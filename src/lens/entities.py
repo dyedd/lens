@@ -60,3 +60,19 @@ class SettingEntity(Base):
 
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class RequestLogEntity(Base):
+    __tablename__ = "request_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    requested_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    matched_group_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    gateway_key_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    status_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    success: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False, index=True)

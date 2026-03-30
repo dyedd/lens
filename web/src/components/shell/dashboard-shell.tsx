@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { KeyRound, Layers3, LayoutDashboard, Settings2, Waypoints } from 'lucide-react'
+import { Activity, KeyRound, Layers3, LayoutDashboard, Settings2, Waypoints } from 'lucide-react'
 import { clearStoredToken } from '@/lib/auth'
 
 const items = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/requests', label: 'Requests', icon: Activity },
   { href: '/dashboard/channels', label: 'Channels', icon: Waypoints },
   { href: '/dashboard/groups', label: 'Groups', icon: Layers3 },
   { href: '/dashboard/keys', label: 'API Keys', icon: KeyRound },

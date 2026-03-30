@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import secrets
+from datetime import UTC
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .entities import GatewayKeyEntity, ModelGroupEntity, SettingEntity
-from .models import GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, SettingItem
+from .entities import GatewayKeyEntity, ModelGroupEntity, RequestLogEntity, SettingEntity
+from .models import GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewMetrics, RequestLogItem, SettingItem
 
 
 class DomainStore:
@@ -156,6 +157,71 @@ class DomainStore:
             result = await session.execute(select(SettingEntity).order_by(SettingEntity.key))
             return [SettingItem(key=item.key, value=item.value) for item in result.scalars().all()]
 
+    async def create_request_log(
+        self,
+        *,
+        protocol: str,
+        requested_model: str | None,
+        matched_group_name: str | None,
+        provider_id: str | None,
+        gateway_key_id: str | None,
+        status_code: int,
+        success: bool,
+        latency_ms: int,
+        error_message: str | None,
+    ) -> RequestLogItem:
+        async with self._session_factory() as session:
+            entity = RequestLogEntity(
+                protocol=protocol,
+                requested_model=requested_model,
+                matched_group_name=matched_group_name,
+                provider_id=provider_id,
+                gateway_key_id=gateway_key_id,
+                status_code=status_code,
+                success=1 if success else 0,
+                latency_ms=latency_ms,
+                error_message=error_message,
+            )
+            session.add(entity)
+            await session.commit()
+            await session.refresh(entity)
+            return self._to_request_log(entity)
+
+    async def list_request_logs(self, limit: int = 100) -> list[RequestLogItem]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(RequestLogEntity)
+                .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+                .limit(limit)
+            )
+            return [self._to_request_log(item) for item in result.scalars().all()]
+
+    async def get_overview_metrics(self) -> OverviewMetrics:
+        async with self._session_factory() as session:
+            total_requests = await session.scalar(select(func.count()).select_from(RequestLogEntity))
+            successful_requests = await session.scalar(
+                select(func.count()).select_from(RequestLogEntity).where(RequestLogEntity.success == 1)
+            )
+            avg_latency = await session.scalar(select(func.avg(RequestLogEntity.latency_ms)).select_from(RequestLogEntity))
+            active_gateway_keys = await session.scalar(
+                select(func.count()).select_from(GatewayKeyEntity).where(GatewayKeyEntity.enabled == 1)
+            )
+            enabled_groups = await session.scalar(
+                select(func.count()).select_from(ModelGroupEntity).where(ModelGroupEntity.enabled == 1)
+            )
+
+        total_value = int(total_requests or 0)
+        success_value = int(successful_requests or 0)
+        return OverviewMetrics(
+            total_requests=total_value,
+            successful_requests=success_value,
+            failed_requests=max(total_value - success_value, 0),
+            avg_latency_ms=int(avg_latency or 0),
+            active_gateway_keys=int(active_gateway_keys or 0),
+            enabled_groups=int(enabled_groups or 0),
+            enabled_providers=0,
+        )
+
     async def _next_id(self, session: AsyncSession, entity_type, prefix: str) -> str:
         result = await session.execute(select(entity_type.id))
         existing_ids = set(result.scalars().all())
@@ -184,4 +250,20 @@ class DomainStore:
             name=entity.name,
             secret=entity.secret,
             enabled=bool(entity.enabled),
+        )
+
+    @staticmethod
+    def _to_request_log(entity: RequestLogEntity) -> RequestLogItem:
+        return RequestLogItem(
+            id=entity.id,
+            protocol=entity.protocol,
+            requested_model=entity.requested_model,
+            matched_group_name=entity.matched_group_name,
+            provider_id=entity.provider_id,
+            gateway_key_id=entity.gateway_key_id,
+            status_code=entity.status_code,
+            success=bool(entity.success),
+            latency_ms=entity.latency_ms,
+            error_message=entity.error_message,
+            created_at=entity.created_at.replace(tzinfo=UTC).isoformat(),
         )

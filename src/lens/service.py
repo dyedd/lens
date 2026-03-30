@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 import httpx
@@ -15,7 +16,7 @@ from .auth import create_access_token, decode_access_token
 from .config import settings
 from .db import Base, create_engine, create_session_factory
 from .domain_store import DomainStore
-from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
+from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewMetrics, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
 from .router import RoundRobinRouter
 from .store import ProviderStore
 from .upstreams import build_upstream_request
@@ -51,6 +52,12 @@ class RoutingPlan:
     strategy: RoutingStrategy
     allowed_provider_ids: set[str] | None
     use_model_matching: bool
+
+
+@dataclass
+class UpstreamResult:
+    response: Response
+    status_code: int
 
 
 async def _startup_app_state(state: AppState) -> None:
@@ -193,6 +200,18 @@ async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]
     return app_state.router.snapshot(providers).model_dump(mode="json")
 
 
+@app.get("/api/overview", response_model=OverviewMetrics)
+async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetrics:
+    metrics = await app_state.domain_store.get_overview_metrics()
+    providers = await app_state.store.list()
+    return metrics.model_copy(update={"enabled_providers": sum(1 for item in providers if item.status.value == "enabled")})
+
+
+@app.get("/api/request-logs", response_model=list[RequestLogItem])
+async def request_logs(_: Any = Depends(get_current_admin)) -> list[RequestLogItem]:
+    return await app_state.domain_store.list_request_logs()
+
+
 @app.post("/api/router/preview")
 async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)) -> dict[str, Any]:
     providers = await app_state.store.list()
@@ -273,40 +292,41 @@ async def update_settings(payload: SettingsUpdate, _: Any = Depends(get_current_
 
 
 @app.post("/v1/chat/completions")
-async def proxy_openai_chat(request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_openai_chat(request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
-    return await _proxy_protocol(ProtocolKind.OPENAI_CHAT, body)
+    return await _proxy_protocol(ProtocolKind.OPENAI_CHAT, body, gateway_key)
 
 
 @app.post("/v1/responses")
-async def proxy_openai_responses(request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_openai_responses(request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
-    return await _proxy_protocol(ProtocolKind.OPENAI_RESPONSES, body)
+    return await _proxy_protocol(ProtocolKind.OPENAI_RESPONSES, body, gateway_key)
 
 
 @app.post("/v1/messages")
-async def proxy_anthropic_messages(request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_anthropic_messages(request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
-    return await _proxy_protocol(ProtocolKind.ANTHROPIC, body)
+    return await _proxy_protocol(ProtocolKind.ANTHROPIC, body, gateway_key)
 
 
 @app.post("/v1beta/models/{model_name}:generateContent")
-async def proxy_gemini_generate_content(model_name: str, request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_gemini_generate_content(model_name: str, request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
     body = {**body, "model": model_name, "stream": False}
-    return await _proxy_protocol(ProtocolKind.GEMINI, body)
+    return await _proxy_protocol(ProtocolKind.GEMINI, body, gateway_key)
 
 
 @app.post("/v1beta/models/{model_name}:streamGenerateContent")
-async def proxy_gemini_stream_generate_content(model_name: str, request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_gemini_stream_generate_content(model_name: str, request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
     body = {**body, "model": model_name, "stream": True}
-    return await _proxy_protocol(ProtocolKind.GEMINI, body)
+    return await _proxy_protocol(ProtocolKind.GEMINI, body, gateway_key)
 
 
-async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any]) -> Response:
+async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_key: GatewayKey) -> Response:
     providers = await app_state.store.list()
     plan = await _resolve_routing_plan(protocol, _requested_model(protocol, body))
+    started_at = perf_counter()
     try:
         selection = app_state.router.select(
             providers,
@@ -317,6 +337,17 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any]) -> Respo
             use_model_matching=plan.use_model_matching,
         )
     except LookupError as exc:
+        await _record_request_log(
+            protocol=protocol,
+            requested_model=plan.requested_model,
+            matched_group_name=plan.matched_group.name if plan.matched_group else None,
+            provider_id=None,
+            gateway_key=gateway_key,
+            status_code=503,
+            success=False,
+            latency_ms=_elapsed_ms(started_at),
+            error_message=str(exc),
+        )
         error_body = ErrorResponse(
             error={
                 "type": "routing_error",
@@ -329,11 +360,34 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any]) -> Respo
 
     for provider in [selection.primary, *selection.fallbacks]:
         try:
-            return await _call_provider(provider, body)
+            result = await _call_provider(provider, body)
+            await _record_request_log(
+                protocol=protocol,
+                requested_model=plan.requested_model,
+                matched_group_name=plan.matched_group.name if plan.matched_group else None,
+                provider_id=provider.id,
+                gateway_key=gateway_key,
+                status_code=result.status_code,
+                success=True,
+                latency_ms=_elapsed_ms(started_at),
+                error_message=None,
+            )
+            return result.response
         except HTTPException as exc:
             message = f"{provider.id}: {exc.detail}"
             app_state.router.record_failure(provider.id, message)
             errors.append(message)
+            await _record_request_log(
+                protocol=protocol,
+                requested_model=plan.requested_model,
+                matched_group_name=plan.matched_group.name if plan.matched_group else None,
+                provider_id=provider.id,
+                gateway_key=gateway_key,
+                status_code=exc.status_code,
+                success=False,
+                latency_ms=_elapsed_ms(started_at),
+                error_message=message,
+            )
 
     error_body = ErrorResponse(
         error={
@@ -345,7 +399,7 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any]) -> Respo
     return JSONResponse(status_code=502, content=error_body.model_dump(mode="json"))
 
 
-async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> Response:
+async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> UpstreamResult:
     upstream = build_upstream_request(provider, body, settings)
     stream = bool(body.get("stream"))
 
@@ -368,11 +422,14 @@ async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> Resp
                 finally:
                     await response.aclose()
 
-            return StreamingResponse(
-                iterator(),
+            return UpstreamResult(
+                response=StreamingResponse(
+                    iterator(),
+                    status_code=response.status_code,
+                    media_type=response.headers.get("content-type"),
+                    headers=_passthrough_headers(response.headers),
+                ),
                 status_code=response.status_code,
-                media_type=response.headers.get("content-type"),
-                headers=_passthrough_headers(response.headers),
             )
 
         response = await app_state.http.request(
@@ -384,11 +441,14 @@ async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> Resp
         response.raise_for_status()
         app_state.router.record_success(provider.id)
 
-        return Response(
-            content=response.content,
+        return UpstreamResult(
+            response=Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type"),
+                headers=_passthrough_headers(response.headers),
+            ),
             status_code=response.status_code,
-            media_type=response.headers.get("content-type"),
-            headers=_passthrough_headers(response.headers),
         )
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text or f"HTTP {exc.response.status_code}"
@@ -434,4 +494,33 @@ async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | N
         strategy=RoutingStrategy.WEIGHTED,
         allowed_provider_ids=None,
         use_model_matching=True,
+    )
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(int((perf_counter() - started_at) * 1000), 0)
+
+
+async def _record_request_log(
+    *,
+    protocol: ProtocolKind,
+    requested_model: str | None,
+    matched_group_name: str | None,
+    provider_id: str | None,
+    gateway_key: GatewayKey,
+    status_code: int,
+    success: bool,
+    latency_ms: int,
+    error_message: str | None,
+) -> None:
+    await app_state.domain_store.create_request_log(
+        protocol=protocol.value,
+        requested_model=requested_model,
+        matched_group_name=matched_group_name,
+        provider_id=provider_id,
+        gateway_key_id=gateway_key.id,
+        status_code=status_code,
+        success=success,
+        latency_ms=latency_ms,
+        error_message=error_message,
     )

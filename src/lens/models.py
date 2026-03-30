@@ -210,3 +210,27 @@ class SettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[SettingItem]
+
+
+class RequestLogItem(BaseModel):
+    id: int
+    protocol: ProtocolKind
+    requested_model: str | None = None
+    matched_group_name: str | None = None
+    provider_id: str | None = None
+    gateway_key_id: str | None = None
+    status_code: int
+    success: bool
+    latency_ms: int
+    error_message: str | None = None
+    created_at: str
+
+
+class OverviewMetrics(BaseModel):
+    total_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    avg_latency_ms: int = 0
+    active_gateway_keys: int = 0
+    enabled_groups: int = 0
+    enabled_providers: int = 0

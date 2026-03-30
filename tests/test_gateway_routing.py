@@ -104,6 +104,27 @@ def test_model_group_name_routes_by_group_providers() -> None:
         assert response.status_code in {502, 503}
 
 
+def test_request_logs_and_overview_metrics_are_exposed() -> None:
+    with TestClient(app) as client:
+        login = client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+        assert login.status_code == 200
+        token = login.json()["access_token"]
+
+        overview = client.get("/api/overview", headers={"Authorization": f"Bearer {token}"})
+        assert overview.status_code == 200
+        overview_payload = overview.json()
+        assert "total_requests" in overview_payload
+        assert "enabled_providers" in overview_payload
+
+        logs = client.get("/api/request-logs", headers={"Authorization": f"Bearer {token}"})
+        assert logs.status_code == 200
+        logs_payload = logs.json()
+        assert isinstance(logs_payload, list)
+        assert len(logs_payload) >= 1
+        assert "status_code" in logs_payload[0]
+        assert "latency_ms" in logs_payload[0]
+
+
 def run_async(awaitable):
     return anyio.run(_await_value, awaitable)
 

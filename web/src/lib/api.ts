@@ -75,6 +75,30 @@ export type RouteSnapshot = {
   health: Array<{ provider_id: string; consecutive_failures: number; last_error?: string | null }>
 }
 
+export type OverviewMetrics = {
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+  avg_latency_ms: number
+  active_gateway_keys: number
+  enabled_groups: number
+  enabled_providers: number
+}
+
+export type RequestLogItem = {
+  id: number
+  protocol: ProtocolKind
+  requested_model?: string | null
+  matched_group_name?: string | null
+  provider_id?: string | null
+  gateway_key_id?: string | null
+  status_code: number
+  success: boolean
+  latency_ms: number
+  error_message?: string | null
+  created_at: string
+}
+
 function getToken() {
   if (typeof window === 'undefined') {
     return ''
