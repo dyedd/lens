@@ -26,7 +26,14 @@ body {
     radial-gradient(circle at top right, rgba(193, 102, 48, 0.2), transparent 34%),
     linear-gradient(180deg, #faf3e7 0%, var(--bg) 100%);
   color: var(--text);
-  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono), "Consolas", monospace;
 }
 
 a {
