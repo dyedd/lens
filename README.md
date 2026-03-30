@@ -1,92 +1,35 @@
 # Lens
 
-Lens is a Python + Next.js management console and LLM gateway.
+Lens is a Python + Next.js admin console and LLM gateway for four native protocol families:
 
-Current product shape:
+- OpenAI Chat Completions
+- OpenAI Responses
+- Anthropic Messages
+- Gemini `generateContent` / `streamGenerateContent`
 
-- Admin login
-- Provider channel management
-- Model group management
-- Downstream gateway key management
-- System settings management
-- Native protocol relay for:
-  - OpenAI Chat Completions
-  - OpenAI Responses
-  - Anthropic Messages
-  - Gemini `generateContent` / `streamGenerateContent`
-- SQLite persistence through SQLAlchemy ORM
-- Model aggregation with regex-based matching
+Current scope is intentionally narrow:
 
-This project does not do protocol conversion. Routing stays inside each native protocol family.
+- no protocol conversion
+- SQLite persistence via SQLAlchemy ORM
+- admin login
+- channel management
+- model-group aggregation
+- downstream gateway keys
+- request logs and overview metrics
 
-## Stack
+## Current Product Shape
 
-- Backend: FastAPI, SQLAlchemy, SQLite, HTTPX
-- Frontend: Next.js App Router, React 19, TypeScript, pnpm, TanStack Query
-
-## Admin surface
-
-Routes implemented in the management UI:
+Management UI:
 
 - `/login`
 - `/dashboard`
+- `/dashboard/requests`
 - `/dashboard/channels`
 - `/dashboard/groups`
 - `/dashboard/keys`
 - `/dashboard/settings`
 
-Default admin credentials on first startup:
-
-- username: `admin`
-- password: `admin`
-
-Change the secret and default password before using this outside local development.
-
-## Backend setup
-
-Use the `temp` conda environment:
-
-```powershell
-conda activate temp
-cd D:\Projects\PYprojects\lens
-python -m pip install -e .
-python -m lens.main
-```
-
-The backend listens on `http://127.0.0.1:8000` by default.
-
-### Environment
-
-Optional `.env` keys:
-
-```env
-LENS_HOST=127.0.0.1
-LENS_PORT=8000
-LENS_DATABASE_URL=sqlite+aiosqlite:///data/lens.db
-LENS_AUTH_SECRET_KEY=change-me-in-production
-LENS_AUTH_ALGORITHM=HS256
-LENS_AUTH_ACCESS_TOKEN_MINUTES=720
-LENS_ADMIN_DEFAULT_USERNAME=admin
-LENS_ADMIN_DEFAULT_PASSWORD=admin
-LENS_ANTHROPIC_VERSION=2023-06-01
-LENS_REQUEST_TIMEOUT_SECONDS=180
-LENS_CONNECT_TIMEOUT_SECONDS=10
-```
-
-## Frontend setup
-
-```powershell
-conda activate temp
-cd D:\Projects\PYprojects\lens\web
-pnpm install
-pnpm dev
-```
-
-The frontend runs on `http://127.0.0.1:3000`.
-
-`Next.js` rewrites `/api/*` to the FastAPI backend at `http://127.0.0.1:8000/api/*`.
-
-## Gateway endpoints
+Gateway endpoints:
 
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
@@ -94,10 +37,12 @@ The frontend runs on `http://127.0.0.1:3000`.
 - `POST /v1beta/models/{model}:generateContent`
 - `POST /v1beta/models/{model}:streamGenerateContent`
 
-## Management API
+Management API:
 
 - `POST /api/auth/login`
 - `GET /api/auth/me`
+- `GET /api/overview`
+- `GET /api/request-logs`
 - `GET /api/providers`
 - `POST /api/providers`
 - `PUT /api/providers/{provider_id}`
@@ -115,9 +60,81 @@ The frontend runs on `http://127.0.0.1:3000`.
 - `GET /api/settings`
 - `PUT /api/settings`
 
-## Model aggregation
+## Stack
 
-Each provider can define `model_patterns`, a list of regex patterns.
+- Backend: FastAPI, HTTPX, SQLAlchemy 2.x, SQLite
+- Frontend: Next.js App Router, React 19, TypeScript, TanStack Query, pnpm
+
+## Run Backend
+
+Use the `temp` conda environment.
+
+```powershell
+conda activate temp
+cd D:\Projects\PYprojects\lens
+python -m pip install -e .[dev]
+python -m lens.main
+```
+
+Default backend address:
+
+- `http://127.0.0.1:8000`
+
+## Run Frontend
+
+```powershell
+conda activate temp
+cd D:\Projects\PYprojects\lens\web
+pnpm install
+pnpm dev
+```
+
+Default frontend address:
+
+- `http://127.0.0.1:3000`
+
+## Default Admin
+
+On first startup the system creates:
+
+- username: `admin`
+- password: `admin`
+
+Change `LENS_AUTH_SECRET_KEY` and the default admin password before any non-local use.
+
+## Environment Variables
+
+Supported backend configuration:
+
+```env
+LENS_HOST=127.0.0.1
+LENS_PORT=8000
+LENS_DATABASE_URL=sqlite+aiosqlite:///data/lens.db
+LENS_AUTH_SECRET_KEY=change-me-in-production-and-make-it-longer-than-32-bytes
+LENS_AUTH_ALGORITHM=HS256
+LENS_AUTH_ACCESS_TOKEN_MINUTES=720
+LENS_ADMIN_DEFAULT_USERNAME=admin
+LENS_ADMIN_DEFAULT_PASSWORD=admin
+LENS_ANTHROPIC_VERSION=2023-06-01
+LENS_REQUEST_TIMEOUT_SECONDS=180
+LENS_CONNECT_TIMEOUT_SECONDS=10
+LENS_MAX_CONNECTIONS=200
+LENS_MAX_KEEPALIVE_CONNECTIONS=50
+```
+
+## Routing Rules
+
+Lens routes only within the same native protocol family.
+
+Routing flow:
+
+1. Authenticate downstream gateway key.
+2. Read requested protocol and model.
+3. If the model exactly matches a model-group name under the same protocol, use that group strategy and provider pool.
+4. Otherwise fall back to provider-level model matching.
+5. Route with `round_robin`, `weighted`, or `failover`.
+
+Provider-level aggregation supports regex via `model_patterns`.
 
 Example:
 
@@ -126,27 +143,40 @@ Example:
 ^claude-opus-.*$
 ```
 
-If a request comes in with `model: "claude-opus-4-6"`, the router filters the same-protocol provider pool by these regex rules before applying weighted round robin or failover.
+If you create a model group named `claude-opus-4-6`, that exact external name can map to a specific internal provider pool regardless of provider regexes.
 
-If `model_patterns` is empty, routing falls back to exact `model_name` matching when a request includes `model`.
+## Downstream Gateway Access
 
-## Current scope
+Create a gateway key in `/dashboard/keys`, then call Lens with one of:
 
-Implemented:
+- `Authorization: Bearer <gateway-secret>`
+- `x-api-key: <gateway-secret>`
+- `x-goog-api-key: <gateway-secret>`
 
-- Admin login
-- Management backend shell
-- CRUD for channels, model groups, gateway keys, settings
-- Regex-based model matching
-- SQLite persistence
-- Native protocol relay for the four requested upstream families
+Example OpenAI Chat call:
 
-Not implemented yet:
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H "Authorization: Bearer sk-lens-..." \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
+```
+
+## What Is Implemented
+
+- Admin authentication
+- SQLite persistence with SQLAlchemy ORM
+- CRUD for providers, model groups, gateway keys, settings
+- Model-group routing and provider regex matching
+- Native relay for OpenAI Chat, OpenAI Responses, Anthropic, Gemini
+- Gateway key authentication on `/v1/*`
+- Request logs and overview metrics in the admin UI
+
+## What Is Not Implemented Yet
 
 - Protocol conversion
-- request logs and analytics UI
-- price sync
-- model sync from upstream
-- circuit breaker and active health probing
+- active health probing and circuit breaker logic
+- upstream model sync
+- cost accounting
 - Alembic migrations
 - multi-admin RBAC
