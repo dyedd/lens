@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
+import { setStoredToken } from '@/lib/auth'
 
 export function LoginScreen() {
   const router = useRouter()
@@ -25,7 +26,7 @@ export function LoginScreen() {
     }
 
     const data = await response.json()
-    window.localStorage.setItem('lens_token', data.access_token)
+    setStoredToken(data.access_token)
     router.push('/dashboard')
   }
 

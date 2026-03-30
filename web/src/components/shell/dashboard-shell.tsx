@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { KeyRound, Layers3, LayoutDashboard, Settings2, Waypoints } from 'lucide-react'
+import { clearStoredToken } from '@/lib/auth'
 
 const items = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -39,6 +40,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               )
             })}
           </nav>
+          <button
+            type="button"
+            className="mt-8 w-full rounded-full border border-[var(--line)] px-4 py-3 text-left text-[var(--muted)] hover:bg-[var(--panel-strong)]"
+            onClick={() => {
+              clearStoredToken()
+              window.location.href = '/login'
+            }}
+          >
+            Sign out
+          </button>
         </aside>
         <main className="rounded-[28px] border border-[var(--line)] bg-[var(--panel)] p-5 backdrop-blur md:p-6">
           {children}
