@@ -78,7 +78,7 @@ python -m lens.main
 
 Default backend address:
 
-- `http://127.0.0.1:7890`
+- `http://127.0.0.1:18080`
 
 ## Run Frontend
 
@@ -108,7 +108,7 @@ Supported backend configuration:
 
 ```env
 LENS_HOST=127.0.0.1
-LENS_PORT=7890
+LENS_PORT=18080
 LENS_DATABASE_URL=sqlite+aiosqlite:///data/lens.db
 LENS_AUTH_SECRET_KEY=change-me-in-production-and-make-it-longer-than-32-bytes
 LENS_AUTH_ALGORITHM=HS256
@@ -156,7 +156,7 @@ Create a gateway key in `/dashboard/keys`, then call Lens with one of:
 Example OpenAI Chat call:
 
 ```bash
-curl http://127.0.0.1:7890/v1/chat/completions \
+curl http://127.0.0.1:18080/v1/chat/completions \
   -H "Authorization: Bearer sk-lens-..." \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
