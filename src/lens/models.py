@@ -19,6 +19,12 @@ class ProviderStatus(str, Enum):
     DISABLED = "disabled"
 
 
+class RoutingStrategy(str, Enum):
+    ROUND_ROBIN = "round_robin"
+    WEIGHTED = "weighted"
+    FAILOVER = "failover"
+
+
 class ProviderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -137,3 +143,68 @@ class AuthTokenResponse(BaseModel):
 class AdminProfile(BaseModel):
     id: int
     username: str
+
+
+class ModelGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    protocol: ProtocolKind
+    strategy: RoutingStrategy
+    provider_ids: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class ModelGroupCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    protocol: ProtocolKind
+    strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
+    provider_ids: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class ModelGroupUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    protocol: ProtocolKind | None = None
+    strategy: RoutingStrategy | None = None
+    provider_ids: list[str] | None = None
+    enabled: bool | None = None
+
+
+class GatewayKey(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    secret: str
+    enabled: bool = True
+
+
+class GatewayKeyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    enabled: bool = True
+
+
+class GatewayKeyUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    enabled: bool | None = None
+
+
+class SettingItem(BaseModel):
+    key: str
+    value: str
+
+
+class SettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[SettingItem]

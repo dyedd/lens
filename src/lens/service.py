@@ -13,7 +13,8 @@ from .admin_store import AdminStore
 from .auth import create_access_token, decode_access_token
 from .config import settings
 from .db import Base, create_engine, create_session_factory
-from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RoutePreviewRequest
+from .domain_store import DomainStore
+from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RoutePreviewRequest, SettingItem, SettingsUpdate
 from .router import RoundRobinRouter
 from .store import ProviderStore
 from .upstreams import build_upstream_request
@@ -33,6 +34,7 @@ class AppState:
         self.engine = create_engine(settings.database_url)
         self.session_factory = create_session_factory(self.engine)
         self.admin_store = AdminStore(self.session_factory)
+        self.domain_store = DomainStore(self.session_factory)
         self.store = ProviderStore(self.session_factory)
         self.router = RoundRobinRouter()
 
@@ -152,6 +154,70 @@ async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]
 async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)) -> dict[str, Any]:
     providers = await app_state.store.list()
     return app_state.router.preview(providers, payload.protocol, payload.model).model_dump(mode="json")
+
+
+@app.get("/api/model-groups", response_model=list[ModelGroup])
+async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGroup]:
+    return await app_state.domain_store.list_groups()
+
+
+@app.post("/api/model-groups", response_model=ModelGroup, status_code=201)
+async def create_model_group(payload: ModelGroupCreate, _: Any = Depends(get_current_admin)) -> ModelGroup:
+    return await app_state.domain_store.create_group(payload)
+
+
+@app.put("/api/model-groups/{group_id}", response_model=ModelGroup)
+async def update_model_group(group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)) -> ModelGroup:
+    try:
+        return await app_state.domain_store.update_group(group_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Model group not found: {group_id}") from exc
+
+
+@app.delete("/api/model-groups/{group_id}", status_code=204)
+async def delete_model_group(group_id: str, _: Any = Depends(get_current_admin)) -> Response:
+    try:
+        await app_state.domain_store.delete_group(group_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Model group not found: {group_id}") from exc
+    return Response(status_code=204)
+
+
+@app.get("/api/gateway-keys", response_model=list[GatewayKey])
+async def list_gateway_keys(_: Any = Depends(get_current_admin)) -> list[GatewayKey]:
+    return await app_state.domain_store.list_gateway_keys()
+
+
+@app.post("/api/gateway-keys", response_model=GatewayKey, status_code=201)
+async def create_gateway_key(payload: GatewayKeyCreate, _: Any = Depends(get_current_admin)) -> GatewayKey:
+    return await app_state.domain_store.create_gateway_key(payload)
+
+
+@app.put("/api/gateway-keys/{key_id}", response_model=GatewayKey)
+async def update_gateway_key(key_id: str, payload: GatewayKeyUpdate, _: Any = Depends(get_current_admin)) -> GatewayKey:
+    try:
+        return await app_state.domain_store.update_gateway_key(key_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Gateway key not found: {key_id}") from exc
+
+
+@app.delete("/api/gateway-keys/{key_id}", status_code=204)
+async def delete_gateway_key(key_id: str, _: Any = Depends(get_current_admin)) -> Response:
+    try:
+        await app_state.domain_store.delete_gateway_key(key_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Gateway key not found: {key_id}") from exc
+    return Response(status_code=204)
+
+
+@app.get("/api/settings", response_model=list[SettingItem])
+async def list_settings(_: Any = Depends(get_current_admin)) -> list[SettingItem]:
+    return await app_state.domain_store.list_settings()
+
+
+@app.put("/api/settings", response_model=list[SettingItem])
+async def update_settings(payload: SettingsUpdate, _: Any = Depends(get_current_admin)) -> list[SettingItem]:
+    return await app_state.domain_store.upsert_settings(payload.items)
 
 
 @app.post("/v1/chat/completions")

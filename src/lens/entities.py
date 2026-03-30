@@ -33,3 +33,30 @@ class ProviderEntity(Base):
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     model_patterns_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
+
+class ModelGroupEntity(Base):
+    __tablename__ = "model_groups"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False, index=True)
+    protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    strategy: Mapped[str] = mapped_column(String(32), nullable=False, default="round_robin")
+    provider_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class GatewayKeyEntity(Base):
+    __tablename__ = "gateway_keys"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    secret: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class SettingEntity(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
