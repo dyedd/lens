@@ -1,41 +1,55 @@
 # Lens
 
-Python + React LLM gateway for aggregating four native upstream protocols:
+Lens is a Python + Next.js management console and LLM gateway.
 
-- OpenAI Chat Completions
-- OpenAI Responses
-- Anthropic Messages
-- Gemini `generateContent` / `streamGenerateContent`
+Current product shape:
 
-This project does not do protocol conversion. Each protocol stays native and is routed only within its own upstream pool.
-
-## Why this shape
-
-`vllm` and `sglang` both expose Python async HTTP services around ASGI-style stacks, and `vllm` explicitly recommends using its OpenAI-compatible server for production-facing serving. For this gateway use case, `FastAPI + httpx` is the smallest maintainable equivalent: async request handling, streaming passthrough, pooled outbound connections, and straightforward operational behavior.
-
-## Current capabilities
-
-- Weighted round robin per protocol pool
-- In-order failover inside the same protocol pool
-- Transparent non-streaming and streaming proxying
-- Provider CRUD API
+- Admin login
+- Provider channel management
+- Model group management
+- Downstream gateway key management
+- System settings management
+- Native protocol relay for:
+  - OpenAI Chat Completions
+  - OpenAI Responses
+  - Anthropic Messages
+  - Gemini `generateContent` / `streamGenerateContent`
 - SQLite persistence through SQLAlchemy ORM
-- Model aggregation by regex pattern matching
-- Minimal React console for upstream management and router inspection
+- Model aggregation with regex-based matching
 
-## Backend
+This project does not do protocol conversion. Routing stays inside each native protocol family.
 
-### Install
+## Stack
+
+- Backend: FastAPI, SQLAlchemy, SQLite, HTTPX
+- Frontend: Next.js App Router, React 19, TypeScript, pnpm, TanStack Query
+
+## Admin surface
+
+Routes implemented in the management UI:
+
+- `/login`
+- `/dashboard`
+- `/dashboard/channels`
+- `/dashboard/groups`
+- `/dashboard/keys`
+- `/dashboard/settings`
+
+Default admin credentials on first startup:
+
+- username: `admin`
+- password: `admin`
+
+Change the secret and default password before using this outside local development.
+
+## Backend setup
+
+Use the `temp` conda environment:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e .
-```
-
-### Start
-
-```powershell
+conda activate temp
+cd D:\Projects\PYprojects\lens
+python -m pip install -e .
 python -m lens.main
 ```
 
@@ -49,18 +63,30 @@ Optional `.env` keys:
 LENS_HOST=127.0.0.1
 LENS_PORT=8000
 LENS_DATABASE_URL=sqlite+aiosqlite:///data/lens.db
+LENS_AUTH_SECRET_KEY=change-me-in-production
+LENS_AUTH_ALGORITHM=HS256
+LENS_AUTH_ACCESS_TOKEN_MINUTES=720
+LENS_ADMIN_DEFAULT_USERNAME=admin
+LENS_ADMIN_DEFAULT_PASSWORD=admin
 LENS_ANTHROPIC_VERSION=2023-06-01
 LENS_REQUEST_TIMEOUT_SECONDS=180
 LENS_CONNECT_TIMEOUT_SECONDS=10
 ```
 
-### Database
+## Frontend setup
 
-By default the app creates and uses `data/lens.db` automatically.
+```powershell
+conda activate temp
+cd D:\Projects\PYprojects\lens\web
+pnpm install
+pnpm dev
+```
 
-If you want seed data, use `data/providers.example.json` as the source shape for `POST /api/providers` requests.
+The frontend runs on `http://127.0.0.1:3000`.
 
-### Proxy endpoints
+`Next.js` rewrites `/api/*` to the FastAPI backend at `http://127.0.0.1:8000/api/*`.
+
+## Gateway endpoints
 
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
@@ -68,30 +94,59 @@ If you want seed data, use `data/providers.example.json` as the source shape for
 - `POST /v1beta/models/{model}:generateContent`
 - `POST /v1beta/models/{model}:streamGenerateContent`
 
-### Management endpoints
+## Management API
 
-- `GET /healthz`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
 - `GET /api/providers`
 - `POST /api/providers`
 - `PUT /api/providers/{provider_id}`
 - `DELETE /api/providers/{provider_id}`
 - `GET /api/router`
 - `POST /api/router/preview`
+- `GET /api/model-groups`
+- `POST /api/model-groups`
+- `PUT /api/model-groups/{group_id}`
+- `DELETE /api/model-groups/{group_id}`
+- `GET /api/gateway-keys`
+- `POST /api/gateway-keys`
+- `PUT /api/gateway-keys/{key_id}`
+- `DELETE /api/gateway-keys/{key_id}`
+- `GET /api/settings`
+- `PUT /api/settings`
 
-## Frontend
+## Model aggregation
 
-```powershell
-cd web
-npm install
-npm run dev
+Each provider can define `model_patterns`, a list of regex patterns.
+
+Example:
+
+```text
+^claude-opus-4-6$
+^claude-opus-.*$
 ```
 
-The Vite dev server runs on `http://127.0.0.1:5173` and proxies `/api` plus `/healthz` to the backend.
+If a request comes in with `model: "claude-opus-4-6"`, the router filters the same-protocol provider pool by these regex rules before applying weighted round robin or failover.
 
-## Notes
+If `model_patterns` is empty, routing falls back to exact `model_name` matching when a request includes `model`.
 
-- Gemini uses native Google REST paths and API key auth.
-- Anthropic requires the `anthropic-version` header and uses SSE for streaming.
-- `model_patterns` supports regex-based aggregation. Example: if a provider includes `^claude-opus-4-6$`, requests with model `claude-opus-4-6` will be routed into that provider pool.
-- If `model_patterns` is empty, routing falls back to exact `model_name` match when `model` is present.
-- This MVP intentionally skips protocol normalization, retries with backoff, circuit breaking, auth for the admin API, migrations, and metrics export.
+## Current scope
+
+Implemented:
+
+- Admin login
+- Management backend shell
+- CRUD for channels, model groups, gateway keys, settings
+- Regex-based model matching
+- SQLite persistence
+- Native protocol relay for the four requested upstream families
+
+Not implemented yet:
+
+- Protocol conversion
+- request logs and analytics UI
+- price sync
+- model sync from upstream
+- circuit breaker and active health probing
+- Alembic migrations
+- multi-admin RBAC
