@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     host: str = "127.0.0.1"
     port: int = 8000
+    auth_secret_key: str = "change-me-in-production"
+    auth_algorithm: str = "HS256"
+    auth_access_token_minutes: int = 60 * 12
+    admin_default_username: str = "admin"
+    admin_default_password: str = "admin"
     request_timeout_seconds: float = 180.0
     connect_timeout_seconds: float = 10.0
     max_connections: int = 200

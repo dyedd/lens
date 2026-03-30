@@ -4,13 +4,16 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from .admin_store import AdminStore
+from .auth import create_access_token, decode_access_token
 from .config import settings
 from .db import Base, create_engine, create_session_factory
-from .models import ErrorResponse, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RoutePreviewRequest
+from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RoutePreviewRequest
 from .router import RoundRobinRouter
 from .store import ProviderStore
 from .upstreams import build_upstream_request
@@ -29,12 +32,17 @@ class AppState:
         self.http = httpx.AsyncClient(timeout=timeout, limits=limits)
         self.engine = create_engine(settings.database_url)
         self.session_factory = create_session_factory(self.engine)
+        self.admin_store = AdminStore(self.session_factory)
         self.store = ProviderStore(self.session_factory)
         self.router = RoundRobinRouter()
 
     async def startup(self) -> None:
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+        await self.admin_store.ensure_default_admin(
+            settings.admin_default_username,
+            settings.admin_default_password,
+        )
 
     async def close(self) -> None:
         await self.http.aclose()
@@ -52,6 +60,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+auth_scheme = HTTPBearer(auto_error=False)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,23 +70,63 @@ app.add_middleware(
 )
 
 
+async def get_current_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(auth_scheme),
+):
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    try:
+        payload = decode_access_token(credentials.credentials, settings)
+        username = payload.get("sub")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+
+    if not username:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    admin = await app_state.admin_store.get_by_username(username)
+    if admin is None or admin.is_active != 1:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
+
+    return admin
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/api/auth/login", response_model=AuthTokenResponse)
+async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
+    user = await app_state.admin_store.authenticate(payload.username, payload.password)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
+
+    access_token, expires_in = create_access_token(user.username, settings)
+    return AuthTokenResponse(access_token=access_token, expires_in=expires_in)
+
+
+@app.get("/api/auth/me", response_model=AdminProfile)
+async def current_admin(admin = Depends(get_current_admin)) -> AdminProfile:
+    return AdminProfile(id=admin.id, username=admin.username)
+
+
 @app.get("/api/providers")
-async def list_providers() -> list[ProviderConfig]:
+async def list_providers(_: Any = Depends(get_current_admin)) -> list[ProviderConfig]:
     return await app_state.store.list()
 
 
 @app.post("/api/providers", status_code=201)
-async def create_provider(payload: ProviderCreate) -> ProviderConfig:
+async def create_provider(payload: ProviderCreate, _: Any = Depends(get_current_admin)) -> ProviderConfig:
     return await app_state.store.create(payload)
 
 
 @app.put("/api/providers/{provider_id}")
-async def update_provider(provider_id: str, payload: ProviderUpdate) -> ProviderConfig:
+async def update_provider(provider_id: str, payload: ProviderUpdate, _: Any = Depends(get_current_admin)) -> ProviderConfig:
     try:
         return await app_state.store.update(provider_id, payload)
     except KeyError as exc:
@@ -85,7 +134,7 @@ async def update_provider(provider_id: str, payload: ProviderUpdate) -> Provider
 
 
 @app.delete("/api/providers/{provider_id}", status_code=204)
-async def delete_provider(provider_id: str) -> Response:
+async def delete_provider(provider_id: str, _: Any = Depends(get_current_admin)) -> Response:
     try:
         await app_state.store.delete(provider_id)
     except KeyError as exc:
@@ -94,13 +143,13 @@ async def delete_provider(provider_id: str) -> Response:
 
 
 @app.get("/api/router")
-async def router_snapshot() -> dict[str, Any]:
+async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]:
     providers = await app_state.store.list()
     return app_state.router.snapshot(providers).model_dump(mode="json")
 
 
 @app.post("/api/router/preview")
-async def router_preview(payload: RoutePreviewRequest) -> dict[str, Any]:
+async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)) -> dict[str, Any]:
     providers = await app_state.store.list()
     return app_state.router.preview(providers, payload.protocol, payload.model).model_dump(mode="json")
 

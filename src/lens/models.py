@@ -119,3 +119,21 @@ class RouterSnapshot(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: dict[str, Any]
+
+
+class AdminLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class AdminProfile(BaseModel):
+    id: int
+    username: str
