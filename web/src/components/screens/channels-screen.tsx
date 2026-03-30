@@ -3,8 +3,9 @@
 import { FormEvent, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, Provider, ProtocolKind, ProviderPayload, apiRequest } from '@/lib/api'
+import { useI18n } from '@/lib/i18n'
 
-type ChannelFormState = {
+type FormState = {
   name: string
   protocol: ProtocolKind
   base_url: string
@@ -16,33 +17,22 @@ type ChannelFormState = {
   model_patterns: string
 }
 
-const emptyForm: ChannelFormState = {
-  name: '',
-  protocol: 'openai_chat',
-  base_url: '',
-  api_key: '',
-  model_name: '',
-  status: 'enabled',
-  weight: 1,
-  priority: 100,
-  model_patterns: ''
+const emptyForm: FormState = {
+  name: '', protocol: 'openai_chat', base_url: '', api_key: '', model_name: '', status: 'enabled', weight: 1, priority: 100, model_patterns: ''
 }
 
-function toForm(provider: Provider): ChannelFormState {
-  return {
-    name: provider.name,
-    protocol: provider.protocol,
-    base_url: provider.base_url,
-    api_key: provider.api_key,
-    model_name: provider.model_name ?? '',
-    status: provider.status,
-    weight: provider.weight,
-    priority: provider.priority,
-    model_patterns: provider.model_patterns.join('\n')
-  }
+const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
+  { value: 'openai_chat', label: 'OpenAI Chat' },
+  { value: 'openai_responses', label: 'OpenAI Responses' },
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'gemini', label: 'Gemini' }
+]
+
+function toForm(item: Provider): FormState {
+  return { ...item, model_name: item.model_name ?? '', model_patterns: item.model_patterns.join('\n') }
 }
 
-function toPayload(form: ChannelFormState): ProviderPayload {
+function toPayload(form: FormState): ProviderPayload {
   return {
     name: form.name.trim(),
     protocol: form.protocol,
@@ -57,13 +47,17 @@ function toPayload(form: ChannelFormState): ProviderPayload {
   }
 }
 
+function maskKey(value: string) {
+  return value.length > 10 ? value.slice(0, 6) + '...' + value.slice(-4) : value || 'n/a'
+}
+
 export function ChannelsScreen() {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<ChannelFormState>(emptyForm)
+  const { locale, t } = useI18n()
+  const [form, setForm] = useState<FormState>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
-
   const { data, isLoading } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
 
   async function refresh() {
@@ -73,116 +67,100 @@ export function ChannelsScreen() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
-
     try {
-      if (editingId) {
-        await apiRequest<Provider>('/providers/' + editingId, {
-          method: 'PUT',
-          body: JSON.stringify(toPayload(form))
-        })
-      } else {
-        await apiRequest<Provider>('/providers', {
-          method: 'POST',
-          body: JSON.stringify(toPayload(form))
-        })
-      }
-      setForm(emptyForm)
+      await apiRequest<Provider>(editingId ? '/providers/' + editingId : '/providers', {
+        method: editingId ? 'PUT' : 'POST',
+        body: JSON.stringify(toPayload(form))
+      })
       setEditingId(null)
+      setForm(emptyForm)
       await refresh()
-    } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Failed to save channel')
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存渠道失败' : 'Failed to save channel'))
     }
   }
 
-  async function remove(providerId: string) {
-    setBusyId(providerId)
+  async function remove(id: string) {
+    setBusyId(id)
     setError('')
     try {
-      await apiRequest<void>('/providers/' + providerId, { method: 'DELETE' })
-      if (editingId === providerId) {
+      await apiRequest<void>('/providers/' + id, { method: 'DELETE' })
+      if (editingId === id) {
         setEditingId(null)
         setForm(emptyForm)
       }
       await refresh()
-    } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Failed to delete channel')
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除渠道失败' : 'Failed to delete channel'))
     } finally {
       setBusyId(null)
     }
   }
 
   return (
-    <section className="grid gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm uppercase tracking-[0.2em] text-[var(--accent-2)]">Channels</p>
-          <h2 className="mt-2 text-4xl font-semibold">Provider channels, upstream keys, model patterns, and health state</h2>
+    <section className="grid gap-6">
+      <div className="rounded-[30px] border border-[var(--line)] bg-[linear-gradient(135deg,rgba(47,111,237,0.1),rgba(19,162,168,0.08))] p-6 md:p-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-sm uppercase tracking-[0.22em] text-[var(--accent)]">{locale === 'zh-CN' ? '渠道管理' : 'Channels'}</p>
+            <h2 className="mt-3 text-4xl font-semibold leading-tight">{locale === 'zh-CN' ? '管理上游渠道池与模型匹配规则。' : 'Manage upstream channels and model matching rules.'}</h2>
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--muted)]">{locale === 'zh-CN' ? '同协议内先匹配模型组，未命中时再按渠道正则回退。支持类似 claude-opus-4-6 的外部模型名正则承接。' : 'Model groups win first. Provider regex rules handle fallback within the same protocol family.'}</p>
+          </div>
+          <button className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-2 text-sm shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()}>{t.refresh}</button>
         </div>
-        <button className="rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[var(--muted)] hover:bg-[var(--panel-strong)]" type="button" onClick={() => void refresh()}>
-          Refresh
-        </button>
       </div>
-      <form className="grid gap-3 rounded-[24px] border border-[var(--line)] bg-[var(--panel-strong)] p-5" onSubmit={submit}>
-        <div className="flex items-center justify-between gap-3">
-          <strong>{editingId ? 'Edit channel' : 'Create channel'}</strong>
-          {editingId ? (
-            <button
-              className="rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[var(--muted)] hover:bg-white/70"
-              type="button"
-              onClick={() => {
-                setEditingId(null)
-                setForm(emptyForm)
-                setError('')
-              }}
-            >
-              Cancel editing
-            </button>
-          ) : null}
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <input className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" placeholder="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          <select className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" value={form.protocol} onChange={(event) => setForm({ ...form, protocol: event.target.value as ProtocolKind })}>
-            <option value="openai_chat">OpenAI Chat</option>
-            <option value="openai_responses">OpenAI Responses</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="gemini">Gemini</option>
-          </select>
-          <input className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" placeholder="Base URL" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} />
-          <input className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" placeholder="API key" value={form.api_key} onChange={(event) => setForm({ ...form, api_key: event.target.value })} />
-          <input className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" placeholder="Model override" value={form.model_name} onChange={(event) => setForm({ ...form, model_name: event.target.value })} />
-          <select className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as 'enabled' | 'disabled' })}>
-            <option value="enabled">Enabled</option>
-            <option value="disabled">Disabled</option>
-          </select>
-          <input className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" placeholder="Weight" type="number" min={1} value={form.weight} onChange={(event) => setForm({ ...form, weight: Number(event.target.value) || 1 })} />
-          <input className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" placeholder="Priority" type="number" min={1} value={form.priority} onChange={(event) => setForm({ ...form, priority: Number(event.target.value) || 1 })} />
-          <textarea className="min-h-32 rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3 md:col-span-2" placeholder="Model regex patterns, one per line" value={form.model_patterns} onChange={(event) => setForm({ ...form, model_patterns: event.target.value })} />
-        </div>
-        {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
-        <button className="w-fit rounded-full bg-[var(--accent)] px-5 py-3 text-white" type="submit">{editingId ? 'Save channel' : 'Create channel'}</button>
-      </form>
-      <div className="grid gap-3">
-        {isLoading ? <p className="text-sm text-[var(--muted)]">Loading channels...</p> : null}
-        {data?.map((provider) => (
-          <div key={provider.id} className="rounded-[24px] border border-[var(--line)] bg-[var(--panel-strong)] p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <strong>{provider.name}</strong>
-                <p className="mt-2 text-sm text-[var(--muted)]">{provider.protocol} · {provider.base_url}</p>
-                <p className="mt-1 text-sm text-[var(--muted)]">{provider.model_patterns.join(' | ') || provider.model_name || 'no model selector'}</p>
-                <p className="mt-1 text-sm text-[var(--muted)]">{provider.status} · weight {provider.weight} · priority {provider.priority}</p>
-              </div>
-              <div className="flex gap-2">
-                <button className="rounded-full border border-[var(--line)] px-4 py-2 text-sm hover:bg-white/70" type="button" onClick={() => { setEditingId(provider.id); setForm(toForm(provider)); setError('') }}>
-                  Edit
-                </button>
-                <button className="rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[var(--danger)] hover:bg-white/70" type="button" onClick={() => void remove(provider.id)} disabled={busyId === provider.id}>
-                  {busyId === provider.id ? 'Deleting...' : 'Delete'}
-                </button>
+
+      <div className="grid gap-4 xl:grid-cols-[430px_minmax(0,1fr)]">
+        <form className="grid gap-3 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]" onSubmit={submit}>
+          <div className="flex items-center justify-between gap-3">
+            <strong>{editingId ? (locale === 'zh-CN' ? '编辑渠道' : 'Edit channel') : (locale === 'zh-CN' ? '新建渠道' : 'Create channel')}</strong>
+            {editingId ? <button className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-2 text-sm" type="button" onClick={() => { setEditingId(null); setForm(emptyForm); setError('') }}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button> : null}
+          </div>
+          <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder={locale === 'zh-CN' ? '渠道名称' : 'Channel name'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <div className="grid gap-3 md:grid-cols-2">
+            <select className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value as ProtocolKind })}>
+              {protocolOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <select className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'enabled' | 'disabled' })}>
+              <option value="enabled">{locale === 'zh-CN' ? '启用' : 'Enabled'}</option>
+              <option value="disabled">{locale === 'zh-CN' ? '停用' : 'Disabled'}</option>
+            </select>
+          </div>
+          <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder="Base URL" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
+          <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder="API Key" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
+          <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder={locale === 'zh-CN' ? '模型覆写，可选' : 'Model override'} value={form.model_name} onChange={(e) => setForm({ ...form, model_name: e.target.value })} />
+          <div className="grid grid-cols-2 gap-3">
+            <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" type="number" min={1} placeholder={locale === 'zh-CN' ? '权重' : 'Weight'} value={form.weight} onChange={(e) => setForm({ ...form, weight: Number(e.target.value) || 1 })} />
+            <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" type="number" min={1} placeholder={locale === 'zh-CN' ? '优先级' : 'Priority'} value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) || 1 })} />
+          </div>
+          <textarea className="min-h-28 rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder={locale === 'zh-CN' ? '每行一个模型正则' : 'One regex per line'} value={form.model_patterns} onChange={(e) => setForm({ ...form, model_patterns: e.target.value })} />
+          {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
+          <button className="rounded-2xl bg-[linear-gradient(135deg,#2f6fed,#1958d7)] px-5 py-3 text-white shadow-[0_16px_30px_rgba(47,111,237,0.24)]" type="submit">{editingId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</button>
+        </form>
+
+        <div className="grid gap-3">
+          {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</p> : null}
+          {data?.map((item) => (
+            <div key={item.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <strong className="text-lg">{item.name}</strong>
+                    <span className={item.status === 'enabled' ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-3 py-1 text-xs text-[var(--success)]' : 'rounded-full bg-[rgba(192,58,76,0.12)] px-3 py-1 text-xs text-[var(--danger)]'}>{item.status === 'enabled' ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
+                    <span className="rounded-full bg-[var(--panel-soft)] px-3 py-1 text-xs text-[var(--muted)]">{protocolOptions.find((option) => option.value === item.protocol)?.label}</span>
+                  </div>
+                  <p className="mt-3 break-all text-sm text-[var(--muted)]">{item.base_url}</p>
+                  <p className="mt-2 text-sm text-[var(--muted)]">{(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(' | ')}</p>
+                  <p className="mt-2 text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '权重' : 'Weight'} {item.weight} · {locale === 'zh-CN' ? '优先级' : 'Priority'} {item.priority} · Key {maskKey(item.api_key)}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-2 text-sm" type="button" onClick={() => { setEditingId(item.id); setForm(toForm(item)); setError('') }}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
+                  <button className="rounded-2xl border border-[rgba(192,58,76,0.2)] bg-[rgba(192,58,76,0.06)] px-4 py-2 text-sm text-[var(--danger)]" type="button" onClick={() => void remove(item.id)} disabled={busyId === item.id}>{busyId === item.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '删除' : 'Delete')}</button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </section>
   )

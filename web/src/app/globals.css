@@ -1,15 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f4efe6;
-  --panel: rgba(255, 250, 242, 0.82);
-  --panel-strong: #fff9f0;
-  --line: rgba(67, 45, 22, 0.12);
-  --text: #1e140d;
-  --muted: #6d5844;
-  --accent: #c16630;
-  --accent-2: #1f7a71;
-  --danger: #a33535;
+  --bg: #f3f6fb;
+  --bg-2: #e8eef7;
+  --panel: rgba(255, 255, 255, 0.78);
+  --panel-strong: #ffffff;
+  --panel-soft: rgba(245, 248, 252, 0.92);
+  --line: rgba(27, 43, 65, 0.08);
+  --line-strong: rgba(27, 43, 65, 0.14);
+  --text: #162235;
+  --muted: #66758b;
+  --accent: #2f6fed;
+  --accent-2: #13a2a8;
+  --danger: #c03a4c;
+  --success: #1f9d68;
+  --shadow-lg: 0 22px 64px rgba(24, 46, 79, 0.12);
+  --shadow-sm: 0 8px 24px rgba(24, 46, 79, 0.06);
 }
 
 * {
@@ -21,19 +27,24 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(31, 122, 113, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(193, 102, 48, 0.2), transparent 34%),
-    linear-gradient(180deg, #faf3e7 0%, var(--bg) 100%);
   color: var(--text);
-  font-family: var(--font-sans), "Segoe UI", sans-serif;
+  font-family: var(--font-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(47, 111, 237, 0.16), transparent 24%),
+    radial-gradient(circle at 100% 0%, rgba(19, 162, 168, 0.14), transparent 26%),
+    linear-gradient(180deg, #f8fbff 0%, var(--bg) 46%, var(--bg-2) 100%);
 }
 
-code,
-pre,
-kbd,
-samp {
-  font-family: var(--font-mono), "Consolas", monospace;
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(20, 44, 79, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 44, 79, 0.03) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.32), transparent 80%);
 }
 
 a {
@@ -46,4 +57,19 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono), "JetBrains Mono", "Consolas", monospace;
+}
+
+::selection {
+  background: rgba(47, 111, 237, 0.18);
 }

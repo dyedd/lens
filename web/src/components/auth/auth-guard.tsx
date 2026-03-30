@@ -4,9 +4,11 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ApiError, AdminProfile, apiRequest } from '@/lib/api'
 import { clearStoredToken, getStoredToken } from '@/lib/auth'
+import { useI18n } from '@/lib/i18n'
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const { locale } = useI18n()
   const [state, setState] = useState<{ ready: boolean; profile: AdminProfile | null }>({ ready: false, profile: null })
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [router])
 
   if (!state.ready) {
-    return <div className="p-6 text-[var(--muted)]">Checking admin session...</div>
+    return <div className="p-6 text-[var(--muted)]">{locale === 'zh-CN' ? '正在校验后台登录状态...' : 'Checking admin session...'}</div>
   }
 
   return <>{children}</>
