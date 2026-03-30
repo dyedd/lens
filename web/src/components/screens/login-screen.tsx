@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
 import { ApiError, apiRequest } from '@/lib/api'
 import { setStoredToken } from '@/lib/auth'
-import { Locale, useI18n } from '@/lib/i18n'
+import { useI18n } from '@/lib/i18n'
 
 type LoginResponse = {
   access_token: string

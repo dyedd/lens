@@ -1,9 +1,14 @@
 "use client"
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Boxes, Plus, RadioTower, ScanSearch, SlidersHorizontal, Trash2, Waypoints } from 'lucide-react'
 import { ApiError, Provider, ProtocolKind, ProviderPayload, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { Dialog, AppDialogContent } from '@/components/ui/dialog'
+import { MetricCard } from '@/components/ui/metric-card'
+import { PageHeader } from '@/components/ui/page-header'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 
 type FormState = {
   name: string
@@ -17,8 +22,18 @@ type FormState = {
   model_patterns: string
 }
 
+type ViewMode = 'cards' | 'list'
+
 const emptyForm: FormState = {
-  name: '', protocol: 'openai_chat', base_url: '', api_key: '', model_name: '', status: 'enabled', weight: 1, priority: 100, model_patterns: ''
+  name: '',
+  protocol: 'openai_chat',
+  base_url: '',
+  api_key: '',
+  model_name: '',
+  status: 'enabled',
+  weight: 1,
+  priority: 100,
+  model_patterns: ''
 }
 
 const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
@@ -51,6 +66,19 @@ function maskKey(value: string) {
   return value.length > 10 ? value.slice(0, 6) + '...' + value.slice(-4) : value || 'n/a'
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-sm text-[var(--muted)]">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function inputClassName() {
+  return 'rounded-[22px] border border-[var(--line-strong)] bg-white/88 px-4 py-3 text-[var(--text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] outline-none transition focus:border-[var(--accent)] focus:bg-white'
+}
+
 export function ChannelsScreen() {
   const queryClient = useQueryClient()
   const { locale, t } = useI18n()
@@ -58,10 +86,31 @@ export function ChannelsScreen() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('cards')
   const { data, isLoading } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
+
+  const enabledCount = useMemo(() => (data ?? []).filter((item) => item.status === 'enabled').length, [data])
+  const regexCount = useMemo(() => (data ?? []).filter((item) => item.model_patterns.length > 0).length, [data])
+  const protocolCount = useMemo(() => new Set((data ?? []).map((item) => item.protocol)).size, [data])
 
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ['providers'] })
+  }
+
+  function openCreate() {
+    setEditingId(null)
+    setForm(emptyForm)
+    setError('')
+    setDialogOpen(true)
+  }
+
+  function openEdit(item: Provider) {
+    setEditingId(item.id)
+    setForm(toForm(item))
+    setError('')
+    setDialogOpen(true)
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -72,6 +121,7 @@ export function ChannelsScreen() {
         method: editingId ? 'PUT' : 'POST',
         body: JSON.stringify(toPayload(form))
       })
+      setDialogOpen(false)
       setEditingId(null)
       setForm(emptyForm)
       await refresh()
@@ -80,15 +130,12 @@ export function ChannelsScreen() {
     }
   }
 
-  async function remove(id: string) {
-    setBusyId(id)
+  async function remove(item: Provider) {
+    setBusyId(item.id)
     setError('')
     try {
-      await apiRequest<void>('/providers/' + id, { method: 'DELETE' })
-      if (editingId === id) {
-        setEditingId(null)
-        setForm(emptyForm)
-      }
+      await apiRequest<void>('/providers/' + item.id, { method: 'DELETE' })
+      setDeleteTarget(null)
       await refresh()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除渠道失败' : 'Failed to delete channel'))
@@ -99,69 +146,192 @@ export function ChannelsScreen() {
 
   return (
     <section className="grid gap-6">
-      <div className="rounded-[30px] border border-[var(--line)] bg-[linear-gradient(135deg,rgba(47,111,237,0.1),rgba(19,162,168,0.08))] p-6 md:p-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-sm uppercase tracking-[0.22em] text-[var(--accent)]">{locale === 'zh-CN' ? '渠道管理' : 'Channels'}</p>
-            <h2 className="mt-3 text-4xl font-semibold leading-tight">{locale === 'zh-CN' ? '管理上游渠道池与模型匹配规则。' : 'Manage upstream channels and model matching rules.'}</h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--muted)]">{locale === 'zh-CN' ? '同协议内先匹配模型组，未命中时再按渠道正则回退。支持类似 claude-opus-4-6 的外部模型名正则承接。' : 'Model groups win first. Provider regex rules handle fallback within the same protocol family.'}</p>
-          </div>
-          <button className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-2 text-sm shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()}>{t.refresh}</button>
-        </div>
+      <PageHeader
+        eyebrow={locale === 'zh-CN' ? '渠道管理' : 'Channels'}
+        title={locale === 'zh-CN' ? '维护上游渠道池、模型规则与轮询权重' : 'Manage upstream channels, model rules, and routing weights'}
+        description={locale === 'zh-CN' ? '页面支持卡片与列表双视图。新建、编辑和删除都通过弹窗完成，减少内容跳动。' : 'Switch between card and list views. Create, edit, and delete actions now happen in modal surfaces.'}
+        actions={
+          <>
+            <SegmentedControl
+              value={viewMode}
+              onValueChange={setViewMode}
+              options={[
+                { value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' },
+                { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }
+              ]}
+            />
+            <button className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_16px_30px_rgba(24,46,79,0.08)] transition hover:translate-y-[-1px]" type="button" onClick={() => void refresh()}>
+              <SlidersHorizontal size={16} />
+              <span>{t.refresh}</span>
+            </button>
+            <button className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#2f6fed,#5a8fff)] px-4 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(47,111,237,0.28)] transition hover:translate-y-[-1px]" type="button" onClick={openCreate}>
+              <Plus size={16} />
+              <span>{locale === 'zh-CN' ? '新增渠道' : 'New channel'}</span>
+            </button>
+          </>
+        }
+      />
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={Waypoints} label={locale === 'zh-CN' ? '渠道总数' : 'Channels'} value={data?.length ?? 0} tone="accent" />
+        <MetricCard icon={RadioTower} label={locale === 'zh-CN' ? '启用渠道' : 'Enabled'} value={enabledCount} />
+        <MetricCard icon={ScanSearch} label={locale === 'zh-CN' ? '正则匹配' : 'Regex rules'} value={regexCount} />
+        <MetricCard icon={Boxes} label={locale === 'zh-CN' ? '协议种类' : 'Protocols'} value={protocolCount} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[430px_minmax(0,1fr)]">
-        <form className="grid gap-3 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]" onSubmit={submit}>
-          <div className="flex items-center justify-between gap-3">
-            <strong>{editingId ? (locale === 'zh-CN' ? '编辑渠道' : 'Edit channel') : (locale === 'zh-CN' ? '新建渠道' : 'Create channel')}</strong>
-            {editingId ? <button className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-2 text-sm" type="button" onClick={() => { setEditingId(null); setForm(emptyForm); setError('') }}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button> : null}
-          </div>
-          <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder={locale === 'zh-CN' ? '渠道名称' : 'Channel name'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <div className="grid gap-3 md:grid-cols-2">
-            <select className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value as ProtocolKind })}>
-              {protocolOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-            <select className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'enabled' | 'disabled' })}>
-              <option value="enabled">{locale === 'zh-CN' ? '启用' : 'Enabled'}</option>
-              <option value="disabled">{locale === 'zh-CN' ? '停用' : 'Disabled'}</option>
-            </select>
-          </div>
-          <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder="Base URL" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
-          <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder="API Key" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
-          <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder={locale === 'zh-CN' ? '模型覆写，可选' : 'Model override'} value={form.model_name} onChange={(e) => setForm({ ...form, model_name: e.target.value })} />
-          <div className="grid grid-cols-2 gap-3">
-            <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" type="number" min={1} placeholder={locale === 'zh-CN' ? '权重' : 'Weight'} value={form.weight} onChange={(e) => setForm({ ...form, weight: Number(e.target.value) || 1 })} />
-            <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" type="number" min={1} placeholder={locale === 'zh-CN' ? '优先级' : 'Priority'} value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) || 1 })} />
-          </div>
-          <textarea className="min-h-28 rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3" placeholder={locale === 'zh-CN' ? '每行一个模型正则' : 'One regex per line'} value={form.model_patterns} onChange={(e) => setForm({ ...form, model_patterns: e.target.value })} />
-          {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
-          <button className="rounded-2xl bg-[linear-gradient(135deg,#2f6fed,#1958d7)] px-5 py-3 text-white shadow-[0_16px_30px_rgba(47,111,237,0.24)]" type="submit">{editingId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</button>
-        </form>
+      {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
 
-        <div className="grid gap-3">
-          {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</p> : null}
+      {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</p> : null}
+
+      {viewMode === 'cards' ? (
+        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {data?.map((item) => (
-            <div key={item.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]">
-              <div className="flex flex-wrap items-start justify-between gap-4">
+            <article key={item.id} className="rounded-[30px] border border-white/70 bg-[rgba(255,255,255,0.78)] p-5 shadow-[0_18px_44px_rgba(24,46,79,0.08)] backdrop-blur-[18px]">
+              <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <strong className="text-lg">{item.name}</strong>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="text-lg tracking-[-0.02em]">{item.name}</strong>
                     <span className={item.status === 'enabled' ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-3 py-1 text-xs text-[var(--success)]' : 'rounded-full bg-[rgba(192,58,76,0.12)] px-3 py-1 text-xs text-[var(--danger)]'}>{item.status === 'enabled' ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
-                    <span className="rounded-full bg-[var(--panel-soft)] px-3 py-1 text-xs text-[var(--muted)]">{protocolOptions.find((option) => option.value === item.protocol)?.label}</span>
                   </div>
-                  <p className="mt-3 break-all text-sm text-[var(--muted)]">{item.base_url}</p>
-                  <p className="mt-2 text-sm text-[var(--muted)]">{(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(' | ')}</p>
-                  <p className="mt-2 text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '权重' : 'Weight'} {item.weight} · {locale === 'zh-CN' ? '优先级' : 'Priority'} {item.priority} · Key {maskKey(item.api_key)}</p>
+                  <p className="mt-3 text-sm text-[var(--muted)]">{protocolOptions.find((option) => option.value === item.protocol)?.label}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-2 text-sm" type="button" onClick={() => { setEditingId(item.id); setForm(toForm(item)); setError('') }}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
-                  <button className="rounded-2xl border border-[rgba(192,58,76,0.2)] bg-[rgba(192,58,76,0.06)] px-4 py-2 text-sm text-[var(--danger)]" type="button" onClick={() => void remove(item.id)} disabled={busyId === item.id}>{busyId === item.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '删除' : 'Delete')}</button>
+                  <button className="rounded-full border border-white/80 bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
+                  <button className="rounded-full border border-[rgba(192,58,76,0.18)] bg-[rgba(192,58,76,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
-            </div>
+              <div className="mt-4 rounded-[24px] border border-white/70 bg-[rgba(247,249,253,0.84)] p-4">
+                <p className="break-all text-sm leading-6 text-[var(--muted)]">{item.base_url}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).map((token) => (
+                    <span key={token} className="rounded-full border border-white/80 bg-white px-3 py-1 text-xs text-[var(--text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">{token}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                <div className="rounded-[22px] border border-white/70 bg-white/80 p-3">
+                  <p className="text-[var(--muted)]">{locale === 'zh-CN' ? '权重' : 'Weight'}</p>
+                  <strong className="mt-2 block text-lg">{item.weight}</strong>
+                </div>
+                <div className="rounded-[22px] border border-white/70 bg-white/80 p-3">
+                  <p className="text-[var(--muted)]">{locale === 'zh-CN' ? '优先级' : 'Priority'}</p>
+                  <strong className="mt-2 block text-lg">{item.priority}</strong>
+                </div>
+                <div className="rounded-[22px] border border-white/70 bg-white/80 p-3">
+                  <p className="text-[var(--muted)]">Key</p>
+                  <strong className="mt-2 block text-sm">{maskKey(item.api_key)}</strong>
+                </div>
+              </div>
+            </article>
           ))}
         </div>
-      </div>
+      ) : (
+        <div className="overflow-hidden rounded-[30px] border border-white/70 bg-[rgba(255,255,255,0.74)] shadow-[0_18px_44px_rgba(24,46,79,0.08)] backdrop-blur-[20px]">
+          <div className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_0.8fr_0.8fr_auto] gap-4 border-b border-white/70 px-5 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+            <span>{locale === 'zh-CN' ? '渠道' : 'Channel'}</span>
+            <span>{locale === 'zh-CN' ? '协议' : 'Protocol'}</span>
+            <span>{locale === 'zh-CN' ? '模型规则' : 'Rules'}</span>
+            <span>{locale === 'zh-CN' ? '权重 / 优先级' : 'Weight / Priority'}</span>
+            <span>{locale === 'zh-CN' ? '操作' : 'Actions'}</span>
+          </div>
+          <div className="divide-y divide-white/60">
+            {data?.map((item) => (
+              <div key={item.id} className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_0.8fr_0.8fr_auto] gap-4 px-5 py-4 text-sm text-[var(--text)]">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <strong className="truncate">{item.name}</strong>
+                    <span className={item.status === 'enabled' ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-2.5 py-1 text-[11px] text-[var(--success)]' : 'rounded-full bg-[rgba(192,58,76,0.12)] px-2.5 py-1 text-[11px] text-[var(--danger)]'}>{item.status === 'enabled' ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
+                  </div>
+                  <p className="mt-2 truncate text-[var(--muted)]">{item.base_url}</p>
+                </div>
+                <span>{protocolOptions.find((option) => option.value === item.protocol)?.label}</span>
+                <span className="text-[var(--muted)]">{(item.model_patterns.length ? item.model_patterns : [item.model_name || 'n/a']).join(', ')}</span>
+                <span className="text-[var(--muted)]">{item.weight} / {item.priority}</span>
+                <div className="flex gap-2">
+                  <button className="rounded-full border border-white/80 bg-white px-3 py-2 text-sm shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
+                  <button className="rounded-full border border-[rgba(192,58,76,0.18)] bg-[rgba(192,58,76,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
+        <AppDialogContent
+          title={editingId ? (locale === 'zh-CN' ? '编辑渠道' : 'Edit channel') : (locale === 'zh-CN' ? '新建渠道' : 'Create channel')}
+          description={locale === 'zh-CN' ? '录入上游地址、协议、模型规则与调度参数。' : 'Configure endpoint, protocol, model rules, and scheduling weights.'}
+        >
+          <form className="grid gap-4" onSubmit={submit}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label={locale === 'zh-CN' ? '渠道名称' : 'Channel name'}>
+                <input className={inputClassName()} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="FoxCode" />
+              </Field>
+              <Field label={locale === 'zh-CN' ? '协议类型' : 'Protocol'}>
+                <select className={inputClassName()} value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value as ProtocolKind })}>
+                  {protocolOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Field label="Base URL">
+              <input className={inputClassName()} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.openai.com/v1" />
+            </Field>
+            <Field label="API Key">
+              <input className={inputClassName()} value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." />
+            </Field>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label={locale === 'zh-CN' ? '状态' : 'Status'}>
+                <select className={inputClassName()} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'enabled' | 'disabled' })}>
+                  <option value="enabled">{locale === 'zh-CN' ? '启用' : 'Enabled'}</option>
+                  <option value="disabled">{locale === 'zh-CN' ? '停用' : 'Disabled'}</option>
+                </select>
+              </Field>
+              <Field label={locale === 'zh-CN' ? '模型覆写' : 'Model override'}>
+                <input className={inputClassName()} value={form.model_name} onChange={(e) => setForm({ ...form, model_name: e.target.value })} placeholder={locale === 'zh-CN' ? '可选' : 'Optional'} />
+              </Field>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label={locale === 'zh-CN' ? '权重' : 'Weight'}>
+                <input className={inputClassName()} type="number" min={1} value={form.weight} onChange={(e) => setForm({ ...form, weight: Number(e.target.value) || 1 })} />
+              </Field>
+              <Field label={locale === 'zh-CN' ? '优先级' : 'Priority'}>
+                <input className={inputClassName()} type="number" min={1} value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) || 1 })} />
+              </Field>
+            </div>
+            <Field label={locale === 'zh-CN' ? '模型正则' : 'Model regex patterns'}>
+              <textarea className={inputClassName() + ' min-h-32'} value={form.model_patterns} onChange={(e) => setForm({ ...form, model_patterns: e.target.value })} placeholder={locale === 'zh-CN' ? '每行一个正则，例如 ^claude-opus-4-6$' : 'One regex per line'} />
+            </Field>
+            {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
+            <div className="flex justify-end gap-3">
+              <button className="rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
+              <button className="rounded-full bg-[linear-gradient(135deg,#2f6fed,#5a8fff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(47,111,237,0.28)]" type="submit">{editingId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</button>
+            </div>
+          </form>
+        </AppDialogContent>
+      </Dialog.Root>
+
+      <Dialog.Root open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <AppDialogContent
+          className="max-w-lg"
+          title={locale === 'zh-CN' ? '确认删除渠道' : 'Delete channel'}
+          description={locale === 'zh-CN' ? '删除后该渠道会从路由池中移除，相关模型组需要重新确认。' : 'This removes the channel from routing pools and may affect bound model groups.'}
+        >
+          <div className="grid gap-5">
+            <div className="rounded-[24px] border border-white/70 bg-[rgba(247,249,253,0.86)] p-4">
+              <strong>{deleteTarget?.name}</strong>
+              <p className="mt-2 text-sm text-[var(--muted)]">{deleteTarget?.base_url}</p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button className="rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
+              <button className="rounded-full bg-[linear-gradient(135deg,#e24f66,#c03a4c)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(192,58,76,0.24)]" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</button>
+            </div>
+          </div>
+        </AppDialogContent>
+      </Dialog.Root>
     </section>
   )
 }

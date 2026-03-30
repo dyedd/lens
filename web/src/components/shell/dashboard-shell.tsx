@@ -20,35 +20,35 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   ]
 
   return (
-    <div className="min-h-screen px-4 py-5 md:px-6">
-      <div className="mx-auto grid min-h-[calc(100vh-2.5rem)] w-full max-w-[1540px] grid-cols-1 gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-[32px] border border-[var(--line)] bg-[linear-gradient(180deg,rgba(15,35,65,0.94),rgba(12,27,48,0.98))] p-5 text-white shadow-[var(--shadow-lg)] xl:sticky xl:top-5 xl:h-[calc(100vh-2.5rem)]">
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <p className="text-xs uppercase tracking-[0.26em] text-white/45">{t.appName}</p>
+    <div className="min-h-screen px-3 py-3 md:px-4 md:py-4">
+      <div className="mx-auto grid min-h-[calc(100vh-1.5rem)] w-full max-w-[1640px] grid-cols-1 gap-4 xl:grid-cols-[276px_minmax(0,1fr)]">
+        <aside className="rounded-[34px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(244,248,253,0.74))] p-4 text-[var(--text)] shadow-[var(--shadow-lg)] backdrop-blur-[24px] xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)]">
+          <div className="rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,rgba(248,251,255,0.92),rgba(239,245,252,0.78))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+            <p className="text-xs uppercase tracking-[0.26em] text-[var(--accent)]">{t.appName}</p>
             <h1 className="mt-3 text-3xl font-semibold leading-tight">
-              {locale === 'zh-CN' ? '多协议模型聚合控制台' : 'Multi-protocol gateway control room'}
+              {locale === 'zh-CN' ? '聚合网关控制台' : 'Gateway control room'}
             </h1>
-            <p className="mt-4 text-sm leading-6 text-white/62">
+            <p className="mt-4 text-sm leading-6 text-[var(--muted)]">
               {locale === 'zh-CN'
-                ? '参考 octopus 形态，聚焦渠道池、模型组、请求观测与网关访问控制。'
-                : 'Octopus-inspired admin surface for channel pools, model groups, request observability, and gateway access.'}
+                ? '左侧导航负责全局切换，右侧内容采用 iOS 风格分块、玻璃卡片和弹窗操作。'
+                : 'Navigation stays on the left, while content uses an iOS-inspired glass layout and modal actions.'}
             </p>
           </div>
-          <div className="mt-5 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="mt-4 flex items-center justify-between rounded-[24px] border border-white/70 bg-[rgba(255,255,255,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-white/45">{t.language}</p>
-              <p className="mt-1 text-sm text-white/88">{locale === 'zh-CN' ? '简体中文' : 'English'}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">{t.language}</p>
+              <p className="mt-1 text-sm text-[var(--text)]">{locale === 'zh-CN' ? '简体中文' : 'English'}</p>
             </div>
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/10 px-3 py-2 text-sm text-white/85 transition hover:bg-white/16"
+              className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)] transition hover:translate-y-[-1px]"
               onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
             >
               <Globe2 size={15} />
               <span>{locale === 'zh-CN' ? 'EN' : '中'}</span>
             </button>
           </div>
-          <nav className="mt-5 grid gap-2">
+          <nav className="mt-4 grid gap-2">
             {items.map((item) => {
               const Icon = item.icon
               const active = pathname === item.href
@@ -57,13 +57,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={
-                    'group flex items-center gap-3 rounded-2xl px-4 py-3 transition ' +
+                    'group flex items-center gap-3 rounded-[22px] px-4 py-3 transition ' +
                     (active
-                      ? 'bg-[linear-gradient(135deg,rgba(47,111,237,0.28),rgba(19,162,168,0.16))] text-white shadow-[0_14px_30px_rgba(0,0,0,0.18)]'
-                      : 'text-white/68 hover:bg-white/8 hover:text-white')
+                      ? 'border border-white/75 bg-white text-[var(--text)] shadow-[0_18px_34px_rgba(24,46,79,0.12)]'
+                      : 'text-[var(--muted)] hover:bg-white/60 hover:text-[var(--text)]')
                   }
                 >
-                  <span className={active ? 'rounded-xl bg-white/14 p-2' : 'rounded-xl bg-white/6 p-2 group-hover:bg-white/10'}>
+                  <span className={active ? 'rounded-xl bg-[rgba(47,111,237,0.1)] p-2 text-[var(--accent)]' : 'rounded-xl bg-[rgba(22,34,53,0.05)] p-2 group-hover:bg-white'}>
                     <Icon size={16} />
                   </span>
                   <span>{item.label}</span>
@@ -73,7 +73,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </nav>
           <button
             type="button"
-            className="mt-6 w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3 text-left text-white/80 transition hover:bg-white/12"
+            className="mt-6 w-full rounded-[22px] border border-white/75 bg-[rgba(255,255,255,0.72)] px-4 py-3 text-left text-[var(--muted)] transition hover:bg-white hover:text-[var(--text)]"
             onClick={() => {
               clearStoredToken()
               window.location.href = '/login'
@@ -82,7 +82,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             {t.signOut}
           </button>
         </aside>
-        <main className="rounded-[32px] border border-[var(--line)] bg-[var(--panel)] p-4 shadow-[var(--shadow-lg)] backdrop-blur md:p-6">
+        <main className="rounded-[36px] border border-white/70 bg-[var(--panel)] p-4 shadow-[var(--shadow-lg)] backdrop-blur-[24px] md:p-6">
           {children}
         </main>
       </div>
