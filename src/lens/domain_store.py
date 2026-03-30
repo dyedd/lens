@@ -19,6 +19,23 @@ class DomainStore:
             result = await session.execute(select(ModelGroupEntity).order_by(ModelGroupEntity.name))
             return [self._to_group(item) for item in result.scalars().all()]
 
+    async def find_group_by_name(self, protocol: str, name: str | None) -> ModelGroup | None:
+        if not name:
+            return None
+
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(ModelGroupEntity)
+                .where(ModelGroupEntity.protocol == protocol)
+                .where(ModelGroupEntity.name == name)
+                .where(ModelGroupEntity.enabled == 1)
+                .limit(1)
+            )
+            entity = result.scalar_one_or_none()
+            if entity is None:
+                return None
+            return self._to_group(entity)
+
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:
             next_id = await self._next_id(session, ModelGroupEntity, payload.protocol.value)
@@ -69,6 +86,19 @@ class DomainStore:
         async with self._session_factory() as session:
             result = await session.execute(select(GatewayKeyEntity).order_by(GatewayKeyEntity.name))
             return [self._to_gateway_key(item) for item in result.scalars().all()]
+
+    async def get_gateway_key_by_secret(self, secret: str) -> GatewayKey | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(GatewayKeyEntity)
+                .where(GatewayKeyEntity.secret == secret)
+                .where(GatewayKeyEntity.enabled == 1)
+                .limit(1)
+            )
+            entity = result.scalar_one_or_none()
+            if entity is None:
+                return None
+            return self._to_gateway_key(entity)
 
     async def create_gateway_key(self, payload: GatewayKeyCreate) -> GatewayKey:
         async with self._session_factory() as session:

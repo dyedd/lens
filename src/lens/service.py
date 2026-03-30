@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -14,7 +15,7 @@ from .auth import create_access_token, decode_access_token
 from .config import settings
 from .db import Base, create_engine, create_session_factory
 from .domain_store import DomainStore
-from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RoutePreviewRequest, SettingItem, SettingsUpdate
+from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
 from .router import RoundRobinRouter
 from .store import ProviderStore
 from .upstreams import build_upstream_request
@@ -22,6 +23,16 @@ from .upstreams import build_upstream_request
 
 class AppState:
     def __init__(self) -> None:
+        self.http = self._create_http_client()
+        self.engine = create_engine(settings.database_url)
+        self.session_factory = create_session_factory(self.engine)
+        self.admin_store = AdminStore(self.session_factory)
+        self.domain_store = DomainStore(self.session_factory)
+        self.store = ProviderStore(self.session_factory)
+        self.router = RoundRobinRouter()
+
+    @staticmethod
+    def _create_http_client() -> httpx.AsyncClient:
         timeout = httpx.Timeout(
             timeout=settings.request_timeout_seconds,
             connect=settings.connect_timeout_seconds,
@@ -30,25 +41,34 @@ class AppState:
             max_connections=settings.max_connections,
             max_keepalive_connections=settings.max_keepalive_connections,
         )
-        self.http = httpx.AsyncClient(timeout=timeout, limits=limits)
-        self.engine = create_engine(settings.database_url)
-        self.session_factory = create_session_factory(self.engine)
-        self.admin_store = AdminStore(self.session_factory)
-        self.domain_store = DomainStore(self.session_factory)
-        self.store = ProviderStore(self.session_factory)
-        self.router = RoundRobinRouter()
+        return httpx.AsyncClient(timeout=timeout, limits=limits)
 
-    async def startup(self) -> None:
-        async with self.engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
-        await self.admin_store.ensure_default_admin(
-            settings.admin_default_username,
-            settings.admin_default_password,
-        )
 
-    async def close(self) -> None:
-        await self.http.aclose()
-        await self.engine.dispose()
+@dataclass
+class RoutingPlan:
+    requested_model: str | None
+    matched_group: ModelGroup | None
+    strategy: RoutingStrategy
+    allowed_provider_ids: set[str] | None
+    use_model_matching: bool
+
+
+async def _startup_app_state(state: AppState) -> None:
+    if state.http.is_closed:
+        state.http = state._create_http_client()
+
+    async with state.engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    await state.admin_store.ensure_default_admin(
+        settings.admin_default_username,
+        settings.admin_default_password,
+    )
+
+
+async def _close_app_state(state: AppState) -> None:
+    if not state.http.is_closed:
+        await state.http.aclose()
+    await state.engine.dispose()
 
 
 app_state = AppState()
@@ -56,9 +76,9 @@ app_state = AppState()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await app_state.startup()
+    await _startup_app_state(app_state)
     yield
-    await app_state.close()
+    await _close_app_state(app_state)
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -92,6 +112,29 @@ async def get_current_admin(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
 
     return admin
+
+
+async def get_current_gateway_key(request: Request) -> GatewayKey:
+    authorization = request.headers.get("authorization", "")
+    x_api_key = request.headers.get("x-api-key", "")
+    x_goog_api_key = request.headers.get("x-goog-api-key", "")
+
+    secret = ""
+    if authorization.lower().startswith("bearer "):
+        secret = authorization[7:].strip()
+    elif x_api_key:
+        secret = x_api_key.strip()
+    elif x_goog_api_key:
+        secret = x_goog_api_key.strip()
+
+    if not secret:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing gateway API key")
+
+    gateway_key = await app_state.domain_store.get_gateway_key_by_secret(secret)
+    if gateway_key is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid gateway API key")
+
+    return gateway_key
 
 
 @app.get("/healthz")
@@ -153,7 +196,16 @@ async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]
 @app.post("/api/router/preview")
 async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)) -> dict[str, Any]:
     providers = await app_state.store.list()
-    return app_state.router.preview(providers, payload.protocol, payload.model).model_dump(mode="json")
+    plan = await _resolve_routing_plan(payload.protocol, payload.model)
+    return app_state.router.preview(
+        providers,
+        payload.protocol,
+        payload.model,
+        strategy=plan.strategy,
+        allowed_provider_ids=plan.allowed_provider_ids,
+        use_model_matching=plan.use_model_matching,
+        matched_group_name=plan.matched_group.name if plan.matched_group else None,
+    ).model_dump(mode="json")
 
 
 @app.get("/api/model-groups", response_model=list[ModelGroup])
@@ -221,32 +273,32 @@ async def update_settings(payload: SettingsUpdate, _: Any = Depends(get_current_
 
 
 @app.post("/v1/chat/completions")
-async def proxy_openai_chat(request: Request):
+async def proxy_openai_chat(request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.OPENAI_CHAT, body)
 
 
 @app.post("/v1/responses")
-async def proxy_openai_responses(request: Request):
+async def proxy_openai_responses(request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.OPENAI_RESPONSES, body)
 
 
 @app.post("/v1/messages")
-async def proxy_anthropic_messages(request: Request):
+async def proxy_anthropic_messages(request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.ANTHROPIC, body)
 
 
 @app.post("/v1beta/models/{model_name}:generateContent")
-async def proxy_gemini_generate_content(model_name: str, request: Request):
+async def proxy_gemini_generate_content(model_name: str, request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
     body = {**body, "model": model_name, "stream": False}
     return await _proxy_protocol(ProtocolKind.GEMINI, body)
 
 
 @app.post("/v1beta/models/{model_name}:streamGenerateContent")
-async def proxy_gemini_stream_generate_content(model_name: str, request: Request):
+async def proxy_gemini_stream_generate_content(model_name: str, request: Request, _: GatewayKey = Depends(get_current_gateway_key)):
     body = await request.json()
     body = {**body, "model": model_name, "stream": True}
     return await _proxy_protocol(ProtocolKind.GEMINI, body)
@@ -254,9 +306,16 @@ async def proxy_gemini_stream_generate_content(model_name: str, request: Request
 
 async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any]) -> Response:
     providers = await app_state.store.list()
-    requested_model = _requested_model(protocol, body)
+    plan = await _resolve_routing_plan(protocol, _requested_model(protocol, body))
     try:
-        selection = app_state.router.select(providers, protocol, requested_model)
+        selection = app_state.router.select(
+            providers,
+            protocol,
+            plan.requested_model,
+            strategy=plan.strategy,
+            allowed_provider_ids=plan.allowed_provider_ids,
+            use_model_matching=plan.use_model_matching,
+        )
     except LookupError as exc:
         error_body = ErrorResponse(
             error={
@@ -356,3 +415,23 @@ def _requested_model(protocol: ProtocolKind, body: dict[str, Any]) -> str | None
     if protocol == ProtocolKind.GEMINI:
         return body.get("model")
     return body.get("model")
+
+
+async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | None) -> RoutingPlan:
+    matched_group = await app_state.domain_store.find_group_by_name(protocol.value, requested_model)
+    if matched_group is not None:
+        return RoutingPlan(
+            requested_model=requested_model,
+            matched_group=matched_group,
+            strategy=matched_group.strategy,
+            allowed_provider_ids=set(matched_group.provider_ids),
+            use_model_matching=False,
+        )
+
+    return RoutingPlan(
+        requested_model=requested_model,
+        matched_group=None,
+        strategy=RoutingStrategy.WEIGHTED,
+        allowed_provider_ids=None,
+        use_model_matching=True,
+    )

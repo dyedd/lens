@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import re
 from threading import Lock
 
-from .models import ProtocolKind, ProviderConfig, ProviderHealth, ProviderStatus, RoutePreview, RouteState, RouterSnapshot
+from .models import ProtocolKind, ProviderConfig, ProviderHealth, ProviderStatus, RoutePreview, RouteState, RouterSnapshot, RoutingStrategy
 
 
 @dataclass
@@ -36,8 +36,18 @@ class RoundRobinRouter:
         providers: list[ProviderConfig],
         protocol: ProtocolKind,
         requested_model: str | None = None,
+        strategy: RoutingStrategy = RoutingStrategy.WEIGHTED,
+        allowed_provider_ids: set[str] | None = None,
+        use_model_matching: bool = True,
     ) -> RouteSelection:
-        active = self._build_active_pool(providers, protocol, requested_model)
+        active = self._build_active_pool(
+            providers,
+            protocol,
+            requested_model,
+            strategy,
+            allowed_provider_ids,
+            use_model_matching,
+        )
         if not active:
             detail = f"No enabled providers available for protocol={protocol.value}"
             if requested_model:
@@ -96,11 +106,24 @@ class RoundRobinRouter:
         providers: list[ProviderConfig],
         protocol: ProtocolKind,
         requested_model: str | None,
+        strategy: RoutingStrategy = RoutingStrategy.WEIGHTED,
+        allowed_provider_ids: set[str] | None = None,
+        use_model_matching: bool = True,
+        matched_group_name: str | None = None,
     ) -> RoutePreview:
-        pool = self._build_active_pool(providers, protocol, requested_model)
+        pool = self._build_active_pool(
+            providers,
+            protocol,
+            requested_model,
+            strategy,
+            allowed_provider_ids,
+            use_model_matching,
+        )
         return RoutePreview(
             protocol=protocol,
             requested_model=requested_model,
+            matched_group_name=matched_group_name,
+            strategy=strategy,
             matched_provider_ids=[provider.id for provider in pool],
         )
 
@@ -109,14 +132,24 @@ class RoundRobinRouter:
         providers: list[ProviderConfig],
         protocol: ProtocolKind,
         requested_model: str | None,
+        strategy: RoutingStrategy = RoutingStrategy.WEIGHTED,
+        allowed_provider_ids: set[str] | None = None,
+        use_model_matching: bool = True,
     ) -> list[ProviderConfig]:
         active = [
             provider
             for provider in sorted(providers, key=lambda item: (item.priority, item.name))
             if provider.protocol == protocol
             and provider.status == ProviderStatus.ENABLED
-            and _matches_model(provider, requested_model)
+            and (allowed_provider_ids is None or provider.id in allowed_provider_ids)
+            and (not use_model_matching or _matches_model(provider, requested_model))
         ]
+
+        if strategy == RoutingStrategy.FAILOVER:
+            return active
+
+        if strategy == RoutingStrategy.ROUND_ROBIN:
+            return active
 
         weighted: list[ProviderConfig] = []
         for provider in active:

@@ -108,6 +108,8 @@ class RouteState(BaseModel):
 class RoutePreview(BaseModel):
     protocol: ProtocolKind
     requested_model: str | None = None
+    matched_group_name: str | None = None
+    strategy: RoutingStrategy | None = None
     matched_provider_ids: list[str] = Field(default_factory=list)
 
 
