@@ -1,0 +1,97 @@
+# Lens
+
+Python + React LLM gateway for aggregating four native upstream protocols:
+
+- OpenAI Chat Completions
+- OpenAI Responses
+- Anthropic Messages
+- Gemini `generateContent` / `streamGenerateContent`
+
+This project does not do protocol conversion. Each protocol stays native and is routed only within its own upstream pool.
+
+## Why this shape
+
+`vllm` and `sglang` both expose Python async HTTP services around ASGI-style stacks, and `vllm` explicitly recommends using its OpenAI-compatible server for production-facing serving. For this gateway use case, `FastAPI + httpx` is the smallest maintainable equivalent: async request handling, streaming passthrough, pooled outbound connections, and straightforward operational behavior.
+
+## Current capabilities
+
+- Weighted round robin per protocol pool
+- In-order failover inside the same protocol pool
+- Transparent non-streaming and streaming proxying
+- Provider CRUD API
+- SQLite persistence through SQLAlchemy ORM
+- Model aggregation by regex pattern matching
+- Minimal React console for upstream management and router inspection
+
+## Backend
+
+### Install
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e .
+```
+
+### Start
+
+```powershell
+python -m lens.main
+```
+
+The backend listens on `http://127.0.0.1:8000` by default.
+
+### Environment
+
+Optional `.env` keys:
+
+```env
+LENS_HOST=127.0.0.1
+LENS_PORT=8000
+LENS_DATABASE_URL=sqlite+aiosqlite:///data/lens.db
+LENS_ANTHROPIC_VERSION=2023-06-01
+LENS_REQUEST_TIMEOUT_SECONDS=180
+LENS_CONNECT_TIMEOUT_SECONDS=10
+```
+
+### Database
+
+By default the app creates and uses `data/lens.db` automatically.
+
+If you want seed data, use `data/providers.example.json` as the source shape for `POST /api/providers` requests.
+
+### Proxy endpoints
+
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+- `POST /v1/messages`
+- `POST /v1beta/models/{model}:generateContent`
+- `POST /v1beta/models/{model}:streamGenerateContent`
+
+### Management endpoints
+
+- `GET /healthz`
+- `GET /api/providers`
+- `POST /api/providers`
+- `PUT /api/providers/{provider_id}`
+- `DELETE /api/providers/{provider_id}`
+- `GET /api/router`
+- `POST /api/router/preview`
+
+## Frontend
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+The Vite dev server runs on `http://127.0.0.1:5173` and proxies `/api` plus `/healthz` to the backend.
+
+## Notes
+
+- Gemini uses native Google REST paths and API key auth.
+- Anthropic requires the `anthropic-version` header and uses SSE for streaming.
+- `model_patterns` supports regex-based aggregation. Example: if a provider includes `^claude-opus-4-6$`, requests with model `claude-opus-4-6` will be routed into that provider pool.
+- If `model_patterns` is empty, routing falls back to exact `model_name` match when `model` is present.
+- This MVP intentionally skips protocol normalization, retries with backoff, circuit breaking, auth for the admin API, migrations, and metrics export.
