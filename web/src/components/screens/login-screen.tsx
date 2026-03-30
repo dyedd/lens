@@ -2,32 +2,39 @@
 
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
+import { ApiError, apiRequest } from '@/lib/api'
 import { setStoredToken } from '@/lib/auth'
+
+type LoginResponse = {
+  access_token: string
+  token_type: string
+  expires_in: number
+}
 
 export function LoginScreen() {
   const router = useRouter()
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('admin')
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setSubmitting(true)
     setError('')
 
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    })
-
-    if (!response.ok) {
-      setError('Login failed')
-      return
+    try {
+      const data = await apiRequest<LoginResponse>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password })
+      })
+      setStoredToken(data.access_token)
+      router.push('/dashboard')
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.message : 'Login failed')
+    } finally {
+      setSubmitting(false)
     }
-
-    const data = await response.json()
-    setStoredToken(data.access_token)
-    router.push('/dashboard')
   }
 
   return (
@@ -38,7 +45,9 @@ export function LoginScreen() {
         <form className="mt-8 grid gap-4" onSubmit={submit}>
           <input className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Username" />
           <input className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" />
-          <button className="rounded-full bg-[var(--accent)] px-5 py-3 text-white" type="submit">Sign in</button>
+          <button className="rounded-full bg-[var(--accent)] px-5 py-3 text-white disabled:opacity-60" type="submit" disabled={submitting}>
+            {submitting ? 'Signing in...' : 'Sign in'}
+          </button>
           {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
         </form>
       </div>
