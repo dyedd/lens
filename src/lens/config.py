@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "Lens"
     app_env: str = "dev"
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = 7890
     auth_secret_key: str = "change-me-in-production"
     auth_algorithm: str = "HS256"
     auth_access_token_minutes: int = 60 * 12
