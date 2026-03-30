@@ -115,6 +115,19 @@ class DomainStore:
             await session.commit()
             return self._to_gateway_key(entity)
 
+    async def create_gateway_key_from_secret(self, *, name: str, secret: str, enabled: bool) -> GatewayKey:
+        async with self._session_factory() as session:
+            next_id = await self._next_id(session, GatewayKeyEntity, "gk")
+            entity = GatewayKeyEntity(
+                id=next_id,
+                name=name,
+                secret=secret,
+                enabled=1 if enabled else 0,
+            )
+            session.add(entity)
+            await session.commit()
+            return self._to_gateway_key(entity)
+
     async def update_gateway_key(self, key_id: str, payload: GatewayKeyUpdate) -> GatewayKey:
         async with self._session_factory() as session:
             entity = await session.get(GatewayKeyEntity, key_id)
