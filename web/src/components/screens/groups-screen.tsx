@@ -2,13 +2,10 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Boxes, GitBranch, Plus, Route, Trash2 } from 'lucide-react'
+import { Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { ApiError, ModelGroup, ModelGroupPayload, ProtocolKind, Provider, RoutingStrategy, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
-import { MetricCard } from '@/components/ui/metric-card'
-import { PageHeader } from '@/components/ui/page-header'
-import { SegmentedControl } from '@/components/ui/segmented-control'
 
 type FormState = {
   name: string
@@ -18,9 +15,13 @@ type FormState = {
   enabled: boolean
 }
 
-type ViewMode = 'cards' | 'list'
-
 const emptyForm: FormState = { name: '', protocol: 'openai_chat', strategy: 'round_robin', provider_ids: [], enabled: true }
+
+const strategyOptions: Array<{ value: RoutingStrategy; zh: string; en: string }> = [
+  { value: 'round_robin', zh: '轮询', en: 'Round Robin' },
+  { value: 'weighted', zh: '加权分配', en: 'Weighted' },
+  { value: 'failover', zh: '故障转移', en: 'Failover' },
+]
 
 function toForm(item: ModelGroup): FormState {
   return { ...item }
@@ -31,25 +32,42 @@ function toPayload(form: FormState): ModelGroupPayload {
 }
 
 function inputClassName() {
-  return 'rounded-[22px] border border-[var(--line-strong)] bg-white/88 px-4 py-3 text-[var(--text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] outline-none transition focus:border-[var(--accent)] focus:bg-white'
+  return 'rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-3 text-[var(--text)] outline-none'
 }
 
 export function GroupsScreen() {
   const queryClient = useQueryClient()
-  const { locale, t } = useI18n()
+  const { locale } = useI18n()
   const [form, setForm] = useState<FormState>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null)
-  const [viewMode, setViewMode] = useState<ViewMode>('cards')
+  const [search, setSearch] = useState('')
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/model-groups') })
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
 
   const matchedProviders = useMemo(() => (providers ?? []).filter((item) => item.protocol === form.protocol), [providers, form.protocol])
-  const enabledCount = useMemo(() => (groups ?? []).filter((item) => item.enabled).length, [groups])
-  const protocolCount = useMemo(() => new Set((groups ?? []).map((item) => item.protocol)).size, [groups])
+
+  const providerMap = useMemo(() => {
+    const map = new Map<string, Provider>()
+    for (const item of providers ?? []) {
+      map.set(item.id, item)
+    }
+    return map
+  }, [providers])
+
+  const visibleGroups = useMemo(() => {
+    const keyword = search.trim().toLowerCase()
+    if (!keyword) {
+      return groups ?? []
+    }
+    return (groups ?? []).filter((group) => {
+      const providerNames = group.provider_ids.map((id) => providerMap.get(id)?.name ?? id).join(' ').toLowerCase()
+      return group.name.toLowerCase().includes(keyword) || providerNames.includes(keyword)
+    })
+  }, [groups, providerMap, search])
 
   async function refresh() {
     await Promise.all([
@@ -85,7 +103,7 @@ export function GroupsScreen() {
       setForm(emptyForm)
       await refresh()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存模型组失败' : 'Failed to save group'))
+      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存分组失败' : 'Failed to save group'))
     }
   }
 
@@ -97,7 +115,7 @@ export function GroupsScreen() {
       setDeleteTarget(null)
       await refresh()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除模型组失败' : 'Failed to delete group'))
+      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除分组失败' : 'Failed to delete group'))
     } finally {
       setBusyId(null)
     }
@@ -111,91 +129,75 @@ export function GroupsScreen() {
   }
 
   return (
-    <section className="grid gap-6">
-      <PageHeader
-        eyebrow={locale === 'zh-CN' ? '模型组' : 'Model groups'}
-        title={locale === 'zh-CN' ? '将外部模型名映射到可轮询的渠道集合' : 'Map external model names to routable channel pools'}
-        description={locale === 'zh-CN' ? '模型组优先级高于渠道正则，适合做同名模型聚合、权重调度和故障切换。' : 'Groups take precedence over provider regex rules and are ideal for pooled routing.'}
-        actions={
-          <>
-            <SegmentedControl value={viewMode} onValueChange={setViewMode} options={[{ value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' }, { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }]} />
-            <button className="rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_16px_30px_rgba(24,46,79,0.08)]" type="button" onClick={() => void refresh()}>{t.refresh}</button>
-            <button className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#2f6fed,#5a8fff)] px-4 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(47,111,237,0.28)]" type="button" onClick={openCreate}><Plus size={16} />{locale === 'zh-CN' ? '新增模型组' : 'New group'}</button>
-          </>
-        }
-      />
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={Boxes} label={locale === 'zh-CN' ? '模型组总数' : 'Groups'} value={groups?.length ?? 0} tone="accent" />
-        <MetricCard icon={GitBranch} label={locale === 'zh-CN' ? '启用模型组' : 'Enabled'} value={enabledCount} />
-        <MetricCard icon={Route} label={locale === 'zh-CN' ? '协议种类' : 'Protocols'} value={protocolCount} />
-        <MetricCard icon={Boxes} label={locale === 'zh-CN' ? '已绑定渠道' : 'Bound providers'} value={(groups ?? []).reduce((count, item) => count + item.provider_ids.length, 0)} />
+    <section className="space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-[48px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '分组' : 'Groups'}</h2>
+        <div className="flex items-center gap-3 text-[var(--muted)]">
+          <div className="hidden items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2.5 shadow-[var(--shadow-sm)] md:flex">
+            <Search size={16} />
+            <input className="ml-2 w-40 bg-transparent text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索分组' : 'Search'} />
+          </div>
+          <button className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()} title={locale === 'zh-CN' ? '刷新' : 'Refresh'}>
+            <Search size={18} />
+          </button>
+          <button className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增分组' : 'New group'}>
+            <Plus size={18} />
+          </button>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
-      {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</p> : null}
+      {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载分组...' : 'Loading groups...'}</p> : null}
 
-      {viewMode === 'cards' ? (
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-          {groups?.map((item) => (
-            <article key={item.id} className="rounded-[30px] border border-white/70 bg-[rgba(255,255,255,0.78)] p-5 shadow-[0_18px_44px_rgba(24,46,79,0.08)] backdrop-blur-[18px]">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <strong className="text-lg tracking-[-0.02em]">{item.name}</strong>
-                    <span className={item.enabled ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-3 py-1 text-xs text-[var(--success)]' : 'rounded-full bg-[rgba(192,58,76,0.12)] px-3 py-1 text-xs text-[var(--danger)]'}>{item.enabled ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
-                  </div>
-                  <p className="mt-3 text-sm text-[var(--muted)]">{item.protocol} · {item.strategy}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button className="rounded-full border border-white/80 bg-white px-3 py-2 text-sm shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
-                  <button className="rounded-full border border-[rgba(192,58,76,0.18)] bg-[rgba(192,58,76,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}><Trash2 size={16} /></button>
-                </div>
+      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        {visibleGroups.map((group) => (
+          <article key={group.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
+            <header className="flex items-start justify-between gap-3">
+              <strong className="truncate pr-2 text-[18px] text-[var(--text)]">{group.name}</strong>
+              <div className="flex items-center gap-2 text-[var(--muted)]">
+                <button type="button" onClick={() => openEdit(group)} className="transition hover:text-[var(--text)]"><Pencil size={16} /></button>
+                <button type="button" onClick={() => void navigator.clipboard.writeText(group.name)} className="transition hover:text-[var(--text)]"><Copy size={16} /></button>
+                <button type="button" onClick={() => setDeleteTarget(group)} className="transition hover:text-[var(--danger)]"><Trash2 size={16} /></button>
               </div>
-              <div className="mt-4 rounded-[24px] border border-white/70 bg-[rgba(247,249,253,0.84)] p-4">
-                <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '渠道链路' : 'Provider chain'}</p>
-                <p className="mt-2 text-sm leading-7 text-[var(--text)]">{item.provider_ids.join(' → ') || (locale === 'zh-CN' ? '未绑定渠道' : 'No providers')}</p>
+            </header>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {strategyOptions.map((item) => {
+                const active = item.value === group.strategy
+                return (
+                  <span key={item.value} className={active ? 'rounded-xl bg-[var(--accent)] px-3 py-1 text-xs text-white' : 'rounded-xl bg-[var(--panel-soft)] px-3 py-1 text-xs text-[var(--text)]'}>
+                    {locale === 'zh-CN' ? item.zh : item.en}
+                  </span>
+                )
+              })}
+            </div>
+
+            <section className="mt-4 min-h-[360px] rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
+              <div className="space-y-3">
+                {group.provider_ids.map((providerId, index) => {
+                  const provider = providerMap.get(providerId)
+                  return (
+                    <div key={providerId + index} className="flex items-center gap-3 rounded-[16px] bg-[var(--panel-soft)] px-3 py-3">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.16)] text-sm font-semibold text-[var(--accent)]">{index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[16px] text-[var(--text)]">{provider?.name ?? providerId}</p>
+                        <p className="truncate text-xs text-[var(--muted)]">{provider?.base_url ?? providerId}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+                {group.provider_ids.length === 0 ? <p className="px-2 py-3 text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无渠道' : 'No providers'}</p> : null}
               </div>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-[30px] border border-white/70 bg-[rgba(255,255,255,0.74)] shadow-[0_18px_44px_rgba(24,46,79,0.08)] backdrop-blur-[20px]">
-          <div className="grid grid-cols-[minmax(0,1.2fr)_0.8fr_0.8fr_1fr_auto] gap-4 border-b border-white/70 px-5 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
-            <span>{locale === 'zh-CN' ? '模型组' : 'Group'}</span>
-            <span>{locale === 'zh-CN' ? '协议' : 'Protocol'}</span>
-            <span>{locale === 'zh-CN' ? '策略' : 'Strategy'}</span>
-            <span>{locale === 'zh-CN' ? '渠道数' : 'Providers'}</span>
-            <span>{locale === 'zh-CN' ? '操作' : 'Actions'}</span>
-          </div>
-          <div className="divide-y divide-white/60">
-            {groups?.map((item) => (
-              <div key={item.id} className="grid grid-cols-[minmax(0,1.2fr)_0.8fr_0.8fr_1fr_auto] gap-4 px-5 py-4 text-sm text-[var(--text)]">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <strong>{item.name}</strong>
-                    <span className={item.enabled ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-2.5 py-1 text-[11px] text-[var(--success)]' : 'rounded-full bg-[rgba(192,58,76,0.12)] px-2.5 py-1 text-[11px] text-[var(--danger)]'}>{item.enabled ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
-                  </div>
-                  <p className="mt-2 text-[var(--muted)]">{item.provider_ids.join(' → ') || 'n/a'}</p>
-                </div>
-                <span>{item.protocol}</span>
-                <span>{item.strategy}</span>
-                <span>{item.provider_ids.length}</span>
-                <div className="flex gap-2">
-                  <button className="rounded-full border border-white/80 bg-white px-3 py-2 text-sm shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
-                  <button className="rounded-full border border-[rgba(192,58,76,0.18)] bg-[rgba(192,58,76,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}><Trash2 size={16} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </section>
+          </article>
+        ))}
+      </div>
 
       <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AppDialogContent title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')} description={locale === 'zh-CN' ? '选择协议、路由策略以及参与轮询的渠道。' : 'Pick the protocol, routing strategy, and providers in the pool.'}>
+        <AppDialogContent title={editingId ? (locale === 'zh-CN' ? '编辑分组' : 'Edit group') : (locale === 'zh-CN' ? '新建分组' : 'Create group')} description={locale === 'zh-CN' ? '选择协议、分配策略和参与分组的渠道。' : 'Select protocol, routing strategy, and providers in the group.'}>
           <form className="grid gap-4" onSubmit={submit}>
             <div className="grid gap-4 md:grid-cols-2">
-              <input className={inputClassName()} placeholder={locale === 'zh-CN' ? '外部模型名' : 'External model name'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <input className={inputClassName()} placeholder={locale === 'zh-CN' ? '分组名' : 'Group name'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               <select className={inputClassName()} value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value as ProtocolKind, provider_ids: [] })}>
                 <option value="openai_chat">OpenAI Chat</option>
                 <option value="openai_responses">OpenAI Responses</option>
@@ -203,44 +205,44 @@ export function GroupsScreen() {
                 <option value="gemini">Gemini</option>
               </select>
             </div>
+
             <div className="grid gap-4 md:grid-cols-2">
               <select className={inputClassName()} value={form.strategy} onChange={(e) => setForm({ ...form, strategy: e.target.value as RoutingStrategy })}>
-                <option value="round_robin">Round Robin</option>
-                <option value="weighted">Weighted</option>
-                <option value="failover">Failover</option>
+                {strategyOptions.map((item) => <option key={item.value} value={item.value}>{locale === 'zh-CN' ? item.zh : item.en}</option>)}
               </select>
-              <label className="flex items-center gap-3 rounded-[22px] border border-[var(--line-strong)] bg-white/88 px-4 py-3 text-sm text-[var(--muted)]">
+              <label className="flex items-center gap-3 rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-3 text-sm text-[var(--muted)]">
                 <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-                {locale === 'zh-CN' ? '启用模型组' : 'Enable group'}
+                {locale === 'zh-CN' ? '启用分组' : 'Enable group'}
               </label>
             </div>
-            <div className="grid gap-2 rounded-[24px] border border-white/70 bg-[rgba(247,249,253,0.84)] p-3">
+
+            <div className="grid gap-2 rounded-[20px] border border-[var(--line)] bg-[var(--panel)] p-3">
               {matchedProviders.map((item) => (
-                <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-[20px] border border-white/80 bg-white px-4 py-3 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-[16px] bg-[var(--panel-soft)] px-4 py-3 text-sm text-[var(--text)]">
                   <input type="checkbox" checked={form.provider_ids.includes(item.id)} onChange={() => toggleProvider(item.id)} />
-                  <span>{item.id} · {item.name}</span>
+                  <span>{item.name}</span>
                 </label>
               ))}
             </div>
+
             {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
             <div className="flex justify-end gap-3">
-              <button className="rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-              <button className="rounded-full bg-[linear-gradient(135deg,#2f6fed,#5a8fff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(47,111,237,0.28)]" type="submit">{editingId ? (locale === 'zh-CN' ? '保存模型组' : 'Save group') : (locale === 'zh-CN' ? '创建模型组' : 'Create group')}</button>
+              <button className="rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2.5 text-sm text-[var(--text)]" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
+              <button className="rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm text-white" type="submit">{editingId ? (locale === 'zh-CN' ? '保存分组' : 'Save group') : (locale === 'zh-CN' ? '创建分组' : 'Create group')}</button>
             </div>
           </form>
         </AppDialogContent>
       </Dialog.Root>
 
       <Dialog.Root open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
-        <AppDialogContent className="max-w-lg" title={locale === 'zh-CN' ? '确认删除模型组' : 'Delete group'} description={locale === 'zh-CN' ? '删除后该模型名将不再命中这组渠道。' : 'This removes the routing group for the external model name.'}>
+        <AppDialogContent className="max-w-lg" title={locale === 'zh-CN' ? '确认删除分组' : 'Delete group'} description={locale === 'zh-CN' ? '删除后，该分组名称将不再参与路由匹配。' : 'This group will no longer participate in routing.'}>
           <div className="grid gap-5">
-            <div className="rounded-[24px] border border-white/70 bg-[rgba(247,249,253,0.86)] p-4">
+            <div className="rounded-[20px] bg-[var(--panel-soft)] p-4">
               <strong>{deleteTarget?.name}</strong>
-              <p className="mt-2 text-sm text-[var(--muted)]">{deleteTarget?.provider_ids.join(' → ')}</p>
             </div>
             <div className="flex justify-end gap-3">
-              <button className="rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-              <button className="rounded-full bg-[linear-gradient(135deg,#e24f66,#c03a4c)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(192,58,76,0.24)]" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</button>
+              <button className="rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2.5 text-sm text-[var(--text)]" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
+              <button className="rounded-full bg-[var(--danger)] px-5 py-2.5 text-sm text-white" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</button>
             </div>
           </div>
         </AppDialogContent>

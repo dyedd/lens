@@ -2,12 +2,10 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Boxes, Plus, RadioTower, ScanSearch, SlidersHorizontal, Trash2, Waypoints } from 'lucide-react'
+import { Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { ApiError, Provider, ProtocolKind, ProviderPayload, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
-import { MetricCard } from '@/components/ui/metric-card'
-import { PageHeader } from '@/components/ui/page-header'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 
 type FormState = {
@@ -89,11 +87,19 @@ export function ChannelsScreen() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('cards')
+  const [search, setSearch] = useState('')
   const { data, isLoading } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
 
-  const enabledCount = useMemo(() => (data ?? []).filter((item) => item.status === 'enabled').length, [data])
-  const regexCount = useMemo(() => (data ?? []).filter((item) => item.model_patterns.length > 0).length, [data])
-  const protocolCount = useMemo(() => new Set((data ?? []).map((item) => item.protocol)).size, [data])
+  const visibleData = useMemo(() => {
+    const keyword = search.trim().toLowerCase()
+    if (!keyword) {
+      return data ?? []
+    }
+    return (data ?? []).filter((item) => {
+      const models = item.model_patterns.join(' ').toLowerCase()
+      return item.name.toLowerCase().includes(keyword) || item.base_url.toLowerCase().includes(keyword) || models.includes(keyword)
+    })
+  }, [data, search])
 
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ['providers'] })
@@ -145,38 +151,27 @@ export function ChannelsScreen() {
   }
 
   return (
-    <section className="grid gap-6">
-      <PageHeader
-        eyebrow={locale === 'zh-CN' ? '渠道管理' : 'Channels'}
-        title={locale === 'zh-CN' ? '维护上游渠道池、模型规则与轮询权重' : 'Manage upstream channels, model rules, and routing weights'}
-        description={locale === 'zh-CN' ? '页面支持卡片与列表双视图。新建、编辑和删除都通过弹窗完成，减少内容跳动。' : 'Switch between card and list views. Create, edit, and delete actions now happen in modal surfaces.'}
-        actions={
-          <>
-            <SegmentedControl
-              value={viewMode}
-              onValueChange={setViewMode}
-              options={[
-                { value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' },
-                { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }
-              ]}
-            />
-            <button className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_16px_30px_rgba(24,46,79,0.08)] transition hover:translate-y-[-1px]" type="button" onClick={() => void refresh()}>
-              <SlidersHorizontal size={16} />
-              <span>{t.refresh}</span>
-            </button>
-            <button className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#2f6fed,#5a8fff)] px-4 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(47,111,237,0.28)] transition hover:translate-y-[-1px]" type="button" onClick={openCreate}>
-              <Plus size={16} />
-              <span>{locale === 'zh-CN' ? '新增渠道' : 'New channel'}</span>
-            </button>
-          </>
-        }
-      />
+    <section className="space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-[48px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '渠道' : 'Channels'}</h2>
+        </div>
+        <div className="flex items-center gap-3 text-[var(--muted)]">
+          <div className="hidden items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2.5 shadow-[var(--shadow-sm)] md:flex">
+            <Search size={16} />
+            <input className="ml-2 w-40 bg-transparent text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索渠道' : 'Search'} />
+          </div>
+          <button className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()} title={t.refresh}>
+            <SlidersHorizontal size={18} />
+          </button>
+          <button className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增渠道' : 'New channel'}>
+            <Plus size={18} />
+          </button>
+        </div>
+      </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={Waypoints} label={locale === 'zh-CN' ? '渠道总数' : 'Channels'} value={data?.length ?? 0} tone="accent" />
-        <MetricCard icon={RadioTower} label={locale === 'zh-CN' ? '启用渠道' : 'Enabled'} value={enabledCount} />
-        <MetricCard icon={ScanSearch} label={locale === 'zh-CN' ? '正则匹配' : 'Regex rules'} value={regexCount} />
-        <MetricCard icon={Boxes} label={locale === 'zh-CN' ? '协议种类' : 'Protocols'} value={protocolCount} />
+      <div className="flex justify-end">
+        <SegmentedControl value={viewMode} onValueChange={setViewMode} options={[{ value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' }, { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }]} />
       </div>
 
       {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
@@ -185,45 +180,41 @@ export function ChannelsScreen() {
 
       {viewMode === 'cards' ? (
         <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-          {data?.map((item) => (
-            <article key={item.id} className="rounded-[30px] border border-white/70 bg-[rgba(255,255,255,0.78)] p-5 shadow-[0_18px_44px_rgba(24,46,79,0.08)] backdrop-blur-[18px]">
+          {visibleData.map((item) => (
+            <article key={item.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <strong className="text-lg tracking-[-0.02em]">{item.name}</strong>
-                    <span className={item.status === 'enabled' ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-3 py-1 text-xs text-[var(--success)]' : 'rounded-full bg-[rgba(192,58,76,0.12)] px-3 py-1 text-xs text-[var(--danger)]'}>{item.status === 'enabled' ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
+                    <button type="button" onClick={() => openEdit(item)} className={item.status === 'enabled' ? 'h-7 w-12 rounded-full bg-[var(--accent)]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]' : 'h-7 w-12 rounded-full bg-[#d9d5cb]'}>
+                      <span className={item.status === 'enabled' ? 'ml-auto mr-1 block h-5 w-5 rounded-full bg-white' : 'ml-1 block h-5 w-5 rounded-full bg-white'} />
+                    </button>
                   </div>
-                  <p className="mt-3 text-sm text-[var(--muted)]">{protocolOptions.find((option) => option.value === item.protocol)?.label}</p>
+                  <div className="mt-4 space-y-3">
+                    <div className="flex items-center justify-between rounded-[18px] bg-[var(--panel-soft)] px-4 py-3 text-sm">
+                      <div className="flex items-center gap-3 text-[var(--muted)]">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">◎</span>
+                        <span>{locale === 'zh-CN' ? '请求次数' : 'Requests'}</span>
+                      </div>
+                      <span>{item.priority.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-[18px] bg-[var(--panel-soft)] px-4 py-3 text-sm">
+                      <div className="flex items-center gap-3 text-[var(--muted)]">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">$</span>
+                        <span>{locale === 'zh-CN' ? '总成本' : 'Total cost'}</span>
+                      </div>
+                      <span>{item.weight.toFixed(2)} $</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="flex gap-2">
-                  <button className="rounded-full border border-white/80 bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
-                  <button className="rounded-full border border-[rgba(192,58,76,0.18)] bg-[rgba(192,58,76,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
+                  <button className="rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2 text-sm text-[var(--text)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
+                  <button className="rounded-full border border-[rgba(217,111,93,0.18)] bg-[rgba(217,111,93,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
-              <div className="mt-4 rounded-[24px] border border-white/70 bg-[rgba(247,249,253,0.84)] p-4">
-                <p className="break-all text-sm leading-6 text-[var(--muted)]">{item.base_url}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).map((token) => (
-                    <span key={token} className="rounded-full border border-white/80 bg-white px-3 py-1 text-xs text-[var(--text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">{token}</span>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-                <div className="rounded-[22px] border border-white/70 bg-white/80 p-3">
-                  <p className="text-[var(--muted)]">{locale === 'zh-CN' ? '权重' : 'Weight'}</p>
-                  <strong className="mt-2 block text-lg">{item.weight}</strong>
-                </div>
-                <div className="rounded-[22px] border border-white/70 bg-white/80 p-3">
-                  <p className="text-[var(--muted)]">{locale === 'zh-CN' ? '优先级' : 'Priority'}</p>
-                  <strong className="mt-2 block text-lg">{item.priority}</strong>
-                </div>
-                <div className="rounded-[22px] border border-white/70 bg-white/80 p-3">
-                  <p className="text-[var(--muted)]">Key</p>
-                  <strong className="mt-2 block text-sm">{maskKey(item.api_key)}</strong>
-                </div>
-              </div>
+              <p className="mt-4 truncate text-xs text-[var(--muted)]">{protocolOptions.find((option) => option.value === item.protocol)?.label} · {maskKey(item.api_key)} · {(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(', ')}</p>
             </article>
           ))}
         </div>
@@ -237,7 +228,7 @@ export function ChannelsScreen() {
             <span>{locale === 'zh-CN' ? '操作' : 'Actions'}</span>
           </div>
           <div className="divide-y divide-white/60">
-            {data?.map((item) => (
+            {visibleData.map((item) => (
               <div key={item.id} className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_0.8fr_0.8fr_auto] gap-4 px-5 py-4 text-sm text-[var(--text)]">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
