@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import re
 from threading import Lock
 
-from .models import ProtocolKind, ProviderConfig, ProviderHealth, ProviderStatus, RoutePreview, RouteState, RouterSnapshot, RoutingStrategy
+from ..models import ProtocolKind, ProviderConfig, ProviderHealth, ProviderStatus, RoutePreview, RouteState, RouterSnapshot, RoutingStrategy
 
 
 @dataclass

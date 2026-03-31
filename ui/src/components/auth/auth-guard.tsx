@@ -4,14 +4,12 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ApiError, AdminProfile, apiRequest } from '@/lib/api'
 import { clearStoredToken, getStoredToken } from '@/lib/auth'
-import { useI18n } from '@/lib/i18n'
 
 const SESSION_CACHE_KEY = 'lens_admin_profile_cache'
 const SESSION_CACHE_TTL_MS = 60_000
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { locale } = useI18n()
   const [state, setState] = useState<{ ready: boolean; profile: AdminProfile | null }>({ ready: false, profile: null })
 
   useEffect(() => {
@@ -78,7 +76,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [router])
 
   if (!state.ready) {
-    return <div className="p-6 text-[var(--muted)]">{locale === 'zh-CN' ? '正在校验后台登录状态...' : 'Checking admin session...'}</div>
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <span className="h-8 w-8 rounded-full border-2 border-[var(--line)] border-t-[var(--accent)] animate-spin" />
+      </div>
+    )
   }
 
   return <>{children}</>

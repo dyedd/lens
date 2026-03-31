@@ -7,11 +7,11 @@ from pathlib import Path
 
 from sqlalchemy import delete
 
-from lens.db import Base, create_engine, create_session_factory
-from lens.domain_store import DomainStore
-from lens.entities import ModelGroupEntity, ProviderEntity
+from lens.core.db import Base, create_engine, create_session_factory
 from lens.models import ModelGroupCreate, ProtocolKind, ProviderCreate, ProviderStatus, RoutingStrategy
-from lens.store import ProviderStore
+from lens.persistence.domain_store import DomainStore
+from lens.persistence.entities import ModelGroupEntity, ProviderEntity
+from lens.persistence.provider_store import ProviderStore
 
 
 TYPE_TO_PROTOCOL = {

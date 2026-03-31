@@ -5,8 +5,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from .config import Settings
-from .models import ProtocolKind, ProviderConfig
+from ..core.config import Settings
+from ..models import ProtocolKind, ProviderConfig
 
 
 @dataclass(frozen=True)

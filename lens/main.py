@@ -1,7 +1,7 @@
 import uvicorn
 
-from .config import settings
-from .service import app
+from .core.config import settings
+from .gateway.service import app
 
 
 def run() -> None:

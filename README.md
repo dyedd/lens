@@ -79,7 +79,7 @@ Default backend address:
 
 ```powershell
 conda activate temp
-cd D:\Projects\PYprojects\lens\web
+cd D:\Projects\PYprojects\lens\ui
 pnpm install
 pnpm dev
 ```
