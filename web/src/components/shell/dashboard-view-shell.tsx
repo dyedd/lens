@@ -2,46 +2,31 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Activity, KeyRound, Layers3, Settings2, Waypoints } from 'lucide-react'
-import { OverviewScreen } from '@/components/screens/overview-screen'
-import { RequestsScreen } from '@/components/screens/requests-screen'
-import { ChannelsScreen } from '@/components/screens/channels-screen'
-import { GroupsScreen } from '@/components/screens/groups-screen'
-import { KeysScreen } from '@/components/screens/keys-screen'
-import { SettingsScreen } from '@/components/screens/settings-screen'
 import { DashboardShell } from '@/components/shell/dashboard-shell'
+import { lazyWithPreload } from '@/lib/lazy-with-preload'
 
 export type DashboardView = 'overview' | 'requests' | 'channels' | 'groups' | 'keys' | 'settings'
 
-export const DASHBOARD_VIEWS: Array<{ key: DashboardView; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = [
-  { key: 'overview', label: 'overview', icon: Layers3 },
-  { key: 'requests', label: 'requests', icon: Activity },
-  { key: 'channels', label: 'channels', icon: Waypoints },
-  { key: 'groups', label: 'groups', icon: Layers3 },
-  { key: 'keys', label: 'keys', icon: KeyRound },
-  { key: 'settings', label: 'settings', icon: Settings2 },
-]
+type LazyScreen = ReturnType<typeof lazyWithPreload>
+
+const OverviewModule = lazyWithPreload(() => import('@/components/screens/overview-screen').then((m) => ({ default: m.OverviewScreen })))
+const RequestsModule = lazyWithPreload(() => import('@/components/screens/requests-screen').then((m) => ({ default: m.RequestsScreen })))
+const ChannelsModule = lazyWithPreload(() => import('@/components/screens/channels-screen').then((m) => ({ default: m.ChannelsScreen })))
+const GroupsModule = lazyWithPreload(() => import('@/components/screens/groups-screen').then((m) => ({ default: m.GroupsScreen })))
+const KeysModule = lazyWithPreload(() => import('@/components/screens/keys-screen').then((m) => ({ default: m.KeysScreen })))
+const SettingsModule = lazyWithPreload(() => import('@/components/screens/settings-screen').then((m) => ({ default: m.SettingsScreen })))
+
+const VIEW_COMPONENTS: Record<DashboardView, LazyScreen> = {
+  overview: OverviewModule,
+  requests: RequestsModule,
+  channels: ChannelsModule,
+  groups: GroupsModule,
+  keys: KeysModule,
+  settings: SettingsModule,
+}
 
 function isDashboardView(value: string | null): value is DashboardView {
   return value === 'overview' || value === 'requests' || value === 'channels' || value === 'groups' || value === 'keys' || value === 'settings'
-}
-
-function ScreenContent({ view }: { view: DashboardView }) {
-  switch (view) {
-    case 'requests':
-      return <RequestsScreen />
-    case 'channels':
-      return <ChannelsScreen />
-    case 'groups':
-      return <GroupsScreen />
-    case 'keys':
-      return <KeysScreen />
-    case 'settings':
-      return <SettingsScreen />
-    case 'overview':
-    default:
-      return <OverviewScreen />
-  }
 }
 
 function DashboardViewShellInner() {
@@ -57,7 +42,17 @@ function DashboardViewShellInner() {
     setActiveView(initialView)
   }, [initialView])
 
+  useEffect(() => {
+    VIEW_COMPONENTS.overview.preload()
+    VIEW_COMPONENTS.channels.preload()
+    VIEW_COMPONENTS.groups.preload()
+    VIEW_COMPONENTS.requests.preload()
+  }, [])
+
+  const ActiveScreen = VIEW_COMPONENTS[activeView]
+
   function handleViewChange(nextView: DashboardView) {
+    VIEW_COMPONENTS[nextView].preload()
     setActiveView(nextView)
     const nextParams = new URLSearchParams(searchParams.toString())
     if (nextView === 'overview') {
@@ -69,9 +64,17 @@ function DashboardViewShellInner() {
     router.replace(query ? '/dashboard?' + query : '/dashboard', { scroll: false })
   }
 
+  function handleViewIntent(nextView: DashboardView) {
+    VIEW_COMPONENTS[nextView].preload()
+  }
+
   return (
-    <DashboardShell activeView={activeView} onViewChange={handleViewChange}>
-      <ScreenContent view={activeView} />
+    <DashboardShell activeView={activeView} onViewChange={handleViewChange} onViewIntent={handleViewIntent}>
+      <div key={activeView} className="min-h-[calc(100vh-10rem)] animate-[fadeIn_.16s_ease-out]">
+        <Suspense fallback={<div className="py-10 text-sm text-[var(--muted)]">加载中...</div>}>
+          <ActiveScreen />
+        </Suspense>
+      </div>
     </DashboardShell>
   )
 }

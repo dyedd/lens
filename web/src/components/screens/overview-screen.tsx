@@ -108,11 +108,11 @@ export function OverviewScreen() {
         </div>
       </section>
 
-      <section className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
+      <section className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 pt-4 shadow-[var(--shadow-sm)]">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '趋势' : 'Trend'}</h3>
-            <div className="mt-3 flex gap-4 text-sm">
+            <div className="mt-3 flex gap-5 text-sm">
               <div>
                 <p className="text-[var(--muted)]">{locale === 'zh-CN' ? '请求次数' : 'Requests'}</p>
                 <strong className="text-xl">{overview?.total_requests ?? 0}</strong>
@@ -129,8 +129,8 @@ export function OverviewScreen() {
           </div>
           <div className="rounded-full bg-[var(--panel-soft)] px-4 py-2 text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '今天' : 'Today'}</div>
         </div>
-        <div className="mt-5 h-60 rounded-[22px] border border-dashed border-[var(--line)] bg-[linear-gradient(180deg,rgba(97,168,102,0.18),rgba(97,168,102,0.04))] p-4">
-          <div className="flex h-full items-end gap-3">
+        <div className="mt-4 h-56 rounded-b-[22px] border-t border-[var(--line)] bg-[linear-gradient(180deg,rgba(97,168,102,0.18),rgba(97,168,102,0.04))] px-2 pb-4 pt-3">
+          <div className="flex h-full items-end gap-2.5">
             {Array.from({ length: 10 }, (_, index) => {
               const value = index === 0 ? 86 : index === 1 ? 44 : index === 2 ? 6 : 1
               return (

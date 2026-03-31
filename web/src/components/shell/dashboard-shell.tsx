@@ -10,10 +10,12 @@ export function DashboardShell({
   children,
   activeView,
   onViewChange,
+  onViewIntent,
 }: {
   children: React.ReactNode
   activeView: DashboardView
   onViewChange: (view: DashboardView) => void
+  onViewIntent?: (view: DashboardView) => void
 }) {
   const { locale, setLocale, t } = useI18n()
 
@@ -39,6 +41,7 @@ export function DashboardShell({
                   key={item.key}
                   type="button"
                   onClick={() => onViewChange(item.key)}
+                  onMouseEnter={() => onViewIntent?.(item.key)}
                   className={
                     'group relative flex h-12 w-12 items-center justify-center rounded-[16px] transition-colors duration-150 ' +
                     (active
