@@ -152,26 +152,18 @@ export function ChannelsScreen() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-[36px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '渠道' : 'Channels'}</h2>
-        </div>
-        <div className="flex items-center gap-3 text-[var(--muted)]">
-          <div className="hidden items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2.5 shadow-[var(--shadow-sm)] md:flex">
+      <div className="flex flex-wrap items-center justify-end gap-2 text-[var(--muted)]">
+          <div className="hidden items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2 md:flex">
             <Search size={16} />
             <input className="ml-2 w-40 bg-transparent text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索渠道' : 'Search'} />
           </div>
-          <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()} title={t.refresh}>
+          <SegmentedControl value={viewMode} onValueChange={setViewMode} options={[{ value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' }, { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }]} />
+          <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)]" type="button" onClick={() => void refresh()} title={t.refresh}>
             <SlidersHorizontal size={18} />
           </button>
-          <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增渠道' : 'New channel'}>
+          <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增渠道' : 'New channel'}>
             <Plus size={18} />
           </button>
-        </div>
-      </div>
-
-      <div className="flex justify-end">
-        <SegmentedControl value={viewMode} onValueChange={setViewMode} options={[{ value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' }, { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }]} />
       </div>
 
       {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
@@ -179,7 +171,7 @@ export function ChannelsScreen() {
       {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</p> : null}
 
       {viewMode === 'cards' ? (
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {visibleData.map((item) => (
             <article key={item.id} className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
               <div className="flex items-start justify-between gap-4">

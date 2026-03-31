@@ -130,35 +130,23 @@ export function KeysScreen() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-[36px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '密钥' : 'Keys'}</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            {locale === 'zh-CN'
-              ? '管理下游客户端访问 Lens 网关所使用的凭证。'
-              : 'Manage the credentials used by downstream clients to access the Lens gateway.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 text-[var(--muted)]">
-          <div className="hidden items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2.5 shadow-[var(--shadow-sm)] md:flex">
+      <div className="flex flex-wrap items-center justify-end gap-2 text-[var(--muted)]">
+          <div className="hidden items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2 md:flex">
             <Search size={16} />
             <input className="ml-2 w-40 bg-transparent text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索密钥' : 'Search'} />
           </div>
-          <button className="inline-flex h-11 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--text)] shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()}>
+          <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)]" type="button" onClick={() => void refresh()} title={locale === 'zh-CN' ? '刷新' : 'Refresh'}>
             <ShieldCheck size={16} />
-            {locale === 'zh-CN' ? '刷新' : 'Refresh'}
           </button>
-          <button className="inline-flex h-11 items-center gap-2 rounded-full bg-[var(--accent)] px-4 text-sm font-medium text-white" type="button" onClick={openCreate}>
+          <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)] text-white" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增密钥' : 'New key'}>
             <Plus size={16} />
-            {locale === 'zh-CN' ? '新增密钥' : 'New key'}
           </button>
-        </div>
       </div>
 
       {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
       {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载网关密钥...' : 'Loading keys...'}</p> : null}
 
-      <div className="columns-1 gap-4 md:columns-2">
+      <div className="columns-1 gap-4 pb-2 md:columns-2">
         <SectionCard
           icon={KeyRound}
           title={locale === 'zh-CN' ? '凭证概览' : 'Credential overview'}

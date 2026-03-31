@@ -14,14 +14,8 @@ export function RequestsScreen() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-[36px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '请求' : 'Requests'}</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            {locale === 'zh-CN' ? '查看最近请求、命中渠道、耗时与失败上下文。' : 'Inspect recent requests, routed providers, latency, and failure context.'}
-          </p>
-        </div>
-        <button className="inline-flex h-10 items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--text)] shadow-[var(--shadow-sm)]" type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ['request-logs'] })}>
+      <div className="flex justify-end">
+        <button className="inline-flex h-9 items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 text-sm text-[var(--text)]" type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ['request-logs'] })}>
           {locale === 'zh-CN' ? '刷新' : 'Refresh'}
         </button>
       </div>

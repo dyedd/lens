@@ -114,33 +114,23 @@ export function SettingsScreen() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-[36px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '设置' : 'Settings'}</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            {locale === 'zh-CN'
-              ? '集中维护运行参数、展示配置与后台访问偏好。'
-              : 'Maintain runtime parameters, display options, and admin preferences in one place.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">
           <button
-            className="inline-flex h-11 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--text)] shadow-[var(--shadow-sm)]"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] text-[var(--text)]"
             type="button"
             onClick={() => void refresh()}
+            title={locale === 'zh-CN' ? '刷新' : 'Refresh'}
           >
             <ServerCog size={16} />
-            {locale === 'zh-CN' ? '刷新' : 'Refresh'}
           </button>
           <button
-            className="inline-flex h-11 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--text)] shadow-[var(--shadow-sm)]"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)] text-white"
             type="button"
             onClick={() => setDrafts((current) => [...current, { key: '', value: '' }])}
+            title={locale === 'zh-CN' ? '新增配置' : 'Add setting'}
           >
             <Plus size={16} />
-            {locale === 'zh-CN' ? '新增配置' : 'Add setting'}
           </button>
-        </div>
       </div>
 
       <div className="columns-1 gap-4 md:columns-2">

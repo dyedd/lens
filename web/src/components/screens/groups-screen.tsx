@@ -130,26 +130,23 @@ export function GroupsScreen() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-[36px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '分组' : 'Groups'}</h2>
-        <div className="flex items-center gap-3 text-[var(--muted)]">
-          <div className="hidden items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2.5 shadow-[var(--shadow-sm)] md:flex">
+      <div className="flex flex-wrap items-center justify-end gap-2 text-[var(--muted)]">
+          <div className="hidden items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2 md:flex">
             <Search size={16} />
             <input className="ml-2 w-40 bg-transparent text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索分组' : 'Search'} />
           </div>
-          <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()} title={locale === 'zh-CN' ? '刷新' : 'Refresh'}>
+          <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)]" type="button" onClick={() => void refresh()} title={locale === 'zh-CN' ? '刷新' : 'Refresh'}>
             <Search size={18} />
           </button>
-          <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增分组' : 'New group'}>
+          <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增分组' : 'New group'}>
             <Plus size={18} />
           </button>
-        </div>
       </div>
 
       {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
       {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载分组...' : 'Loading groups...'}</p> : null}
 
-      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {visibleGroups.map((group) => (
           <article key={group.id} className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
             <header className="flex items-start justify-between gap-3">
@@ -172,7 +169,7 @@ export function GroupsScreen() {
               })}
             </div>
 
-            <section className="mt-4 min-h-[320px] rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
+            <section className="mt-4 min-h-[360px] rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
               <div className="space-y-3">
                 {group.provider_ids.map((providerId, index) => {
                   const provider = providerMap.get(providerId)
