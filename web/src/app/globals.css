@@ -22,25 +22,28 @@
   box-sizing: border-box;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(126, 110, 84, 0.38) transparent;
+html {
+  scrollbar-width: none;
 }
 
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+body {
+  scrollbar-width: none;
 }
 
-*::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background-color: rgba(126, 110, 84, 0.34);
-  background-clip: padding-box;
+body::-webkit-scrollbar,
+html::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
-*::-webkit-scrollbar-track {
-  background: transparent;
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 html,

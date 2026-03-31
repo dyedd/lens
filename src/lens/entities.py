@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -74,5 +74,47 @@ class RequestLogEntity(Base):
     status_code: Mapped[int] = mapped_column(Integer, nullable=False)
     success: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resolved_model: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    output_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False, index=True)
+
+
+class ModelPriceEntity(Base):
+    __tablename__ = "model_prices"
+
+    model_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    input_price_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    output_price_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+
+class ImportedStatsTotalEntity(Base):
+    __tablename__ = "imported_stats_total"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    input_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    output_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    wait_time: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    request_success: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    request_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class ImportedStatsDailyEntity(Base):
+    __tablename__ = "imported_stats_daily"
+
+    date: Mapped[str] = mapped_column(String(8), primary_key=True)
+    input_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    output_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    wait_time: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    request_success: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    request_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

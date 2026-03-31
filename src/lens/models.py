@@ -222,6 +222,13 @@ class RequestLogItem(BaseModel):
     status_code: int
     success: bool
     latency_ms: int
+    resolved_model: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
     error_message: str | None = None
     created_at: str
 
@@ -234,3 +241,49 @@ class OverviewMetrics(BaseModel):
     active_gateway_keys: int = 0
     enabled_groups: int = 0
     enabled_providers: int = 0
+
+
+class OverviewSummaryMetric(BaseModel):
+    value: float
+    delta: float = 0.0
+
+
+class OverviewSummary(BaseModel):
+    request_count: OverviewSummaryMetric
+    wait_time_ms: OverviewSummaryMetric
+    total_tokens: OverviewSummaryMetric
+    total_cost_usd: OverviewSummaryMetric
+    input_tokens: OverviewSummaryMetric
+    input_cost_usd: OverviewSummaryMetric
+    output_tokens: OverviewSummaryMetric
+    output_cost_usd: OverviewSummaryMetric
+
+
+class OverviewDailyPoint(BaseModel):
+    date: str
+    request_count: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+    wait_time_ms: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+
+
+class OverviewModelMetricPoint(BaseModel):
+    model: str
+    requests: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+
+
+class OverviewModelTrendPoint(BaseModel):
+    date: str
+    model: str
+    value: float
+
+
+class OverviewModelAnalytics(BaseModel):
+    distribution: list[OverviewModelMetricPoint] = Field(default_factory=list)
+    request_ranking: list[OverviewModelMetricPoint] = Field(default_factory=list)
+    trend: list[OverviewModelTrendPoint] = Field(default_factory=list)
+    available_models: list[str] = Field(default_factory=list)

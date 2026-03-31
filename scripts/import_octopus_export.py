@@ -39,6 +39,24 @@ async def main(export_path: str) -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
+    await domain_store.ensure_schema()
+
+    stats_total = payload.get('stats_total')
+    await domain_store.replace_imported_stats(
+        total=stats_total[0] if isinstance(stats_total, list) and stats_total else stats_total,
+        daily=payload.get('stats_daily', []),
+        model_prices=[
+            {
+                'model_key': item.get('name'),
+                'display_name': item.get('name'),
+                'input_price_per_million': item.get('input'),
+                'output_price_per_million': item.get('output'),
+            }
+            for item in payload.get('llm_infos', [])
+            if item.get('name')
+        ],
+    )
+
     channel_keys_by_channel = {
         item['channel_id']: item
         for item in payload.get('channel_keys', [])

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -16,7 +18,7 @@ from .auth import create_access_token, decode_access_token
 from .config import settings
 from .db import Base, create_engine, create_session_factory
 from .domain_store import DomainStore
-from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewMetrics, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
+from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
 from .router import RoundRobinRouter
 from .store import ProviderStore
 from .upstreams import build_upstream_request
@@ -58,6 +60,13 @@ class RoutingPlan:
 class UpstreamResult:
     response: Response
     status_code: int
+    resolved_model: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
 
 
 async def _startup_app_state(state: AppState) -> None:
@@ -66,10 +75,12 @@ async def _startup_app_state(state: AppState) -> None:
 
     async with state.engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+    await state.domain_store.ensure_schema()
     await state.admin_store.ensure_default_admin(
         settings.admin_default_username,
         settings.admin_default_password,
     )
+    await _bootstrap_imported_stats(state)
 
 
 async def _close_app_state(state: AppState) -> None:
@@ -205,6 +216,21 @@ async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetri
     metrics = await app_state.domain_store.get_overview_metrics()
     providers = await app_state.store.list()
     return metrics.model_copy(update={"enabled_providers": sum(1 for item in providers if item.status.value == "enabled")})
+
+
+@app.get("/api/overview/summary", response_model=OverviewSummary)
+async def overview_summary(_: Any = Depends(get_current_admin)) -> OverviewSummary:
+    return await app_state.domain_store.get_overview_summary()
+
+
+@app.get("/api/overview/daily", response_model=list[OverviewDailyPoint])
+async def overview_daily(_: Any = Depends(get_current_admin)) -> list[OverviewDailyPoint]:
+    return await app_state.domain_store.list_overview_daily()
+
+
+@app.get("/api/overview/models", response_model=OverviewModelAnalytics)
+async def overview_models(_: Any = Depends(get_current_admin)) -> OverviewModelAnalytics:
+    return await app_state.domain_store.get_model_analytics()
 
 
 @app.get("/api/request-logs", response_model=list[RequestLogItem])
@@ -370,6 +396,13 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
                 status_code=result.status_code,
                 success=True,
                 latency_ms=_elapsed_ms(started_at),
+                resolved_model=result.resolved_model,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                total_tokens=result.total_tokens,
+                input_cost_usd=result.input_cost_usd,
+                output_cost_usd=result.output_cost_usd,
+                total_cost_usd=result.total_cost_usd,
                 error_message=None,
             )
             return result.response
@@ -430,6 +463,7 @@ async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> Upst
                     headers=_passthrough_headers(response.headers),
                 ),
                 status_code=response.status_code,
+                resolved_model=provider.model_name or body.get("model"),
             )
 
         response = await app_state.http.request(
@@ -441,6 +475,13 @@ async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> Upst
         response.raise_for_status()
         app_state.router.record_success(provider.id)
 
+        parsed = _extract_response_usage(provider.protocol, response)
+        input_cost_usd, output_cost_usd, total_cost_usd = await app_state.domain_store.estimate_model_cost(
+            parsed["resolved_model"],
+            parsed["input_tokens"],
+            parsed["output_tokens"],
+        )
+
         return UpstreamResult(
             response=Response(
                 content=response.content,
@@ -449,6 +490,13 @@ async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> Upst
                 headers=_passthrough_headers(response.headers),
             ),
             status_code=response.status_code,
+            resolved_model=parsed["resolved_model"],
+            input_tokens=parsed["input_tokens"],
+            output_tokens=parsed["output_tokens"],
+            total_tokens=parsed["total_tokens"],
+            input_cost_usd=input_cost_usd,
+            output_cost_usd=output_cost_usd,
+            total_cost_usd=total_cost_usd,
         )
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text or f"HTTP {exc.response.status_code}"
@@ -511,6 +559,13 @@ async def _record_request_log(
     status_code: int,
     success: bool,
     latency_ms: int,
+    resolved_model: str | None = None,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+    input_cost_usd: float = 0.0,
+    output_cost_usd: float = 0.0,
+    total_cost_usd: float = 0.0,
     error_message: str | None,
 ) -> None:
     await app_state.domain_store.create_request_log(
@@ -522,5 +577,81 @@ async def _record_request_log(
         status_code=status_code,
         success=success,
         latency_ms=latency_ms,
+        resolved_model=resolved_model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        input_cost_usd=input_cost_usd,
+        output_cost_usd=output_cost_usd,
+        total_cost_usd=total_cost_usd,
         error_message=error_message,
     )
+
+
+def _extract_response_usage(protocol: ProtocolKind, response: httpx.Response) -> dict[str, int | str | None]:
+    payload = response.json()
+
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        usage = payload.get("usage") or {}
+        return {
+            "resolved_model": payload.get("model"),
+            "input_tokens": int(usage.get("prompt_tokens") or 0),
+            "output_tokens": int(usage.get("completion_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+        }
+
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        usage = payload.get("usage") or {}
+        return {
+            "resolved_model": payload.get("model"),
+            "input_tokens": int(usage.get("input_tokens") or 0),
+            "output_tokens": int(usage.get("output_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+        }
+
+    if protocol == ProtocolKind.ANTHROPIC:
+        usage = payload.get("usage") or {}
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        return {
+            "resolved_model": payload.get("model"),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        }
+
+    usage = payload.get("usageMetadata") or {}
+    input_tokens = int(usage.get("promptTokenCount") or usage.get("inputTokenCount") or 0)
+    output_tokens = int(usage.get("candidatesTokenCount") or usage.get("outputTokenCount") or 0)
+    total_tokens = int(usage.get("totalTokenCount") or (input_tokens + output_tokens))
+    return {
+        "resolved_model": payload.get("modelVersion") or payload.get("model"),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+async def _bootstrap_imported_stats(state: AppState) -> None:
+    default_export = Path(r"D:\dyedd\Downloads\octopus-export-20260330203705.json")
+    if not default_export.exists():
+        return
+
+    try:
+        payload = json.loads(default_export.read_text(encoding="utf-8"))
+        await state.domain_store.replace_imported_stats(
+            total=payload.get("stats_total"),
+            daily=payload.get("stats_daily", []),
+            model_prices=[
+                {
+                    "model_key": item.get("name"),
+                    "display_name": item.get("name"),
+                    "input_price_per_million": item.get("input"),
+                    "output_price_per_million": item.get("output"),
+                }
+                for item in payload.get("llm_infos", [])
+                if item.get("name")
+            ],
+        )
+    except Exception:
+        return
