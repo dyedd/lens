@@ -1,5 +1,5 @@
-import { ChannelsScreen } from '@/components/screens/channels-screen'
+import { redirect } from 'next/navigation'
 
 export default function ChannelsPage() {
-  return <ChannelsScreen />
+  redirect('/dashboard?view=channels')
 }

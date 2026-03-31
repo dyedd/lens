@@ -1,5 +1,5 @@
-import { KeysScreen } from '@/components/screens/keys-screen'
+import { redirect } from 'next/navigation'
 
 export default function KeysPage() {
-  return <KeysScreen />
+  redirect('/dashboard?view=keys')
 }

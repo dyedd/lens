@@ -1,23 +1,29 @@
 "use client"
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import Image from 'next/image'
 import { Activity, Globe2, KeyRound, Layers3, LayoutDashboard, Settings2, Waypoints } from 'lucide-react'
 import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
+import type { DashboardView } from '@/components/shell/dashboard-view-shell'
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
+export function DashboardShell({
+  children,
+  activeView,
+  onViewChange,
+}: {
+  children: React.ReactNode
+  activeView: DashboardView
+  onViewChange: (view: DashboardView) => void
+}) {
   const { locale, setLocale, t } = useI18n()
 
   const items = [
-    { href: '/dashboard', label: t.dashboard, icon: LayoutDashboard },
-    { href: '/dashboard/requests', label: t.requests, icon: Activity },
-    { href: '/dashboard/channels', label: t.channels, icon: Waypoints },
-    { href: '/dashboard/groups', label: t.groups, icon: Layers3 },
-    { href: '/dashboard/keys', label: t.keys, icon: KeyRound },
-    { href: '/dashboard/settings', label: t.settings, icon: Settings2 }
+    { key: 'overview' as DashboardView, label: t.dashboard, icon: LayoutDashboard },
+    { key: 'requests' as DashboardView, label: t.requests, icon: Activity },
+    { key: 'channels' as DashboardView, label: t.channels, icon: Waypoints },
+    { key: 'groups' as DashboardView, label: t.groups, icon: Layers3 },
+    { key: 'keys' as DashboardView, label: t.keys, icon: KeyRound },
+    { key: 'settings' as DashboardView, label: t.settings, icon: Settings2 }
   ]
 
   return (
@@ -27,12 +33,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <nav className="flex w-[76px] flex-col items-center gap-2.5 rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-2.5 shadow-[var(--shadow-lg)]">
             {items.map((item) => {
               const Icon = item.icon
-              const active = pathname === item.href
+              const active = activeView === item.key
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  prefetch
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => onViewChange(item.key)}
                   className={
                     'group relative flex h-12 w-12 items-center justify-center rounded-[16px] transition-colors duration-150 ' +
                     (active
@@ -42,7 +48,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   title={item.label}
                 >
                   <Icon size={20} />
-                </Link>
+                </button>
               )
             })}
           </nav>
@@ -54,7 +60,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <Image src="/logo.svg" alt="Lens" width={42} height={42} className="h-[42px] w-[42px]" />
               <div>
                 <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted)]">{t.appName}</p>
-                <h1 className="mt-1 text-[26px] font-semibold leading-none tracking-[-0.03em] text-[var(--text)] md:text-[30px]">{items.find((item) => item.href === pathname)?.label ?? t.dashboard}</h1>
+                <h1 className="mt-1 text-[26px] font-semibold leading-none tracking-[-0.03em] text-[var(--text)] md:text-[30px]">{items.find((item) => item.key === activeView)?.label ?? t.dashboard}</h1>
               </div>
             </div>
             <div className="flex items-center gap-3">

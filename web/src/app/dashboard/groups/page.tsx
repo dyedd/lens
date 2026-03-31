@@ -1,5 +1,5 @@
-import { GroupsScreen } from '@/components/screens/groups-screen'
+import { redirect } from 'next/navigation'
 
 export default function GroupsPage() {
-  return <GroupsScreen />
+  redirect('/dashboard?view=groups')
 }

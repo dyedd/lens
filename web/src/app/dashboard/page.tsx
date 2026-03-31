@@ -1,5 +1,5 @@
-import { OverviewScreen } from '@/components/screens/overview-screen'
+import { DashboardViewShell } from '@/components/shell/dashboard-view-shell'
 
 export default function DashboardPage() {
-  return <OverviewScreen />
+  return <DashboardViewShell />
 }
