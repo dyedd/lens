@@ -29,10 +29,9 @@ export function DashboardShell({
   ]
 
   return (
-    <div className="min-h-screen px-4 py-4 md:px-5">
-      <div className="mx-auto flex w-full max-w-[1240px] gap-5">
-        <aside className="sticky top-7 hidden h-fit self-start md:block">
-          <nav className="flex w-[76px] flex-col items-center gap-2.5 rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-2.5 shadow-[var(--shadow-lg)]">
+    <div className="mx-auto flex h-dvh max-w-6xl flex-col overflow-hidden px-3 md:grid md:grid-cols-[auto_1fr] md:gap-6 md:px-6">
+      <aside className="relative z-50 md:min-h-screen">
+        <nav className="fixed bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-3 shadow-[var(--shadow-lg)] md:sticky md:top-30 md:left-auto md:bottom-auto md:translate-x-0 md:flex-col md:gap-3">
             {items.map((item) => {
               const Icon = item.icon
               const active = activeView === item.key
@@ -43,7 +42,7 @@ export function DashboardShell({
                   onClick={() => onViewChange(item.key)}
                   onMouseEnter={() => onViewIntent?.(item.key)}
                   className={
-                    'group relative flex h-12 w-12 items-center justify-center rounded-[16px] transition-colors duration-150 ' +
+                    'group relative z-10 flex rounded-2xl p-2 md:p-3 transition-colors duration-150 ' +
                     (active
                       ? 'bg-[var(--accent-2)] text-[var(--text)] shadow-[var(--shadow-sm)]'
                       : 'text-[var(--muted)] hover:bg-[var(--panel-soft)] hover:text-[var(--text)]')
@@ -55,29 +54,29 @@ export function DashboardShell({
               )
             })}
           </nav>
-        </aside>
+      </aside>
 
-        <main className="min-h-screen flex-1 rounded-[28px] border border-[var(--line)] bg-[rgba(255,253,249,0.72)] p-5 shadow-[var(--shadow-lg)] md:p-6">
-          <header className="mb-6 flex items-start justify-between gap-5">
-            <div className="flex items-center gap-4">
-              <Image src="/logo.svg" alt="Lens" width={42} height={42} className="h-[42px] w-[42px]" />
+      <main className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+          <header className="my-6 flex flex-none items-center gap-x-2 px-2">
+            <Image src="/logo.svg" alt="Lens" width={48} height={48} className="h-12 w-12" />
+            <div className="min-w-0 flex-1 overflow-hidden">
               <div>
                 <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted)]">{t.appName}</p>
-                <h1 className="mt-1 text-[26px] font-semibold leading-none tracking-[-0.03em] text-[var(--text)] md:text-[30px]">{items.find((item) => item.key === activeView)?.label ?? t.dashboard}</h1>
+                <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--text)]">{items.find((item) => item.key === activeView)?.label ?? t.dashboard}</h1>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--text)] shadow-[var(--shadow-sm)]"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-[var(--muted)] transition-none hover:bg-transparent hover:text-[var(--text)]"
                 onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
+                title={locale === 'zh-CN' ? '切换到英文' : 'Switch to Chinese'}
               >
-                <Globe2 size={15} />
-                <span>{locale === 'zh-CN' ? 'EN' : '中'}</span>
+                <Globe2 size={16} />
               </button>
               <button
                 type="button"
-                className="inline-flex h-10 items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--muted)] shadow-[var(--shadow-sm)]"
+                className="inline-flex h-9 items-center rounded-xl px-3 text-sm text-[var(--muted)] transition-none hover:bg-transparent hover:text-[var(--text)]"
                 onClick={() => {
                   clearStoredToken()
                   window.location.href = '/login'
@@ -87,9 +86,10 @@ export function DashboardShell({
               </button>
             </div>
           </header>
-          {children}
-        </main>
-      </div>
+          <div className="h-full min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-t-3xl pb-24 md:pb-4">
+            {children}
+          </div>
+      </main>
     </div>
   )
 }
