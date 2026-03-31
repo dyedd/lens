@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { MessageSquare, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { ApiError, Provider, ProtocolKind, ProviderPayload, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
@@ -74,7 +74,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function inputClassName() {
-  return 'rounded-[22px] border border-[var(--line-strong)] bg-white/88 px-4 py-3 text-[var(--text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] outline-none transition focus:border-[var(--accent)] focus:bg-white'
+  return 'h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
 }
 
 export function ChannelsScreen() {
@@ -119,20 +119,39 @@ export function ChannelsScreen() {
     setDialogOpen(true)
   }
 
+  async function saveProvider(payload: FormState, providerId: string | null) {
+    await apiRequest<Provider>(providerId ? '/providers/' + providerId : '/providers', {
+      method: providerId ? 'PUT' : 'POST',
+      body: JSON.stringify(toPayload(payload))
+    })
+    await refresh()
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
     try {
-      await apiRequest<Provider>(editingId ? '/providers/' + editingId : '/providers', {
-        method: editingId ? 'PUT' : 'POST',
-        body: JSON.stringify(toPayload(form))
-      })
+      await saveProvider(form, editingId)
       setDialogOpen(false)
       setEditingId(null)
       setForm(emptyForm)
-      await refresh()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存渠道失败' : 'Failed to save channel'))
+    }
+  }
+
+  async function toggleStatus(item: Provider) {
+    setBusyId(item.id)
+    setError('')
+    try {
+      await saveProvider({
+        ...toForm(item),
+        status: item.status === 'enabled' ? 'disabled' : 'enabled'
+      }, item.id)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '更新渠道状态失败' : 'Failed to update status'))
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -151,37 +170,37 @@ export function ChannelsScreen() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2 text-[var(--muted)]">
-          <div className="hidden items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2 md:flex">
-            <Search size={16} />
-            <input className="ml-2 w-40 bg-transparent text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索渠道' : 'Search'} />
-          </div>
-          <SegmentedControl value={viewMode} onValueChange={setViewMode} options={[{ value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' }, { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }]} />
-          <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)]" type="button" onClick={() => void refresh()} title={t.refresh}>
-            <SlidersHorizontal size={18} />
-          </button>
-          <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增渠道' : 'New channel'}>
-            <Plus size={18} />
-          </button>
+        <div className="hidden h-9 items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 md:flex">
+          <Search size={15} />
+          <input className="ml-2 w-40 bg-transparent text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索渠道' : 'Search'} />
+        </div>
+        <SegmentedControl value={viewMode} onValueChange={setViewMode} options={[{ value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' }, { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }]} />
+        <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] transition-colors hover:text-[var(--text)]" type="button" onClick={() => void refresh()} title={t.refresh}>
+          <SlidersHorizontal size={16} />
+        </button>
+        <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] transition-colors hover:text-[var(--text)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增渠道' : 'New channel'}>
+          <Plus size={16} />
+        </button>
       </div>
 
       {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
-
       {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</p> : null}
 
       {viewMode === 'cards' ? (
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {visibleData.map((item) => (
-            <article key={item.id} className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)] transition-all duration-300">
+            <article key={item.id} className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
               <header className="relative flex items-center justify-between gap-2">
-                <strong className="min-w-0 truncate text-lg font-bold">{item.name}</strong>
+                <strong className="min-w-0 truncate text-[17px] font-semibold text-[var(--text)]">{item.name}</strong>
                 <button
                   type="button"
-                  onClick={() => openEdit(item)}
+                  onClick={() => void toggleStatus(item)}
+                  disabled={busyId === item.id}
                   className={item.status === 'enabled'
-                    ? 'relative h-6 w-11 rounded-full bg-[var(--accent)] transition-colors'
-                    : 'relative h-6 w-11 rounded-full bg-[var(--line-strong)] transition-colors'}
+                    ? 'relative h-6 w-11 rounded-full bg-[var(--accent)] transition-colors disabled:opacity-60'
+                    : 'relative h-6 w-11 rounded-full bg-[var(--line-strong)] transition-colors disabled:opacity-60'}
                 >
                   <span className={item.status === 'enabled'
                     ? 'absolute right-1 top-1 h-4 w-4 rounded-full bg-white'
@@ -193,64 +212,70 @@ export function ChannelsScreen() {
                 <div className="flex items-center justify-between rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-2.5">
                   <div className="flex items-center gap-3">
                     <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">
-                      ◎
+                      <MessageSquare className="h-4 w-4" />
                     </span>
-                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '请求次数' : 'Requests'}</dt>
+                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '优先级' : 'Priority'}</dt>
                   </div>
-                  <dd className="text-base font-medium">{item.priority.toFixed(2)}</dd>
+                  <dd className="text-sm font-semibold text-[var(--text)]">{item.priority}</dd>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-2.5">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">
-                      $
-                    </span>
-                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '总成本' : 'Total cost'}</dt>
+                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">$</span>
+                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '权重' : 'Weight'}</dt>
                   </div>
-                  <dd className="text-base font-medium">{item.weight.toFixed(2)} $</dd>
+                  <dd className="text-sm font-semibold text-[var(--text)]">{item.weight}</dd>
                 </div>
               </dl>
 
-              <div className="flex items-center justify-between gap-3 text-[11px] text-[var(--muted)]">
-                <p className="min-w-0 flex-1 truncate">{protocolOptions.find((option) => option.value === item.protocol)?.label} · {maskKey(item.api_key)} · {(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(', ')}</p>
-                <div className="flex items-center gap-1.5">
-                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel-soft)] hover:text-[var(--text)]" type="button" onClick={() => openEdit(item)} title={locale === 'zh-CN' ? '编辑' : 'Edit'}>
-                    <SlidersHorizontal size={14} />
-                  </button>
-                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[rgba(217,111,93,0.10)] hover:text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)} title={locale === 'zh-CN' ? '删除' : 'Delete'}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+              <div className="space-y-2 text-[11px] text-[var(--muted)]">
+                <p className="truncate">{protocolOptions.find((option) => option.value === item.protocol)?.label}</p>
+                <p className="truncate">{maskKey(item.api_key)} · {item.base_url}</p>
+                <p className="line-clamp-2">{(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(', ')}</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-1 text-[var(--muted)]">
+                <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel-soft)] hover:text-[var(--text)]" type="button" onClick={() => openEdit(item)} title={locale === 'zh-CN' ? '编辑' : 'Edit'}>
+                  <Pencil size={15} />
+                </button>
+                <button className="rounded-lg p-1.5 transition-colors hover:bg-[rgba(217,111,93,0.10)] hover:text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)} title={locale === 'zh-CN' ? '删除' : 'Delete'}>
+                  <Trash2 size={15} />
+                </button>
               </div>
             </article>
           ))}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-[30px] border border-white/70 bg-[rgba(255,255,255,0.74)] shadow-[0_18px_44px_rgba(24,46,79,0.08)] backdrop-blur-[20px]">
-          <div className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_0.8fr_0.8fr_auto] gap-4 border-b border-white/70 px-5 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+        <div className="overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]">
+          <div className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_1fr_0.8fr_auto] gap-4 border-b border-[var(--line)] px-5 py-3 text-xs font-semibold text-[var(--muted)]">
             <span>{locale === 'zh-CN' ? '渠道' : 'Channel'}</span>
             <span>{locale === 'zh-CN' ? '协议' : 'Protocol'}</span>
             <span>{locale === 'zh-CN' ? '模型规则' : 'Rules'}</span>
             <span>{locale === 'zh-CN' ? '权重 / 优先级' : 'Weight / Priority'}</span>
             <span>{locale === 'zh-CN' ? '操作' : 'Actions'}</span>
           </div>
-          <div className="divide-y divide-white/60">
+          <div className="divide-y divide-[var(--line)]">
             {visibleData.map((item) => (
-              <div key={item.id} className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_0.8fr_0.8fr_auto] gap-4 px-5 py-4 text-sm text-[var(--text)]">
+              <div key={item.id} className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_1fr_0.8fr_auto] gap-4 px-5 py-4 text-sm text-[var(--text)]">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <strong className="truncate">{item.name}</strong>
-                    <span className={item.status === 'enabled' ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-2.5 py-1 text-[11px] text-[var(--success)]' : 'rounded-full bg-[rgba(192,58,76,0.12)] px-2.5 py-1 text-[11px] text-[var(--danger)]'}>{item.status === 'enabled' ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
+                    <span className={item.status === 'enabled' ? 'rounded-lg bg-[rgba(31,157,104,0.12)] px-2 py-1 text-[11px] text-[var(--success)]' : 'rounded-lg bg-[rgba(192,58,76,0.12)] px-2 py-1 text-[11px] text-[var(--danger)]'}>{item.status === 'enabled' ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
                   </div>
                   <p className="mt-2 truncate text-[var(--muted)]">{item.base_url}</p>
                 </div>
                 <span>{protocolOptions.find((option) => option.value === item.protocol)?.label}</span>
-                <span className="text-[var(--muted)]">{(item.model_patterns.length ? item.model_patterns : [item.model_name || 'n/a']).join(', ')}</span>
+                <span className="truncate text-[var(--muted)]">{(item.model_patterns.length ? item.model_patterns : [item.model_name || 'n/a']).join(', ')}</span>
                 <span className="text-[var(--muted)]">{item.weight} / {item.priority}</span>
-                <div className="flex gap-2">
-                  <button className="rounded-full border border-white/80 bg-white px-3 py-2 text-sm shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
-                  <button className="rounded-full border border-[rgba(192,58,76,0.18)] bg-[rgba(192,58,76,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
-                    <Trash2 size={16} />
+                <div className="flex items-center gap-1 justify-end text-[var(--muted)]">
+                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel)] hover:text-[var(--text)]" type="button" onClick={() => void toggleStatus(item)} disabled={busyId === item.id}>
+                    <SlidersHorizontal size={15} />
+                  </button>
+                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel)] hover:text-[var(--text)]" type="button" onClick={() => openEdit(item)}>
+                    <Pencil size={15} />
+                  </button>
+                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[rgba(217,111,93,0.10)] hover:text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </div>
@@ -301,12 +326,12 @@ export function ChannelsScreen() {
               </Field>
             </div>
             <Field label={locale === 'zh-CN' ? '模型正则' : 'Model regex patterns'}>
-              <textarea className={inputClassName() + ' min-h-32'} value={form.model_patterns} onChange={(e) => setForm({ ...form, model_patterns: e.target.value })} placeholder={locale === 'zh-CN' ? '每行一个正则，例如 ^claude-opus-4-6$' : 'One regex per line'} />
+              <textarea className={inputClassName() + ' min-h-28 py-3'} value={form.model_patterns} onChange={(e) => setForm({ ...form, model_patterns: e.target.value })} placeholder={locale === 'zh-CN' ? '每行一个正则，例如 ^claude-opus-4-6$' : 'One regex per line'} />
             </Field>
             {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
             <div className="flex justify-end gap-3">
-              <button className="rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-              <button className="rounded-full bg-[linear-gradient(135deg,#2f6fed,#5a8fff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(47,111,237,0.28)]" type="submit">{editingId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</button>
+              <button className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)]" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
+              <button className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white" type="submit">{editingId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</button>
             </div>
           </form>
         </AppDialogContent>
@@ -319,13 +344,13 @@ export function ChannelsScreen() {
           description={locale === 'zh-CN' ? '删除后该渠道会从路由池中移除，相关模型组需要重新确认。' : 'This removes the channel from routing pools and may affect bound model groups.'}
         >
           <div className="grid gap-5">
-            <div className="rounded-[24px] border border-white/70 bg-[rgba(247,249,253,0.86)] p-4">
+            <div className="rounded-2xl bg-[var(--panel)] p-4">
               <strong>{deleteTarget?.name}</strong>
               <p className="mt-2 text-sm text-[var(--muted)]">{deleteTarget?.base_url}</p>
             </div>
             <div className="flex justify-end gap-3">
-              <button className="rounded-full border border-white/80 bg-white px-4 py-2.5 text-sm font-medium text-[var(--text)] shadow-[0_10px_24px_rgba(24,46,79,0.08)]" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-              <button className="rounded-full bg-[linear-gradient(135deg,#e24f66,#c03a4c)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_36px_rgba(192,58,76,0.24)]" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</button>
+              <button className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)]" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
+              <button className="rounded-xl bg-[var(--danger)] px-4 py-2.5 text-sm font-medium text-white" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</button>
             </div>
           </div>
         </AppDialogContent>
