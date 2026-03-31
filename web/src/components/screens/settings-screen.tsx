@@ -9,35 +9,45 @@ import { useI18n } from '@/lib/i18n'
 type Draft = { key: string; value: string }
 
 function inputClassName() {
-  return 'w-full rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)] focus:bg-[var(--panel-strong)]'
+  return 'h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
 }
 
-function SettingSection({
+function SettingCard({
   icon: Icon,
   title,
-  description,
   children,
   className = ''
 }: {
   icon: React.ComponentType<{ className?: string }>
   title: string
-  description?: string
   children: React.ReactNode
   className?: string
 }) {
   return (
-    <section className={'mb-4 break-inside-avoid rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)] ' + className}>
-      <div className="flex items-start gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[rgba(97,168,102,0.14)] text-[var(--accent)]">
-          <Icon className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold text-[var(--text)]">{title}</h3>
-          {description ? <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{description}</p> : null}
-        </div>
-      </div>
+    <section className={'break-inside-avoid rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)] ' + className}>
+      <h2 className="flex items-center gap-2 text-base font-semibold text-[var(--text)]">
+        <Icon className="h-4 w-4 text-[var(--muted)]" />
+        {title}
+      </h2>
       <div className="mt-5">{children}</div>
     </section>
+  )
+}
+
+function SettingRow({
+  label,
+  value,
+  muted = false
+}: {
+  label: string
+  value: React.ReactNode
+  muted?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-sm font-medium text-[var(--text)]">{label}</span>
+      <span className={muted ? 'text-sm text-[var(--muted)]' : 'text-sm text-[var(--text)]'}>{value}</span>
+    </div>
   )
 }
 
@@ -55,16 +65,16 @@ function KVRow({
   locale: 'zh-CN' | 'en-US'
 }) {
   return (
-    <div className="grid gap-3 rounded-3xl border border-[var(--line)] bg-[var(--panel)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_auto]">
+    <div className="grid gap-2 rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-3 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)_auto]">
       <input className={inputClassName()} placeholder="key" value={item.key} onChange={(e) => onChange(index, { key: e.target.value })} />
       <input className={inputClassName()} placeholder="value" value={item.value} onChange={(e) => onChange(index, { value: e.target.value })} />
       <button
-        className="inline-flex h-[46px] w-[46px] items-center justify-center rounded-2xl border border-[rgba(217,111,93,0.18)] bg-[rgba(217,111,93,0.08)] text-[var(--danger)] transition hover:bg-[rgba(217,111,93,0.12)]"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] text-[var(--muted)] transition-colors hover:text-[var(--danger)]"
         type="button"
         onClick={() => onRemove(index)}
         title={locale === 'zh-CN' ? '删除配置' : 'Delete setting'}
       >
-        <Trash2 size={16} />
+        <Trash2 size={15} />
       </button>
     </div>
   )
@@ -84,7 +94,7 @@ export function SettingsScreen() {
 
   const nonEmptyCount = useMemo(() => drafts.filter((item) => item.key.trim() || item.value.trim()).length, [drafts])
   const blankCount = drafts.length - nonEmptyCount
-  const previewKeys = useMemo(() => drafts.filter((item) => item.key.trim()).slice(0, 6), [drafts])
+  const previewKeys = useMemo(() => drafts.filter((item) => item.key.trim()).slice(0, 8), [drafts])
 
   function updateRow(index: number, patch: Partial<Draft>) {
     setDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))
@@ -113,171 +123,131 @@ export function SettingsScreen() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] text-[var(--text)]"
-            type="button"
-            onClick={() => void refresh()}
-            title={locale === 'zh-CN' ? '刷新' : 'Refresh'}
-          >
-            <ServerCog size={16} />
-          </button>
-          <button
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)] text-white"
-            type="button"
-            onClick={() => setDrafts((current) => [...current, { key: '', value: '' }])}
-            title={locale === 'zh-CN' ? '新增配置' : 'Add setting'}
-          >
-            <Plus size={16} />
-          </button>
+        <button
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+          type="button"
+          onClick={() => void refresh()}
+          title={locale === 'zh-CN' ? '刷新' : 'Refresh'}
+        >
+          <ServerCog size={16} />
+        </button>
+        <button
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+          type="button"
+          onClick={() => setDrafts((current) => [...current, { key: '', value: '' }])}
+          title={locale === 'zh-CN' ? '新增配置' : 'Add setting'}
+        >
+          <Plus size={16} />
+        </button>
       </div>
 
-      <div className="columns-1 gap-4 md:columns-2">
-        <SettingSection
-          icon={ShieldCheck}
-          title={locale === 'zh-CN' ? '系统信息' : 'System info'}
-          description={locale === 'zh-CN' ? '当前后台的基础运行形态。' : 'Basic runtime characteristics of the current admin.'}
-        >
-          <div className="grid gap-3 text-sm text-[var(--text)]">
-            <div className="flex items-center justify-between rounded-2xl bg-[var(--panel)] px-4 py-3">
-              <span className="text-[var(--muted)]">{locale === 'zh-CN' ? '数据库' : 'Database'}</span>
-              <strong>SQLite</strong>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl bg-[var(--panel)] px-4 py-3">
-              <span className="text-[var(--muted)]">ORM</span>
-              <strong>SQLAlchemy</strong>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl bg-[var(--panel)] px-4 py-3">
-              <span className="text-[var(--muted)]">{locale === 'zh-CN' ? '支持协议' : 'Protocols'}</span>
-              <strong>OpenAI / Anthropic / Gemini</strong>
-            </div>
+      <div className="columns-1 gap-4 md:columns-2 [&>*]:mb-4">
+        <SettingCard icon={ShieldCheck} title={locale === 'zh-CN' ? '系统信息' : 'System info'}>
+          <div className="space-y-4">
+            <SettingRow label={locale === 'zh-CN' ? '数据库' : 'Database'} value="SQLite" muted />
+            <SettingRow label="ORM" value="SQLAlchemy" muted />
+            <SettingRow label={locale === 'zh-CN' ? '支持协议' : 'Protocols'} value="OpenAI / Anthropic / Gemini" muted />
           </div>
-        </SettingSection>
+        </SettingCard>
 
-        <SettingSection
-          icon={Languages}
-          title={locale === 'zh-CN' ? '界面偏好' : 'Appearance'}
-          description={locale === 'zh-CN' ? '默认中文，也可以在这里快速切换管理台语言。' : 'Chinese is the default, and you can switch the admin language here.'}
-        >
-          <div className="grid gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setLocale('zh-CN')}
-                className={locale === 'zh-CN'
-                  ? 'rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-medium text-white'
-                  : 'rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--text)]'}
-              >
-                简体中文
-              </button>
-              <button
-                type="button"
-                onClick={() => setLocale('en-US')}
-                className={locale === 'en-US'
-                  ? 'rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-medium text-white'
-                  : 'rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--text)]'}
-              >
-                English
-              </button>
-            </div>
-            <div className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
+        <SettingCard icon={Languages} title={locale === 'zh-CN' ? '外观' : 'Appearance'}>
+          <div className="space-y-4">
+            <SettingRow
+              label={locale === 'zh-CN' ? '语言' : 'Language'}
+              value={
+                <div className="inline-flex rounded-xl border border-[var(--line)] bg-[var(--panel)] p-1">
+                  <button
+                    type="button"
+                    onClick={() => setLocale('zh-CN')}
+                    className={locale === 'zh-CN' ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)]'}
+                  >
+                    简体中文
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLocale('en-US')}
+                    className={locale === 'en-US' ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)]'}
+                  >
+                    English
+                  </button>
+                </div>
+              }
+            />
+            <p className="text-xs leading-6 text-[var(--muted)]">
               {locale === 'zh-CN'
-                ? '语言偏好会保存在当前浏览器的本地存储中。'
-                : 'The language preference is stored in local browser storage.'}
+                ? '语言偏好会保存在当前浏览器本地。'
+                : 'Language preference is stored in local browser storage.'}
+            </p>
+          </div>
+        </SettingCard>
+
+        <SettingCard icon={Database} title={locale === 'zh-CN' ? '配置概览' : 'Config overview'}>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '总配置项' : 'Total items'}</p>
+              <strong className="mt-2 block text-2xl text-[var(--text)]">{drafts.length}</strong>
+            </div>
+            <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '有效配置' : 'Non-empty'}</p>
+              <strong className="mt-2 block text-2xl text-[var(--text)]">{nonEmptyCount}</strong>
+            </div>
+            <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '空白行' : 'Blank rows'}</p>
+              <strong className="mt-2 block text-2xl text-[var(--text)]">{blankCount}</strong>
+            </div>
+            <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '加载状态' : 'Load state'}</p>
+              <strong className="mt-2 block text-sm text-[var(--text)]">{isLoading ? (locale === 'zh-CN' ? '加载中' : 'Loading') : (locale === 'zh-CN' ? '已就绪' : 'Ready')}</strong>
             </div>
           </div>
-        </SettingSection>
+        </SettingCard>
 
-        <SettingSection
-          icon={Database}
-          title={locale === 'zh-CN' ? '配置概览' : 'Config overview'}
-          description={locale === 'zh-CN' ? '快速查看当前 key/value 配置规模。' : 'A quick view of the current key/value configuration set.'}
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl bg-[var(--panel)] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">{locale === 'zh-CN' ? '总配置项' : 'Total items'}</p>
-              <strong className="mt-3 block text-[28px] text-[var(--text)]">{drafts.length}</strong>
-            </div>
-            <div className="rounded-2xl bg-[var(--panel)] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">{locale === 'zh-CN' ? '有效配置' : 'Non-empty'}</p>
-              <strong className="mt-3 block text-[28px] text-[var(--text)]">{nonEmptyCount}</strong>
-            </div>
-            <div className="rounded-2xl bg-[var(--panel)] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">{locale === 'zh-CN' ? '空白行' : 'Blank rows'}</p>
-              <strong className="mt-3 block text-[28px] text-[var(--text)]">{blankCount}</strong>
-            </div>
-            <div className="rounded-2xl bg-[var(--panel)] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">{locale === 'zh-CN' ? '加载状态' : 'Load state'}</p>
-              <strong className="mt-3 block text-[18px] text-[var(--text)]">{isLoading ? (locale === 'zh-CN' ? '加载中' : 'Loading') : (locale === 'zh-CN' ? '已就绪' : 'Ready')}</strong>
-            </div>
-          </div>
-        </SettingSection>
-
-        <SettingSection
-          icon={Globe2}
-          title={locale === 'zh-CN' ? '路由规则说明' : 'Routing notes'}
-          description={locale === 'zh-CN' ? '当前聚合路由采用显式模型组优先，然后回退到渠道正则匹配。' : 'The gateway routes by exact model-group name first, then falls back to provider regex matching.'}
-        >
+        <SettingCard icon={Globe2} title={locale === 'zh-CN' ? '路由规则' : 'Routing'}>
           <div className="space-y-3 text-sm leading-6 text-[var(--muted)]">
-            <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
-              {locale === 'zh-CN'
-                ? '1. 先按模型组名称精确匹配，命中后使用该分组内的轮询、加权或故障转移策略。'
-                : '1. Match the requested model against model-group names exactly, then use the configured strategy inside that group.'}
-            </div>
-            <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
-              {locale === 'zh-CN'
-                ? '2. 若没有命中模型组，再根据渠道上的正则规则顺序回退匹配，适合 `claude-opus-*` 这类前缀模型。'
-                : '2. If no group matches, fall back to provider-side regex rules, which works well for patterns like `claude-opus-*`.'}
-            </div>
+            <p>{locale === 'zh-CN' ? '按模型组名精确匹配优先；未命中时，再使用渠道的正则规则回退匹配。' : 'Exact model-group match is used first. If it misses, provider regex rules are used as fallback.'}</p>
+            <p>{locale === 'zh-CN' ? '适合把 `claude-opus-4-6` 这类命名直接映射到目标渠道。' : 'This works well for names such as `claude-opus-4-6` mapped by provider patterns.'}</p>
           </div>
-        </SettingSection>
+        </SettingCard>
 
-        <SettingSection
-          icon={ServerCog}
-          title={locale === 'zh-CN' ? '配置键预览' : 'Key preview'}
-          description={locale === 'zh-CN' ? '这里显示当前已保存配置中的前几个键。' : 'This previews the first few saved keys from the current configuration set.'}
-        >
+        <SettingCard icon={ServerCog} title={locale === 'zh-CN' ? '配置键' : 'Config keys'}>
           <div className="flex flex-wrap gap-2">
             {previewKeys.length ? previewKeys.map((item) => (
-              <span key={item.key} className="rounded-xl bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text)]">
+              <span key={item.key} className="rounded-xl bg-[var(--panel)] px-3 py-2 text-xs text-[var(--text)]">
                 {item.key}
               </span>
             )) : (
-              <div className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-                {locale === 'zh-CN' ? '当前还没有已保存的配置键。' : 'No saved configuration keys yet.'}
-              </div>
+              <span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前没有已保存的配置键。' : 'No saved configuration keys yet.'}</span>
             )}
           </div>
-        </SettingSection>
+        </SettingCard>
       </div>
 
-      <form className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]" onSubmit={submit}>
+      <form className="rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]" onSubmit={submit}>
         <div className="flex items-center justify-between gap-4">
           <div>
             <h3 className="text-base font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '配置列表' : 'Configuration list'}</h3>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              {locale === 'zh-CN'
-                ? '按 key/value 直接维护后端配置，保存时会过滤空 key。'
-                : 'Edit backend configuration directly as key/value pairs. Empty keys are filtered on save.'}
+              {locale === 'zh-CN' ? '按 key/value 维护系统配置，空 key 不会被保存。' : 'Maintain system settings as key/value pairs. Empty keys are filtered before save.'}
             </p>
           </div>
           <button
-            className="inline-flex h-11 items-center gap-2 rounded-full bg-[var(--accent)] px-4 text-sm font-medium text-white"
+            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] transition-colors hover:bg-[var(--panel-soft)]"
             type="button"
             onClick={() => setDrafts((current) => [...current, { key: '', value: '' }])}
           >
-            <Plus size={16} />
+            <Plus size={15} />
             {locale === 'zh-CN' ? '新增' : 'Add'}
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3">
+        <div className="mt-4 grid gap-3">
           {drafts.map((item, index) => (
             <KVRow key={item.key + '-' + index} item={item} index={index} onChange={updateRow} onRemove={removeRow} locale={locale} />
           ))}
           {!isLoading && drafts.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-[var(--line)] bg-[var(--panel)] px-5 py-10 text-center text-sm text-[var(--muted)]">
+            <div className="rounded-2xl border border-dashed border-[var(--line)] bg-[var(--panel)] px-5 py-8 text-center text-sm text-[var(--muted)]">
               {locale === 'zh-CN' ? '还没有配置项，可以先新增一行。' : 'No settings yet. Add your first row.'}
             </div>
           ) : null}
@@ -286,9 +256,9 @@ export function SettingsScreen() {
         {error ? <p className="mt-4 text-sm text-[var(--danger)]">{error}</p> : null}
         {saved ? <p className="mt-4 text-sm text-[var(--success)]">{saved}</p> : null}
 
-        <div className="mt-5 flex justify-end">
-          <button className="inline-flex h-11 items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-sm font-medium text-white" type="submit">
-            <Save size={16} />
+        <div className="mt-4 flex justify-end">
+          <button className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white" type="submit">
+            <Save size={15} />
             {locale === 'zh-CN' ? '保存系统配置' : 'Save settings'}
           </button>
         </div>

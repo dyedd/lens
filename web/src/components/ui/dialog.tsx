@@ -19,10 +19,10 @@ export function AppDialogContent({
 }) {
   return (
     <Dialog.Portal>
-      <Dialog.Overlay className="fixed inset-0 z-50 bg-[rgba(18,24,38,0.28)] backdrop-blur-[10px] data-[state=open]:animate-[fadeIn_.18s_ease-out]" />
+      <Dialog.Overlay className="fixed inset-0 z-50 bg-[rgba(34,31,25,0.22)] data-[state=open]:animate-[fadeIn_.18s_ease-out]" />
       <Dialog.Content
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 w-[calc(100vw-1.5rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-[32px] border border-white/60 bg-[rgba(255,255,255,0.88)] p-6 shadow-[0_30px_80px_rgba(31,41,55,0.18)] backdrop-blur-[26px] outline-none data-[state=open]:animate-[dialogIn_.22s_ease-out]',
+          'fixed left-1/2 top-1/2 z-50 w-[calc(100vw-1.5rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-6 shadow-[0_20px_48px_rgba(63,53,40,0.12)] outline-none data-[state=open]:animate-[dialogIn_.22s_ease-out]',
           className
         )}
       >
@@ -31,7 +31,7 @@ export function AppDialogContent({
             <Dialog.Title className="text-xl font-semibold text-[var(--text)]">{title}</Dialog.Title>
             {description ? <Dialog.Description className="mt-2 text-sm leading-6 text-[var(--muted)]">{description}</Dialog.Description> : null}
           </div>
-          <Dialog.Close className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line-strong)] bg-white/72 text-[var(--muted)] transition hover:bg-white">
+          <Dialog.Close className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel)] text-[var(--muted)] transition hover:text-[var(--text)]">
             <X size={18} />
           </Dialog.Close>
         </div>

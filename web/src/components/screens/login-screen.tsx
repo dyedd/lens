@@ -1,6 +1,7 @@
 "use client"
 
-import { Globe2, ShieldCheck } from 'lucide-react'
+import { Globe2, LockKeyhole, User } from 'lucide-react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
 import { ApiError, apiRequest } from '@/lib/api'
@@ -11,6 +12,10 @@ type LoginResponse = {
   access_token: string
   token_type: string
   expires_in: number
+}
+
+function inputClassName() {
+  return 'h-11 w-full rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
 }
 
 export function LoginScreen() {
@@ -41,65 +46,77 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(47,111,237,0.18),transparent_22%),radial-gradient(circle_at_80%_10%,rgba(19,162,168,0.14),transparent_22%)]" />
-      <div className="relative grid w-full max-w-6xl gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-[36px] border border-[var(--line)] bg-[linear-gradient(180deg,rgba(20,47,89,0.92),rgba(11,26,52,0.96))] p-8 text-white shadow-[var(--shadow-lg)] md:p-10">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.28em] text-white/60">Lens Gateway</p>
-              <h1 className="mt-4 max-w-xl text-4xl font-semibold leading-tight md:text-5xl">
-                {locale === 'zh-CN' ? '统一管理渠道、模型组与网关调用。' : 'Run your provider channels and model groups from one control plane.'}
-              </h1>
+    <div className="flex min-h-screen items-center justify-center px-6 py-10">
+      <div className="w-full max-w-sm space-y-7">
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 text-sm text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+            onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
+          >
+            <Globe2 size={15} />
+            <span>{locale === 'zh-CN' ? 'English' : '中文'}</span>
+          </button>
+        </div>
+
+        <header className="flex flex-col items-center gap-3 text-center">
+          <Image src="/logo.svg" alt="Lens" width={52} height={52} className="h-13 w-13" />
+          <div className="space-y-1">
+            <h1 className="text-[28px] font-bold tracking-tight text-[var(--text)]">Lens</h1>
+            <p className="text-sm text-[var(--muted)]">{t.loginSubtitle}</p>
+          </div>
+        </header>
+
+        <form onSubmit={submit} className="space-y-5 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-6 shadow-[var(--shadow-sm)]">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-[var(--text)]">{t.signIn}</h2>
+            <p className="text-sm text-[var(--muted)]">{t.loginTitle}</p>
+          </div>
+
+          <label className="grid gap-2">
+            <span className="text-xs font-medium text-[var(--muted)]">{t.username}</span>
+            <div className="relative">
+              <User className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
+              <input
+                className={inputClassName() + ' pl-10'}
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder={t.username}
+                autoComplete="username"
+              />
             </div>
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-white/80 transition hover:bg-white/16"
-              onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
-            >
-              <Globe2 size={16} />
-              <span>{locale === 'zh-CN' ? 'English' : '中文'}</span>
-            </button>
+          </label>
+
+          <label className="grid gap-2">
+            <span className="text-xs font-medium text-[var(--muted)]">{t.password}</span>
+            <div className="relative">
+              <LockKeyhole className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
+              <input
+                className={inputClassName() + ' pl-10'}
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={t.password}
+                autoComplete="current-password"
+              />
+            </div>
+          </label>
+
+          {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
+
+          <button
+            className="inline-flex h-11 w-full items-center justify-center rounded-2xl bg-[var(--accent)] px-4 text-sm font-medium text-white transition-colors hover:opacity-92 disabled:opacity-60"
+            type="submit"
+            disabled={submitting}
+          >
+            {submitting ? t.signingIn : t.signIn}
+          </button>
+
+          <div className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-xs leading-6 text-[var(--muted)]">
+            <div>OpenAI Chat / OpenAI Responses / Anthropic / Gemini</div>
+            <div>{locale === 'zh-CN' ? '默认账号：admin / admin' : 'Default account: admin / admin'}</div>
           </div>
-          <p className="mt-6 max-w-xl text-base leading-7 text-white/70">
-            {locale === 'zh-CN'
-              ? '默认中文，支持中英切换。后台聚合 OpenAI Chat、OpenAI Responses、Anthropic、Gemini 四类原生协议，并提供渠道管理、模型组路由、请求观测与密钥控制。'
-              : 'Chinese by default with English switch. Manage OpenAI Chat, OpenAI Responses, Anthropic, and Gemini native channels with routing, keys, and request observability.'}
-          </p>
-          <div className="mt-10 grid gap-4 sm:grid-cols-3">
-            {[
-              locale === 'zh-CN' ? ['渠道池', '25 条已导入'] : ['Channels', '25 imported'],
-              locale === 'zh-CN' ? ['模型组', '8 组已导入'] : ['Groups', '8 imported'],
-              locale === 'zh-CN' ? ['协议族', '4 类原生协议'] : ['Protocols', '4 native families']
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-3xl border border-white/10 bg-white/8 p-5 backdrop-blur">
-                <p className="text-sm text-white/55">{label}</p>
-                <strong className="mt-3 block text-2xl text-white">{value}</strong>
-              </div>
-            ))}
-          </div>
-        </section>
-        <section className="rounded-[36px] border border-[var(--line)] bg-[var(--panel)] p-8 shadow-[var(--shadow-lg)] backdrop-blur md:p-10">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-soft)] px-4 py-2 text-sm text-[var(--accent)]">
-            <ShieldCheck size={16} />
-            <span>{t.loginSubtitle}</span>
-          </div>
-          <h2 className="mt-6 text-3xl font-semibold leading-tight">{t.loginTitle}</h2>
-          <form className="mt-10 grid gap-4" onSubmit={submit}>
-            <label className="grid gap-2">
-              <span className="text-sm text-[var(--muted)]">{t.username}</span>
-              <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3 shadow-[var(--shadow-sm)] outline-none transition focus:border-[var(--accent)]" value={username} onChange={(event) => setUsername(event.target.value)} placeholder={t.username} />
-            </label>
-            <label className="grid gap-2">
-              <span className="text-sm text-[var(--muted)]">{t.password}</span>
-              <input className="rounded-2xl border border-[var(--line-strong)] bg-white px-4 py-3 shadow-[var(--shadow-sm)] outline-none transition focus:border-[var(--accent)]" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t.password} />
-            </label>
-            <button className="mt-2 rounded-2xl bg-[linear-gradient(135deg,#2f6fed,#1958d7)] px-5 py-3 text-white shadow-[0_16px_30px_rgba(47,111,237,0.28)] transition hover:translate-y-[-1px] disabled:opacity-60" type="submit" disabled={submitting}>
-              {submitting ? t.signingIn : t.signIn}
-            </button>
-            {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
-          </form>
-        </section>
+        </form>
       </div>
     </div>
   )
