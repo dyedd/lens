@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { MessageSquare, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { DollarSign, MessageSquare, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { ApiError, Provider, ProtocolKind, ProviderPayload, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
@@ -58,10 +58,6 @@ function toPayload(form: FormState): ProviderPayload {
     headers: {},
     model_patterns: form.model_patterns.split('\n').map((item) => item.trim()).filter(Boolean)
   }
-}
-
-function maskKey(value: string) {
-  return value.length > 10 ? value.slice(0, 6) + '...' + value.slice(-4) : value || 'n/a'
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -192,20 +188,28 @@ export function ChannelsScreen() {
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {visibleData.map((item) => (
             <article key={item.id} className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
-              <header className="relative flex items-center justify-between gap-2">
+              <header className="relative flex items-center justify-between gap-3">
                 <strong className="min-w-0 truncate text-[17px] font-semibold text-[var(--text)]">{item.name}</strong>
-                <button
-                  type="button"
-                  onClick={() => void toggleStatus(item)}
-                  disabled={busyId === item.id}
-                  className={item.status === 'enabled'
-                    ? 'relative h-6 w-11 rounded-full bg-[var(--accent)] transition-colors disabled:opacity-60'
-                    : 'relative h-6 w-11 rounded-full bg-[var(--line-strong)] transition-colors disabled:opacity-60'}
-                >
-                  <span className={item.status === 'enabled'
-                    ? 'absolute right-1 top-1 h-4 w-4 rounded-full bg-white'
-                    : 'absolute left-1 top-1 h-4 w-4 rounded-full bg-white'} />
-                </button>
+                <div className="flex items-center gap-1 text-[var(--muted)]">
+                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel-soft)] hover:text-[var(--text)]" type="button" onClick={() => openEdit(item)} title={locale === 'zh-CN' ? '编辑' : 'Edit'}>
+                    <Pencil size={15} />
+                  </button>
+                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[rgba(217,111,93,0.10)] hover:text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)} title={locale === 'zh-CN' ? '删除' : 'Delete'}>
+                    <Trash2 size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void toggleStatus(item)}
+                    disabled={busyId === item.id}
+                    className={item.status === 'enabled'
+                      ? 'relative h-6 w-11 rounded-full bg-[var(--accent)] transition-colors disabled:opacity-60'
+                      : 'relative h-6 w-11 rounded-full bg-[var(--line-strong)] transition-colors disabled:opacity-60'}
+                  >
+                    <span className={item.status === 'enabled'
+                      ? 'absolute right-1 top-1 h-4 w-4 rounded-full bg-white'
+                      : 'absolute left-1 top-1 h-4 w-4 rounded-full bg-white'} />
+                  </button>
+                </div>
               </header>
 
               <dl className="grid grid-cols-1 gap-3">
@@ -214,68 +218,59 @@ export function ChannelsScreen() {
                     <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">
                       <MessageSquare className="h-4 w-4" />
                     </span>
-                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '优先级' : 'Priority'}</dt>
+                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '请求次数' : 'Requests'}</dt>
                   </div>
-                  <dd className="text-sm font-semibold text-[var(--text)]">{item.priority}</dd>
+                  <dd className="text-sm font-semibold text-[var(--text)]">{item.priority.toFixed(2)}</dd>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-2.5">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">$</span>
-                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '权重' : 'Weight'}</dt>
+                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">
+                      <DollarSign className="h-4 w-4" />
+                    </span>
+                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '总成本' : 'Total cost'}</dt>
                   </div>
-                  <dd className="text-sm font-semibold text-[var(--text)]">{item.weight}</dd>
+                  <dd className="text-sm font-semibold text-[var(--text)]">{item.weight.toFixed(2)} $</dd>
                 </div>
               </dl>
 
-              <div className="space-y-2 text-[11px] text-[var(--muted)]">
-                <p className="truncate">{protocolOptions.find((option) => option.value === item.protocol)?.label}</p>
-                <p className="truncate">{maskKey(item.api_key)} · {item.base_url}</p>
-                <p className="line-clamp-2">{(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(', ')}</p>
-              </div>
-
-              <div className="flex items-center justify-end gap-1 text-[var(--muted)]">
-                <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel-soft)] hover:text-[var(--text)]" type="button" onClick={() => openEdit(item)} title={locale === 'zh-CN' ? '编辑' : 'Edit'}>
-                  <Pencil size={15} />
-                </button>
-                <button className="rounded-lg p-1.5 transition-colors hover:bg-[rgba(217,111,93,0.10)] hover:text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)} title={locale === 'zh-CN' ? '删除' : 'Delete'}>
-                  <Trash2 size={15} />
-                </button>
-              </div>
             </article>
           ))}
         </div>
       ) : (
         <div className="overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]">
-          <div className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_1fr_0.8fr_auto] gap-4 border-b border-[var(--line)] px-5 py-3 text-xs font-semibold text-[var(--muted)]">
+          <div className="grid grid-cols-[minmax(0,1.4fr)_0.8fr_0.8fr_auto] gap-4 border-b border-[var(--line)] px-5 py-3 text-xs font-semibold text-[var(--muted)]">
             <span>{locale === 'zh-CN' ? '渠道' : 'Channel'}</span>
-            <span>{locale === 'zh-CN' ? '协议' : 'Protocol'}</span>
-            <span>{locale === 'zh-CN' ? '模型规则' : 'Rules'}</span>
-            <span>{locale === 'zh-CN' ? '权重 / 优先级' : 'Weight / Priority'}</span>
+            <span>{locale === 'zh-CN' ? '请求次数' : 'Requests'}</span>
+            <span>{locale === 'zh-CN' ? '总成本' : 'Total cost'}</span>
             <span>{locale === 'zh-CN' ? '操作' : 'Actions'}</span>
           </div>
           <div className="divide-y divide-[var(--line)]">
             {visibleData.map((item) => (
-              <div key={item.id} className="grid grid-cols-[minmax(0,1.2fr)_0.9fr_1fr_0.8fr_auto] gap-4 px-5 py-4 text-sm text-[var(--text)]">
+              <div key={item.id} className="grid grid-cols-[minmax(0,1.4fr)_0.8fr_0.8fr_auto] gap-4 px-5 py-4 text-sm text-[var(--text)]">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <strong className="truncate">{item.name}</strong>
-                    <span className={item.status === 'enabled' ? 'rounded-lg bg-[rgba(31,157,104,0.12)] px-2 py-1 text-[11px] text-[var(--success)]' : 'rounded-lg bg-[rgba(192,58,76,0.12)] px-2 py-1 text-[11px] text-[var(--danger)]'}>{item.status === 'enabled' ? (locale === 'zh-CN' ? '启用' : 'Enabled') : (locale === 'zh-CN' ? '停用' : 'Disabled')}</span>
-                  </div>
-                  <p className="mt-2 truncate text-[var(--muted)]">{item.base_url}</p>
+                  <strong className="truncate">{item.name}</strong>
                 </div>
-                <span>{protocolOptions.find((option) => option.value === item.protocol)?.label}</span>
-                <span className="truncate text-[var(--muted)]">{(item.model_patterns.length ? item.model_patterns : [item.model_name || 'n/a']).join(', ')}</span>
-                <span className="text-[var(--muted)]">{item.weight} / {item.priority}</span>
+                <span className="text-[var(--muted)]">{item.priority.toFixed(2)}</span>
+                <span className="text-[var(--muted)]">{item.weight.toFixed(2)} $</span>
                 <div className="flex items-center gap-1 justify-end text-[var(--muted)]">
-                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel)] hover:text-[var(--text)]" type="button" onClick={() => void toggleStatus(item)} disabled={busyId === item.id}>
-                    <SlidersHorizontal size={15} />
-                  </button>
                   <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel)] hover:text-[var(--text)]" type="button" onClick={() => openEdit(item)}>
                     <Pencil size={15} />
                   </button>
                   <button className="rounded-lg p-1.5 transition-colors hover:bg-[rgba(217,111,93,0.10)] hover:text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
                     <Trash2 size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void toggleStatus(item)}
+                    disabled={busyId === item.id}
+                    className={item.status === 'enabled'
+                      ? 'relative h-6 w-11 rounded-full bg-[var(--accent)] transition-colors disabled:opacity-60'
+                      : 'relative h-6 w-11 rounded-full bg-[var(--line-strong)] transition-colors disabled:opacity-60'}
+                  >
+                    <span className={item.status === 'enabled'
+                      ? 'absolute right-1 top-1 h-4 w-4 rounded-full bg-white'
+                      : 'absolute left-1 top-1 h-4 w-4 rounded-full bg-white'} />
                   </button>
                 </div>
               </div>

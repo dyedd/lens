@@ -60,10 +60,7 @@ export function DashboardShell({
           <header className="my-6 flex flex-none items-center gap-x-2 px-2">
             <Image src="/logo.svg" alt="Lens" width={48} height={48} className="h-12 w-12" />
             <div className="min-w-0 flex-1 overflow-hidden">
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted)]">{t.appName}</p>
-                <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--text)]">{items.find((item) => item.key === activeView)?.label ?? t.dashboard}</h1>
-              </div>
+              <h1 className="text-3xl font-bold tracking-tight text-[var(--text)]">{items.find((item) => item.key === activeView)?.label ?? t.dashboard}</h1>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <button

@@ -59,19 +59,12 @@ export function LoginScreen() {
           </button>
         </div>
 
-        <header className="flex flex-col items-center gap-3 text-center">
-          <Image src="/logo.svg" alt="Lens" width={52} height={52} className="h-13 w-13" />
-          <div className="space-y-1">
-            <h1 className="text-[28px] font-bold tracking-tight text-[var(--text)]">Lens</h1>
-            <p className="text-sm text-[var(--muted)]">{t.loginSubtitle}</p>
-          </div>
+        <header className="flex flex-col items-center gap-2 text-center">
+          <Image src="/logo.svg" alt="Lens" width={72} height={72} className="h-18 w-18" />
         </header>
 
         <form onSubmit={submit} className="space-y-5 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-6 shadow-[var(--shadow-sm)]">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold text-[var(--text)]">{t.signIn}</h2>
-            <p className="text-sm text-[var(--muted)]">{t.loginTitle}</p>
-          </div>
+          <h2 className="text-base font-semibold text-[var(--text)]">{t.signIn}</h2>
 
           <label className="grid gap-2">
             <span className="text-xs font-medium text-[var(--muted)]">{t.username}</span>
@@ -111,11 +104,6 @@ export function LoginScreen() {
           >
             {submitting ? t.signingIn : t.signIn}
           </button>
-
-          <div className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-xs leading-6 text-[var(--muted)]">
-            <div>OpenAI Chat / OpenAI Responses / Anthropic / Gemini</div>
-            <div>{locale === 'zh-CN' ? '默认账号：admin / admin' : 'Default account: admin / admin'}</div>
-          </div>
         </form>
       </div>
     </div>
