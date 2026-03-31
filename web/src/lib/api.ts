@@ -48,18 +48,6 @@ export type ModelGroupPayload = {
   enabled: boolean
 }
 
-export type GatewayKey = {
-  id: string
-  name: string
-  secret: string
-  enabled: boolean
-}
-
-export type GatewayKeyPayload = {
-  name: string
-  enabled: boolean
-}
-
 export type SettingItem = {
   key: string
   value: string

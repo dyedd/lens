@@ -60,7 +60,7 @@ export function LoginScreen() {
         </div>
 
         <header className="flex flex-col items-center gap-2 text-center">
-          <Image src="/logo.svg" alt="Lens" width={72} height={72} className="h-18 w-18" />
+          <Image src="/logo.svg" alt="logo" width={108} height={108} className="h-24 w-24" />
         </header>
 
         <form onSubmit={submit} className="space-y-5 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-6 shadow-[var(--shadow-sm)]">

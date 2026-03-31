@@ -16,7 +16,6 @@ type Copy = {
   requests: string
   channels: string
   groups: string
-  keys: string
   settings: string
   signOut: string
   overview: string
@@ -26,9 +25,9 @@ type Copy = {
 
 const messages: Record<Locale, Copy> = {
   'zh-CN': {
-    appName: 'Lens 网关控制台',
-    loginTitle: '统一管理渠道、模型组、网关密钥与系统配置',
-    loginSubtitle: '多协议聚合管理后台',
+    appName: '',
+    loginTitle: '统一管理渠道、模型组与系统配置',
+    loginSubtitle: 'OpenAI Chat / OpenAI Responses / Anthropic / Gemini',
     username: '用户名',
     password: '密码',
     signIn: '登录',
@@ -37,7 +36,6 @@ const messages: Record<Locale, Copy> = {
     requests: '请求日志',
     channels: '渠道管理',
     groups: '模型组',
-    keys: '网关密钥',
     settings: '系统设置',
     signOut: '退出登录',
     overview: '总览',
@@ -45,9 +43,9 @@ const messages: Record<Locale, Copy> = {
     refresh: '刷新'
   },
   'en-US': {
-    appName: 'Lens Gateway Console',
-    loginTitle: 'Manage channels, model groups, gateway keys, and system settings',
-    loginSubtitle: 'Multi-protocol gateway admin',
+    appName: '',
+    loginTitle: 'Manage channels, model groups, and system settings',
+    loginSubtitle: 'OpenAI Chat / OpenAI Responses / Anthropic / Gemini',
     username: 'Username',
     password: 'Password',
     signIn: 'Sign in',
@@ -56,7 +54,6 @@ const messages: Record<Locale, Copy> = {
     requests: 'Requests',
     channels: 'Channels',
     groups: 'Groups',
-    keys: 'Gateway Keys',
     settings: 'Settings',
     signOut: 'Sign out',
     overview: 'Overview',

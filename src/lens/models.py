@@ -178,29 +178,6 @@ class ModelGroupUpdate(BaseModel):
     enabled: bool | None = None
 
 
-class GatewayKey(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    name: str
-    secret: str
-    enabled: bool = True
-
-
-class GatewayKeyCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    enabled: bool = True
-
-
-class GatewayKeyUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str | None = None
-    enabled: bool | None = None
-
-
 class SettingItem(BaseModel):
     key: str
     value: str

@@ -46,15 +46,6 @@ class ModelGroupEntity(Base):
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
-class GatewayKeyEntity(Base):
-    __tablename__ = "gateway_keys"
-
-    id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    secret: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-
-
 class SettingEntity(Base):
     __tablename__ = "settings"
 

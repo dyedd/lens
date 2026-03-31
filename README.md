@@ -14,7 +14,7 @@ Current scope is intentionally narrow:
 - admin login
 - channel management
 - model-group aggregation
-- downstream gateway keys
+- gateway API keys managed in settings
 - request logs and overview metrics
 
 ## Current Product Shape
@@ -26,7 +26,6 @@ Management UI:
 - `/dashboard/requests`
 - `/dashboard/channels`
 - `/dashboard/groups`
-- `/dashboard/keys`
 - `/dashboard/settings`
 
 Gateway endpoints:
@@ -53,10 +52,6 @@ Management API:
 - `POST /api/model-groups`
 - `PUT /api/model-groups/{group_id}`
 - `DELETE /api/model-groups/{group_id}`
-- `GET /api/gateway-keys`
-- `POST /api/gateway-keys`
-- `PUT /api/gateway-keys/{key_id}`
-- `DELETE /api/gateway-keys/{key_id}`
 - `GET /api/settings`
 - `PUT /api/settings`
 
@@ -128,7 +123,7 @@ Lens routes only within the same native protocol family.
 
 Routing flow:
 
-1. Authenticate downstream gateway key.
+1. Authenticate the incoming gateway API key.
 2. Read requested protocol and model.
 3. If the model exactly matches a model-group name under the same protocol, use that group strategy and provider pool.
 4. Otherwise fall back to provider-level model matching.
@@ -147,7 +142,7 @@ If you create a model group named `claude-opus-4-6`, that exact external name ca
 
 ## Downstream Gateway Access
 
-Create a gateway key in `/dashboard/keys`, then call Lens with one of:
+Create one or more gateway API keys in `/dashboard?view=settings`, then call Lens with one of:
 
 - `Authorization: Bearer <gateway-secret>`
 - `x-api-key: <gateway-secret>`
@@ -166,10 +161,10 @@ curl http://127.0.0.1:18080/v1/chat/completions \
 
 - Admin authentication
 - SQLite persistence with SQLAlchemy ORM
-- CRUD for providers, model groups, gateway keys, settings
+- CRUD for providers, model groups, settings
 - Model-group routing and provider regex matching
 - Native relay for OpenAI Chat, OpenAI Responses, Anthropic, Gemini
-- Gateway key authentication on `/v1/*`
+- Gateway API key authentication on `/v1/*` via settings
 - Request logs and overview metrics in the admin UI
 
 ## What Is Not Implemented Yet

@@ -18,7 +18,7 @@ from .auth import create_access_token, decode_access_token
 from .config import settings
 from .db import Base, create_engine, create_session_factory
 from .domain_store import DomainStore
-from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, GatewayKey, GatewayKeyCreate, GatewayKeyUpdate, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
+from .models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
 from .router import RoundRobinRouter
 from .store import ProviderStore
 from .upstreams import build_upstream_request
@@ -132,7 +132,7 @@ async def get_current_admin(
     return admin
 
 
-async def get_current_gateway_key(request: Request) -> GatewayKey:
+async def get_current_gateway_key(request: Request) -> str:
     authorization = request.headers.get("authorization", "")
     x_api_key = request.headers.get("x-api-key", "")
     x_goog_api_key = request.headers.get("x-goog-api-key", "")
@@ -145,14 +145,17 @@ async def get_current_gateway_key(request: Request) -> GatewayKey:
     elif x_goog_api_key:
         secret = x_goog_api_key.strip()
 
+    gateway_auth = await app_state.domain_store.get_gateway_auth_config()
+    if not gateway_auth["require_api_key"]:
+        return secret or "anonymous"
+
     if not secret:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing gateway API key")
 
-    gateway_key = await app_state.domain_store.get_gateway_key_by_secret(secret)
-    if gateway_key is None:
+    if secret not in gateway_auth["keys"]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid gateway API key")
 
-    return gateway_key
+    return secret
 
 
 @app.get("/healthz")
@@ -280,33 +283,6 @@ async def delete_model_group(group_id: str, _: Any = Depends(get_current_admin))
     return Response(status_code=204)
 
 
-@app.get("/api/gateway-keys", response_model=list[GatewayKey])
-async def list_gateway_keys(_: Any = Depends(get_current_admin)) -> list[GatewayKey]:
-    return await app_state.domain_store.list_gateway_keys()
-
-
-@app.post("/api/gateway-keys", response_model=GatewayKey, status_code=201)
-async def create_gateway_key(payload: GatewayKeyCreate, _: Any = Depends(get_current_admin)) -> GatewayKey:
-    return await app_state.domain_store.create_gateway_key(payload)
-
-
-@app.put("/api/gateway-keys/{key_id}", response_model=GatewayKey)
-async def update_gateway_key(key_id: str, payload: GatewayKeyUpdate, _: Any = Depends(get_current_admin)) -> GatewayKey:
-    try:
-        return await app_state.domain_store.update_gateway_key(key_id, payload)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Gateway key not found: {key_id}") from exc
-
-
-@app.delete("/api/gateway-keys/{key_id}", status_code=204)
-async def delete_gateway_key(key_id: str, _: Any = Depends(get_current_admin)) -> Response:
-    try:
-        await app_state.domain_store.delete_gateway_key(key_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Gateway key not found: {key_id}") from exc
-    return Response(status_code=204)
-
-
 @app.get("/api/settings", response_model=list[SettingItem])
 async def list_settings(_: Any = Depends(get_current_admin)) -> list[SettingItem]:
     return await app_state.domain_store.list_settings()
@@ -318,38 +294,38 @@ async def update_settings(payload: SettingsUpdate, _: Any = Depends(get_current_
 
 
 @app.post("/v1/chat/completions")
-async def proxy_openai_chat(request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_openai_chat(request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.OPENAI_CHAT, body, gateway_key)
 
 
 @app.post("/v1/responses")
-async def proxy_openai_responses(request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_openai_responses(request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.OPENAI_RESPONSES, body, gateway_key)
 
 
 @app.post("/v1/messages")
-async def proxy_anthropic_messages(request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_anthropic_messages(request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.ANTHROPIC, body, gateway_key)
 
 
 @app.post("/v1beta/models/{model_name}:generateContent")
-async def proxy_gemini_generate_content(model_name: str, request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_gemini_generate_content(model_name: str, request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     body = {**body, "model": model_name, "stream": False}
     return await _proxy_protocol(ProtocolKind.GEMINI, body, gateway_key)
 
 
 @app.post("/v1beta/models/{model_name}:streamGenerateContent")
-async def proxy_gemini_stream_generate_content(model_name: str, request: Request, gateway_key: GatewayKey = Depends(get_current_gateway_key)):
+async def proxy_gemini_stream_generate_content(model_name: str, request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     body = {**body, "model": model_name, "stream": True}
     return await _proxy_protocol(ProtocolKind.GEMINI, body, gateway_key)
 
 
-async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_key: GatewayKey) -> Response:
+async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_key: str) -> Response:
     providers = await app_state.store.list()
     plan = await _resolve_routing_plan(protocol, _requested_model(protocol, body))
     started_at = perf_counter()
@@ -555,7 +531,7 @@ async def _record_request_log(
     requested_model: str | None,
     matched_group_name: str | None,
     provider_id: str | None,
-    gateway_key: GatewayKey,
+    gateway_key: str,
     status_code: int,
     success: bool,
     latency_ms: int,
@@ -573,7 +549,7 @@ async def _record_request_log(
         requested_model=requested_model,
         matched_group_name=matched_group_name,
         provider_id=provider_id,
-        gateway_key_id=gateway_key.id,
+        gateway_key_id=gateway_key,
         status_code=status_code,
         success=success,
         latency_ms=latency_ms,

@@ -7,8 +7,8 @@ const sans = Noto_Sans_SC({ subsets: ['latin'], variable: '--font-sans', weight:
 const mono = IBM_Plex_Mono({ subsets: ['latin'], variable: '--font-mono', weight: ['400', '500'] })
 
 export const metadata: Metadata = {
-  title: 'Lens Admin',
-  description: 'Lens management console'
+  title: 'Lens',
+  description: '渠道、模型组与系统配置管理后台'
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

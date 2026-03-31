@@ -5,11 +5,11 @@ import json
 import sys
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 
 from lens.db import Base, create_engine, create_session_factory
 from lens.domain_store import DomainStore
-from lens.entities import GatewayKeyEntity, ModelGroupEntity, ProviderEntity
+from lens.entities import ModelGroupEntity, ProviderEntity
 from lens.models import ModelGroupCreate, ProtocolKind, ProviderCreate, ProviderStatus, RoutingStrategy
 from lens.store import ProviderStore
 
@@ -65,7 +65,6 @@ async def main(export_path: str) -> None:
 
     async with session_factory() as session:
         await session.execute(delete(ModelGroupEntity))
-        await session.execute(delete(GatewayKeyEntity))
         await session.execute(delete(ProviderEntity))
         await session.commit()
 
@@ -99,17 +98,6 @@ async def main(export_path: str) -> None:
             )
         )
         imported_channels[channel['id']] = provider.id
-
-    for item in payload.get('channel_keys', []):
-        if not item.get('enabled'):
-            continue
-        channel = next((entry for entry in payload.get('channels', []) if entry.get('id') == item.get('channel_id')), None)
-        key_name = (channel or {}).get('name') or f"channel-{item.get('channel_id')}"
-        await domain_store.create_gateway_key_from_secret(
-            name=key_name,
-            secret=item['channel_key'],
-            enabled=True,
-        )
 
     group_items_by_group: dict[int, list[dict]] = {}
     for item in payload.get('group_items', []):

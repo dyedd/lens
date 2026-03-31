@@ -261,7 +261,7 @@ export function OverviewScreen() {
               <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{metrics?.total_requests ? Math.round(((metrics?.successful_requests ?? 0) / metrics.total_requests) * 100) + '%' : '0%'}</div>
             </div>
             <div className="rounded-2xl bg-[var(--panel)] px-3 py-4">
-              <div className="text-[12px] text-[var(--muted)]">{locale === 'zh-CN' ? '密钥数' : 'Keys'}</div>
+              <div className="text-[12px] text-[var(--muted)]">{locale === 'zh-CN' ? '服务 API Key' : 'Service keys'}</div>
               <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(metrics?.active_gateway_keys ?? 0)}</div>
             </div>
         </div>

@@ -64,7 +64,7 @@ export function RequestsScreen() {
                   <p className="mt-1 truncate text-[var(--text)]">{item.provider_id || 'n/a'}</p>
                 </div>
                 <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
-                  <p className="text-xs">key</p>
+                  <p className="text-xs">{locale === 'zh-CN' ? '调用密钥' : 'Client key'}</p>
                   <p className="mt-1 truncate text-[var(--text)]">{item.gateway_key_id || 'n/a'}</p>
                 </div>
                 <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
