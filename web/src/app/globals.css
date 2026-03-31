@@ -10,10 +10,10 @@
   --line-strong: rgba(126, 110, 84, 0.18);
   --text: #3f3528;
   --muted: #8c806f;
-  --accent: #61a866;
-  --accent-2: #e8d7ad;
+  --accent: #587c63;
+  --accent-2: #dfe7dc;
   --danger: #d96f5d;
-  --success: #61a866;
+  --success: #587c63;
   --shadow-lg: 0 10px 30px rgba(63, 53, 40, 0.08);
   --shadow-sm: 0 4px 16px rgba(63, 53, 40, 0.06);
 }
