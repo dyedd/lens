@@ -148,34 +148,34 @@ export function GroupsScreen() {
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {visibleGroups.map((group) => (
-          <article key={group.id} className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
-            <header className="flex items-start justify-between gap-3">
+          <article key={group.id} className="flex flex-col rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
+            <header className="relative mb-3 flex items-start justify-between gap-3">
               <strong className="truncate pr-2 text-[17px] font-semibold text-[var(--text)]">{group.name}</strong>
               <div className="flex items-center gap-2 text-[var(--muted)]">
-                <button type="button" onClick={() => openEdit(group)} className="transition hover:text-[var(--text)]"><Pencil size={16} /></button>
-                <button type="button" onClick={() => void navigator.clipboard.writeText(group.name)} className="transition hover:text-[var(--text)]"><Copy size={16} /></button>
-                <button type="button" onClick={() => setDeleteTarget(group)} className="transition hover:text-[var(--danger)]"><Trash2 size={16} /></button>
+                <button type="button" onClick={() => openEdit(group)} className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel-soft)] hover:text-[var(--text)]"><Pencil size={16} /></button>
+                <button type="button" onClick={() => void navigator.clipboard.writeText(group.name)} className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel-soft)] hover:text-[var(--text)]"><Copy size={16} /></button>
+                <button type="button" onClick={() => setDeleteTarget(group)} className="rounded-lg p-1.5 transition-colors hover:bg-[rgba(217,111,93,0.10)] hover:text-[var(--danger)]"><Trash2 size={16} /></button>
               </div>
             </header>
 
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mb-3 flex gap-1">
               {strategyOptions.map((item) => {
                 const active = item.value === group.strategy
                 return (
-                  <span key={item.value} className={active ? 'rounded-xl bg-[var(--accent)] px-3 py-1 text-xs text-white' : 'rounded-xl bg-[var(--panel-soft)] px-3 py-1 text-xs text-[var(--text)]'}>
+                  <span key={item.value} className={active ? 'flex-1 rounded-lg bg-[var(--accent)] py-1 text-center text-xs text-white' : 'flex-1 rounded-lg bg-[var(--panel-soft)] py-1 text-center text-xs text-[var(--text)]'}>
                     {locale === 'zh-CN' ? item.zh : item.en}
                   </span>
                 )
               })}
             </div>
 
-            <section className="mt-4 min-h-[360px] rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
+            <section className="relative h-[25.25rem] overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
               <div className="space-y-3">
                 {group.provider_ids.map((providerId, index) => {
                   const provider = providerMap.get(providerId)
                   return (
-                    <div key={providerId + index} className="flex items-center gap-3 rounded-[16px] bg-[var(--panel-soft)] px-3 py-3">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.16)] text-sm font-semibold text-[var(--accent)]">{index + 1}</span>
+                    <div key={providerId + index} className="m-3 flex items-center gap-3 rounded-[16px] bg-[var(--panel-soft)] px-3 py-3">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.16)] text-xs font-semibold text-[var(--accent)]">{index + 1}</span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-[var(--text)]">{provider?.name ?? providerId}</p>
                         <p className="truncate text-xs text-[var(--muted)]">{provider?.base_url ?? providerId}</p>

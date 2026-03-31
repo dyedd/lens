@@ -173,40 +173,55 @@ export function ChannelsScreen() {
       {viewMode === 'cards' ? (
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {visibleData.map((item) => (
-            <article key={item.id} className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <strong className="text-[17px] font-semibold tracking-[-0.02em]">{item.name}</strong>
-                    <button type="button" onClick={() => openEdit(item)} className={item.status === 'enabled' ? 'h-7 w-12 rounded-full bg-[var(--accent)]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]' : 'h-7 w-12 rounded-full bg-[#d9d5cb]'}>
-                      <span className={item.status === 'enabled' ? 'ml-auto mr-1 block h-5 w-5 rounded-full bg-white' : 'ml-1 block h-5 w-5 rounded-full bg-white'} />
-                    </button>
+            <article key={item.id} className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)] transition-all duration-300">
+              <header className="relative flex items-center justify-between gap-2">
+                <strong className="min-w-0 truncate text-lg font-bold">{item.name}</strong>
+                <button
+                  type="button"
+                  onClick={() => openEdit(item)}
+                  className={item.status === 'enabled'
+                    ? 'relative h-6 w-11 rounded-full bg-[var(--accent)] transition-colors'
+                    : 'relative h-6 w-11 rounded-full bg-[var(--line-strong)] transition-colors'}
+                >
+                  <span className={item.status === 'enabled'
+                    ? 'absolute right-1 top-1 h-4 w-4 rounded-full bg-white'
+                    : 'absolute left-1 top-1 h-4 w-4 rounded-full bg-white'} />
+                </button>
+              </header>
+
+              <dl className="grid grid-cols-1 gap-3">
+                <div className="flex items-center justify-between rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">
+                      ◎
+                    </span>
+                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '请求次数' : 'Requests'}</dt>
                   </div>
-                  <div className="mt-4 space-y-3">
-                    <div className="flex items-center justify-between rounded-[18px] bg-[var(--panel-soft)] px-4 py-3 text-sm">
-                      <div className="flex items-center gap-3 text-[var(--muted)]">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">◎</span>
-                        <span>{locale === 'zh-CN' ? '请求次数' : 'Requests'}</span>
-                      </div>
-                      <span>{item.priority.toFixed(2)}</span>
-                    </div>
-                    <div className="flex items-center justify-between rounded-[18px] bg-[var(--panel-soft)] px-4 py-3 text-sm">
-                      <div className="flex items-center gap-3 text-[var(--muted)]">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">$</span>
-                        <span>{locale === 'zh-CN' ? '总成本' : 'Total cost'}</span>
-                      </div>
-                      <span>{item.weight.toFixed(2)} $</span>
-                    </div>
-                  </div>
+                  <dd className="text-base font-medium">{item.priority.toFixed(2)}</dd>
                 </div>
-                <div className="flex gap-2">
-                  <button className="rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2 text-xs text-[var(--text)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
-                  <button className="rounded-full border border-[rgba(217,111,93,0.18)] bg-[rgba(217,111,93,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
-                    <Trash2 size={16} />
+
+                <div className="flex items-center justify-between rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">
+                      $
+                    </span>
+                    <dt className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '总成本' : 'Total cost'}</dt>
+                  </div>
+                  <dd className="text-base font-medium">{item.weight.toFixed(2)} $</dd>
+                </div>
+              </dl>
+
+              <div className="flex items-center justify-between gap-3 text-[11px] text-[var(--muted)]">
+                <p className="min-w-0 flex-1 truncate">{protocolOptions.find((option) => option.value === item.protocol)?.label} · {maskKey(item.api_key)} · {(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(', ')}</p>
+                <div className="flex items-center gap-1.5">
+                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[var(--panel-soft)] hover:text-[var(--text)]" type="button" onClick={() => openEdit(item)} title={locale === 'zh-CN' ? '编辑' : 'Edit'}>
+                    <SlidersHorizontal size={14} />
+                  </button>
+                  <button className="rounded-lg p-1.5 transition-colors hover:bg-[rgba(217,111,93,0.10)] hover:text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)} title={locale === 'zh-CN' ? '删除' : 'Delete'}>
+                    <Trash2 size={14} />
                   </button>
                 </div>
               </div>
-              <p className="mt-4 truncate text-[11px] text-[var(--muted)]">{protocolOptions.find((option) => option.value === item.protocol)?.label} · {maskKey(item.api_key)} · {(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(', ')}</p>
             </article>
           ))}
         </div>
