@@ -154,17 +154,17 @@ export function ChannelsScreen() {
     <section className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-[48px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '渠道' : 'Channels'}</h2>
+          <h2 className="text-[36px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '渠道' : 'Channels'}</h2>
         </div>
         <div className="flex items-center gap-3 text-[var(--muted)]">
           <div className="hidden items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2.5 shadow-[var(--shadow-sm)] md:flex">
             <Search size={16} />
             <input className="ml-2 w-40 bg-transparent text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索渠道' : 'Search'} />
           </div>
-          <button className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()} title={t.refresh}>
+          <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={() => void refresh()} title={t.refresh}>
             <SlidersHorizontal size={18} />
           </button>
-          <button className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增渠道' : 'New channel'}>
+          <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]" type="button" onClick={openCreate} title={locale === 'zh-CN' ? '新增渠道' : 'New channel'}>
             <Plus size={18} />
           </button>
         </div>
@@ -181,11 +181,11 @@ export function ChannelsScreen() {
       {viewMode === 'cards' ? (
         <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {visibleData.map((item) => (
-            <article key={item.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
+            <article key={item.id} className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <strong className="text-lg tracking-[-0.02em]">{item.name}</strong>
+                    <strong className="text-[17px] font-semibold tracking-[-0.02em]">{item.name}</strong>
                     <button type="button" onClick={() => openEdit(item)} className={item.status === 'enabled' ? 'h-7 w-12 rounded-full bg-[var(--accent)]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]' : 'h-7 w-12 rounded-full bg-[#d9d5cb]'}>
                       <span className={item.status === 'enabled' ? 'ml-auto mr-1 block h-5 w-5 rounded-full bg-white' : 'ml-1 block h-5 w-5 rounded-full bg-white'} />
                     </button>
@@ -193,14 +193,14 @@ export function ChannelsScreen() {
                   <div className="mt-4 space-y-3">
                     <div className="flex items-center justify-between rounded-[18px] bg-[var(--panel-soft)] px-4 py-3 text-sm">
                       <div className="flex items-center gap-3 text-[var(--muted)]">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">◎</span>
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">◎</span>
                         <span>{locale === 'zh-CN' ? '请求次数' : 'Requests'}</span>
                       </div>
                       <span>{item.priority.toFixed(2)}</span>
                     </div>
                     <div className="flex items-center justify-between rounded-[18px] bg-[var(--panel-soft)] px-4 py-3 text-sm">
                       <div className="flex items-center gap-3 text-[var(--muted)]">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">$</span>
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(97,168,102,0.12)] text-[var(--accent)]">$</span>
                         <span>{locale === 'zh-CN' ? '总成本' : 'Total cost'}</span>
                       </div>
                       <span>{item.weight.toFixed(2)} $</span>
@@ -208,13 +208,13 @@ export function ChannelsScreen() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button className="rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2 text-sm text-[var(--text)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
+                  <button className="rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2 text-xs text-[var(--text)]" type="button" onClick={() => openEdit(item)}>{locale === 'zh-CN' ? '编辑' : 'Edit'}</button>
                   <button className="rounded-full border border-[rgba(217,111,93,0.18)] bg-[rgba(217,111,93,0.08)] p-2 text-[var(--danger)]" type="button" onClick={() => setDeleteTarget(item)}>
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
-              <p className="mt-4 truncate text-xs text-[var(--muted)]">{protocolOptions.find((option) => option.value === item.protocol)?.label} · {maskKey(item.api_key)} · {(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(', ')}</p>
+              <p className="mt-4 truncate text-[11px] text-[var(--muted)]">{protocolOptions.find((option) => option.value === item.protocol)?.label} · {maskKey(item.api_key)} · {(item.model_patterns.length ? item.model_patterns : [item.model_name || (locale === 'zh-CN' ? '未设置模型条件' : 'No selector')]).join(', ')}</p>
             </article>
           ))}
         </div>

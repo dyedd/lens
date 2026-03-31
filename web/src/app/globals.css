@@ -29,10 +29,17 @@ body {
   min-height: 100%;
   color: var(--text);
   font-family: var(--font-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   background:
     radial-gradient(circle at 78% 10%, rgba(150, 195, 181, 0.24), transparent 18%),
     radial-gradient(circle at 15% 82%, rgba(195, 215, 224, 0.22), transparent 18%),
     linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 100%);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body::before {
@@ -63,6 +70,11 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
 }
 
 button {

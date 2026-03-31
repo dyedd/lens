@@ -21,10 +21,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   ]
 
   return (
-    <div className="min-h-screen px-4 py-5 md:px-6">
-      <div className="mx-auto flex w-full max-w-[1280px] gap-6">
-        <aside className="sticky top-8 hidden h-fit self-start md:block">
-          <nav className="flex w-[82px] flex-col items-center gap-3 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-3 shadow-[var(--shadow-lg)]">
+    <div className="min-h-screen px-4 py-4 md:px-5">
+      <div className="mx-auto flex w-full max-w-[1240px] gap-5">
+        <aside className="sticky top-7 hidden h-fit self-start md:block">
+          <nav className="flex w-[76px] flex-col items-center gap-2.5 rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-2.5 shadow-[var(--shadow-lg)]">
             {items.map((item) => {
               const Icon = item.icon
               const active = pathname === item.href
@@ -32,34 +32,35 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch
                   className={
-                    'group relative flex h-14 w-14 items-center justify-center rounded-[18px] transition ' +
+                    'group relative flex h-12 w-12 items-center justify-center rounded-[16px] transition-colors duration-150 ' +
                     (active
                       ? 'bg-[var(--accent-2)] text-[var(--text)] shadow-[var(--shadow-sm)]'
                       : 'text-[var(--muted)] hover:bg-[var(--panel-soft)] hover:text-[var(--text)]')
                   }
                   title={item.label}
                 >
-                  <Icon size={22} />
+                  <Icon size={20} />
                 </Link>
               )
             })}
           </nav>
         </aside>
 
-        <main className="min-h-screen flex-1 rounded-[32px] border border-[var(--line)] bg-[rgba(255,253,249,0.72)] p-6 shadow-[var(--shadow-lg)] md:p-8">
-          <header className="mb-8 flex items-start justify-between gap-6">
+        <main className="min-h-screen flex-1 rounded-[28px] border border-[var(--line)] bg-[rgba(255,253,249,0.72)] p-5 shadow-[var(--shadow-lg)] md:p-6">
+          <header className="mb-6 flex items-start justify-between gap-5">
             <div className="flex items-center gap-4">
-              <Image src="/logo.svg" alt="Lens" width={46} height={46} className="h-[46px] w-[46px]" />
+              <Image src="/logo.svg" alt="Lens" width={42} height={42} className="h-[42px] w-[42px]" />
               <div>
                 <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted)]">{t.appName}</p>
-                <h1 className="mt-1 text-2xl font-semibold text-[var(--text)] md:text-3xl">{items.find((item) => item.href === pathname)?.label ?? t.dashboard}</h1>
+                <h1 className="mt-1 text-[26px] font-semibold leading-none tracking-[-0.03em] text-[var(--text)] md:text-[30px]">{items.find((item) => item.href === pathname)?.label ?? t.dashboard}</h1>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="inline-flex h-11 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--text)] shadow-[var(--shadow-sm)]"
+                className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--text)] shadow-[var(--shadow-sm)]"
                 onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
               >
                 <Globe2 size={15} />
@@ -67,7 +68,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 type="button"
-                className="inline-flex h-11 items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--muted)] shadow-[var(--shadow-sm)]"
+                className="inline-flex h-10 items-center rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 text-sm text-[var(--muted)] shadow-[var(--shadow-sm)]"
                 onClick={() => {
                   clearStoredToken()
                   window.location.href = '/login'

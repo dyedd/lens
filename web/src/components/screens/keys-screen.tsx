@@ -41,13 +41,13 @@ function SectionCard({
   className?: string
 }) {
   return (
-    <section className={'mb-4 break-inside-avoid rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)] ' + className}>
+    <section className={'mb-4 break-inside-avoid rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)] ' + className}>
       <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[rgba(97,168,102,0.14)] text-[var(--accent)]">
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-[17px] font-semibold text-[var(--text)]">{title}</h3>
+          <h3 className="text-base font-semibold text-[var(--text)]">{title}</h3>
           {description ? <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{description}</p> : null}
         </div>
       </div>
@@ -132,7 +132,7 @@ export function KeysScreen() {
     <section className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-[48px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '密钥' : 'Keys'}</h2>
+          <h2 className="text-[36px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '密钥' : 'Keys'}</h2>
           <p className="mt-2 text-sm text-[var(--muted)]">
             {locale === 'zh-CN'
               ? '管理下游客户端访问 Lens 网关所使用的凭证。'
@@ -204,10 +204,10 @@ export function KeysScreen() {
         </SectionCard>
       </div>
 
-      <section className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]">
+      <section className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h3 className="text-[18px] font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '密钥列表' : 'Key list'}</h3>
+            <h3 className="text-base font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '密钥列表' : 'Key list'}</h3>
             <p className="mt-1 text-sm text-[var(--muted)]">
               {locale === 'zh-CN'
                 ? '采用与设置页一致的分块卡片布局，便于快速查看与编辑。'

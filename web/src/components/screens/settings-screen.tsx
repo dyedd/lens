@@ -26,13 +26,13 @@ function SettingSection({
   className?: string
 }) {
   return (
-    <section className={'mb-4 break-inside-avoid rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)] ' + className}>
+    <section className={'mb-4 break-inside-avoid rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)] ' + className}>
       <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[rgba(97,168,102,0.14)] text-[var(--accent)]">
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-[17px] font-semibold text-[var(--text)]">{title}</h3>
+          <h3 className="text-base font-semibold text-[var(--text)]">{title}</h3>
           {description ? <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{description}</p> : null}
         </div>
       </div>
@@ -116,7 +116,7 @@ export function SettingsScreen() {
     <section className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-[48px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '设置' : 'Settings'}</h2>
+          <h2 className="text-[36px] font-semibold tracking-[-0.04em] text-[var(--text)]">{locale === 'zh-CN' ? '设置' : 'Settings'}</h2>
           <p className="mt-2 text-sm text-[var(--muted)]">
             {locale === 'zh-CN'
               ? '集中维护运行参数、展示配置与后台访问偏好。'
@@ -262,10 +262,10 @@ export function SettingsScreen() {
         </SettingSection>
       </div>
 
-      <form className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]" onSubmit={submit}>
+      <form className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-[var(--shadow-sm)]" onSubmit={submit}>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h3 className="text-[18px] font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '配置列表' : 'Configuration list'}</h3>
+            <h3 className="text-base font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '配置列表' : 'Configuration list'}</h3>
             <p className="mt-1 text-sm text-[var(--muted)]">
               {locale === 'zh-CN'
                 ? '按 key/value 直接维护后端配置，保存时会过滤空 key。'
