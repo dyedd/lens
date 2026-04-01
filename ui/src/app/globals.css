@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #efece5;
-  --bg-2: #f4f1ea;
-  --panel: #faf8f3;
-  --panel-strong: #fffdf9;
-  --panel-soft: #f2efe7;
-  --line: rgba(126, 110, 84, 0.12);
-  --line-strong: rgba(126, 110, 84, 0.18);
-  --text: #3f3528;
-  --muted: #8c806f;
-  --accent: #587c63;
-  --accent-2: #dfe7dc;
+  --bg: #eef3fb;
+  --bg-2: #f7faff;
+  --panel: #fbfdff;
+  --panel-strong: #ffffff;
+  --panel-soft: #f2f6fc;
+  --line: rgba(37, 99, 235, 0.10);
+  --line-strong: rgba(37, 99, 235, 0.18);
+  --text: #18253d;
+  --muted: #6b7a96;
+  --accent: #2563eb;
+  --accent-2: #dbe9ff;
   --danger: #d96f5d;
-  --success: #587c63;
-  --shadow-lg: 0 10px 30px rgba(63, 53, 40, 0.08);
-  --shadow-sm: 0 4px 16px rgba(63, 53, 40, 0.06);
+  --success: #2563eb;
+  --shadow-lg: 0 18px 42px rgba(24, 37, 61, 0.10);
+  --shadow-sm: 0 8px 24px rgba(24, 37, 61, 0.06);
 }
 
 * {
@@ -53,11 +53,11 @@ body {
   min-height: 100%;
   color: var(--text);
   font-family: var(--font-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.45;
   background:
-    radial-gradient(circle at 78% 10%, rgba(150, 195, 181, 0.24), transparent 18%),
-    radial-gradient(circle at 15% 82%, rgba(195, 215, 224, 0.22), transparent 18%),
+    radial-gradient(circle at 78% 10%, rgba(37, 99, 235, 0.15), transparent 18%),
+    radial-gradient(circle at 15% 82%, rgba(59, 130, 246, 0.10), transparent 18%),
     linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 100%);
 }
 
@@ -72,8 +72,8 @@ body::before {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 78% 10%, rgba(150, 195, 181, 0.12), transparent 22%),
-    radial-gradient(circle at 18% 78%, rgba(195, 215, 224, 0.12), transparent 22%);
+    radial-gradient(circle at 78% 10%, rgba(37, 99, 235, 0.08), transparent 22%),
+    radial-gradient(circle at 18% 78%, rgba(96, 165, 250, 0.08), transparent 22%);
 }
 
 body::after {
@@ -94,6 +94,16 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin: 0;
 }
 
 input::placeholder,

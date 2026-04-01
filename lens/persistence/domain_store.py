@@ -8,7 +8,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..models import ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, RequestLogItem, SettingItem
-from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelPriceEntity, RequestLogEntity, SettingEntity
+from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelPriceEntity, ProviderEntity, RequestLogEntity, SettingEntity
 
 
 SETTING_GATEWAY_API_KEYS = "gateway_api_keys"
@@ -104,6 +104,7 @@ class DomainStore:
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:
+            await self._validate_group_payload(session, payload.protocol.value, payload.name, payload.provider_ids)
             next_id = await self._next_id(session, ModelGroupEntity, payload.protocol.value)
             entity = ModelGroupEntity(
                 id=next_id,
@@ -122,6 +123,11 @@ class DomainStore:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
                 raise KeyError(group_id)
+
+            next_protocol = payload.protocol.value if payload.protocol is not None else entity.protocol
+            next_name = payload.name if payload.name is not None else entity.name
+            next_provider_ids = payload.provider_ids if payload.provider_ids is not None else json.loads(entity.provider_ids_json)
+            await self._validate_group_payload(session, next_protocol, next_name, next_provider_ids, exclude_group_id=group_id)
 
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
@@ -147,6 +153,44 @@ class DomainStore:
                 raise KeyError(group_id)
             await session.delete(entity)
             await session.commit()
+
+    async def _validate_group_payload(
+        self,
+        session: AsyncSession,
+        protocol: str,
+        name: str,
+        provider_ids: list[str],
+        exclude_group_id: str | None = None,
+    ) -> None:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError('Model group name is required')
+
+        if not provider_ids:
+            raise ValueError('At least one provider is required')
+
+        result = await session.execute(
+            select(ModelGroupEntity.id)
+            .where(ModelGroupEntity.name == normalized_name)
+            .limit(1)
+        )
+        existing_id = result.scalar_one_or_none()
+        if existing_id is not None and existing_id != exclude_group_id:
+            raise ValueError(f'Model group already exists: {normalized_name}')
+
+        provider_result = await session.execute(
+            select(ProviderEntity.id, ProviderEntity.protocol)
+            .where(ProviderEntity.id.in_(provider_ids))
+        )
+        provider_rows = provider_result.all()
+        existing_provider_ids = {row[0] for row in provider_rows}
+        missing_provider_ids = [provider_id for provider_id in provider_ids if provider_id not in existing_provider_ids]
+        if missing_provider_ids:
+            raise ValueError(f'Providers not found: {", ".join(missing_provider_ids)}')
+
+        invalid_provider_ids = [provider_id for provider_id, provider_protocol in provider_rows if provider_protocol != protocol]
+        if invalid_provider_ids:
+            raise ValueError(f'Providers must match protocol={protocol}: {", ".join(invalid_provider_ids)}')
 
     async def get_gateway_auth_config(self) -> dict[str, Any]:
         items = await self.list_settings()

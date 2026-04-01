@@ -7,6 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import delete
 
+from lens.core.config import settings
 from lens.core.db import create_engine, create_session_factory
 from lens.models import ModelGroupCreate, ProtocolKind, ProviderCreate, ProviderKeyItem, ProviderStatus, ProviderUrlItem, RoutingStrategy
 from lens.persistence.domain_store import DomainStore
@@ -31,7 +32,7 @@ def normalize_model_names(value: str | None) -> list[str]:
 async def main(export_path: str) -> None:
     payload = json.loads(Path(export_path).read_text(encoding='utf-8'))
 
-    engine = create_engine('sqlite+aiosqlite:///data/lens.db')
+    engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     provider_store = ProviderStore(session_factory)
     domain_store = DomainStore(session_factory)

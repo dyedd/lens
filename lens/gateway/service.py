@@ -275,7 +275,10 @@ async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGr
 
 @app.post("/api/model-groups", response_model=ModelGroup, status_code=201)
 async def create_model_group(payload: ModelGroupCreate, _: Any = Depends(get_current_admin)) -> ModelGroup:
-    return await app_state.domain_store.create_group(payload)
+    try:
+        return await app_state.domain_store.create_group(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.put("/api/model-groups/{group_id}", response_model=ModelGroup)
@@ -284,6 +287,8 @@ async def update_model_group(group_id: str, payload: ModelGroupUpdate, _: Any = 
         return await app_state.domain_store.update_group(group_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Model group not found: {group_id}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.delete("/api/model-groups/{group_id}", status_code=204)
