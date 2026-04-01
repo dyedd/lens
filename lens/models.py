@@ -19,6 +19,17 @@ class ProviderStatus(str, Enum):
     DISABLED = "disabled"
 
 
+class ProviderUrlItem(BaseModel):
+    url: HttpUrl
+    delay: int = Field(default=0, ge=0)
+
+
+class ProviderKeyItem(BaseModel):
+    key: str = Field(min_length=1)
+    remark: str = ""
+    enabled: bool = True
+
+
 class RoutingStrategy(str, Enum):
     ROUND_ROBIN = "round_robin"
     WEIGHTED = "weighted"
@@ -33,12 +44,15 @@ class ProviderConfig(BaseModel):
     protocol: ProtocolKind
     base_url: HttpUrl
     api_key: str = Field(min_length=1)
-    model_name: str | None = None
     status: ProviderStatus = ProviderStatus.ENABLED
-    weight: int = Field(default=1, ge=1)
-    priority: int = Field(default=100, ge=1)
     headers: dict[str, str] = Field(default_factory=dict)
     model_patterns: list[str] = Field(default_factory=list)
+    base_urls: list[ProviderUrlItem] = Field(default_factory=list)
+    keys: list[ProviderKeyItem] = Field(default_factory=list)
+    proxy: bool = False
+    channel_proxy: str = ""
+    param_override: str = ""
+    match_regex: str = ""
 
 
 class ProviderCreate(BaseModel):
@@ -48,12 +62,15 @@ class ProviderCreate(BaseModel):
     protocol: ProtocolKind
     base_url: HttpUrl
     api_key: str = Field(min_length=1)
-    model_name: str | None = None
     status: ProviderStatus = ProviderStatus.ENABLED
-    weight: int = Field(default=1, ge=1)
-    priority: int = Field(default=100, ge=1)
     headers: dict[str, str] = Field(default_factory=dict)
     model_patterns: list[str] = Field(default_factory=list)
+    base_urls: list[ProviderUrlItem] = Field(default_factory=list)
+    keys: list[ProviderKeyItem] = Field(default_factory=list)
+    proxy: bool = False
+    channel_proxy: str = ""
+    param_override: str = ""
+    match_regex: str = ""
 
     @field_validator("model_patterns")
     @classmethod
@@ -69,15 +86,19 @@ class ProviderCreate(BaseModel):
 class ProviderUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    protocol: ProtocolKind | None = None
     name: str | None = None
     base_url: HttpUrl | None = None
     api_key: str | None = Field(default=None, min_length=1)
-    model_name: str | None = None
     status: ProviderStatus | None = None
-    weight: int | None = Field(default=None, ge=1)
-    priority: int | None = Field(default=None, ge=1)
     headers: dict[str, str] | None = None
     model_patterns: list[str] | None = None
+    base_urls: list[ProviderUrlItem] | None = None
+    keys: list[ProviderKeyItem] | None = None
+    proxy: bool | None = None
+    channel_proxy: str | None = None
+    param_override: str | None = None
+    match_regex: str | None = None
 
     @field_validator("model_patterns")
     @classmethod
@@ -90,6 +111,30 @@ class ProviderUpdate(BaseModel):
             except re.error as exc:
                 raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
         return patterns
+
+
+class ProviderModelFetchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: ProtocolKind
+    base_url: HttpUrl | None = None
+    api_key: str | None = Field(default=None, min_length=1)
+    headers: dict[str, str] = Field(default_factory=dict)
+    base_urls: list[ProviderUrlItem] = Field(default_factory=list)
+    keys: list[ProviderKeyItem] = Field(default_factory=list)
+    channel_proxy: str = ""
+    match_regex: str = ""
+
+    @field_validator("match_regex")
+    @classmethod
+    def validate_match_regex(cls, pattern: str) -> str:
+        if not pattern:
+            return pattern
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
+        return pattern
 
 
 class ProviderHealth(BaseModel):

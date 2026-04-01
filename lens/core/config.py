@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     connect_timeout_seconds: float = 10.0
     max_connections: int = 200
     max_keepalive_connections: int = 50
-    database_url: str = "sqlite+aiosqlite:///data/lens.db"
+    database_url: str = "sqlite+aiosqlite:///data/data.db"
     anthropic_version: str = "2023-06-01"
 
     model_config = SettingsConfigDict(

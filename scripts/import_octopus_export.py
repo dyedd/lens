@@ -7,8 +7,8 @@ from pathlib import Path
 
 from sqlalchemy import delete
 
-from lens.core.db import Base, create_engine, create_session_factory
-from lens.models import ModelGroupCreate, ProtocolKind, ProviderCreate, ProviderStatus, RoutingStrategy
+from lens.core.db import create_engine, create_session_factory
+from lens.models import ModelGroupCreate, ProtocolKind, ProviderCreate, ProviderKeyItem, ProviderStatus, ProviderUrlItem, RoutingStrategy
 from lens.persistence.domain_store import DomainStore
 from lens.persistence.entities import ModelGroupEntity, ProviderEntity
 from lens.persistence.provider_store import ProviderStore
@@ -35,11 +35,6 @@ async def main(export_path: str) -> None:
     session_factory = create_session_factory(engine)
     provider_store = ProviderStore(session_factory)
     domain_store = DomainStore(session_factory)
-
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
-    await domain_store.ensure_schema()
 
     stats_total = payload.get('stats_total')
     await domain_store.replace_imported_stats(
@@ -89,12 +84,28 @@ async def main(export_path: str) -> None:
                 protocol=protocol,
                 base_url=first_url,
                 api_key=key_info['channel_key'],
-                model_name=all_models[0] if len(all_models) == 1 else None,
                 status=ProviderStatus.ENABLED if channel.get('enabled') else ProviderStatus.DISABLED,
-                weight=1,
-                priority=max(int((base_urls[0] or {}).get('delay') or 0), 1),
                 headers={},
-                model_patterns=all_models if len(all_models) > 1 else [],
+                model_patterns=all_models,
+                base_urls=[
+                    ProviderUrlItem(
+                        url=item.get('url'),
+                        delay=max(int(item.get('delay') or 0), 0),
+                    )
+                    for item in base_urls
+                    if item.get('url')
+                ],
+                keys=[
+                    ProviderKeyItem(
+                        key=key_info['channel_key'],
+                        remark=key_info.get('remark') or '',
+                        enabled=bool(key_info.get('enabled', True)),
+                    )
+                ],
+                proxy=bool(channel.get('proxy')),
+                channel_proxy=channel.get('channel_proxy') or '',
+                param_override=channel.get('param_override') or '',
+                match_regex=channel.get('match_regex') or '',
             )
         )
         imported_channels[channel['id']] = provider.id

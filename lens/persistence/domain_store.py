@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, inspect, select, text
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..models import ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, RequestLogItem, SettingItem
@@ -16,38 +16,9 @@ SETTING_GATEWAY_REQUIRE_API_KEY = "gateway_require_api_key"
 SETTING_GATEWAY_API_KEY_HINT = "gateway_api_key_hint"
 
 
-REQUEST_LOG_EXTRA_COLUMNS: dict[str, str] = {
-    "resolved_model": "VARCHAR(200)",
-    "input_tokens": "INTEGER NOT NULL DEFAULT 0",
-    "output_tokens": "INTEGER NOT NULL DEFAULT 0",
-    "total_tokens": "INTEGER NOT NULL DEFAULT 0",
-    "input_cost_usd": "FLOAT NOT NULL DEFAULT 0",
-    "output_cost_usd": "FLOAT NOT NULL DEFAULT 0",
-    "total_cost_usd": "FLOAT NOT NULL DEFAULT 0",
-}
-
-
 class DomainStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
-
-    async def ensure_schema(self) -> None:
-        async with self._session_factory() as session:
-            await session.run_sync(self._ensure_schema_sync)
-            await session.commit()
-
-    @staticmethod
-    def _ensure_schema_sync(sync_session) -> None:
-        connection = sync_session.connection()
-        inspector = inspect(connection)
-        if "request_logs" not in inspector.get_table_names():
-            return
-
-        existing_columns = {column["name"] for column in inspector.get_columns("request_logs")}
-        for column_name, column_sql in REQUEST_LOG_EXTRA_COLUMNS.items():
-            if column_name in existing_columns:
-                continue
-            connection.execute(text(f"ALTER TABLE request_logs ADD COLUMN {column_name} {column_sql}"))
 
     async def replace_imported_stats(
         self,

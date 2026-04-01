@@ -15,7 +15,7 @@ class ProviderStore:
 
     async def list(self) -> list[ProviderConfig]:
         async with self._session_factory() as session:
-            result = await session.execute(select(ProviderEntity).order_by(ProviderEntity.priority, ProviderEntity.name))
+            result = await session.execute(select(ProviderEntity).order_by(ProviderEntity.name))
             entities = result.scalars().all()
             return [self._to_model(entity) for entity in entities]
 
@@ -26,14 +26,17 @@ class ProviderStore:
                 id=next_id,
                 name=payload.name,
                 protocol=payload.protocol.value,
-                base_url=str(payload.base_url),
-                api_key=payload.api_key,
-                model_name=payload.model_name,
+                base_url=str(self._first_base_url(payload.base_urls, payload.base_url)),
+                api_key=self._first_api_key(payload.keys, payload.api_key),
                 status=payload.status.value,
-                weight=payload.weight,
-                priority=payload.priority,
                 headers_json=json.dumps(payload.headers, ensure_ascii=True),
                 model_patterns_json=json.dumps(payload.model_patterns, ensure_ascii=True),
+                base_urls_json=json.dumps([item.model_dump(mode="json") for item in self._normalize_base_urls(payload.base_urls, payload.base_url)], ensure_ascii=True),
+                keys_json=json.dumps([item.model_dump(mode="json") for item in self._normalize_keys(payload.keys, payload.api_key)], ensure_ascii=True),
+                proxy=1 if payload.proxy else 0,
+                channel_proxy=payload.channel_proxy,
+                param_override=payload.param_override,
+                match_regex=payload.match_regex,
             )
             session.add(entity)
             await session.commit()
@@ -47,7 +50,9 @@ class ProviderStore:
 
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
-                if key == "base_url" and value is not None:
+                if key == "protocol" and value is not None:
+                    entity.protocol = value.value
+                elif key == "base_url" and value is not None:
                     entity.base_url = str(value)
                 elif key == "status" and value is not None:
                     entity.status = value.value
@@ -55,6 +60,16 @@ class ProviderStore:
                     entity.headers_json = json.dumps(value, ensure_ascii=True)
                 elif key == "model_patterns" and value is not None:
                     entity.model_patterns_json = json.dumps(value, ensure_ascii=True)
+                elif key == "base_urls" and value is not None:
+                    entity.base_urls_json = json.dumps([item.model_dump(mode="json") for item in value], ensure_ascii=True)
+                    entity.base_url = str(value[0].url) if value else entity.base_url
+                elif key == "keys" and value is not None:
+                    entity.keys_json = json.dumps([item.model_dump(mode="json") for item in value], ensure_ascii=True)
+                    enabled_key = next((item.key for item in value if item.enabled), value[0].key if value else None)
+                    if enabled_key:
+                        entity.api_key = enabled_key
+                elif key == "proxy" and value is not None:
+                    entity.proxy = 1 if value else 0
                 else:
                     setattr(entity, key, value)
 
@@ -84,16 +99,52 @@ class ProviderStore:
 
     @staticmethod
     def _to_model(entity: ProviderEntity) -> ProviderConfig:
+        base_urls = json.loads(entity.base_urls_json or "[]")
+        keys = json.loads(entity.keys_json or "[]")
+        if not base_urls and entity.base_url:
+            base_urls = [{"url": entity.base_url, "delay": 0}]
+        if not keys and entity.api_key:
+            keys = [{"key": entity.api_key, "remark": "", "enabled": True}]
         return ProviderConfig(
             id=entity.id,
             name=entity.name,
             protocol=entity.protocol,
             base_url=entity.base_url,
             api_key=entity.api_key,
-            model_name=entity.model_name,
             status=ProviderStatus(entity.status),
-            weight=entity.weight,
-            priority=entity.priority,
             headers=json.loads(entity.headers_json),
             model_patterns=json.loads(entity.model_patterns_json),
+            base_urls=base_urls,
+            keys=keys,
+            proxy=bool(entity.proxy),
+            channel_proxy=entity.channel_proxy,
+            param_override=entity.param_override,
+            match_regex=entity.match_regex,
         )
+
+    @staticmethod
+    def _normalize_base_urls(base_urls, fallback_base_url):
+        if base_urls:
+            return base_urls
+        return [{"url": str(fallback_base_url), "delay": 0}]
+
+    @staticmethod
+    def _normalize_keys(keys, fallback_api_key):
+        if keys:
+            return keys
+        return [{"key": fallback_api_key, "remark": "", "enabled": True}]
+
+    @staticmethod
+    def _first_base_url(base_urls, fallback_base_url):
+        if base_urls:
+            return base_urls[0].url
+        return fallback_base_url
+
+    @staticmethod
+    def _first_api_key(keys, fallback_api_key):
+        if keys:
+            for item in keys:
+                if item.enabled:
+                    return item.key
+            return keys[0].key
+        return fallback_api_key

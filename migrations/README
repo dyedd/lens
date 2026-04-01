@@ -1,0 +1,4 @@
+Run migrations with:
+
+  alembic upgrade head
+

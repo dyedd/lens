@@ -2,6 +2,17 @@ export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'anthropic' | 'g
 
 export type ProviderStatus = 'enabled' | 'disabled'
 
+export type ProviderUrlItem = {
+  url: string
+  delay: number
+}
+
+export type ProviderKeyItem = {
+  key: string
+  remark: string
+  enabled: boolean
+}
+
 export type RoutingStrategy = 'round_robin' | 'weighted' | 'failover'
 
 export type Provider = {
@@ -10,12 +21,15 @@ export type Provider = {
   protocol: ProtocolKind
   base_url: string
   api_key: string
-  model_name?: string | null
   status: ProviderStatus
-  weight: number
-  priority: number
   headers: Record<string, string>
   model_patterns: string[]
+  base_urls: ProviderUrlItem[]
+  keys: ProviderKeyItem[]
+  proxy: boolean
+  channel_proxy: string
+  param_override: string
+  match_regex: string
 }
 
 export type ProviderPayload = {
@@ -23,12 +37,26 @@ export type ProviderPayload = {
   protocol: ProtocolKind
   base_url: string
   api_key: string
-  model_name?: string | null
   status: ProviderStatus
-  weight: number
-  priority: number
   headers: Record<string, string>
   model_patterns: string[]
+  base_urls: ProviderUrlItem[]
+  keys: ProviderKeyItem[]
+  proxy: boolean
+  channel_proxy: string
+  param_override: string
+  match_regex: string
+}
+
+export type ProviderModelFetchPayload = {
+  protocol: ProtocolKind
+  base_url: string
+  api_key: string
+  headers: Record<string, string>
+  base_urls: ProviderUrlItem[]
+  keys: ProviderKeyItem[]
+  channel_proxy: string
+  match_regex: string
 }
 
 export type ModelGroup = {

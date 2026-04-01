@@ -15,13 +15,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
-from ..core.db import Base, create_engine, create_session_factory
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
+from ..core.db import create_engine, create_session_factory
+from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderModelFetchRequest, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore
 from ..persistence.provider_store import ProviderStore
 from .router import RoundRobinRouter
-from .upstreams import build_upstream_request
+from .upstreams import build_upstream_request, resolve_provider_api_key, resolve_provider_base_url, resolve_provider_proxy_url
 
 
 class AppState:
@@ -72,14 +72,6 @@ class UpstreamResult:
 async def _startup_app_state(state: AppState) -> None:
     if state.http.is_closed:
         state.http = state._create_http_client()
-
-    async with state.engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-    await state.domain_store.ensure_schema()
-    await state.admin_store.ensure_default_admin(
-        settings.admin_default_username,
-        settings.admin_default_password,
-    )
     await _bootstrap_imported_stats(state)
 
 
@@ -189,6 +181,26 @@ async def list_providers(_: Any = Depends(get_current_admin)) -> list[ProviderCo
 @app.post("/api/providers", status_code=201)
 async def create_provider(payload: ProviderCreate, _: Any = Depends(get_current_admin)) -> ProviderConfig:
     return await app_state.store.create(payload)
+
+
+@app.post("/api/providers/fetch-models", response_model=list[str])
+async def fetch_provider_models(payload: ProviderModelFetchRequest, _: Any = Depends(get_current_admin)) -> list[str]:
+    provider = ProviderConfig(
+        id="preview",
+        name="preview",
+        protocol=payload.protocol,
+        base_url=payload.base_urls[0].url if payload.base_urls else payload.base_url,
+        api_key=(payload.keys[0].key if payload.keys else payload.api_key) or "preview-key",
+        headers=payload.headers,
+        model_patterns=[],
+        base_urls=payload.base_urls,
+        keys=payload.keys,
+        proxy=bool(payload.channel_proxy.strip()),
+        channel_proxy=payload.channel_proxy,
+        param_override="",
+        match_regex=payload.match_regex,
+    )
+    return await _fetch_upstream_models(provider)
 
 
 @app.put("/api/providers/{provider_id}")
@@ -411,16 +423,30 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
 async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> UpstreamResult:
     upstream = build_upstream_request(provider, body, settings)
     stream = bool(body.get("stream"))
+    client = app_state.http
+    close_client = False
+
+    if upstream.proxy_url:
+        client = httpx.AsyncClient(
+            proxy=upstream.proxy_url,
+            timeout=app_state.http.timeout,
+            limits=httpx.Limits(
+                max_connections=settings.max_connections,
+                max_keepalive_connections=settings.max_keepalive_connections,
+            ),
+            trust_env=False,
+        )
+        close_client = True
 
     try:
         if stream:
-            request = app_state.http.build_request(
+            request = client.build_request(
                 upstream.method,
                 upstream.url,
                 headers=upstream.headers,
                 json=upstream.json_body,
             )
-            response = await app_state.http.send(request, stream=True)
+            response = await client.send(request, stream=True)
             response.raise_for_status()
             app_state.router.record_success(provider.id)
 
@@ -439,10 +465,10 @@ async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> Upst
                     headers=_passthrough_headers(response.headers),
                 ),
                 status_code=response.status_code,
-                resolved_model=provider.model_name or body.get("model"),
+                resolved_model=body.get("model"),
             )
 
-        response = await app_state.http.request(
+        response = await client.request(
             upstream.method,
             upstream.url,
             headers=upstream.headers,
@@ -479,6 +505,9 @@ async def _call_provider(provider: ProviderConfig, body: dict[str, Any]) -> Upst
         raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Transport error: {exc}") from exc
+    finally:
+        if close_client:
+            await client.aclose()
 
 
 def _passthrough_headers(headers: httpx.Headers) -> dict[str, str]:
@@ -501,6 +530,108 @@ def _requested_model(protocol: ProtocolKind, body: dict[str, Any]) -> str | None
     return body.get("model")
 
 
+async def _fetch_upstream_models(provider: ProviderConfig) -> list[str]:
+    client = app_state.http
+    close_client = False
+    proxy_url = resolve_provider_proxy_url(provider)
+
+    if proxy_url:
+        client = httpx.AsyncClient(
+            proxy=proxy_url,
+            timeout=app_state.http.timeout,
+            limits=httpx.Limits(
+                max_connections=settings.max_connections,
+                max_keepalive_connections=settings.max_keepalive_connections,
+            ),
+            trust_env=False,
+        )
+        close_client = True
+
+    try:
+        response = await client.request(**_model_list_request(provider))
+        response.raise_for_status()
+        return _parse_model_list(provider.protocol, response.json(), provider.match_regex)
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text or f"HTTP {exc.response.status_code}"
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Transport error: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if close_client:
+            await client.aclose()
+
+
+def _model_list_request(provider: ProviderConfig) -> dict[str, Any]:
+    base_url = resolve_provider_base_url(provider).rstrip("/")
+    api_key = resolve_provider_api_key(provider)
+    headers = dict(provider.headers)
+
+    if provider.protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}:
+        return {
+            "method": "GET",
+            "url": _openai_models_url(base_url),
+            "headers": {
+                "authorization": f"Bearer {api_key}",
+                **headers,
+            },
+        }
+
+    if provider.protocol == ProtocolKind.ANTHROPIC:
+        return {
+            "method": "GET",
+            "url": f"{base_url}/models",
+            "headers": {
+                "x-api-key": api_key,
+                "anthropic-version": settings.anthropic_version,
+                **headers,
+            },
+        }
+
+    if provider.protocol == ProtocolKind.GEMINI:
+        return {
+            "method": "GET",
+            "url": f"{base_url}/models?key={api_key}",
+            "headers": headers,
+        }
+
+    raise ValueError(f"Unsupported protocol={provider.protocol.value}")
+
+
+def _parse_model_list(protocol: ProtocolKind, payload: dict[str, Any], match_regex: str) -> list[str]:
+    names: list[str] = []
+    items = payload.get("data") or payload.get("models") or []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if protocol == ProtocolKind.GEMINI:
+            value = str(item.get("name") or "")
+            if value.startswith("models/"):
+                value = value[7:]
+        else:
+            value = str(item.get("id") or item.get("name") or "")
+        value = value.strip()
+        if value:
+            names.append(value)
+
+    unique_names = list(dict.fromkeys(names))
+    if not match_regex.strip():
+        return unique_names
+
+    import re
+
+    pattern = re.compile(match_regex)
+    return [name for name in unique_names if pattern.search(name)]
+
+
+def _openai_models_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/v1"):
+        return f"{normalized}/models"
+    return f"{normalized}/v1/models"
+
+
 async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | None) -> RoutingPlan:
     matched_group = await app_state.domain_store.find_group_by_name(protocol.value, requested_model)
     if matched_group is not None:
@@ -515,7 +646,7 @@ async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | N
     return RoutingPlan(
         requested_model=requested_model,
         matched_group=None,
-        strategy=RoutingStrategy.WEIGHTED,
+        strategy=RoutingStrategy.ROUND_ROBIN,
         allowed_provider_ids=None,
         use_model_matching=True,
     )
