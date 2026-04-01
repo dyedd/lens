@@ -3,7 +3,7 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Layers3, Pencil, Plus, RefreshCcw, Search, Trash2, X } from 'lucide-react'
-import { ApiError, ModelGroup, ModelGroupPayload, ProtocolKind, Provider, RoutingStrategy, apiRequest } from '@/lib/api'
+import { ApiError, ModelGroup, ModelGroupPayload, ProtocolKind, Provider, RoutePreview, RoutingStrategy, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/cn'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
@@ -119,6 +119,20 @@ export function GroupsScreen() {
 
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/model-groups') })
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
+  const { data: previews } = useQuery({
+    queryKey: ['group-previews', groups],
+    enabled: Boolean(groups?.length),
+    queryFn: async () => {
+      const items = await Promise.all((groups ?? []).map(async (group) => {
+        const preview = await apiRequest<RoutePreview>('/router/preview', {
+          method: 'POST',
+          body: JSON.stringify({ protocol: group.protocol, model: group.name }),
+        })
+        return [group.id, preview] as const
+      }))
+      return new Map(items)
+    },
+  })
 
   const providerMap = useMemo(() => {
     const map = new Map<string, Provider>()
@@ -240,12 +254,18 @@ export function GroupsScreen() {
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {visibleGroups.map((group) => {
           const selectedProviders = group.provider_ids.map((id) => providerMap.get(id)).filter(Boolean) as Provider[]
+          const preview = previews?.get(group.id)
+          const previewProviders = (preview?.matched_provider_ids ?? []).map((id) => providerMap.get(id)).filter(Boolean) as Provider[]
           return (
             <article key={group.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[15px] font-semibold text-[var(--text)]">{group.name}</div>
-                  <div className="mt-1 text-xs text-[var(--muted)]">{protocolOptions.find((item) => item.value === group.protocol)?.label ?? group.protocol}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                    <span>{protocolOptions.find((item) => item.value === group.protocol)?.label ?? group.protocol}</span>
+                    <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5">{group.enabled ? (locale === 'zh-CN' ? '已启用' : 'Enabled') : (locale === 'zh-CN' ? '已停用' : 'Disabled')}</span>
+                    <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5">{locale === 'zh-CN' ? `渠道 ${group.provider_ids.length}` : `${group.provider_ids.length} providers`}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <SwitchButton checked={group.enabled} onChange={() => void toggleEnabled(group)} />
@@ -260,6 +280,21 @@ export function GroupsScreen() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</span>
                     <span className="rounded-full bg-[var(--accent-2)] px-2.5 py-1 text-xs text-[var(--accent)]">{strategyOptions.find((item) => item.value === group.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</span>
+                  </div>
+                </div>
+
+                <div className={panelClassName() + ' p-3'}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '路由预览' : 'Route preview'}</span>
+                    <span className="rounded-full bg-[var(--panel-soft)] px-2.5 py-1 text-xs text-[var(--muted)]">{previewProviders.length}</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {previewProviders.length ? previewProviders.map((provider) => (
+                      <div key={provider.id} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-2.5">
+                        <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
+                        <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
+                      </div>
+                    )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前没有命中渠道' : 'No providers matched'}</p>}
                   </div>
                 </div>
 

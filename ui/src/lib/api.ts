@@ -91,6 +91,14 @@ export type RouteSnapshot = {
   health: Array<{ provider_id: string; consecutive_failures: number; last_error?: string | null }>
 }
 
+export type RoutePreview = {
+  protocol: ProtocolKind
+  requested_model?: string | null
+  matched_group_name?: string | null
+  strategy?: RoutingStrategy | null
+  matched_provider_ids: string[]
+}
+
 export type OverviewMetrics = {
   total_requests: number
   successful_requests: number
