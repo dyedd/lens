@@ -45,7 +45,7 @@ function heatLevel(value: number, maxValue: number) {
 }
 
 function HeatCell({ level }: { level: number }) {
-  const palette = ['#ece8df', '#dce8dc', '#bfd4c2', '#88ab90', '#5b7f66']
+  const palette = ['#edf3ff', '#dbe9ff', '#bfd6ff', '#7aa7ff', '#2563eb']
   return <span className="block h-3.5 w-3.5 rounded-[4px]" style={{ backgroundColor: palette[level] }} />
 }
 
@@ -145,7 +145,7 @@ export function OverviewScreen() {
                   const Icon = item.icon
                   return (
                     <div key={item.label} className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[rgba(88,124,99,0.12)] text-[var(--accent)] xl:h-10 xl:w-10">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[rgba(37,99,235,0.12)] text-[var(--accent)] xl:h-10 xl:w-10">
                         <Icon className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0">
@@ -200,7 +200,7 @@ export function OverviewScreen() {
           <div className="flex items-end gap-3 rounded-[24px] bg-[var(--panel)] px-4 pb-4 pt-6">
             {chartBars.length ? chartBars.map((item) => (
               <div key={item.label} className="flex min-w-0 flex-1 flex-col justify-end gap-2">
-                <div className="rounded-t-[14px] bg-[linear-gradient(180deg,rgba(88,124,99,0.7),rgba(88,124,99,0.26))]" style={{ height: `${Math.max((item.value / maxBar) * 220, 10)}px` }} />
+                <div className="rounded-t-[14px] bg-[linear-gradient(180deg,rgba(37,99,235,0.72),rgba(37,99,235,0.24))]" style={{ height: `${Math.max((item.value / maxBar) * 220, 10)}px` }} />
                 <div className="truncate text-center text-[11px] text-[var(--muted)]" title={item.label}>{item.label}</div>
               </div>
             )) : <div className="flex h-full w-full items-center justify-center text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无模型日志数据' : 'No model logs yet'}</div>}

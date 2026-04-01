@@ -431,11 +431,11 @@ export function ChannelsScreen() {
 
                 <button type="button" className="mt-4 grid w-full gap-3 text-left" onClick={() => setDetailTarget(item)}>
                   <div className="flex items-center justify-between rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
-                    <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(88,124,99,0.12)] text-[var(--accent)]"><Activity className="h-4 w-4" /></span><span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '请求数' : 'Requests'}</span></div>
+                    <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(37,99,235,0.12)] text-[var(--accent)]"><Activity className="h-4 w-4" /></span><span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '请求数' : 'Requests'}</span></div>
                     <strong className="text-base text-[var(--text)]">{formatCompact(stats?.requestCount ?? 0)}</strong>
                   </div>
                   <div className="flex items-center justify-between rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
-                    <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(88,124,99,0.12)] text-[var(--accent)]"><DollarSign className="h-4 w-4" /></span><span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '成本' : 'Cost'}</span></div>
+                    <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(37,99,235,0.12)] text-[var(--accent)]"><DollarSign className="h-4 w-4" /></span><span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '成本' : 'Cost'}</span></div>
                     <strong className="text-base text-[var(--text)]">{formatMoney(stats?.totalCostUsd ?? 0)}</strong>
                   </div>
                 </button>

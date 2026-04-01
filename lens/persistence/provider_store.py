@@ -61,11 +61,13 @@ class ProviderStore:
                 elif key == "model_patterns" and value is not None:
                     entity.model_patterns_json = json.dumps(value, ensure_ascii=True)
                 elif key == "base_urls" and value is not None:
-                    entity.base_urls_json = json.dumps([item.model_dump(mode="json") for item in value], ensure_ascii=True)
-                    entity.base_url = str(value[0].url) if value else entity.base_url
+                    normalized_base_urls = [self._normalize_base_url_item(item) for item in value]
+                    entity.base_urls_json = json.dumps(normalized_base_urls, ensure_ascii=True)
+                    entity.base_url = str(normalized_base_urls[0]["url"]) if normalized_base_urls else entity.base_url
                 elif key == "keys" and value is not None:
-                    entity.keys_json = json.dumps([item.model_dump(mode="json") for item in value], ensure_ascii=True)
-                    enabled_key = next((item.key for item in value if item.enabled), value[0].key if value else None)
+                    normalized_keys = [self._normalize_key_item(item) for item in value]
+                    entity.keys_json = json.dumps(normalized_keys, ensure_ascii=True)
+                    enabled_key = next((item["key"] for item in normalized_keys if item["enabled"]), normalized_keys[0]["key"] if normalized_keys else None)
                     if enabled_key:
                         entity.api_key = enabled_key
                 elif key == "proxy" and value is not None:
@@ -129,10 +131,32 @@ class ProviderStore:
         return [{"url": str(fallback_base_url), "delay": 0}]
 
     @staticmethod
+    def _normalize_base_url_item(item):
+        if hasattr(item, "model_dump"):
+            payload = item.model_dump(mode="json")
+            return {"url": str(payload["url"]), "delay": int(payload.get("delay") or 0)}
+        return {"url": str(item["url"]), "delay": int(item.get("delay") or 0)}
+
+    @staticmethod
     def _normalize_keys(keys, fallback_api_key):
         if keys:
             return keys
         return [{"key": fallback_api_key, "remark": "", "enabled": True}]
+
+    @staticmethod
+    def _normalize_key_item(item):
+        if hasattr(item, "model_dump"):
+            payload = item.model_dump(mode="json")
+            return {
+                "key": str(payload["key"]),
+                "remark": str(payload.get("remark") or ""),
+                "enabled": bool(payload.get("enabled", True)),
+            }
+        return {
+            "key": str(item["key"]),
+            "remark": str(item.get("remark") or ""),
+            "enabled": bool(item.get("enabled", True)),
+        }
 
     @staticmethod
     def _first_base_url(base_urls, fallback_base_url):
