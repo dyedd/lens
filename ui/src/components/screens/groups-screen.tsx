@@ -116,6 +116,7 @@ export function GroupsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null)
+  const [detailTarget, setDetailTarget] = useState<ModelGroup | null>(null)
 
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/model-groups') })
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
@@ -155,6 +156,10 @@ export function GroupsScreen() {
       return group.name.toLowerCase().includes(keyword) || providerNames.includes(keyword)
     })
   }, [groups, providerMap, search])
+
+  const detailPreview = detailTarget ? previews?.get(detailTarget.id) : undefined
+  const detailProviders = detailTarget ? detailTarget.provider_ids.map((id) => providerMap.get(id)).filter(Boolean) as Provider[] : []
+  const detailPreviewProviders = (detailPreview?.matched_provider_ids ?? []).map((id) => providerMap.get(id)).filter(Boolean) as Provider[]
 
   async function refresh() {
     await Promise.all([
@@ -259,14 +264,14 @@ export function GroupsScreen() {
           return (
             <article key={group.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetailTarget(group)}>
                   <div className="truncate text-[15px] font-semibold text-[var(--text)]">{group.name}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
                     <span>{protocolOptions.find((item) => item.value === group.protocol)?.label ?? group.protocol}</span>
                     <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5">{group.enabled ? (locale === 'zh-CN' ? '已启用' : 'Enabled') : (locale === 'zh-CN' ? '已停用' : 'Disabled')}</span>
                     <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5">{locale === 'zh-CN' ? `渠道 ${group.provider_ids.length}` : `${group.provider_ids.length} providers`}</span>
                   </div>
-                </div>
+                </button>
                 <div className="flex items-center gap-1.5">
                   <SwitchButton checked={group.enabled} onChange={() => void toggleEnabled(group)} />
                   <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => openEdit(group)}><Pencil size={15} /></button>
@@ -276,14 +281,14 @@ export function GroupsScreen() {
               </div>
 
               <div className="mt-4 grid gap-3">
-                <div className={panelClassName() + ' p-3'}>
+                <button type="button" className={panelClassName() + ' p-3 text-left'} onClick={() => setDetailTarget(group)}>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</span>
                     <span className="rounded-full bg-[var(--accent-2)] px-2.5 py-1 text-xs text-[var(--accent)]">{strategyOptions.find((item) => item.value === group.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</span>
                   </div>
-                </div>
+                </button>
 
-                <div className={panelClassName() + ' p-3'}>
+                <button type="button" className={panelClassName() + ' p-3 text-left'} onClick={() => setDetailTarget(group)}>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '路由预览' : 'Route preview'}</span>
                     <span className="rounded-full bg-[var(--panel-soft)] px-2.5 py-1 text-xs text-[var(--muted)]">{previewProviders.length}</span>
@@ -296,9 +301,9 @@ export function GroupsScreen() {
                       </div>
                     )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前没有命中渠道' : 'No providers matched'}</p>}
                   </div>
-                </div>
+                </button>
 
-                <div className={panelClassName() + ' p-3'}>
+                <button type="button" className={panelClassName() + ' p-3 text-left'} onClick={() => setDetailTarget(group)}>
                   <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
                     <Layers3 size={14} />
                     {locale === 'zh-CN' ? '渠道' : 'Providers'}
@@ -311,12 +316,82 @@ export function GroupsScreen() {
                       </div>
                     )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无渠道' : 'No providers'}</p>}
                   </div>
-                </div>
+                </button>
               </div>
             </article>
           )
         })}
       </div>
+
+      <Dialog.Root open={Boolean(detailTarget)} onOpenChange={(open) => { if (!open) setDetailTarget(null) }}>
+        {detailTarget ? (
+          <AppDialogContent className="max-w-5xl" title={locale === 'zh-CN' ? '模型组详情' : 'Group detail'}>
+            <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+              <section className="space-y-4">
+                <div className={panelClassName() + ' p-4'}>
+                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '基础信息' : 'Overview'}</div>
+                  <div className="mt-4 grid gap-3 text-sm text-[var(--text)]">
+                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '名称' : 'Name'}</div><div className="mt-1">{detailTarget.name}</div></div>
+                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '协议' : 'Protocol'}</div><div className="mt-1">{protocolOptions.find((item) => item.value === detailTarget.protocol)?.label ?? detailTarget.protocol}</div></div>
+                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</div><div className="mt-1">{strategyOptions.find((item) => item.value === detailTarget.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</div></div>
+                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '状态' : 'Status'}</div><div className="mt-1">{detailTarget.enabled ? (locale === 'zh-CN' ? '已启用' : 'Enabled') : (locale === 'zh-CN' ? '已停用' : 'Disabled')}</div></div>
+                  </div>
+                </div>
+
+                <div className={panelClassName() + ' p-4'}>
+                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '模型组渠道' : 'Group providers'}</div>
+                  <div className="mt-4 space-y-2">
+                    {detailProviders.length ? detailProviders.map((provider, index) => (
+                      <div key={provider.id} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-3">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--accent-2)] text-xs text-[var(--accent)]">{index + 1}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
+                            <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无渠道' : 'No providers'}</p>}
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <div className={panelClassName() + ' p-4'}>
+                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '路由预览结果' : 'Route preview result'}</div>
+                  <div className="mt-4 grid gap-3 text-sm text-[var(--text)]">
+                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '请求模型' : 'Requested model'}</div><div className="mt-1">{detailPreview?.requested_model ?? detailTarget.name}</div></div>
+                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '命中分组' : 'Matched group'}</div><div className="mt-1">{detailPreview?.matched_group_name ?? detailTarget.name}</div></div>
+                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '预览策略' : 'Preview strategy'}</div><div className="mt-1">{detailPreview?.strategy ? strategyOptions.find((item) => item.value === detailPreview.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en'] : '-'}</div></div>
+                  </div>
+                </div>
+
+                <div className={panelClassName() + ' p-4'}>
+                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '命中顺序' : 'Matched order'}</div>
+                  <div className="mt-4 space-y-2">
+                    {detailPreviewProviders.length ? detailPreviewProviders.map((provider, index) => (
+                      <div key={provider.id + index} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-3">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--accent-2)] text-xs text-[var(--accent)]">{index + 1}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
+                            <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前没有命中渠道' : 'No providers matched'}</p>}
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button className="h-12 rounded-2xl bg-[var(--accent)] text-sm font-medium text-white" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑模型组' : 'Edit group'}</button>
+              <button className="h-12 rounded-2xl bg-[var(--danger)] text-sm font-medium text-white" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除模型组' : 'Delete group'}</button>
+            </div>
+          </AppDialogContent>
+        ) : null}
+      </Dialog.Root>
 
       <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
         <AppDialogContent className="max-w-4xl" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
