@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderModelFetchRequest, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
+from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderModelFetchRequest, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore
 from ..persistence.provider_store import ProviderStore
@@ -271,6 +271,11 @@ async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_curr
 @app.get("/api/model-groups", response_model=list[ModelGroup])
 async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGroup]:
     return await app_state.domain_store.list_groups()
+
+
+@app.get("/api/model-groups/stats", response_model=list[ModelGroupStats])
+async def list_model_group_stats(_: Any = Depends(get_current_admin)) -> list[ModelGroupStats]:
+    return await app_state.domain_store.list_group_stats()
 
 
 @app.post("/api/model-groups", response_model=ModelGroup, status_code=201)

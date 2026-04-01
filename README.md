@@ -50,6 +50,7 @@ Lens 是一个基于 Python + Next.js 的模型网关与管理后台，当前只
 - `GET /api/router`
 - `POST /api/router/preview`
 - `GET /api/model-groups`
+- `GET /api/model-groups/stats`
 - `POST /api/model-groups`
 - `PUT /api/model-groups/{group_id}`
 - `DELETE /api/model-groups/{group_id}`
@@ -132,7 +133,7 @@ Lens 只会在同一种原生协议族内做路由。
 2. Read requested protocol and model.
 3. If the model exactly matches a model-group name under the same protocol, use that group strategy and provider pool.
 4. Otherwise fall back to provider-level model matching.
-5. Route with `round_robin`, `weighted`, or `failover`.
+5. Route with `round_robin` or `failover`.
 
 渠道级聚合通过后台中手工选择的模型列表配置。
 

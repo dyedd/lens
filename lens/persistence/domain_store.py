@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ..models import ModelGroup, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, RequestLogItem, SettingItem
+from ..models import ModelGroup, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, RequestLogItem, SettingItem
 from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelPriceEntity, ProviderEntity, RequestLogEntity, SettingEntity
 
 
@@ -101,6 +101,77 @@ class DomainStore:
             if entity is None:
                 return None
             return self._to_group(entity)
+
+    async def list_group_stats(self) -> list[ModelGroupStats]:
+        async with self._session_factory() as session:
+            groups = (
+                await session.execute(select(ModelGroupEntity).order_by(ModelGroupEntity.name))
+            ).scalars().all()
+            grouped_rows = (
+                await session.execute(
+                    select(
+                        RequestLogEntity.matched_group_name,
+                        func.count(RequestLogEntity.id),
+                        func.sum(RequestLogEntity.success),
+                        func.sum(RequestLogEntity.total_tokens),
+                        func.sum(RequestLogEntity.total_cost_usd),
+                        func.avg(RequestLogEntity.latency_ms),
+                    )
+                    .where(RequestLogEntity.matched_group_name.is_not(None))
+                    .group_by(RequestLogEntity.matched_group_name)
+                )
+            ).all()
+
+            last_model_rows = (
+                await session.execute(
+                    select(
+                        RequestLogEntity.matched_group_name,
+                        RequestLogEntity.resolved_model,
+                    )
+                    .where(RequestLogEntity.matched_group_name.is_not(None))
+                    .where(RequestLogEntity.resolved_model.is_not(None))
+                    .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+                )
+            ).all()
+
+        aggregates = {
+            str(name): {
+                "request_count": int(request_count or 0),
+                "success_count": int(success_count or 0),
+                "total_tokens": int(total_tokens or 0),
+                "total_cost_usd": float(total_cost_usd or 0.0),
+                "avg_latency_ms": int(avg_latency_ms or 0),
+            }
+            for name, request_count, success_count, total_tokens, total_cost_usd, avg_latency_ms in grouped_rows
+            if name
+        }
+
+        last_models: dict[str, str] = {}
+        for group_name, resolved_model in last_model_rows:
+            if not group_name or not resolved_model:
+                continue
+            key = str(group_name)
+            if key not in last_models:
+                last_models[key] = str(resolved_model)
+
+        items: list[ModelGroupStats] = []
+        for group in groups:
+            aggregate = aggregates.get(group.name, {})
+            request_count = int(aggregate.get("request_count", 0))
+            success_count = int(aggregate.get("success_count", 0))
+            items.append(
+                ModelGroupStats(
+                    name=group.name,
+                    request_count=request_count,
+                    success_count=success_count,
+                    failed_count=max(request_count - success_count, 0),
+                    total_tokens=int(aggregate.get("total_tokens", 0)),
+                    total_cost_usd=round(float(aggregate.get("total_cost_usd", 0.0)), 6),
+                    avg_latency_ms=int(aggregate.get("avg_latency_ms", 0)),
+                    last_resolved_model=last_models.get(group.name),
+                )
+            )
+        return items
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:

@@ -68,6 +68,17 @@ export type ModelGroup = {
   enabled: boolean
 }
 
+export type ModelGroupStats = {
+  name: string
+  request_count: number
+  success_count: number
+  failed_count: number
+  total_tokens: number
+  total_cost_usd: number
+  avg_latency_ms: number
+  last_resolved_model?: string | null
+}
+
 export type ModelGroupPayload = {
   name: string
   protocol: ProtocolKind

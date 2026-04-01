@@ -223,6 +223,19 @@ class ModelGroupUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class ModelGroupStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    request_count: int = 0
+    success_count: int = 0
+    failed_count: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+    avg_latency_ms: int = 0
+    last_resolved_model: str | None = None
+
+
 class SettingItem(BaseModel):
     key: str
     value: str

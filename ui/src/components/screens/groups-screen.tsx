@@ -2,8 +2,8 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Layers3, Pencil, Plus, RefreshCcw, Search, Trash2, X } from 'lucide-react'
-import { ApiError, ModelGroup, ModelGroupPayload, ProtocolKind, Provider, RoutePreview, RoutingStrategy, apiRequest } from '@/lib/api'
+import { Activity, CheckCircle2, Clock3, Copy, DollarSign, FileText, Layers3, Pencil, Plus, RefreshCcw, Search, Trash2, X, XCircle } from 'lucide-react'
+import { ApiError, ModelGroup, ModelGroupPayload, ModelGroupStats, ProtocolKind, Provider, RoutePreview, RoutingStrategy, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/cn'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
@@ -33,7 +33,6 @@ const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
 
 const strategyOptions: Array<{ value: RoutingStrategy; zh: string; en: string }> = [
   { value: 'round_robin', zh: '轮询', en: 'Round Robin' },
-  { value: 'weighted', zh: '加权', en: 'Weighted' },
   { value: 'failover', zh: '故障转移', en: 'Failover' },
 ]
 
@@ -106,6 +105,26 @@ function SwitchIndicator({ checked }: { checked: boolean }) {
   )
 }
 
+function formatCompact(value: number) {
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(2) + 'M'
+  if (value >= 1_000) return (value / 1_000).toFixed(2) + 'K'
+  return String(value)
+}
+
+function formatMoney(value: number) {
+  if (value <= 0) return '$0.00'
+  return '$' + value.toFixed(value < 1 ? 4 : 2)
+}
+
+function MetricCard({ icon, label, value, accent = false }: { icon: React.ReactNode; label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="rounded-[24px] border border-[var(--line)] bg-[var(--panel)] p-4">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-[var(--muted)]">{icon}{label}</div>
+      <div className={accent ? 'mt-3 text-[24px] font-semibold text-[var(--accent)]' : 'mt-3 text-[24px] font-semibold text-[var(--text)]'}>{value}</div>
+    </div>
+  )
+}
+
 export function GroupsScreen() {
   const queryClient = useQueryClient()
   const { locale } = useI18n()
@@ -120,6 +139,7 @@ export function GroupsScreen() {
 
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/model-groups') })
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
+  const { data: groupStats } = useQuery({ queryKey: ['group-stats'], queryFn: () => apiRequest<ModelGroupStats[]>('/model-groups/stats') })
   const { data: previews } = useQuery({
     queryKey: ['group-previews', groups],
     enabled: Boolean(groups?.length),
@@ -157,7 +177,9 @@ export function GroupsScreen() {
     })
   }, [groups, providerMap, search])
 
+  const groupStatsMap = useMemo(() => new Map((groupStats ?? []).map((item) => [item.name, item])), [groupStats])
   const detailPreview = detailTarget ? previews?.get(detailTarget.id) : undefined
+  const detailStats = detailTarget ? groupStatsMap.get(detailTarget.name) : undefined
   const detailProviders = detailTarget ? detailTarget.provider_ids.map((id) => providerMap.get(id)).filter(Boolean) as Provider[] : []
   const detailPreviewProviders = (detailPreview?.matched_provider_ids ?? []).map((id) => providerMap.get(id)).filter(Boolean) as Provider[]
 
@@ -165,6 +187,7 @@ export function GroupsScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['groups'] }),
       queryClient.invalidateQueries({ queryKey: ['providers'] }),
+      queryClient.invalidateQueries({ queryKey: ['group-stats'] }),
     ])
   }
 
@@ -258,6 +281,7 @@ export function GroupsScreen() {
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {visibleGroups.map((group) => {
+          const stats = groupStatsMap.get(group.name)
           const selectedProviders = group.provider_ids.map((id) => providerMap.get(id)).filter(Boolean) as Provider[]
           const preview = previews?.get(group.id)
           const previewProviders = (preview?.matched_provider_ids ?? []).map((id) => providerMap.get(id)).filter(Boolean) as Provider[]
@@ -268,7 +292,7 @@ export function GroupsScreen() {
                   <div className="truncate text-[15px] font-semibold text-[var(--text)]">{group.name}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
                     <span>{protocolOptions.find((item) => item.value === group.protocol)?.label ?? group.protocol}</span>
-                    <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5">{group.enabled ? (locale === 'zh-CN' ? '已启用' : 'Enabled') : (locale === 'zh-CN' ? '已停用' : 'Disabled')}</span>
+                    <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5">{strategyOptions.find((item) => item.value === group.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</span>
                     <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5">{locale === 'zh-CN' ? `渠道 ${group.provider_ids.length}` : `${group.provider_ids.length} providers`}</span>
                   </div>
                 </button>
@@ -280,44 +304,48 @@ export function GroupsScreen() {
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3">
-                <button type="button" className={panelClassName() + ' p-3 text-left'} onClick={() => setDetailTarget(group)}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</span>
-                    <span className="rounded-full bg-[var(--accent-2)] px-2.5 py-1 text-xs text-[var(--accent)]">{strategyOptions.find((item) => item.value === group.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</span>
+              <button type="button" className="mt-4 grid w-full gap-3 text-left" onClick={() => setDetailTarget(group)}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-center justify-between rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
+                    <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(37,99,235,0.12)] text-[var(--accent)]"><Activity className="h-4 w-4" /></span><span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '请求数' : 'Requests'}</span></div>
+                    <strong className="text-base text-[var(--text)]">{formatCompact(stats?.request_count ?? 0)}</strong>
                   </div>
-                </button>
+                  <div className="flex items-center justify-between rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
+                    <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(37,99,235,0.12)] text-[var(--accent)]"><DollarSign className="h-4 w-4" /></span><span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '费用' : 'Cost'}</span></div>
+                    <strong className="text-base text-[var(--text)]">{formatMoney(stats?.total_cost_usd ?? 0)}</strong>
+                  </div>
+                </div>
 
-                <button type="button" className={panelClassName() + ' p-3 text-left'} onClick={() => setDetailTarget(group)}>
+                <div className={panelClassName() + ' p-3 text-left'}>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '路由预览' : 'Route preview'}</span>
                     <span className="rounded-full bg-[var(--panel-soft)] px-2.5 py-1 text-xs text-[var(--muted)]">{previewProviders.length}</span>
                   </div>
                   <div className="mt-3 space-y-2">
-                    {previewProviders.length ? previewProviders.map((provider) => (
+                    {previewProviders.length ? previewProviders.slice(0, 2).map((provider) => (
                       <div key={provider.id} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-2.5">
                         <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
                         <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
                       </div>
                     )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前没有命中渠道' : 'No providers matched'}</p>}
                   </div>
-                </button>
+                </div>
 
-                <button type="button" className={panelClassName() + ' p-3 text-left'} onClick={() => setDetailTarget(group)}>
-                  <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
-                    <Layers3 size={14} />
-                    {locale === 'zh-CN' ? '渠道' : 'Providers'}
+                <div className={panelClassName() + ' p-3 text-left'}>
+                  <div className="flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
+                    <span className="inline-flex items-center gap-2"><Layers3 size={14} />{locale === 'zh-CN' ? '渠道' : 'Providers'}</span>
+                    <span>{selectedProviders.length}</span>
                   </div>
                   <div className="mt-3 space-y-2">
-                    {selectedProviders.length ? selectedProviders.map((provider) => (
+                    {selectedProviders.length ? selectedProviders.slice(0, 2).map((provider) => (
                       <div key={provider.id} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-2.5">
                         <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
                         <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
                       </div>
                     )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无渠道' : 'No providers'}</p>}
                   </div>
-                </button>
-              </div>
+                </div>
+              </button>
             </article>
           )
         })}
@@ -326,68 +354,79 @@ export function GroupsScreen() {
       <Dialog.Root open={Boolean(detailTarget)} onOpenChange={(open) => { if (!open) setDetailTarget(null) }}>
         {detailTarget ? (
           <AppDialogContent className="max-w-5xl" title={locale === 'zh-CN' ? '模型组详情' : 'Group detail'}>
-            <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-              <section className="space-y-4">
-                <div className={panelClassName() + ' p-4'}>
-                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '基础信息' : 'Overview'}</div>
-                  <div className="mt-4 grid gap-3 text-sm text-[var(--text)]">
-                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '名称' : 'Name'}</div><div className="mt-1">{detailTarget.name}</div></div>
-                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '协议' : 'Protocol'}</div><div className="mt-1">{protocolOptions.find((item) => item.value === detailTarget.protocol)?.label ?? detailTarget.protocol}</div></div>
-                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</div><div className="mt-1">{strategyOptions.find((item) => item.value === detailTarget.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</div></div>
-                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '状态' : 'Status'}</div><div className="mt-1">{detailTarget.enabled ? (locale === 'zh-CN' ? '已启用' : 'Enabled') : (locale === 'zh-CN' ? '已停用' : 'Disabled')}</div></div>
-                  </div>
-                </div>
+            <div className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                <MetricCard icon={<Activity className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '总请求' : 'Requests'} value={formatCompact(detailStats?.request_count ?? 0)} accent />
+                <MetricCard icon={<CheckCircle2 className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '成功' : 'Success'} value={formatCompact(detailStats?.success_count ?? 0)} />
+                <MetricCard icon={<XCircle className="h-4 w-4 text-[var(--danger)]" />} label={locale === 'zh-CN' ? '失败' : 'Failed'} value={formatCompact(detailStats?.failed_count ?? 0)} />
+                <MetricCard icon={<FileText className="h-4 w-4 text-[var(--accent)]" />} label="Token" value={formatCompact(detailStats?.total_tokens ?? 0)} />
+                <MetricCard icon={<DollarSign className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '成本' : 'Cost'} value={formatMoney(detailStats?.total_cost_usd ?? 0)} />
+                <MetricCard icon={<Clock3 className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '平均耗时' : 'Latency'} value={`${detailStats?.avg_latency_ms ?? 0} ms`} />
+              </div>
 
-                <div className={panelClassName() + ' p-4'}>
-                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '模型组渠道' : 'Group providers'}</div>
-                  <div className="mt-4 space-y-2">
-                    {detailProviders.length ? detailProviders.map((provider, index) => (
-                      <div key={provider.id} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-3">
-                        <div className="flex items-start gap-3">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--accent-2)] text-xs text-[var(--accent)]">{index + 1}</span>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
-                            <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
+              <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+                <section className="space-y-4">
+                  <div className={panelClassName() + ' p-4'}>
+                    <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '基础信息' : 'Overview'}</div>
+                    <div className="mt-4 grid gap-3 text-sm text-[var(--text)]">
+                      <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '名称' : 'Name'}</div><div className="mt-1">{detailTarget.name}</div></div>
+                      <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '协议' : 'Protocol'}</div><div className="mt-1">{protocolOptions.find((item) => item.value === detailTarget.protocol)?.label ?? detailTarget.protocol}</div></div>
+                      <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</div><div className="mt-1">{strategyOptions.find((item) => item.value === detailTarget.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</div></div>
+                      <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '最近命中模型' : 'Last resolved model'}</div><div className="mt-1 break-all">{detailStats?.last_resolved_model ?? (locale === 'zh-CN' ? '暂无数据' : 'No data yet')}</div></div>
+                    </div>
+                  </div>
+
+                  <div className={panelClassName() + ' p-4'}>
+                    <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '路由预览结果' : 'Route preview result'}</div>
+                    <div className="mt-4 grid gap-3 text-sm text-[var(--text)]">
+                      <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '请求模型' : 'Requested model'}</div><div className="mt-1">{detailPreview?.requested_model ?? detailTarget.name}</div></div>
+                      <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '命中分组' : 'Matched group'}</div><div className="mt-1">{detailPreview?.matched_group_name ?? detailTarget.name}</div></div>
+                      <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '预览策略' : 'Preview strategy'}</div><div className="mt-1">{detailPreview?.strategy ? strategyOptions.find((item) => item.value === detailPreview.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en'] : '-'}</div></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <div className={panelClassName() + ' p-4'}>
+                    <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '命中顺序' : 'Matched order'}</div>
+                    <div className="mt-4 space-y-2">
+                      {detailPreviewProviders.length ? detailPreviewProviders.map((provider, index) => (
+                        <div key={provider.id + index} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-3">
+                          <div className="flex items-start gap-3">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--accent-2)] text-xs text-[var(--accent)]">{index + 1}</span>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
+                              <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无渠道' : 'No providers'}</p>}
+                      )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前没有命中渠道' : 'No providers matched'}</p>}
+                    </div>
                   </div>
-                </div>
-              </section>
 
-              <section className="space-y-4">
-                <div className={panelClassName() + ' p-4'}>
-                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '路由预览结果' : 'Route preview result'}</div>
-                  <div className="mt-4 grid gap-3 text-sm text-[var(--text)]">
-                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '请求模型' : 'Requested model'}</div><div className="mt-1">{detailPreview?.requested_model ?? detailTarget.name}</div></div>
-                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '命中分组' : 'Matched group'}</div><div className="mt-1">{detailPreview?.matched_group_name ?? detailTarget.name}</div></div>
-                    <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '预览策略' : 'Preview strategy'}</div><div className="mt-1">{detailPreview?.strategy ? strategyOptions.find((item) => item.value === detailPreview.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en'] : '-'}</div></div>
-                  </div>
-                </div>
-
-                <div className={panelClassName() + ' p-4'}>
-                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '命中顺序' : 'Matched order'}</div>
-                  <div className="mt-4 space-y-2">
-                    {detailPreviewProviders.length ? detailPreviewProviders.map((provider, index) => (
-                      <div key={provider.id + index} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-3">
-                        <div className="flex items-start gap-3">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--accent-2)] text-xs text-[var(--accent)]">{index + 1}</span>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
-                            <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
+                  <div className={panelClassName() + ' p-4'}>
+                    <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '模型组渠道' : 'Group providers'}</div>
+                    <div className="mt-4 space-y-2">
+                      {detailProviders.length ? detailProviders.map((provider, index) => (
+                        <div key={provider.id} className="rounded-2xl bg-[var(--panel-soft)] px-3 py-3">
+                          <div className="flex items-start gap-3">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--accent-2)] text-xs text-[var(--accent)]">{index + 1}</span>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[13px] font-medium text-[var(--text)]">{provider.name}</div>
+                              <div className="mt-1 truncate text-xs text-[var(--muted)]">{provider.base_url}</div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前没有命中渠道' : 'No providers matched'}</p>}
+                      )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无渠道' : 'No providers'}</p>}
+                    </div>
                   </div>
-                </div>
-              </section>
-            </div>
+                </section>
+              </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <button className="h-12 rounded-2xl bg-[var(--accent)] text-sm font-medium text-white" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑模型组' : 'Edit group'}</button>
-              <button className="h-12 rounded-2xl bg-[var(--danger)] text-sm font-medium text-white" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除模型组' : 'Delete group'}</button>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button className="h-12 rounded-2xl bg-[var(--accent)] text-sm font-medium text-white" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑模型组' : 'Edit group'}</button>
+                <button className="h-12 rounded-2xl bg-[var(--danger)] text-sm font-medium text-white" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除模型组' : 'Delete group'}</button>
+              </div>
             </div>
           </AppDialogContent>
         ) : null}

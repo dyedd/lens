@@ -132,13 +132,13 @@ class RoundRobinRouter:
         providers: list[ProviderConfig],
         protocol: ProtocolKind,
         requested_model: str | None,
-        strategy: RoutingStrategy = RoutingStrategy.WEIGHTED,
+        strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN,
         allowed_provider_ids: set[str] | None = None,
         use_model_matching: bool = True,
     ) -> list[ProviderConfig]:
         active = [
             provider
-            for provider in sorted(providers, key=lambda item: (item.priority, item.name))
+            for provider in sorted(providers, key=lambda item: item.name)
             if provider.protocol == protocol
             and provider.status == ProviderStatus.ENABLED
             and (allowed_provider_ids is None or provider.id in allowed_provider_ids)
@@ -151,10 +151,7 @@ class RoundRobinRouter:
         if strategy == RoutingStrategy.ROUND_ROBIN:
             return active
 
-        weighted: list[ProviderConfig] = []
-        for provider in active:
-            weighted.extend([provider] * provider.weight)
-        return weighted
+        return active
 
 
 def _matches_model(provider: ProviderConfig, requested_model: str | None) -> bool:
@@ -169,8 +166,5 @@ def _matches_model(provider: ProviderConfig, requested_model: str | None) -> boo
             except re.error:
                 continue
         return False
-
-    if provider.model_name:
-        return provider.model_name == requested_model
 
     return True
