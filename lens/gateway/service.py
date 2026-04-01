@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import json
@@ -85,10 +86,22 @@ app_state = AppState()
 
 
 @asynccontextmanager
+async def _managed_lifespan(state: AppState):
+    await _startup_app_state(state)
+    try:
+        yield
+    except asyncio.CancelledError:
+        # Uvicorn on Windows can cancel the lifespan receive loop during Ctrl+C.
+        # Treat it as normal shutdown so the console does not dump an extra traceback.
+        pass
+    finally:
+        await _close_app_state(state)
+
+
+@asynccontextmanager
 async def lifespan(_: FastAPI):
-    await _startup_app_state(app_state)
-    yield
-    await _close_app_state(app_state)
+    async with _managed_lifespan(app_state):
+        yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
