@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import re
 from threading import Lock
 
-from ..models import ProtocolKind, ProviderConfig, ProviderHealth, ProviderStatus, RoutePreview, RouteState, RouterSnapshot, RoutingStrategy
+from ..models import ProtocolKind, ProviderConfig, ProviderHealth, ProviderStatus, RoutePreview, RoutePreviewItem, RouteState, RouterSnapshot, RoutingStrategy
 
 
 @dataclass
@@ -20,15 +20,21 @@ class _RouteCursor:
 
 
 @dataclass
+class RouteTarget:
+    provider: ProviderConfig
+    model_name: str | None = None
+
+
+@dataclass
 class RouteSelection:
-    primary: ProviderConfig
-    fallbacks: list[ProviderConfig] = field(default_factory=list)
+    primary: RouteTarget
+    fallbacks: list[RouteTarget] = field(default_factory=list)
 
 
 class RoundRobinRouter:
     def __init__(self) -> None:
         self._lock = Lock()
-        self._cursors: dict[ProtocolKind, _RouteCursor] = {}
+        self._cursors: dict[str, _RouteCursor] = {}
         self._health: dict[str, _HealthState] = defaultdict(_HealthState)
 
     def select(
@@ -39,25 +45,24 @@ class RoundRobinRouter:
         strategy: RoutingStrategy = RoutingStrategy.WEIGHTED,
         allowed_provider_ids: set[str] | None = None,
         use_model_matching: bool = True,
+        route_targets: list[RouteTarget] | None = None,
+        cursor_key: str | None = None,
     ) -> RouteSelection:
-        active = self._build_active_pool(
-            providers,
-            protocol,
-            requested_model,
-            strategy,
-            allowed_provider_ids,
-            use_model_matching,
-        )
+        active = self._build_active_pool(providers, protocol, requested_model, allowed_provider_ids, use_model_matching, route_targets)
         if not active:
             detail = f"No enabled providers available for protocol={protocol.value}"
             if requested_model:
                 detail = f"No enabled providers matched protocol={protocol.value} model={requested_model}"
             raise LookupError(detail)
 
-        with self._lock:
-            cursor = self._cursors.setdefault(protocol, _RouteCursor())
-            primary_index = cursor.next_index % len(active)
-            cursor.next_index = (primary_index + 1) % len(active)
+        route_key = cursor_key or protocol.value
+        if strategy == RoutingStrategy.FAILOVER:
+            primary_index = 0
+        else:
+            with self._lock:
+                cursor = self._cursors.setdefault(route_key, _RouteCursor())
+                primary_index = cursor.next_index % len(active)
+                cursor.next_index = (primary_index + 1) % len(active)
 
         primary = active[primary_index]
         fallbacks = active[primary_index + 1 :] + active[:primary_index]
@@ -78,13 +83,13 @@ class RoundRobinRouter:
         for protocol in ProtocolKind:
             pool = self._build_active_pool(providers, protocol, None)
             with self._lock:
-                next_index = self._cursors.get(protocol, _RouteCursor()).next_index
+                next_index = self._cursors.get(protocol.value, _RouteCursor()).next_index
 
             routes.append(
                 RouteState(
                     protocol=protocol,
                     next_index=next_index,
-                    provider_ids=[provider.id for provider in pool],
+                    provider_ids=[target.provider.id for target in pool],
                     requested_model=None,
                 )
             )
@@ -110,21 +115,23 @@ class RoundRobinRouter:
         allowed_provider_ids: set[str] | None = None,
         use_model_matching: bool = True,
         matched_group_name: str | None = None,
+        route_targets: list[RouteTarget] | None = None,
     ) -> RoutePreview:
-        pool = self._build_active_pool(
-            providers,
-            protocol,
-            requested_model,
-            strategy,
-            allowed_provider_ids,
-            use_model_matching,
-        )
+        pool = self._build_active_pool(providers, protocol, requested_model, allowed_provider_ids, use_model_matching, route_targets)
         return RoutePreview(
             protocol=protocol,
             requested_model=requested_model,
             matched_group_name=matched_group_name,
             strategy=strategy,
-            matched_provider_ids=[provider.id for provider in pool],
+            matched_provider_ids=[target.provider.id for target in pool],
+            items=[
+                RoutePreviewItem(
+                    provider_id=target.provider.id,
+                    provider_name=target.provider.name,
+                    model_name=target.model_name,
+                )
+                for target in pool
+            ],
         )
 
     @staticmethod
@@ -132,25 +139,28 @@ class RoundRobinRouter:
         providers: list[ProviderConfig],
         protocol: ProtocolKind,
         requested_model: str | None,
-        strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN,
         allowed_provider_ids: set[str] | None = None,
         use_model_matching: bool = True,
-    ) -> list[ProviderConfig]:
-        active = [
-            provider
-            for provider in sorted(providers, key=lambda item: item.name)
-            if provider.protocol == protocol
-            and provider.status == ProviderStatus.ENABLED
-            and (allowed_provider_ids is None or provider.id in allowed_provider_ids)
-            and (not use_model_matching or _matches_model(provider, requested_model))
-        ]
+        route_targets: list[RouteTarget] | None = None,
+    ) -> list[RouteTarget]:
+        provider_map = {provider.id: provider for provider in providers}
+        if route_targets is not None:
+            return [
+                target
+                for target in route_targets
+                if target.provider.status == ProviderStatus.ENABLED and target.provider.protocol == protocol
+            ]
 
-        if strategy == RoutingStrategy.FAILOVER:
-            return active
-
-        if strategy == RoutingStrategy.ROUND_ROBIN:
-            return active
-
+        active: list[RouteTarget] = []
+        for provider in sorted(providers, key=lambda item: item.name):
+            if provider.protocol != protocol or provider.status != ProviderStatus.ENABLED:
+                continue
+            if allowed_provider_ids is not None and provider.id not in allowed_provider_ids:
+                continue
+            if use_model_matching and not _matches_model(provider, requested_model):
+                continue
+            resolved = provider_map.get(provider.id, provider)
+            active.append(RouteTarget(provider=resolved, model_name=requested_model))
         return active
 
 

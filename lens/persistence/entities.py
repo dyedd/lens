@@ -42,11 +42,24 @@ class ModelGroupEntity(Base):
     __tablename__ = "model_groups"
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     strategy: Mapped[str] = mapped_column(String(32), nullable=False, default="round_robin")
-    provider_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    first_token_timeout: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    session_keep_time: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class ModelGroupItemEntity(Base):
+    __tablename__ = "model_group_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    provider_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    provider_name_snapshot: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class SettingEntity(Base):

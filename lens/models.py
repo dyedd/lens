@@ -156,6 +156,13 @@ class RoutePreview(BaseModel):
     matched_group_name: str | None = None
     strategy: RoutingStrategy | None = None
     matched_provider_ids: list[str] = Field(default_factory=list)
+    items: list["RoutePreviewItem"] = Field(default_factory=list)
+
+
+class RoutePreviewItem(BaseModel):
+    provider_id: str
+    provider_name: str = ""
+    model_name: str | None = None
 
 
 class RoutePreviewRequest(BaseModel):
@@ -199,8 +206,27 @@ class ModelGroup(BaseModel):
     name: str
     protocol: ProtocolKind
     strategy: RoutingStrategy
-    provider_ids: list[str] = Field(default_factory=list)
     enabled: bool = True
+    match_regex: str = ""
+    first_token_timeout: int = Field(default=0, ge=0)
+    session_keep_time: int = Field(default=0, ge=0)
+    items: list["ModelGroupItem"] = Field(default_factory=list)
+
+
+class ModelGroupItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    provider_name: str = ""
+    model_name: str
+    sort_order: int = Field(default=0, ge=0)
+
+
+class ModelGroupItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
 
 
 class ModelGroupCreate(BaseModel):
@@ -209,8 +235,22 @@ class ModelGroupCreate(BaseModel):
     name: str
     protocol: ProtocolKind
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
-    provider_ids: list[str] = Field(default_factory=list)
     enabled: bool = True
+    match_regex: str = ""
+    first_token_timeout: int = Field(default=0, ge=0)
+    session_keep_time: int = Field(default=0, ge=0)
+    items: list[ModelGroupItemInput] = Field(default_factory=list)
+
+    @field_validator("match_regex")
+    @classmethod
+    def validate_match_regex(cls, pattern: str) -> str:
+        if not pattern:
+            return pattern
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
+        return pattern
 
 
 class ModelGroupUpdate(BaseModel):
@@ -219,8 +259,22 @@ class ModelGroupUpdate(BaseModel):
     name: str | None = None
     protocol: ProtocolKind | None = None
     strategy: RoutingStrategy | None = None
-    provider_ids: list[str] | None = None
     enabled: bool | None = None
+    match_regex: str | None = None
+    first_token_timeout: int | None = Field(default=None, ge=0)
+    session_keep_time: int | None = Field(default=None, ge=0)
+    items: list[ModelGroupItemInput] | None = None
+
+    @field_validator("match_regex")
+    @classmethod
+    def validate_match_regex(cls, pattern: str | None) -> str | None:
+        if not pattern:
+            return pattern
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
+        return pattern
 
 
 class ModelGroupStats(BaseModel):
@@ -234,6 +288,42 @@ class ModelGroupStats(BaseModel):
     total_cost_usd: float = 0.0
     avg_latency_ms: int = 0
     last_resolved_model: str | None = None
+
+
+class ModelGroupCandidateItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    provider_name: str
+    base_url: str
+    model_name: str
+
+
+class ModelGroupCandidatesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: ProtocolKind | None = None
+    name: str = ""
+    match_regex: str = ""
+    exclude_items: list[ModelGroupItemInput] = Field(default_factory=list)
+
+    @field_validator("match_regex")
+    @classmethod
+    def validate_match_regex(cls, pattern: str) -> str:
+        if not pattern:
+            return pattern
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
+        return pattern
+
+
+class ModelGroupCandidatesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidates: list[ModelGroupCandidateItem] = Field(default_factory=list)
+    matched_items: list[ModelGroupCandidateItem] = Field(default_factory=list)
 
 
 class SettingItem(BaseModel):

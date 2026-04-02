@@ -59,32 +59,58 @@ export type ProviderModelFetchPayload = {
   match_regex: string
 }
 
+export type ModelGroupItem = {
+  provider_id: string
+  provider_name: string
+  model_name: string
+  sort_order: number
+}
+
 export type ModelGroup = {
   id: string
   name: string
   protocol: ProtocolKind
   strategy: RoutingStrategy
-  provider_ids: string[]
   enabled: boolean
+  match_regex: string
+  first_token_timeout: number
+  session_keep_time: number
+  items: ModelGroupItem[]
 }
 
-export type ModelGroupStats = {
-  name: string
-  request_count: number
-  success_count: number
-  failed_count: number
-  total_tokens: number
-  total_cost_usd: number
-  avg_latency_ms: number
-  last_resolved_model?: string | null
+export type ModelGroupItemPayload = {
+  provider_id: string
+  model_name: string
 }
 
 export type ModelGroupPayload = {
   name: string
   protocol: ProtocolKind
   strategy: RoutingStrategy
-  provider_ids: string[]
   enabled: boolean
+  match_regex: string
+  first_token_timeout: number
+  session_keep_time: number
+  items: ModelGroupItemPayload[]
+}
+
+export type ModelGroupCandidateItem = {
+  provider_id: string
+  provider_name: string
+  base_url: string
+  model_name: string
+}
+
+export type ModelGroupCandidatesPayload = {
+  protocol?: ProtocolKind
+  name: string
+  match_regex: string
+  exclude_items: ModelGroupItemPayload[]
+}
+
+export type ModelGroupCandidatesResponse = {
+  candidates: ModelGroupCandidateItem[]
+  matched_items: ModelGroupCandidateItem[]
 }
 
 export type SettingItem = {
@@ -108,6 +134,7 @@ export type RoutePreview = {
   matched_group_name?: string | null
   strategy?: RoutingStrategy | null
   matched_provider_ids: string[]
+  items: Array<{ provider_id: string; provider_name: string; model_name?: string | null }>
 }
 
 export type OverviewMetrics = {

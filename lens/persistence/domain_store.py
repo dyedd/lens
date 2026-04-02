@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+import re
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ..models import ModelGroup, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, RequestLogItem, SettingItem
-from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelPriceEntity, ProviderEntity, RequestLogEntity, SettingEntity
+from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, RequestLogItem, SettingItem
+from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, ProviderEntity, RequestLogEntity, SettingEntity
 
 
 SETTING_GATEWAY_API_KEYS = "gateway_api_keys"
@@ -82,8 +84,10 @@ class DomainStore:
 
     async def list_groups(self) -> list[ModelGroup]:
         async with self._session_factory() as session:
-            result = await session.execute(select(ModelGroupEntity).order_by(ModelGroupEntity.name))
-            return [self._to_group(item) for item in result.scalars().all()]
+            entities = (
+                await session.execute(select(ModelGroupEntity).order_by(ModelGroupEntity.name))
+            ).scalars().all()
+            return await self._hydrate_groups(session, entities)
 
     async def find_group_by_name(self, protocol: str, name: str | None) -> ModelGroup | None:
         if not name:
@@ -100,7 +104,45 @@ class DomainStore:
             entity = result.scalar_one_or_none()
             if entity is None:
                 return None
-            return self._to_group(entity)
+            items = await self._load_group_items(session, [entity.id])
+            return self._to_group(entity, items.get(entity.id, []))
+
+    async def list_group_candidates(self, payload: ModelGroupCandidatesRequest) -> ModelGroupCandidatesResponse:
+        async with self._session_factory() as session:
+            query = select(ProviderEntity).order_by(ProviderEntity.name.asc(), ProviderEntity.id.asc())
+            if payload.protocol is not None:
+                query = query.where(ProviderEntity.protocol == payload.protocol.value)
+            providers = (
+                await session.execute(query)
+            ).scalars().all()
+
+        candidates: list[ModelGroupCandidateItem] = []
+        seen: set[tuple[str, str]] = set()
+        excluded = {(item.provider_id, item.model_name) for item in payload.exclude_items}
+
+        for provider in providers:
+            model_names = self._provider_model_names(provider)
+            for model_name in model_names:
+                candidate_key = (provider.id, model_name)
+                if candidate_key in seen:
+                    continue
+                seen.add(candidate_key)
+                candidates.append(
+                    ModelGroupCandidateItem(
+                        provider_id=provider.id,
+                        provider_name=provider.name,
+                        base_url=provider.base_url,
+                        model_name=model_name,
+                    )
+                )
+
+        matched_items = [
+            item
+            for item in candidates
+            if (item.provider_id, item.model_name) not in excluded
+            and self._candidate_matches_group(item.model_name, payload.name, payload.match_regex)
+        ]
+        return ModelGroupCandidatesResponse(candidates=candidates, matched_items=matched_items)
 
     async def list_group_stats(self) -> list[ModelGroupStats]:
         async with self._session_factory() as session:
@@ -175,19 +217,24 @@ class DomainStore:
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:
-            await self._validate_group_payload(session, payload.protocol.value, payload.name, payload.provider_ids)
-            next_id = await self._next_id(session, ModelGroupEntity, payload.protocol.value)
+            providers = await self._validate_group_payload(session, payload.protocol.value, payload.name, payload.items)
             entity = ModelGroupEntity(
-                id=next_id,
-                name=payload.name,
+                id=str(uuid.uuid4()),
+                name=payload.name.strip(),
                 protocol=payload.protocol.value,
                 strategy=payload.strategy.value,
-                provider_ids_json=json.dumps(payload.provider_ids, ensure_ascii=True),
                 enabled=1 if payload.enabled else 0,
+                match_regex=payload.match_regex,
+                first_token_timeout=payload.first_token_timeout,
+                session_keep_time=payload.session_keep_time,
             )
             session.add(entity)
+            await session.flush()
+            self._replace_group_items(session, entity.id, payload.items, providers)
             await session.commit()
-            return self._to_group(entity)
+            await session.refresh(entity)
+            items = await self._load_group_items(session, [entity.id])
+            return self._to_group(entity, items.get(entity.id, []))
 
     async def update_group(self, group_id: str, payload: ModelGroupUpdate) -> ModelGroup:
         async with self._session_factory() as session:
@@ -197,8 +244,12 @@ class DomainStore:
 
             next_protocol = payload.protocol.value if payload.protocol is not None else entity.protocol
             next_name = payload.name if payload.name is not None else entity.name
-            next_provider_ids = payload.provider_ids if payload.provider_ids is not None else json.loads(entity.provider_ids_json)
-            await self._validate_group_payload(session, next_protocol, next_name, next_provider_ids, exclude_group_id=group_id)
+            current_items = await self._load_group_items(session, [group_id])
+            next_items = payload.items if payload.items is not None else [
+                ModelGroupItemInput(provider_id=item.provider_id, model_name=item.model_name)
+                for item in current_items.get(group_id, [])
+            ]
+            providers = await self._validate_group_payload(session, next_protocol, next_name, next_items, exclude_group_id=group_id)
 
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
@@ -206,22 +257,28 @@ class DomainStore:
                     entity.protocol = value.value
                 elif key == "strategy" and value is not None:
                     entity.strategy = value.value
-                elif key == "provider_ids" and value is not None:
-                    entity.provider_ids_json = json.dumps(value, ensure_ascii=True)
                 elif key == "enabled" and value is not None:
                     entity.enabled = 1 if value else 0
+                elif key == "items" and value is not None:
+                    continue
                 else:
                     setattr(entity, key, value)
 
+            if payload.items is not None or payload.protocol is not None:
+                await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
+                self._replace_group_items(session, group_id, next_items, providers)
+
             await session.commit()
             await session.refresh(entity)
-            return self._to_group(entity)
+            items = await self._load_group_items(session, [entity.id])
+            return self._to_group(entity, items.get(entity.id, []))
 
     async def delete_group(self, group_id: str) -> None:
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
                 raise KeyError(group_id)
+            await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
             await session.delete(entity)
             await session.commit()
 
@@ -230,38 +287,120 @@ class DomainStore:
         session: AsyncSession,
         protocol: str,
         name: str,
-        provider_ids: list[str],
+        items: list[ModelGroupItemInput],
         exclude_group_id: str | None = None,
-    ) -> None:
+    ) -> dict[str, ProviderEntity]:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError('Model group name is required')
 
-        if not provider_ids:
-            raise ValueError('At least one provider is required')
+        if not items:
+            raise ValueError('At least one model item is required')
 
         result = await session.execute(
             select(ModelGroupEntity.id)
+            .where(ModelGroupEntity.protocol == protocol)
             .where(ModelGroupEntity.name == normalized_name)
             .limit(1)
         )
         existing_id = result.scalar_one_or_none()
         if existing_id is not None and existing_id != exclude_group_id:
-            raise ValueError(f'Model group already exists: {normalized_name}')
+            raise ValueError(f'Model group already exists for protocol={protocol}: {normalized_name}')
 
+        provider_ids = list(dict.fromkeys(item.provider_id for item in items))
         provider_result = await session.execute(
-            select(ProviderEntity.id, ProviderEntity.protocol)
+            select(ProviderEntity)
             .where(ProviderEntity.id.in_(provider_ids))
         )
-        provider_rows = provider_result.all()
-        existing_provider_ids = {row[0] for row in provider_rows}
+        provider_rows = provider_result.scalars().all()
+        providers_by_id = {row.id: row for row in provider_rows}
+        existing_provider_ids = set(providers_by_id)
         missing_provider_ids = [provider_id for provider_id in provider_ids if provider_id not in existing_provider_ids]
         if missing_provider_ids:
             raise ValueError(f'Providers not found: {", ".join(missing_provider_ids)}')
 
-        invalid_provider_ids = [provider_id for provider_id, provider_protocol in provider_rows if provider_protocol != protocol]
+        invalid_provider_ids = [provider.id for provider in provider_rows if provider.protocol != protocol]
         if invalid_provider_ids:
             raise ValueError(f'Providers must match protocol={protocol}: {", ".join(invalid_provider_ids)}')
+
+        for item in items:
+            provider = providers_by_id[item.provider_id]
+            provider_models = self._provider_model_names(provider)
+            if item.model_name not in provider_models:
+                raise ValueError(f'Model not found in provider {provider.id}: {item.model_name}')
+
+        return providers_by_id
+
+    async def _hydrate_groups(self, session: AsyncSession, entities: list[ModelGroupEntity]) -> list[ModelGroup]:
+        if not entities:
+            return []
+        items_by_group = await self._load_group_items(session, [item.id for item in entities])
+        return [self._to_group(item, items_by_group.get(item.id, [])) for item in entities]
+
+    async def _load_group_items(self, session: AsyncSession, group_ids: list[str]) -> dict[str, list[ModelGroupItem]]:
+        if not group_ids:
+            return {}
+
+        rows = (
+            await session.execute(
+                select(ModelGroupItemEntity)
+                .where(ModelGroupItemEntity.group_id.in_(group_ids))
+                .order_by(ModelGroupItemEntity.group_id.asc(), ModelGroupItemEntity.sort_order.asc(), ModelGroupItemEntity.id.asc())
+            )
+        ).scalars().all()
+
+        items_by_group: dict[str, list[ModelGroupItem]] = {group_id: [] for group_id in group_ids}
+        for row in rows:
+            items_by_group.setdefault(row.group_id, []).append(
+                ModelGroupItem(
+                    provider_id=row.provider_id,
+                    provider_name=row.provider_name_snapshot,
+                    model_name=row.model_name,
+                    sort_order=row.sort_order,
+                )
+            )
+        return items_by_group
+
+    def _replace_group_items(
+        self,
+        session: AsyncSession,
+        group_id: str,
+        items: list[ModelGroupItemInput],
+        providers_by_id: dict[str, ProviderEntity],
+    ) -> None:
+        for index, item in enumerate(items):
+            provider = providers_by_id[item.provider_id]
+            session.add(
+                ModelGroupItemEntity(
+                    group_id=group_id,
+                    provider_id=item.provider_id,
+                    provider_name_snapshot=provider.name,
+                    model_name=item.model_name,
+                    sort_order=index,
+                )
+            )
+
+    @staticmethod
+    def _provider_model_names(provider: ProviderEntity) -> list[str]:
+        names = []
+        for item in json.loads(provider.model_patterns_json or '[]'):
+            value = str(item or '').strip()
+            if value:
+                names.append(value)
+        return list(dict.fromkeys(names))
+
+    @staticmethod
+    def _normalize_match_value(value: str) -> str:
+        return ''.join(ch for ch in value.lower() if ch.isalnum())
+
+    def _candidate_matches_group(self, model_name: str, group_name: str, match_regex: str) -> bool:
+        normalized_model = self._normalize_match_value(model_name)
+        if match_regex.strip():
+            return re.search(match_regex, model_name) is not None
+        normalized_group = self._normalize_match_value(group_name)
+        if not normalized_group:
+            return False
+        return normalized_group in normalized_model
 
     async def get_gateway_auth_config(self) -> dict[str, Any]:
         items = await self.list_settings()
@@ -618,25 +757,18 @@ class DomainStore:
             keys.append(normalized)
         return keys
 
-    async def _next_id(self, session: AsyncSession, entity_type, prefix: str) -> str:
-        result = await session.execute(select(entity_type.id))
-        existing_ids = set(result.scalars().all())
-        next_number = len(existing_ids) + 1
-        next_id = f"{prefix}-{next_number}"
-        while next_id in existing_ids:
-            next_number += 1
-            next_id = f"{prefix}-{next_number}"
-        return next_id
-
     @staticmethod
-    def _to_group(entity: ModelGroupEntity) -> ModelGroup:
+    def _to_group(entity: ModelGroupEntity, items: list[ModelGroupItem]) -> ModelGroup:
         return ModelGroup(
             id=entity.id,
             name=entity.name,
             protocol=entity.protocol,
             strategy=entity.strategy,
-            provider_ids=json.loads(entity.provider_ids_json),
             enabled=bool(entity.enabled),
+            match_regex=entity.match_regex,
+            first_token_timeout=entity.first_token_timeout,
+            session_keep_time=entity.session_keep_time,
+            items=items,
         )
 
     @staticmethod
