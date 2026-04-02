@@ -206,7 +206,6 @@ class ModelGroup(BaseModel):
     name: str
     protocol: ProtocolKind
     strategy: RoutingStrategy
-    enabled: bool = True
     match_regex: str = ""
     first_token_timeout: int = Field(default=0, ge=0)
     session_keep_time: int = Field(default=0, ge=0)
@@ -219,6 +218,7 @@ class ModelGroupItem(BaseModel):
     provider_id: str
     provider_name: str = ""
     model_name: str
+    enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
 
 
@@ -227,6 +227,7 @@ class ModelGroupItemInput(BaseModel):
 
     provider_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
+    enabled: bool = True
 
 
 class ModelGroupCreate(BaseModel):
@@ -235,7 +236,6 @@ class ModelGroupCreate(BaseModel):
     name: str
     protocol: ProtocolKind
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
-    enabled: bool = True
     match_regex: str = ""
     first_token_timeout: int = Field(default=0, ge=0)
     session_keep_time: int = Field(default=0, ge=0)
@@ -259,7 +259,6 @@ class ModelGroupUpdate(BaseModel):
     name: str | None = None
     protocol: ProtocolKind | None = None
     strategy: RoutingStrategy | None = None
-    enabled: bool | None = None
     match_regex: str | None = None
     first_token_timeout: int | None = Field(default=None, ge=0)
     session_keep_time: int | None = Field(default=None, ge=0)

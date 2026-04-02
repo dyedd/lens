@@ -45,7 +45,6 @@ class ModelGroupEntity(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     strategy: Mapped[str] = mapped_column(String(32), nullable=False, default="round_robin")
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
     first_token_timeout: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     session_keep_time: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -59,6 +58,7 @@ class ModelGroupItemEntity(Base):
     provider_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     provider_name_snapshot: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 

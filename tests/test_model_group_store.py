@@ -47,19 +47,19 @@ async def _run_group_store_test(tmp_path):
             name="claude-sonnet",
             protocol=ProtocolKind.ANTHROPIC,
             strategy=RoutingStrategy.ROUND_ROBIN,
-            enabled=True,
             match_regex="",
             first_token_timeout=12,
             session_keep_time=34,
             items=[
-                ModelGroupItemInput(provider_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6"),
-                ModelGroupItemInput(provider_id=provider_two.id, model_name="claude-sonnet-4-5"),
+                ModelGroupItemInput(provider_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6", enabled=True),
+                ModelGroupItemInput(provider_id=provider_two.id, model_name="claude-sonnet-4-5", enabled=False),
             ],
         )
     )
 
     assert [item.provider_id for item in group.items] == [provider_one.id, provider_two.id]
     assert [item.model_name for item in group.items] == ["anthropic/claude-sonnet-4-6", "claude-sonnet-4-5"]
+    assert [item.enabled for item in group.items] == [True, False]
     assert group.first_token_timeout == 12
     assert group.session_keep_time == 34
 
@@ -67,6 +67,7 @@ async def _run_group_store_test(tmp_path):
     persisted = next(item for item in groups if item.id == group.id)
     assert [item.provider_id for item in persisted.items] == [provider_one.id, provider_two.id]
     assert [item.sort_order for item in persisted.items] == [0, 1]
+    assert [item.enabled for item in persisted.items] == [True, False]
     assert persisted.first_token_timeout == 12
     assert persisted.session_keep_time == 34
 
@@ -96,9 +97,8 @@ async def _run_group_store_test(tmp_path):
             name="claude-sonnet",
             protocol=ProtocolKind.OPENAI_CHAT,
             strategy=RoutingStrategy.ROUND_ROBIN,
-            enabled=True,
             match_regex="",
-            items=[ModelGroupItemInput(provider_id=openai_provider.id, model_name="claude-sonnet")],
+            items=[ModelGroupItemInput(provider_id=openai_provider.id, model_name="claude-sonnet", enabled=True)],
         )
     )
 

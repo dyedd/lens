@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from copy import deepcopy
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -17,11 +18,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderModelFetchRequest, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
+from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderModelFetchRequest, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore
 from ..persistence.provider_store import ProviderStore
-from .router import RoundRobinRouter
+from .router import RoundRobinRouter, RouteTarget
 from .upstreams import build_upstream_request, resolve_provider_api_key, resolve_provider_base_url, resolve_provider_proxy_url
 
 
@@ -53,8 +54,9 @@ class RoutingPlan:
     requested_model: str | None
     matched_group: ModelGroup | None
     strategy: RoutingStrategy
-    allowed_provider_ids: set[str] | None
+    route_targets: list[RouteTarget] | None
     use_model_matching: bool
+    cursor_key: str | None = None
 
 
 @dataclass
@@ -275,7 +277,7 @@ async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_curr
         payload.protocol,
         payload.model,
         strategy=plan.strategy,
-        allowed_provider_ids=plan.allowed_provider_ids,
+        route_targets=plan.route_targets,
         use_model_matching=plan.use_model_matching,
         matched_group_name=plan.matched_group.name if plan.matched_group else None,
     ).model_dump(mode="json")
@@ -286,9 +288,12 @@ async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGr
     return await app_state.domain_store.list_groups()
 
 
-@app.get("/api/model-groups/stats", response_model=list[ModelGroupStats])
-async def list_model_group_stats(_: Any = Depends(get_current_admin)) -> list[ModelGroupStats]:
-    return await app_state.domain_store.list_group_stats()
+@app.post("/api/model-groups/candidates", response_model=ModelGroupCandidatesResponse)
+async def model_group_candidates(payload: ModelGroupCandidatesRequest, _: Any = Depends(get_current_admin)) -> ModelGroupCandidatesResponse:
+    try:
+        return await app_state.domain_store.list_group_candidates(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/model-groups", response_model=ModelGroup, status_code=201)
@@ -370,8 +375,9 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
             protocol,
             plan.requested_model,
             strategy=plan.strategy,
-            allowed_provider_ids=plan.allowed_provider_ids,
+            route_targets=plan.route_targets,
             use_model_matching=plan.use_model_matching,
+            cursor_key=plan.cursor_key,
         )
     except LookupError as exc:
         await _record_request_log(
@@ -395,9 +401,10 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
 
     errors: list[str] = []
 
-    for provider in [selection.primary, *selection.fallbacks]:
+    for target in [selection.primary, *selection.fallbacks]:
+        provider = target.provider
         try:
-            result = await _call_provider(provider, body)
+            result = await _call_provider(provider, _prepare_upstream_body(protocol, body, target.model_name))
             await _record_request_log(
                 protocol=protocol,
                 requested_model=plan.requested_model,
@@ -658,21 +665,40 @@ def _openai_models_url(base_url: str) -> str:
 async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | None) -> RoutingPlan:
     matched_group = await app_state.domain_store.find_group_by_name(protocol.value, requested_model)
     if matched_group is not None:
+        providers = await app_state.store.list()
+        provider_map = {provider.id: provider for provider in providers}
+        route_targets = [
+            RouteTarget(provider=provider_map[item.provider_id], model_name=item.model_name)
+            for item in matched_group.items
+            if item.enabled and item.provider_id in provider_map
+        ]
         return RoutingPlan(
             requested_model=requested_model,
             matched_group=matched_group,
             strategy=matched_group.strategy,
-            allowed_provider_ids=set(matched_group.provider_ids),
+            route_targets=route_targets,
             use_model_matching=False,
+            cursor_key=f"{protocol.value}:{matched_group.id}",
         )
 
     return RoutingPlan(
         requested_model=requested_model,
         matched_group=None,
         strategy=RoutingStrategy.ROUND_ROBIN,
-        allowed_provider_ids=None,
+        route_targets=None,
         use_model_matching=True,
     )
+
+
+def _prepare_upstream_body(protocol: ProtocolKind, body: dict[str, Any], target_model_name: str | None) -> dict[str, Any]:
+    payload = deepcopy(body)
+    if not target_model_name:
+        return payload
+    if protocol == ProtocolKind.GEMINI:
+        payload["model"] = target_model_name
+        return payload
+    payload["model"] = target_model_name
+    return payload
 
 
 def _elapsed_ms(started_at: float) -> int:

@@ -63,6 +63,7 @@ export type ModelGroupItem = {
   provider_id: string
   provider_name: string
   model_name: string
+  enabled: boolean
   sort_order: number
 }
 
@@ -71,7 +72,6 @@ export type ModelGroup = {
   name: string
   protocol: ProtocolKind
   strategy: RoutingStrategy
-  enabled: boolean
   match_regex: string
   first_token_timeout: number
   session_keep_time: number
@@ -81,13 +81,13 @@ export type ModelGroup = {
 export type ModelGroupItemPayload = {
   provider_id: string
   model_name: string
+  enabled: boolean
 }
 
 export type ModelGroupPayload = {
   name: string
   protocol: ProtocolKind
   strategy: RoutingStrategy
-  enabled: boolean
   match_regex: string
   first_token_timeout: number
   session_keep_time: number

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from lens.core.db import Base, create_engine, create_session_factory
-from lens.models import ModelGroupCreate, ProtocolKind, ProviderCreate, RoutingStrategy
+from lens.models import ModelGroupCreate, ModelGroupItemInput, ProtocolKind, ProviderCreate, RoutingStrategy
 from lens.persistence.domain_store import DomainStore
 from lens.persistence.provider_store import ProviderStore
 
@@ -30,6 +30,7 @@ async def _run_group_stats_test(tmp_path):
             protocol=ProtocolKind.OPENAI_CHAT,
             base_url="https://primary.example.com/v1",
             api_key="sk-primary",
+            model_patterns=["claude-opus-4-6-2026-03-31", "gpt-4.1-2026-03-30"],
         )
     )
     fallback_provider = await provider_store.create(
@@ -38,6 +39,7 @@ async def _run_group_stats_test(tmp_path):
             protocol=ProtocolKind.OPENAI_CHAT,
             base_url="https://fallback.example.com/v1",
             api_key="sk-fallback",
+            model_patterns=["claude-opus-4-6-2026-03-31"],
         )
     )
 
@@ -46,8 +48,10 @@ async def _run_group_stats_test(tmp_path):
             name="claude-opus-4-6",
             protocol=ProtocolKind.OPENAI_CHAT,
             strategy=RoutingStrategy.ROUND_ROBIN,
-            provider_ids=[primary_provider.id, fallback_provider.id],
-            enabled=True,
+            items=[
+                ModelGroupItemInput(provider_id=primary_provider.id, model_name="claude-opus-4-6-2026-03-31"),
+                ModelGroupItemInput(provider_id=fallback_provider.id, model_name="claude-opus-4-6-2026-03-31"),
+            ],
         )
     )
     await domain_store.create_group(
@@ -55,8 +59,9 @@ async def _run_group_stats_test(tmp_path):
             name="gpt-4.1",
             protocol=ProtocolKind.OPENAI_CHAT,
             strategy=RoutingStrategy.FAILOVER,
-            provider_ids=[primary_provider.id],
-            enabled=True,
+            items=[
+                ModelGroupItemInput(provider_id=primary_provider.id, model_name="gpt-4.1-2026-03-30"),
+            ],
         )
     )
 

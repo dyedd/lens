@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..models import ProviderConfig, ProviderCreate, ProviderStatus, ProviderUpdate
-from .entities import ProviderEntity
+from .entities import ModelGroupItemEntity, ProviderEntity
 
 
 class ProviderStore:
@@ -22,6 +22,8 @@ class ProviderStore:
     async def create(self, payload: ProviderCreate) -> ProviderConfig:
         async with self._session_factory() as session:
             next_id = await self._next_provider_id(session, payload.protocol.value)
+            normalized_base_urls = [self._normalize_base_url_item(item) for item in self._normalize_base_urls(payload.base_urls, payload.base_url)]
+            normalized_keys = [self._normalize_key_item(item) for item in self._normalize_keys(payload.keys, payload.api_key)]
             entity = ProviderEntity(
                 id=next_id,
                 name=payload.name,
@@ -31,8 +33,8 @@ class ProviderStore:
                 status=payload.status.value,
                 headers_json=json.dumps(payload.headers, ensure_ascii=True),
                 model_patterns_json=json.dumps(payload.model_patterns, ensure_ascii=True),
-                base_urls_json=json.dumps([item.model_dump(mode="json") for item in self._normalize_base_urls(payload.base_urls, payload.base_url)], ensure_ascii=True),
-                keys_json=json.dumps([item.model_dump(mode="json") for item in self._normalize_keys(payload.keys, payload.api_key)], ensure_ascii=True),
+                base_urls_json=json.dumps(normalized_base_urls, ensure_ascii=True),
+                keys_json=json.dumps(normalized_keys, ensure_ascii=True),
                 proxy=1 if payload.proxy else 0,
                 channel_proxy=payload.channel_proxy,
                 param_override=payload.param_override,
@@ -85,6 +87,7 @@ class ProviderStore:
             if entity is None:
                 raise KeyError(provider_id)
 
+            await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.provider_id == provider_id))
             await session.delete(entity)
             await session.commit()
 

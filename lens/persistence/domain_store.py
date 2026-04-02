@@ -98,7 +98,6 @@ class DomainStore:
                 select(ModelGroupEntity)
                 .where(ModelGroupEntity.protocol == protocol)
                 .where(ModelGroupEntity.name == name)
-                .where(ModelGroupEntity.enabled == 1)
                 .limit(1)
             )
             entity = result.scalar_one_or_none()
@@ -223,7 +222,6 @@ class DomainStore:
                 name=payload.name.strip(),
                 protocol=payload.protocol.value,
                 strategy=payload.strategy.value,
-                enabled=1 if payload.enabled else 0,
                 match_regex=payload.match_regex,
                 first_token_timeout=payload.first_token_timeout,
                 session_keep_time=payload.session_keep_time,
@@ -257,8 +255,6 @@ class DomainStore:
                     entity.protocol = value.value
                 elif key == "strategy" and value is not None:
                     entity.strategy = value.value
-                elif key == "enabled" and value is not None:
-                    entity.enabled = 1 if value else 0
                 elif key == "items" and value is not None:
                     continue
                 else:
@@ -294,9 +290,6 @@ class DomainStore:
         if not normalized_name:
             raise ValueError('Model group name is required')
 
-        if not items:
-            raise ValueError('At least one model item is required')
-
         result = await session.execute(
             select(ModelGroupEntity.id)
             .where(ModelGroupEntity.protocol == protocol)
@@ -306,6 +299,9 @@ class DomainStore:
         existing_id = result.scalar_one_or_none()
         if existing_id is not None and existing_id != exclude_group_id:
             raise ValueError(f'Model group already exists for protocol={protocol}: {normalized_name}')
+
+        if not items:
+            return {}
 
         provider_ids = list(dict.fromkeys(item.provider_id for item in items))
         provider_result = await session.execute(
@@ -356,6 +352,7 @@ class DomainStore:
                     provider_id=row.provider_id,
                     provider_name=row.provider_name_snapshot,
                     model_name=row.model_name,
+                    enabled=bool(row.enabled),
                     sort_order=row.sort_order,
                 )
             )
@@ -376,6 +373,7 @@ class DomainStore:
                     provider_id=item.provider_id,
                     provider_name_snapshot=provider.name,
                     model_name=item.model_name,
+                    enabled=1 if item.enabled else 0,
                     sort_order=index,
                 )
             )
@@ -500,9 +498,7 @@ class DomainStore:
                 success_value = int(successful_requests or 0)
                 avg_latency = int(avg_latency_value or 0)
 
-            enabled_groups = await session.scalar(
-                select(func.count()).select_from(ModelGroupEntity).where(ModelGroupEntity.enabled == 1)
-            )
+            enabled_groups = await session.scalar(select(func.count()).select_from(ModelGroupEntity))
 
         gateway_auth = await self.get_gateway_auth_config()
 
@@ -764,7 +760,6 @@ class DomainStore:
             name=entity.name,
             protocol=entity.protocol,
             strategy=entity.strategy,
-            enabled=bool(entity.enabled),
             match_regex=entity.match_regex,
             first_token_timeout=entity.first_token_timeout,
             session_keep_time=entity.session_keep_time,

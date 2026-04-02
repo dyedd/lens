@@ -24,13 +24,13 @@ type FormItem = {
   provider_id: string
   provider_name: string
   model_name: string
+  enabled: boolean
 }
 
 type FormState = {
   name: string
   protocol: ProtocolKind
   strategy: RoutingStrategy
-  enabled: boolean
   match_regex: string
   first_token_timeout: string
   session_keep_time: string
@@ -47,7 +47,6 @@ const emptyForm: FormState = {
   name: '',
   protocol: 'openai_chat',
   strategy: 'round_robin',
-  enabled: true,
   match_regex: '',
   first_token_timeout: '',
   session_keep_time: '',
@@ -126,7 +125,6 @@ function toForm(group: ModelGroup): FormState {
     name: group.name,
     protocol: group.protocol,
     strategy: group.strategy,
-    enabled: group.enabled,
     match_regex: group.match_regex,
     first_token_timeout: String(group.first_token_timeout ?? 0),
     session_keep_time: String(group.session_keep_time ?? 0),
@@ -137,6 +135,7 @@ function toForm(group: ModelGroup): FormState {
         provider_id: item.provider_id,
         provider_name: item.provider_name,
         model_name: item.model_name,
+        enabled: item.enabled,
       })),
   }
 }
@@ -146,11 +145,10 @@ function toPayload(form: FormState): ModelGroupPayload {
     name: form.name.trim(),
     protocol: form.protocol,
     strategy: form.strategy,
-    enabled: form.enabled,
     match_regex: form.match_regex.trim(),
     first_token_timeout: parseDurationInput(form.first_token_timeout),
     session_keep_time: parseDurationInput(form.session_keep_time),
-    items: form.items.map((item) => ({ provider_id: item.provider_id, model_name: item.model_name })),
+    items: form.items.map((item) => ({ provider_id: item.provider_id, model_name: item.model_name, enabled: item.enabled })),
   }
 }
 
@@ -234,6 +232,8 @@ function SelectedMemberRow({
   item,
   index,
   dragging,
+  busy,
+  onToggle,
   onRemove,
   onDragStart,
   onDragEnter,
@@ -242,6 +242,8 @@ function SelectedMemberRow({
   item: FormItem
   index: number
   dragging: boolean
+  busy: boolean
+  onToggle: () => void
   onRemove: () => void
   onDragStart: () => void
   onDragEnter: () => void
@@ -256,7 +258,8 @@ function SelectedMemberRow({
       onDragEnd={onDragEnd}
       className={cn(
         'flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-2.5 py-2 transition',
-        dragging && 'opacity-60 shadow-[var(--shadow-sm)]'
+        dragging && 'opacity-60 shadow-[var(--shadow-sm)]',
+        !item.enabled && 'opacity-55'
       )}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-[var(--accent-2)] text-[11px] font-semibold text-[var(--accent)]">{index + 1}</span>
@@ -265,8 +268,9 @@ function SelectedMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="truncate text-[11px] text-[var(--muted)]">{item.provider_name}</div>
+        <div className="truncate text-[11px] text-[var(--muted)]">{item.provider_name}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
+      <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
       <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[rgba(217,111,93,0.08)] hover:text-[var(--danger)]" onClick={onRemove}>
         <X size={13} />
       </button>
@@ -278,6 +282,8 @@ function CardMemberRow({
   item,
   index,
   dragging,
+  busy,
+  onToggle,
   onDragStart,
   onDrop,
   onDragEnd,
@@ -285,6 +291,8 @@ function CardMemberRow({
   item: FormItem
   index: number
   dragging: boolean
+  busy: boolean
+  onToggle: () => void
   onDragStart: () => void
   onDrop: () => void
   onDragEnd: () => void
@@ -301,7 +309,8 @@ function CardMemberRow({
       onDragEnd={onDragEnd}
       className={cn(
         'flex items-start gap-3 rounded-2xl bg-[var(--panel-soft)] px-3 py-2.5 transition',
-        dragging && 'opacity-60 shadow-[var(--shadow-sm)]'
+        dragging && 'opacity-60 shadow-[var(--shadow-sm)]',
+        !item.enabled && 'opacity-55'
       )}
     >
       <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-md bg-[rgba(37,99,235,0.12)] text-[11px] text-[var(--accent)]">{index + 1}</span>
@@ -310,8 +319,9 @@ function CardMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.provider_name}</div>
+        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.provider_name}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
+      <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
     </div>
   )
 }
@@ -339,7 +349,7 @@ export function GroupsScreen() {
     protocol: form.items[0] ? form.protocol : undefined,
     name: form.name,
     match_regex: form.match_regex,
-    exclude_items: form.items.map((item) => ({ provider_id: item.provider_id, model_name: item.model_name })),
+    exclude_items: form.items.map((item) => ({ provider_id: item.provider_id, model_name: item.model_name, enabled: item.enabled })),
   }), [form])
   const { data: candidateResponse, refetch: refetchCandidates, isFetching: isFetchingCandidates } = useQuery({
     queryKey: ['group-candidates', candidatePayload],
@@ -482,18 +492,6 @@ export function GroupsScreen() {
     }
   }
 
-  async function toggleEnabled(item: ModelGroup) {
-    setBusyId(item.id)
-    setError('')
-    try {
-      await saveGroup({ ...toForm(item), enabled: !item.enabled }, item.id)
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '更新模型组状态失败' : 'Failed to update group status'))
-    } finally {
-      setBusyId(null)
-    }
-  }
-
   async function remove(item: ModelGroup) {
     setBusyId(item.id)
     setError('')
@@ -518,7 +516,7 @@ export function GroupsScreen() {
       return {
         ...current,
         protocol: nextProtocol,
-        items: [...current.items, { provider_id: item.provider_id, provider_name: item.provider_name, model_name: item.model_name }],
+        items: [...current.items, { provider_id: item.provider_id, provider_name: item.provider_name, model_name: item.model_name, enabled: true }],
       }
     })
   }
@@ -581,6 +579,11 @@ export function GroupsScreen() {
     setCardDraggingKey(null)
   }
 
+  async function toggleMember(group: ModelGroup, index: number) {
+    const nextItems = toForm(group).items.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item)
+    await updateGroupPartial(group, { items: nextItems })
+  }
+
   function autoAddMatched() {
     if (!matchedItems.length) {
       return
@@ -589,7 +592,7 @@ export function GroupsScreen() {
       const existing = new Set(current.items.map((item) => itemKey(item)))
       const additions = matchedItems
         .filter((item) => !existing.has(itemKey(item)))
-        .map((item) => ({ provider_id: item.provider_id, provider_name: item.provider_name, model_name: item.model_name }))
+        .map((item) => ({ provider_id: item.provider_id, provider_name: item.provider_name, model_name: item.model_name, enabled: true }))
       if (!additions.length) {
         return current
       }
@@ -641,6 +644,7 @@ export function GroupsScreen() {
             provider_id: item.provider_id,
             provider_name: item.provider_name || providerMap.get(item.provider_id)?.name || item.provider_id,
             model_name: item.model_name,
+            enabled: item.enabled,
           }))
           return (
             <article key={group.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
@@ -650,7 +654,6 @@ export function GroupsScreen() {
                   {duplicateNameSet.has(group.name) ? <div className="mt-1 text-xs text-[var(--muted)]">{protocolLabel(group.protocol, locale)}</div> : null}
                 </button>
                 <div className="flex items-center gap-1.5">
-                  <SwitchButton checked={group.enabled} disabled={busyId === group.id} onChange={() => void toggleEnabled(group)} />
                   <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => openEdit(group)}><Pencil size={15} /></button>
                   <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => void navigator.clipboard.writeText(group.name)}><Copy size={15} /></button>
                   <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--danger)] transition hover:bg-[rgba(217,111,93,0.08)]" onClick={() => setDeleteTarget(group)}><Trash2 size={15} /></button>
@@ -690,6 +693,8 @@ export function GroupsScreen() {
                       item={item}
                       index={index}
                       dragging={cardDraggingKey === `${group.id}:${index}`}
+                      busy={busyId === group.id}
+                      onToggle={() => void toggleMember(group, index)}
                       onDragStart={() => updateCardDrag(group.id, index)}
                       onDrop={() => {
                         const prefix = `${group.id}:`
@@ -844,6 +849,11 @@ export function GroupsScreen() {
                         item={item}
                         index={index}
                         dragging={draggingIndex === index}
+                        busy={false}
+                        onToggle={() => setForm((current) => ({
+                          ...current,
+                          items: current.items.map((member, memberIndex) => memberIndex === index ? { ...member, enabled: !member.enabled } : member),
+                        }))}
                         onRemove={() => removeItem(index)}
                         onDragStart={() => setDraggingIndex(index)}
                         onDragEnter={() => {
