@@ -26,7 +26,6 @@ from ..models import (
 )
 from .entities import (
     ModelGroupItemEntity,
-    ProviderEntity,
     SiteCredentialEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
@@ -48,12 +47,10 @@ class ProviderStore:
 
     async def list_sites(self) -> list[SiteConfig]:
         async with self._session_factory() as session:
-            await self._bootstrap_from_legacy_providers(session)
             return await self._load_sites(session)
 
     async def get_site(self, site_id: str) -> SiteConfig:
         async with self._session_factory() as session:
-            await self._bootstrap_from_legacy_providers(session)
             sites = await self._load_sites(session, site_ids=[site_id])
             if not sites:
                 raise KeyError(site_id)
@@ -61,7 +58,6 @@ class ProviderStore:
 
     async def create_site(self, payload: SiteCreate) -> SiteConfig:
         async with self._session_factory() as session:
-            await self._bootstrap_from_legacy_providers(session)
             await self._ensure_site_name_unique(session, payload.name)
             site_id = str(uuid.uuid4())
             await self._upsert_site_payload(session, site_id, payload.name, payload.base_url, payload.credentials, payload.protocols)
@@ -70,7 +66,6 @@ class ProviderStore:
 
     async def update_site(self, site_id: str, payload: SiteUpdate) -> SiteConfig:
         async with self._session_factory() as session:
-            await self._bootstrap_from_legacy_providers(session)
             site = await self._get_site_entity(session, site_id)
             if site is None:
                 raise KeyError(site_id)
@@ -81,7 +76,6 @@ class ProviderStore:
 
     async def delete_site(self, site_id: str) -> None:
         async with self._session_factory() as session:
-            await self._bootstrap_from_legacy_providers(session)
             site = await self._get_site_entity(session, site_id)
             if site is None:
                 raise KeyError(site_id)
@@ -355,98 +349,6 @@ class ProviderStore:
         deleted_credential_ids = current_credential_ids - next_credential_ids
         if deleted_credential_ids:
             await session.execute(delete(SiteCredentialEntity).where(SiteCredentialEntity.id.in_(deleted_credential_ids)))
-
-    async def _bootstrap_from_legacy_providers(self, session: AsyncSession) -> None:
-        site_exists = await session.scalar(select(SiteEntity.id).limit(1))
-        if site_exists is not None:
-            return
-
-        rows = (
-            await session.execute(select(ProviderEntity).order_by(ProviderEntity.name.asc(), ProviderEntity.id.asc()))
-        ).scalars().all()
-        if not rows:
-            return
-
-        for row in rows:
-            site_id = str(uuid.uuid4())
-            raw_keys = json.loads(row.keys_json or '[]') or [{'key': row.api_key, 'remark': '', 'enabled': row.status == 'enabled'}]
-            session.add(SiteEntity(id=site_id, name=row.name, base_url=row.base_url))
-
-            credential_ids: list[str] = []
-            for index, item in enumerate(raw_keys):
-                credential_id = item.get('id') or str(uuid.uuid4())
-                credential_ids.append(credential_id)
-                session.add(
-                    SiteCredentialEntity(
-                        id=credential_id,
-                        site_id=site_id,
-                        name=str(item.get('remark') or f'Key {index + 1}'),
-                        api_key=str(item.get('key') or row.api_key),
-                        enabled=1 if bool(item.get('enabled', True)) else 0,
-                        sort_order=index,
-                    )
-                )
-
-            session.add(
-                SiteProtocolConfigEntity(
-                    id=row.id,
-                    site_id=site_id,
-                    protocol=row.protocol,
-                    enabled=1 if row.status == 'enabled' else 0,
-                    headers_json=row.headers_json,
-                    channel_proxy=row.channel_proxy,
-                    param_override=row.param_override,
-                    match_regex=row.match_regex,
-                )
-            )
-
-            for index, credential_id in enumerate(credential_ids):
-                key_meta = raw_keys[index]
-                session.add(
-                    SiteProtocolCredentialBindingEntity(
-                        id=str(uuid.uuid4()),
-                        protocol_config_id=row.id,
-                        credential_id=credential_id,
-                        enabled=1 if bool(key_meta.get('enabled', True)) else 0,
-                        sort_order=index,
-                    )
-                )
-
-            default_credential_id = credential_ids[0] if credential_ids else str(uuid.uuid4())
-            for index, model_name in enumerate(json.loads(row.model_patterns_json or '[]')):
-                session.add(
-                    SiteDiscoveredModelEntity(
-                        id=str(uuid.uuid4()),
-                        protocol_config_id=row.id,
-                        credential_id=default_credential_id,
-                        model_name=str(model_name),
-                        enabled=1,
-                        sort_order=index,
-                    )
-                )
-
-            if not credential_ids:
-                session.add(
-                    SiteCredentialEntity(
-                        id=default_credential_id,
-                        site_id=site_id,
-                        name='Key 1',
-                        api_key=row.api_key,
-                        enabled=1 if row.status == 'enabled' else 0,
-                        sort_order=0,
-                    )
-                )
-                session.add(
-                    SiteProtocolCredentialBindingEntity(
-                        id=str(uuid.uuid4()),
-                        protocol_config_id=row.id,
-                        credential_id=default_credential_id,
-                        enabled=1 if row.status == 'enabled' else 0,
-                        sort_order=0,
-                    )
-                )
-
-        await session.commit()
 
     def _flatten_site(self, site: SiteConfig) -> list[ProviderConfig]:
         credentials_by_id = {item.id: item for item in site.credentials}

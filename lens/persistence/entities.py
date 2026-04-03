@@ -19,24 +19,6 @@ class AdminUserEntity(Base):
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
-class ProviderEntity(Base):
-    __tablename__ = "providers"
-
-    id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
-    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    api_key: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="enabled")
-    headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    model_patterns_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    keys_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    proxy: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
-
-
 class SiteEntity(Base):
     __tablename__ = "sites"
 
