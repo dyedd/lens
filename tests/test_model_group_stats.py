@@ -5,7 +5,7 @@ import asyncio
 from lens.core.db import Base, create_engine, create_session_factory
 from lens.models import ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate, SiteUpdate
 from lens.persistence.domain_store import DomainStore
-from lens.persistence.provider_store import ProviderStore
+from lens.persistence.channel_store import ChannelStore
 
 
 def test_list_group_stats_returns_aggregated_metrics(tmp_path):
@@ -21,10 +21,10 @@ async def _run_group_stats_test(tmp_path):
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
-    provider_store = ProviderStore(session_factory)
+    channel_store = ChannelStore(session_factory)
     domain_store = DomainStore(session_factory)
 
-    primary_site = await provider_store.create_site(
+    primary_site = await channel_store.create_site(
         SiteCreate(
             name="Primary Claude",
             base_url="https://primary.example.com",
@@ -34,7 +34,7 @@ async def _run_group_stats_test(tmp_path):
     )
     primary_credential = primary_site.credentials[0]
     primary_protocol = primary_site.protocols[0]
-    primary_site = await provider_store.update_site(
+    primary_site = await channel_store.update_site(
         primary_site.id,
         SiteUpdate(
             name=primary_site.name,
@@ -43,9 +43,9 @@ async def _run_group_stats_test(tmp_path):
             protocols=[{"id": primary_protocol.id, "protocol": primary_protocol.protocol, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [{"credential_id": primary_credential.id, "enabled": True}], "models": [{"credential_id": primary_credential.id, "model_name": "claude-opus-4-6-2026-03-31", "enabled": True}, {"credential_id": primary_credential.id, "model_name": "gpt-4.1-2026-03-30", "enabled": True}]}],
         ),
     )
-    primary_provider = primary_site.protocols[0]
+    primary_channel = primary_site.protocols[0]
 
-    fallback_site = await provider_store.create_site(
+    fallback_site = await channel_store.create_site(
         SiteCreate(
             name="Fallback Claude",
             base_url="https://fallback.example.com",
@@ -55,7 +55,7 @@ async def _run_group_stats_test(tmp_path):
     )
     fallback_credential = fallback_site.credentials[0]
     fallback_protocol = fallback_site.protocols[0]
-    fallback_site = await provider_store.update_site(
+    fallback_site = await channel_store.update_site(
         fallback_site.id,
         SiteUpdate(
             name=fallback_site.name,
@@ -64,7 +64,7 @@ async def _run_group_stats_test(tmp_path):
             protocols=[{"id": fallback_protocol.id, "protocol": fallback_protocol.protocol, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [{"credential_id": fallback_credential.id, "enabled": True}], "models": [{"credential_id": fallback_credential.id, "model_name": "claude-opus-4-6-2026-03-31", "enabled": True}]}],
         ),
     )
-    fallback_provider = fallback_site.protocols[0]
+    fallback_channel = fallback_site.protocols[0]
 
     primary_group = await domain_store.create_group(
         ModelGroupCreate(
@@ -72,8 +72,8 @@ async def _run_group_stats_test(tmp_path):
             protocol=ProtocolKind.OPENAI_CHAT,
             strategy=RoutingStrategy.ROUND_ROBIN,
             items=[
-                ModelGroupItemInput(provider_id=primary_provider.id, model_name="claude-opus-4-6-2026-03-31"),
-                ModelGroupItemInput(provider_id=fallback_provider.id, model_name="claude-opus-4-6-2026-03-31"),
+                ModelGroupItemInput(channel_id=primary_channel.id, model_name="claude-opus-4-6-2026-03-31"),
+                ModelGroupItemInput(channel_id=fallback_channel.id, model_name="claude-opus-4-6-2026-03-31"),
             ],
         )
     )
@@ -83,7 +83,7 @@ async def _run_group_stats_test(tmp_path):
             protocol=ProtocolKind.OPENAI_CHAT,
             strategy=RoutingStrategy.FAILOVER,
             items=[
-                ModelGroupItemInput(provider_id=primary_provider.id, model_name="gpt-4.1-2026-03-30"),
+                ModelGroupItemInput(channel_id=primary_channel.id, model_name="gpt-4.1-2026-03-30"),
             ],
         )
     )
@@ -92,7 +92,7 @@ async def _run_group_stats_test(tmp_path):
         protocol=ProtocolKind.OPENAI_CHAT.value,
         requested_model=primary_group.name,
         matched_group_name=primary_group.name,
-        provider_id=primary_provider.id,
+        channel_id=primary_channel.id,
         gateway_key_id="gw-a",
         status_code=200,
         success=True,
@@ -110,7 +110,7 @@ async def _run_group_stats_test(tmp_path):
         protocol=ProtocolKind.OPENAI_CHAT.value,
         requested_model=primary_group.name,
         matched_group_name=primary_group.name,
-        provider_id=fallback_provider.id,
+        channel_id=fallback_channel.id,
         gateway_key_id="gw-a",
         status_code=429,
         success=False,
@@ -128,7 +128,7 @@ async def _run_group_stats_test(tmp_path):
         protocol=ProtocolKind.OPENAI_CHAT.value,
         requested_model="gpt-4.1",
         matched_group_name="gpt-4.1",
-        provider_id=primary_provider.id,
+        channel_id=primary_channel.id,
         gateway_key_id="gw-b",
         status_code=200,
         success=True,
@@ -165,3 +165,4 @@ async def _run_group_stats_test(tmp_path):
     assert secondary_stats.last_resolved_model == "gpt-4.1-2026-03-30"
 
     await engine.dispose()
+

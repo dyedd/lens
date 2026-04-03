@@ -43,10 +43,10 @@ Lens 是一个基于 Python + Next.js 的模型网关与管理后台，当前只
 - `GET /api/auth/me`
 - `GET /api/overview`
 - `GET /api/request-logs`
-- `GET /api/providers`
-- `POST /api/providers`
-- `PUT /api/providers/{provider_id}`
-- `DELETE /api/providers/{provider_id}`
+- `GET /api/sites`
+- `POST /api/sites`
+- `PUT /api/sites/{site_id}`
+- `DELETE /api/sites/{site_id}`
 - `GET /api/router`
 - `POST /api/router/preview`
 - `GET /api/model-groups`
@@ -70,12 +70,12 @@ Lens 是一个基于 Python + Next.js 的模型网关与管理后台，当前只
 conda activate temp
 cd D:\Projects\PYprojects\lens
 python -m pip install -e .[dev]
-python scripts/migrate.py
+alembic upgrade head
 python scripts/seed_admin.py
 python -m lens.main
 ```
 
-如果 `data/data.db` 已经存在，但不是由当前 Alembic 迁移流程创建的，请先删除后再执行 `python scripts/migrate.py`。
+如果 `data/data.db` 已经存在，但不是由当前 Alembic 迁移流程创建的，请先删除后再执行 `alembic upgrade head`。
 
 默认后端地址：
 
@@ -131,8 +131,8 @@ Lens 只会在同一种原生协议族内做路由。
 
 1. Authenticate the incoming gateway API key.
 2. Read requested protocol and model.
-3. If the model exactly matches a model-group name under the same protocol, use that group strategy and provider pool.
-4. Otherwise fall back to provider-level model matching.
+3. If the model exactly matches a model-group name under the same protocol, use that group strategy and channel pool.
+4. Otherwise fall back to channel-level model matching.
 5. Route with `round_robin` or `failover`.
 
 渠道级聚合通过后台中手工选择的模型列表配置。

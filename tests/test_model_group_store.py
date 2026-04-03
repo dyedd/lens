@@ -5,7 +5,7 @@ import asyncio
 from lens.core.db import Base, create_engine, create_session_factory
 from lens.models import ModelGroupCandidatesRequest, ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate
 from lens.persistence.domain_store import DomainStore
-from lens.persistence.provider_store import ProviderStore
+from lens.persistence.channel_store import ChannelStore
 
 
 def test_create_group_persists_ordered_model_items(tmp_path):
@@ -20,10 +20,10 @@ async def _run_group_store_test(tmp_path):
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
-    provider_store = ProviderStore(session_factory)
+    channel_store = ChannelStore(session_factory)
     domain_store = DomainStore(session_factory)
 
-    site_one = await provider_store.create_site(
+    site_one = await channel_store.create_site(
         SiteCreate(
             name="Anthropic A",
             base_url="https://a.example.com",
@@ -42,7 +42,7 @@ async def _run_group_store_test(tmp_path):
     )
     credential_one = site_one.credentials[0]
     provider_one = site_one.protocols[0]
-    site_one = await provider_store.update_site(
+    site_one = await channel_store.update_site(
         site_one.id,
         SiteCreate(
             name=site_one.name,
@@ -66,7 +66,7 @@ async def _run_group_store_test(tmp_path):
     )
     provider_one = site_one.protocols[0]
 
-    site_two = await provider_store.create_site(
+    site_two = await channel_store.create_site(
         SiteCreate(
             name="Anthropic B",
             base_url="https://b.example.com",
@@ -85,7 +85,7 @@ async def _run_group_store_test(tmp_path):
     )
     credential_two = site_two.credentials[0]
     provider_two = site_two.protocols[0]
-    site_two = await provider_store.update_site(
+    site_two = await channel_store.update_site(
         site_two.id,
         SiteCreate(
             name=site_two.name,
@@ -118,13 +118,13 @@ async def _run_group_store_test(tmp_path):
             first_token_timeout=12,
             session_keep_time=34,
             items=[
-                ModelGroupItemInput(provider_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6", enabled=True),
-                ModelGroupItemInput(provider_id=provider_two.id, model_name="claude-sonnet-4-5", enabled=False),
+                ModelGroupItemInput(channel_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6", enabled=True),
+                ModelGroupItemInput(channel_id=provider_two.id, model_name="claude-sonnet-4-5", enabled=False),
             ],
         )
     )
 
-    assert [item.provider_id for item in group.items] == [provider_one.id, provider_two.id]
+    assert [item.channel_id for item in group.items] == [provider_one.id, provider_two.id]
     assert [item.model_name for item in group.items] == ["anthropic/claude-sonnet-4-6", "claude-sonnet-4-5"]
     assert [item.enabled for item in group.items] == [True, False]
     assert group.first_token_timeout == 12
@@ -132,7 +132,7 @@ async def _run_group_store_test(tmp_path):
 
     groups = await domain_store.list_groups()
     persisted = next(item for item in groups if item.id == group.id)
-    assert [item.provider_id for item in persisted.items] == [provider_one.id, provider_two.id]
+    assert [item.channel_id for item in persisted.items] == [provider_one.id, provider_two.id]
     assert [item.sort_order for item in persisted.items] == [0, 1]
     assert [item.enabled for item in persisted.items] == [True, False]
     assert persisted.first_token_timeout == 12
@@ -143,14 +143,14 @@ async def _run_group_store_test(tmp_path):
             protocol=ProtocolKind.ANTHROPIC,
             name="claude-sonnet",
             match_regex="",
-            exclude_items=[ModelGroupItemInput(provider_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6")],
+            exclude_items=[ModelGroupItemInput(channel_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6")],
         )
     )
-    matched_keys = {(item.provider_id, item.model_name) for item in candidates.matched_items}
+    matched_keys = {(item.channel_id, item.model_name) for item in candidates.matched_items}
     assert (provider_one.id, "anthropic/claude-sonnet-4-6") not in matched_keys
     assert (provider_two.id, "claude-sonnet-4-5") in matched_keys
 
-    openai_site = await provider_store.create_site(
+    openai_site = await channel_store.create_site(
         SiteCreate(
             name="OpenAI A",
             base_url="https://openai.example.com",
@@ -168,16 +168,16 @@ async def _run_group_store_test(tmp_path):
         )
     )
     openai_credential = openai_site.credentials[0]
-    openai_provider = openai_site.protocols[0]
-    openai_site = await provider_store.update_site(
+    openai_channel = openai_site.protocols[0]
+    openai_site = await channel_store.update_site(
         openai_site.id,
         SiteCreate(
             name=openai_site.name,
             base_url=openai_site.base_url,
             credentials=[{"id": openai_credential.id, "name": openai_credential.name, "api_key": openai_credential.api_key, "enabled": True}],
             protocols=[{
-                "id": openai_provider.id,
-                "protocol": openai_provider.protocol,
+                "id": openai_channel.id,
+                "protocol": openai_channel.protocol,
                 "enabled": True,
                 "headers": {},
                 "channel_proxy": "",
@@ -188,14 +188,14 @@ async def _run_group_store_test(tmp_path):
             }],
         ),
     )
-    openai_provider = openai_site.protocols[0]
+    openai_channel = openai_site.protocols[0]
     duplicate_name_group = await domain_store.create_group(
         ModelGroupCreate(
             name="claude-sonnet",
             protocol=ProtocolKind.OPENAI_CHAT,
             strategy=RoutingStrategy.ROUND_ROBIN,
             match_regex="",
-            items=[ModelGroupItemInput(provider_id=openai_provider.id, model_name="claude-sonnet", enabled=True)],
+            items=[ModelGroupItemInput(channel_id=openai_channel.id, model_name="claude-sonnet", enabled=True)],
         )
     )
 
@@ -204,3 +204,4 @@ async def _run_group_store_test(tmp_path):
     assert duplicate_name_group.id != group.id
 
     await engine.dispose()
+

@@ -8,10 +8,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..models import (
-    ProviderConfig,
-    ProviderDiscoveredModel,
-    ProviderKeyItem,
-    ProviderStatus,
+    ChannelConfig,
+    ChannelDiscoveredModel,
+    ChannelKeyItem,
+    ChannelStatus,
     SiteConfig,
     SiteCreate,
     SiteCredential,
@@ -34,13 +34,13 @@ from .entities import (
 )
 
 
-class ProviderStore:
+class ChannelStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
-    async def list(self) -> list[ProviderConfig]:
+    async def list(self) -> list[ChannelConfig]:
         sites = await self.list_sites()
-        items: list[ProviderConfig] = []
+        items: list[ChannelConfig] = []
         for site in sites:
             items.extend(self._flatten_site(site))
         return sorted(items, key=lambda item: (item.name.lower(), item.id))
@@ -83,7 +83,7 @@ class ProviderStore:
             protocol_ids = await self._site_protocol_ids(session, site_id)
             credential_ids = await self._site_credential_ids(session, site_id)
             if protocol_ids:
-                await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.provider_id.in_(protocol_ids)))
+                await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.channel_id.in_(protocol_ids)))
                 await session.execute(delete(SiteDiscoveredModelEntity).where(SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_ids)))
                 await session.execute(delete(SiteProtocolCredentialBindingEntity).where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(protocol_ids)))
                 await session.execute(delete(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(protocol_ids)))
@@ -341,7 +341,7 @@ class ProviderStore:
 
         deleted_protocol_ids = current_protocol_ids - next_protocol_ids
         if deleted_protocol_ids:
-            await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.provider_id.in_(deleted_protocol_ids)))
+            await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.channel_id.in_(deleted_protocol_ids)))
             await session.execute(delete(SiteDiscoveredModelEntity).where(SiteDiscoveredModelEntity.protocol_config_id.in_(deleted_protocol_ids)))
             await session.execute(delete(SiteProtocolCredentialBindingEntity).where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(deleted_protocol_ids)))
             await session.execute(delete(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(deleted_protocol_ids)))
@@ -350,9 +350,9 @@ class ProviderStore:
         if deleted_credential_ids:
             await session.execute(delete(SiteCredentialEntity).where(SiteCredentialEntity.id.in_(deleted_credential_ids)))
 
-    def _flatten_site(self, site: SiteConfig) -> list[ProviderConfig]:
+    def _flatten_site(self, site: SiteConfig) -> list[ChannelConfig]:
         credentials_by_id = {item.id: item for item in site.credentials}
-        items: list[ProviderConfig] = []
+        items: list[ChannelConfig] = []
         for protocol in site.protocols:
             binding_credentials = [
                 credentials_by_id[binding.credential_id]
@@ -360,7 +360,7 @@ class ProviderStore:
                 if binding.credential_id in credentials_by_id
             ]
             keys = [
-                ProviderKeyItem(
+                ChannelKeyItem(
                     id=item.id,
                     key=item.api_key,
                     remark=item.name,
@@ -369,7 +369,7 @@ class ProviderStore:
                 for item in binding_credentials
             ]
             models = [
-                ProviderDiscoveredModel(
+                ChannelDiscoveredModel(
                     id=item.id,
                     credential_id=item.credential_id,
                     credential_name=credentials_by_id[item.credential_id].name if item.credential_id in credentials_by_id else '',
@@ -381,13 +381,13 @@ class ProviderStore:
             ]
             active_key = next((item for item in keys if item.enabled), keys[0] if keys else None)
             items.append(
-                ProviderConfig(
+                ChannelConfig(
                     id=protocol.id,
                     name=site.name,
                     protocol=protocol.protocol,
                     base_url=site.base_url,
                     api_key=active_key.key if active_key else 'placeholder-key',
-                    status=ProviderStatus.ENABLED if protocol.enabled else ProviderStatus.DISABLED,
+                    status=ChannelStatus.ENABLED if protocol.enabled else ChannelStatus.DISABLED,
                     headers=protocol.headers,
                     model_patterns=[item.model_name for item in models if item.enabled],
                     keys=keys,

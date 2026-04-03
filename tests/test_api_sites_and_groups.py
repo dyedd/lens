@@ -162,11 +162,11 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
             )
             assert candidates.status_code == 200
             payload = candidates.json()
-            keys = {(item['provider_id'], item['credential_id'], item['model_name']) for item in payload['candidates']}
+            keys = {(item['channel_id'], item['credential_id'], item['model_name']) for item in payload['candidates']}
             assert (protocol['id'], alpha['id'], 'gpt-4.1') in keys
             assert (protocol['id'], beta['id'], 'gpt-4.1') in keys
             assert (protocol['id'], beta['id'], 'gpt-4.1-mini') in keys
-            assert all(item['provider_name'] == 'Candidate Site' for item in payload['candidates'])
+            assert all(item['channel_name'] == 'Candidate Site' for item in payload['candidates'])
 
             matched = {(item['credential_id'], item['model_name']) for item in payload['matched_items']}
             assert (alpha['id'], 'gpt-4.1') in matched
@@ -189,3 +189,4 @@ async def _build_test_app(database_path: Path):
     service_module.settings = config
     service_module.app_state = service_module.AppState()
     return service_module, service_module.app, config
+

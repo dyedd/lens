@@ -60,8 +60,8 @@ export function RequestsScreen() {
                   <p className="mt-1 truncate text-[var(--text)]">{item.matched_group_name || (locale === 'zh-CN' ? '未命中' : 'No match')}</p>
                 </div>
                 <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
-                  <p className="text-xs">provider</p>
-                  <p className="mt-1 truncate text-[var(--text)]">{item.provider_id || 'n/a'}</p>
+                  <p className="text-xs">channel</p>
+                  <p className="mt-1 truncate text-[var(--text)]">{item.channel_id || 'n/a'}</p>
                 </div>
                 <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
                   <p className="text-xs">{locale === 'zh-CN' ? '调用密钥' : 'Client key'}</p>
@@ -94,3 +94,4 @@ export function RequestsScreen() {
     </section>
   )
 }
+

@@ -25,19 +25,19 @@ class ProtocolKind(str, Enum):
     GEMINI = "gemini"
 
 
-class ProviderStatus(str, Enum):
+class ChannelStatus(str, Enum):
     ENABLED = "enabled"
     DISABLED = "disabled"
 
 
-class ProviderKeyItem(BaseModel):
+class ChannelKeyItem(BaseModel):
     id: str = ""
     key: str = Field(min_length=1)
     remark: str = ""
     enabled: bool = True
 
 
-class ProviderDiscoveredModel(BaseModel):
+class ChannelDiscoveredModel(BaseModel):
     id: str = ""
     credential_id: str = ""
     credential_name: str = ""
@@ -52,7 +52,7 @@ class RoutingStrategy(str, Enum):
     FAILOVER = "failover"
 
 
-class ProviderConfig(BaseModel):
+class ChannelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
@@ -60,11 +60,11 @@ class ProviderConfig(BaseModel):
     protocol: ProtocolKind
     base_url: HttpUrl
     api_key: str = Field(min_length=1)
-    status: ProviderStatus = ProviderStatus.ENABLED
+    status: ChannelStatus = ChannelStatus.ENABLED
     headers: dict[str, str] = Field(default_factory=dict)
     model_patterns: list[str] = Field(default_factory=list)
-    keys: list[ProviderKeyItem] = Field(default_factory=list)
-    models: list[ProviderDiscoveredModel] = Field(default_factory=list)
+    keys: list[ChannelKeyItem] = Field(default_factory=list)
+    models: list[ChannelDiscoveredModel] = Field(default_factory=list)
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
@@ -233,8 +233,8 @@ class SiteModelFetchItem(BaseModel):
     model_name: str
 
 
-class ProviderHealth(BaseModel):
-    provider_id: str
+class ChannelHealth(BaseModel):
+    channel_id: str
     consecutive_failures: int = 0
     last_error: str | None = None
 
@@ -242,7 +242,7 @@ class ProviderHealth(BaseModel):
 class RouteState(BaseModel):
     protocol: ProtocolKind
     next_index: int = 0
-    provider_ids: list[str] = Field(default_factory=list)
+    channel_ids: list[str] = Field(default_factory=list)
     requested_model: str | None = None
 
 
@@ -251,13 +251,13 @@ class RoutePreview(BaseModel):
     requested_model: str | None = None
     matched_group_name: str | None = None
     strategy: RoutingStrategy | None = None
-    matched_provider_ids: list[str] = Field(default_factory=list)
+    matched_channel_ids: list[str] = Field(default_factory=list)
     items: list["RoutePreviewItem"] = Field(default_factory=list)
 
 
 class RoutePreviewItem(BaseModel):
-    provider_id: str
-    provider_name: str = ""
+    channel_id: str
+    channel_name: str = ""
     model_name: str | None = None
 
 
@@ -270,7 +270,7 @@ class RoutePreviewRequest(BaseModel):
 
 class RouterSnapshot(BaseModel):
     routes: list[RouteState]
-    health: list[ProviderHealth]
+    health: list[ChannelHealth]
 
 
 class ErrorResponse(BaseModel):
@@ -311,8 +311,8 @@ class ModelGroup(BaseModel):
 class ModelGroupItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider_id: str
-    provider_name: str = ""
+    channel_id: str
+    channel_name: str = ""
     credential_id: str = ""
     credential_name: str = ""
     model_name: str
@@ -323,7 +323,7 @@ class ModelGroupItem(BaseModel):
 class ModelGroupItemInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider_id: str = Field(min_length=1)
+    channel_id: str = Field(min_length=1)
     credential_id: str = ""
     model_name: str = Field(min_length=1)
     enabled: bool = True
@@ -391,8 +391,8 @@ class ModelGroupStats(BaseModel):
 class ModelGroupCandidateItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider_id: str
-    provider_name: str
+    channel_id: str
+    channel_name: str
     credential_id: str = ""
     credential_name: str = ""
     base_url: str
@@ -442,7 +442,7 @@ class RequestLogItem(BaseModel):
     protocol: ProtocolKind
     requested_model: str | None = None
     matched_group_name: str | None = None
-    provider_id: str | None = None
+    channel_id: str | None = None
     gateway_key_id: str | None = None
     status_code: int
     success: bool
@@ -465,7 +465,7 @@ class OverviewMetrics(BaseModel):
     avg_latency_ms: int = 0
     active_gateway_keys: int = 0
     enabled_groups: int = 0
-    enabled_providers: int = 0
+    enabled_channels: int = 0
 
 
 class OverviewSummaryMetric(BaseModel):

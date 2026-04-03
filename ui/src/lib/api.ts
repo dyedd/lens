@@ -3,8 +3,8 @@ export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'anthropic' | 'g
 export type RoutingStrategy = 'round_robin' | 'weighted' | 'failover'
 
 export type ModelGroupItem = {
-  provider_id: string
-  provider_name: string
+  channel_id: string
+  channel_name: string
   credential_id: string
   credential_name: string
   model_name: string
@@ -24,7 +24,7 @@ export type ModelGroup = {
 }
 
 export type ModelGroupItemPayload = {
-  provider_id: string
+  channel_id: string
   credential_id: string
   model_name: string
   enabled: boolean
@@ -41,8 +41,8 @@ export type ModelGroupPayload = {
 }
 
 export type ModelGroupCandidateItem = {
-  provider_id: string
-  provider_name: string
+  channel_id: string
+  channel_name: string
   credential_id: string
   credential_name: string
   base_url: string
@@ -170,8 +170,8 @@ export type AdminProfile = {
 }
 
 export type RouteSnapshot = {
-  routes: Array<{ protocol: ProtocolKind; next_index: number; provider_ids: string[] }>
-  health: Array<{ provider_id: string; consecutive_failures: number; last_error?: string | null }>
+  routes: Array<{ protocol: ProtocolKind; next_index: number; channel_ids: string[] }>
+  health: Array<{ channel_id: string; consecutive_failures: number; last_error?: string | null }>
 }
 
 export type RoutePreview = {
@@ -179,8 +179,8 @@ export type RoutePreview = {
   requested_model?: string | null
   matched_group_name?: string | null
   strategy?: RoutingStrategy | null
-  matched_provider_ids: string[]
-  items: Array<{ provider_id: string; provider_name: string; model_name?: string | null }>
+  matched_channel_ids: string[]
+  items: Array<{ channel_id: string; channel_name: string; model_name?: string | null }>
 }
 
 export type OverviewMetrics = {
@@ -190,7 +190,7 @@ export type OverviewMetrics = {
   avg_latency_ms: number
   active_gateway_keys: number
   enabled_groups: number
-  enabled_providers: number
+  enabled_channels: number
 }
 
 export type OverviewSummaryMetric = {
@@ -244,7 +244,7 @@ export type RequestLogItem = {
   protocol: ProtocolKind
   requested_model?: string | null
   matched_group_name?: string | null
-  provider_id?: string | null
+  channel_id?: string | null
   gateway_key_id?: string | null
   status_code: number
   success: boolean
@@ -318,3 +318,4 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
 
   return response.json() as Promise<T>
 }
+

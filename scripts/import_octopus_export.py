@@ -26,14 +26,13 @@ from lens.persistence.domain_store import DomainStore
 from lens.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
-    ProviderEntity,
     SiteCredentialEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
     SiteProtocolCredentialBindingEntity,
 )
-from lens.persistence.provider_store import ProviderStore
+from lens.persistence.channel_store import ChannelStore
 
 
 TYPE_TO_PROTOCOL = {
@@ -63,7 +62,7 @@ async def main(export_path: str) -> None:
 
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
-    provider_store = ProviderStore(session_factory)
+    channel_store = ChannelStore(session_factory)
     domain_store = DomainStore(session_factory)
 
     stats_total = payload.get('stats_total')
@@ -97,7 +96,6 @@ async def main(export_path: str) -> None:
         await session.execute(delete(SiteProtocolConfigEntity))
         await session.execute(delete(SiteCredentialEntity))
         await session.execute(delete(SiteEntity))
-        await session.execute(delete(ProviderEntity))
         await session.commit()
 
     imported_channels: dict[int, tuple[str, str]] = {}
@@ -132,18 +130,17 @@ async def main(export_path: str) -> None:
         all_models = list(dict.fromkeys([*direct_models, *custom_models]))
         protocol_id = str(uuid.uuid4())
 
-        site = await provider_store.create_site(
+        site = await channel_store.create_site(
             SiteCreate(
                 name=channel.get('name') or f'channel-{channel_id}',
+                base_url=base_url,
                 credentials=credentials,
                 protocols=[
                     SiteProtocolConfigInput(
                         id=protocol_id,
                         protocol=protocol,
                         enabled=bool(channel.get('enabled', True)),
-                        base_url=base_url,
                         headers={},
-                        proxy=bool(channel.get('proxy')),
                         channel_proxy=channel.get('channel_proxy') or '',
                         param_override=channel.get('param_override') or '',
                         match_regex=channel.get('match_regex') or '',
@@ -185,13 +182,13 @@ async def main(export_path: str) -> None:
             model_name = str(item.get('model_name') or '').strip()
             if not imported or not model_name:
                 continue
-            _, provider_id = imported
+            _, channel_config_id = imported
             channel_payload = channels_by_id.get(channel_id)
             protocol = TYPE_TO_PROTOCOL.get(channel_payload.get('type')) if channel_payload else None
             if protocol is None:
                 continue
             grouped_members[protocol].append(
-                ModelGroupItemInput(provider_id=provider_id, credential_id='', model_name=model_name, enabled=True)
+                ModelGroupItemInput(channel_id=channel_config_id, credential_id='', model_name=model_name, enabled=True)
             )
 
         if not grouped_members:

@@ -204,8 +204,8 @@ function buildSiteStats(logs: RequestLogItem[] | undefined, sites: Site[] | unde
   }
   const grouped = new Map<string, SiteStats>()
   for (const row of logs ?? []) {
-    if (!row.provider_id) continue
-    const siteId = protocolToSite.get(row.provider_id)
+    if (!row.channel_id) continue
+    const siteId = protocolToSite.get(row.channel_id)
     if (!siteId) continue
     const current = grouped.get(siteId) ?? { requestCount: 0, successCount: 0, failedCount: 0 }
     current.requestCount += 1
@@ -876,3 +876,4 @@ export function ChannelsScreen() {
     </section>
   )
 }
+

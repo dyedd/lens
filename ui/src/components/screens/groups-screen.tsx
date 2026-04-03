@@ -21,8 +21,8 @@ import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 
 type FormItem = {
-  provider_id: string
-  provider_name: string
+  channel_id: string
+  channel_name: string
   credential_id: string
   credential_name: string
   model_name: string
@@ -40,8 +40,8 @@ type FormState = {
 }
 
 type CandidateChannel = {
-  provider_id: string
-  provider_name: string
+  channel_id: string
+  channel_name: string
   credentials: Array<{
     credential_id: string
     credential_name: string
@@ -89,8 +89,8 @@ function panelClassName(extra = '') {
   return cn('rounded-[24px] border border-[var(--line)] bg-[var(--panel)]', extra)
 }
 
-function itemKey(item: Pick<FormItem, 'provider_id' | 'credential_id' | 'model_name'>) {
-  return `${item.provider_id}::${item.credential_id}::${item.model_name}`
+function itemKey(item: Pick<FormItem, 'channel_id' | 'credential_id' | 'model_name'>) {
+  return `${item.channel_id}::${item.credential_id}::${item.model_name}`
 }
 
 function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
@@ -128,9 +128,9 @@ type ProtocolMeta = {
   protocol: ProtocolKind
 }
 
-function providerEndpoint(provider?: ProtocolMeta) {
-  if (!provider) return ''
-  return provider.base_url || ''
+function channelEndpoint(channel?: ProtocolMeta) {
+  if (!channel) return ''
+  return channel.base_url || ''
 }
 
 function toForm(group: ModelGroup): FormState {
@@ -145,8 +145,8 @@ function toForm(group: ModelGroup): FormState {
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((item) => ({
-        provider_id: item.provider_id,
-        provider_name: item.provider_name,
+        channel_id: item.channel_id,
+        channel_name: item.channel_name,
         credential_id: item.credential_id,
         credential_name: item.credential_name,
         model_name: item.model_name,
@@ -163,7 +163,7 @@ function toPayload(form: FormState): ModelGroupPayload {
     match_regex: form.match_regex.trim(),
     first_token_timeout: parseDurationInput(form.first_token_timeout),
     session_keep_time: parseDurationInput(form.session_keep_time),
-    items: form.items.map((item) => ({ provider_id: item.provider_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
+    items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }
 }
 
@@ -237,7 +237,7 @@ function CandidateRow({
     >
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="mt-1 truncate text-[11px] text-[var(--muted)]">{item.credential_name || item.provider_name}</div>
+        <div className="mt-1 truncate text-[11px] text-[var(--muted)]">{item.credential_name || item.channel_name}</div>
       </div>
       <span className="shrink-0 text-[var(--muted)]">{active ? <Check size={15} className="text-[var(--accent)]" /> : <Plus size={15} />}</span>
     </button>
@@ -284,7 +284,7 @@ function SelectedMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="truncate text-[11px] text-[var(--muted)]">{item.provider_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="truncate text-[11px] text-[var(--muted)]">{item.channel_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
       <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
       <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[rgba(217,111,93,0.08)] hover:text-[var(--danger)]" onClick={onRemove}>
@@ -335,7 +335,7 @@ function CardMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.provider_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.channel_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
       <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
     </div>
@@ -367,7 +367,7 @@ export function GroupsScreen() {
     protocol: form.items[0] ? form.protocol : undefined,
     name: form.name,
     match_regex: form.match_regex,
-    exclude_items: form.items.map((item) => ({ provider_id: item.provider_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
+    exclude_items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }), [form])
   const { data: candidateResponse, refetch: refetchCandidates, isFetching: isFetchingCandidates } = useQuery({
     queryKey: ['group-candidates', candidatePayload],
@@ -378,7 +378,7 @@ export function GroupsScreen() {
     enabled: dialogOpen,
   })
 
-  const providerMap = useMemo(() => {
+  const channelMap = useMemo(() => {
     const map = new Map<string, ProtocolMeta>()
     for (const site of sites ?? []) {
       for (const protocol of site.protocols) {
@@ -399,7 +399,7 @@ export function GroupsScreen() {
     return (groups ?? []).filter((group) => {
       const haystack = [
         group.name,
-        ...group.items.map((item) => item.provider_name),
+        ...group.items.map((item) => item.channel_name),
         ...group.items.map((item) => item.model_name),
       ].join(' ').toLowerCase()
       return haystack.includes(keyword)
@@ -420,21 +420,21 @@ export function GroupsScreen() {
 
   const groupedCandidates = useMemo(() => {
     const keyword = candidateSearch.trim().toLowerCase()
-    const providerKeyword = channelSearch.trim().toLowerCase()
+    const channelKeyword = channelSearch.trim().toLowerCase()
     const credentialKeyword = credentialSearch.trim().toLowerCase()
-    const groupsByProvider = new Map<string, CandidateChannel>()
+    const groupsByChannel = new Map<string, CandidateChannel>()
 
     for (const item of candidateResponse?.candidates ?? []) {
-      const provider = providerMap.get(item.provider_id)
-      const providerName = provider?.name || item.provider_name
-      const endpoint = providerEndpoint(provider)
-      const matchProvider = !providerKeyword || `${providerName} ${endpoint}`.toLowerCase().includes(providerKeyword)
+      const channel = channelMap.get(item.channel_id)
+      const channelName = channel?.name || item.channel_name
+      const endpoint = channelEndpoint(channel)
+      const matchChannel = !channelKeyword || `${channelName} ${endpoint}`.toLowerCase().includes(channelKeyword)
       const matchCredential = !credentialKeyword || item.credential_name.toLowerCase().includes(credentialKeyword)
-      const matchItem = !keyword || `${item.model_name} ${providerName}`.toLowerCase().includes(keyword)
-      if (!matchProvider || !matchCredential || !matchItem) {
+      const matchItem = !keyword || `${item.model_name} ${channelName}`.toLowerCase().includes(keyword)
+      if (!matchChannel || !matchCredential || !matchItem) {
         continue
       }
-      const existing = groupsByProvider.get(item.provider_id)
+      const existing = groupsByChannel.get(item.channel_id)
       if (existing) {
         const existingCredential = existing.credentials.find((credential) => credential.credential_id === item.credential_id)
         if (existingCredential) {
@@ -447,16 +447,16 @@ export function GroupsScreen() {
           })
         }
       } else {
-        groupsByProvider.set(item.provider_id, {
-          provider_id: item.provider_id,
-          provider_name: providerName,
+        groupsByChannel.set(item.channel_id, {
+          channel_id: item.channel_id,
+          channel_name: channelName,
           credentials: [{ credential_id: item.credential_id, credential_name: item.credential_name, items: [item] }],
         })
       }
     }
 
-    return Array.from(groupsByProvider.values()).sort((a, b) => a.provider_name.localeCompare(b.provider_name))
-  }, [candidateResponse, candidateSearch, channelSearch, credentialSearch, providerMap])
+    return Array.from(groupsByChannel.values()).sort((a, b) => a.channel_name.localeCompare(b.channel_name))
+  }, [candidateResponse, candidateSearch, channelSearch, credentialSearch, channelMap])
 
   const visibleSelectedItems = useMemo(() => {
     if (!showEnabledOnly) return form.items
@@ -481,12 +481,12 @@ export function GroupsScreen() {
       return
     }
     setExpandedChannels((current) => {
-      const available = new Set(groupedCandidates.map((item) => item.provider_id))
+      const available = new Set(groupedCandidates.map((item) => item.channel_id))
       const filtered = current.filter((item) => available.has(item))
       if (filtered.length) {
         return filtered
       }
-      return [groupedCandidates[0].provider_id]
+      return [groupedCandidates[0].channel_id]
     })
   }, [groupedCandidates])
 
@@ -554,11 +554,11 @@ export function GroupsScreen() {
       if (current.items.some((member) => itemKey(member) === key)) {
         return current
       }
-      const nextProtocol = providerMap.get(item.provider_id)?.protocol || current.protocol
+      const nextProtocol = channelMap.get(item.channel_id)?.protocol || current.protocol
       return {
         ...current,
         protocol: nextProtocol,
-        items: [...current.items, { provider_id: item.provider_id, provider_name: item.provider_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }],
+        items: [...current.items, { channel_id: item.channel_id, channel_name: item.channel_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }],
       }
     })
   }
@@ -634,17 +634,17 @@ export function GroupsScreen() {
       const existing = new Set(current.items.map((item) => itemKey(item)))
       const additions = matchedItems
         .filter((item) => !existing.has(itemKey(item)))
-        .map((item) => ({ provider_id: item.provider_id, provider_name: item.provider_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }))
+        .map((item) => ({ channel_id: item.channel_id, channel_name: item.channel_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }))
       if (!additions.length) {
         return current
       }
-      const nextProtocol = providerMap.get(additions[0].provider_id)?.protocol || current.protocol
+      const nextProtocol = channelMap.get(additions[0].channel_id)?.protocol || current.protocol
       return { ...current, protocol: nextProtocol, items: [...current.items, ...additions] }
     })
   }
 
-  function toggleChannel(providerId: string) {
-    setExpandedChannels((current) => current.includes(providerId) ? current.filter((item) => item !== providerId) : [...current, providerId])
+  function toggleChannel(channelId: string) {
+    setExpandedChannels((current) => current.includes(channelId) ? current.filter((item) => item !== channelId) : [...current, channelId])
   }
 
   function changeProtocol(protocol: ProtocolKind) {
@@ -690,8 +690,8 @@ export function GroupsScreen() {
         {visibleGroups.map((group) => {
           const items = group.items.slice().sort((a, b) => a.sort_order - b.sort_order)
           const cardItems = items.map((item) => ({
-            provider_id: item.provider_id,
-            provider_name: item.provider_name || providerMap.get(item.provider_id)?.name || item.provider_id,
+            channel_id: item.channel_id,
+            channel_name: item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id,
             credential_id: item.credential_id,
             credential_name: item.credential_name,
             model_name: item.model_name,
@@ -793,9 +793,9 @@ export function GroupsScreen() {
                 <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '模型成员' : 'Members'}</div>
                 <div className="mt-4 space-y-2">
                   {detailItems.length ? detailItems.map((item) => (
-                    <div key={`${item.provider_id}-${item.credential_id}-${item.model_name}`} className="rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2.5">
+                    <div key={`${item.channel_id}-${item.credential_id}-${item.model_name}`} className="rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2.5">
                       <div className="text-sm font-medium text-[var(--text)]">{item.model_name}</div>
-                      <div className="mt-1 text-xs text-[var(--muted)]">{item.provider_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
+                      <div className="mt-1 text-xs text-[var(--muted)]">{item.channel_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
                     </div>
                   )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无成员' : 'No members'}</p>}
                 </div>
@@ -879,14 +879,14 @@ export function GroupsScreen() {
                 <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-3">
                   <div className="space-y-2">
                     {groupedCandidates.map((channel) => {
-                      const provider = providerMap.get(channel.provider_id)
-                      const isOpen = expandedChannels.includes(channel.provider_id)
-      const endpoint = providerEndpoint(provider)
+                      const currentChannel = channelMap.get(channel.channel_id)
+                      const isOpen = expandedChannels.includes(channel.channel_id)
+                      const endpoint = channelEndpoint(currentChannel)
                       return (
-                        <div key={channel.provider_id} className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)]">
-                          <button type="button" className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-[var(--panel-soft)]" onClick={() => toggleChannel(channel.provider_id)}>
+                        <div key={channel.channel_id} className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)]">
+                          <button type="button" className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-[var(--panel-soft)]" onClick={() => toggleChannel(channel.channel_id)}>
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-[13px] font-medium text-[var(--text)]">{channel.provider_name}</div>
+                              <div className="truncate text-[13px] font-medium text-[var(--text)]">{channel.channel_name}</div>
                               <div className="mt-1 truncate text-[11px] text-[var(--muted)]">{endpoint}</div>
                             </div>
                             <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5 text-[11px] text-[var(--muted)]">{channel.credentials.reduce((total, credential) => total + credential.items.length, 0)}</span>
@@ -895,10 +895,10 @@ export function GroupsScreen() {
                           {isOpen ? (
                             <div className="space-y-1.5 border-t border-[var(--line)] px-3 py-3">
                               {channel.credentials.map((credential) => (
-                                <div key={`${channel.provider_id}-${credential.credential_id}`} className="space-y-1.5 rounded-xl bg-[var(--panel-soft)] p-2.5">
-                                  <div className="px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{credential.credential_name || locale === 'zh-CN' ? credential.credential_name || '未命名 Key' : credential.credential_name || 'Unnamed key'}</div>
+                                <div key={`${channel.channel_id}-${credential.credential_id}`} className="space-y-1.5 rounded-xl bg-[var(--panel-soft)] p-2.5">
+                                  <div className="px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{credential.credential_name || (locale === 'zh-CN' ? '未命名 Key' : 'Unnamed key')}</div>
                                   {credential.items.map((item) => (
-                                    <CandidateRow key={`${item.provider_id}-${item.credential_id}-${item.model_name}`} item={item} active={form.items.some((member) => itemKey(member) === itemKey(item))} onClick={() => addItem(item)} />
+                                    <CandidateRow key={`${item.channel_id}-${item.credential_id}-${item.model_name}`} item={item} active={form.items.some((member) => itemKey(member) === itemKey(item))} onClick={() => addItem(item)} />
                                   ))}
                                 </div>
                               ))}
@@ -978,3 +978,4 @@ export function GroupsScreen() {
     </section>
   )
 }
+

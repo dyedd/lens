@@ -216,7 +216,7 @@ export function SettingsScreen() {
             <p className="text-xs leading-6 text-[var(--muted)]">
               {locale === 'zh-CN'
                 ? '这里配置的是访问当前服务 /v1/* 接口时使用的 API Key，不是渠道的上游密钥。'
-                : 'These keys protect this service /v1/* access. They are not upstream provider keys.'}
+                : 'These keys protect this service /v1/* access. They are not upstream channel keys.'}
             </p>
           </div>
         </SettingCard>
@@ -275,7 +275,7 @@ export function SettingsScreen() {
 
         <SettingCard icon={Globe2} title={locale === 'zh-CN' ? '路由规则' : 'Routing'}>
           <div className="space-y-3 text-sm leading-6 text-[var(--muted)]">
-            <p>{locale === 'zh-CN' ? '按模型组名精确匹配优先；未命中时，再使用渠道的正则规则回退匹配。' : 'Exact model-group match is used first. If it misses, provider regex rules are used as fallback.'}</p>
+            <p>{locale === 'zh-CN' ? '按模型组名精确匹配优先；未命中时，再使用渠道的正则规则回退匹配。' : 'Exact model-group match is used first. If it misses, channel regex rules are used as fallback.'}</p>
             <p>{locale === 'zh-CN' ? '服务自身的访问控制现在由设置页里的 API Key 统一管理。' : 'Service access control is now managed centrally by API keys in settings.'}</p>
           </div>
         </SettingCard>
