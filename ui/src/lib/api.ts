@@ -2,15 +2,20 @@ export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'anthropic' | 'g
 
 export type ProviderStatus = 'enabled' | 'disabled'
 
-export type ProviderUrlItem = {
-  url: string
-  delay: number
-}
-
 export type ProviderKeyItem = {
+  id: string
   key: string
   remark: string
   enabled: boolean
+}
+
+export type ProviderDiscoveredModel = {
+  id: string
+  credential_id: string
+  credential_name: string
+  model_name: string
+  enabled: boolean
+  sort_order: number
 }
 
 export type RoutingStrategy = 'round_robin' | 'weighted' | 'failover'
@@ -24,8 +29,8 @@ export type Provider = {
   status: ProviderStatus
   headers: Record<string, string>
   model_patterns: string[]
-  base_urls: ProviderUrlItem[]
   keys: ProviderKeyItem[]
+  models: ProviderDiscoveredModel[]
   proxy: boolean
   channel_proxy: string
   param_override: string
@@ -40,7 +45,6 @@ export type ProviderPayload = {
   status: ProviderStatus
   headers: Record<string, string>
   model_patterns: string[]
-  base_urls: ProviderUrlItem[]
   keys: ProviderKeyItem[]
   proxy: boolean
   channel_proxy: string
@@ -53,7 +57,6 @@ export type ProviderModelFetchPayload = {
   base_url: string
   api_key: string
   headers: Record<string, string>
-  base_urls: ProviderUrlItem[]
   keys: ProviderKeyItem[]
   channel_proxy: string
   match_regex: string
@@ -62,6 +65,8 @@ export type ProviderModelFetchPayload = {
 export type ModelGroupItem = {
   provider_id: string
   provider_name: string
+  credential_id: string
+  credential_name: string
   model_name: string
   enabled: boolean
   sort_order: number
@@ -80,6 +85,7 @@ export type ModelGroup = {
 
 export type ModelGroupItemPayload = {
   provider_id: string
+  credential_id: string
   model_name: string
   enabled: boolean
 }
@@ -97,7 +103,109 @@ export type ModelGroupPayload = {
 export type ModelGroupCandidateItem = {
   provider_id: string
   provider_name: string
+  credential_id: string
+  credential_name: string
   base_url: string
+  model_name: string
+}
+
+export type SiteCredential = {
+  id: string
+  name: string
+  api_key: string
+  enabled: boolean
+  sort_order: number
+}
+
+export type SiteCredentialInput = {
+  id?: string | null
+  name: string
+  api_key: string
+  enabled: boolean
+}
+
+export type SiteProtocolCredentialBinding = {
+  credential_id: string
+  credential_name: string
+  enabled: boolean
+  sort_order: number
+}
+
+export type SiteProtocolCredentialBindingInput = {
+  credential_id: string
+  enabled: boolean
+}
+
+export type SiteModel = {
+  id: string
+  credential_id: string
+  credential_name: string
+  model_name: string
+  enabled: boolean
+  sort_order: number
+}
+
+export type SiteModelInput = {
+  id?: string | null
+  credential_id: string
+  model_name: string
+  enabled: boolean
+}
+
+export type SiteProtocolConfig = {
+  id: string
+  protocol: ProtocolKind
+  enabled: boolean
+  headers: Record<string, string>
+  proxy: boolean
+  channel_proxy: string
+  param_override: string
+  match_regex: string
+  bindings: SiteProtocolCredentialBinding[]
+  models: SiteModel[]
+}
+
+export type SiteProtocolConfigInput = {
+  id?: string | null
+  protocol: ProtocolKind
+  enabled: boolean
+  headers: Record<string, string>
+  proxy: boolean
+  channel_proxy: string
+  param_override: string
+  match_regex: string
+  bindings: SiteProtocolCredentialBindingInput[]
+  models: SiteModelInput[]
+}
+
+export type Site = {
+  id: string
+  name: string
+  base_url: string
+  credentials: SiteCredential[]
+  protocols: SiteProtocolConfig[]
+}
+
+export type SitePayload = {
+  name: string
+  base_url: string
+  credentials: SiteCredentialInput[]
+  protocols: SiteProtocolConfigInput[]
+}
+
+export type SiteModelFetchPayload = {
+  protocol: ProtocolKind
+  base_url: string
+  headers: Record<string, string>
+  channel_proxy: string
+  match_regex: string
+  credentials: SiteCredentialInput[]
+  bindings: SiteProtocolCredentialBindingInput[]
+}
+
+export type SiteModelFetchItem = {
+  credential_id: string
+  credential_name: string
   model_name: string
 }
 

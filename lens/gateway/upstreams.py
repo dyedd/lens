@@ -30,7 +30,7 @@ def build_upstream_request(
     if provider.protocol == ProtocolKind.OPENAI_CHAT:
         return UpstreamRequest(
             method="POST",
-            url=f"{base_url.rstrip('/')}/chat/completions",
+            url=f"{_protocol_base_url(provider).rstrip('/')}/chat/completions",
             headers={
                 "authorization": f"Bearer {api_key}",
                 "content-type": "application/json",
@@ -43,7 +43,7 @@ def build_upstream_request(
     if provider.protocol == ProtocolKind.OPENAI_RESPONSES:
         return UpstreamRequest(
             method="POST",
-            url=f"{base_url.rstrip('/')}/responses",
+            url=f"{_protocol_base_url(provider).rstrip('/')}/responses",
             headers={
                 "authorization": f"Bearer {api_key}",
                 "content-type": "application/json",
@@ -56,7 +56,7 @@ def build_upstream_request(
     if provider.protocol == ProtocolKind.ANTHROPIC:
         return UpstreamRequest(
             method="POST",
-            url=f"{base_url.rstrip('/')}/messages",
+            url=f"{_protocol_base_url(provider).rstrip('/')}/messages",
             headers={
                 "x-api-key": api_key,
                 "anthropic-version": settings.anthropic_version,
@@ -77,7 +77,7 @@ def build_upstream_request(
         return UpstreamRequest(
             method="POST",
             url=(
-                f"{base_url.rstrip('/')}/models/{model_name}:{path}"
+                f"{_protocol_base_url(provider).rstrip('/')}/models/{model_name}:{path}"
                 f"?key={api_key}"
             ),
             headers={
@@ -105,9 +105,25 @@ def protocol_for_path(path: str) -> ProtocolKind:
 
 
 def _resolve_base_url(provider: ProviderConfig) -> str:
-    if provider.base_urls:
-        return str(provider.base_urls[0].url)
-    return str(provider.base_url)
+    return _normalize_base_url(str(provider.base_url))
+
+
+def _protocol_base_url(provider: ProviderConfig) -> str:
+    root = _resolve_base_url(provider)
+    if provider.protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES, ProtocolKind.ANTHROPIC}:
+        return f"{root}/v1"
+    if provider.protocol == ProtocolKind.GEMINI:
+        return f"{root}/v1beta"
+    return root
+
+
+def _normalize_base_url(value: str) -> str:
+    normalized = value.strip().rstrip("/")
+    if normalized.endswith("/v1beta"):
+        return normalized[:-7]
+    if normalized.endswith("/v1"):
+        return normalized[:-3]
+    return normalized
 
 
 def _resolve_api_key(provider: ProviderConfig) -> str:

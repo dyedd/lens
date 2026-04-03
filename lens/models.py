@@ -7,6 +7,17 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
+def normalize_base_url(value: Any) -> Any:
+    if value is None:
+        return value
+    text = str(value).strip().rstrip("/")
+    if text.endswith("/v1beta"):
+        text = text[:-7]
+    elif text.endswith("/v1"):
+        text = text[:-3]
+    return text
+
+
 class ProtocolKind(str, Enum):
     OPENAI_CHAT = "openai_chat"
     OPENAI_RESPONSES = "openai_responses"
@@ -19,15 +30,20 @@ class ProviderStatus(str, Enum):
     DISABLED = "disabled"
 
 
-class ProviderUrlItem(BaseModel):
-    url: HttpUrl
-    delay: int = Field(default=0, ge=0)
-
-
 class ProviderKeyItem(BaseModel):
+    id: str = ""
     key: str = Field(min_length=1)
     remark: str = ""
     enabled: bool = True
+
+
+class ProviderDiscoveredModel(BaseModel):
+    id: str = ""
+    credential_id: str = ""
+    credential_name: str = ""
+    model_name: str
+    enabled: bool = True
+    sort_order: int = Field(default=0, ge=0)
 
 
 class RoutingStrategy(str, Enum):
@@ -47,12 +63,177 @@ class ProviderConfig(BaseModel):
     status: ProviderStatus = ProviderStatus.ENABLED
     headers: dict[str, str] = Field(default_factory=dict)
     model_patterns: list[str] = Field(default_factory=list)
-    base_urls: list[ProviderUrlItem] = Field(default_factory=list)
     keys: list[ProviderKeyItem] = Field(default_factory=list)
+    models: list[ProviderDiscoveredModel] = Field(default_factory=list)
     proxy: bool = False
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
+
+
+class SiteCredential(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    api_key: str = Field(min_length=1)
+    enabled: bool = True
+    sort_order: int = Field(default=0, ge=0)
+
+
+class SiteCredentialInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    name: str
+    api_key: str = Field(min_length=1)
+    enabled: bool = True
+
+
+class SiteProtocolCredentialBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    credential_id: str
+    credential_name: str = ""
+    enabled: bool = True
+    sort_order: int = Field(default=0, ge=0)
+
+
+class SiteProtocolCredentialBindingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    credential_id: str = Field(min_length=1)
+    enabled: bool = True
+
+
+class SiteModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    credential_id: str
+    credential_name: str = ""
+    model_name: str
+    enabled: bool = True
+    sort_order: int = Field(default=0, ge=0)
+
+
+class SiteModelInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    credential_id: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+    enabled: bool = True
+
+
+class SiteProtocolConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    protocol: ProtocolKind
+    enabled: bool = True
+    headers: dict[str, str] = Field(default_factory=dict)
+    proxy: bool = False
+    channel_proxy: str = ""
+    param_override: str = ""
+    match_regex: str = ""
+    bindings: list[SiteProtocolCredentialBinding] = Field(default_factory=list)
+    models: list[SiteModel] = Field(default_factory=list)
+
+
+class SiteProtocolConfigInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    protocol: ProtocolKind
+    enabled: bool = True
+    headers: dict[str, str] = Field(default_factory=dict)
+    proxy: bool = False
+    channel_proxy: str = ""
+    param_override: str = ""
+    match_regex: str = ""
+    bindings: list[SiteProtocolCredentialBindingInput] = Field(default_factory=list)
+    models: list[SiteModelInput] = Field(default_factory=list)
+
+    @field_validator("match_regex")
+    @classmethod
+    def validate_match_regex(cls, pattern: str) -> str:
+        if not pattern:
+            return pattern
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
+        return pattern
+
+
+class SiteConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    base_url: HttpUrl
+    credentials: list[SiteCredential] = Field(default_factory=list)
+    protocols: list[SiteProtocolConfig] = Field(default_factory=list)
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
+
+
+class SiteCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    base_url: HttpUrl
+    credentials: list[SiteCredentialInput] = Field(default_factory=list)
+    protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
+
+
+class SiteUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    base_url: HttpUrl
+    credentials: list[SiteCredentialInput] = Field(default_factory=list)
+    protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
+
+
+class SiteModelFetchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: ProtocolKind
+    base_url: HttpUrl
+    headers: dict[str, str] = Field(default_factory=dict)
+    channel_proxy: str = ""
+    match_regex: str = ""
+    credentials: list[SiteCredentialInput] = Field(default_factory=list)
+    bindings: list[SiteProtocolCredentialBindingInput] = Field(default_factory=list)
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
+
+    @field_validator("match_regex")
+    @classmethod
+    def validate_match_regex(cls, pattern: str) -> str:
+        if not pattern:
+            return pattern
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
+        return pattern
+
+
+class SiteModelFetchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    credential_id: str
+    credential_name: str = ""
+    model_name: str
 
 
 class ProviderCreate(BaseModel):
@@ -65,12 +246,13 @@ class ProviderCreate(BaseModel):
     status: ProviderStatus = ProviderStatus.ENABLED
     headers: dict[str, str] = Field(default_factory=dict)
     model_patterns: list[str] = Field(default_factory=list)
-    base_urls: list[ProviderUrlItem] = Field(default_factory=list)
     keys: list[ProviderKeyItem] = Field(default_factory=list)
     proxy: bool = False
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
     @field_validator("model_patterns")
     @classmethod
@@ -93,12 +275,13 @@ class ProviderUpdate(BaseModel):
     status: ProviderStatus | None = None
     headers: dict[str, str] | None = None
     model_patterns: list[str] | None = None
-    base_urls: list[ProviderUrlItem] | None = None
     keys: list[ProviderKeyItem] | None = None
     proxy: bool | None = None
     channel_proxy: str | None = None
     param_override: str | None = None
     match_regex: str | None = None
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
     @field_validator("model_patterns")
     @classmethod
@@ -120,10 +303,11 @@ class ProviderModelFetchRequest(BaseModel):
     base_url: HttpUrl | None = None
     api_key: str | None = Field(default=None, min_length=1)
     headers: dict[str, str] = Field(default_factory=dict)
-    base_urls: list[ProviderUrlItem] = Field(default_factory=list)
     keys: list[ProviderKeyItem] = Field(default_factory=list)
     channel_proxy: str = ""
     match_regex: str = ""
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
     @field_validator("match_regex")
     @classmethod
@@ -217,6 +401,8 @@ class ModelGroupItem(BaseModel):
 
     provider_id: str
     provider_name: str = ""
+    credential_id: str = ""
+    credential_name: str = ""
     model_name: str
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
@@ -226,6 +412,7 @@ class ModelGroupItemInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider_id: str = Field(min_length=1)
+    credential_id: str = ""
     model_name: str = Field(min_length=1)
     enabled: bool = True
 
@@ -294,6 +481,8 @@ class ModelGroupCandidateItem(BaseModel):
 
     provider_id: str
     provider_name: str
+    credential_id: str = ""
+    credential_name: str = ""
     base_url: str
     model_name: str
 

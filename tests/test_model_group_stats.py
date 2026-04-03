@@ -28,7 +28,7 @@ async def _run_group_stats_test(tmp_path):
         ProviderCreate(
             name="Primary Claude",
             protocol=ProtocolKind.OPENAI_CHAT,
-            base_url="https://primary.example.com/v1",
+            base_url="https://primary.example.com",
             api_key="sk-primary",
             model_patterns=["claude-opus-4-6-2026-03-31", "gpt-4.1-2026-03-30"],
         )
@@ -37,7 +37,7 @@ async def _run_group_stats_test(tmp_path):
         ProviderCreate(
             name="Fallback Claude",
             protocol=ProtocolKind.OPENAI_CHAT,
-            base_url="https://fallback.example.com/v1",
+            base_url="https://fallback.example.com",
             api_key="sk-fallback",
             model_patterns=["claude-opus-4-6-2026-03-31"],
         )

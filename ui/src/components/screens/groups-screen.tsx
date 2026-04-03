@@ -23,6 +23,8 @@ import { SegmentedControl } from '@/components/ui/segmented-control'
 type FormItem = {
   provider_id: string
   provider_name: string
+  credential_id: string
+  credential_name: string
   model_name: string
   enabled: boolean
 }
@@ -40,7 +42,11 @@ type FormState = {
 type CandidateChannel = {
   provider_id: string
   provider_name: string
-  items: ModelGroupCandidateItem[]
+  credentials: Array<{
+    credential_id: string
+    credential_name: string
+    items: ModelGroupCandidateItem[]
+  }>
 }
 
 const emptyForm: FormState = {
@@ -83,8 +89,8 @@ function panelClassName(extra = '') {
   return cn('rounded-[24px] border border-[var(--line)] bg-[var(--panel)]', extra)
 }
 
-function itemKey(item: Pick<FormItem, 'provider_id' | 'model_name'>) {
-  return `${item.provider_id}::${item.model_name}`
+function itemKey(item: Pick<FormItem, 'provider_id' | 'credential_id' | 'model_name'>) {
+  return `${item.provider_id}::${item.credential_id}::${item.model_name}`
 }
 
 function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
@@ -117,7 +123,7 @@ function protocolOptions(locale: 'zh-CN' | 'en-US') {
 
 function providerEndpoint(provider?: Provider) {
   if (!provider) return ''
-  return provider.base_urls[0]?.url || provider.base_url || ''
+  return provider.base_url || ''
 }
 
 function toForm(group: ModelGroup): FormState {
@@ -134,6 +140,8 @@ function toForm(group: ModelGroup): FormState {
       .map((item) => ({
         provider_id: item.provider_id,
         provider_name: item.provider_name,
+        credential_id: item.credential_id,
+        credential_name: item.credential_name,
         model_name: item.model_name,
         enabled: item.enabled,
       })),
@@ -148,7 +156,7 @@ function toPayload(form: FormState): ModelGroupPayload {
     match_regex: form.match_regex.trim(),
     first_token_timeout: parseDurationInput(form.first_token_timeout),
     session_keep_time: parseDurationInput(form.session_keep_time),
-    items: form.items.map((item) => ({ provider_id: item.provider_id, model_name: item.model_name, enabled: item.enabled })),
+    items: form.items.map((item) => ({ provider_id: item.provider_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }
 }
 
@@ -222,6 +230,7 @@ function CandidateRow({
     >
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
+        <div className="mt-1 truncate text-[11px] text-[var(--muted)]">{item.credential_name || item.provider_name}</div>
       </div>
       <span className="shrink-0 text-[var(--muted)]">{active ? <Check size={15} className="text-[var(--accent)]" /> : <Plus size={15} />}</span>
     </button>
@@ -268,7 +277,7 @@ function SelectedMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="truncate text-[11px] text-[var(--muted)]">{item.provider_name}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="truncate text-[11px] text-[var(--muted)]">{item.provider_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
       <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
       <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[rgba(217,111,93,0.08)] hover:text-[var(--danger)]" onClick={onRemove}>
@@ -319,7 +328,7 @@ function CardMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.provider_name}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.provider_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
       <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
     </div>
@@ -332,6 +341,7 @@ export function GroupsScreen() {
   const [search, setSearch] = useState('')
   const [candidateSearch, setCandidateSearch] = useState('')
   const [channelSearch, setChannelSearch] = useState('')
+  const [credentialSearch, setCredentialSearch] = useState('')
   const [form, setForm] = useState<FormState>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -342,6 +352,7 @@ export function GroupsScreen() {
   const [expandedChannels, setExpandedChannels] = useState<string[]>([])
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
   const [cardDraggingKey, setCardDraggingKey] = useState<string | null>(null)
+  const [showEnabledOnly, setShowEnabledOnly] = useState(false)
 
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/model-groups') })
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
@@ -349,7 +360,7 @@ export function GroupsScreen() {
     protocol: form.items[0] ? form.protocol : undefined,
     name: form.name,
     match_regex: form.match_regex,
-    exclude_items: form.items.map((item) => ({ provider_id: item.provider_id, model_name: item.model_name, enabled: item.enabled })),
+    exclude_items: form.items.map((item) => ({ provider_id: item.provider_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }), [form])
   const { data: candidateResponse, refetch: refetchCandidates, isFetching: isFetchingCandidates } = useQuery({
     queryKey: ['group-candidates', candidatePayload],
@@ -396,6 +407,7 @@ export function GroupsScreen() {
   const groupedCandidates = useMemo(() => {
     const keyword = candidateSearch.trim().toLowerCase()
     const providerKeyword = channelSearch.trim().toLowerCase()
+    const credentialKeyword = credentialSearch.trim().toLowerCase()
     const groupsByProvider = new Map<string, CandidateChannel>()
 
     for (const item of candidateResponse?.candidates ?? []) {
@@ -403,24 +415,39 @@ export function GroupsScreen() {
       const providerName = provider?.name || item.provider_name
       const endpoint = providerEndpoint(provider)
       const matchProvider = !providerKeyword || `${providerName} ${endpoint}`.toLowerCase().includes(providerKeyword)
+      const matchCredential = !credentialKeyword || item.credential_name.toLowerCase().includes(credentialKeyword)
       const matchItem = !keyword || `${item.model_name} ${providerName}`.toLowerCase().includes(keyword)
-      if (!matchProvider || !matchItem) {
+      if (!matchProvider || !matchCredential || !matchItem) {
         continue
       }
       const existing = groupsByProvider.get(item.provider_id)
       if (existing) {
-        existing.items.push(item)
+        const existingCredential = existing.credentials.find((credential) => credential.credential_id === item.credential_id)
+        if (existingCredential) {
+          existingCredential.items.push(item)
+        } else {
+          existing.credentials.push({
+            credential_id: item.credential_id,
+            credential_name: item.credential_name,
+            items: [item],
+          })
+        }
       } else {
         groupsByProvider.set(item.provider_id, {
           provider_id: item.provider_id,
           provider_name: providerName,
-          items: [item],
+          credentials: [{ credential_id: item.credential_id, credential_name: item.credential_name, items: [item] }],
         })
       }
     }
 
     return Array.from(groupsByProvider.values()).sort((a, b) => a.provider_name.localeCompare(b.provider_name))
-  }, [candidateResponse, candidateSearch, channelSearch, providerMap])
+  }, [candidateResponse, candidateSearch, channelSearch, credentialSearch, providerMap])
+
+  const visibleSelectedItems = useMemo(() => {
+    if (!showEnabledOnly) return form.items
+    return form.items.filter((item) => item.enabled)
+  }, [form.items, showEnabledOnly])
 
   const matchedItems = candidateResponse?.matched_items ?? []
 
@@ -428,6 +455,7 @@ export function GroupsScreen() {
     if (!dialogOpen) {
       setCandidateSearch('')
       setChannelSearch('')
+      setCredentialSearch('')
       setExpandedChannels([])
       setDraggingIndex(null)
     }
@@ -516,7 +544,7 @@ export function GroupsScreen() {
       return {
         ...current,
         protocol: nextProtocol,
-        items: [...current.items, { provider_id: item.provider_id, provider_name: item.provider_name, model_name: item.model_name, enabled: true }],
+        items: [...current.items, { provider_id: item.provider_id, provider_name: item.provider_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }],
       }
     })
   }
@@ -592,7 +620,7 @@ export function GroupsScreen() {
       const existing = new Set(current.items.map((item) => itemKey(item)))
       const additions = matchedItems
         .filter((item) => !existing.has(itemKey(item)))
-        .map((item) => ({ provider_id: item.provider_id, provider_name: item.provider_name, model_name: item.model_name, enabled: true }))
+        .map((item) => ({ provider_id: item.provider_id, provider_name: item.provider_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }))
       if (!additions.length) {
         return current
       }
@@ -619,6 +647,13 @@ export function GroupsScreen() {
     setExpandedChannels([])
   }
 
+  function setAllMembersEnabled(enabled: boolean) {
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((item) => ({ ...item, enabled })),
+    }))
+  }
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2 text-[var(--muted)]">
@@ -643,6 +678,8 @@ export function GroupsScreen() {
           const cardItems = items.map((item) => ({
             provider_id: item.provider_id,
             provider_name: item.provider_name || providerMap.get(item.provider_id)?.name || item.provider_id,
+            credential_id: item.credential_id,
+            credential_name: item.credential_name,
             model_name: item.model_name,
             enabled: item.enabled,
           }))
@@ -737,6 +774,18 @@ export function GroupsScreen() {
                 <button className="h-12 rounded-2xl bg-[var(--accent)] text-sm font-medium text-white" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑模型组' : 'Edit group'}</button>
                 <button className="h-12 rounded-2xl bg-[var(--danger)] text-sm font-medium text-white" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除模型组' : 'Delete group'}</button>
               </div>
+
+              <div className={panelClassName('p-5')}>
+                <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '模型成员' : 'Members'}</div>
+                <div className="mt-4 space-y-2">
+                  {detailItems.length ? detailItems.map((item) => (
+                    <div key={`${item.provider_id}-${item.credential_id}-${item.model_name}`} className="rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2.5">
+                      <div className="text-sm font-medium text-[var(--text)]">{item.model_name}</div>
+                      <div className="mt-1 text-xs text-[var(--muted)]">{item.provider_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
+                    </div>
+                  )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无成员' : 'No members'}</p>}
+                </div>
+              </div>
             </div>
           </AppDialogContent>
         ) : null}
@@ -797,6 +846,14 @@ export function GroupsScreen() {
                   </div>
                 </div>
 
+                <div className="grid gap-3 border-b border-[var(--line)] px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                  <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3">
+                    <Search size={14} className="text-[var(--muted)]" />
+                    <input className="h-9 min-w-0 flex-1 bg-transparent text-[13px] outline-none" value={credentialSearch} onChange={(e) => setCredentialSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索 Key' : 'Search keys'} />
+                  </div>
+                  <div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '支持按 Key 过滤候选模型' : 'Filter candidates by credential'}</div>
+                </div>
+
                 <div className="flex items-center justify-between px-4 py-3 text-xs text-[var(--muted)]">
                   <span>{locale === 'zh-CN' ? `自动命中 ${matchedItems.length} 个模型` : `${matchedItems.length} auto matched`}</span>
                   <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-[12px] text-[var(--text)] disabled:opacity-50" onClick={() => void refetchCandidates()} disabled={isFetchingCandidates}>
@@ -810,7 +867,7 @@ export function GroupsScreen() {
                     {groupedCandidates.map((channel) => {
                       const provider = providerMap.get(channel.provider_id)
                       const isOpen = expandedChannels.includes(channel.provider_id)
-                      const endpoint = providerEndpoint(provider)
+      const endpoint = providerEndpoint(provider)
                       return (
                         <div key={channel.provider_id} className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)]">
                           <button type="button" className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-[var(--panel-soft)]" onClick={() => toggleChannel(channel.provider_id)}>
@@ -818,13 +875,18 @@ export function GroupsScreen() {
                               <div className="truncate text-[13px] font-medium text-[var(--text)]">{channel.provider_name}</div>
                               <div className="mt-1 truncate text-[11px] text-[var(--muted)]">{endpoint}</div>
                             </div>
-                            <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5 text-[11px] text-[var(--muted)]">{channel.items.length}</span>
+                            <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5 text-[11px] text-[var(--muted)]">{channel.credentials.reduce((total, credential) => total + credential.items.length, 0)}</span>
                             <ChevronDown size={15} className={cn('text-[var(--muted)] transition-transform', isOpen && 'rotate-180')} />
                           </button>
                           {isOpen ? (
                             <div className="space-y-1.5 border-t border-[var(--line)] px-3 py-3">
-                              {channel.items.map((item) => (
-                                <CandidateRow key={item.provider_id + item.model_name} item={item} active={form.items.some((member) => itemKey(member) === itemKey(item))} onClick={() => addItem(item)} />
+                              {channel.credentials.map((credential) => (
+                                <div key={`${channel.provider_id}-${credential.credential_id}`} className="space-y-1.5 rounded-xl bg-[var(--panel-soft)] p-2.5">
+                                  <div className="px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{credential.credential_name || locale === 'zh-CN' ? credential.credential_name || '未命名 Key' : credential.credential_name || 'Unnamed key'}</div>
+                                  {credential.items.map((item) => (
+                                    <CandidateRow key={`${item.provider_id}-${item.credential_id}-${item.model_name}`} item={item} active={form.items.some((member) => itemKey(member) === itemKey(item))} onClick={() => addItem(item)} />
+                                  ))}
+                                </div>
                               ))}
                             </div>
                           ) : null}
@@ -839,11 +901,18 @@ export function GroupsScreen() {
               <section className={panelClassName('flex min-h-0 flex-col overflow-hidden')}>
                 <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
                   <div className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
-                  <span className="rounded-full bg-[var(--panel-soft)] px-2.5 py-1 text-xs text-[var(--muted)]">{form.items.length}</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-2.5 py-1 text-xs text-[var(--muted)]" onClick={() => setAllMembersEnabled(true)}>{locale === 'zh-CN' ? '全开' : 'Enable all'}</button>
+                    <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-2.5 py-1 text-xs text-[var(--muted)]" onClick={() => setAllMembersEnabled(false)}>{locale === 'zh-CN' ? '全关' : 'Disable all'}</button>
+                    <button type="button" className={cn('rounded-xl border px-2.5 py-1 text-xs', showEnabledOnly ? 'border-[var(--accent)] bg-[var(--panel-soft)] text-[var(--accent)]' : 'border-[var(--line)] bg-[var(--panel)] text-[var(--muted)]')} onClick={() => setShowEnabledOnly((current) => !current)}>{locale === 'zh-CN' ? '仅看启用' : 'Enabled only'}</button>
+                    <span className="rounded-full bg-[var(--panel-soft)] px-2.5 py-1 text-xs text-[var(--muted)]">{visibleSelectedItems.length}/{form.items.length}</span>
+                  </div>
                 </div>
                 <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
                   <div className="space-y-1.5">
-                    {form.items.length ? form.items.map((item, index) => (
+                    {visibleSelectedItems.length ? visibleSelectedItems.map((item) => {
+                      const index = form.items.findIndex((candidate) => itemKey(candidate) === itemKey(item))
+                      return (
                       <SelectedMemberRow
                         key={itemKey(item)}
                         item={item}
@@ -863,7 +932,7 @@ export function GroupsScreen() {
                         }}
                         onDragEnd={() => setDraggingIndex(null)}
                       />
-                    )) : <p className="px-1 py-6 text-center text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂未选择模型' : 'No members selected'}</p>}
+                    )}) : <p className="px-1 py-6 text-center text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前筛选下没有成员' : 'No members under current filter'}</p>}
                   </div>
                 </div>
               </section>

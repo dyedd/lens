@@ -30,12 +30,65 @@ class ProviderEntity(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="enabled")
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     model_patterns_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    base_urls_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     keys_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     proxy: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
     match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class SiteEntity(Base):
+    __tablename__ = "sites"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+
+class SiteCredentialEntity(Base):
+    __tablename__ = "site_credentials"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    api_key: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class SiteProtocolConfigEntity(Base):
+    __tablename__ = "site_protocol_configs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    proxy: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class SiteProtocolCredentialBindingEntity(Base):
+    __tablename__ = "site_protocol_credential_bindings"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    protocol_config_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class SiteDiscoveredModelEntity(Base):
+    __tablename__ = "site_discovered_models"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    protocol_config_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class ModelGroupEntity(Base):
@@ -57,6 +110,8 @@ class ModelGroupItemEntity(Base):
     group_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     provider_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     provider_name_snapshot: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
+    credential_name_snapshot: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

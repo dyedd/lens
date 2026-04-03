@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     host: str = "127.0.0.1"
     port: int = 18080
-    auth_secret_key: str = "change-me-in-production"
+    auth_secret_key: str = "lens-dev-secret-key-change-me-32bytes"
     auth_algorithm: str = "HS256"
     auth_access_token_minutes: int = 60 * 12
     admin_default_username: str = "admin"

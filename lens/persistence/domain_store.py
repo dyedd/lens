@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, RequestLogItem, SettingItem
-from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, ProviderEntity, RequestLogEntity, SettingEntity
+from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
 SETTING_GATEWAY_API_KEYS = "gateway_api_keys"
@@ -108,28 +108,63 @@ class DomainStore:
 
     async def list_group_candidates(self, payload: ModelGroupCandidatesRequest) -> ModelGroupCandidatesResponse:
         async with self._session_factory() as session:
-            query = select(ProviderEntity).order_by(ProviderEntity.name.asc(), ProviderEntity.id.asc())
+            query = select(SiteProtocolConfigEntity).order_by(SiteProtocolConfigEntity.protocol.asc(), SiteProtocolConfigEntity.id.asc())
             if payload.protocol is not None:
-                query = query.where(ProviderEntity.protocol == payload.protocol.value)
-            providers = (
-                await session.execute(query)
-            ).scalars().all()
+                query = query.where(SiteProtocolConfigEntity.protocol == payload.protocol.value)
+            providers = (await session.execute(query)).scalars().all()
+            provider_ids = [item.id for item in providers]
+            discovered_models = []
+            if provider_ids:
+                discovered_models = (
+                    await session.execute(
+                        select(SiteDiscoveredModelEntity)
+                        .where(SiteDiscoveredModelEntity.protocol_config_id.in_(provider_ids))
+                        .where(SiteDiscoveredModelEntity.enabled == 1)
+                        .order_by(SiteDiscoveredModelEntity.protocol_config_id.asc(), SiteDiscoveredModelEntity.sort_order.asc(), SiteDiscoveredModelEntity.id.asc())
+                    )
+                ).scalars().all()
 
         candidates: list[ModelGroupCandidateItem] = []
-        seen: set[tuple[str, str]] = set()
-        excluded = {(item.provider_id, item.model_name) for item in payload.exclude_items}
+        seen: set[tuple[str, str, str]] = set()
+        excluded = {(item.provider_id, item.credential_id, item.model_name) for item in payload.exclude_items}
+        credential_rows = []
+        credential_ids = sorted({item.credential_id for item in discovered_models if item.credential_id})
+        if credential_ids:
+            async with self._session_factory() as session:
+                credential_rows = (
+                    await session.execute(select(SiteCredentialEntity).where(SiteCredentialEntity.id.in_(credential_ids)))
+                ).scalars().all()
+        credential_names = {item.id: item.name for item in credential_rows}
+
+        models_by_provider: dict[str, list[tuple[str, str]]] = {}
+        for item in discovered_models:
+            models_by_provider.setdefault(item.protocol_config_id, []).append((item.credential_id, item.model_name))
+
+        site_name_by_provider: dict[str, str] = {}
+        if provider_ids:
+            async with self._session_factory() as session:
+                rows = (
+                    await session.execute(
+                        select(SiteProtocolConfigEntity.id, SiteEntity.name)
+                        .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
+                        .where(SiteProtocolConfigEntity.id.in_(provider_ids))
+                    )
+                ).all()
+            site_name_by_provider = {provider_id: site_name for provider_id, site_name in rows}
 
         for provider in providers:
-            model_names = self._provider_model_names(provider)
-            for model_name in model_names:
-                candidate_key = (provider.id, model_name)
+            provider_items = list(dict.fromkeys(models_by_provider.get(provider.id, [])))
+            for credential_id, model_name in provider_items:
+                candidate_key = (provider.id, credential_id, model_name)
                 if candidate_key in seen:
                     continue
                 seen.add(candidate_key)
                 candidates.append(
                     ModelGroupCandidateItem(
                         provider_id=provider.id,
-                        provider_name=provider.name,
+                        provider_name=site_name_by_provider.get(provider.id, provider.protocol),
+                        credential_id=credential_id,
+                        credential_name=credential_names.get(credential_id, ""),
                         base_url=provider.base_url,
                         model_name=model_name,
                     )
@@ -216,7 +251,7 @@ class DomainStore:
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:
-            providers = await self._validate_group_payload(session, payload.protocol.value, payload.name, payload.items)
+            providers, provider_site_names = await self._validate_group_payload(session, payload.protocol.value, payload.name, payload.items)
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
@@ -228,7 +263,7 @@ class DomainStore:
             )
             session.add(entity)
             await session.flush()
-            self._replace_group_items(session, entity.id, payload.items, providers)
+            await self._replace_group_items(session, entity.id, payload.items, providers, provider_site_names)
             await session.commit()
             await session.refresh(entity)
             items = await self._load_group_items(session, [entity.id])
@@ -244,10 +279,10 @@ class DomainStore:
             next_name = payload.name if payload.name is not None else entity.name
             current_items = await self._load_group_items(session, [group_id])
             next_items = payload.items if payload.items is not None else [
-                ModelGroupItemInput(provider_id=item.provider_id, model_name=item.model_name)
+                ModelGroupItemInput(provider_id=item.provider_id, credential_id=item.credential_id, model_name=item.model_name, enabled=item.enabled)
                 for item in current_items.get(group_id, [])
             ]
-            providers = await self._validate_group_payload(session, next_protocol, next_name, next_items, exclude_group_id=group_id)
+            providers, provider_site_names = await self._validate_group_payload(session, next_protocol, next_name, next_items, exclude_group_id=group_id)
 
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
@@ -262,7 +297,7 @@ class DomainStore:
 
             if payload.items is not None or payload.protocol is not None:
                 await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
-                self._replace_group_items(session, group_id, next_items, providers)
+                await self._replace_group_items(session, group_id, next_items, providers, provider_site_names)
 
             await session.commit()
             await session.refresh(entity)
@@ -285,7 +320,7 @@ class DomainStore:
         name: str,
         items: list[ModelGroupItemInput],
         exclude_group_id: str | None = None,
-    ) -> dict[str, ProviderEntity]:
+    ) -> tuple[dict[str, SiteProtocolConfigEntity], dict[str, str]]:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError('Model group name is required')
@@ -301,15 +336,21 @@ class DomainStore:
             raise ValueError(f'Model group already exists for protocol={protocol}: {normalized_name}')
 
         if not items:
-            return {}
+            return {}, {}
 
         provider_ids = list(dict.fromkeys(item.provider_id for item in items))
-        provider_result = await session.execute(
-            select(ProviderEntity)
-            .where(ProviderEntity.id.in_(provider_ids))
-        )
+        provider_result = await session.execute(select(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(provider_ids)))
         provider_rows = provider_result.scalars().all()
         providers_by_id = {row.id: row for row in provider_rows}
+        provider_site_names = {}
+        site_rows = (
+            await session.execute(
+                select(SiteProtocolConfigEntity.id, SiteEntity.name)
+                .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
+                .where(SiteProtocolConfigEntity.id.in_(provider_ids))
+            )
+        ).all()
+        provider_site_names = {provider_id: site_name for provider_id, site_name in site_rows}
         existing_provider_ids = set(providers_by_id)
         missing_provider_ids = [provider_id for provider_id in provider_ids if provider_id not in existing_provider_ids]
         if missing_provider_ids:
@@ -319,13 +360,27 @@ class DomainStore:
         if invalid_provider_ids:
             raise ValueError(f'Providers must match protocol={protocol}: {", ".join(invalid_provider_ids)}')
 
-        for item in items:
-            provider = providers_by_id[item.provider_id]
-            provider_models = self._provider_model_names(provider)
-            if item.model_name not in provider_models:
-                raise ValueError(f'Model not found in provider {provider.id}: {item.model_name}')
+        model_rows = (
+            await session.execute(
+                select(SiteDiscoveredModelEntity)
+                .where(SiteDiscoveredModelEntity.protocol_config_id.in_(provider_ids))
+                .where(SiteDiscoveredModelEntity.enabled == 1)
+            )
+        ).scalars().all()
+        model_names_by_provider: dict[str, set[tuple[str, str]]] = {}
+        for row in model_rows:
+            model_names_by_provider.setdefault(row.protocol_config_id, set()).add((row.credential_id, row.model_name))
 
-        return providers_by_id
+        for item in items:
+            provider_models = model_names_by_provider.get(item.provider_id, set())
+            target = (item.credential_id, item.model_name) if item.credential_id else None
+            if target is not None:
+                if target not in provider_models:
+                    raise ValueError(f'Model not found in provider {item.provider_id} credential={item.credential_id}: {item.model_name}')
+            elif not any(model_name == item.model_name for _, model_name in provider_models):
+                raise ValueError(f'Model not found in provider {item.provider_id}: {item.model_name}')
+
+        return providers_by_id, provider_site_names
 
     async def _hydrate_groups(self, session: AsyncSession, entities: list[ModelGroupEntity]) -> list[ModelGroup]:
         if not entities:
@@ -351,6 +406,8 @@ class DomainStore:
                 ModelGroupItem(
                     provider_id=row.provider_id,
                     provider_name=row.provider_name_snapshot,
+                    credential_id=row.credential_id,
+                    credential_name=row.credential_name_snapshot,
                     model_name=row.model_name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
@@ -358,34 +415,45 @@ class DomainStore:
             )
         return items_by_group
 
-    def _replace_group_items(
+    async def _replace_group_items(
         self,
         session: AsyncSession,
         group_id: str,
         items: list[ModelGroupItemInput],
-        providers_by_id: dict[str, ProviderEntity],
+        providers_by_id: dict[str, SiteProtocolConfigEntity],
+        provider_site_names: dict[str, str],
     ) -> None:
+        credential_names_by_provider: dict[str, dict[str, str]] = {}
+        provider_ids = list(providers_by_id)
+        if provider_ids:
+            provider_rows = await session.execute(
+                select(
+                    SiteProtocolCredentialBindingEntity.protocol_config_id,
+                    SiteProtocolCredentialBindingEntity.credential_id,
+                    SiteCredentialEntity.name,
+                )
+                .join(
+                    SiteCredentialEntity,
+                    SiteCredentialEntity.id == SiteProtocolCredentialBindingEntity.credential_id,
+                )
+                .where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(provider_ids))
+            )
+            for protocol_config_id, credential_id, credential_name in provider_rows.all():
+                credential_names_by_provider.setdefault(protocol_config_id, {})[credential_id] = credential_name
+
         for index, item in enumerate(items):
-            provider = providers_by_id[item.provider_id]
             session.add(
                 ModelGroupItemEntity(
                     group_id=group_id,
                     provider_id=item.provider_id,
-                    provider_name_snapshot=provider.name,
+                    provider_name_snapshot=provider_site_names.get(item.provider_id, ''),
+                    credential_id=item.credential_id,
+                    credential_name_snapshot=credential_names_by_provider.get(item.provider_id, {}).get(item.credential_id, ''),
                     model_name=item.model_name,
                     enabled=1 if item.enabled else 0,
                     sort_order=index,
                 )
             )
-
-    @staticmethod
-    def _provider_model_names(provider: ProviderEntity) -> list[str]:
-        names = []
-        for item in json.loads(provider.model_patterns_json or '[]'):
-            value = str(item or '').strip()
-            if value:
-                names.append(value)
-        return list(dict.fromkeys(names))
 
     @staticmethod
     def _normalize_match_value(value: str) -> str:

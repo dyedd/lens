@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderModelFetchRequest, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate
+from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderModelFetchRequest, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore
 from ..persistence.provider_store import ProviderStore
@@ -75,6 +75,7 @@ class UpstreamResult:
 async def _startup_app_state(state: AppState) -> None:
     if state.http.is_closed:
         state.http = state._create_http_client()
+    await state.admin_store.ensure_default_admin(settings.admin_default_username, settings.admin_default_password)
     await _bootstrap_imported_stats(state)
 
 
@@ -193,6 +194,33 @@ async def list_providers(_: Any = Depends(get_current_admin)) -> list[ProviderCo
     return await app_state.store.list()
 
 
+@app.get("/api/sites")
+async def list_sites(_: Any = Depends(get_current_admin)) -> list[SiteConfig]:
+    return await app_state.store.list_sites()
+
+
+@app.post("/api/sites", status_code=201)
+async def create_site(payload: SiteCreate, _: Any = Depends(get_current_admin)) -> SiteConfig:
+    return await app_state.store.create_site(payload)
+
+
+@app.put("/api/sites/{site_id}")
+async def update_site(site_id: str, payload: SiteUpdate, _: Any = Depends(get_current_admin)) -> SiteConfig:
+    try:
+        return await app_state.store.update_site(site_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Site not found: {site_id}") from exc
+
+
+@app.delete("/api/sites/{site_id}", status_code=204)
+async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Response:
+    try:
+        await app_state.store.delete_site(site_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Site not found: {site_id}") from exc
+    return Response(status_code=204)
+
+
 @app.post("/api/providers", status_code=201)
 async def create_provider(payload: ProviderCreate, _: Any = Depends(get_current_admin)) -> ProviderConfig:
     return await app_state.store.create(payload)
@@ -204,11 +232,10 @@ async def fetch_provider_models(payload: ProviderModelFetchRequest, _: Any = Dep
         id="preview",
         name="preview",
         protocol=payload.protocol,
-        base_url=payload.base_urls[0].url if payload.base_urls else payload.base_url,
+        base_url=payload.base_url,
         api_key=(payload.keys[0].key if payload.keys else payload.api_key) or "preview-key",
         headers=payload.headers,
         model_patterns=[],
-        base_urls=payload.base_urls,
         keys=payload.keys,
         proxy=bool(payload.channel_proxy.strip()),
         channel_proxy=payload.channel_proxy,
@@ -216,6 +243,42 @@ async def fetch_provider_models(payload: ProviderModelFetchRequest, _: Any = Dep
         match_regex=payload.match_regex,
     )
     return await _fetch_upstream_models(provider)
+
+
+@app.post("/api/sites/fetch-models", response_model=list[SiteModelFetchItem])
+async def fetch_site_models(payload: SiteModelFetchRequest, _: Any = Depends(get_current_admin)) -> list[SiteModelFetchItem]:
+    previews = await app_state.store.fetch_models_preview(payload)
+    items: list[SiteModelFetchItem] = []
+    seen: set[tuple[str, str]] = set()
+    for preview in previews:
+        provider = ProviderConfig(
+            id="preview",
+            name=preview["credential_name"] or "preview",
+            protocol=payload.protocol,
+            base_url=payload.base_url,
+            api_key=next(item.api_key for item in payload.credentials if (item.id or "") == preview["credential_id"]),
+            headers=payload.headers,
+            model_patterns=[],
+            keys=[],
+            models=[],
+            proxy=bool(payload.channel_proxy.strip()),
+            channel_proxy=payload.channel_proxy,
+            param_override="",
+            match_regex=payload.match_regex,
+        )
+        for model_name in await _fetch_upstream_models(provider):
+            key = (preview["credential_id"], model_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(
+                SiteModelFetchItem(
+                    credential_id=preview["credential_id"],
+                    credential_name=preview["credential_name"],
+                    model_name=model_name,
+                )
+            )
+    return items
 
 
 @app.put("/api/providers/{provider_id}")
@@ -601,7 +664,7 @@ def _model_list_request(provider: ProviderConfig) -> dict[str, Any]:
     if provider.protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}:
         return {
             "method": "GET",
-            "url": _openai_models_url(base_url),
+            "url": f"{base_url}/v1/models",
             "headers": {
                 "authorization": f"Bearer {api_key}",
                 **headers,
@@ -611,7 +674,7 @@ def _model_list_request(provider: ProviderConfig) -> dict[str, Any]:
     if provider.protocol == ProtocolKind.ANTHROPIC:
         return {
             "method": "GET",
-            "url": f"{base_url}/models",
+            "url": f"{base_url}/v1/models",
             "headers": {
                 "x-api-key": api_key,
                 "anthropic-version": settings.anthropic_version,
@@ -622,7 +685,7 @@ def _model_list_request(provider: ProviderConfig) -> dict[str, Any]:
     if provider.protocol == ProtocolKind.GEMINI:
         return {
             "method": "GET",
-            "url": f"{base_url}/models?key={api_key}",
+            "url": f"{base_url}/v1beta/models?key={api_key}",
             "headers": headers,
         }
 
@@ -653,15 +716,6 @@ def _parse_model_list(protocol: ProtocolKind, payload: dict[str, Any], match_reg
 
     pattern = re.compile(match_regex)
     return [name for name in unique_names if pattern.search(name)]
-
-
-def _openai_models_url(base_url: str) -> str:
-    normalized = base_url.rstrip("/")
-    if normalized.endswith("/v1"):
-        return f"{normalized}/models"
-    return f"{normalized}/v1/models"
-
-
 async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | None) -> RoutingPlan:
     matched_group = await app_state.domain_store.find_group_by_name(protocol.value, requested_model)
     if matched_group is not None:
