@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from lens.core.db import Base, create_engine, create_session_factory
-from lens.models import ModelGroupCreate, ModelGroupItemInput, ProtocolKind, ProviderCreate, RoutingStrategy
+from lens.models import ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate, SiteUpdate
 from lens.persistence.domain_store import DomainStore
 from lens.persistence.provider_store import ProviderStore
 
@@ -24,24 +24,47 @@ async def _run_group_stats_test(tmp_path):
     provider_store = ProviderStore(session_factory)
     domain_store = DomainStore(session_factory)
 
-    primary_provider = await provider_store.create(
-        ProviderCreate(
+    primary_site = await provider_store.create_site(
+        SiteCreate(
             name="Primary Claude",
-            protocol=ProtocolKind.OPENAI_CHAT,
             base_url="https://primary.example.com",
-            api_key="sk-primary",
-            model_patterns=["claude-opus-4-6-2026-03-31", "gpt-4.1-2026-03-30"],
+            credentials=[{"name": "Key 1", "api_key": "sk-primary", "enabled": True}],
+            protocols=[{"protocol": ProtocolKind.OPENAI_CHAT, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [], "models": []}],
         )
     )
-    fallback_provider = await provider_store.create(
-        ProviderCreate(
+    primary_credential = primary_site.credentials[0]
+    primary_protocol = primary_site.protocols[0]
+    primary_site = await provider_store.update_site(
+        primary_site.id,
+        SiteUpdate(
+            name=primary_site.name,
+            base_url=primary_site.base_url,
+            credentials=[{"id": primary_credential.id, "name": primary_credential.name, "api_key": primary_credential.api_key, "enabled": True}],
+            protocols=[{"id": primary_protocol.id, "protocol": primary_protocol.protocol, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [{"credential_id": primary_credential.id, "enabled": True}], "models": [{"credential_id": primary_credential.id, "model_name": "claude-opus-4-6-2026-03-31", "enabled": True}, {"credential_id": primary_credential.id, "model_name": "gpt-4.1-2026-03-30", "enabled": True}]}],
+        ),
+    )
+    primary_provider = primary_site.protocols[0]
+
+    fallback_site = await provider_store.create_site(
+        SiteCreate(
             name="Fallback Claude",
-            protocol=ProtocolKind.OPENAI_CHAT,
             base_url="https://fallback.example.com",
-            api_key="sk-fallback",
-            model_patterns=["claude-opus-4-6-2026-03-31"],
+            credentials=[{"name": "Key 1", "api_key": "sk-fallback", "enabled": True}],
+            protocols=[{"protocol": ProtocolKind.OPENAI_CHAT, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [], "models": []}],
         )
     )
+    fallback_credential = fallback_site.credentials[0]
+    fallback_protocol = fallback_site.protocols[0]
+    fallback_site = await provider_store.update_site(
+        fallback_site.id,
+        SiteUpdate(
+            name=fallback_site.name,
+            base_url=fallback_site.base_url,
+            credentials=[{"id": fallback_credential.id, "name": fallback_credential.name, "api_key": fallback_credential.api_key, "enabled": True}],
+            protocols=[{"id": fallback_protocol.id, "protocol": fallback_protocol.protocol, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [{"credential_id": fallback_credential.id, "enabled": True}], "models": [{"credential_id": fallback_credential.id, "model_name": "claude-opus-4-6-2026-03-31", "enabled": True}]}],
+        ),
+    )
+    fallback_provider = fallback_site.protocols[0]
 
     primary_group = await domain_store.create_group(
         ModelGroupCreate(

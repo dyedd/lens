@@ -11,8 +11,8 @@ import {
   ModelGroupCandidatesResponse,
   ModelGroupPayload,
   ProtocolKind,
-  Provider,
   RoutingStrategy,
+  Site,
   apiRequest,
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -121,7 +121,14 @@ function protocolOptions(locale: 'zh-CN' | 'en-US') {
   }))
 }
 
-function providerEndpoint(provider?: Provider) {
+type ProtocolMeta = {
+  id: string
+  name: string
+  base_url: string
+  protocol: ProtocolKind
+}
+
+function providerEndpoint(provider?: ProtocolMeta) {
   if (!provider) return ''
   return provider.base_url || ''
 }
@@ -355,7 +362,7 @@ export function GroupsScreen() {
   const [showEnabledOnly, setShowEnabledOnly] = useState(false)
 
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/model-groups') })
-  const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => apiRequest<Provider[]>('/providers') })
+  const { data: sites } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/sites') })
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(() => ({
     protocol: form.items[0] ? form.protocol : undefined,
     name: form.name,
@@ -372,12 +379,19 @@ export function GroupsScreen() {
   })
 
   const providerMap = useMemo(() => {
-    const map = new Map<string, Provider>()
-    for (const item of providers ?? []) {
-      map.set(item.id, item)
+    const map = new Map<string, ProtocolMeta>()
+    for (const site of sites ?? []) {
+      for (const protocol of site.protocols) {
+        map.set(protocol.id, {
+          id: protocol.id,
+          name: site.name,
+          base_url: site.base_url,
+          protocol: protocol.protocol,
+        })
+      }
     }
     return map
-  }, [providers])
+  }, [sites])
 
   const visibleGroups = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -479,7 +493,7 @@ export function GroupsScreen() {
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['groups'] }),
-      queryClient.invalidateQueries({ queryKey: ['providers'] }),
+      queryClient.invalidateQueries({ queryKey: ['sites'] }),
       queryClient.invalidateQueries({ queryKey: ['group-candidates'] }),
     ])
   }

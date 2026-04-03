@@ -64,7 +64,6 @@ class SiteProtocolConfigEntity(Base):
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    proxy: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
     match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")

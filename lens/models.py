@@ -65,7 +65,6 @@ class ProviderConfig(BaseModel):
     model_patterns: list[str] = Field(default_factory=list)
     keys: list[ProviderKeyItem] = Field(default_factory=list)
     models: list[ProviderDiscoveredModel] = Field(default_factory=list)
-    proxy: bool = False
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
@@ -135,7 +134,6 @@ class SiteProtocolConfig(BaseModel):
     protocol: ProtocolKind
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
-    proxy: bool = False
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
@@ -150,7 +148,6 @@ class SiteProtocolConfigInput(BaseModel):
     protocol: ProtocolKind
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
-    proxy: bool = False
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
@@ -234,91 +231,6 @@ class SiteModelFetchItem(BaseModel):
     credential_id: str
     credential_name: str = ""
     model_name: str
-
-
-class ProviderCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    protocol: ProtocolKind
-    base_url: HttpUrl
-    api_key: str = Field(min_length=1)
-    status: ProviderStatus = ProviderStatus.ENABLED
-    headers: dict[str, str] = Field(default_factory=dict)
-    model_patterns: list[str] = Field(default_factory=list)
-    keys: list[ProviderKeyItem] = Field(default_factory=list)
-    proxy: bool = False
-    channel_proxy: str = ""
-    param_override: str = ""
-    match_regex: str = ""
-
-    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
-
-    @field_validator("model_patterns")
-    @classmethod
-    def validate_model_patterns(cls, patterns: list[str]) -> list[str]:
-        for pattern in patterns:
-            try:
-                re.compile(pattern)
-            except re.error as exc:
-                raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
-        return patterns
-
-
-class ProviderUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    protocol: ProtocolKind | None = None
-    name: str | None = None
-    base_url: HttpUrl | None = None
-    api_key: str | None = Field(default=None, min_length=1)
-    status: ProviderStatus | None = None
-    headers: dict[str, str] | None = None
-    model_patterns: list[str] | None = None
-    keys: list[ProviderKeyItem] | None = None
-    proxy: bool | None = None
-    channel_proxy: str | None = None
-    param_override: str | None = None
-    match_regex: str | None = None
-
-    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
-
-    @field_validator("model_patterns")
-    @classmethod
-    def validate_model_patterns(cls, patterns: list[str] | None) -> list[str] | None:
-        if patterns is None:
-            return None
-        for pattern in patterns:
-            try:
-                re.compile(pattern)
-            except re.error as exc:
-                raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
-        return patterns
-
-
-class ProviderModelFetchRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    protocol: ProtocolKind
-    base_url: HttpUrl | None = None
-    api_key: str | None = Field(default=None, min_length=1)
-    headers: dict[str, str] = Field(default_factory=dict)
-    keys: list[ProviderKeyItem] = Field(default_factory=list)
-    channel_proxy: str = ""
-    match_regex: str = ""
-
-    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
-
-    @field_validator("match_regex")
-    @classmethod
-    def validate_match_regex(cls, pattern: str) -> str:
-        if not pattern:
-            return pattern
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
-        return pattern
 
 
 class ProviderHealth(BaseModel):

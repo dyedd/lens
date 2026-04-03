@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, ProviderCreate, ProviderModelFetchRequest, ProviderUpdate, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
+from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ProviderConfig, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore
 from ..persistence.provider_store import ProviderStore
@@ -189,11 +189,6 @@ async def current_admin(admin = Depends(get_current_admin)) -> AdminProfile:
     return AdminProfile(id=admin.id, username=admin.username)
 
 
-@app.get("/api/providers")
-async def list_providers(_: Any = Depends(get_current_admin)) -> list[ProviderConfig]:
-    return await app_state.store.list()
-
-
 @app.get("/api/sites")
 async def list_sites(_: Any = Depends(get_current_admin)) -> list[SiteConfig]:
     return await app_state.store.list_sites()
@@ -221,30 +216,6 @@ async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Resp
     return Response(status_code=204)
 
 
-@app.post("/api/providers", status_code=201)
-async def create_provider(payload: ProviderCreate, _: Any = Depends(get_current_admin)) -> ProviderConfig:
-    return await app_state.store.create(payload)
-
-
-@app.post("/api/providers/fetch-models", response_model=list[str])
-async def fetch_provider_models(payload: ProviderModelFetchRequest, _: Any = Depends(get_current_admin)) -> list[str]:
-    provider = ProviderConfig(
-        id="preview",
-        name="preview",
-        protocol=payload.protocol,
-        base_url=payload.base_url,
-        api_key=(payload.keys[0].key if payload.keys else payload.api_key) or "preview-key",
-        headers=payload.headers,
-        model_patterns=[],
-        keys=payload.keys,
-        proxy=bool(payload.channel_proxy.strip()),
-        channel_proxy=payload.channel_proxy,
-        param_override="",
-        match_regex=payload.match_regex,
-    )
-    return await _fetch_upstream_models(provider)
-
-
 @app.post("/api/sites/fetch-models", response_model=list[SiteModelFetchItem])
 async def fetch_site_models(payload: SiteModelFetchRequest, _: Any = Depends(get_current_admin)) -> list[SiteModelFetchItem]:
     previews = await app_state.store.fetch_models_preview(payload)
@@ -261,7 +232,6 @@ async def fetch_site_models(payload: SiteModelFetchRequest, _: Any = Depends(get
             model_patterns=[],
             keys=[],
             models=[],
-            proxy=bool(payload.channel_proxy.strip()),
             channel_proxy=payload.channel_proxy,
             param_override="",
             match_regex=payload.match_regex,
@@ -279,23 +249,6 @@ async def fetch_site_models(payload: SiteModelFetchRequest, _: Any = Depends(get
                 )
             )
     return items
-
-
-@app.put("/api/providers/{provider_id}")
-async def update_provider(provider_id: str, payload: ProviderUpdate, _: Any = Depends(get_current_admin)) -> ProviderConfig:
-    try:
-        return await app_state.store.update(provider_id, payload)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Provider not found: {provider_id}") from exc
-
-
-@app.delete("/api/providers/{provider_id}", status_code=204)
-async def delete_provider(provider_id: str, _: Any = Depends(get_current_admin)) -> Response:
-    try:
-        await app_state.store.delete(provider_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Provider not found: {provider_id}") from exc
-    return Response(status_code=204)
 
 
 @app.get("/api/router")

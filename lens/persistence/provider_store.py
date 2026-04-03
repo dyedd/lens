@@ -9,11 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..models import (
     ProviderConfig,
-    ProviderCreate,
     ProviderDiscoveredModel,
     ProviderKeyItem,
     ProviderStatus,
-    ProviderUpdate,
     SiteConfig,
     SiteCreate,
     SiteCredential,
@@ -100,117 +98,6 @@ class ProviderStore:
             await session.delete(site)
             await session.commit()
 
-    async def create(self, payload: ProviderCreate) -> ProviderConfig:
-        site = await self.create_site(self._provider_payload_to_site_create(payload))
-        return self._flatten_site(site)[0]
-
-    async def update(self, provider_id: str, payload: ProviderUpdate) -> ProviderConfig:
-        site = await self._site_for_provider(provider_id)
-        protocol = next((item for item in site.protocols if item.id == provider_id), None)
-        if protocol is None:
-            raise KeyError(provider_id)
-
-        next_credentials = list(site.credentials)
-        if payload.keys is not None:
-            next_credentials = [
-                SiteCredential(
-                    id=item.id or str(uuid.uuid4()),
-                    name=(item.remark or f"Key {index + 1}").strip(),
-                    api_key=item.key,
-                    enabled=item.enabled,
-                    sort_order=index,
-                )
-                for index, item in enumerate(payload.keys)
-            ]
-
-        next_site_base_url = payload.base_url if payload.base_url is not None else site.base_url
-        next_protocol = protocol.model_copy(
-            update={
-                "protocol": payload.protocol if payload.protocol is not None else protocol.protocol,
-                "enabled": protocol.enabled if payload.status is None else payload.status == ProviderStatus.ENABLED,
-                "headers": payload.headers if payload.headers is not None else protocol.headers,
-                "proxy": payload.proxy if payload.proxy is not None else protocol.proxy,
-                "channel_proxy": payload.channel_proxy if payload.channel_proxy is not None else protocol.channel_proxy,
-                "param_override": payload.param_override if payload.param_override is not None else protocol.param_override,
-                "match_regex": payload.match_regex if payload.match_regex is not None else protocol.match_regex,
-            }
-        )
-        if payload.keys is not None:
-            next_protocol = next_protocol.model_copy(
-                update={
-                    "bindings": [
-                        SiteProtocolCredentialBinding(
-                            credential_id=item.id,
-                            credential_name=item.name,
-                            enabled=item.enabled,
-                            sort_order=index,
-                        )
-                        for index, item in enumerate(next_credentials)
-                    ],
-                    "models": self._reassign_models(protocol.models, next_credentials),
-                }
-            )
-        if payload.model_patterns is not None:
-            owner_id = next_protocol.bindings[0].credential_id if next_protocol.bindings else next_credentials[0].id
-            next_protocol = next_protocol.model_copy(
-                update={
-                    "models": [
-                        SiteModel(
-                            id=str(uuid.uuid4()),
-                            credential_id=owner_id,
-                            credential_name="",
-                            model_name=model_name,
-                            enabled=True,
-                            sort_order=index,
-                        )
-                        for index, model_name in enumerate(payload.model_patterns)
-                    ]
-                }
-            )
-
-        updated_site = await self.update_site(
-            site.id,
-            SiteUpdate(
-                name=site.name,
-                base_url=next_site_base_url,
-                credentials=[
-                    SiteCredentialInput(id=item.id, name=item.name, api_key=item.api_key, enabled=item.enabled)
-                    for item in next_credentials
-                ],
-                protocols=[
-                    self._protocol_to_input(next_protocol if item.id == provider_id else item)
-                    for item in site.protocols
-                ],
-            ),
-        )
-        return next(item for item in self._flatten_site(updated_site) if item.id == provider_id)
-
-    async def delete(self, provider_id: str) -> None:
-        site = await self._site_for_provider(provider_id)
-        remaining_protocols = [item for item in site.protocols if item.id != provider_id]
-        if not remaining_protocols:
-            await self.delete_site(site.id)
-            return
-
-        remaining_credential_ids = {
-            binding.credential_id
-            for protocol in remaining_protocols
-            for binding in protocol.bindings
-        }
-        remaining_credentials = [item for item in site.credentials if item.id in remaining_credential_ids]
-        await self.update_site(
-            site.id,
-            SiteUpdate(
-                name=site.name,
-                base_url=site.base_url,
-                credentials=[
-                    SiteCredentialInput(id=item.id, name=item.name, api_key=item.api_key, enabled=item.enabled)
-                    for item in remaining_credentials
-                ],
-                protocols=[self._protocol_to_input(item) for item in remaining_protocols],
-            ),
-        )
-
     async def fetch_models_preview(self, payload: SiteModelFetchRequest) -> list[dict[str, str]]:
         credentials = [
             SiteCredential(
@@ -228,24 +115,6 @@ class ProviderStore:
         if not binding_ids:
             binding_ids = [item.id for item in credentials if item.enabled]
         return [{"credential_id": item_id, "credential_name": credential_map[item_id].name} for item_id in binding_ids]
-
-
-    async def _site_for_provider(self, provider_id: str) -> SiteConfig:
-        async with self._session_factory() as session:
-            await self._bootstrap_from_legacy_providers(session)
-            result = await session.execute(
-                select(SiteProtocolConfigEntity.site_id)
-                .where(SiteProtocolConfigEntity.id == provider_id)
-                .limit(1)
-            )
-            site_id = result.scalar_one_or_none()
-            if site_id is None:
-                raise KeyError(provider_id)
-            sites = await self._load_sites(session, site_ids=[site_id])
-            if not sites:
-                raise KeyError(provider_id)
-            return sites[0]
-
     async def _load_sites(self, session: AsyncSession, site_ids: list[str] | None = None) -> list[SiteConfig]:
         site_query = select(SiteEntity).order_by(SiteEntity.name.asc())
         if site_ids is not None:
@@ -335,7 +204,6 @@ class ProviderStore:
                     protocol=row.protocol,
                     enabled=bool(row.enabled),
                     headers=json.loads(row.headers_json or '{}'),
-                    proxy=bool(row.proxy),
                     channel_proxy=row.channel_proxy,
                     param_override=row.param_override,
                     match_regex=row.match_regex,
@@ -418,7 +286,6 @@ class ProviderStore:
                     protocol=protocol.protocol.value,
                     enabled=1 if protocol.enabled else 0,
                     headers_json=json.dumps(protocol.headers, ensure_ascii=True),
-                    proxy=1 if protocol.proxy else 0,
                     channel_proxy=protocol.channel_proxy,
                     param_override=protocol.param_override,
                     match_regex=protocol.match_regex,
@@ -429,7 +296,6 @@ class ProviderStore:
                 existing_protocol.protocol = protocol.protocol.value
                 existing_protocol.enabled = 1 if protocol.enabled else 0
                 existing_protocol.headers_json = json.dumps(protocol.headers, ensure_ascii=True)
-                existing_protocol.proxy = 1 if protocol.proxy else 0
                 existing_protocol.channel_proxy = protocol.channel_proxy
                 existing_protocol.param_override = protocol.param_override
                 existing_protocol.match_regex = protocol.match_regex
@@ -528,7 +394,6 @@ class ProviderStore:
                     protocol=row.protocol,
                     enabled=1 if row.status == 'enabled' else 0,
                     headers_json=row.headers_json,
-                    proxy=row.proxy,
                     channel_proxy=row.channel_proxy,
                     param_override=row.param_override,
                     match_regex=row.match_regex,
@@ -625,58 +490,12 @@ class ProviderStore:
                     model_patterns=[item.model_name for item in models if item.enabled],
                     keys=keys,
                     models=models,
-                    proxy=protocol.proxy,
                     channel_proxy=protocol.channel_proxy,
                     param_override=protocol.param_override,
                     match_regex=protocol.match_regex,
                 )
             )
         return items
-
-    def _provider_payload_to_site_create(self, payload: ProviderCreate) -> SiteCreate:
-        raw_keys = payload.keys or [ProviderKeyItem(key=payload.api_key, remark='Key 1', enabled=True)]
-        credentials = [
-            SiteCredentialInput(
-                id=item.id or str(uuid.uuid4()),
-                name=(item.remark or f'Key {index + 1}').strip(),
-                api_key=item.key,
-                enabled=item.enabled,
-            )
-            for index, item in enumerate(raw_keys)
-        ]
-        default_credential_id = credentials[0].id
-        return SiteCreate(
-            name=payload.name,
-            base_url=payload.base_url,
-            credentials=credentials,
-            protocols=[
-                SiteProtocolConfigInput(
-                    id=str(uuid.uuid4()),
-                    protocol=payload.protocol,
-                    enabled=payload.status == ProviderStatus.ENABLED,
-                    headers=payload.headers,
-                    proxy=payload.proxy,
-                    channel_proxy=payload.channel_proxy,
-                    param_override=payload.param_override,
-                    match_regex=payload.match_regex,
-                    bindings=[
-                        SiteProtocolCredentialBindingInput(credential_id=item.id, enabled=item.enabled)
-                        for item in credentials
-                    ],
-                    models=[
-                        SiteModel(
-                            id=str(uuid.uuid4()),
-                            credential_id=default_credential_id,
-                            credential_name='',
-                            model_name=model_name,
-                            enabled=True,
-                            sort_order=index,
-                        )
-                        for index, model_name in enumerate(payload.model_patterns)
-                    ],
-                )
-            ],
-        )
 
     def _normalize_credentials(self, items: list[SiteCredentialInput]) -> list[SiteCredential]:
         normalized: list[SiteCredential] = []
@@ -700,43 +519,6 @@ class ProviderStore:
         if not normalized:
             raise ValueError('At least one credential is required')
         return normalized
-
-    def _reassign_models(self, models: list[SiteModel], credentials: list[SiteCredential]) -> list[SiteModel]:
-        if not credentials:
-            return []
-        valid_ids = {item.id for item in credentials}
-        fallback_id = credentials[0].id
-        return [
-            item.model_copy(update={'credential_id': item.credential_id if item.credential_id in valid_ids else fallback_id})
-            for item in models
-        ]
-
-    def _protocol_to_input(self, protocol: SiteProtocolConfig) -> SiteProtocolConfigInput:
-        return SiteProtocolConfigInput(
-            id=protocol.id,
-            protocol=protocol.protocol,
-            enabled=protocol.enabled,
-            headers=protocol.headers,
-            proxy=protocol.proxy,
-            channel_proxy=protocol.channel_proxy,
-            param_override=protocol.param_override,
-            match_regex=protocol.match_regex,
-            bindings=[
-                SiteProtocolCredentialBindingInput(credential_id=item.credential_id, enabled=item.enabled)
-                for item in protocol.bindings
-            ],
-            models=[
-                SiteModel(
-                    id=item.id,
-                    credential_id=item.credential_id,
-                    credential_name=item.credential_name,
-                    model_name=item.model_name,
-                    enabled=item.enabled,
-                    sort_order=item.sort_order,
-                )
-                for item in protocol.models
-            ],
-        )
 
     async def _ensure_site_name_unique(self, session: AsyncSession, name: str, exclude_site_id: str | None = None) -> None:
         normalized_name = name.strip()

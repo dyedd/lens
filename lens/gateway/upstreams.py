@@ -136,8 +136,6 @@ def _resolve_api_key(provider: ProviderConfig) -> str:
 
 
 def _resolve_proxy_url(provider: ProviderConfig) -> str | None:
-    if not provider.proxy:
-        return None
     value = provider.channel_proxy.strip()
     return value or None
 

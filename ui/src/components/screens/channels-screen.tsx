@@ -45,7 +45,6 @@ type FormProtocol = {
   protocol: ProtocolKind
   enabled: boolean
   headers: HeaderItem[]
-  proxy: boolean
   channel_proxy: string
   param_override: string
   match_regex: string
@@ -92,7 +91,6 @@ const emptyProtocol = (): FormProtocol => ({
   protocol: 'openai_chat',
   enabled: true,
   headers: [{ key: '', value: '' }],
-  proxy: false,
   channel_proxy: '',
   param_override: '',
   match_regex: '',
@@ -228,7 +226,6 @@ function toForm(site: Site): FormState {
       protocol: item.protocol,
       enabled: item.enabled,
       headers: Object.entries(item.headers).length ? Object.entries(item.headers).map(([key, value]) => ({ key, value })) : [{ key: '', value: '' }],
-      proxy: item.proxy,
       channel_proxy: item.channel_proxy,
       param_override: item.param_override,
       match_regex: safeText(item.match_regex),
@@ -252,7 +249,6 @@ function toPayload(form: FormState): SitePayload {
       protocol: item.protocol,
       enabled: item.enabled,
       headers: Object.fromEntries(item.headers.map((entry) => [entry.key.trim(), entry.value] as const).filter(([key]) => key)),
-      proxy: item.proxy,
       channel_proxy: item.channel_proxy.trim(),
       param_override: item.param_override.trim(),
       match_regex: safeText(item.match_regex).trim(),
@@ -344,7 +340,6 @@ export function ChannelsScreen() {
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['sites'] }),
-      queryClient.invalidateQueries({ queryKey: ['providers'] }),
       queryClient.invalidateQueries({ queryKey: ['request-logs'] }),
       queryClient.invalidateQueries({ queryKey: ['group-candidates'] }),
     ])
@@ -424,7 +419,6 @@ export function ChannelsScreen() {
             protocol: item.protocol,
             enabled,
             headers: item.headers,
-            proxy: item.proxy,
             channel_proxy: item.channel_proxy,
             param_override: item.param_override,
             match_regex: item.match_regex,
@@ -804,7 +798,7 @@ export function ChannelsScreen() {
             <div className="grid gap-4">
               <label className="grid gap-2">
                 <span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '代理地址' : 'Proxy'}</span>
-                <input className={inputClassName()} value={form.protocols[advancedProtocolIndex].channel_proxy} onChange={(event) => updateProtocol(advancedProtocolIndex, { channel_proxy: event.target.value, proxy: Boolean(event.target.value.trim()) })} placeholder="http://127.0.0.1:7890" />
+                <input className={inputClassName()} value={form.protocols[advancedProtocolIndex].channel_proxy} onChange={(event) => updateProtocol(advancedProtocolIndex, { channel_proxy: event.target.value })} placeholder="http://127.0.0.1:7890" />
               </label>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">

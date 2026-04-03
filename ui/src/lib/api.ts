@@ -1,66 +1,6 @@
 export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini'
 
-export type ProviderStatus = 'enabled' | 'disabled'
-
-export type ProviderKeyItem = {
-  id: string
-  key: string
-  remark: string
-  enabled: boolean
-}
-
-export type ProviderDiscoveredModel = {
-  id: string
-  credential_id: string
-  credential_name: string
-  model_name: string
-  enabled: boolean
-  sort_order: number
-}
-
 export type RoutingStrategy = 'round_robin' | 'weighted' | 'failover'
-
-export type Provider = {
-  id: string
-  name: string
-  protocol: ProtocolKind
-  base_url: string
-  api_key: string
-  status: ProviderStatus
-  headers: Record<string, string>
-  model_patterns: string[]
-  keys: ProviderKeyItem[]
-  models: ProviderDiscoveredModel[]
-  proxy: boolean
-  channel_proxy: string
-  param_override: string
-  match_regex: string
-}
-
-export type ProviderPayload = {
-  name: string
-  protocol: ProtocolKind
-  base_url: string
-  api_key: string
-  status: ProviderStatus
-  headers: Record<string, string>
-  model_patterns: string[]
-  keys: ProviderKeyItem[]
-  proxy: boolean
-  channel_proxy: string
-  param_override: string
-  match_regex: string
-}
-
-export type ProviderModelFetchPayload = {
-  protocol: ProtocolKind
-  base_url: string
-  api_key: string
-  headers: Record<string, string>
-  keys: ProviderKeyItem[]
-  channel_proxy: string
-  match_regex: string
-}
 
 export type ModelGroupItem = {
   provider_id: string
@@ -157,7 +97,6 @@ export type SiteProtocolConfig = {
   protocol: ProtocolKind
   enabled: boolean
   headers: Record<string, string>
-  proxy: boolean
   channel_proxy: string
   param_override: string
   match_regex: string
@@ -170,7 +109,6 @@ export type SiteProtocolConfigInput = {
   protocol: ProtocolKind
   enabled: boolean
   headers: Record<string, string>
-  proxy: boolean
   channel_proxy: string
   param_override: string
   match_regex: string

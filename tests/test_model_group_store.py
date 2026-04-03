@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from lens.core.db import Base, create_engine, create_session_factory
-from lens.models import ModelGroupCandidatesRequest, ModelGroupCreate, ModelGroupItemInput, ProtocolKind, ProviderCreate, RoutingStrategy
+from lens.models import ModelGroupCandidatesRequest, ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate
 from lens.persistence.domain_store import DomainStore
 from lens.persistence.provider_store import ProviderStore
 
@@ -23,24 +23,91 @@ async def _run_group_store_test(tmp_path):
     provider_store = ProviderStore(session_factory)
     domain_store = DomainStore(session_factory)
 
-    provider_one = await provider_store.create(
-        ProviderCreate(
+    site_one = await provider_store.create_site(
+        SiteCreate(
             name="Anthropic A",
-            protocol=ProtocolKind.ANTHROPIC,
             base_url="https://a.example.com",
-            api_key="sk-a",
-            model_patterns=["anthropic/claude-sonnet-4-6", "anthropic/claude-opus-4-6"],
+            credentials=[{"name": "Key 1", "api_key": "sk-a", "enabled": True}],
+            protocols=[{
+                "protocol": ProtocolKind.ANTHROPIC,
+                "enabled": True,
+                "headers": {},
+                "channel_proxy": "",
+                "param_override": "",
+                "match_regex": "",
+                "bindings": [],
+                "models": [],
+            }],
         )
     )
-    provider_two = await provider_store.create(
-        ProviderCreate(
+    credential_one = site_one.credentials[0]
+    provider_one = site_one.protocols[0]
+    site_one = await provider_store.update_site(
+        site_one.id,
+        SiteCreate(
+            name=site_one.name,
+            base_url=site_one.base_url,
+            credentials=[{"id": credential_one.id, "name": credential_one.name, "api_key": credential_one.api_key, "enabled": True}],
+            protocols=[{
+                "id": provider_one.id,
+                "protocol": provider_one.protocol,
+                "enabled": True,
+                "headers": {},
+                "channel_proxy": "",
+                "param_override": "",
+                "match_regex": "",
+                "bindings": [{"credential_id": credential_one.id, "enabled": True}],
+                "models": [
+                    {"credential_id": credential_one.id, "model_name": "anthropic/claude-sonnet-4-6", "enabled": True},
+                    {"credential_id": credential_one.id, "model_name": "anthropic/claude-opus-4-6", "enabled": True},
+                ],
+            }],
+        ),
+    )
+    provider_one = site_one.protocols[0]
+
+    site_two = await provider_store.create_site(
+        SiteCreate(
             name="Anthropic B",
-            protocol=ProtocolKind.ANTHROPIC,
             base_url="https://b.example.com",
-            api_key="sk-b",
-            model_patterns=["claude-sonnet-4-5", "claude-haiku-4-5"],
+            credentials=[{"name": "Key 1", "api_key": "sk-b", "enabled": True}],
+            protocols=[{
+                "protocol": ProtocolKind.ANTHROPIC,
+                "enabled": True,
+                "headers": {},
+                "channel_proxy": "",
+                "param_override": "",
+                "match_regex": "",
+                "bindings": [],
+                "models": [],
+            }],
         )
     )
+    credential_two = site_two.credentials[0]
+    provider_two = site_two.protocols[0]
+    site_two = await provider_store.update_site(
+        site_two.id,
+        SiteCreate(
+            name=site_two.name,
+            base_url=site_two.base_url,
+            credentials=[{"id": credential_two.id, "name": credential_two.name, "api_key": credential_two.api_key, "enabled": True}],
+            protocols=[{
+                "id": provider_two.id,
+                "protocol": provider_two.protocol,
+                "enabled": True,
+                "headers": {},
+                "channel_proxy": "",
+                "param_override": "",
+                "match_regex": "",
+                "bindings": [{"credential_id": credential_two.id, "enabled": True}],
+                "models": [
+                    {"credential_id": credential_two.id, "model_name": "claude-sonnet-4-5", "enabled": True},
+                    {"credential_id": credential_two.id, "model_name": "claude-haiku-4-5", "enabled": True},
+                ],
+            }],
+        ),
+    )
+    provider_two = site_two.protocols[0]
 
     group = await domain_store.create_group(
         ModelGroupCreate(
@@ -83,15 +150,45 @@ async def _run_group_store_test(tmp_path):
     assert (provider_one.id, "anthropic/claude-sonnet-4-6") not in matched_keys
     assert (provider_two.id, "claude-sonnet-4-5") in matched_keys
 
-    openai_provider = await provider_store.create(
-        ProviderCreate(
+    openai_site = await provider_store.create_site(
+        SiteCreate(
             name="OpenAI A",
-            protocol=ProtocolKind.OPENAI_CHAT,
             base_url="https://openai.example.com",
-            api_key="sk-openai",
-            model_patterns=["claude-sonnet"],
+            credentials=[{"name": "Key 1", "api_key": "sk-openai", "enabled": True}],
+            protocols=[{
+                "protocol": ProtocolKind.OPENAI_CHAT,
+                "enabled": True,
+                "headers": {},
+                "channel_proxy": "",
+                "param_override": "",
+                "match_regex": "",
+                "bindings": [],
+                "models": [],
+            }],
         )
     )
+    openai_credential = openai_site.credentials[0]
+    openai_provider = openai_site.protocols[0]
+    openai_site = await provider_store.update_site(
+        openai_site.id,
+        SiteCreate(
+            name=openai_site.name,
+            base_url=openai_site.base_url,
+            credentials=[{"id": openai_credential.id, "name": openai_credential.name, "api_key": openai_credential.api_key, "enabled": True}],
+            protocols=[{
+                "id": openai_provider.id,
+                "protocol": openai_provider.protocol,
+                "enabled": True,
+                "headers": {},
+                "channel_proxy": "",
+                "param_override": "",
+                "match_regex": "",
+                "bindings": [{"credential_id": openai_credential.id, "enabled": True}],
+                "models": [{"credential_id": openai_credential.id, "model_name": "claude-sonnet", "enabled": True}],
+            }],
+        ),
+    )
+    openai_provider = openai_site.protocols[0]
     duplicate_name_group = await domain_store.create_group(
         ModelGroupCreate(
             name="claude-sonnet",

@@ -15,7 +15,6 @@ def _provider(provider_id: str, name: str, models: list[str]) -> ProviderConfig:
         model_patterns=models,
         headers={},
         keys=[],
-        proxy=False,
         channel_proxy="",
         param_override="",
         match_regex="",
