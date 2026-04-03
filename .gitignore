@@ -9,3 +9,4 @@ build/
 .env
 data/lens.db
 data/data.db
+*.tsbuildinfo
