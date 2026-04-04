@@ -80,8 +80,6 @@ class ModelGroupEntity(Base):
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     strategy: Mapped[str] = mapped_column(String(32), nullable=False, default="round_robin")
     match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    first_token_timeout: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    session_keep_time: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class ModelGroupItemEntity(Base):
@@ -90,9 +88,7 @@ class ModelGroupItemEntity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     channel_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    channel_name_snapshot: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     credential_id: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
-    credential_name_snapshot: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

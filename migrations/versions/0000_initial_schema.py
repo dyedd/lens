@@ -56,9 +56,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('group_id', sa.String(length=80), nullable=False),
     sa.Column('channel_id', sa.String(length=80), nullable=False),
-    sa.Column('channel_name_snapshot', sa.String(length=120), nullable=False),
     sa.Column('credential_id', sa.String(length=80), nullable=False),
-    sa.Column('credential_name_snapshot', sa.String(length=120), nullable=False),
     sa.Column('model_name', sa.String(length=200), nullable=False),
     sa.Column('enabled', sa.Integer(), nullable=False),
     sa.Column('sort_order', sa.Integer(), nullable=False),
@@ -73,8 +71,6 @@ def upgrade() -> None:
     sa.Column('protocol', sa.String(length=40), nullable=False),
     sa.Column('strategy', sa.String(length=32), nullable=False),
     sa.Column('match_regex', sa.Text(), nullable=False),
-    sa.Column('first_token_timeout', sa.Integer(), nullable=False),
-    sa.Column('session_keep_time', sa.Integer(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_model_groups_name'), 'model_groups', ['name'], unique=False)
@@ -206,4 +202,3 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_admin_users_username'), table_name='admin_users')
     op.drop_table('admin_users')
     # ### end Alembic commands ###
-

@@ -115,8 +115,6 @@ async def _run_group_store_test(tmp_path):
             protocol=ProtocolKind.ANTHROPIC,
             strategy=RoutingStrategy.ROUND_ROBIN,
             match_regex="",
-            first_token_timeout=12,
-            session_keep_time=34,
             items=[
                 ModelGroupItemInput(channel_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6", enabled=True),
                 ModelGroupItemInput(channel_id=provider_two.id, model_name="claude-sonnet-4-5", enabled=False),
@@ -127,16 +125,12 @@ async def _run_group_store_test(tmp_path):
     assert [item.channel_id for item in group.items] == [provider_one.id, provider_two.id]
     assert [item.model_name for item in group.items] == ["anthropic/claude-sonnet-4-6", "claude-sonnet-4-5"]
     assert [item.enabled for item in group.items] == [True, False]
-    assert group.first_token_timeout == 12
-    assert group.session_keep_time == 34
 
     groups = await domain_store.list_groups()
     persisted = next(item for item in groups if item.id == group.id)
     assert [item.channel_id for item in persisted.items] == [provider_one.id, provider_two.id]
     assert [item.sort_order for item in persisted.items] == [0, 1]
     assert [item.enabled for item in persisted.items] == [True, False]
-    assert persisted.first_token_timeout == 12
-    assert persisted.session_keep_time == 34
 
     candidates = await domain_store.list_group_candidates(
         ModelGroupCandidatesRequest(

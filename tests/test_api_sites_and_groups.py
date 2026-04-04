@@ -14,6 +14,10 @@ def test_model_group_candidates_include_credential_dimension(tmp_path: Path):
     asyncio.run(_run_model_group_candidates_include_credential_dimension(tmp_path))
 
 
+def test_model_group_detail_and_stats_api(tmp_path: Path):
+    asyncio.run(_run_model_group_detail_and_stats_api(tmp_path))
+
+
 async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
     service_module, app, config = await _build_test_app(tmp_path / 'api-crud.db')
 
@@ -172,6 +176,123 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
             assert (alpha['id'], 'gpt-4.1') in matched
             assert (beta['id'], 'gpt-4.1') in matched
             assert (beta['id'], 'gpt-4.1-mini') not in matched
+    finally:
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_model_group_detail_and_stats_api(tmp_path: Path):
+    service_module, app, config = await _build_test_app(tmp_path / 'api-group-detail.db')
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            headers = {'authorization': f'Bearer {token}'}
+
+            created_site = await client.post(
+                '/api/sites',
+                headers=headers,
+                json={
+                    'name': 'Stats Site',
+                    'base_url': 'https://api.openai.com',
+                    'credentials': [{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    'protocols': [{
+                        'protocol': 'openai_chat',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [],
+                        'models': [],
+                    }],
+                },
+            )
+            assert created_site.status_code == 201
+            site = created_site.json()
+            protocol = site['protocols'][0]
+            credential = site['credentials'][0]
+
+            updated_site = await client.put(
+                f"/api/sites/{site['id']}",
+                headers=headers,
+                json={
+                    'name': site['name'],
+                    'base_url': site['base_url'],
+                    'credentials': [{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    'protocols': [{
+                        'id': protocol['id'],
+                        'protocol': protocol['protocol'],
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                        'models': [{'credential_id': credential['id'], 'model_name': 'gpt-4.1', 'enabled': True}],
+                    }],
+                },
+            )
+            assert updated_site.status_code == 200
+
+            created_group = await client.post(
+                '/api/model-groups',
+                headers=headers,
+                json={
+                    'name': 'gpt-4.1',
+                    'protocol': 'openai_chat',
+                    'strategy': 'failover',
+                    'match_regex': '',
+                    'items': [{
+                        'channel_id': protocol['id'],
+                        'credential_id': credential['id'],
+                        'model_name': 'gpt-4.1',
+                        'enabled': True,
+                    }],
+                },
+            )
+            assert created_group.status_code == 201
+            group = created_group.json()
+
+            group_detail = await client.get(f"/api/model-groups/{group['id']}", headers=headers)
+            assert group_detail.status_code == 200
+            detail_payload = group_detail.json()
+            assert detail_payload['id'] == group['id']
+            assert detail_payload['items'][0]['channel_id'] == protocol['id']
+
+            missing_group = await client.get('/api/model-groups/missing-group-id', headers=headers)
+            assert missing_group.status_code == 404
+
+            await service_module.app_state.domain_store.create_request_log(
+                protocol='openai_chat',
+                requested_model='gpt-4.1',
+                matched_group_name='gpt-4.1',
+                channel_id=protocol['id'],
+                gateway_key_id='gw-test',
+                status_code=200,
+                success=True,
+                latency_ms=123,
+                resolved_model='gpt-4.1',
+                input_tokens=10,
+                output_tokens=20,
+                total_tokens=30,
+                input_cost_usd=0.001,
+                output_cost_usd=0.002,
+                total_cost_usd=0.003,
+                error_message=None,
+            )
+
+            stats = await client.get('/api/model-groups/stats', headers=headers)
+            assert stats.status_code == 200
+            stats_payload = stats.json()
+            target = next(item for item in stats_payload if item['name'] == 'gpt-4.1')
+            assert target['request_count'] == 1
+            assert target['success_count'] == 1
+            assert target['failed_count'] == 0
+            assert target['last_resolved_model'] == 'gpt-4.1'
     finally:
         await service_module._close_app_state(service_module.app_state)
 

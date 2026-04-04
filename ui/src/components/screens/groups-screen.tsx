@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Check, ChevronDown, CircleHelp, Copy, GripVertical, Pencil, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, Check, ChevronDown, Copy, GripVertical, Pencil, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import {
   ApiError,
   ModelGroup,
@@ -34,8 +34,6 @@ type FormState = {
   protocol: ProtocolKind
   strategy: RoutingStrategy
   match_regex: string
-  first_token_timeout: string
-  session_keep_time: string
   items: FormItem[]
 }
 
@@ -54,8 +52,6 @@ const emptyForm: FormState = {
   protocol: 'openai_chat',
   strategy: 'round_robin',
   match_regex: '',
-  first_token_timeout: '',
-  session_keep_time: '',
   items: [],
 }
 
@@ -63,16 +59,6 @@ const strategyOptions: Array<{ value: RoutingStrategy; zh: string; en: string }>
   { value: 'round_robin', zh: '轮询', en: 'Round Robin' },
   { value: 'failover', zh: '故障转移', en: 'Failover' },
 ]
-
-const firstTokenHint = {
-  'zh-CN': '单位秒，仅流式响应时起效，0 表示不限制',
-  'en-US': 'Seconds. Applies to streaming responses only. 0 means unlimited.',
-} as const
-
-const sessionKeepHint = {
-  'zh-CN': '单位秒，0 表示不限制',
-  'en-US': 'Seconds. 0 means unlimited.',
-} as const
 
 const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> = {
   openai_chat: { zh: 'OpenAI Chat', en: 'OpenAI Chat' },
@@ -101,13 +87,6 @@ function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
   const [target] = nextItems.splice(fromIndex, 1)
   nextItems.splice(toIndex, 0, target)
   return nextItems
-}
-
-function parseDurationInput(value: string) {
-  const normalized = value.trim()
-  if (!normalized) return 0
-  const parsed = Number.parseInt(normalized, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
 function protocolLabel(protocol: ProtocolKind, locale: 'zh-CN' | 'en-US') {
@@ -139,8 +118,6 @@ function toForm(group: ModelGroup): FormState {
     protocol: group.protocol,
     strategy: group.strategy,
     match_regex: group.match_regex,
-    first_token_timeout: String(group.first_token_timeout ?? 0),
-    session_keep_time: String(group.session_keep_time ?? 0),
     items: group.items
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -161,8 +138,6 @@ function toPayload(form: FormState): ModelGroupPayload {
     protocol: form.protocol,
     strategy: form.strategy,
     match_regex: form.match_regex.trim(),
-    first_token_timeout: parseDurationInput(form.first_token_timeout),
-    session_keep_time: parseDurationInput(form.session_keep_time),
     items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }
 }
@@ -192,17 +167,6 @@ function SwitchButton({ checked, disabled, onChange }: { checked: boolean; disab
 
 function FieldHint({ text }: { text: string }) {
   return <p className="text-[11px] leading-4 text-[var(--muted)]">{text}</p>
-}
-
-function HintBadge({ text }: { text: string }) {
-  return (
-    <span className="group relative inline-flex h-4 w-4 items-center justify-center text-[var(--muted)]">
-      <CircleHelp size={14} />
-      <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-max max-w-[260px] -translate-x-1/2 rounded-xl bg-[var(--panel)] px-3 py-2 text-[11px] leading-4 text-[var(--text)] shadow-[var(--shadow-sm)] ring-1 ring-[var(--line)] group-hover:block">
-        {text}
-      </span>
-    </span>
-  )
 }
 
 function AlertHintBadge({ text }: { text: string }) {
@@ -779,8 +743,6 @@ export function GroupsScreen() {
                   <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</div><div className="mt-1">{strategyOptions.find((item) => item.value === detailTarget.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</div></div>
                   <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '成员数量' : 'Members'}</div><div className="mt-1">{detailTarget.items.length}</div></div>
                   <div className="md:col-span-2"><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '自动归类正则' : 'Match regex'}</div><div className="mt-1 break-all">{detailTarget.match_regex || (locale === 'zh-CN' ? '未设置' : 'Not set')}</div></div>
-                  <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '首字超时' : 'First token timeout'}</div><div className="mt-1">{detailTarget.first_token_timeout || 0}</div></div>
-                  <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '会话保持' : 'Session keep time'}</div><div className="mt-1">{detailTarget.session_keep_time || 0}</div></div>
                 </div>
               </div>
 
@@ -809,7 +771,7 @@ export function GroupsScreen() {
         <AppDialogContent className="max-w-6xl" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
           <form className="flex h-full min-h-0 flex-col overflow-hidden" onSubmit={submit}>
             <div className="hide-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto pr-1" style={{ maxHeight: 'calc(88vh - 210px)' }}>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)]">
               <label className="grid gap-2">
                 <span className="flex items-center gap-1.5 text-sm font-medium text-[var(--text)]">
                   {locale === 'zh-CN' ? '协议' : 'Protocol'}
@@ -826,20 +788,6 @@ export function GroupsScreen() {
               <label className="grid gap-2">
                 <span className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '匹配正则' : 'Match regex'}</span>
                 <input className={inputClassName()} placeholder={locale === 'zh-CN' ? '留空则按名称自动归类' : 'Optional, otherwise infer by name'} value={form.match_regex} onChange={(e) => setForm({ ...form, match_regex: e.target.value })} />
-              </label>
-              <label className="grid gap-2">
-                <span className="flex items-center gap-1.5 text-sm font-medium text-[var(--text)]">
-                  {locale === 'zh-CN' ? '首字超时' : 'First token timeout'}
-                  <HintBadge text={firstTokenHint[locale]} />
-                </span>
-                <input className={inputClassName()} placeholder="0" value={form.first_token_timeout} onChange={(e) => setForm({ ...form, first_token_timeout: e.target.value })} />
-              </label>
-              <label className="grid gap-2">
-                <span className="flex items-center gap-1.5 text-sm font-medium text-[var(--text)]">
-                  {locale === 'zh-CN' ? '会话保持' : 'Session keep time'}
-                  <HintBadge text={sessionKeepHint[locale]} />
-                </span>
-                <input className={inputClassName()} placeholder="0" value={form.session_keep_time} onChange={(e) => setForm({ ...form, session_keep_time: e.target.value })} />
               </label>
               </div>
 

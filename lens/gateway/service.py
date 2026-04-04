@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ChannelConfig, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
+from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ChannelConfig, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore
 from ..persistence.channel_store import ChannelStore
@@ -302,6 +302,19 @@ async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_curr
 @app.get("/api/model-groups", response_model=list[ModelGroup])
 async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGroup]:
     return await app_state.domain_store.list_groups()
+
+
+@app.get("/api/model-groups/{group_id}", response_model=ModelGroup)
+async def get_model_group(group_id: str, _: Any = Depends(get_current_admin)) -> ModelGroup:
+    try:
+        return await app_state.domain_store.get_group(group_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Model group not found: {group_id}") from exc
+
+
+@app.get("/api/model-groups/stats", response_model=list[ModelGroupStats])
+async def list_model_group_stats(_: Any = Depends(get_current_admin)) -> list[ModelGroupStats]:
+    return await app_state.domain_store.list_group_stats()
 
 
 @app.post("/api/model-groups/candidates", response_model=ModelGroupCandidatesResponse)

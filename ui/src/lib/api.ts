@@ -1,6 +1,6 @@
 export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini'
 
-export type RoutingStrategy = 'round_robin' | 'weighted' | 'failover'
+export type RoutingStrategy = 'round_robin' | 'failover'
 
 export type ModelGroupItem = {
   channel_id: string
@@ -18,8 +18,6 @@ export type ModelGroup = {
   protocol: ProtocolKind
   strategy: RoutingStrategy
   match_regex: string
-  first_token_timeout: number
-  session_keep_time: number
   items: ModelGroupItem[]
 }
 
@@ -35,8 +33,6 @@ export type ModelGroupPayload = {
   protocol: ProtocolKind
   strategy: RoutingStrategy
   match_regex: string
-  first_token_timeout: number
-  session_keep_time: number
   items: ModelGroupItemPayload[]
 }
 

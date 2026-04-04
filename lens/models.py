@@ -48,7 +48,6 @@ class ChannelDiscoveredModel(BaseModel):
 
 class RoutingStrategy(str, Enum):
     ROUND_ROBIN = "round_robin"
-    WEIGHTED = "weighted"
     FAILOVER = "failover"
 
 
@@ -303,8 +302,6 @@ class ModelGroup(BaseModel):
     protocol: ProtocolKind
     strategy: RoutingStrategy
     match_regex: str = ""
-    first_token_timeout: int = Field(default=0, ge=0)
-    session_keep_time: int = Field(default=0, ge=0)
     items: list["ModelGroupItem"] = Field(default_factory=list)
 
 
@@ -336,8 +333,6 @@ class ModelGroupCreate(BaseModel):
     protocol: ProtocolKind
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
     match_regex: str = ""
-    first_token_timeout: int = Field(default=0, ge=0)
-    session_keep_time: int = Field(default=0, ge=0)
     items: list[ModelGroupItemInput] = Field(default_factory=list)
 
     @field_validator("match_regex")
@@ -359,8 +354,6 @@ class ModelGroupUpdate(BaseModel):
     protocol: ProtocolKind | None = None
     strategy: RoutingStrategy | None = None
     match_regex: str | None = None
-    first_token_timeout: int | None = Field(default=None, ge=0)
-    session_keep_time: int | None = Field(default=None, ge=0)
     items: list[ModelGroupItemInput] | None = None
 
     @field_validator("match_regex")

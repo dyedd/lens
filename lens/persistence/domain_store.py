@@ -89,6 +89,14 @@ class DomainStore:
             ).scalars().all()
             return await self._hydrate_groups(session, entities)
 
+    async def get_group(self, group_id: str) -> ModelGroup:
+        async with self._session_factory() as session:
+            entity = await session.get(ModelGroupEntity, group_id)
+            if entity is None:
+                raise KeyError(group_id)
+            items = await self._load_group_items(session, [group_id])
+            return self._to_group(entity, items.get(group_id, []))
+
     async def find_group_by_name(self, protocol: str, name: str | None) -> ModelGroup | None:
         if not name:
             return None
@@ -258,8 +266,6 @@ class DomainStore:
                 protocol=payload.protocol.value,
                 strategy=payload.strategy.value,
                 match_regex=payload.match_regex,
-                first_token_timeout=payload.first_token_timeout,
-                session_keep_time=payload.session_keep_time,
             )
             session.add(entity)
             await session.flush()
@@ -401,13 +407,16 @@ class DomainStore:
         ).scalars().all()
 
         items_by_group: dict[str, list[ModelGroupItem]] = {group_id: [] for group_id in group_ids}
+        channel_ids = list({row.channel_id for row in rows})
+        channel_site_names = await self._load_channel_site_names(session, channel_ids)
+        credential_names_by_channel = await self._load_credential_names_by_channel(session, channel_ids)
         for row in rows:
             items_by_group.setdefault(row.group_id, []).append(
                 ModelGroupItem(
                     channel_id=row.channel_id,
-                    channel_name=row.channel_name_snapshot,
+                    channel_name=channel_site_names.get(row.channel_id, ''),
                     credential_id=row.credential_id,
-                    credential_name=row.credential_name_snapshot,
+                    credential_name=credential_names_by_channel.get(row.channel_id, {}).get(row.credential_id, ''),
                     model_name=row.model_name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
@@ -423,37 +432,49 @@ class DomainStore:
         channels_by_id: dict[str, SiteProtocolConfigEntity],
         channel_site_names: dict[str, str],
     ) -> None:
-        credential_names_by_channel: dict[str, dict[str, str]] = {}
-        channel_ids = list(channels_by_id)
-        if channel_ids:
-            channel_rows = await session.execute(
-                select(
-                    SiteProtocolCredentialBindingEntity.protocol_config_id,
-                    SiteProtocolCredentialBindingEntity.credential_id,
-                    SiteCredentialEntity.name,
-                )
-                .join(
-                    SiteCredentialEntity,
-                    SiteCredentialEntity.id == SiteProtocolCredentialBindingEntity.credential_id,
-                )
-                .where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(channel_ids))
-            )
-            for protocol_config_id, credential_id, credential_name in channel_rows.all():
-                credential_names_by_channel.setdefault(protocol_config_id, {})[credential_id] = credential_name
-
         for index, item in enumerate(items):
             session.add(
                 ModelGroupItemEntity(
                     group_id=group_id,
                     channel_id=item.channel_id,
-                    channel_name_snapshot=channel_site_names.get(item.channel_id, ''),
                     credential_id=item.credential_id,
-                    credential_name_snapshot=credential_names_by_channel.get(item.channel_id, {}).get(item.credential_id, ''),
                     model_name=item.model_name,
                     enabled=1 if item.enabled else 0,
                     sort_order=index,
                 )
             )
+
+    async def _load_channel_site_names(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, str]:
+        if not channel_ids:
+            return {}
+        rows = (
+            await session.execute(
+                select(SiteProtocolConfigEntity.id, SiteEntity.name)
+                .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
+                .where(SiteProtocolConfigEntity.id.in_(channel_ids))
+            )
+        ).all()
+        return {channel_id: site_name for channel_id, site_name in rows}
+
+    async def _load_credential_names_by_channel(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, dict[str, str]]:
+        if not channel_ids:
+            return {}
+        rows = await session.execute(
+            select(
+                SiteProtocolCredentialBindingEntity.protocol_config_id,
+                SiteProtocolCredentialBindingEntity.credential_id,
+                SiteCredentialEntity.name,
+            )
+            .join(
+                SiteCredentialEntity,
+                SiteCredentialEntity.id == SiteProtocolCredentialBindingEntity.credential_id,
+            )
+            .where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(channel_ids))
+        )
+        credential_names_by_channel: dict[str, dict[str, str]] = {}
+        for protocol_config_id, credential_id, credential_name in rows.all():
+            credential_names_by_channel.setdefault(protocol_config_id, {})[credential_id] = credential_name
+        return credential_names_by_channel
 
     @staticmethod
     def _normalize_match_value(value: str) -> str:
@@ -829,8 +850,6 @@ class DomainStore:
             protocol=entity.protocol,
             strategy=entity.strategy,
             match_regex=entity.match_regex,
-            first_token_timeout=entity.first_token_timeout,
-            session_keep_time=entity.session_keep_time,
             items=items,
         )
 
