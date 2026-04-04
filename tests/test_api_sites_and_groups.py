@@ -159,8 +159,6 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
                 headers=headers,
                 json={
                     'protocol': 'openai_chat',
-                    'name': 'gpt-4.1',
-                    'match_regex': '',
                     'exclude_items': [],
                 },
             )
@@ -172,10 +170,6 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
             assert (protocol['id'], beta['id'], 'gpt-4.1-mini') in keys
             assert all(item['channel_name'] == 'Candidate Site' for item in payload['candidates'])
 
-            matched = {(item['credential_id'], item['model_name']) for item in payload['matched_items']}
-            assert (alpha['id'], 'gpt-4.1') in matched
-            assert (beta['id'], 'gpt-4.1') in matched
-            assert (beta['id'], 'gpt-4.1-mini') not in matched
     finally:
         await service_module._close_app_state(service_module.app_state)
 
@@ -245,7 +239,6 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
                     'name': 'gpt-4.1',
                     'protocol': 'openai_chat',
                     'strategy': 'failover',
-                    'match_regex': '',
                     'items': [{
                         'channel_id': protocol['id'],
                         'credential_id': credential['id'],

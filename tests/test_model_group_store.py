@@ -114,7 +114,6 @@ async def _run_group_store_test(tmp_path):
             name="claude-sonnet",
             protocol=ProtocolKind.ANTHROPIC,
             strategy=RoutingStrategy.ROUND_ROBIN,
-            match_regex="",
             items=[
                 ModelGroupItemInput(channel_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6", enabled=True),
                 ModelGroupItemInput(channel_id=provider_two.id, model_name="claude-sonnet-4-5", enabled=False),
@@ -135,14 +134,12 @@ async def _run_group_store_test(tmp_path):
     candidates = await domain_store.list_group_candidates(
         ModelGroupCandidatesRequest(
             protocol=ProtocolKind.ANTHROPIC,
-            name="claude-sonnet",
-            match_regex="",
             exclude_items=[ModelGroupItemInput(channel_id=provider_one.id, model_name="anthropic/claude-sonnet-4-6")],
         )
     )
-    matched_keys = {(item.channel_id, item.model_name) for item in candidates.matched_items}
-    assert (provider_one.id, "anthropic/claude-sonnet-4-6") not in matched_keys
-    assert (provider_two.id, "claude-sonnet-4-5") in matched_keys
+    candidate_keys = {(item.channel_id, item.model_name) for item in candidates.candidates}
+    assert (provider_one.id, "anthropic/claude-sonnet-4-6") not in candidate_keys
+    assert (provider_two.id, "claude-sonnet-4-5") in candidate_keys
 
     openai_site = await channel_store.create_site(
         SiteCreate(
@@ -188,7 +185,6 @@ async def _run_group_store_test(tmp_path):
             name="claude-sonnet",
             protocol=ProtocolKind.OPENAI_CHAT,
             strategy=RoutingStrategy.ROUND_ROBIN,
-            match_regex="",
             items=[ModelGroupItemInput(channel_id=openai_channel.id, model_name="claude-sonnet", enabled=True)],
         )
     )

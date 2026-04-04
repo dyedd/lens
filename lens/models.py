@@ -396,27 +396,13 @@ class ModelGroupCandidatesRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     protocol: ProtocolKind | None = None
-    name: str = ""
-    match_regex: str = ""
     exclude_items: list[ModelGroupItemInput] = Field(default_factory=list)
-
-    @field_validator("match_regex")
-    @classmethod
-    def validate_match_regex(cls, pattern: str) -> str:
-        if not pattern:
-            return pattern
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
-        return pattern
 
 
 class ModelGroupCandidatesResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     candidates: list[ModelGroupCandidateItem] = Field(default_factory=list)
-    matched_items: list[ModelGroupCandidateItem] = Field(default_factory=list)
 
 
 class SettingItem(BaseModel):

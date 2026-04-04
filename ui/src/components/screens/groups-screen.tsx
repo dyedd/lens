@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Check, ChevronDown, Copy, GripVertical, Pencil, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, GripVertical, Pencil, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import {
   ApiError,
   ModelGroup,
@@ -18,7 +18,6 @@ import {
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/cn'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
-import { SegmentedControl } from '@/components/ui/segmented-control'
 
 type FormItem = {
   channel_id: string
@@ -53,6 +52,27 @@ const emptyForm: FormState = {
   strategy: 'round_robin',
   match_regex: '',
   items: [],
+}
+
+function normalizeMatchValue(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function matchesCandidate(modelName: string, groupName: string, matchRegex: string) {
+  const regexValue = matchRegex.trim()
+  if (regexValue) {
+    try {
+      return new RegExp(regexValue, 'i').test(modelName)
+    } catch {
+      return false
+    }
+  }
+
+  const normalizedGroupName = normalizeMatchValue(groupName)
+  if (!normalizedGroupName) {
+    return false
+  }
+  return normalizeMatchValue(modelName).includes(normalizedGroupName)
 }
 
 const strategyOptions: Array<{ value: RoutingStrategy; zh: string; en: string }> = [
@@ -165,21 +185,6 @@ function SwitchButton({ checked, disabled, onChange }: { checked: boolean; disab
   )
 }
 
-function FieldHint({ text }: { text: string }) {
-  return <p className="text-[11px] leading-4 text-[var(--muted)]">{text}</p>
-}
-
-function AlertHintBadge({ text }: { text: string }) {
-  return (
-    <span className="group relative inline-flex h-4 w-4 items-center justify-center text-[var(--muted)]">
-      <AlertCircle size={14} />
-      <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-max max-w-[260px] -translate-x-1/2 rounded-xl bg-[var(--panel)] px-3 py-2 text-[11px] leading-4 text-[var(--text)] shadow-[var(--shadow-sm)] ring-1 ring-[var(--line)] group-hover:block">
-        {text}
-      </span>
-    </span>
-  )
-}
-
 function CandidateRow({
   item,
   active,
@@ -201,7 +206,6 @@ function CandidateRow({
     >
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="mt-1 truncate text-[11px] text-[var(--muted)]">{item.credential_name || item.channel_name}</div>
       </div>
       <span className="shrink-0 text-[var(--muted)]">{active ? <Check size={15} className="text-[var(--accent)]" /> : <Plus size={15} />}</span>
     </button>
@@ -248,7 +252,7 @@ function SelectedMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="truncate text-[11px] text-[var(--muted)]">{item.channel_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="truncate text-[11px] text-[var(--muted)]">{item.channel_name}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
       <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
       <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[rgba(217,111,93,0.08)] hover:text-[var(--danger)]" onClick={onRemove}>
@@ -299,7 +303,7 @@ function CardMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.channel_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.channel_name}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
       <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
     </div>
@@ -311,8 +315,6 @@ export function GroupsScreen() {
   const { locale } = useI18n()
   const [search, setSearch] = useState('')
   const [candidateSearch, setCandidateSearch] = useState('')
-  const [channelSearch, setChannelSearch] = useState('')
-  const [credentialSearch, setCredentialSearch] = useState('')
   const [form, setForm] = useState<FormState>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -328,9 +330,7 @@ export function GroupsScreen() {
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/model-groups') })
   const { data: sites } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/sites') })
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(() => ({
-    protocol: form.items[0] ? form.protocol : undefined,
-    name: form.name,
-    match_regex: form.match_regex,
+    protocol: form.protocol,
     exclude_items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }), [form])
   const { data: candidateResponse, refetch: refetchCandidates, isFetching: isFetchingCandidates } = useQuery({
@@ -384,18 +384,14 @@ export function GroupsScreen() {
 
   const groupedCandidates = useMemo(() => {
     const keyword = candidateSearch.trim().toLowerCase()
-    const channelKeyword = channelSearch.trim().toLowerCase()
-    const credentialKeyword = credentialSearch.trim().toLowerCase()
     const groupsByChannel = new Map<string, CandidateChannel>()
 
     for (const item of candidateResponse?.candidates ?? []) {
       const channel = channelMap.get(item.channel_id)
       const channelName = channel?.name || item.channel_name
       const endpoint = channelEndpoint(channel)
-      const matchChannel = !channelKeyword || `${channelName} ${endpoint}`.toLowerCase().includes(channelKeyword)
-      const matchCredential = !credentialKeyword || item.credential_name.toLowerCase().includes(credentialKeyword)
-      const matchItem = !keyword || `${item.model_name} ${channelName}`.toLowerCase().includes(keyword)
-      if (!matchChannel || !matchCredential || !matchItem) {
+      const matchItem = !keyword || `${item.model_name} ${channelName} ${item.credential_name} ${endpoint}`.toLowerCase().includes(keyword)
+      if (!matchItem) {
         continue
       }
       const existing = groupsByChannel.get(item.channel_id)
@@ -420,20 +416,20 @@ export function GroupsScreen() {
     }
 
     return Array.from(groupsByChannel.values()).sort((a, b) => a.channel_name.localeCompare(b.channel_name))
-  }, [candidateResponse, candidateSearch, channelSearch, credentialSearch, channelMap])
+  }, [candidateResponse, candidateSearch, channelMap])
 
   const visibleSelectedItems = useMemo(() => {
     if (!showEnabledOnly) return form.items
     return form.items.filter((item) => item.enabled)
   }, [form.items, showEnabledOnly])
 
-  const matchedItems = candidateResponse?.matched_items ?? []
+  const matchedCandidates = useMemo(() => {
+    return (candidateResponse?.candidates ?? []).filter((item) => matchesCandidate(item.model_name, form.name, form.match_regex))
+  }, [candidateResponse, form.name, form.match_regex])
 
   useEffect(() => {
     if (!dialogOpen) {
       setCandidateSearch('')
-      setChannelSearch('')
-      setCredentialSearch('')
       setExpandedChannels([])
       setDraggingIndex(null)
     }
@@ -590,25 +586,31 @@ export function GroupsScreen() {
     await updateGroupPartial(group, { items: nextItems })
   }
 
-  function autoAddMatched() {
-    if (!matchedItems.length) {
+  function toggleChannel(channelId: string) {
+    setExpandedChannels((current) => current.includes(channelId) ? current.filter((item) => item !== channelId) : [...current, channelId])
+  }
+
+  function addMatchedItems() {
+    if (!matchedCandidates.length) {
       return
     }
     setForm((current) => {
       const existing = new Set(current.items.map((item) => itemKey(item)))
-      const additions = matchedItems
+      const additions = matchedCandidates
         .filter((item) => !existing.has(itemKey(item)))
-        .map((item) => ({ channel_id: item.channel_id, channel_name: item.channel_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }))
+        .map((item) => ({
+          channel_id: item.channel_id,
+          channel_name: item.channel_name,
+          credential_id: item.credential_id,
+          credential_name: item.credential_name,
+          model_name: item.model_name,
+          enabled: true,
+        }))
       if (!additions.length) {
         return current
       }
-      const nextProtocol = channelMap.get(additions[0].channel_id)?.protocol || current.protocol
-      return { ...current, protocol: nextProtocol, items: [...current.items, ...additions] }
+      return { ...current, items: [...current.items, ...additions] }
     })
-  }
-
-  function toggleChannel(channelId: string) {
-    setExpandedChannels((current) => current.includes(channelId) ? current.filter((item) => item !== channelId) : [...current, channelId])
   }
 
   function changeProtocol(protocol: ProtocolKind) {
@@ -670,7 +672,6 @@ export function GroupsScreen() {
                 </button>
                 <div className="flex items-center gap-1.5">
                   <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => openEdit(group)}><Pencil size={15} /></button>
-                  <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => void navigator.clipboard.writeText(group.name)}><Copy size={15} /></button>
                   <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--danger)] transition hover:bg-[rgba(217,111,93,0.08)]" onClick={() => setDeleteTarget(group)}><Trash2 size={15} /></button>
                 </div>
               </div>
@@ -742,7 +743,7 @@ export function GroupsScreen() {
                   <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '协议' : 'Protocol'}</div><div className="mt-1">{protocolLabel(detailTarget.protocol, locale)}</div></div>
                   <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</div><div className="mt-1">{strategyOptions.find((item) => item.value === detailTarget.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</div></div>
                   <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '成员数量' : 'Members'}</div><div className="mt-1">{detailTarget.items.length}</div></div>
-                  <div className="md:col-span-2"><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '自动归类正则' : 'Match regex'}</div><div className="mt-1 break-all">{detailTarget.match_regex || (locale === 'zh-CN' ? '未设置' : 'Not set')}</div></div>
+                  <div className="md:col-span-2"><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '匹配正则' : 'Match regex'}</div><div className="mt-1 break-all">{detailTarget.match_regex || (locale === 'zh-CN' ? '未设置，按名称匹配' : 'Not set, match by name')}</div></div>
                 </div>
               </div>
 
@@ -757,7 +758,7 @@ export function GroupsScreen() {
                   {detailItems.length ? detailItems.map((item) => (
                     <div key={`${item.channel_id}-${item.credential_id}-${item.model_name}`} className="rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2.5">
                       <div className="text-sm font-medium text-[var(--text)]">{item.model_name}</div>
-                      <div className="mt-1 text-xs text-[var(--muted)]">{item.channel_name}{item.credential_name ? ` · ${item.credential_name}` : ''}{!item.enabled ? ' · 已关闭' : ''}</div>
+                      <div className="mt-1 text-xs text-[var(--muted)]">{item.channel_name}{!item.enabled ? ' · 已关闭' : ''}</div>
                     </div>
                   )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无成员' : 'No members'}</p>}
                 </div>
@@ -771,12 +772,9 @@ export function GroupsScreen() {
         <AppDialogContent className="max-w-6xl" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
           <form className="flex h-full min-h-0 flex-col overflow-hidden" onSubmit={submit}>
             <div className="hide-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto pr-1" style={{ maxHeight: 'calc(88vh - 210px)' }}>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)]">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <label className="grid gap-2">
-                <span className="flex items-center gap-1.5 text-sm font-medium text-[var(--text)]">
-                  {locale === 'zh-CN' ? '协议' : 'Protocol'}
-                  <AlertHintBadge text={locale === 'zh-CN' ? '切换协议会清空当前已选成员。' : 'Changing protocol clears the current selected members.'} />
-                </span>
+                <span className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '协议' : 'Protocol'}</span>
                 <select className={inputClassName()} value={form.protocol} onChange={(e) => changeProtocol(e.target.value as ProtocolKind)}>
                   {protocolOptions(locale).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
@@ -787,41 +785,27 @@ export function GroupsScreen() {
               </label>
               <label className="grid gap-2">
                 <span className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '匹配正则' : 'Match regex'}</span>
-                <input className={inputClassName()} placeholder={locale === 'zh-CN' ? '留空则按名称自动归类' : 'Optional, otherwise infer by name'} value={form.match_regex} onChange={(e) => setForm({ ...form, match_regex: e.target.value })} />
+                <input className={inputClassName()} placeholder={locale === 'zh-CN' ? '留空则按模型组名称匹配' : 'Optional, otherwise match by group name'} value={form.match_regex} onChange={(e) => setForm({ ...form, match_regex: e.target.value })} />
               </label>
               </div>
 
               <div className="grid min-h-0 gap-4 overflow-hidden lg:grid-cols-[1.05fr_0.95fr]">
               <section className={panelClassName('flex min-h-0 flex-col overflow-hidden')}>
-                <div className="grid gap-3 border-b border-[var(--line)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center">
-                  <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3">
-                    <Search size={14} className="text-[var(--muted)]" />
-                    <input className="h-9 min-w-0 flex-1 bg-transparent text-[13px] outline-none" value={channelSearch} onChange={(e) => setChannelSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索渠道' : 'Search channels'} />
-                  </div>
-                  <button type="button" className="inline-flex h-9 items-center justify-center gap-2 rounded-xl px-2 text-xs font-medium text-[var(--muted)] transition hover:bg-[var(--panel-soft)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50" onClick={autoAddMatched} disabled={!matchedItems.length}>
-                    <Sparkles size={14} />
-                    {locale === 'zh-CN' ? '自动加入' : 'Auto add'}
-                  </button>
+                <div className="grid gap-3 border-b border-[var(--line)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3">
                     <Search size={14} className="text-[var(--muted)]" />
                     <input className="h-9 min-w-0 flex-1 bg-transparent text-[13px] outline-none" value={candidateSearch} onChange={(e) => setCandidateSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型' : 'Search models'} />
                   </div>
-                </div>
-
-                <div className="grid gap-3 border-b border-[var(--line)] px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3">
-                    <Search size={14} className="text-[var(--muted)]" />
-                    <input className="h-9 min-w-0 flex-1 bg-transparent text-[13px] outline-none" value={credentialSearch} onChange={(e) => setCredentialSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索 Key' : 'Search keys'} />
+                  <div className="flex items-center justify-end gap-2">
+                    <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-[12px] text-[var(--text)] disabled:opacity-50" onClick={addMatchedItems} disabled={!matchedCandidates.length}>
+                      <Sparkles size={13} />
+                      {locale === 'zh-CN' ? `批量加入 ${matchedCandidates.length}` : `Add matched ${matchedCandidates.length}`}
+                    </button>
+                    <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-[12px] text-[var(--text)] disabled:opacity-50" onClick={() => void refetchCandidates()} disabled={isFetchingCandidates}>
+                      <RefreshCcw size={13} />
+                      {locale === 'zh-CN' ? '刷新列表' : 'Refresh'}
+                    </button>
                   </div>
-                  <div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '支持按 Key 过滤候选模型' : 'Filter candidates by credential'}</div>
-                </div>
-
-                <div className="flex items-center justify-between px-4 py-3 text-xs text-[var(--muted)]">
-                  <span>{locale === 'zh-CN' ? `自动命中 ${matchedItems.length} 个模型` : `${matchedItems.length} auto matched`}</span>
-                  <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-[12px] text-[var(--text)] disabled:opacity-50" onClick={() => void refetchCandidates()} disabled={isFetchingCandidates}>
-                    <RefreshCcw size={13} />
-                    {locale === 'zh-CN' ? '刷新列表' : 'Refresh'}
-                  </button>
                 </div>
 
                 <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-3">

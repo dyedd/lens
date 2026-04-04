@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -131,6 +130,15 @@ class DomainStore:
                         .order_by(SiteDiscoveredModelEntity.protocol_config_id.asc(), SiteDiscoveredModelEntity.sort_order.asc(), SiteDiscoveredModelEntity.id.asc())
                     )
                 ).scalars().all()
+            channel_rows = []
+            if channel_ids:
+                channel_rows = (
+                    await session.execute(
+                        select(SiteProtocolConfigEntity.id, SiteEntity.name, SiteEntity.base_url)
+                        .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
+                        .where(SiteProtocolConfigEntity.id.in_(channel_ids))
+                    )
+                ).all()
 
         candidates: list[ModelGroupCandidateItem] = []
         seen: set[tuple[str, str, str]] = set()
@@ -148,43 +156,34 @@ class DomainStore:
         for item in discovered_models:
             models_by_channel.setdefault(item.protocol_config_id, []).append((item.credential_id, item.model_name))
 
-        site_name_by_channel: dict[str, str] = {}
-        if channel_ids:
-            async with self._session_factory() as session:
-                rows = (
-                    await session.execute(
-                        select(SiteProtocolConfigEntity.id, SiteEntity.name)
-                        .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
-                        .where(SiteProtocolConfigEntity.id.in_(channel_ids))
-                    )
-                ).all()
-            site_name_by_channel = {channel_id: site_name for channel_id, site_name in rows}
+        channel_meta_by_id = {
+            channel_id: {
+                "name": site_name,
+                "base_url": base_url,
+            }
+            for channel_id, site_name, base_url in channel_rows
+        }
 
         for channel in channels:
             channel_items = list(dict.fromkeys(models_by_channel.get(channel.id, [])))
             for credential_id, model_name in channel_items:
                 candidate_key = (channel.id, credential_id, model_name)
-                if candidate_key in seen:
+                if candidate_key in seen or candidate_key in excluded:
                     continue
                 seen.add(candidate_key)
+                meta = channel_meta_by_id.get(channel.id, {})
                 candidates.append(
                     ModelGroupCandidateItem(
                         channel_id=channel.id,
-                        channel_name=site_name_by_channel.get(channel.id, channel.protocol),
+                        channel_name=str(meta.get("name") or channel.protocol),
                         credential_id=credential_id,
                         credential_name=credential_names.get(credential_id, ""),
-                        base_url=channel.base_url,
+                        base_url=str(meta.get("base_url") or ""),
                         model_name=model_name,
                     )
                 )
 
-        matched_items = [
-            item
-            for item in candidates
-            if (item.channel_id, item.model_name) not in excluded
-            and self._candidate_matches_group(item.model_name, payload.name, payload.match_regex)
-        ]
-        return ModelGroupCandidatesResponse(candidates=candidates, matched_items=matched_items)
+        return ModelGroupCandidatesResponse(candidates=candidates)
 
     async def list_group_stats(self) -> list[ModelGroupStats]:
         async with self._session_factory() as session:
@@ -475,19 +474,6 @@ class DomainStore:
         for protocol_config_id, credential_id, credential_name in rows.all():
             credential_names_by_channel.setdefault(protocol_config_id, {})[credential_id] = credential_name
         return credential_names_by_channel
-
-    @staticmethod
-    def _normalize_match_value(value: str) -> str:
-        return ''.join(ch for ch in value.lower() if ch.isalnum())
-
-    def _candidate_matches_group(self, model_name: str, group_name: str, match_regex: str) -> bool:
-        normalized_model = self._normalize_match_value(model_name)
-        if match_regex.strip():
-            return re.search(match_regex, model_name) is not None
-        normalized_group = self._normalize_match_value(group_name)
-        if not normalized_group:
-            return False
-        return normalized_group in normalized_model
 
     async def get_gateway_auth_config(self) -> dict[str, Any]:
         items = await self.list_settings()

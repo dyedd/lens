@@ -145,14 +145,11 @@ export type SiteModelFetchItem = {
 
 export type ModelGroupCandidatesPayload = {
   protocol?: ProtocolKind
-  name: string
-  match_regex: string
   exclude_items: ModelGroupItemPayload[]
 }
 
 export type ModelGroupCandidatesResponse = {
   candidates: ModelGroupCandidateItem[]
-  matched_items: ModelGroupCandidateItem[]
 }
 
 export type SettingItem = {
