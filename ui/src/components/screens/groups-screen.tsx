@@ -17,6 +17,7 @@ import {
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/cn'
+import { getModelGroupAvatar } from '@/lib/model-icons'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 
 type FormItem = {
@@ -374,6 +375,11 @@ export function GroupsScreen() {
     return (detailTarget?.items ?? []).slice().sort((a, b) => a.sort_order - b.sort_order)
   }, [detailTarget])
 
+  const detailIconMeta = useMemo(() => {
+    return detailTarget ? getModelGroupAvatar(detailTarget.name) : null
+  }, [detailTarget])
+  const DetailAvatar = detailIconMeta
+
   const duplicateNameSet = useMemo(() => {
     const counts = new Map<string, number>()
     for (const group of groups ?? []) {
@@ -654,6 +660,7 @@ export function GroupsScreen() {
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {visibleGroups.map((group) => {
+          const GroupAvatar = getModelGroupAvatar(group.name)
           const items = group.items.slice().sort((a, b) => a.sort_order - b.sort_order)
           const cardItems = items.map((item) => ({
             channel_id: item.channel_id,
@@ -667,8 +674,13 @@ export function GroupsScreen() {
             <article key={group.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
               <div className="flex items-start justify-between gap-3">
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetailTarget(group)}>
-                  <div className="truncate text-[15px] font-semibold text-[var(--text)]">{group.name}</div>
-                  {duplicateNameSet.has(group.name) ? <div className="mt-1 text-xs text-[var(--muted)]">{protocolLabel(group.protocol, locale)}</div> : null}
+                  <div className="flex items-center gap-3">
+                    <GroupAvatar size={36} />
+                    <div className="min-w-0">
+                      <div className="truncate text-[15px] font-semibold text-[var(--text)]">{group.name}</div>
+                      {duplicateNameSet.has(group.name) ? <div className="mt-1 text-xs text-[var(--muted)]">{protocolLabel(group.protocol, locale)}</div> : null}
+                    </div>
+                  </div>
                 </button>
                 <div className="flex items-center gap-1.5">
                   <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => openEdit(group)}><Pencil size={15} /></button>
@@ -737,6 +749,13 @@ export function GroupsScreen() {
           <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '模型组详情' : 'Group detail'}>
             <div className="space-y-5 overflow-y-auto pr-1">
               <div className={panelClassName('p-5')}>
+                <div className="mb-4 flex items-center gap-3">
+                  {DetailAvatar ? <DetailAvatar size={44} /> : null}
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-semibold text-[var(--text)]">{detailTarget.name}</div>
+                    <div className="text-xs text-[var(--muted)]">{protocolLabel(detailTarget.protocol, locale)}</div>
+                  </div>
+                </div>
                 <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '基础信息' : 'Overview'}</div>
                 <div className="mt-4 grid gap-x-8 gap-y-4 text-sm text-[var(--text)] md:grid-cols-2">
                   <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '名称' : 'Name'}</div><div className="mt-1">{detailTarget.name}</div></div>

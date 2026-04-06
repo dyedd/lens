@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 from time import perf_counter
@@ -18,7 +19,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ChannelConfig, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
+from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
+from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ChannelConfig, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore
 from ..persistence.channel_store import ChannelStore
@@ -77,6 +79,7 @@ async def _startup_app_state(state: AppState) -> None:
         state.http = state._create_http_client()
     await state.admin_store.ensure_default_admin(settings.admin_default_username, settings.admin_default_password)
     await _bootstrap_imported_stats(state)
+    await _sync_group_prices(state)
 
 
 async def _close_app_state(state: AppState) -> None:
@@ -317,6 +320,26 @@ async def list_model_group_stats(_: Any = Depends(get_current_admin)) -> list[Mo
     return await app_state.domain_store.list_group_stats()
 
 
+@app.get("/api/model-prices", response_model=ModelPriceListResponse)
+async def list_model_prices(_: Any = Depends(get_current_admin)) -> ModelPriceListResponse:
+    await app_state.domain_store.prune_model_prices_to_groups()
+    return await app_state.domain_store.list_model_prices()
+
+
+@app.put("/api/model-prices/{model_key}", response_model=ModelPriceItem)
+async def update_model_price(model_key: str, payload: ModelPriceUpdate, _: Any = Depends(get_current_admin)) -> ModelPriceItem:
+    try:
+        return await app_state.domain_store.upsert_model_price(payload.model_copy(update={"model_key": model_key}))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/model-prices/sync", response_model=ModelPriceListResponse)
+async def sync_model_prices(_: Any = Depends(get_current_admin)) -> ModelPriceListResponse:
+    await _sync_group_prices(app_state, overwrite_existing=True)
+    return await app_state.domain_store.list_model_prices()
+
+
 @app.post("/api/model-groups/candidates", response_model=ModelGroupCandidatesResponse)
 async def model_group_candidates(payload: ModelGroupCandidatesRequest, _: Any = Depends(get_current_admin)) -> ModelGroupCandidatesResponse:
     try:
@@ -328,7 +351,9 @@ async def model_group_candidates(payload: ModelGroupCandidatesRequest, _: Any = 
 @app.post("/api/model-groups", response_model=ModelGroup, status_code=201)
 async def create_model_group(payload: ModelGroupCreate, _: Any = Depends(get_current_admin)) -> ModelGroup:
     try:
-        return await app_state.domain_store.create_group(payload)
+        group = await app_state.domain_store.create_group(payload)
+        await _sync_group_prices(app_state)
+        return group
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -336,7 +361,9 @@ async def create_model_group(payload: ModelGroupCreate, _: Any = Depends(get_cur
 @app.put("/api/model-groups/{group_id}", response_model=ModelGroup)
 async def update_model_group(group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)) -> ModelGroup:
     try:
-        return await app_state.domain_store.update_group(group_id, payload)
+        group = await app_state.domain_store.update_group(group_id, payload)
+        await _sync_group_prices(app_state)
+        return group
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Model group not found: {group_id}") from exc
     except ValueError as exc:
@@ -347,6 +374,7 @@ async def update_model_group(group_id: str, payload: ModelGroupUpdate, _: Any = 
 async def delete_model_group(group_id: str, _: Any = Depends(get_current_admin)) -> Response:
     try:
         await app_state.domain_store.delete_group(group_id)
+        await _sync_group_prices(app_state)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Model group not found: {group_id}") from exc
     return Response(status_code=204)
@@ -433,7 +461,11 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
     for target in [selection.primary, *selection.fallbacks]:
         channel = target.channel
         try:
-            result = await _call_channel(channel, _prepare_upstream_body(protocol, body, target.model_name))
+            result = await _call_channel(
+                channel,
+                _prepare_upstream_body(protocol, body, target.model_name),
+                matched_group_name=plan.matched_group.name if plan.matched_group else None,
+            )
             await _record_request_log(
                 protocol=protocol,
                 requested_model=plan.requested_model,
@@ -479,7 +511,7 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
     return JSONResponse(status_code=502, content=error_body.model_dump(mode="json"))
 
 
-async def _call_channel(channel: ChannelConfig, body: dict[str, Any]) -> UpstreamResult:
+async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_group_name: str | None = None) -> UpstreamResult:
     upstream = build_upstream_request(channel, body, settings)
     stream = bool(body.get("stream"))
     client = app_state.http
@@ -538,7 +570,7 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any]) -> Upstrea
 
         parsed = _extract_response_usage(channel.protocol, response)
         input_cost_usd, output_cost_usd, total_cost_usd = await app_state.domain_store.estimate_model_cost(
-            parsed["resolved_model"],
+            matched_group_name or parsed["resolved_model"],
             parsed["input_tokens"],
             parsed["output_tokens"],
         )
@@ -824,11 +856,30 @@ async def _bootstrap_imported_stats(state: AppState) -> None:
                     "display_name": item.get("name"),
                     "input_price_per_million": item.get("input"),
                     "output_price_per_million": item.get("output"),
+                    "cache_read_price_per_million": item.get("cache_read_input") or item.get("cache_read"),
+                    "cache_write_price_per_million": item.get("cache_creation_input") or item.get("cache_write"),
                 }
                 for item in payload.get("llm_infos", [])
                 if item.get("name")
             ],
         )
+    except Exception:
+        return
+
+
+async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) -> None:
+    group_names = await state.domain_store.list_group_names()
+    if not group_names:
+        await state.domain_store.replace_model_prices([])
+        return
+
+    try:
+        response = await state.http.get('https://models.dev/api.json')
+        response.raise_for_status()
+        price_index = build_models_dev_price_index(response.json())
+        payloads = build_group_price_payloads(group_names, price_index)
+        await state.domain_store.sync_model_prices(payloads, overwrite_existing=overwrite_existing, allowed_keys=group_names)
+        await state.domain_store.set_model_price_sync_time(datetime.now(UTC).isoformat())
     except Exception:
         return
 

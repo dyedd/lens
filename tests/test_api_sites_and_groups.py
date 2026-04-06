@@ -18,6 +18,10 @@ def test_model_group_detail_and_stats_api(tmp_path: Path):
     asyncio.run(_run_model_group_detail_and_stats_api(tmp_path))
 
 
+def test_model_price_api(tmp_path: Path):
+    asyncio.run(_run_model_price_api(tmp_path))
+
+
 async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
     service_module, app, config = await _build_test_app(tmp_path / 'api-crud.db')
 
@@ -286,6 +290,87 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
             assert target['success_count'] == 1
             assert target['failed_count'] == 0
             assert target['last_resolved_model'] == 'gpt-4.1'
+    finally:
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_model_price_api(tmp_path: Path):
+    service_module, app, config = await _build_test_app(tmp_path / 'api-model-price.db')
+
+    async def fake_sync(state, overwrite_existing: bool = False):
+        await state.domain_store.sync_model_prices([
+            {
+                'model_key': 'gpt-5.4',
+                'display_name': 'gpt-5.4',
+                'input_price_per_million': 1.0,
+                'output_price_per_million': 8.0,
+                'cache_read_price_per_million': 0.5,
+                'cache_write_price_per_million': 1.5,
+            }
+        ], overwrite_existing=overwrite_existing, allowed_keys=['gpt-5.4'])
+        await state.domain_store.set_model_price_sync_time('2026-04-05T00:00:00+00:00')
+
+    service_module._sync_group_prices = fake_sync
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            token = login.json()['access_token']
+            headers = {'authorization': f'Bearer {token}'}
+
+            created_group = await client.post(
+                '/api/model-groups',
+                headers=headers,
+                json={
+                    'name': 'gpt-5.4',
+                    'protocol': 'openai_chat',
+                    'strategy': 'round_robin',
+                    'items': [],
+                },
+            )
+            assert created_group.status_code == 201
+
+            prices = await client.get('/api/model-prices', headers=headers)
+            assert prices.status_code == 200
+            assert prices.json()['items'][0]['model_key'] == 'gpt-5.4'
+            assert prices.json()['items'][0]['cache_read_price_per_million'] == 0.5
+            assert prices.json()['items'][0]['cache_write_price_per_million'] == 1.5
+
+            updated = await client.put(
+                '/api/model-prices/gpt-5.4',
+                headers=headers,
+                json={
+                    'model_key': 'ignored-by-path',
+                    'display_name': 'gpt-5.4',
+                    'input_price_per_million': 2.5,
+                    'output_price_per_million': 10.5,
+                    'cache_read_price_per_million': 0.8,
+                    'cache_write_price_per_million': 1.8,
+                },
+            )
+            assert updated.status_code == 200
+            assert updated.json()['input_price_per_million'] == 2.5
+            assert updated.json()['cache_read_price_per_million'] == 0.8
+
+            missing = await client.put(
+                '/api/model-prices/not-a-group',
+                headers=headers,
+                json={
+                    'model_key': 'ignored-by-path',
+                    'display_name': 'not-a-group',
+                    'input_price_per_million': 1,
+                    'output_price_per_million': 1,
+                    'cache_read_price_per_million': 0,
+                    'cache_write_price_per_million': 0,
+                },
+            )
+            assert missing.status_code == 400
+
+            synced = await client.post('/api/model-prices/sync', headers=headers)
+            assert synced.status_code == 200
+            assert synced.json()['last_synced_at'] == '2026-04-05T00:00:00+00:00'
     finally:
         await service_module._close_app_state(service_module.app_state)
 

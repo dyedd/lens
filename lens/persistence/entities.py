@@ -131,6 +131,8 @@ class ModelPriceEntity(Base):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     input_price_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     output_price_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cache_read_price_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cache_write_price_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
 
 class ImportedStatsTotalEntity(Base):

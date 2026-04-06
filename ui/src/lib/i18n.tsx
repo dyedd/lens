@@ -16,6 +16,7 @@ type Copy = {
   requests: string
   channels: string
   groups: string
+  modelPrices: string
   settings: string
   signOut: string
   overview: string
@@ -36,6 +37,7 @@ const messages: Record<Locale, Copy> = {
     requests: '请求日志',
     channels: '渠道管理',
     groups: '模型组',
+    modelPrices: '模型价格',
     settings: '系统设置',
     signOut: '退出登录',
     overview: '总览',
@@ -54,6 +56,7 @@ const messages: Record<Locale, Copy> = {
     requests: 'Requests',
     channels: 'Channels',
     groups: 'Groups',
+    modelPrices: 'Model Prices',
     settings: 'Settings',
     signOut: 'Sign out',
     overview: 'Overview',

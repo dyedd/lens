@@ -166,3 +166,35 @@ async def _run_group_stats_test(tmp_path):
 
     await engine.dispose()
 
+
+def test_estimate_model_cost_uses_group_name_key(tmp_path):
+    asyncio.run(_run_group_name_price_test(tmp_path))
+
+
+async def _run_group_name_price_test(tmp_path):
+    database_path = tmp_path / 'group-price.db'
+    engine = create_engine(f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}")
+    session_factory = create_session_factory(engine)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    domain_store = DomainStore(session_factory)
+    await domain_store.replace_model_prices([
+        {
+            'model_key': 'gpt-5.4',
+            'display_name': 'gpt-5.4',
+            'input_price_per_million': 2.0,
+            'output_price_per_million': 8.0,
+            'cache_read_price_per_million': 0.5,
+            'cache_write_price_per_million': 1.0,
+        }
+    ])
+
+    input_cost, output_cost, total_cost = await domain_store.estimate_model_cost('gpt-5.4', 1000, 500)
+    assert input_cost == 0.002
+    assert output_cost == 0.004
+    assert total_cost == 0.006
+
+    await engine.dispose()
+

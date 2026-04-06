@@ -80,6 +80,8 @@ def upgrade() -> None:
     sa.Column('display_name', sa.String(length=200), nullable=False),
     sa.Column('input_price_per_million', sa.Float(), nullable=False),
     sa.Column('output_price_per_million', sa.Float(), nullable=False),
+    sa.Column('cache_read_price_per_million', sa.Float(), nullable=False, server_default='0.0'),
+    sa.Column('cache_write_price_per_million', sa.Float(), nullable=False, server_default='0.0'),
     sa.PrimaryKeyConstraint('model_key')
     )
     op.create_table('request_logs',

@@ -1,7 +1,7 @@
 "use client"
 
 import Image from 'next/image'
-import { Activity, Globe2, Layers3, LayoutDashboard, Settings2, Waypoints } from 'lucide-react'
+import { Activity, DollarSign, Globe2, Layers3, LayoutDashboard, Settings2, Waypoints } from 'lucide-react'
 import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 import type { DashboardView } from '@/components/shell/dashboard-view-shell'
@@ -24,6 +24,7 @@ export function DashboardShell({
     { key: 'requests' as DashboardView, label: t.requests, icon: Activity },
     { key: 'channels' as DashboardView, label: t.channels, icon: Waypoints },
     { key: 'groups' as DashboardView, label: t.groups, icon: Layers3 },
+    { key: 'model-prices' as DashboardView, label: t.modelPrices, icon: DollarSign },
     { key: 'settings' as DashboardView, label: t.settings, icon: Settings2 }
   ]
 

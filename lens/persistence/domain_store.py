@@ -8,13 +8,15 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, RequestLogItem, SettingItem
+from ..core.model_prices import normalize_model_key
+from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogItem, SettingItem
 from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
 SETTING_GATEWAY_API_KEYS = "gateway_api_keys"
 SETTING_GATEWAY_REQUIRE_API_KEY = "gateway_require_api_key"
 SETTING_GATEWAY_API_KEY_HINT = "gateway_api_key_hint"
+SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
 
 
 class DomainStore:
@@ -76,9 +78,190 @@ class DomainStore:
                         display_name=str(item.get("display_name") or key),
                         input_price_per_million=float(item.get("input_price_per_million") or 0.0),
                         output_price_per_million=float(item.get("output_price_per_million") or 0.0),
+                        cache_read_price_per_million=float(item.get("cache_read_price_per_million") or 0.0),
+                        cache_write_price_per_million=float(item.get("cache_write_price_per_million") or 0.0),
                     )
                 )
 
+            await session.commit()
+
+    async def list_group_names(self) -> list[str]:
+        async with self._session_factory() as session:
+            rows = await session.execute(select(ModelGroupEntity.name).order_by(ModelGroupEntity.name.asc()))
+            return [str(item) for item in rows.scalars().all() if str(item).strip()]
+
+    async def prune_model_prices_to_groups(self) -> None:
+        group_names = await self.list_group_names()
+        normalized_keys = {normalize_model_key(item) for item in group_names if normalize_model_key(item)}
+        async with self._session_factory() as session:
+            if normalized_keys:
+                await session.execute(delete(ModelPriceEntity).where(ModelPriceEntity.model_key.not_in(normalized_keys)))
+            else:
+                await session.execute(delete(ModelPriceEntity))
+            await session.commit()
+
+    async def replace_model_prices(self, model_prices: list[dict[str, int | float | str]]) -> None:
+        async with self._session_factory() as session:
+            await session.execute(delete(ModelPriceEntity))
+            for item in model_prices:
+                key = normalize_model_key(str(item.get("model_key") or ""))
+                if not key:
+                    continue
+                session.add(
+                    ModelPriceEntity(
+                        model_key=key,
+                        display_name=str(item.get("display_name") or key),
+                        input_price_per_million=float(item.get("input_price_per_million") or 0.0),
+                        output_price_per_million=float(item.get("output_price_per_million") or 0.0),
+                        cache_read_price_per_million=float(item.get("cache_read_price_per_million") or 0.0),
+                        cache_write_price_per_million=float(item.get("cache_write_price_per_million") or 0.0),
+                    )
+                )
+            await session.commit()
+
+    async def sync_model_prices(
+        self,
+        model_prices: list[dict[str, int | float | str]],
+        *,
+        overwrite_existing: bool,
+        allowed_keys: list[str] | None = None,
+    ) -> None:
+        async with self._session_factory() as session:
+            existing_rows = (
+                await session.execute(select(ModelPriceEntity))
+            ).scalars().all()
+            entities_by_key = {item.model_key: item for item in existing_rows}
+
+            for item in model_prices:
+                key = normalize_model_key(str(item.get("model_key") or ""))
+                if not key:
+                    continue
+                entity = entities_by_key.get(key)
+                if entity is None:
+                    session.add(
+                        ModelPriceEntity(
+                            model_key=key,
+                            display_name=str(item.get("display_name") or key),
+                            input_price_per_million=float(item.get("input_price_per_million") or 0.0),
+                            output_price_per_million=float(item.get("output_price_per_million") or 0.0),
+                            cache_read_price_per_million=float(item.get("cache_read_price_per_million") or 0.0),
+                            cache_write_price_per_million=float(item.get("cache_write_price_per_million") or 0.0),
+                        )
+                    )
+                    continue
+                if overwrite_existing:
+                    entity.display_name = str(item.get("display_name") or entity.display_name or key)
+                    entity.input_price_per_million = float(item.get("input_price_per_million") or 0.0)
+                    entity.output_price_per_million = float(item.get("output_price_per_million") or 0.0)
+                    entity.cache_read_price_per_million = float(item.get("cache_read_price_per_million") or 0.0)
+                    entity.cache_write_price_per_million = float(item.get("cache_write_price_per_million") or 0.0)
+
+            if allowed_keys is not None:
+                normalized_allowed_keys = {normalize_model_key(item) for item in allowed_keys if normalize_model_key(item)}
+                if normalized_allowed_keys:
+                    await session.execute(delete(ModelPriceEntity).where(ModelPriceEntity.model_key.not_in(normalized_allowed_keys)))
+                else:
+                    await session.execute(delete(ModelPriceEntity))
+
+            await session.commit()
+
+    async def list_model_prices(self) -> ModelPriceListResponse:
+        async with self._session_factory() as session:
+            price_rows = (
+                await session.execute(select(ModelPriceEntity).order_by(ModelPriceEntity.display_name.asc(), ModelPriceEntity.model_key.asc()))
+            ).scalars().all()
+            group_rows = (
+                await session.execute(select(ModelGroupEntity.name, ModelGroupEntity.protocol).order_by(ModelGroupEntity.name.asc()))
+            ).all()
+            last_synced_at = await session.get(SettingEntity, SETTING_MODEL_PRICE_LAST_SYNC_AT)
+
+        prices_by_key = {item.model_key: item for item in price_rows}
+        protocols_by_key: dict[str, set[ProtocolKind]] = {}
+        display_names_by_key: dict[str, str] = {}
+        for name, protocol in group_rows:
+            key = normalize_model_key(str(name))
+            if not key:
+                continue
+            protocols_by_key.setdefault(key, set()).add(ProtocolKind(str(protocol)))
+            display_names_by_key.setdefault(key, str(name))
+
+        items: list[ModelPriceItem] = []
+        for key in sorted(display_names_by_key, key=lambda item: display_names_by_key[item].lower()):
+            price_entity = prices_by_key.get(key)
+            items.append(
+                ModelPriceItem(
+                    model_key=key,
+                    display_name=display_names_by_key[key],
+                    protocols=sorted(protocols_by_key.get(key, set()), key=lambda value: value.value),
+                    input_price_per_million=float(price_entity.input_price_per_million) if price_entity is not None else 0.0,
+                    output_price_per_million=float(price_entity.output_price_per_million) if price_entity is not None else 0.0,
+                    cache_read_price_per_million=float(price_entity.cache_read_price_per_million) if price_entity is not None else 0.0,
+                    cache_write_price_per_million=float(price_entity.cache_write_price_per_million) if price_entity is not None else 0.0,
+                )
+            )
+
+        return ModelPriceListResponse(
+            items=items,
+            last_synced_at=last_synced_at.value if last_synced_at is not None and last_synced_at.value.strip() else None,
+        )
+
+    async def upsert_model_price(self, payload: ModelPriceUpdate) -> ModelPriceItem:
+        model_key = normalize_model_key(payload.model_key)
+        if not model_key:
+            raise ValueError('Model key is required')
+
+        async with self._session_factory() as session:
+            group_rows = (
+                await session.execute(select(ModelGroupEntity.name, ModelGroupEntity.protocol))
+            ).all()
+            matched_groups = [
+                (str(name), ProtocolKind(str(protocol)))
+                for name, protocol in group_rows
+                if normalize_model_key(str(name)) == model_key
+            ]
+            if not matched_groups:
+                raise ValueError('Model price can only be maintained for existing model groups')
+
+            entity = await session.get(ModelPriceEntity, model_key)
+            display_name = payload.display_name.strip() or matched_groups[0][0]
+            if entity is None:
+                entity = ModelPriceEntity(
+                    model_key=model_key,
+                    display_name=display_name,
+                    input_price_per_million=float(payload.input_price_per_million),
+                    output_price_per_million=float(payload.output_price_per_million),
+                    cache_read_price_per_million=float(payload.cache_read_price_per_million),
+                    cache_write_price_per_million=float(payload.cache_write_price_per_million),
+                )
+                session.add(entity)
+            else:
+                entity.display_name = display_name
+                entity.input_price_per_million = float(payload.input_price_per_million)
+                entity.output_price_per_million = float(payload.output_price_per_million)
+                entity.cache_read_price_per_million = float(payload.cache_read_price_per_million)
+                entity.cache_write_price_per_million = float(payload.cache_write_price_per_million)
+
+            await session.commit()
+
+        protocols = sorted({protocol for _, protocol in matched_groups}, key=lambda value: value.value)
+
+        return ModelPriceItem(
+            model_key=model_key,
+            display_name=display_name,
+            protocols=protocols,
+            input_price_per_million=float(payload.input_price_per_million),
+            output_price_per_million=float(payload.output_price_per_million),
+            cache_read_price_per_million=float(payload.cache_read_price_per_million),
+            cache_write_price_per_million=float(payload.cache_write_price_per_million),
+        )
+
+    async def set_model_price_sync_time(self, value: str) -> None:
+        async with self._session_factory() as session:
+            entity = await session.get(SettingEntity, SETTING_MODEL_PRICE_LAST_SYNC_AT)
+            if entity is None:
+                session.add(SettingEntity(key=SETTING_MODEL_PRICE_LAST_SYNC_AT, value=value))
+            else:
+                entity.value = value
             await session.commit()
 
     async def list_groups(self) -> list[ModelGroup]:
@@ -766,7 +949,7 @@ class DomainStore:
             return 0.0, 0.0, 0.0
 
         async with self._session_factory() as session:
-            entity = await session.get(ModelPriceEntity, model_name.strip().lower())
+            entity = await session.get(ModelPriceEntity, normalize_model_key(model_name))
             if entity is None:
                 return 0.0, 0.0, 0.0
 
