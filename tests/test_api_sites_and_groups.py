@@ -22,6 +22,14 @@ def test_model_price_api(tmp_path: Path):
     asyncio.run(_run_model_price_api(tmp_path))
 
 
+def test_openai_requests_require_matching_group_protocol(tmp_path: Path):
+    asyncio.run(_run_openai_requests_require_matching_group_protocol(tmp_path))
+
+
+def test_openai_responses_proxy_standard_request(tmp_path: Path):
+    asyncio.run(_run_openai_responses_proxy_standard_request(tmp_path))
+
+
 async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
     service_module, app, config = await _build_test_app(tmp_path / 'api-crud.db')
 
@@ -375,7 +383,269 @@ async def _run_model_price_api(tmp_path: Path):
         await service_module._close_app_state(service_module.app_state)
 
 
+async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
+    service_module, app, config = await _build_test_app(tmp_path / 'api-routing-protocol.db')
+
+    async def fake_request(*args, **kwargs):
+        raise AssertionError('upstream should not be called when protocol-specific group is missing')
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    original_request = service_module.app_state.http.request
+    service_module.app_state.http.request = fake_request
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            admin_headers = {'authorization': f'Bearer {token}'}
+            updated_settings = await client.put(
+                '/api/settings',
+                headers=admin_headers,
+                json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
+            )
+            assert updated_settings.status_code == 200
+
+            created_site = await client.post(
+                '/api/sites',
+                headers=admin_headers,
+                json={
+                    'name': 'Mixed OpenAI Site',
+                    'base_url': 'https://api.openai.com',
+                    'credentials': [{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    'protocols': [
+                        {
+                            'protocol': 'openai_chat',
+                            'enabled': True,
+                            'headers': {},
+                            'channel_proxy': '',
+                            'param_override': '',
+                            'match_regex': '',
+                            'bindings': [],
+                            'models': [],
+                        },
+                        {
+                            'protocol': 'openai_responses',
+                            'enabled': True,
+                            'headers': {},
+                            'channel_proxy': '',
+                            'param_override': '',
+                            'match_regex': '',
+                            'bindings': [],
+                            'models': [],
+                        },
+                    ],
+                },
+            )
+            assert created_site.status_code == 201
+            site = created_site.json()
+            credential = site['credentials'][0]
+            chat_protocol = next(item for item in site['protocols'] if item['protocol'] == 'openai_chat')
+            responses_protocol = next(item for item in site['protocols'] if item['protocol'] == 'openai_responses')
+
+            updated_site = await client.put(
+                f"/api/sites/{site['id']}",
+                headers=admin_headers,
+                json={
+                    'name': site['name'],
+                    'base_url': site['base_url'],
+                    'credentials': [{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    'protocols': [
+                        {
+                            'id': chat_protocol['id'],
+                            'protocol': 'openai_chat',
+                            'enabled': True,
+                            'headers': {},
+                            'channel_proxy': '',
+                            'param_override': '',
+                            'match_regex': '',
+                            'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                            'models': [],
+                        },
+                        {
+                            'id': responses_protocol['id'],
+                            'protocol': 'openai_responses',
+                            'enabled': True,
+                            'headers': {},
+                            'channel_proxy': '',
+                            'param_override': '',
+                            'match_regex': '',
+                            'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                            'models': [{'credential_id': credential['id'], 'model_name': 'gpt-5.4', 'enabled': True}],
+                        },
+                    ],
+                },
+            )
+            assert updated_site.status_code == 200
+
+            created_group = await client.post(
+                '/api/model-groups',
+                headers=admin_headers,
+                json={
+                    'name': 'gpt-5.4',
+                    'protocol': 'openai_responses',
+                    'strategy': 'round_robin',
+                    'items': [{
+                        'channel_id': responses_protocol['id'],
+                        'credential_id': credential['id'],
+                        'model_name': 'gpt-5.4',
+                        'enabled': True,
+                    }],
+                },
+            )
+            assert created_group.status_code == 201
+
+            gateway_response = await client.post(
+                '/v1/chat/completions',
+                headers={'authorization': 'Bearer test-gateway-key'},
+                json={
+                    'model': 'gpt-5.4',
+                    'messages': [{'role': 'user', 'content': 'hello'}],
+                },
+            )
+            assert gateway_response.status_code == 503
+            payload = gateway_response.json()
+            assert payload['error']['type'] == 'routing_error'
+            assert payload['error']['message'] == 'No model group matched protocol=openai_chat model=gpt-5.4'
+    finally:
+        service_module.app_state.http.request = original_request
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
+    service_module, app, config = await _build_test_app(tmp_path / 'api-openai-responses.db')
+
+    upstream_calls: list[dict[str, object]] = []
+
+    async def fake_request(method, url, headers=None, json=None, **kwargs):
+        upstream_calls.append({'method': method, 'url': url, 'headers': headers, 'json': json})
+        request = httpx.Request(method, url, headers=headers, json=json)
+        if method == 'GET' and url == 'https://models.dev/api.json':
+            return httpx.Response(200, request=request, json={})
+        return httpx.Response(
+            200,
+            request=request,
+            headers={'content-type': 'application/json', 'x-request-id': 'req_test'},
+            json={
+                'id': 'resp_123',
+                'object': 'response',
+                'model': 'gpt-5.4',
+                'output': [
+                    {
+                        'id': 'msg_123',
+                        'type': 'message',
+                        'role': 'assistant',
+                        'content': [{'type': 'output_text', 'text': 'hello'}],
+                    }
+                ],
+                'usage': {
+                    'input_tokens': 10,
+                    'output_tokens': 20,
+                    'total_tokens': 30,
+                },
+            },
+        )
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    original_request = service_module.app_state.http.request
+    service_module.app_state.http.request = fake_request
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            admin_headers = {'authorization': f'Bearer {token}'}
+            updated_settings = await client.put(
+                '/api/settings',
+                headers=admin_headers,
+                json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
+            )
+            assert updated_settings.status_code == 200
+
+            created_site = await client.post(
+                '/api/sites',
+                headers=admin_headers,
+                json={
+                    'name': 'Responses Site',
+                    'base_url': 'https://api.openai.com',
+                    'credentials': [{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    'protocols': [{
+                        'protocol': 'openai_responses',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [],
+                        'models': [],
+                    }],
+                },
+            )
+            assert created_site.status_code == 201
+            site = created_site.json()
+            credential = site['credentials'][0]
+            protocol = site['protocols'][0]
+
+            updated_site = await client.put(
+                f"/api/sites/{site['id']}",
+                headers=admin_headers,
+                json={
+                    'name': site['name'],
+                    'base_url': site['base_url'],
+                    'credentials': [{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    'protocols': [{
+                        'id': protocol['id'],
+                        'protocol': 'openai_responses',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                        'models': [{'credential_id': credential['id'], 'model_name': 'gpt-5.4', 'enabled': True}],
+                    }],
+                },
+            )
+            assert updated_site.status_code == 200
+
+            created_group = await client.post(
+                '/api/model-groups',
+                headers=admin_headers,
+                json={
+                    'name': 'gpt-5.4',
+                    'protocol': 'openai_responses',
+                    'strategy': 'round_robin',
+                    'items': [{
+                        'channel_id': protocol['id'],
+                        'credential_id': credential['id'],
+                        'model_name': 'gpt-5.4',
+                        'enabled': True,
+                    }],
+                },
+            )
+            assert created_group.status_code == 201
+
+            gateway_response = await client.post(
+                '/v1/responses',
+                headers={'authorization': 'Bearer test-gateway-key'},
+                json={'model': 'gpt-5.4', 'input': 'hello'},
+            )
+            assert gateway_response.status_code == 200
+            payload = gateway_response.json()
+            assert payload['model'] == 'gpt-5.4'
+            assert payload['output'][0]['content'][0]['text'] == 'hello'
+
+            post_call = next(item for item in upstream_calls if item['method'] == 'POST')
+            assert post_call['url'] == 'https://api.openai.com/v1/responses'
+            assert post_call['json'] == {'model': 'gpt-5.4', 'input': 'hello'}
+    finally:
+        service_module.app_state.http.request = original_request
+        await service_module._close_app_state(service_module.app_state)
+
+
 async def _build_test_app(database_path: Path):
+    from lens.core.db import Base
     from lens.core.config import Settings
     from lens.gateway import service as service_module
 
@@ -387,5 +657,7 @@ async def _build_test_app(database_path: Path):
     )
     service_module.settings = config
     service_module.app_state = service_module.AppState()
+    async with service_module.app_state.engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
     return service_module, service_module.app, config
 

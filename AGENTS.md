@@ -19,6 +19,12 @@
 - 数据库 schema 变更必须优先使用显式迁移方案，不要依赖应用启动时的隐式 `create_all`、补列、重建表或自动兼容逻辑。
 - Python ORM 采用 `SQLAlchemy`，数据库迁移采用 `Alembic`。
 
+## Python Execution Environment
+
+- 默认以当前会话的临时 conda 环境作为 Python 执行环境，不默认使用项目内 `.venv`。
+- 执行 Python、测试、脚本前，先确认 `python` 指向的解释器与依赖可用性；不要想当然切到 `.venv`。
+- 只有在用户明确指定，或当前 conda 环境缺少项目依赖且已确认 `.venv` 才是可用环境时，才改用 `.venv`。
+
 
 ## Commit Workflow
 

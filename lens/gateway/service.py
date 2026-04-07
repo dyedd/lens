@@ -424,9 +424,11 @@ async def proxy_gemini_stream_generate_content(model_name: str, request: Request
 
 async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_key: str) -> Response:
     channels = await app_state.store.list()
-    plan = await _resolve_routing_plan(protocol, _requested_model(protocol, body))
     started_at = perf_counter()
+    requested_model = _requested_model(protocol, body)
+    plan: RoutingPlan | None = None
     try:
+        plan = await _resolve_routing_plan(protocol, requested_model)
         selection = app_state.router.select(
             channels,
             protocol,
@@ -439,8 +441,8 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
     except LookupError as exc:
         await _record_request_log(
             protocol=protocol,
-            requested_model=plan.requested_model,
-            matched_group_name=plan.matched_group.name if plan.matched_group else None,
+            requested_model=plan.requested_model if plan is not None else requested_model,
+            matched_group_name=plan.matched_group.name if plan is not None and plan.matched_group else None,
             channel_id=None,
             gateway_key=gateway_key,
             status_code=503,
@@ -732,6 +734,9 @@ async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | N
             use_model_matching=False,
             cursor_key=f"{protocol.value}:{matched_group.id}",
         )
+
+    if requested_model and protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}:
+        raise LookupError(f"No model group matched protocol={protocol.value} model={requested_model}")
 
     return RoutingPlan(
         requested_model=requested_model,
