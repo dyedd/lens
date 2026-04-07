@@ -2,9 +2,22 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Clock3, Filter, RefreshCcw, Search, Zap, DollarSign, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Clock3,
+  DollarSign,
+  Filter,
+  RefreshCcw,
+  ServerCog,
+  Waypoints,
+  Zap,
+} from 'lucide-react'
 import { RequestLogDetail, RequestLogItem, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { cn } from '@/lib/cn'
+import { getModelGroupAvatar } from '@/lib/model-icons'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 
 function formatMs(value: number) {
@@ -16,9 +29,24 @@ function formatMoney(value: number) {
   return `$${value.toFixed(6)}`
 }
 
-function JsonPanel({ content, emptyText }: { content?: string | null, emptyText: string }) {
+function formatCount(value: number) {
+  return value.toLocaleString()
+}
+
+function formatDate(value: string, locale: 'zh-CN' | 'en-US') {
+  return new Date(value).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+}
+
+function JsonPanel({ content, emptyText }: { content?: string | null; emptyText: string }) {
   if (!content) {
-    return <div className="px-4 py-3 text-xs text-[var(--muted)]">{emptyText}</div>
+    return <div className="px-4 py-4 text-xs text-[var(--muted)]">{emptyText}</div>
   }
 
   let formatted = content
@@ -28,7 +56,140 @@ function JsonPanel({ content, emptyText }: { content?: string | null, emptyText:
     formatted = content
   }
 
-  return <pre className="overflow-auto px-4 py-3 text-xs leading-6 text-[var(--text)]">{formatted}</pre>
+  return <pre className="max-h-[440px] overflow-auto px-4 py-4 text-xs leading-6 text-[var(--text)]">{formatted}</pre>
+}
+
+function MetricPill({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+}) {
+  return (
+    <div className="inline-flex min-h-8 items-center gap-2 text-sm text-[var(--muted)]">
+      <span className="inline-flex h-5 w-5 items-center justify-center">{icon}</span>
+      <span>{label} {value}</span>
+    </div>
+  )
+}
+
+function DetailStat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="rounded-[22px] border border-[var(--line)] bg-[var(--panel)] px-4 py-4">
+      <div className="text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">{label}</div>
+      <div className={cn('mt-3 text-lg font-semibold', accent ? 'text-[var(--accent)]' : 'text-[var(--text)]')}>{value}</div>
+    </div>
+  )
+}
+
+function ProtocolBadge({ protocol }: { protocol: RequestLogItem['protocol'] }) {
+  const labelMap = {
+    openai_chat: 'chat',
+    openai_responses: 'responses',
+    anthropic: 'anthropic',
+    gemini: 'gemini',
+  } as const
+
+  return (
+    <span className="inline-flex items-center rounded-full bg-[rgba(30,160,140,0.14)] px-3 py-1 text-xs font-medium text-[rgb(19,146,126)]">
+      {labelMap[protocol] ?? protocol}
+    </span>
+  )
+}
+
+function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'zh-CN' | 'en-US' }) {
+  const attempts = detail.attempts.length
+    ? detail.attempts
+    : [{
+        channel_id: detail.channel_id || 'n/a',
+        channel_name: detail.channel_name || detail.channel_id || 'n/a',
+        model_name: detail.resolved_model || detail.requested_model || null,
+        status_code: detail.status_code,
+        success: detail.success,
+        duration_ms: detail.latency_ms,
+        error_message: detail.error_message || null,
+      }]
+
+  return (
+    <div className="grid gap-3">
+      {attempts.map((attempt, index) => (
+        <div key={`${attempt.channel_id}-${index}`} className="rounded-[22px] border border-[var(--line)] bg-[var(--panel)] px-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-[var(--panel-strong)] px-2 text-xs font-semibold text-[var(--muted)]">{index + 1}</span>
+              <span className="font-medium text-[var(--text)]">{attempt.channel_name}</span>
+              {attempt.model_name ? <span className="text-[var(--muted)]">{attempt.model_name}</span> : null}
+              <span className={attempt.success ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-2.5 py-1 text-[11px] text-[var(--success)]' : 'rounded-full bg-[rgba(217,111,93,0.12)] px-2.5 py-1 text-[11px] text-[var(--danger)]'}>
+                {attempt.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
+              <span>{attempt.status_code ?? '-'}</span>
+              <span>{formatMs(attempt.duration_ms)}</span>
+            </div>
+          </div>
+          {attempt.error_message ? <div className="mt-3 rounded-2xl bg-[rgba(217,111,93,0.08)] px-3 py-2 text-xs text-[var(--danger)]">{attempt.error_message}</div> : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RequestCard({
+  item,
+  locale,
+  onToggle,
+}: {
+  item: RequestLogItem
+  locale: 'zh-CN' | 'en-US'
+  onToggle: () => void
+}) {
+  const Avatar = getModelGroupAvatar(item.requested_model || item.resolved_model || '')
+
+  return (
+    <article
+      className={cn(
+        'overflow-hidden rounded-[30px] border bg-[var(--panel-strong)] shadow-[var(--shadow-sm)] transition-all duration-200 border-[var(--line)] hover:border-[color:color-mix(in_oklab,var(--accent)_18%,var(--line))] hover:bg-[var(--panel-soft)]',
+        item.success ? '' : 'border-[rgba(217,111,93,0.24)]'
+      )}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full text-left"
+      >
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 px-5 py-5 lg:px-6">
+          <div className="row-span-2 flex h-12 w-12 shrink-0 items-center justify-center self-start rounded-2xl border border-[var(--line)] bg-[var(--panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
+              <Avatar size={28} />
+          </div>
+
+          <div className="min-w-0 self-center">
+            <div className="flex flex-wrap items-center gap-2 text-[15px] leading-none">
+              <span className="font-semibold text-[var(--text)]">{item.requested_model || item.resolved_model || 'n/a'}</span>
+              <ProtocolBadge protocol={item.protocol} />
+              <span className={item.success ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-3 py-1.5 text-xs font-medium text-[var(--success)]' : 'rounded-full bg-[rgba(217,111,93,0.12)] px-3 py-1.5 text-xs font-medium text-[var(--danger)]'}>
+                {item.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
+              </span>
+              {item.resolved_model && item.resolved_model !== item.requested_model ? <span className="truncate text-[var(--muted)]">{item.resolved_model}</span> : null}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 self-center pt-0.5 lg:flex-nowrap lg:gap-x-5 lg:gap-y-0">
+            <MetricPill icon={<Clock3 size={14} className="text-[rgb(26,174,155)]" />} label="" value={formatDate(item.created_at, locale)} />
+            <MetricPill icon={<Waypoints size={14} className="text-[rgb(238,137,54)]" />} label="" value={item.channel_name || item.channel_id || 'n/a'} />
+            <MetricPill icon={<Zap size={14} className="text-[rgb(238,137,54)]" />} label={locale === 'zh-CN' ? '首字' : 'First'} value={formatMs(item.first_token_latency_ms)} />
+            <MetricPill icon={<ServerCog size={14} className="text-[rgb(70,116,255)]" />} label={locale === 'zh-CN' ? '总耗时' : 'Total'} value={formatMs(item.latency_ms)} />
+            <MetricPill icon={<ArrowDownToLine size={14} className="text-[rgb(24,180,103)]" />} label={locale === 'zh-CN' ? '输入' : 'Input'} value={formatCount(item.input_tokens)} />
+            <MetricPill icon={<ArrowUpFromLine size={14} className="text-[rgb(164,73,255)]" />} label={locale === 'zh-CN' ? '输出' : 'Output'} value={formatCount(item.output_tokens)} />
+            <MetricPill icon={<DollarSign size={14} className="text-[rgb(0,162,112)]" />} label={locale === 'zh-CN' ? '费用' : 'Cost'} value={formatMoney(item.total_cost_usd)} />
+          </div>
+        </div>
+      </button>
+    </article>
+  )
 }
 
 export function RequestsScreen() {
@@ -39,7 +200,7 @@ export function RequestsScreen() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['request-logs'],
-    queryFn: () => apiRequest<RequestLogItem[]>('/request-logs')
+    queryFn: () => apiRequest<RequestLogItem[]>('/request-logs'),
   })
 
   const { data: detail, isLoading: detailLoading } = useQuery({
@@ -73,129 +234,80 @@ export function RequestsScreen() {
         </button>
       </div>
 
-      <div className="grid gap-3">
+      <div className="grid gap-4">
         {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载请求日志...' : 'Loading request logs...'}</p> : null}
+
+        {!isLoading && visibleData.length === 0 ? (
+          <div className="rounded-[28px] border border-dashed border-[var(--line)] bg-[var(--panel-strong)] px-6 py-14 text-center text-sm text-[var(--muted)]">
+            {locale === 'zh-CN' ? '暂无请求日志。' : 'No request logs yet.'}
+          </div>
+        ) : null}
+
         {visibleData.map((item) => (
-          <article key={item.id} className={item.success ? 'rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]' : 'rounded-3xl border border-[rgba(217,111,93,0.22)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]'}>
-            <div className="grid gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <strong className="font-semibold text-[var(--text)]">{item.requested_model || 'n/a'}</strong>
-                  <span className="text-[var(--muted)]">→</span>
-                  <span className="text-[var(--text)]">{item.resolved_model || item.channel_name || item.channel_id || 'n/a'}</span>
-                  <span className="rounded-lg bg-[var(--panel)] px-2 py-1 text-[12px] text-[var(--text)]">{item.protocol}</span>
-                  {item.is_stream ? <span className="rounded-lg bg-[rgba(196,142,67,0.12)] px-2 py-1 text-[11px] text-[rgb(154,101,35)]">stream</span> : null}
-                  <span className={item.success ? 'rounded-lg bg-[rgba(31,157,104,0.12)] px-2 py-1 text-[11px] text-[var(--success)]' : 'rounded-lg bg-[rgba(217,111,93,0.12)] px-2 py-1 text-[11px] text-[var(--danger)]'}>
-                    {item.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
-                  </span>
-                </div>
-                <button type="button" className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)]" onClick={() => setDetailId(item.id)}>
-                  <Search size={14} />
-                  {locale === 'zh-CN' ? '详情' : 'Detail'}
-                </button>
-              </div>
-
-              <div className="grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
-                  <p className="text-xs">group</p>
-                  <p className="mt-1 truncate text-[var(--text)]">{item.matched_group_name || (locale === 'zh-CN' ? '未命中' : 'No match')}</p>
-                </div>
-                <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
-                  <p className="text-xs">channel</p>
-                  <p className="mt-1 truncate text-[var(--text)]">{item.channel_name || item.channel_id || 'n/a'}</p>
-                </div>
-                <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
-                  <p className="text-xs">token</p>
-                  <p className="mt-1 text-[var(--text)]">{item.total_tokens.toLocaleString()}</p>
-                </div>
-                <div className="rounded-2xl bg-[var(--panel)] px-4 py-3">
-                  <p className="text-xs">cost</p>
-                  <p className="mt-1 text-[var(--text)]">{formatMoney(item.total_cost_usd)}</p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 text-xs text-[var(--muted)]">
-                <span className="inline-flex items-center gap-1.5"><Zap size={13} />{locale === 'zh-CN' ? '首字' : 'First token'} {formatMs(item.first_token_latency_ms)}</span>
-                <span className="inline-flex items-center gap-1.5"><Clock3 size={13} />{locale === 'zh-CN' ? '总耗时' : 'Total'} {formatMs(item.latency_ms)}</span>
-                <span>{new Date(item.created_at).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US')}</span>
-              </div>
-
-              {item.error_message ? (
-                <div className="rounded-2xl border border-[rgba(217,111,93,0.16)] bg-[rgba(217,111,93,0.08)] px-4 py-3 text-sm text-[var(--danger)]">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle size={15} className="mt-0.5 shrink-0" />
-                    <span>{item.error_message}</span>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </article>
+          <RequestCard
+            key={item.id}
+            item={item}
+            locale={locale}
+            onToggle={() => setDetailId(item.id)}
+          />
         ))}
-        {!isLoading && visibleData.length === 0 ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无请求日志。' : 'No request logs yet.'}</p> : null}
       </div>
 
       <Dialog.Root open={detailId !== null} onOpenChange={(open) => { if (!open) setDetailId(null) }}>
         <AppDialogContent className="max-w-6xl" title={locale === 'zh-CN' ? '请求详情' : 'Request detail'}>
-          {detailLoading || !detail ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载详情...' : 'Loading detail...'}</p> : (
-            <div className="grid gap-4">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-                  <p className="text-xs">channel</p>
-                  <p className="mt-1 text-[var(--text)]">{detail.channel_name || detail.channel_id || 'n/a'}</p>
-                </div>
-                <div className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-                  <p className="text-xs">status</p>
-                  <p className="mt-1 text-[var(--text)]">{detail.status_code}</p>
-                </div>
-                <div className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-                  <p className="text-xs">input/output</p>
-                  <p className="mt-1 text-[var(--text)]">{detail.input_tokens.toLocaleString()} / {detail.output_tokens.toLocaleString()}</p>
-                </div>
-                <div className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-                  <p className="text-xs">cost</p>
-                  <p className="mt-1 text-[var(--text)]">{formatMoney(detail.total_cost_usd)}</p>
-                </div>
+          {detailLoading || !detail ? (
+            <div className="rounded-[24px] border border-[var(--line)] bg-[var(--panel)] px-5 py-8 text-sm text-[var(--muted)]">
+              {locale === 'zh-CN' ? '正在加载详情...' : 'Loading detail...'}
+            </div>
+          ) : (
+            <div className="grid gap-5">
+              <div className="grid gap-4 lg:grid-cols-5">
+                <DetailStat label="group" value={detail.matched_group_name || (locale === 'zh-CN' ? '未命中' : 'No match')} />
+                <DetailStat label="channel" value={detail.channel_name || detail.channel_id || 'n/a'} />
+                <DetailStat label="status" value={String(detail.status_code)} />
+                <DetailStat label={locale === 'zh-CN' ? '总 token' : 'tokens'} value={formatCount(detail.total_tokens)} />
+                <DetailStat label={locale === 'zh-CN' ? '总费用' : 'cost'} value={formatMoney(detail.total_cost_usd)} accent />
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-                <span className="inline-flex items-center gap-1.5"><Zap size={14} className="text-[rgb(154,101,35)]" />{locale === 'zh-CN' ? '首字时间' : 'First token'}: {formatMs(detail.first_token_latency_ms)}</span>
-                <span className="inline-flex items-center gap-1.5"><Clock3 size={14} />{locale === 'zh-CN' ? '总耗时' : 'Total time'}: {formatMs(detail.latency_ms)}</span>
-                <span className="inline-flex items-center gap-1.5"><ArrowDownToLine size={14} />{locale === 'zh-CN' ? '输入' : 'Input'}: {detail.input_tokens.toLocaleString()}</span>
-                <span className="inline-flex items-center gap-1.5"><ArrowUpFromLine size={14} />{locale === 'zh-CN' ? '输出' : 'Output'}: {detail.output_tokens.toLocaleString()}</span>
-                <span className="inline-flex items-center gap-1.5"><DollarSign size={14} />{locale === 'zh-CN' ? '费用' : 'Cost'}: {formatMoney(detail.total_cost_usd)}</span>
-              </div>
+              {detail.error_message ? (
+                <div className="rounded-[24px] border border-[rgba(217,111,93,0.16)] bg-[rgba(217,111,93,0.08)] px-4 py-4 text-sm text-[var(--danger)]">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                    <span>{detail.error_message}</span>
+                  </div>
+                </div>
+              ) : null}
 
-              <div className="rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)] p-4">
-                <p className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '尝试链路' : 'Attempts'}</p>
-                <div className="mt-3 grid gap-2">
-                  {(detail.attempts.length ? detail.attempts : [{ channel_id: detail.channel_id || 'n/a', channel_name: detail.channel_name || detail.channel_id || 'n/a', model_name: detail.resolved_model || detail.requested_model || null, status_code: detail.status_code, success: detail.success, duration_ms: detail.latency_ms, error_message: detail.error_message || null }]).map((attempt, index) => (
-                    <div key={`${attempt.channel_id}-${index}`} className="rounded-2xl bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium text-[var(--text)]">{attempt.channel_name}</span>
-                          {attempt.model_name ? <span>{attempt.model_name}</span> : null}
-                          <span className={attempt.success ? 'rounded-lg bg-[rgba(31,157,104,0.12)] px-2 py-1 text-[11px] text-[var(--success)]' : 'rounded-lg bg-[rgba(217,111,93,0.12)] px-2 py-1 text-[11px] text-[var(--danger)]'}>{attempt.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}</span>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs">
-                          <span>{attempt.status_code ?? '-'}</span>
-                          <span>{formatMs(attempt.duration_ms)}</span>
-                        </div>
-                      </div>
-                      {attempt.error_message ? <p className="mt-2 text-xs text-[var(--danger)]">{attempt.error_message}</p> : null}
+              <section className="rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 lg:p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '尝试链路' : 'Attempts'}</h3>
+                    <p className="mt-1 text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '按实际命中与重试顺序记录' : 'Captured in routing and retry order'}</p>
+                  </div>
+                </div>
+                <AttemptChain detail={detail} locale={locale} />
+              </section>
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <section className="overflow-hidden rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)]">
+                  <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-4">
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '请求内容' : 'Request'}</div>
+                      <div className="mt-1 text-xs text-[var(--muted)]">{formatCount(detail.input_tokens)} tokens</div>
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid gap-4 xl:grid-cols-2">
-                <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)]">
-                  <div className="border-b border-[var(--line)] px-4 py-3 text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '输入 JSON' : 'Input JSON'}</div>
+                  </div>
                   <JsonPanel content={detail.request_content} emptyText={locale === 'zh-CN' ? '无输入内容' : 'No request content'} />
-                </div>
-                <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)]">
-                  <div className="border-b border-[var(--line)] px-4 py-3 text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '输出 JSON' : 'Output JSON'}</div>
+                </section>
+
+                <section className="overflow-hidden rounded-[26px] border border-[var(--line)] bg-[var(--panel-strong)]">
+                  <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-4">
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '响应内容' : 'Response'}</div>
+                      <div className="mt-1 text-xs text-[var(--muted)]">{formatCount(detail.output_tokens)} tokens</div>
+                    </div>
+                  </div>
                   <JsonPanel content={detail.response_content} emptyText={locale === 'zh-CN' ? '无输出内容' : 'No response content'} />
-                </div>
+                </section>
               </div>
             </div>
           )}
