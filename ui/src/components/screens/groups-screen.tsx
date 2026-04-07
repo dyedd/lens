@@ -456,7 +456,7 @@ export function GroupsScreen() {
     })
   }, [groupedCandidates])
 
-  async function refresh() {
+  async function invalidateGroupData() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['groups'] }),
       queryClient.invalidateQueries({ queryKey: ['sites'] }),
@@ -483,7 +483,7 @@ export function GroupsScreen() {
       method: groupId ? 'PUT' : 'POST',
       body: JSON.stringify(toPayload(payload)),
     })
-    await refresh()
+    await invalidateGroupData()
     return savedGroup
   }
 
@@ -506,7 +506,7 @@ export function GroupsScreen() {
     try {
       await apiRequest<void>('/model-groups/' + item.id, { method: 'DELETE' })
       setDeleteTarget(null)
-      await refresh()
+      await invalidateGroupData()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除模型组失败' : 'Failed to delete group'))
     } finally {
@@ -647,9 +647,6 @@ export function GroupsScreen() {
           <Search size={15} />
           <input className="ml-2 w-40 bg-transparent text-[13px] outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型组' : 'Search groups'} />
         </div>
-        <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] transition-colors hover:text-[var(--text)]" type="button" onClick={() => void refresh()}>
-          <RefreshCcw size={15} />
-        </button>
         <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] transition-colors hover:text-[var(--text)]" type="button" onClick={openCreate}>
           <Plus size={15} />
         </button>

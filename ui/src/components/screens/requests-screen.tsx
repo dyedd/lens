@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -9,7 +9,6 @@ import {
   Clock3,
   DollarSign,
   Filter,
-  RefreshCcw,
   ServerCog,
   Waypoints,
   Zap,
@@ -204,7 +203,6 @@ function RequestCard({
 }
 
 export function RequestsScreen() {
-  const queryClient = useQueryClient()
   const { locale } = useI18n()
   const [showFailedOnly, setShowFailedOnly] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(null)
@@ -212,6 +210,7 @@ export function RequestsScreen() {
   const { data, isLoading } = useQuery({
     queryKey: ['request-logs'],
     queryFn: () => apiRequest<RequestLogItem[]>('/request-logs'),
+    refetchInterval: 5000,
   })
 
   const { data: detail, isLoading: detailLoading } = useQuery({
@@ -239,9 +238,6 @@ export function RequestsScreen() {
         >
           <Filter size={15} />
           {locale === 'zh-CN' ? `仅看失败 ${failedCount ? `(${failedCount})` : ''}` : `Failed only${failedCount ? ` (${failedCount})` : ''}`}
-        </button>
-        <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] text-[var(--muted)] transition-colors hover:text-[var(--text)]" type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ['request-logs'] })}>
-          <RefreshCcw size={15} />
         </button>
       </div>
 

@@ -286,7 +286,7 @@ function SwitchButton({ checked, onChange, disabled = false }: { checked: boolea
 
 export function ChannelsScreen() {
   const queryClient = useQueryClient()
-  const { locale, t } = useI18n()
+  const { locale } = useI18n()
   const [viewMode, setViewMode] = useState<ViewMode>('cards')
   const [search, setSearch] = useState('')
   const [detailTarget, setDetailTarget] = useState<SiteRow | null>(null)
@@ -337,7 +337,7 @@ export function ChannelsScreen() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [dialogOpen, hasUnsavedChanges])
 
-  async function refresh() {
+  async function invalidateChannelData() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['sites'] }),
       queryClient.invalidateQueries({ queryKey: ['request-logs'] }),
@@ -383,7 +383,7 @@ export function ChannelsScreen() {
       const nextForm = emptyForm()
       setForm(nextForm)
       setFormSnapshot(JSON.stringify(toPayload(nextForm)))
-      await refresh()
+      await invalidateChannelData()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存渠道失败' : 'Failed to save channel'))
     }
@@ -396,7 +396,7 @@ export function ChannelsScreen() {
       await apiRequest<void>(`/sites/${site.id}`, { method: 'DELETE' })
       setDeleteTarget(null)
       setDetailTarget(null)
-      await refresh()
+      await invalidateChannelData()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除渠道失败' : 'Failed to delete channel'))
     } finally {
@@ -430,7 +430,7 @@ export function ChannelsScreen() {
       if (detailTarget?.id === site.id) {
         setDetailTarget((current) => current ? { ...current, protocols: current.protocols.map((item) => ({ ...item, enabled })) } : current)
       }
-      await refresh()
+      await invalidateChannelData()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '更新渠道状态失败' : 'Failed to update channel status'))
     } finally {
@@ -556,9 +556,6 @@ export function ChannelsScreen() {
           <input className="ml-2 w-56 bg-transparent text-sm outline-none" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={locale === 'zh-CN' ? '搜索渠道 / 协议 / 模型' : 'Search channels'} />
         </div>
         <SegmentedControl value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)} options={[{ value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' }, { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }]} />
-        <button type="button" onClick={() => void refresh()} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] transition hover:text-[var(--text)]" title={t.refresh}>
-          <RefreshCcw size={16} />
-        </button>
         <button type="button" onClick={openCreate} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] transition hover:text-[var(--text)]" title={locale === 'zh-CN' ? '新建渠道' : 'New channel'}>
           <Plus size={16} />
         </button>
