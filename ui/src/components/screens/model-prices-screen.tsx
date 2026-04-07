@@ -11,7 +11,21 @@ import { cn } from '@/lib/cn'
 type ModelPriceDraft = Record<string, { input: string; output: string; cache_read: string; cache_write: string }>
 
 function metricInputClassName() {
-  return 'h-11 w-full rounded-2xl border border-[var(--line)] bg-[rgba(255,255,255,0.92)] px-3 text-[15px] font-medium text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
+  return 'h-9 w-full rounded-xl border border-[rgba(37,99,235,0.12)] bg-[rgba(255,255,255,0.96)] px-3 text-[14px] font-medium text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
+}
+
+function priceRowToneClassName(tone: 'input' | 'output') {
+  if (tone === 'input') {
+    return {
+      surface: 'bg-[linear-gradient(180deg,rgba(229,239,255,0.96),rgba(223,234,255,0.88))]',
+      badge: 'bg-[rgba(37,99,235,0.10)] text-[var(--accent)]',
+    }
+  }
+
+  return {
+    surface: 'bg-[linear-gradient(180deg,rgba(217,111,93,0.08),rgba(217,111,93,0.04))]',
+    badge: 'bg-[rgba(217,111,93,0.14)] text-[var(--danger)]',
+  }
 }
 
 function formatMoney(value: number) {
@@ -62,56 +76,89 @@ function metricLabel(key: 'input' | 'output' | 'cache_read' | 'cache_write', loc
   return labels[key][locale === 'zh-CN' ? 'zh' : 'en']
 }
 
-function MainPriceStat({ label, value, locale, tone }: { label: 'input' | 'output'; value: number; locale: 'zh-CN' | 'en-US'; tone: 'neutral' | 'accent' }) {
-  const toneClassName = tone === 'accent'
-    ? 'bg-[rgba(37,99,235,0.06)]'
-    : 'bg-[rgba(255,255,255,0.78)]'
-
-  return (
-    <div className={cn('min-w-0 rounded-[20px] border border-[var(--line)] px-4 py-3.5', toneClassName)}>
-      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{metricLabel(label, locale)}</div>
-      <div className="mt-2 flex items-end gap-1 text-[var(--text)]">
-        <span className="pb-0.5 text-[13px] font-medium leading-none text-[var(--muted)]">$</span>
-        <span className="tabular-nums text-[26px] font-semibold leading-none">{formatMoney(value)}</span>
-      </div>
-    </div>
-  )
-}
-
-function CachePriceStat({ label, value, locale }: { label: 'cache_read' | 'cache_write'; value: number; locale: 'zh-CN' | 'en-US' }) {
-  return (
-    <div className="min-w-0 rounded-[18px] border border-[var(--line)] bg-[rgba(255,255,255,0.64)] px-4 py-3">
-      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{metricLabel(label, locale)}</div>
-      <div className="mt-1.5 flex items-end gap-1 text-[var(--text)]">
-        <span className="text-[12px] font-medium leading-none text-[var(--muted)]">$</span>
-        <span className="tabular-nums text-[18px] font-semibold leading-none">{formatMoney(value)}</span>
-      </div>
-    </div>
-  )
-}
-
-function EditablePriceField({
-  label,
-  value,
+function PriceRow({
   locale,
-  prominent,
-  onChange,
+  tone,
+  primaryLabel,
+  primaryValue,
+  secondaryLabel,
+  secondaryValue,
 }: {
-  label: 'input' | 'output' | 'cache_read' | 'cache_write'
-  value: string
   locale: 'zh-CN' | 'en-US'
-  prominent?: boolean
-  onChange: (value: string) => void
+  tone: 'input' | 'output'
+  primaryLabel: 'input' | 'output'
+  primaryValue: number
+  secondaryLabel: 'cache_read' | 'cache_write'
+  secondaryValue: number
 }) {
+  const isInput = tone === 'input'
+  const toneClassName = priceRowToneClassName(tone)
+
   return (
-    <div className={cn(
-      'min-w-0 rounded-[20px] border border-[var(--line)] bg-[rgba(255,255,255,0.78)] px-4 py-3',
-      prominent && 'bg-[rgba(37,99,235,0.06)]'
-    )}>
-      <div className="text-[11px] font-medium text-[var(--muted)]">{locale === 'zh-CN' ? `${metricLabel(label, locale)} / 1M tokens` : `${metricLabel(label, locale)} / 1M tokens`}</div>
-      <div className="mt-2.5 flex items-center gap-2">
-        <span className="text-[15px] font-medium text-[var(--muted)]">$</span>
-        <input className={metricInputClassName()} value={value} onChange={(event) => onChange(event.target.value)} />
+    <div className={cn('grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-[18px] px-3.5 py-2.5', toneClassName.surface)}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-[11px] font-medium text-[var(--muted)]">
+          <span className={cn('inline-flex h-5 min-w-7 items-center justify-center rounded-full px-2 text-[10px] font-semibold uppercase tracking-[0.08em]', toneClassName.badge)}>{isInput ? 'IN' : 'OUT'}</span>
+          <span>{metricLabel(primaryLabel, locale)}{locale === 'zh-CN' ? '价格' : ' Price'}</span>
+        </div>
+        <div className="mt-2 flex items-end gap-1 text-[var(--text)]">
+          <span className="pb-0.5 text-[12px] font-medium leading-none text-[var(--muted)]">$</span>
+          <span className="tabular-nums text-[20px] font-semibold leading-none">{formatMoney(primaryValue)}</span>
+        </div>
+      </div>
+
+      <div className="min-w-[86px] text-right">
+        <div className="text-[11px] font-medium text-[var(--muted)]">{metricLabel(secondaryLabel, locale)}</div>
+        <div className="mt-1.5 flex items-end justify-end gap-1 text-[var(--text)]">
+          <span className="text-[12px] font-medium leading-none text-[var(--muted)]">$</span>
+          <span className="tabular-nums text-[15px] font-semibold leading-none">{formatMoney(secondaryValue)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EditablePriceRow({
+  locale,
+  tone,
+  primaryLabel,
+  primaryValue,
+  secondaryLabel,
+  secondaryValue,
+  onPrimaryChange,
+  onSecondaryChange,
+}: {
+  locale: 'zh-CN' | 'en-US'
+  tone: 'input' | 'output'
+  primaryLabel: 'input' | 'output'
+  primaryValue: string
+  secondaryLabel: 'cache_read' | 'cache_write'
+  secondaryValue: string
+  onPrimaryChange: (value: string) => void
+  onSecondaryChange: (value: string) => void
+}) {
+  const isInput = tone === 'input'
+  const toneClassName = priceRowToneClassName(tone)
+
+  return (
+    <div className={cn('grid grid-cols-[minmax(0,1fr)_minmax(112px,0.8fr)] items-start gap-3 rounded-[18px] px-3.5 py-2.5', toneClassName.surface)}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-[11px] font-medium text-[var(--muted)]">
+          <span className={cn('inline-flex h-5 min-w-7 items-center justify-center rounded-full px-2 text-[10px] font-semibold uppercase tracking-[0.08em]', toneClassName.badge)}>{isInput ? 'IN' : 'OUT'}</span>
+          <span>{metricLabel(primaryLabel, locale)}{locale === 'zh-CN' ? '价格' : ' Price'}</span>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-[14px] font-medium text-[var(--muted)]">$</span>
+          <input className={metricInputClassName()} value={primaryValue} onChange={(event) => onPrimaryChange(event.target.value)} />
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <div className="text-right text-[11px] font-medium text-[var(--muted)]">{metricLabel(secondaryLabel, locale)}</div>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-[14px] font-medium text-[var(--muted)]">$</span>
+          <input className={metricInputClassName()} value={secondaryValue} onChange={(event) => onSecondaryChange(event.target.value)} />
+        </div>
       </div>
     </div>
   )
@@ -281,12 +328,12 @@ export function ModelPricesScreen() {
           const protocolsText = item.protocols.map((protocol) => protocolLabel(protocol, locale)).join(' · ')
 
           return (
-            <article key={item.model_key} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)] transition-shadow hover:shadow-[0_14px_32px_rgba(24,37,61,0.08)]">
+            <article key={item.model_key} className="rounded-[24px] border border-[rgba(37,99,235,0.12)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,250,255,0.98))] p-3.5 shadow-[0_10px_24px_rgba(24,37,61,0.05)] transition-shadow hover:shadow-[0_14px_28px_rgba(24,37,61,0.08)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--panel-soft)] ring-1 ring-[var(--line)]">
-                      <Avatar size={30} />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(180deg,rgba(234,241,255,0.95),rgba(225,235,255,0.92))]">
+                      <Avatar size={28} />
                     </span>
 
                     <div className="min-w-0 flex-1">
@@ -301,8 +348,8 @@ export function ModelPricesScreen() {
                     type="button"
                     title={locale === 'zh-CN' ? '编辑价格' : 'Edit price'}
                     className={cn(
-                      'inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]',
-                      editing && 'bg-[var(--panel)] text-[var(--accent)]'
+                      'inline-flex h-8 w-8 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[rgba(37,99,235,0.06)] hover:text-[var(--text)]',
+                      editing && 'bg-[rgba(37,99,235,0.08)] text-[var(--accent)]'
                     )}
                     onClick={() => setEditingKey((current) => current === item.model_key ? '' : item.model_key)}
                   >
@@ -311,7 +358,7 @@ export function ModelPricesScreen() {
                   <button
                     type="button"
                     title={locale === 'zh-CN' ? '清空价格' : 'Clear prices'}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--danger)] transition hover:bg-[rgba(217,111,93,0.08)]"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[rgba(37,99,235,0.06)] hover:text-[var(--accent)]"
                     onClick={() => void clearPrice(item)}
                     disabled={busyKey === item.model_key}
                   >
@@ -320,41 +367,57 @@ export function ModelPricesScreen() {
                 </div>
               </div>
 
-              <div className="mt-4 rounded-[24px] bg-[var(--panel-soft)] p-2.5 ring-1 ring-[var(--line)]">
-                <div className="grid grid-cols-2 gap-2.5">
-                  {editing ? (
-                    <EditablePriceField locale={locale} label="input" value={drafts[item.model_key]?.input ?? ''} prominent onChange={(value) => updateDraft(item.model_key, { input: value })} />
-                  ) : (
-                    <MainPriceStat locale={locale} label="input" value={item.input_price_per_million} tone="accent" />
-                  )}
-
-                  {editing ? (
-                    <EditablePriceField locale={locale} label="output" value={drafts[item.model_key]?.output ?? ''} prominent={false} onChange={(value) => updateDraft(item.model_key, { output: value })} />
-                  ) : (
-                    <MainPriceStat locale={locale} label="output" value={item.output_price_per_million} tone="neutral" />
-                  )}
-                </div>
-
-                <div className="mt-2.5 grid grid-cols-2 gap-2.5">
-                  {editing ? (
-                    <EditablePriceField locale={locale} label="cache_read" value={drafts[item.model_key]?.cache_read ?? ''} onChange={(value) => updateDraft(item.model_key, { cache_read: value })} />
-                  ) : (
-                    <CachePriceStat locale={locale} label="cache_read" value={item.cache_read_price_per_million} />
-                  )}
-
-                  {editing ? (
-                    <EditablePriceField locale={locale} label="cache_write" value={drafts[item.model_key]?.cache_write ?? ''} onChange={(value) => updateDraft(item.model_key, { cache_write: value })} />
-                  ) : (
-                    <CachePriceStat locale={locale} label="cache_write" value={item.cache_write_price_per_million} />
-                  )}
-                </div>
+              <div className="mt-3 space-y-2">
+                {editing ? (
+                  <EditablePriceRow
+                    locale={locale}
+                    tone="input"
+                    primaryLabel="input"
+                    primaryValue={drafts[item.model_key]?.input ?? ''}
+                    secondaryLabel="cache_read"
+                    secondaryValue={drafts[item.model_key]?.cache_read ?? ''}
+                    onPrimaryChange={(value) => updateDraft(item.model_key, { input: value })}
+                    onSecondaryChange={(value) => updateDraft(item.model_key, { cache_read: value })}
+                  />
+                ) : (
+                  <PriceRow
+                    locale={locale}
+                    tone="input"
+                    primaryLabel="input"
+                    primaryValue={item.input_price_per_million}
+                    secondaryLabel="cache_read"
+                    secondaryValue={item.cache_read_price_per_million}
+                  />
+                )}
 
                 {editing ? (
-                  <div className="mt-3 flex justify-end gap-2 border-t border-[var(--line)] px-1 pt-3">
-                    <button className="inline-flex h-10 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 text-sm text-[var(--text)] transition hover:bg-[var(--panel-soft)]" type="button" onClick={() => setEditingKey('')}>
+                  <EditablePriceRow
+                    locale={locale}
+                    tone="output"
+                    primaryLabel="output"
+                    primaryValue={drafts[item.model_key]?.output ?? ''}
+                    secondaryLabel="cache_write"
+                    secondaryValue={drafts[item.model_key]?.cache_write ?? ''}
+                    onPrimaryChange={(value) => updateDraft(item.model_key, { output: value })}
+                    onSecondaryChange={(value) => updateDraft(item.model_key, { cache_write: value })}
+                  />
+                ) : (
+                  <PriceRow
+                    locale={locale}
+                    tone="output"
+                    primaryLabel="output"
+                    primaryValue={item.output_price_per_million}
+                    secondaryLabel="cache_write"
+                    secondaryValue={item.cache_write_price_per_million}
+                  />
+                )}
+
+                {editing ? (
+                  <div className="flex justify-end gap-2 px-1 pt-1">
+                    <button className="inline-flex h-9 items-center justify-center rounded-xl border border-[rgba(37,99,235,0.12)] bg-[rgba(255,255,255,0.92)] px-4 text-sm text-[var(--text)] transition hover:bg-[rgba(255,255,255,0.98)]" type="button" onClick={() => setEditingKey('')}>
                       {locale === 'zh-CN' ? '取消' : 'Cancel'}
                     </button>
-                    <button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white disabled:opacity-60" type="button" onClick={() => void savePrice(item)} disabled={busyKey === item.model_key}>
+                    <button className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white shadow-[0_10px_18px_rgba(37,99,235,0.16)] disabled:opacity-60" type="button" onClick={() => void savePrice(item)} disabled={busyKey === item.model_key}>
                       <Save size={15} />
                       {busyKey === item.model_key ? (locale === 'zh-CN' ? '保存中...' : 'Saving...') : (locale === 'zh-CN' ? '保存价格' : 'Save price')}
                     </button>
