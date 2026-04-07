@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
-from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogItem, SettingItem
+from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, SettingItem
 from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
@@ -693,9 +693,12 @@ class DomainStore:
         requested_model: str | None,
         matched_group_name: str | None,
         channel_id: str | None,
+        channel_name: str | None,
         gateway_key_id: str | None,
         status_code: int,
         success: bool,
+        is_stream: bool,
+        first_token_latency_ms: int,
         latency_ms: int,
         resolved_model: str | None,
         input_tokens: int,
@@ -704,6 +707,9 @@ class DomainStore:
         input_cost_usd: float,
         output_cost_usd: float,
         total_cost_usd: float,
+        request_content: str | None,
+        response_content: str | None,
+        attempts: list[dict[str, Any]] | None,
         error_message: str | None,
     ) -> RequestLogItem:
         async with self._session_factory() as session:
@@ -712,9 +718,12 @@ class DomainStore:
                 requested_model=requested_model,
                 matched_group_name=matched_group_name,
                 channel_id=channel_id,
+                channel_name=channel_name,
                 gateway_key_id=gateway_key_id,
                 status_code=status_code,
                 success=1 if success else 0,
+                is_stream=1 if is_stream else 0,
+                first_token_latency_ms=max(first_token_latency_ms, 0),
                 latency_ms=latency_ms,
                 resolved_model=resolved_model,
                 input_tokens=max(input_tokens, 0),
@@ -723,6 +732,9 @@ class DomainStore:
                 input_cost_usd=max(input_cost_usd, 0.0),
                 output_cost_usd=max(output_cost_usd, 0.0),
                 total_cost_usd=max(total_cost_usd, 0.0),
+                request_content=request_content,
+                response_content=response_content,
+                attempts_json=json.dumps(attempts or [], ensure_ascii=True),
                 error_message=error_message,
             )
             session.add(entity)
@@ -738,6 +750,13 @@ class DomainStore:
                 .limit(limit)
             )
             return [self._to_request_log(item) for item in result.scalars().all()]
+
+    async def get_request_log(self, log_id: int) -> RequestLogDetail:
+        async with self._session_factory() as session:
+            entity = await session.get(RequestLogEntity, log_id)
+            if entity is None:
+                raise KeyError(log_id)
+            return self._to_request_log_detail(entity)
 
     async def get_overview_metrics(self) -> OverviewMetrics:
         async with self._session_factory() as session:
@@ -1030,9 +1049,12 @@ class DomainStore:
             requested_model=entity.requested_model,
             matched_group_name=entity.matched_group_name,
             channel_id=entity.channel_id,
+            channel_name=entity.channel_name,
             gateway_key_id=entity.gateway_key_id,
             status_code=entity.status_code,
             success=bool(entity.success),
+            is_stream=bool(entity.is_stream),
+            first_token_latency_ms=entity.first_token_latency_ms,
             latency_ms=entity.latency_ms,
             resolved_model=entity.resolved_model,
             input_tokens=entity.input_tokens,
@@ -1044,4 +1066,28 @@ class DomainStore:
             error_message=entity.error_message,
             created_at=entity.created_at.replace(tzinfo=UTC).isoformat(),
         )
+
+    @staticmethod
+    def _to_request_log_detail(entity: RequestLogEntity) -> RequestLogDetail:
+        return RequestLogDetail(
+            **DomainStore._to_request_log(entity).model_dump(),
+            request_content=entity.request_content,
+            response_content=entity.response_content,
+            attempts=[
+                RequestLogAttempt(**item)
+                for item in DomainStore._parse_attempts_json(entity.attempts_json)
+            ],
+        )
+
+    @staticmethod
+    def _parse_attempts_json(raw_value: str | None) -> list[dict[str, Any]]:
+        if not raw_value:
+            return []
+        try:
+            payload = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(payload, list):
+            return []
+        return [item for item in payload if isinstance(item, dict)]
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -15,12 +15,13 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
 
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
 from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ChannelConfig, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
+from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ChannelConfig, RequestLogDetail, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore
 from ..persistence.channel_store import ChannelStore
@@ -65,6 +66,8 @@ class RoutingPlan:
 class UpstreamResult:
     response: Response
     status_code: int
+    is_stream: bool = False
+    first_token_latency_ms: int = 0
     resolved_model: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
@@ -72,6 +75,32 @@ class UpstreamResult:
     input_cost_usd: float = 0.0
     output_cost_usd: float = 0.0
     total_cost_usd: float = 0.0
+    request_content: str | None = None
+    response_content: str | None = None
+    stream_capture: StreamCapture | None = None
+
+
+@dataclass
+class AttemptLog:
+    channel_id: str
+    channel_name: str
+    model_name: str | None
+    status_code: int | None
+    success: bool
+    duration_ms: int
+    error_message: str | None = None
+
+
+@dataclass
+class StreamCapture:
+    saw_first_chunk: bool = False
+    first_token_latency_ms: int = 0
+    response_content: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    resolved_model: str | None = None
+    errors: list[str] = field(default_factory=list)
 
 
 async def _startup_app_state(state: AppState) -> None:
@@ -287,6 +316,14 @@ async def request_logs(_: Any = Depends(get_current_admin)) -> list[RequestLogIt
     return await app_state.domain_store.list_request_logs()
 
 
+@app.get("/api/request-logs/{log_id}", response_model=RequestLogDetail)
+async def request_log_detail(log_id: int, _: Any = Depends(get_current_admin)) -> RequestLogDetail:
+    try:
+        return await app_state.domain_store.get_request_log(log_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Request log not found: {log_id}") from exc
+
+
 @app.post("/api/router/preview")
 async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)) -> dict[str, Any]:
     channels = await app_state.store.list()
@@ -426,7 +463,9 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
     channels = await app_state.store.list()
     started_at = perf_counter()
     requested_model = _requested_model(protocol, body)
+    request_content = _dump_json(body)
     plan: RoutingPlan | None = None
+    attempts: list[AttemptLog] = []
     try:
         plan = await _resolve_routing_plan(protocol, requested_model)
         selection = app_state.router.select(
@@ -444,10 +483,16 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
             requested_model=plan.requested_model if plan is not None else requested_model,
             matched_group_name=plan.matched_group.name if plan is not None and plan.matched_group else None,
             channel_id=None,
+            channel_name=None,
             gateway_key=gateway_key,
             status_code=503,
             success=False,
+            is_stream=bool(body.get("stream")),
+            first_token_latency_ms=0,
             latency_ms=_elapsed_ms(started_at),
+            request_content=request_content,
+            response_content=None,
+            attempts=[item.__dict__ for item in attempts],
             error_message=str(exc),
         )
         error_body = ErrorResponse(
@@ -462,20 +507,49 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
 
     for target in [selection.primary, *selection.fallbacks]:
         channel = target.channel
+        attempt_started_at = perf_counter()
+        upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
         try:
             result = await _call_channel(
                 channel,
-                _prepare_upstream_body(protocol, body, target.model_name),
+                upstream_body,
                 matched_group_name=plan.matched_group.name if plan.matched_group else None,
             )
+            attempts.append(
+                AttemptLog(
+                    channel_id=channel.id,
+                    channel_name=channel.name,
+                    model_name=target.model_name,
+                    status_code=result.status_code,
+                    success=True,
+                    duration_ms=_elapsed_ms(attempt_started_at),
+                )
+            )
+            if result.is_stream:
+                result.response.background = BackgroundTask(
+                    _record_stream_request_log,
+                    protocol=protocol,
+                    requested_model=plan.requested_model,
+                    matched_group_name=plan.matched_group.name if plan.matched_group else None,
+                    channel=channel,
+                    gateway_key=gateway_key,
+                    started_at=started_at,
+                    upstream_body=upstream_body,
+                    result=result,
+                    attempts=[item.__dict__ for item in attempts],
+                )
+                return result.response
             await _record_request_log(
                 protocol=protocol,
                 requested_model=plan.requested_model,
                 matched_group_name=plan.matched_group.name if plan.matched_group else None,
                 channel_id=channel.id,
+                channel_name=channel.name,
                 gateway_key=gateway_key,
                 status_code=result.status_code,
                 success=True,
+                is_stream=result.is_stream,
+                first_token_latency_ms=result.first_token_latency_ms,
                 latency_ms=_elapsed_ms(started_at),
                 resolved_model=result.resolved_model,
                 input_tokens=result.input_tokens,
@@ -484,6 +558,9 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
                 input_cost_usd=result.input_cost_usd,
                 output_cost_usd=result.output_cost_usd,
                 total_cost_usd=result.total_cost_usd,
+                request_content=result.request_content or _dump_json(upstream_body),
+                response_content=result.response_content,
+                attempts=[item.__dict__ for item in attempts],
                 error_message=None,
             )
             return result.response
@@ -491,15 +568,32 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
             message = f"{channel.id}: {exc.detail}"
             app_state.router.record_failure(channel.id, message)
             errors.append(message)
+            attempts.append(
+                AttemptLog(
+                    channel_id=channel.id,
+                    channel_name=channel.name,
+                    model_name=target.model_name,
+                    status_code=exc.status_code,
+                    success=False,
+                    duration_ms=_elapsed_ms(attempt_started_at),
+                    error_message=message,
+                )
+            )
             await _record_request_log(
                 protocol=protocol,
                 requested_model=plan.requested_model,
                 matched_group_name=plan.matched_group.name if plan.matched_group else None,
                 channel_id=channel.id,
+                channel_name=channel.name,
                 gateway_key=gateway_key,
                 status_code=exc.status_code,
                 success=False,
+                is_stream=bool(upstream_body.get("stream")),
+                first_token_latency_ms=0,
                 latency_ms=_elapsed_ms(started_at),
+                request_content=_dump_json(upstream_body),
+                response_content=None,
+                attempts=[item.__dict__ for item in attempts],
                 error_message=message,
             )
 
@@ -515,7 +609,7 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
 
 async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_group_name: str | None = None) -> UpstreamResult:
     upstream = build_upstream_request(channel, body, settings)
-    stream = bool(body.get("stream"))
+    request_content = _dump_json(upstream.json_body)
     client = app_state.http
     close_client = False
 
@@ -532,24 +626,32 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
         close_client = True
 
     try:
-        if stream:
-            request = client.build_request(
-                upstream.method,
-                upstream.url,
-                headers=upstream.headers,
-                json=upstream.json_body,
-            )
-            response = await client.send(request, stream=True)
-            response.raise_for_status()
-            app_state.router.record_success(channel.id)
+        request = client.build_request(
+            upstream.method,
+            upstream.url,
+            headers=upstream.headers,
+            json=upstream.json_body,
+        )
+        stream_started_at = perf_counter()
+        response = await client.send(request, stream=True)
+        response.raise_for_status()
+        app_state.router.record_success(channel.id)
+
+        if _is_event_stream_response(response):
+            capture = StreamCapture()
 
             async def iterator():
                 try:
                     async for chunk in response.aiter_bytes():
+                        if not capture.saw_first_chunk and chunk:
+                            capture.saw_first_chunk = True
+                            capture.first_token_latency_ms = _elapsed_ms(stream_started_at)
+                        _capture_stream_chunk(channel.protocol, chunk, capture)
                         yield chunk
                 finally:
                     await response.aclose()
 
+            resolved_model = body.get("model")
             return UpstreamResult(
                 response=StreamingResponse(
                     iterator(),
@@ -557,18 +659,16 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
                     media_type=response.headers.get("content-type"),
                     headers=_passthrough_headers(response.headers),
                 ),
+                is_stream=True,
                 status_code=response.status_code,
-                resolved_model=body.get("model"),
+                resolved_model=resolved_model,
+                first_token_latency_ms=0,
+                request_content=request_content,
+                response_content=None,
+                stream_capture=capture,
             )
 
-        response = await client.request(
-            upstream.method,
-            upstream.url,
-            headers=upstream.headers,
-            json=upstream.json_body,
-        )
-        response.raise_for_status()
-        app_state.router.record_success(channel.id)
+        content = await response.aread()
 
         parsed = _extract_response_usage(channel.protocol, response)
         input_cost_usd, output_cost_usd, total_cost_usd = await app_state.domain_store.estimate_model_cost(
@@ -579,12 +679,14 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
 
         return UpstreamResult(
             response=Response(
-                content=response.content,
+                content=content,
                 status_code=response.status_code,
                 media_type=response.headers.get("content-type"),
                 headers=_passthrough_headers(response.headers),
             ),
             status_code=response.status_code,
+            is_stream=False,
+            first_token_latency_ms=0,
             resolved_model=parsed["resolved_model"],
             input_tokens=parsed["input_tokens"],
             output_tokens=parsed["output_tokens"],
@@ -592,6 +694,8 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
             input_cost_usd=input_cost_usd,
             output_cost_usd=output_cost_usd,
             total_cost_usd=total_cost_usd,
+            request_content=request_content,
+            response_content=_decode_response_content(response),
         )
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text or f"HTTP {exc.response.status_code}"
@@ -615,6 +719,11 @@ def _passthrough_headers(headers: httpx.Headers) -> dict[str, str]:
         if key in headers:
             allowed[key] = headers[key]
     return allowed
+
+
+def _is_event_stream_response(response: httpx.Response) -> bool:
+    content_type = (response.headers.get("content-type") or "").lower()
+    return "text/event-stream" in content_type
 
 
 def _requested_model(protocol: ProtocolKind, body: dict[str, Any]) -> str | None:
@@ -749,6 +858,8 @@ async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | N
 
 def _prepare_upstream_body(protocol: ProtocolKind, body: dict[str, Any], target_model_name: str | None) -> dict[str, Any]:
     payload = deepcopy(body)
+    if protocol == ProtocolKind.OPENAI_RESPONSES and "input" in payload:
+        payload["input"] = _normalize_openai_responses_input(payload.get("input"))
     if not target_model_name:
         return payload
     if protocol == ProtocolKind.GEMINI:
@@ -758,8 +869,90 @@ def _prepare_upstream_body(protocol: ProtocolKind, body: dict[str, Any], target_
     return payload
 
 
+def _normalize_openai_responses_input(value: Any) -> Any:
+    if isinstance(value, str):
+        text = value.strip()
+        return [{
+            "role": "user",
+            "content": [{"type": "input_text", "text": text}],
+        }]
+
+    if isinstance(value, list):
+        normalized_items: list[Any] = []
+        for item in value:
+            if isinstance(item, str):
+                text = item.strip()
+                normalized_items.append({
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": text}],
+                })
+                continue
+
+            if isinstance(item, dict) and isinstance(item.get("content"), str):
+                normalized = dict(item)
+                normalized["content"] = [{"type": "input_text", "text": item["content"]}]
+                normalized_items.append(normalized)
+                continue
+
+            normalized_items.append(item)
+        return normalized_items
+
+    return value
+
+
 def _elapsed_ms(started_at: float) -> int:
     return max(int((perf_counter() - started_at) * 1000), 0)
+
+
+async def _record_stream_request_log(
+    *,
+    protocol: ProtocolKind,
+    requested_model: str | None,
+    matched_group_name: str | None,
+    channel: ChannelConfig,
+    gateway_key: str,
+    started_at: float,
+    upstream_body: dict[str, Any],
+    result: UpstreamResult,
+    attempts: list[dict[str, Any]],
+) -> None:
+    capture = result.stream_capture
+    raw_content = capture.response_content if capture is not None else result.response_content
+    parsed = _extract_stream_usage(protocol, raw_content)
+    distilled_content = _distill_stream_response_content(protocol, raw_content)
+    resolved_model = parsed["resolved_model"] or result.resolved_model
+    input_tokens = parsed["input_tokens"]
+    output_tokens = parsed["output_tokens"]
+    total_tokens = parsed["total_tokens"]
+    input_cost_usd, output_cost_usd, total_cost_usd = await app_state.domain_store.estimate_model_cost(
+        matched_group_name or resolved_model,
+        input_tokens,
+        output_tokens,
+    )
+    await _record_request_log(
+        protocol=protocol,
+        requested_model=requested_model,
+        matched_group_name=matched_group_name,
+        channel_id=channel.id,
+        channel_name=channel.name,
+        gateway_key=gateway_key,
+        status_code=result.status_code,
+        success=True,
+        is_stream=True,
+        first_token_latency_ms=capture.first_token_latency_ms if capture is not None else result.first_token_latency_ms,
+        latency_ms=_elapsed_ms(started_at),
+        resolved_model=resolved_model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        input_cost_usd=input_cost_usd,
+        output_cost_usd=output_cost_usd,
+        total_cost_usd=total_cost_usd,
+        request_content=result.request_content or _dump_json(upstream_body),
+        response_content=distilled_content,
+        attempts=attempts,
+        error_message=None,
+    )
 
 
 async def _record_request_log(
@@ -768,9 +961,12 @@ async def _record_request_log(
     requested_model: str | None,
     matched_group_name: str | None,
     channel_id: str | None,
+    channel_name: str | None,
     gateway_key: str,
     status_code: int,
     success: bool,
+    is_stream: bool,
+    first_token_latency_ms: int,
     latency_ms: int,
     resolved_model: str | None = None,
     input_tokens: int = 0,
@@ -779,6 +975,9 @@ async def _record_request_log(
     input_cost_usd: float = 0.0,
     output_cost_usd: float = 0.0,
     total_cost_usd: float = 0.0,
+    request_content: str | None = None,
+    response_content: str | None = None,
+    attempts: list[dict[str, Any]] | None = None,
     error_message: str | None,
 ) -> None:
     await app_state.domain_store.create_request_log(
@@ -786,9 +985,12 @@ async def _record_request_log(
         requested_model=requested_model,
         matched_group_name=matched_group_name,
         channel_id=channel_id,
+        channel_name=channel_name,
         gateway_key_id=gateway_key,
         status_code=status_code,
         success=success,
+        is_stream=is_stream,
+        first_token_latency_ms=first_token_latency_ms,
         latency_ms=latency_ms,
         resolved_model=resolved_model,
         input_tokens=input_tokens,
@@ -797,8 +999,200 @@ async def _record_request_log(
         input_cost_usd=input_cost_usd,
         output_cost_usd=output_cost_usd,
         total_cost_usd=total_cost_usd,
+        request_content=request_content,
+        response_content=response_content,
+        attempts=attempts,
         error_message=error_message,
     )
+
+
+def _dump_json(value: Any) -> str | None:
+    try:
+        return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _decode_response_content(response: httpx.Response) -> str | None:
+    content = response.content
+    if not content:
+        return None
+    try:
+        return content.decode("utf-8")
+    except UnicodeDecodeError:
+        return content.decode("utf-8", errors="replace")
+
+
+def _capture_stream_chunk(protocol: ProtocolKind, chunk: bytes, capture: StreamCapture) -> None:
+    text = chunk.decode("utf-8", errors="replace")
+    if not text:
+        return
+    capture.response_content = (capture.response_content or "") + text
+
+
+def _distill_stream_response_content(protocol: ProtocolKind, raw_content: str | None) -> str | None:
+    if not raw_content:
+        return None
+
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        payloads = _parse_sse_payloads(raw_content)
+        for payload in reversed(payloads):
+            if payload.get("type") != "response.completed":
+                continue
+            response_payload = payload.get("response")
+            if isinstance(response_payload, dict):
+                return _dump_json(_compact_openai_response_payload(response_payload)) or raw_content
+
+    return raw_content
+
+
+def _compact_openai_response_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in (
+        "id",
+        "object",
+        "model",
+        "status",
+        "created_at",
+        "completed_at",
+        "error",
+        "incomplete_details",
+        "output",
+        "usage",
+    ):
+        value = payload.get(key)
+        if value is not None:
+            compact[key] = value
+    return compact
+
+
+def _extract_stream_usage(protocol: ProtocolKind, raw_content: str | None) -> dict[str, int | str | None]:
+    if not raw_content:
+        return {"resolved_model": None, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    if protocol == ProtocolKind.GEMINI:
+        payloads = _parse_ndjson_payloads(raw_content)
+        merged = payloads[-1] if payloads else {}
+        if isinstance(merged, dict):
+            return _extract_usage_from_payload(protocol, merged)
+        return {"resolved_model": None, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    payloads = _parse_sse_payloads(raw_content)
+    merged = {"resolved_model": None, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    for payload in payloads:
+        parsed = _extract_usage_from_payload(protocol, payload)
+        if parsed["resolved_model"]:
+            merged["resolved_model"] = parsed["resolved_model"]
+        if parsed["input_tokens"]:
+            merged["input_tokens"] = parsed["input_tokens"]
+        if parsed["output_tokens"]:
+            merged["output_tokens"] = parsed["output_tokens"]
+        if parsed["total_tokens"]:
+            merged["total_tokens"] = parsed["total_tokens"]
+    if not merged["total_tokens"]:
+        merged["total_tokens"] = int(merged["input_tokens"] or 0) + int(merged["output_tokens"] or 0)
+    return merged
+
+
+def _parse_sse_payloads(raw_content: str) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for block in raw_content.split("\n\n"):
+        data_lines = [line[5:].strip() for line in block.splitlines() if line.startswith("data:")]
+        if not data_lines:
+            continue
+        joined = "\n".join(line for line in data_lines if line and line != "[DONE]")
+        if not joined:
+            continue
+        try:
+            payload = json.loads(joined)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def _parse_ndjson_payloads(raw_content: str) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for line in raw_content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def _extract_usage_from_payload(protocol: ProtocolKind, payload: dict[str, Any]) -> dict[str, int | str | None]:
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        usage = payload.get("usage") or {}
+        return {
+            "resolved_model": payload.get("model"),
+            "input_tokens": int(usage.get("prompt_tokens") or 0),
+            "output_tokens": int(usage.get("completion_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+        }
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        if payload.get("type") == "response.completed":
+            response_payload = payload.get("response") or {}
+            usage = response_payload.get("usage") or {}
+            return {
+                "resolved_model": response_payload.get("model") or payload.get("model"),
+                "input_tokens": int(usage.get("input_tokens") or 0),
+                "output_tokens": int(usage.get("output_tokens") or 0),
+                "total_tokens": int(usage.get("total_tokens") or 0),
+            }
+        usage = payload.get("usage") or {}
+        return {
+            "resolved_model": payload.get("model"),
+            "input_tokens": int(usage.get("input_tokens") or 0),
+            "output_tokens": int(usage.get("output_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+        }
+    if protocol == ProtocolKind.ANTHROPIC:
+        if payload.get("type") == "message_start":
+            message = payload.get("message") or {}
+            usage = message.get("usage") or {}
+            input_tokens = int(usage.get("input_tokens") or 0)
+            output_tokens = int(usage.get("output_tokens") or 0)
+            return {
+                "resolved_model": message.get("model"),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            }
+        if payload.get("type") == "message_delta":
+            delta = payload.get("usage") or {}
+            output_tokens = int(delta.get("output_tokens") or 0)
+            return {
+                "resolved_model": None,
+                "input_tokens": 0,
+                "output_tokens": output_tokens,
+                "total_tokens": output_tokens,
+            }
+        usage = payload.get("usage") or {}
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        return {
+            "resolved_model": payload.get("model"),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        }
+    usage = payload.get("usageMetadata") or {}
+    input_tokens = int(usage.get("promptTokenCount") or usage.get("inputTokenCount") or 0)
+    output_tokens = int(usage.get("candidatesTokenCount") or usage.get("outputTokenCount") or 0)
+    total_tokens = int(usage.get("totalTokenCount") or (input_tokens + output_tokens))
+    return {
+        "resolved_model": payload.get("modelVersion") or payload.get("model"),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
 
 
 def _extract_response_usage(protocol: ProtocolKind, response: httpx.Response) -> dict[str, int | str | None]:

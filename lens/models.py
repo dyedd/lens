@@ -452,9 +452,12 @@ class RequestLogItem(BaseModel):
     requested_model: str | None = None
     matched_group_name: str | None = None
     channel_id: str | None = None
+    channel_name: str | None = None
     gateway_key_id: str | None = None
     status_code: int
     success: bool
+    is_stream: bool = False
+    first_token_latency_ms: int = 0
     latency_ms: int
     resolved_model: str | None = None
     input_tokens: int = 0
@@ -465,6 +468,22 @@ class RequestLogItem(BaseModel):
     total_cost_usd: float = 0.0
     error_message: str | None = None
     created_at: str
+
+
+class RequestLogAttempt(BaseModel):
+    channel_id: str
+    channel_name: str
+    model_name: str | None = None
+    status_code: int | None = None
+    success: bool
+    duration_ms: int = 0
+    error_message: str | None = None
+
+
+class RequestLogDetail(RequestLogItem):
+    request_content: str | None = None
+    response_content: str | None = None
+    attempts: list[RequestLogAttempt] = Field(default_factory=list)
 
 
 class OverviewMetrics(BaseModel):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import httpx
@@ -28,6 +29,14 @@ def test_openai_requests_require_matching_group_protocol(tmp_path: Path):
 
 def test_openai_responses_proxy_standard_request(tmp_path: Path):
     asyncio.run(_run_openai_responses_proxy_standard_request(tmp_path))
+
+
+def test_openai_responses_stream_log_detail_distills_completed_response(tmp_path: Path):
+    asyncio.run(_run_openai_responses_stream_log_detail_distills_completed_response(tmp_path))
+
+
+def test_request_log_detail_api(tmp_path: Path):
+    asyncio.run(_run_request_log_detail_api(tmp_path))
 
 
 async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
@@ -276,9 +285,12 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
                 requested_model='gpt-4.1',
                 matched_group_name='gpt-4.1',
                 channel_id=protocol['id'],
+                channel_name=protocol['id'],
                 gateway_key_id='gw-test',
                 status_code=200,
                 success=True,
+                is_stream=False,
+                first_token_latency_ms=0,
                 latency_ms=123,
                 resolved_model='gpt-4.1',
                 input_tokens=10,
@@ -287,6 +299,9 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
                 input_cost_usd=0.001,
                 output_cost_usd=0.002,
                 total_cost_usd=0.003,
+                request_content='{"model":"gpt-4.1"}',
+                response_content='{"model":"gpt-4.1"}',
+                attempts=[],
                 error_message=None,
             )
 
@@ -638,9 +653,211 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
 
             post_call = next(item for item in upstream_calls if item['method'] == 'POST')
             assert post_call['url'] == 'https://api.openai.com/v1/responses'
-            assert post_call['json'] == {'model': 'gpt-5.4', 'input': 'hello'}
+            assert post_call['json'] == {
+                'model': 'gpt-5.4',
+                'input': [
+                    {
+                        'role': 'user',
+                        'content': [
+                            {'type': 'input_text', 'text': 'hello'},
+                        ],
+                    }
+                ],
+            }
     finally:
         service_module.app_state.http.request = original_request
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_request_log_detail_api(tmp_path: Path):
+    service_module, app, config = await _build_test_app(tmp_path / 'api-request-log-detail.db')
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            headers = {'authorization': f'Bearer {token}'}
+
+            created = await service_module.app_state.domain_store.create_request_log(
+                protocol='openai_chat',
+                requested_model='gpt-4.1',
+                matched_group_name='gpt-4.1',
+                channel_id='channel-a',
+                channel_name='Channel A',
+                gateway_key_id='gw-test',
+                status_code=200,
+                success=True,
+                is_stream=False,
+                first_token_latency_ms=0,
+                latency_ms=321,
+                resolved_model='gpt-4.1',
+                input_tokens=12,
+                output_tokens=34,
+                total_tokens=46,
+                input_cost_usd=0.0012,
+                output_cost_usd=0.0034,
+                total_cost_usd=0.0046,
+                request_content='{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}',
+                response_content='{"model":"gpt-4.1","choices":[{"message":{"role":"assistant","content":"world"}}]}',
+                attempts=[{'channel_id': 'channel-a', 'channel_name': 'Channel A', 'model_name': 'gpt-4.1', 'status_code': 200, 'success': True, 'duration_ms': 321}],
+                error_message=None,
+            )
+
+            summary = await client.get('/api/request-logs', headers=headers)
+            assert summary.status_code == 200
+            summary_payload = summary.json()
+            assert summary_payload[0]['id'] == created.id
+            assert 'request_content' not in summary_payload[0]
+
+            detail = await client.get(f'/api/request-logs/{created.id}', headers=headers)
+            assert detail.status_code == 200
+            payload = detail.json()
+            assert payload['id'] == created.id
+            assert payload['channel_name'] == 'Channel A'
+            assert payload['request_content'].startswith('{"model":"gpt-4.1"')
+            assert 'world' in payload['response_content']
+            assert payload['attempts'][0]['channel_name'] == 'Channel A'
+            assert payload['first_token_latency_ms'] == 0
+
+            missing = await client.get('/api/request-logs/999999', headers=headers)
+            assert missing.status_code == 404
+    finally:
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_openai_responses_stream_log_detail_distills_completed_response(tmp_path: Path):
+    service_module, app, config = await _build_test_app(tmp_path / 'api-openai-responses-stream-log.db')
+
+    sse_body = (
+        'event: response.created\n'
+        'data: {"type":"response.created","response":{"id":"resp_123","model":"gpt-5.4","instructions":"very long hidden instructions"}}\n\n'
+        'event: response.output_text.delta\n'
+        'data: {"type":"response.output_text.delta","delta":"OK"}\n\n'
+        'event: response.completed\n'
+        'data: {"type":"response.completed","response":{"id":"resp_123","object":"response","model":"gpt-5.4","output":[{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"output_text","text":"OK","annotations":[]}]}],"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}\n\n'
+        'data: [DONE]\n\n'
+    ).encode()
+
+    async def fake_send(request, **kwargs):
+        if request.method == 'GET' and str(request.url) == 'https://models.dev/api.json':
+            return httpx.Response(200, request=request, json={})
+        return httpx.Response(
+            200,
+            request=request,
+            headers={'content-type': 'text/event-stream', 'x-request-id': 'req_stream'},
+            content=sse_body,
+        )
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    original_send = service_module.app_state.http.send
+    service_module.app_state.http.send = fake_send
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            admin_headers = {'authorization': f'Bearer {token}'}
+
+            updated_settings = await client.put(
+                '/api/settings',
+                headers=admin_headers,
+                json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
+            )
+            assert updated_settings.status_code == 200
+
+            created_site = await client.post(
+                '/api/sites',
+                headers=admin_headers,
+                json={
+                    'name': 'Responses Stream Site',
+                    'base_url': 'https://api.openai.com',
+                    'credentials': [{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    'protocols': [{
+                        'protocol': 'openai_responses',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [],
+                        'models': [],
+                    }],
+                },
+            )
+            assert created_site.status_code == 201
+            site = created_site.json()
+            credential = site['credentials'][0]
+            protocol = site['protocols'][0]
+
+            updated_site = await client.put(
+                f"/api/sites/{site['id']}",
+                headers=admin_headers,
+                json={
+                    'name': site['name'],
+                    'base_url': site['base_url'],
+                    'credentials': [{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    'protocols': [{
+                        'id': protocol['id'],
+                        'protocol': 'openai_responses',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                        'models': [{'credential_id': credential['id'], 'model_name': 'gpt-5.4', 'enabled': True}],
+                    }],
+                },
+            )
+            assert updated_site.status_code == 200
+
+            created_group = await client.post(
+                '/api/model-groups',
+                headers=admin_headers,
+                json={
+                    'name': 'gpt-5.4',
+                    'protocol': 'openai_responses',
+                    'strategy': 'round_robin',
+                    'items': [{
+                        'channel_id': protocol['id'],
+                        'credential_id': credential['id'],
+                        'model_name': 'gpt-5.4',
+                        'enabled': True,
+                    }],
+                },
+            )
+            assert created_group.status_code == 201
+
+            gateway_response = await client.post(
+                '/v1/responses',
+                headers={'authorization': 'Bearer test-gateway-key'},
+                json={'model': 'gpt-5.4', 'input': 'Reply with exactly OK.'},
+            )
+            assert gateway_response.status_code == 200
+            assert 'OK' in gateway_response.text
+
+            summary = await client.get('/api/request-logs', headers=admin_headers)
+            assert summary.status_code == 200
+            latest_id = summary.json()[0]['id']
+
+            detail = await client.get(f'/api/request-logs/{latest_id}', headers=admin_headers)
+            assert detail.status_code == 200
+            payload = detail.json()
+            assert payload['protocol'] == 'openai_responses'
+            assert payload['is_stream'] is True
+            assert payload['response_content']
+            distilled = json.loads(payload['response_content'])
+            assert distilled['model'] == 'gpt-5.4'
+            assert distilled['usage']['total_tokens'] == 12
+            assert distilled['output'][0]['content'][0]['text'] == 'OK'
+            assert 'data:' not in payload['response_content']
+            assert 'very long hidden instructions' not in payload['response_content']
+    finally:
+        service_module.app_state.http.send = original_send
         await service_module._close_app_state(service_module.app_state)
 
 

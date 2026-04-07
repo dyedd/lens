@@ -262,9 +262,12 @@ export type RequestLogItem = {
   requested_model?: string | null
   matched_group_name?: string | null
   channel_id?: string | null
+  channel_name?: string | null
   gateway_key_id?: string | null
   status_code: number
   success: boolean
+  is_stream: boolean
+  first_token_latency_ms: number
   latency_ms: number
   resolved_model?: string | null
   input_tokens: number
@@ -275,6 +278,22 @@ export type RequestLogItem = {
   total_cost_usd: number
   error_message?: string | null
   created_at: string
+}
+
+export type RequestLogAttempt = {
+  channel_id: string
+  channel_name: string
+  model_name?: string | null
+  status_code?: number | null
+  success: boolean
+  duration_ms: number
+  error_message?: string | null
+}
+
+export type RequestLogDetail = RequestLogItem & {
+  request_content?: string | null
+  response_content?: string | null
+  attempts: RequestLogAttempt[]
 }
 
 function getToken() {
