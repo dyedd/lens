@@ -85,6 +85,21 @@ function DetailStat({ label, value, accent = false }: { label: string; value: st
   )
 }
 
+function StatusBadge({ success, locale }: { success: boolean; locale: 'zh-CN' | 'en-US' }) {
+  return (
+    <span
+      className={cn(
+        'rounded-full px-3 py-1.5 text-xs font-medium',
+        success
+          ? 'bg-[rgba(37,99,235,0.10)] text-[var(--accent)]'
+          : 'bg-[rgba(217,111,93,0.12)] text-[var(--danger)]'
+      )}
+    >
+      {success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
+    </span>
+  )
+}
+
 function ProtocolBadge({ protocol }: { protocol: RequestLogItem['protocol'] }) {
   const labelMap = {
     openai_chat: 'chat',
@@ -122,9 +137,7 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
               <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-[var(--panel-strong)] px-2 text-xs font-semibold text-[var(--muted)]">{index + 1}</span>
               <span className="font-medium text-[var(--text)]">{attempt.channel_name}</span>
               {attempt.model_name ? <span className="text-[var(--muted)]">{attempt.model_name}</span> : null}
-              <span className={attempt.success ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-2.5 py-1 text-[11px] text-[var(--success)]' : 'rounded-full bg-[rgba(217,111,93,0.12)] px-2.5 py-1 text-[11px] text-[var(--danger)]'}>
-                {attempt.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
-              </span>
+              <StatusBadge success={attempt.success} locale={locale} />
             </div>
             <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
               <span>{attempt.status_code ?? '-'}</span>
@@ -170,9 +183,7 @@ function RequestCard({
             <div className="flex flex-wrap items-center gap-2 text-[15px] leading-none">
               <span className="font-semibold text-[var(--text)]">{item.requested_model || item.resolved_model || 'n/a'}</span>
               <ProtocolBadge protocol={item.protocol} />
-              <span className={item.success ? 'rounded-full bg-[rgba(31,157,104,0.12)] px-3 py-1.5 text-xs font-medium text-[var(--success)]' : 'rounded-full bg-[rgba(217,111,93,0.12)] px-3 py-1.5 text-xs font-medium text-[var(--danger)]'}>
-                {item.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
-              </span>
+              <StatusBadge success={item.success} locale={locale} />
               {item.resolved_model && item.resolved_model !== item.requested_model ? <span className="truncate text-[var(--muted)]">{item.resolved_model}</span> : null}
             </div>
           </div>
@@ -262,11 +273,11 @@ export function RequestsScreen() {
           ) : (
             <div className="grid gap-5">
               <div className="grid gap-4 lg:grid-cols-5">
-                <DetailStat label="group" value={detail.matched_group_name || (locale === 'zh-CN' ? '未命中' : 'No match')} />
-                <DetailStat label="channel" value={detail.channel_name || detail.channel_id || 'n/a'} />
-                <DetailStat label="status" value={String(detail.status_code)} />
-                <DetailStat label={locale === 'zh-CN' ? '总 token' : 'tokens'} value={formatCount(detail.total_tokens)} />
-                <DetailStat label={locale === 'zh-CN' ? '总费用' : 'cost'} value={formatMoney(detail.total_cost_usd)} accent />
+                <DetailStat label={locale === 'zh-CN' ? '模型组' : 'Group'} value={detail.matched_group_name || (locale === 'zh-CN' ? '未命中' : 'No match')} />
+                <DetailStat label={locale === 'zh-CN' ? '渠道' : 'Channel'} value={detail.channel_name || detail.channel_id || 'n/a'} />
+                <DetailStat label={locale === 'zh-CN' ? '状态' : 'Status'} value={String(detail.status_code)} />
+                <DetailStat label={locale === 'zh-CN' ? '总 Token' : 'Total token'} value={formatCount(detail.total_tokens)} />
+                <DetailStat label={locale === 'zh-CN' ? '总费用' : 'Total cost'} value={formatMoney(detail.total_cost_usd)} accent />
               </div>
 
               {detail.error_message ? (
