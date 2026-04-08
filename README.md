@@ -94,6 +94,10 @@ pnpm dev
 
 - `http://127.0.0.1:3000`
 
+前端开发代理环境变量：
+
+- `LENS_UI_BACKEND_BASE_URL=http://127.0.0.1:18080`
+
 ## 默认管理员
 
 执行 `python scripts/seed_admin.py` 后会写入默认管理员：
@@ -158,6 +162,24 @@ OpenAI Chat 调用示例：
 
 ```bash
 curl http://127.0.0.1:18080/v1/chat/completions \
+  -H "Authorization: Bearer sk-lens-..." \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
+```
+
+如果前端使用 `pnpm dev` 跑在 `3000`，也可以直接把工具接到前端地址。Next.js 会把以下接口转发到后端 `LENS_UI_BACKEND_BASE_URL`：
+
+- `/api/*`
+- `/v1/chat/completions`
+- `/v1/responses`
+- `/v1/messages`
+- `/v1/models`
+- `/v1beta/*`
+
+例如：
+
+```bash
+curl http://127.0.0.1:3000/v1/chat/completions \
   -H "Authorization: Bearer sk-lens-..." \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'

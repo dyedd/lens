@@ -25,10 +25,6 @@ export function DashboardShell({
   const siteName = branding?.site_name?.trim() || 'Lens'
   const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
 
-  useEffect(() => {
-    document.title = siteName
-  }, [siteName])
-
   const items = [
     { key: 'overview' as DashboardView, label: t.dashboard, icon: LayoutDashboard },
     { key: 'requests' as DashboardView, label: t.requests, icon: Activity },
@@ -37,6 +33,11 @@ export function DashboardShell({
     { key: 'model-prices' as DashboardView, label: t.modelPrices, icon: DollarSign },
     { key: 'settings' as DashboardView, label: t.settings, icon: Settings2 }
   ]
+
+  useEffect(() => {
+    const activeLabel = items.find((item) => item.key === activeView)?.label ?? t.dashboard
+    document.title = `${activeLabel} - ${siteName}`
+  }, [activeView, items, siteName, t.dashboard])
 
   return (
     <div className="mx-auto flex h-dvh max-w-6xl flex-col overflow-hidden px-3 md:grid md:grid-cols-[auto_1fr] md:gap-6 md:px-6">

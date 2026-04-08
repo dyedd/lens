@@ -540,6 +540,28 @@ async def proxy_anthropic_messages(request: Request, gateway_key: str = Depends(
     return await _proxy_protocol(ProtocolKind.ANTHROPIC, body, gateway_key)
 
 
+@app.get("/v1/models")
+async def list_gateway_models(_: str = Depends(get_current_gateway_key)) -> dict[str, Any]:
+    groups = await app_state.domain_store.list_groups()
+    openai_model_names = sorted({
+        group.name.strip()
+        for group in groups
+        if group.name.strip() and group.protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}
+    })
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": model_name,
+                "object": "model",
+                "created": 0,
+                "owned_by": "lens",
+            }
+            for model_name in openai_model_names
+        ],
+    }
+
+
 @app.post("/v1beta/models/{model_name}:generateContent")
 async def proxy_gemini_generate_content(model_name: str, request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
