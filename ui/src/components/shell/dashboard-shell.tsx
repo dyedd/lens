@@ -1,7 +1,10 @@
 "use client"
 
 import Image from 'next/image'
+import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Activity, DollarSign, Globe2, Layers3, LayoutDashboard, Settings2, Waypoints } from 'lucide-react'
+import { apiRequest, type PublicBranding } from '@/lib/api'
 import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 import type { DashboardView } from '@/components/shell/dashboard-view-shell'
@@ -18,6 +21,13 @@ export function DashboardShell({
   onViewIntent?: (view: DashboardView) => void
 }) {
   const { locale, setLocale, t } = useI18n()
+  const { data: branding } = useQuery({ queryKey: ['public-branding'], queryFn: () => apiRequest<PublicBranding>('/public/branding') })
+  const siteName = branding?.site_name?.trim() || 'Lens'
+  const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
+
+  useEffect(() => {
+    document.title = siteName
+  }, [siteName])
 
   const items = [
     { key: 'overview' as DashboardView, label: t.dashboard, icon: LayoutDashboard },
@@ -58,7 +68,7 @@ export function DashboardShell({
 
       <main className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
           <header className="my-6 flex flex-none items-center gap-x-2 px-2">
-            <Image src="/logo.svg" alt="Lens" width={48} height={48} className="h-12 w-12" />
+            <Image src={logoUrl} alt={siteName} width={48} height={48} className="h-12 w-12 rounded-2xl object-cover" unoptimized={logoUrl !== '/logo.svg'} />
             <div className="min-w-0 flex-1 overflow-hidden">
               <h1 className="text-3xl font-bold tracking-tight text-[var(--text)]">{items.find((item) => item.key === activeView)?.label ?? t.dashboard}</h1>
             </div>

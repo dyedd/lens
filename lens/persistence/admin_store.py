@@ -45,3 +45,16 @@ class AdminStore:
                 select(AdminUserEntity).where(AdminUserEntity.username == username).limit(1)
             )
             return result.scalar_one_or_none()
+
+    async def update_password(self, username: str, current_password: str, new_password: str) -> None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(AdminUserEntity).where(AdminUserEntity.username == username).limit(1)
+            )
+            user = result.scalar_one_or_none()
+            if user is None or user.is_active != 1:
+                raise KeyError(username)
+            if not verify_password(current_password, user.password_hash):
+                raise ValueError("Current password is incorrect")
+            user.password_hash = hash_password(new_password)
+            await session.commit()

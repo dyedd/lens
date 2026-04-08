@@ -14,9 +14,18 @@ from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelG
 
 
 SETTING_GATEWAY_API_KEYS = "gateway_api_keys"
-SETTING_GATEWAY_REQUIRE_API_KEY = "gateway_require_api_key"
 SETTING_GATEWAY_API_KEY_HINT = "gateway_api_key_hint"
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
+SETTING_PROXY_URL = "proxy_url"
+SETTING_STATS_SAVE_INTERVAL = "stats_save_interval"
+SETTING_CORS_ALLOW_ORIGINS = "cors_allow_origins"
+SETTING_RELAY_LOG_KEEP_ENABLED = "relay_log_keep_enabled"
+SETTING_RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
+SETTING_CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"
+SETTING_CIRCUIT_BREAKER_COOLDOWN = "circuit_breaker_cooldown"
+SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown"
+SETTING_SITE_NAME = "site_name"
+SETTING_SITE_LOGO_URL = "site_logo_url"
 
 
 class DomainStore:
@@ -662,11 +671,35 @@ class DomainStore:
         items = await self.list_settings()
         mapping = {item.key: item.value for item in items}
         keys = self._split_gateway_keys(mapping.get(SETTING_GATEWAY_API_KEYS, ""))
-        require_api_key = mapping.get(SETTING_GATEWAY_REQUIRE_API_KEY, "true").strip().lower() not in {"0", "false", "no", "off"}
+        require_api_key = bool(keys)
         return {
             "keys": keys,
             "require_api_key": require_api_key,
             "hint": mapping.get(SETTING_GATEWAY_API_KEY_HINT, ""),
+        }
+
+    async def get_runtime_settings(self) -> dict[str, Any]:
+        items = await self.list_settings()
+        mapping = {item.key: item.value for item in items}
+        cors_allow_origins = self._split_comma_lines(mapping.get(SETTING_CORS_ALLOW_ORIGINS, ""))
+        return {
+            "proxy_url": mapping.get(SETTING_PROXY_URL, "").strip(),
+            "stats_save_interval": self._parse_int(mapping.get(SETTING_STATS_SAVE_INTERVAL), default=60),
+            "cors_allow_origins": cors_allow_origins or ["*"],
+            "relay_log_keep_enabled": self._parse_bool(mapping.get(SETTING_RELAY_LOG_KEEP_ENABLED), default=True),
+            "relay_log_keep_period": self._parse_int(mapping.get(SETTING_RELAY_LOG_KEEP_PERIOD), default=7),
+            "circuit_breaker_threshold": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_THRESHOLD), default=3),
+            "circuit_breaker_cooldown": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_COOLDOWN), default=60),
+            "circuit_breaker_max_cooldown": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN), default=600),
+            "site_name": mapping.get(SETTING_SITE_NAME, "Lens").strip() or "Lens",
+            "site_logo_url": mapping.get(SETTING_SITE_LOGO_URL, "").strip(),
+        }
+
+    async def get_branding_settings(self) -> dict[str, str]:
+        runtime = await self.get_runtime_settings()
+        return {
+            "site_name": str(runtime["site_name"]),
+            "site_logo_url": str(runtime["site_logo_url"]),
         }
 
     async def list_settings(self) -> list[SettingItem]:
@@ -757,6 +790,21 @@ class DomainStore:
             if entity is None:
                 raise KeyError(log_id)
             return self._to_request_log_detail(entity)
+
+    async def clear_request_logs(self) -> None:
+        async with self._session_factory() as session:
+            await session.execute(delete(RequestLogEntity))
+            await session.commit()
+
+    async def prune_request_logs(self) -> None:
+        runtime = await self.get_runtime_settings()
+        if not runtime["relay_log_keep_enabled"]:
+            return
+        keep_days = max(int(runtime["relay_log_keep_period"]), 1)
+        cutoff = datetime.utcnow() - timedelta(days=keep_days)
+        async with self._session_factory() as session:
+            await session.execute(delete(RequestLogEntity).where(RequestLogEntity.created_at < cutoff))
+            await session.commit()
 
     async def get_overview_metrics(self) -> OverviewMetrics:
         async with self._session_factory() as session:
@@ -1029,6 +1077,34 @@ class DomainStore:
             seen.add(normalized)
             keys.append(normalized)
         return keys
+
+    @staticmethod
+    def _split_comma_lines(raw_value: str) -> list[str]:
+        items: list[str] = []
+        seen: set[str] = set()
+        for chunk in raw_value.replace("\r", "\n").replace("，", ",").splitlines():
+            for item in chunk.split(","):
+                normalized = item.strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                items.append(normalized)
+        return items
+
+    @staticmethod
+    def _parse_bool(value: str | None, *, default: bool) -> bool:
+        if value is None:
+            return default
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+
+    @staticmethod
+    def _parse_int(value: str | None, *, default: int) -> int:
+        if value is None:
+            return default
+        try:
+            return int(value.strip())
+        except ValueError:
+            return default
 
     @staticmethod
     def _to_group(entity: ModelGroupEntity, items: list[ModelGroupItem]) -> ModelGroup:

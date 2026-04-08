@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 import re
 from threading import Lock
+from time import monotonic
 
 from ..models import ChannelConfig, ChannelHealth, ChannelStatus, ProtocolKind, RoutePreview, RoutePreviewItem, RouteState, RouterSnapshot, RoutingStrategy
 
@@ -12,6 +13,7 @@ from ..models import ChannelConfig, ChannelHealth, ChannelStatus, ProtocolKind, 
 class _HealthState:
     consecutive_failures: int = 0
     last_error: str | None = None
+    opened_until: float = 0.0
 
 
 @dataclass
@@ -72,11 +74,35 @@ class RoundRobinRouter:
         with self._lock:
             self._health[channel_id] = _HealthState()
 
-    def record_failure(self, channel_id: str, error: str) -> None:
+    def record_failure(
+        self,
+        channel_id: str,
+        error: str,
+        *,
+        threshold: int = 0,
+        cooldown_seconds: int = 0,
+        max_cooldown_seconds: int = 0,
+    ) -> None:
         with self._lock:
             state = self._health[channel_id]
             state.consecutive_failures += 1
             state.last_error = error
+            if threshold > 0 and state.consecutive_failures >= threshold:
+                extra_failures = max(state.consecutive_failures - threshold, 0)
+                base_cooldown = max(cooldown_seconds, 1)
+                max_cooldown = max(max_cooldown_seconds, base_cooldown)
+                cooldown = min(base_cooldown * (2 ** extra_failures), max_cooldown)
+                state.opened_until = max(state.opened_until, monotonic() + cooldown)
+
+    def is_channel_available(self, channel_id: str) -> bool:
+        with self._lock:
+            state = self._health[channel_id]
+            if state.opened_until <= 0:
+                return True
+            if state.opened_until <= monotonic():
+                state.opened_until = 0.0
+                return True
+            return False
 
     def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:
         routes = []
@@ -148,7 +174,9 @@ class RoundRobinRouter:
             return [
                 target
                 for target in route_targets
-                if target.channel.status == ChannelStatus.ENABLED and target.channel.protocol == protocol
+                if target.channel.status == ChannelStatus.ENABLED
+                and target.channel.protocol == protocol
+                and (allowed_channel_ids is None or target.channel.id in allowed_channel_ids)
             ]
 
         active: list[RouteTarget] = []

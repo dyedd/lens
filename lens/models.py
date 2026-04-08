@@ -294,6 +294,26 @@ class AdminProfile(BaseModel):
     username: str
 
 
+class AdminPasswordChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=1)
+
+
+class PublicBranding(BaseModel):
+    site_name: str
+    logo_url: str = ""
+
+
+class AppInfo(BaseModel):
+    backend_version: str
+    frontend_version: str
+    app_env: str
+    site_name: str
+    logo_url: str = ""
+
+
 class ModelGroup(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -2,9 +2,10 @@
 
 import { Globe2, LockKeyhole, User } from 'lucide-react'
 import Image from 'next/image'
+import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
-import { ApiError, apiRequest } from '@/lib/api'
+import { ApiError, apiRequest, type PublicBranding } from '@/lib/api'
 import { setStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 
@@ -21,10 +22,13 @@ function inputClassName() {
 export function LoginScreen() {
   const router = useRouter()
   const { locale, setLocale, t } = useI18n()
+  const { data: branding } = useQuery({ queryKey: ['public-branding'], queryFn: () => apiRequest<PublicBranding>('/public/branding') })
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('admin')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const siteName = branding?.site_name?.trim() || 'Lens'
+  const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -60,7 +64,8 @@ export function LoginScreen() {
         </div>
 
         <header className="flex flex-col items-center gap-2 text-center">
-          <Image src="/logo.svg" alt="logo" width={108} height={108} className="h-24 w-24" />
+          <Image src={logoUrl} alt={siteName} width={108} height={108} className="h-24 w-24 rounded-[28px] object-cover" unoptimized={logoUrl !== '/logo.svg'} />
+          <h1 className="text-lg font-semibold text-[var(--text)]">{siteName}</h1>
         </header>
 
         <form onSubmit={submit} className="space-y-5 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-6 shadow-[var(--shadow-sm)]">

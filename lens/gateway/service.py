@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import lru_cache
 import json
 from pathlib import Path
 from time import perf_counter
@@ -13,7 +14,6 @@ from copy import deepcopy
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
@@ -21,12 +21,24 @@ from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
 from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
-from ..models import AdminLoginRequest, AdminProfile, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, ChannelConfig, RequestLogDetail, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
+from ..models import AdminLoginRequest, AdminPasswordChangeRequest, AdminProfile, AppInfo, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, PublicBranding, ChannelConfig, RequestLogDetail, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
 from ..persistence.admin_store import AdminStore
-from ..persistence.domain_store import DomainStore
+from ..persistence.domain_store import DomainStore, SETTING_GATEWAY_API_KEY_HINT, SETTING_GATEWAY_API_KEYS, SETTING_SITE_LOGO_URL, SETTING_SITE_NAME
 from ..persistence.channel_store import ChannelStore
 from .router import RoundRobinRouter, RouteTarget
-from .upstreams import build_upstream_request, resolve_channel_api_key, resolve_channel_base_url, resolve_channel_proxy_url
+from .upstreams import build_upstream_request, resolve_channel_api_key, resolve_channel_base_url, resolve_upstream_proxy_url
+from .. import __version__ as backend_version
+
+
+@lru_cache(maxsize=1)
+def _read_frontend_version() -> str:
+    package_file = Path(__file__).resolve().parents[2] / "ui" / "package.json"
+    try:
+        payload = json.loads(package_file.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return "0.1.0"
+    version = str(payload.get("version") or "").strip()
+    return version or "0.1.0"
 
 
 class AppState:
@@ -108,6 +120,7 @@ async def _startup_app_state(state: AppState) -> None:
         state.http = state._create_http_client()
     await state.admin_store.ensure_default_admin(settings.admin_default_username, settings.admin_default_password)
     await _bootstrap_imported_stats(state)
+    await state.domain_store.prune_request_logs()
     await _sync_group_prices(state)
 
 
@@ -141,13 +154,41 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 auth_scheme = HTTPBearer(auto_error=False)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+
+@app.middleware("http")
+async def dynamic_cors_middleware(request: Request, call_next):
+    response = await call_next(request)
+    runtime = await app_state.domain_store.get_runtime_settings()
+    allow_origins = runtime["cors_allow_origins"]
+    origin = request.headers.get("origin", "")
+    if allow_origins == ["*"]:
+        response.headers["access-control-allow-origin"] = "*"
+    elif origin and origin in allow_origins:
+        response.headers["access-control-allow-origin"] = origin
+        response.headers["vary"] = "Origin"
+    response.headers["access-control-allow-credentials"] = "true"
+    response.headers["access-control-allow-methods"] = "*"
+    response.headers["access-control-allow-headers"] = "*"
+    return response
+
+
+@app.options("/{path:path}")
+async def cors_preflight(path: str, request: Request) -> Response:
+    runtime = await app_state.domain_store.get_runtime_settings()
+    allow_origins = runtime["cors_allow_origins"]
+    origin = request.headers.get("origin", "")
+    headers = {
+        "access-control-allow-credentials": "true",
+        "access-control-allow-methods": "*",
+        "access-control-allow-headers": request.headers.get("access-control-request-headers", "*"),
+    }
+    if allow_origins == ["*"]:
+        headers["access-control-allow-origin"] = "*"
+    elif origin and origin in allow_origins:
+        headers["access-control-allow-origin"] = origin
+        headers["vary"] = "Origin"
+    return Response(status_code=204, headers=headers)
 
 
 async def get_current_admin(
@@ -203,6 +244,24 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/public/branding", response_model=PublicBranding)
+async def public_branding() -> PublicBranding:
+    branding = await app_state.domain_store.get_branding_settings()
+    return PublicBranding(site_name=branding["site_name"], logo_url=branding["site_logo_url"])
+
+
+@app.get("/api/app-info", response_model=AppInfo)
+async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
+    branding = await app_state.domain_store.get_branding_settings()
+    return AppInfo(
+        backend_version=backend_version,
+        frontend_version=_read_frontend_version(),
+        app_env=settings.app_env,
+        site_name=branding["site_name"],
+        logo_url=branding["site_logo_url"],
+    )
+
+
 @app.post("/api/auth/login", response_model=AuthTokenResponse)
 async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
     user = await app_state.admin_store.authenticate(payload.username, payload.password)
@@ -219,6 +278,15 @@ async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
 @app.get("/api/auth/me", response_model=AdminProfile)
 async def current_admin(admin = Depends(get_current_admin)) -> AdminProfile:
     return AdminProfile(id=admin.id, username=admin.username)
+
+
+@app.put("/api/auth/password", status_code=204)
+async def change_password(payload: AdminPasswordChangeRequest, admin = Depends(get_current_admin)) -> Response:
+    try:
+        await app_state.admin_store.update_password(admin.username, payload.current_password, payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 @app.get("/api/sites")
@@ -316,6 +384,12 @@ async def request_logs(_: Any = Depends(get_current_admin)) -> list[RequestLogIt
     return await app_state.domain_store.list_request_logs()
 
 
+@app.delete("/api/request-logs", status_code=204)
+async def clear_request_logs(_: Any = Depends(get_current_admin)) -> Response:
+    await app_state.domain_store.clear_request_logs()
+    return Response(status_code=204)
+
+
 @app.get("/api/request-logs/{log_id}", response_model=RequestLogDetail)
 async def request_log_detail(log_id: int, _: Any = Depends(get_current_admin)) -> RequestLogDetail:
     try:
@@ -327,12 +401,18 @@ async def request_log_detail(log_id: int, _: Any = Depends(get_current_admin)) -
 @app.post("/api/router/preview")
 async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)) -> dict[str, Any]:
     channels = await app_state.store.list()
+    available_channel_ids = {
+        channel.id
+        for channel in channels
+        if app_state.router.is_channel_available(channel.id)
+    }
     plan = await _resolve_routing_plan(payload.protocol, payload.model)
     return app_state.router.preview(
         channels,
         payload.protocol,
         payload.model,
         strategy=plan.strategy,
+        allowed_channel_ids=available_channel_ids,
         route_targets=plan.route_targets,
         use_model_matching=plan.use_model_matching,
         matched_group_name=plan.matched_group.name if plan.matched_group else None,
@@ -424,7 +504,22 @@ async def list_settings(_: Any = Depends(get_current_admin)) -> list[SettingItem
 
 @app.put("/api/settings", response_model=list[SettingItem])
 async def update_settings(payload: SettingsUpdate, _: Any = Depends(get_current_admin)) -> list[SettingItem]:
-    return await app_state.domain_store.upsert_settings(payload.items)
+    normalized_items = []
+    for item in payload.items:
+        if item.key == SETTING_GATEWAY_API_KEYS:
+            normalized_items.append(SettingItem(key=item.key, value=item.value))
+            continue
+        if item.key == SETTING_GATEWAY_API_KEY_HINT:
+            normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
+            continue
+        if item.key == SETTING_SITE_NAME:
+            normalized_items.append(SettingItem(key=item.key, value=item.value.strip() or "Lens"))
+            continue
+        if item.key == SETTING_SITE_LOGO_URL:
+            normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
+            continue
+        normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
+    return await app_state.domain_store.upsert_settings(normalized_items)
 
 
 @app.post("/v1/chat/completions")
@@ -461,6 +556,12 @@ async def proxy_gemini_stream_generate_content(model_name: str, request: Request
 
 async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_key: str) -> Response:
     channels = await app_state.store.list()
+    runtime = await app_state.domain_store.get_runtime_settings()
+    available_channel_ids = {
+        channel.id
+        for channel in channels
+        if app_state.router.is_channel_available(channel.id)
+    }
     started_at = perf_counter()
     requested_model = _requested_model(protocol, body)
     request_content = _dump_json(body)
@@ -473,6 +574,7 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
             protocol,
             plan.requested_model,
             strategy=plan.strategy,
+            allowed_channel_ids=available_channel_ids,
             route_targets=plan.route_targets,
             use_model_matching=plan.use_model_matching,
             cursor_key=plan.cursor_key,
@@ -566,7 +668,13 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
             return result.response
         except HTTPException as exc:
             message = f"{channel.id}: {exc.detail}"
-            app_state.router.record_failure(channel.id, message)
+            app_state.router.record_failure(
+                channel.id,
+                message,
+                threshold=int(runtime["circuit_breaker_threshold"]),
+                cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
+                max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+            )
             errors.append(message)
             attempts.append(
                 AttemptLog(
@@ -612,10 +720,13 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
     request_content = _dump_json(upstream.json_body)
     client = app_state.http
     close_client = False
+    runtime = await app_state.domain_store.get_runtime_settings()
 
-    if upstream.proxy_url:
+    proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
+
+    if proxy_url:
         client = httpx.AsyncClient(
-            proxy=upstream.proxy_url,
+            proxy=proxy_url,
             timeout=app_state.http.timeout,
             limits=httpx.Limits(
                 max_connections=settings.max_connections,
@@ -735,7 +846,8 @@ def _requested_model(protocol: ProtocolKind, body: dict[str, Any]) -> str | None
 async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
     client = app_state.http
     close_client = False
-    proxy_url = resolve_channel_proxy_url(channel)
+    runtime = await app_state.domain_store.get_runtime_settings()
+    proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
 
     if proxy_url:
         client = httpx.AsyncClient(

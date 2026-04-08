@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { I18nProvider } from '@/lib/i18n'
+import { ToastProvider } from '@/components/ui/toast'
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [client] = useState(() => new QueryClient({
@@ -19,7 +20,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   }))
   return (
     <QueryClientProvider client={client}>
-      <I18nProvider>{children}</I18nProvider>
+      <I18nProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </I18nProvider>
     </QueryClientProvider>
   )
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, RefreshCcw, Save, Search, Trash2, X } from 'lucide-react'
+import { Pencil, Save, Search, Trash2, X } from 'lucide-react'
 import { ApiError, ModelPriceItem, ModelPriceListResponse, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { getModelGroupAvatar } from '@/lib/model-icons'
@@ -34,24 +34,6 @@ function formatMoney(value: number) {
     minimumFractionDigits: value >= 1 ? 2 : 0,
     maximumFractionDigits: 4,
   }).format(value)
-}
-
-function formatSyncTime(value: string | null | undefined, locale: 'zh-CN' | 'en-US') {
-  if (!value) {
-    return locale === 'zh-CN' ? '未同步' : 'Never synced'
-  }
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return locale === 'zh-CN' ? '未同步' : 'Never synced'
-  }
-
-  return new Intl.DateTimeFormat(locale, {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
 }
 
 function protocolLabel(protocol: string, locale: 'zh-CN' | 'en-US') {
@@ -263,30 +245,10 @@ export function ModelPricesScreen() {
     await savePrice(item, { input: 0, output: 0, cache_read: 0, cache_write: 0 })
   }
 
-  async function syncPrices() {
-    setBusyKey('__sync__')
-    setError('')
-    setSaved('')
-    try {
-      await apiRequest<ModelPriceListResponse>('/model-prices/sync', { method: 'POST' })
-      setSaved(locale === 'zh-CN' ? '模型价格已同步' : 'Model prices synced')
-      await queryClient.invalidateQueries({ queryKey: ['model-prices'] })
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '同步模型价格失败' : 'Failed to sync model prices'))
-    } finally {
-      setBusyKey('')
-    }
-  }
-
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--muted)]">
-          <span className="rounded-full bg-[var(--panel-strong)] px-3 py-1.5 font-medium text-[var(--text)] shadow-[var(--shadow-sm)]">{data?.items.length ?? 0}</span>
-          <span>{locale === 'zh-CN' ? '模型组价格' : 'Model group prices'}</span>
-          <span className="hidden sm:inline">·</span>
-          <span>{locale === 'zh-CN' ? `最近同步 ${formatSyncTime(data?.last_synced_at, locale)}` : `Last sync ${formatSyncTime(data?.last_synced_at, locale)}`}</span>
-        </div>
+        <div className="text-[12px] text-[var(--muted)]">{locale === 'zh-CN' ? '模型组价格' : 'Model group prices'}</div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="hidden h-9 items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 md:flex">
@@ -298,16 +260,6 @@ export function ModelPricesScreen() {
               placeholder={locale === 'zh-CN' ? '搜索模型组' : 'Search groups'}
             />
           </div>
-
-          <button
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 text-[13px] font-medium text-[var(--text)] transition hover:text-[var(--text)] disabled:opacity-60"
-            type="button"
-            onClick={() => void syncPrices()}
-            disabled={busyKey === '__sync__'}
-          >
-            <RefreshCcw size={15} className={cn(busyKey === '__sync__' && 'animate-spin')} />
-            <span>{busyKey === '__sync__' ? (locale === 'zh-CN' ? '同步中...' : 'Syncing...') : (locale === 'zh-CN' ? '同步价格' : 'Sync prices')}</span>
-          </button>
         </div>
 
         <div className="flex h-9 w-full items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 md:hidden">

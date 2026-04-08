@@ -181,9 +181,28 @@ export type SettingItem = {
   value: string
 }
 
+export type PublicBranding = {
+  site_name: string
+  logo_url: string
+}
+
+export type AppInfo = {
+  backend_version: string
+  frontend_version: string
+  app_env: string
+  site_name: string
+  logo_url: string
+}
+
+
 export type AdminProfile = {
   id: number
   username: string
+}
+
+export type AdminPasswordChangePayload = {
+  current_password: string
+  new_password: string
 }
 
 export type RouteSnapshot = {

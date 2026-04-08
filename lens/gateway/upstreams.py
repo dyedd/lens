@@ -140,6 +140,14 @@ def _resolve_proxy_url(channel: ChannelConfig) -> str | None:
     return value or None
 
 
+def resolve_upstream_proxy_url(channel: ChannelConfig, global_proxy_url: str | None = None) -> str | None:
+    channel_proxy = _resolve_proxy_url(channel)
+    if channel_proxy:
+        return channel_proxy
+    value = (global_proxy_url or "").strip()
+    return value or None
+
+
 def resolve_channel_base_url(channel: ChannelConfig) -> str:
     return _resolve_base_url(channel)
 
