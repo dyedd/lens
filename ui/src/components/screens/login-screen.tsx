@@ -50,7 +50,7 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-6 py-10">
+    <div className="relative flex min-h-screen items-center justify-center px-6 py-10 pb-24">
       <div className="w-full max-w-sm space-y-7">
         <div className="flex justify-end">
           <button
@@ -111,6 +111,12 @@ export function LoginScreen() {
           </button>
         </form>
       </div>
+
+      <footer className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2">
+        <div className="rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-1.5 text-xs text-[var(--muted)] shadow-[var(--shadow-sm)] backdrop-blur-sm">
+          powered by <span className="font-semibold tracking-[0.08em] text-[var(--text)]">lens</span>
+        </div>
+      </footer>
     </div>
   )
 }
