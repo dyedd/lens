@@ -371,10 +371,6 @@ export function GroupsScreen() {
     })
   }, [groups, search])
 
-  const detailItems = useMemo(() => {
-    return (detailTarget?.items ?? []).slice().sort((a, b) => a.sort_order - b.sort_order)
-  }, [detailTarget])
-
   const detailIconMeta = useMemo(() => {
     return detailTarget ? getModelGroupAvatar(detailTarget.name) : null
   }, [detailTarget])
@@ -766,18 +762,6 @@ export function GroupsScreen() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <button className="h-12 rounded-2xl bg-[var(--accent)] text-sm font-medium text-white" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑模型组' : 'Edit group'}</button>
                 <button className="h-12 rounded-2xl bg-[var(--danger)] text-sm font-medium text-white" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除模型组' : 'Delete group'}</button>
-              </div>
-
-              <div className={panelClassName('p-5')}>
-                <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '模型成员' : 'Members'}</div>
-                <div className="mt-4 space-y-2">
-                  {detailItems.length ? detailItems.map((item) => (
-                    <div key={`${item.channel_id}-${item.credential_id}-${item.model_name}`} className="rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2.5">
-                      <div className="text-sm font-medium text-[var(--text)]">{item.model_name}</div>
-                      <div className="mt-1 text-xs text-[var(--muted)]">{item.channel_name}{!item.enabled ? ' · 已关闭' : ''}</div>
-                    </div>
-                  )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无成员' : 'No members'}</p>}
-                </div>
               </div>
             </div>
           </AppDialogContent>
