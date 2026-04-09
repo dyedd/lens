@@ -1,177 +1,88 @@
 # Lens
 
-Lens 是一个基于 Python + Next.js 的模型网关与管理后台，当前只聚焦 4 类原生协议：
+多供应商 LLM 网关与管理后台，原生透传以下协议：
 
-- OpenAI Chat Completions
-- OpenAI Responses
+- OpenAI Chat Completions / Responses
 - Anthropic Messages
-- Gemini `generateContent` / `streamGenerateContent`
+- Gemini generateContent / streamGenerateContent
 
-当前范围刻意保持收敛：
-
-- 不做协议互转
-- 使用 SQLite + SQLAlchemy ORM
-- 使用 Alembic 做显式数据库迁移
-- 提供管理员登录
-- 提供渠道管理
-- 提供模型组聚合
-- 网关 API Key 在设置页管理
-- 提供请求日志与总览统计
-
-## 当前形态
-
-管理后台页面：
-
-- `/login`
-- `/dashboard`
-- `/dashboard/requests`
-- `/dashboard/channels`
-- `/dashboard/groups`
-- `/dashboard/settings`
-
-网关接口：
-
-- `POST /v1/chat/completions`
-- `POST /v1/responses`
-- `POST /v1/messages`
-- `POST /v1beta/models/{model}:generateContent`
-- `POST /v1beta/models/{model}:streamGenerateContent`
-
-管理 API：
-
-- `POST /api/admin/session`
-- `GET /api/admin/session`
-- `PUT /api/admin/password`
-- `GET /api/admin/app-info`
-- `GET /api/admin/overview`
-- `GET /api/admin/overview-summary`
-- `GET /api/admin/overview-daily`
-- `GET /api/admin/overview-models`
-- `GET /api/admin/request-logs`
-- `DELETE /api/admin/request-logs`
-- `GET /api/admin/request-logs/{log_id}`
-- `GET /api/admin/sites`
-- `POST /api/admin/sites`
-- `PUT /api/admin/sites/{site_id}`
-- `DELETE /api/admin/sites/{site_id}`
-- `POST /api/admin/site-model-discoveries`
-- `GET /api/admin/routes`
-- `POST /api/admin/route-previews`
-- `GET /api/admin/model-groups`
-- `GET /api/admin/model-group-stats`
-- `POST /api/admin/model-group-candidates`
-- `POST /api/admin/model-groups`
-- `PUT /api/admin/model-groups/{group_id}`
-- `DELETE /api/admin/model-groups/{group_id}`
-- `GET /api/admin/model-prices`
-- `PUT /api/admin/model-prices/{model_key}`
-- `POST /api/admin/model-price-sync-jobs`
-- `GET /api/admin/settings`
-- `PUT /api/admin/settings`
+不做协议互转，只在同协议族内路由和聚合。
 
 ## 技术栈
 
-- 后端：FastAPI、HTTPX、SQLAlchemy 2.x、SQLite、Alembic
-- 前端：Next.js App Router、React 19、TypeScript、TanStack Query、pnpm
+- 后端：Python 3.11+、FastAPI、SQLAlchemy 2.x、Alembic、SQLite
+- 前端：Next.js (App Router)、React 19、TypeScript、TanStack Query
+- 包管理：pip (后端)、pnpm (前端)
 
-## 运行后端
+## 快速开始
 
-使用 `temp` conda 环境。
+### 后端
 
-```powershell
-conda activate temp
-cd D:\Projects\PYprojects\lens
-python -m pip install -e .[dev]
-alembic upgrade head
+```bash
+pip install -e .[dev]
+lens db upgrade
 python scripts/seed_admin.py --username admin --password admin
 python -m lens_api.main
 ```
 
-如果 `data/data.db` 已经存在，但不是由当前 Alembic 迁移流程创建的，请先删除后再执行 `alembic upgrade head`。
+后端默认监听 `http://127.0.0.1:18080`。
 
-默认后端地址：
+### 前端
 
-- `http://127.0.0.1:18080`
-
-## 运行前端
-
-```powershell
-conda activate temp
-cd D:\Projects\PYprojects\lens\ui
+```bash
+cd ui
 pnpm install
 pnpm dev
 ```
 
-默认前端地址：
+前端默认监听 `http://127.0.0.1:3000`，开发模式下自动代理 API 请求到后端。
 
-- `http://127.0.0.1:3000`
+代理目标可通过环境变量覆盖：
 
-前端开发代理环境变量：
-
-- `LENS_UI_BACKEND_BASE_URL=http://127.0.0.1:18080`
-
-## 默认管理员
-
-执行 `python scripts/seed_admin.py --username <name> --password <password>` 后会显式写入管理员。
-
-本地开发示例：
-
-```powershell
-python scripts/seed_admin.py --username admin --password admin
+```env
+LENS_UI_BACKEND_BASE_URL=http://127.0.0.1:18080
 ```
 
-应用启动不会再自动创建管理员，也不会自动导入统计文件、自动清理日志或自动同步价格。在任何非本地场景中使用前，请修改 `LENS_AUTH_SECRET_KEY`，并显式设置你自己的管理员密码。
+## 数据库迁移
+
+通过 `lens db` 命令管理 Alembic 迁移，不需要 `alembic.ini`。
+
+```bash
+lens db upgrade                               # 升级到最新
+lens db downgrade                             # 回退一步
+lens db revision -m "describe your change"    # 生成新迁移（自动检测模型变更）
+lens db current                               # 查看当前版本
+lens db history                               # 查看迁移历史
+lens db stamp head                            # 标记数据库为最新（不执行 SQL）
+```
 
 ## 环境变量
 
-后端支持的配置项：
+所有配置项通过 `LENS_` 前缀的环境变量设置，也支持 `.env` 文件。
 
-```env
-LENS_HOST=127.0.0.1
-LENS_PORT=18080
-LENS_DATABASE_URL=sqlite+aiosqlite:///data/data.db
-LENS_AUTH_SECRET_KEY=change-me-in-production-and-make-it-longer-than-32-bytes
-LENS_AUTH_ALGORITHM=HS256
-LENS_AUTH_ACCESS_TOKEN_MINUTES=720
-LENS_ANTHROPIC_VERSION=2023-06-01
-LENS_REQUEST_TIMEOUT_SECONDS=180
-LENS_CONNECT_TIMEOUT_SECONDS=10
-LENS_MAX_CONNECTIONS=200
-LENS_MAX_KEEPALIVE_CONNECTIONS=50
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `LENS_HOST` | `127.0.0.1` | 监听地址 |
+| `LENS_PORT` | `18080` | 监听端口 |
+| `LENS_DATABASE_URL` | `sqlite+aiosqlite:///data/data.db` | 数据库连接 |
+| `LENS_AUTH_SECRET_KEY` | (开发用默认值) | JWT 签名密钥，生产环境必须修改 |
+| `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720` | Token 有效期（分钟） |
+| `LENS_REQUEST_TIMEOUT_SECONDS` | `180` | 上游请求超时 |
+| `LENS_CONNECT_TIMEOUT_SECONDS` | `10` | 上游连接超时 |
+| `LENS_MAX_CONNECTIONS` | `200` | 连接池上限 |
+| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50` | Keep-alive 连接上限 |
+
+## 网关使用
+
+在管理后台设置页创建网关 API Key 后，通过以下任一方式鉴权：
+
+```
+Authorization: Bearer <key>
+x-api-key: <key>
+x-goog-api-key: <key>
 ```
 
-## 路由规则
-
-Lens 只会在同一种原生协议族内做路由。
-
-路由流程：
-
-1. Authenticate the incoming gateway API key.
-2. Read requested protocol and model.
-3. If the model exactly matches a model-group name under the same protocol, use that group strategy and channel pool.
-4. Otherwise fall back to channel-level model matching.
-5. Route with `round_robin` or `failover`.
-
-渠道级聚合通过后台中手工选择的模型列表配置。
-
-示例：
-
-```text
-^claude-opus-4-6$
-^claude-opus-.*$
-```
-
-如果你创建一个名为 `claude-opus-4-6` 的模型组，那么这个外部模型名可以直接映射到指定的内部渠道池。
-
-## 下游网关访问
-
-先在 `/dashboard?view=settings` 中创建一个或多个网关 API Key，然后通过以下任一方式调用 Lens：
-
-- `Authorization: Bearer <gateway-secret>`
-- `x-api-key: <gateway-secret>`
-- `x-goog-api-key: <gateway-secret>`
-
-OpenAI Chat 调用示例：
+调用示例：
 
 ```bash
 curl http://127.0.0.1:18080/v1/chat/completions \
@@ -180,38 +91,14 @@ curl http://127.0.0.1:18080/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
 ```
 
-如果前端使用 `pnpm dev` 跑在 `3000`，也可以直接把工具接到前端地址。Next.js 会把以下接口转发到后端 `LENS_UI_BACKEND_BASE_URL`：
+## 路由规则
 
-- `/api/*`
-- `/v1/chat/completions`
-- `/v1/responses`
-- `/v1/messages`
-- `/v1/models`
-- `/v1beta/*`
+Lens 只在同协议族内路由，流程：
 
-例如：
+1. 验证网关 API Key
+2. 识别协议和请求模型
+3. 若模型名精确匹配某个模型组，使用该组的策略和渠道池
+4. 否则回退到渠道级模型匹配
+5. 按 `round_robin` 或 `failover` 策略分发
 
-```bash
-curl http://127.0.0.1:3000/v1/chat/completions \
-  -H "Authorization: Bearer sk-lens-..." \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
-```
-
-## 已实现
-
-- 管理员认证
-- SQLite 持久化，基于 SQLAlchemy ORM + Alembic
-- 渠道、模型组、设置的 CRUD
-- 基于模型组和渠道模型选择的路由
-- OpenAI Chat、OpenAI Responses、Anthropic、Gemini 原生透传
-- `/v1/*` 网关 API Key 鉴权
-- 管理后台中的请求日志与总览统计
-
-## 尚未实现
-
-- 协议互转
-- 主动健康检查和熔断逻辑
-- 上游模型自动同步
-- 完整成本核算
-- 多管理员 RBAC
+模型组示例：创建名为 `claude-opus-4-6` 的模型组，外部请求该模型名时直接路由到组内配置的渠道池。
