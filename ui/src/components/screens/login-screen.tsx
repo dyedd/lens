@@ -63,12 +63,14 @@ export function LoginScreen() {
           </button>
         </div>
 
-        <header className="flex flex-col items-center gap-2 text-center">
-          <Image src={logoUrl} alt={siteName} width={108} height={108} className="h-24 w-24 rounded-[28px] object-cover" unoptimized={logoUrl !== '/logo.svg'} />
-          <h1 className="text-lg font-semibold text-[var(--text)]">{siteName}</h1>
+        <header className="flex flex-col items-center gap-3 text-center mb-6">
+          <div className="relative h-20 w-20 overflow-hidden ">
+            <Image src={logoUrl} alt={siteName} fill className="object-cover" unoptimized={logoUrl !== '/logo.svg'} />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">{siteName}</h1>
         </header>
 
-        <form onSubmit={submit} className="space-y-5 rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-6 shadow-[var(--shadow-sm)]">
+        <form onSubmit={submit} className="space-y-5 rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--panel-strong)] p-6 sm:p-8 shadow-sm">
           <h2 className="text-base font-semibold text-[var(--text)]">{t.signIn}</h2>
 
           <label className="grid gap-2">

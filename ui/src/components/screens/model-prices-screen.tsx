@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Save, Search, Trash2, X } from 'lucide-react'
+import { Pencil, Save, Search, Trash2, X, RefreshCcw, Info } from 'lucide-react'
 import { ApiError, ModelPriceItem, ModelPriceListResponse, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { getModelGroupAvatar } from '@/lib/model-icons'
@@ -156,6 +157,22 @@ export function ModelPricesScreen() {
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
+  const [syncing, setSyncing] = useState(false)
+
+  async function syncPrices() {
+    setSyncing(true)
+    setError('')
+    setSaved('')
+    try {
+      await apiRequest<void>('/model-prices/sync', { method: 'POST' })
+      setSaved(locale === 'zh-CN' ? '价格同步成功' : 'Prices synced successfully')
+      await queryClient.invalidateQueries({ queryKey: ['model-prices'] })
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '同步失败' : 'Failed to sync prices'))
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   useEffect(() => {
     const nextDrafts: ModelPriceDraft = {}
@@ -247,33 +264,34 @@ export function ModelPricesScreen() {
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-[12px] text-[var(--muted)]">{locale === 'zh-CN' ? '模型组价格' : 'Model group prices'}</div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="hidden h-9 items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 md:flex">
+      {typeof document !== 'undefined' && document.getElementById('header-portal') ? createPortal(
+        <div className="flex flex-1 items-center justify-end gap-2">
+          <div className="flex h-9 w-full max-w-sm items-center rounded-lg border border-[var(--line)] bg-[var(--panel-strong)] px-3 shadow-sm transition-colors focus-within:border-[var(--accent)]">
             <Search size={15} className="text-[var(--muted)]" />
             <input
-              className="ml-2 w-44 bg-transparent text-[13px] text-[var(--text)] outline-none"
+              className="ml-2 h-full min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text)] outline-none"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={locale === 'zh-CN' ? '搜索模型组' : 'Search groups'}
             />
+            {search ? <button type="button" className="text-[var(--muted)] hover:text-[var(--text)]" onClick={() => setSearch('')}><X size={14} /></button> : null}
           </div>
-        </div>
+          <div className="group relative">
+            <button type="button" onClick={() => void syncPrices()} disabled={syncing} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--accent)] px-3.5 text-[13px] font-medium text-white shadow-sm transition-colors hover:opacity-90 disabled:opacity-60">
+              <RefreshCcw size={15} className={syncing ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">{syncing ? (locale === 'zh-CN' ? '同步中...' : 'Syncing...') : (locale === 'zh-CN' ? '重新同步配置' : 'Sync config')}</span>
+            </button>
+            <div className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-max max-w-[200px] origin-top-right scale-95 opacity-0 transition-all group-hover:scale-100 group-hover:opacity-100">
+              <div className="rounded-lg bg-[#1e293b] px-3 py-2.5 shadow-xl text-[12px] leading-tight text-white/90 text-center">
+                {data?.last_synced_at ? (locale === 'zh-CN' ? `上次同步时间：\n${new Date(data.last_synced_at).toLocaleString('zh-CN')}` : `Last synced:\n${new Date(data.last_synced_at).toLocaleString()}`) : (locale === 'zh-CN' ? '未同步' : 'Never synced')}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.getElementById('header-portal')!
+      ) : null}
 
-        <div className="flex h-9 w-full items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 md:hidden">
-          <Search size={15} className="text-[var(--muted)]" />
-          <input
-            className="ml-2 min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text)] outline-none"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={locale === 'zh-CN' ? '搜索模型组' : 'Search groups'}
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 mt-2 md:grid-cols-2 xl:grid-cols-3">
         {filteredItems.map((item) => {
           const Avatar = getModelGroupAvatar(item.display_name)
           const editing = editingKey === item.model_key

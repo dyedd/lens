@@ -8,6 +8,7 @@ import { apiRequest, type PublicBranding } from '@/lib/api'
 import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 import type { DashboardView } from '@/components/shell/dashboard-view-shell'
+import { cn } from '@/lib/cn'
 
 export function DashboardShell({
   children,
@@ -40,9 +41,9 @@ export function DashboardShell({
   }, [activeView, items, siteName, t.dashboard])
 
   return (
-    <div className="mx-auto flex h-dvh max-w-6xl flex-col overflow-hidden px-3 md:grid md:grid-cols-[auto_1fr] md:gap-6 md:px-6">
-      <aside className="relative z-50 md:min-h-screen">
-        <nav className="fixed bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-3 shadow-[var(--shadow-lg)] md:sticky md:top-30 md:left-auto md:bottom-auto md:translate-x-0 md:flex-col md:gap-3">
+    <div className="mx-auto flex h-dvh max-w-[960px] flex-col overflow-hidden px-4 md:grid md:grid-cols-[auto_1fr] md:gap-6 md:px-6">
+      <aside className="relative z-50 md:min-h-screen pt-4 md:pt-10">
+        <nav className="fixed bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--line)] bg-[rgba(255,255,255,0.85)] p-2 shadow-[var(--shadow-lg)] backdrop-blur-xl md:sticky md:top-12 md:left-auto md:bottom-auto md:translate-x-0 md:flex-col md:gap-4 md:rounded-[var(--radius-lg)]">
             {items.map((item) => {
               const Icon = item.icon
               const active = activeView === item.key
@@ -52,15 +53,18 @@ export function DashboardShell({
                   type="button"
                   onClick={() => onViewChange(item.key)}
                   onMouseEnter={() => onViewIntent?.(item.key)}
-                  className={
-                    'group relative z-10 flex rounded-2xl p-2 md:p-3 transition-colors duration-150 ' +
-                    (active
-                      ? 'bg-[var(--accent-2)] text-[var(--text)] shadow-[var(--shadow-sm)]'
-                      : 'text-[var(--muted)] hover:bg-[var(--panel-soft)] hover:text-[var(--text)]')
-                  }
+                  className={cn(
+                    'group relative z-10 flex rounded-full p-3 transition-all duration-300 md:rounded-[var(--radius-md)]',
+                    active
+                      ? 'bg-[var(--accent)] text-white shadow-[var(--shadow-sm)] scale-105'
+                      : 'text-[var(--muted)] hover:bg-[var(--panel-soft)] hover:text-[var(--text)]'
+                  )}
                   title={item.label}
                 >
-                  <Icon size={20} />
+                  <Icon size={22} strokeWidth={active ? 2.5 : 2} />
+                  {active && (
+                    <span className="absolute -bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-[var(--accent)] md:hidden" />
+                  )}
                 </button>
               )
             })}
@@ -68,23 +72,24 @@ export function DashboardShell({
       </aside>
 
       <main className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
-          <header className="my-6 flex flex-none items-center gap-x-2 px-2">
-            <Image src={logoUrl} alt={siteName} width={48} height={48} className="h-12 w-12 rounded-2xl object-cover" unoptimized={logoUrl !== '/logo.svg'} />
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <h1 className="text-3xl font-bold tracking-tight text-[var(--text)]">{items.find((item) => item.key === activeView)?.label ?? t.dashboard}</h1>
+          <header className="mt-8 mb-6 flex flex-none items-center gap-x-4 px-2">
+            <Image src={logoUrl} alt={siteName} width={64} height={64} className="h-[52px] w-[52px] object-contain" unoptimized={logoUrl !== '/logo.svg'} />
+            <div className="flex shrink-0 items-center gap-3 pr-2">
+              <h1 className="text-[24px] font-bold tracking-tight text-[var(--text)]">{items.find((item) => item.key === activeView)?.label ?? t.dashboard}</h1>
             </div>
-            <div className="ml-auto flex items-center gap-2">
+            <div id="header-portal" className="min-w-0 flex-1 flex items-center justify-end" />
+            <div className="ml-auto flex shrink-0 items-center gap-2 pl-2 border-l border-[var(--line)]">
               <button
                 type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-[var(--muted)] transition-none hover:bg-transparent hover:text-[var(--text)]"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted)] transition-all hover:bg-[var(--panel-soft)] hover:text-[var(--text)]"
                 onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
                 title={locale === 'zh-CN' ? '切换到英文' : 'Switch to Chinese'}
               >
-                <Globe2 size={16} />
+                <Globe2 size={18} />
               </button>
               <button
                 type="button"
-                className="inline-flex h-9 items-center rounded-xl px-3 text-sm text-[var(--muted)] transition-none hover:bg-transparent hover:text-[var(--text)]"
+                className="inline-flex h-9 items-center rounded-full px-4 text-[13px] font-medium text-[var(--muted)] transition-all hover:bg-[var(--panel-soft)] hover:text-[var(--danger)]"
                 onClick={() => {
                   clearStoredToken()
                   window.location.href = '/login'
@@ -94,7 +99,7 @@ export function DashboardShell({
               </button>
             </div>
           </header>
-          <div className="hide-scrollbar h-full min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-t-3xl pb-24 md:pb-4">
+          <div className="hide-scrollbar h-full min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-t-[var(--radius-lg)] pb-28 pt-2 md:pb-8">
             {children}
           </div>
       </main>

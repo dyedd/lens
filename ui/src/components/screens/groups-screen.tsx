@@ -1,6 +1,7 @@
 "use client"
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, GripVertical, Pencil, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import {
@@ -638,18 +639,24 @@ export function GroupsScreen() {
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-2 text-[var(--muted)]">
-        <div className="hidden h-9 items-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 md:flex">
-          <Search size={15} />
-          <input className="ml-2 w-40 bg-transparent text-[13px] outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型组' : 'Search groups'} />
-        </div>
-        <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] transition-colors hover:text-[var(--text)]" type="button" onClick={openCreate}>
-          <Plus size={15} />
-        </button>
-      </div>
+      {typeof document !== 'undefined' && document.getElementById('header-portal') ? createPortal(
+        <div className="flex flex-1 items-center justify-end gap-2">
+          <div className="flex h-9 w-full max-w-sm items-center rounded-lg border border-[var(--line)] bg-[var(--panel-strong)] px-3 shadow-sm transition-colors focus-within:border-[var(--accent)]">
+            <Search size={15} className="text-[var(--muted)]" />
+            <input className="ml-2 h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型组' : 'Search groups'} />
+            {search ? <button type="button" className="text-[var(--muted)] hover:text-[var(--text)]" onClick={() => setSearch('')}><X size={14} /></button> : null}
+          </div>
+          <button className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-sm transition-colors hover:opacity-90" type="button" onClick={openCreate}>
+            <Plus size={18} />
+          </button>
+        </div>,
+        document.getElementById('header-portal')!
+      ) : null}
 
-      {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
-      {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</p> : null}
+      <div className="mt-2">
+        {error ? <p className="text-sm text-[var(--danger)] mb-4">{error}</p> : null}
+        {isLoading ? <p className="text-sm text-[var(--muted)] mb-4">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</p> : null}
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {visibleGroups.map((group) => {
