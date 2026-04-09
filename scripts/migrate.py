@@ -6,7 +6,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
-from lens.core.config import settings
+from lens_api.core.config import settings
 
 
 def _sqlite_db_path() -> Path | None:

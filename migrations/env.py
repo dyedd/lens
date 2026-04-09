@@ -5,8 +5,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from lens.core.config import settings
-from lens.persistence.entities import Base
+from lens_api.core.config import settings
+from lens_api.persistence.entities import Base
 
 
 config = context.config
@@ -51,4 +51,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

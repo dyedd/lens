@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
 import json
-from pathlib import Path
 from time import perf_counter
 from typing import Any
 from copy import deepcopy
@@ -25,6 +24,7 @@ from ..models import AdminLoginRequest, AdminPasswordChangeRequest, AdminProfile
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore, SETTING_GATEWAY_API_KEY_HINT, SETTING_GATEWAY_API_KEYS, SETTING_SITE_LOGO_URL, SETTING_SITE_NAME
 from ..persistence.channel_store import ChannelStore
+from ..api import create_app
 from .router import RoundRobinRouter, RouteTarget
 from .upstreams import build_upstream_request, resolve_channel_api_key, resolve_channel_base_url, resolve_upstream_proxy_url
 from .. import __version__ as backend_version
@@ -118,10 +118,6 @@ class StreamCapture:
 async def _startup_app_state(state: AppState) -> None:
     if state.http.is_closed:
         state.http = state._create_http_client()
-    await state.admin_store.ensure_default_admin(settings.admin_default_username, settings.admin_default_password)
-    await _bootstrap_imported_stats(state)
-    await state.domain_store.prune_request_logs()
-    await _sync_group_prices(state)
 
 
 async def _close_app_state(state: AppState) -> None:
@@ -152,11 +148,9 @@ async def lifespan(_: FastAPI):
         yield
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
 auth_scheme = HTTPBearer(auto_error=False)
 
 
-@app.middleware("http")
 async def dynamic_cors_middleware(request: Request, call_next):
     response = await call_next(request)
     runtime = await app_state.domain_store.get_runtime_settings()
@@ -173,7 +167,6 @@ async def dynamic_cors_middleware(request: Request, call_next):
     return response
 
 
-@app.options("/{path:path}")
 async def cors_preflight(path: str, request: Request) -> Response:
     runtime = await app_state.domain_store.get_runtime_settings()
     allow_origins = runtime["cors_allow_origins"]
@@ -239,18 +232,15 @@ async def get_current_gateway_key(request: Request) -> str:
     return secret
 
 
-@app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/public/branding", response_model=PublicBranding)
 async def public_branding() -> PublicBranding:
     branding = await app_state.domain_store.get_branding_settings()
     return PublicBranding(site_name=branding["site_name"], logo_url=branding["site_logo_url"])
 
 
-@app.get("/api/app-info", response_model=AppInfo)
 async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
     branding = await app_state.domain_store.get_branding_settings()
     return AppInfo(
@@ -262,7 +252,6 @@ async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
     )
 
 
-@app.post("/api/auth/login", response_model=AuthTokenResponse)
 async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
     user = await app_state.admin_store.authenticate(payload.username, payload.password)
     if user is None:
@@ -275,12 +264,10 @@ async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
     return AuthTokenResponse(access_token=access_token, expires_in=expires_in)
 
 
-@app.get("/api/auth/me", response_model=AdminProfile)
 async def current_admin(admin = Depends(get_current_admin)) -> AdminProfile:
     return AdminProfile(id=admin.id, username=admin.username)
 
 
-@app.put("/api/auth/password", status_code=204)
 async def change_password(payload: AdminPasswordChangeRequest, admin = Depends(get_current_admin)) -> Response:
     try:
         await app_state.admin_store.update_password(admin.username, payload.current_password, payload.new_password)
@@ -289,17 +276,14 @@ async def change_password(payload: AdminPasswordChangeRequest, admin = Depends(g
     return Response(status_code=204)
 
 
-@app.get("/api/sites")
 async def list_sites(_: Any = Depends(get_current_admin)) -> list[SiteConfig]:
     return await app_state.store.list_sites()
 
 
-@app.post("/api/sites", status_code=201)
 async def create_site(payload: SiteCreate, _: Any = Depends(get_current_admin)) -> SiteConfig:
     return await app_state.store.create_site(payload)
 
 
-@app.put("/api/sites/{site_id}")
 async def update_site(site_id: str, payload: SiteUpdate, _: Any = Depends(get_current_admin)) -> SiteConfig:
     try:
         return await app_state.store.update_site(site_id, payload)
@@ -307,7 +291,6 @@ async def update_site(site_id: str, payload: SiteUpdate, _: Any = Depends(get_cu
         raise HTTPException(status_code=404, detail=f"Site not found: {site_id}") from exc
 
 
-@app.delete("/api/sites/{site_id}", status_code=204)
 async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Response:
     try:
         await app_state.store.delete_site(site_id)
@@ -316,7 +299,6 @@ async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Resp
     return Response(status_code=204)
 
 
-@app.post("/api/sites/fetch-models", response_model=list[SiteModelFetchItem])
 async def fetch_site_models(payload: SiteModelFetchRequest, _: Any = Depends(get_current_admin)) -> list[SiteModelFetchItem]:
     previews = await app_state.store.fetch_models_preview(payload)
     items: list[SiteModelFetchItem] = []
@@ -351,46 +333,38 @@ async def fetch_site_models(payload: SiteModelFetchRequest, _: Any = Depends(get
     return items
 
 
-@app.get("/api/router")
 async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]:
     channels = await app_state.store.list()
     return app_state.router.snapshot(channels).model_dump(mode="json")
 
 
-@app.get("/api/overview", response_model=OverviewMetrics)
 async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetrics:
     metrics = await app_state.domain_store.get_overview_metrics()
     channels = await app_state.store.list()
     return metrics.model_copy(update={"enabled_channels": sum(1 for item in channels if item.status.value == "enabled")})
 
 
-@app.get("/api/overview/summary", response_model=OverviewSummary)
 async def overview_summary(_: Any = Depends(get_current_admin)) -> OverviewSummary:
     return await app_state.domain_store.get_overview_summary()
 
 
-@app.get("/api/overview/daily", response_model=list[OverviewDailyPoint])
 async def overview_daily(_: Any = Depends(get_current_admin)) -> list[OverviewDailyPoint]:
     return await app_state.domain_store.list_overview_daily()
 
 
-@app.get("/api/overview/models", response_model=OverviewModelAnalytics)
 async def overview_models(_: Any = Depends(get_current_admin)) -> OverviewModelAnalytics:
     return await app_state.domain_store.get_model_analytics()
 
 
-@app.get("/api/request-logs", response_model=list[RequestLogItem])
 async def request_logs(_: Any = Depends(get_current_admin)) -> list[RequestLogItem]:
     return await app_state.domain_store.list_request_logs()
 
 
-@app.delete("/api/request-logs", status_code=204)
 async def clear_request_logs(_: Any = Depends(get_current_admin)) -> Response:
     await app_state.domain_store.clear_request_logs()
     return Response(status_code=204)
 
 
-@app.get("/api/request-logs/{log_id}", response_model=RequestLogDetail)
 async def request_log_detail(log_id: int, _: Any = Depends(get_current_admin)) -> RequestLogDetail:
     try:
         return await app_state.domain_store.get_request_log(log_id)
@@ -398,7 +372,6 @@ async def request_log_detail(log_id: int, _: Any = Depends(get_current_admin)) -
         raise HTTPException(status_code=404, detail=f"Request log not found: {log_id}") from exc
 
 
-@app.post("/api/router/preview")
 async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)) -> dict[str, Any]:
     channels = await app_state.store.list()
     available_channel_ids = {
@@ -419,12 +392,10 @@ async def router_preview(payload: RoutePreviewRequest, _: Any = Depends(get_curr
     ).model_dump(mode="json")
 
 
-@app.get("/api/model-groups", response_model=list[ModelGroup])
 async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGroup]:
     return await app_state.domain_store.list_groups()
 
 
-@app.get("/api/model-groups/{group_id}", response_model=ModelGroup)
 async def get_model_group(group_id: str, _: Any = Depends(get_current_admin)) -> ModelGroup:
     try:
         return await app_state.domain_store.get_group(group_id)
@@ -432,18 +403,15 @@ async def get_model_group(group_id: str, _: Any = Depends(get_current_admin)) ->
         raise HTTPException(status_code=404, detail=f"Model group not found: {group_id}") from exc
 
 
-@app.get("/api/model-groups/stats", response_model=list[ModelGroupStats])
 async def list_model_group_stats(_: Any = Depends(get_current_admin)) -> list[ModelGroupStats]:
     return await app_state.domain_store.list_group_stats()
 
 
-@app.get("/api/model-prices", response_model=ModelPriceListResponse)
 async def list_model_prices(_: Any = Depends(get_current_admin)) -> ModelPriceListResponse:
     await app_state.domain_store.prune_model_prices_to_groups()
     return await app_state.domain_store.list_model_prices()
 
 
-@app.put("/api/model-prices/{model_key}", response_model=ModelPriceItem)
 async def update_model_price(model_key: str, payload: ModelPriceUpdate, _: Any = Depends(get_current_admin)) -> ModelPriceItem:
     try:
         return await app_state.domain_store.upsert_model_price(payload.model_copy(update={"model_key": model_key}))
@@ -451,13 +419,11 @@ async def update_model_price(model_key: str, payload: ModelPriceUpdate, _: Any =
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/model-prices/sync", response_model=ModelPriceListResponse)
 async def sync_model_prices(_: Any = Depends(get_current_admin)) -> ModelPriceListResponse:
     await _sync_group_prices(app_state, overwrite_existing=True)
     return await app_state.domain_store.list_model_prices()
 
 
-@app.post("/api/model-groups/candidates", response_model=ModelGroupCandidatesResponse)
 async def model_group_candidates(payload: ModelGroupCandidatesRequest, _: Any = Depends(get_current_admin)) -> ModelGroupCandidatesResponse:
     try:
         return await app_state.domain_store.list_group_candidates(payload)
@@ -465,7 +431,6 @@ async def model_group_candidates(payload: ModelGroupCandidatesRequest, _: Any = 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/model-groups", response_model=ModelGroup, status_code=201)
 async def create_model_group(payload: ModelGroupCreate, _: Any = Depends(get_current_admin)) -> ModelGroup:
     try:
         group = await app_state.domain_store.create_group(payload)
@@ -475,7 +440,6 @@ async def create_model_group(payload: ModelGroupCreate, _: Any = Depends(get_cur
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.put("/api/model-groups/{group_id}", response_model=ModelGroup)
 async def update_model_group(group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)) -> ModelGroup:
     try:
         group = await app_state.domain_store.update_group(group_id, payload)
@@ -487,7 +451,6 @@ async def update_model_group(group_id: str, payload: ModelGroupUpdate, _: Any = 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.delete("/api/model-groups/{group_id}", status_code=204)
 async def delete_model_group(group_id: str, _: Any = Depends(get_current_admin)) -> Response:
     try:
         await app_state.domain_store.delete_group(group_id)
@@ -497,12 +460,10 @@ async def delete_model_group(group_id: str, _: Any = Depends(get_current_admin))
     return Response(status_code=204)
 
 
-@app.get("/api/settings", response_model=list[SettingItem])
 async def list_settings(_: Any = Depends(get_current_admin)) -> list[SettingItem]:
     return await app_state.domain_store.list_settings()
 
 
-@app.put("/api/settings", response_model=list[SettingItem])
 async def update_settings(payload: SettingsUpdate, _: Any = Depends(get_current_admin)) -> list[SettingItem]:
     normalized_items = []
     for item in payload.items:
@@ -522,25 +483,21 @@ async def update_settings(payload: SettingsUpdate, _: Any = Depends(get_current_
     return await app_state.domain_store.upsert_settings(normalized_items)
 
 
-@app.post("/v1/chat/completions")
 async def proxy_openai_chat(request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.OPENAI_CHAT, body, gateway_key)
 
 
-@app.post("/v1/responses")
 async def proxy_openai_responses(request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.OPENAI_RESPONSES, body, gateway_key)
 
 
-@app.post("/v1/messages")
 async def proxy_anthropic_messages(request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.ANTHROPIC, body, gateway_key)
 
 
-@app.get("/v1/models")
 async def list_gateway_models(_: str = Depends(get_current_gateway_key)) -> dict[str, Any]:
     groups = await app_state.domain_store.list_groups()
     openai_model_names = sorted({
@@ -562,14 +519,12 @@ async def list_gateway_models(_: str = Depends(get_current_gateway_key)) -> dict
     }
 
 
-@app.post("/v1beta/models/{model_name}:generateContent")
 async def proxy_gemini_generate_content(model_name: str, request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     body = {**body, "model": model_name, "stream": False}
     return await _proxy_protocol(ProtocolKind.GEMINI, body, gateway_key)
 
 
-@app.post("/v1beta/models/{model_name}:streamGenerateContent")
 async def proxy_gemini_stream_generate_content(model_name: str, request: Request, gateway_key: str = Depends(get_current_gateway_key)):
     body = await request.json()
     body = {**body, "model": model_name, "stream": True}
@@ -759,14 +714,23 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
         close_client = True
 
     try:
-        request = client.build_request(
-            upstream.method,
-            upstream.url,
-            headers=upstream.headers,
-            json=upstream.json_body,
-        )
+        is_stream_request = bool(body.get("stream"))
         stream_started_at = perf_counter()
-        response = await client.send(request, stream=True)
+        if is_stream_request:
+            request = client.build_request(
+                upstream.method,
+                upstream.url,
+                headers=upstream.headers,
+                json=upstream.json_body,
+            )
+            response = await client.send(request, stream=True)
+        else:
+            response = await client.request(
+                upstream.method,
+                upstream.url,
+                headers=upstream.headers,
+                json=upstream.json_body,
+            )
         response.raise_for_status()
         app_state.router.record_success(channel.id)
 
@@ -801,7 +765,7 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
                 stream_capture=capture,
             )
 
-        content = await response.aread()
+        content = response.content if hasattr(response, "content") else await response.aread()
 
         parsed = _extract_response_usage(channel.protocol, response)
         input_cost_usd, output_cost_usd, total_cost_usd = await app_state.domain_store.estimate_model_cost(
@@ -831,6 +795,7 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
             response_content=_decode_response_content(response),
         )
     except httpx.HTTPStatusError as exc:
+        await exc.response.aread()
         detail = exc.response.text or f"HTTP {exc.response.status_code}"
         raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
     except httpx.HTTPError as exc:
@@ -1373,33 +1338,6 @@ def _extract_response_usage(protocol: ProtocolKind, response: httpx.Response) ->
     }
 
 
-async def _bootstrap_imported_stats(state: AppState) -> None:
-    default_export = Path(r"D:\dyedd\Downloads\octopus-export-20260330203705.json")
-    if not default_export.exists():
-        return
-
-    try:
-        payload = json.loads(default_export.read_text(encoding="utf-8"))
-        await state.domain_store.replace_imported_stats(
-            total=payload.get("stats_total"),
-            daily=payload.get("stats_daily", []),
-            model_prices=[
-                {
-                    "model_key": item.get("name"),
-                    "display_name": item.get("name"),
-                    "input_price_per_million": item.get("input"),
-                    "output_price_per_million": item.get("output"),
-                    "cache_read_price_per_million": item.get("cache_read_input") or item.get("cache_read"),
-                    "cache_write_price_per_million": item.get("cache_creation_input") or item.get("cache_write"),
-                }
-                for item in payload.get("llm_infos", [])
-                if item.get("name")
-            ],
-        )
-    except Exception:
-        return
-
-
 async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) -> None:
     group_names = await state.domain_store.list_group_names()
     if not group_names:
@@ -1415,5 +1353,8 @@ async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) 
         await state.domain_store.set_model_price_sync_time(datetime.now(UTC).isoformat())
     except Exception:
         return
+
+
+app = create_app(service_module=__import__(__name__, fromlist=["*"]))
 
 

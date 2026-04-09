@@ -36,7 +36,7 @@ export function LoginScreen() {
     setError('')
 
     try {
-      const data = await apiRequest<LoginResponse>('/auth/login', {
+      const data = await apiRequest<LoginResponse>('/admin/session', {
         method: 'POST',
         body: JSON.stringify({ username, password })
       })

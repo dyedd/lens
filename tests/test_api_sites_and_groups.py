@@ -7,6 +7,10 @@ from pathlib import Path
 import httpx
 
 
+TEST_ADMIN_USERNAME = 'admin'
+TEST_ADMIN_PASSWORD = 'admin'
+
+
 def test_api_bootstrap_and_site_crud(tmp_path: Path):
     asyncio.run(_run_api_bootstrap_and_site_crud(tmp_path))
 
@@ -46,17 +50,17 @@ async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
     await service_module._startup_app_state(service_module.app_state)
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
-            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
             assert login.status_code == 200
             token = login.json()['access_token']
             headers = {'authorization': f'Bearer {token}'}
 
-            sites_before = await client.get('/api/sites', headers=headers)
+            sites_before = await client.get('/api/admin/sites', headers=headers)
             assert sites_before.status_code == 200
             before_count = len(sites_before.json())
 
             created = await client.post(
-                '/api/sites',
+                '/api/admin/sites',
                 headers=headers,
                 json={
                     'name': 'Test Site',
@@ -85,14 +89,14 @@ async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
             assert len(payload['protocols']) == 1
             site_id = payload['id']
 
-            sites_after_create = await client.get('/api/sites', headers=headers)
+            sites_after_create = await client.get('/api/admin/sites', headers=headers)
             assert sites_after_create.status_code == 200
             assert len(sites_after_create.json()) == before_count + 1
 
-            deleted = await client.delete(f'/api/sites/{site_id}', headers=headers)
+            deleted = await client.delete(f'/api/admin/sites/{site_id}', headers=headers)
             assert deleted.status_code == 204
 
-            sites_after_delete = await client.get('/api/sites', headers=headers)
+            sites_after_delete = await client.get('/api/admin/sites', headers=headers)
             assert sites_after_delete.status_code == 200
             assert len(sites_after_delete.json()) == before_count
     finally:
@@ -106,13 +110,13 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
     await service_module._startup_app_state(service_module.app_state)
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
-            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
             assert login.status_code == 200
             token = login.json()['access_token']
             headers = {'authorization': f'Bearer {token}'}
 
             created = await client.post(
-                '/api/sites',
+                '/api/admin/sites',
                 headers=headers,
                 json={
                     'name': 'Candidate Site',
@@ -142,7 +146,7 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
             beta = next(item for item in site['credentials'] if item['name'] == 'Beta')
 
             updated = await client.put(
-                f"/api/sites/{site['id']}",
+                f"/api/admin/sites/{site['id']}",
                 headers=headers,
                 json={
                     'name': site['name'],
@@ -176,7 +180,7 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
             assert updated.status_code == 200
 
             candidates = await client.post(
-                '/api/model-groups/candidates',
+                '/api/admin/model-group-candidates',
                 headers=headers,
                 json={
                     'protocol': 'openai_chat',
@@ -202,13 +206,13 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
     await service_module._startup_app_state(service_module.app_state)
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
-            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
             assert login.status_code == 200
             token = login.json()['access_token']
             headers = {'authorization': f'Bearer {token}'}
 
             created_site = await client.post(
-                '/api/sites',
+                '/api/admin/sites',
                 headers=headers,
                 json={
                     'name': 'Stats Site',
@@ -232,7 +236,7 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
             credential = site['credentials'][0]
 
             updated_site = await client.put(
-                f"/api/sites/{site['id']}",
+                f"/api/admin/sites/{site['id']}",
                 headers=headers,
                 json={
                     'name': site['name'],
@@ -254,7 +258,7 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
             assert updated_site.status_code == 200
 
             created_group = await client.post(
-                '/api/model-groups',
+                '/api/admin/model-groups',
                 headers=headers,
                 json={
                     'name': 'gpt-4.1',
@@ -271,13 +275,13 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
             assert created_group.status_code == 201
             group = created_group.json()
 
-            group_detail = await client.get(f"/api/model-groups/{group['id']}", headers=headers)
+            group_detail = await client.get(f"/api/admin/model-groups/{group['id']}", headers=headers)
             assert group_detail.status_code == 200
             detail_payload = group_detail.json()
             assert detail_payload['id'] == group['id']
             assert detail_payload['items'][0]['channel_id'] == protocol['id']
 
-            missing_group = await client.get('/api/model-groups/missing-group-id', headers=headers)
+            missing_group = await client.get('/api/admin/model-groups/missing-group-id', headers=headers)
             assert missing_group.status_code == 404
 
             await service_module.app_state.domain_store.create_request_log(
@@ -305,7 +309,7 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
                 error_message=None,
             )
 
-            stats = await client.get('/api/model-groups/stats', headers=headers)
+            stats = await client.get('/api/admin/model-group-stats', headers=headers)
             assert stats.status_code == 200
             stats_payload = stats.json()
             target = next(item for item in stats_payload if item['name'] == 'gpt-4.1')
@@ -339,12 +343,12 @@ async def _run_model_price_api(tmp_path: Path):
     await service_module._startup_app_state(service_module.app_state)
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
-            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
             token = login.json()['access_token']
             headers = {'authorization': f'Bearer {token}'}
 
             created_group = await client.post(
-                '/api/model-groups',
+                '/api/admin/model-groups',
                 headers=headers,
                 json={
                     'name': 'gpt-5.4',
@@ -355,14 +359,14 @@ async def _run_model_price_api(tmp_path: Path):
             )
             assert created_group.status_code == 201
 
-            prices = await client.get('/api/model-prices', headers=headers)
+            prices = await client.get('/api/admin/model-prices', headers=headers)
             assert prices.status_code == 200
             assert prices.json()['items'][0]['model_key'] == 'gpt-5.4'
             assert prices.json()['items'][0]['cache_read_price_per_million'] == 0.5
             assert prices.json()['items'][0]['cache_write_price_per_million'] == 1.5
 
             updated = await client.put(
-                '/api/model-prices/gpt-5.4',
+                '/api/admin/model-prices/gpt-5.4',
                 headers=headers,
                 json={
                     'model_key': 'ignored-by-path',
@@ -378,7 +382,7 @@ async def _run_model_price_api(tmp_path: Path):
             assert updated.json()['cache_read_price_per_million'] == 0.8
 
             missing = await client.put(
-                '/api/model-prices/not-a-group',
+                '/api/admin/model-prices/not-a-group',
                 headers=headers,
                 json={
                     'model_key': 'ignored-by-path',
@@ -391,7 +395,7 @@ async def _run_model_price_api(tmp_path: Path):
             )
             assert missing.status_code == 400
 
-            synced = await client.post('/api/model-prices/sync', headers=headers)
+            synced = await client.post('/api/admin/model-price-sync-jobs', headers=headers)
             assert synced.status_code == 200
             assert synced.json()['last_synced_at'] == '2026-04-05T00:00:00+00:00'
     finally:
@@ -410,19 +414,19 @@ async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
     service_module.app_state.http.request = fake_request
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
-            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
             assert login.status_code == 200
             token = login.json()['access_token']
             admin_headers = {'authorization': f'Bearer {token}'}
             updated_settings = await client.put(
-                '/api/settings',
+                '/api/admin/settings',
                 headers=admin_headers,
                 json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
             )
             assert updated_settings.status_code == 200
 
             created_site = await client.post(
-                '/api/sites',
+                '/api/admin/sites',
                 headers=admin_headers,
                 json={
                     'name': 'Mixed OpenAI Site',
@@ -459,7 +463,7 @@ async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
             responses_protocol = next(item for item in site['protocols'] if item['protocol'] == 'openai_responses')
 
             updated_site = await client.put(
-                f"/api/sites/{site['id']}",
+                f"/api/admin/sites/{site['id']}",
                 headers=admin_headers,
                 json={
                     'name': site['name'],
@@ -494,7 +498,7 @@ async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
             assert updated_site.status_code == 200
 
             created_group = await client.post(
-                '/api/model-groups',
+                '/api/admin/model-groups',
                 headers=admin_headers,
                 json={
                     'name': 'gpt-5.4',
@@ -567,19 +571,19 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
     service_module.app_state.http.request = fake_request
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
-            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
             assert login.status_code == 200
             token = login.json()['access_token']
             admin_headers = {'authorization': f'Bearer {token}'}
             updated_settings = await client.put(
-                '/api/settings',
+                '/api/admin/settings',
                 headers=admin_headers,
                 json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
             )
             assert updated_settings.status_code == 200
 
             created_site = await client.post(
-                '/api/sites',
+                '/api/admin/sites',
                 headers=admin_headers,
                 json={
                     'name': 'Responses Site',
@@ -603,7 +607,7 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
             protocol = site['protocols'][0]
 
             updated_site = await client.put(
-                f"/api/sites/{site['id']}",
+                f"/api/admin/sites/{site['id']}",
                 headers=admin_headers,
                 json={
                     'name': site['name'],
@@ -625,7 +629,7 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
             assert updated_site.status_code == 200
 
             created_group = await client.post(
-                '/api/model-groups',
+                '/api/admin/model-groups',
                 headers=admin_headers,
                 json={
                     'name': 'gpt-5.4',
@@ -676,7 +680,7 @@ async def _run_request_log_detail_api(tmp_path: Path):
     await service_module._startup_app_state(service_module.app_state)
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
-            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
             assert login.status_code == 200
             token = login.json()['access_token']
             headers = {'authorization': f'Bearer {token}'}
@@ -706,13 +710,13 @@ async def _run_request_log_detail_api(tmp_path: Path):
                 error_message=None,
             )
 
-            summary = await client.get('/api/request-logs', headers=headers)
+            summary = await client.get('/api/admin/request-logs', headers=headers)
             assert summary.status_code == 200
             summary_payload = summary.json()
             assert summary_payload[0]['id'] == created.id
             assert 'request_content' not in summary_payload[0]
 
-            detail = await client.get(f'/api/request-logs/{created.id}', headers=headers)
+            detail = await client.get(f'/api/admin/request-logs/{created.id}', headers=headers)
             assert detail.status_code == 200
             payload = detail.json()
             assert payload['id'] == created.id
@@ -722,7 +726,7 @@ async def _run_request_log_detail_api(tmp_path: Path):
             assert payload['attempts'][0]['channel_name'] == 'Channel A'
             assert payload['first_token_latency_ms'] == 0
 
-            missing = await client.get('/api/request-logs/999999', headers=headers)
+            missing = await client.get('/api/admin/request-logs/999999', headers=headers)
             assert missing.status_code == 404
     finally:
         await service_module._close_app_state(service_module.app_state)
@@ -757,20 +761,20 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
     service_module.app_state.http.send = fake_send
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
-            login = await client.post('/api/auth/login', json={'username': config.admin_default_username, 'password': config.admin_default_password})
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
             assert login.status_code == 200
             token = login.json()['access_token']
             admin_headers = {'authorization': f'Bearer {token}'}
 
             updated_settings = await client.put(
-                '/api/settings',
+                '/api/admin/settings',
                 headers=admin_headers,
                 json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
             )
             assert updated_settings.status_code == 200
 
             created_site = await client.post(
-                '/api/sites',
+                '/api/admin/sites',
                 headers=admin_headers,
                 json={
                     'name': 'Responses Stream Site',
@@ -794,7 +798,7 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
             protocol = site['protocols'][0]
 
             updated_site = await client.put(
-                f"/api/sites/{site['id']}",
+                f"/api/admin/sites/{site['id']}",
                 headers=admin_headers,
                 json={
                     'name': site['name'],
@@ -816,7 +820,7 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
             assert updated_site.status_code == 200
 
             created_group = await client.post(
-                '/api/model-groups',
+                '/api/admin/model-groups',
                 headers=admin_headers,
                 json={
                     'name': 'gpt-5.4',
@@ -840,11 +844,11 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
             assert gateway_response.status_code == 200
             assert 'OK' in gateway_response.text
 
-            summary = await client.get('/api/request-logs', headers=admin_headers)
+            summary = await client.get('/api/admin/request-logs', headers=admin_headers)
             assert summary.status_code == 200
             latest_id = summary.json()[0]['id']
 
-            detail = await client.get(f'/api/request-logs/{latest_id}', headers=admin_headers)
+            detail = await client.get(f'/api/admin/request-logs/{latest_id}', headers=admin_headers)
             assert detail.status_code == 200
             payload = detail.json()
             assert payload['protocol'] == 'openai_responses'
@@ -862,19 +866,20 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
 
 
 async def _build_test_app(database_path: Path):
-    from lens.core.db import Base
-    from lens.core.config import Settings
-    from lens.gateway import service as service_module
+    from lens_api.core.db import Base
+    from lens_api.core.config import Settings
+    from lens_api.gateway import service as service_module
+    from lens_api.persistence.admin_store import AdminStore
 
     config = Settings(
         database_url=f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}",
-        admin_default_username='admin',
-        admin_default_password='admin',
         auth_secret_key='lens-test-secret-key-with-32-bytes!!',
     )
     service_module.settings = config
     service_module.app_state = service_module.AppState()
     async with service_module.app_state.engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+    admin_store = AdminStore(service_module.app_state.session_factory)
+    await admin_store.ensure_default_admin(TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD)
     return service_module, service_module.app, config
 

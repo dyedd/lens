@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 
-from lens.core.db import Base, create_engine, create_session_factory
-from lens.models import ModelGroupCandidatesRequest, ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate
-from lens.persistence.domain_store import DomainStore
-from lens.persistence.channel_store import ChannelStore
+from lens_api.core.db import Base, create_engine, create_session_factory
+from lens_api.models import ModelGroupCandidatesRequest, ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate
+from lens_api.persistence.domain_store import DomainStore
+from lens_api.persistence.channel_store import ChannelStore
 
 
 def test_create_group_persists_ordered_model_items(tmp_path):

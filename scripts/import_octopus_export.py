@@ -9,9 +9,9 @@ from pathlib import Path
 
 from sqlalchemy import delete
 
-from lens.core.config import settings
-from lens.core.db import create_engine, create_session_factory
-from lens.models import (
+from lens_api.core.config import settings
+from lens_api.core.db import create_engine, create_session_factory
+from lens_api.models import (
     ModelGroupCreate,
     ModelGroupItemInput,
     ProtocolKind,
@@ -22,8 +22,8 @@ from lens.models import (
     SiteProtocolConfigInput,
     SiteProtocolCredentialBindingInput,
 )
-from lens.persistence.domain_store import DomainStore
-from lens.persistence.entities import (
+from lens_api.persistence.domain_store import DomainStore
+from lens_api.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
     SiteCredentialEntity,
@@ -32,7 +32,7 @@ from lens.persistence.entities import (
     SiteProtocolConfigEntity,
     SiteProtocolCredentialBindingEntity,
 )
-from lens.persistence.channel_store import ChannelStore
+from lens_api.persistence.channel_store import ChannelStore
 
 
 TYPE_TO_PROTOCOL = {

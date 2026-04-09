@@ -214,10 +214,10 @@ export function SettingsScreen() {
   const queryClient = useQueryClient()
   const { locale, setLocale } = useI18n()
   const toast = useToast()
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => apiRequest<SettingItem[]>('/settings') })
-  const { data: profile } = useQuery({ queryKey: ['auth-me'], queryFn: () => apiRequest<AdminProfile>('/auth/me') })
-  const { data: appInfo } = useQuery({ queryKey: ['app-info'], queryFn: () => apiRequest<AppInfo>('/app-info') })
-  const { data: modelPrices } = useQuery({ queryKey: ['model-prices'], queryFn: () => apiRequest<ModelPriceListResponse>('/model-prices') })
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => apiRequest<SettingItem[]>('/admin/settings') })
+  const { data: profile } = useQuery({ queryKey: ['auth-me'], queryFn: () => apiRequest<AdminProfile>('/admin/session') })
+  const { data: appInfo } = useQuery({ queryKey: ['app-info'], queryFn: () => apiRequest<AppInfo>('/admin/app-info') })
+  const { data: modelPrices } = useQuery({ queryKey: ['model-prices'], queryFn: () => apiRequest<ModelPriceListResponse>('/admin/model-prices') })
 
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT)
   const [gatewayKeys, setGatewayKeys] = useState<string[]>([])
@@ -301,7 +301,7 @@ export function SettingsScreen() {
         { key: SITE_NAME, value: draft.siteName.trim() || 'Lens' },
         { key: SITE_LOGO_URL, value: draft.siteLogoUrl.trim() },
       ]
-      await apiRequest<SettingItem[]>('/settings', { method: 'PUT', body: JSON.stringify({ items }) })
+      await apiRequest<SettingItem[]>('/admin/settings', { method: 'PUT', body: JSON.stringify({ items }) })
       const message = titleForLocale(locale, '设置已保存', 'Settings saved')
       setSaved(message)
       toast.success(message)
@@ -324,7 +324,7 @@ export function SettingsScreen() {
     setError('')
     setSaved('')
     try {
-      await apiRequest<void>('/request-logs', { method: 'DELETE' })
+      await apiRequest<void>('/admin/request-logs', { method: 'DELETE' })
       const message = titleForLocale(locale, '请求日志已清空', 'Request logs cleared')
       setSaved(message)
       toast.success(message)
@@ -360,7 +360,7 @@ export function SettingsScreen() {
     }
     setChangingPassword(true)
     try {
-      await apiRequest<void>('/auth/password', { method: 'PUT', body: JSON.stringify(payload) })
+      await apiRequest<void>('/admin/password', { method: 'PUT', body: JSON.stringify(payload) })
       const message = titleForLocale(locale, '密码已更新', 'Password updated')
       setSaved(message)
       toast.success(message)
@@ -380,7 +380,7 @@ export function SettingsScreen() {
     setError('')
     setSaved('')
     try {
-      await apiRequest<ModelPriceListResponse>('/model-prices/sync', { method: 'POST' })
+      await apiRequest<ModelPriceListResponse>('/admin/model-price-sync-jobs', { method: 'POST' })
       const message = titleForLocale(locale, '模型价格已同步', 'Model prices synced')
       setSaved(message)
       toast.success(message)

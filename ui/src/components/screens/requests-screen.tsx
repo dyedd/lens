@@ -210,13 +210,13 @@ export function RequestsScreen() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['request-logs'],
-    queryFn: () => apiRequest<RequestLogItem[]>('/request-logs'),
+    queryFn: () => apiRequest<RequestLogItem[]>('/admin/request-logs'),
     refetchInterval: 5000,
   })
 
   const { data: detail, isLoading: detailLoading } = useQuery({
     queryKey: ['request-log-detail', detailId],
-    queryFn: () => apiRequest<RequestLogDetail>(`/request-logs/${detailId}`),
+    queryFn: () => apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
     enabled: detailId !== null,
   })
 
