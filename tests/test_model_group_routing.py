@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from lens.gateway.router import RoundRobinRouter, RouteTarget
-from lens.models import ChannelConfig, ChannelStatus, ProtocolKind, RoutingStrategy
+from lens_api.gateway.router import RoundRobinRouter, RouteTarget
+from lens_api.models import ChannelConfig, ChannelStatus, ProtocolKind, RoutingStrategy
 
 
 def _channel(channel_id: str, name: str, models: list[str]) -> ChannelConfig:

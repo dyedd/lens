@@ -304,8 +304,8 @@ export function ChannelsScreen() {
   const [pickerSelectedModelKeys, setPickerSelectedModelKeys] = useState<string[]>([])
   const [formSnapshot, setFormSnapshot] = useState('')
 
-  const { data: sites, isLoading } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/sites') })
-  const { data: requestLogs } = useQuery({ queryKey: ['request-logs'], queryFn: () => apiRequest<RequestLogItem[]>('/request-logs') })
+  const { data: sites, isLoading } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
+  const { data: requestLogs } = useQuery({ queryKey: ['request-logs'], queryFn: () => apiRequest<RequestLogItem[]>('/admin/request-logs') })
 
   const siteStats = useMemo(() => buildSiteStats(requestLogs, sites), [requestLogs, sites])
   const visibleSites = useMemo<SiteRow[]>(() => {
@@ -375,7 +375,7 @@ export function ChannelsScreen() {
       return
     }
     try {
-      await apiRequest<Site>(editingSiteId ? `/sites/${editingSiteId}` : '/sites', {
+      await apiRequest<Site>(editingSiteId ? `/admin/sites/${editingSiteId}` : '/admin/sites', {
         method: editingSiteId ? 'PUT' : 'POST',
         body: JSON.stringify(toPayload(form)),
       })
@@ -394,7 +394,7 @@ export function ChannelsScreen() {
     setBusyId(site.id)
     setError('')
     try {
-      await apiRequest<void>(`/sites/${site.id}`, { method: 'DELETE' })
+      await apiRequest<void>(`/admin/sites/${site.id}`, { method: 'DELETE' })
       setDeleteTarget(null)
       setDetailTarget(null)
       await invalidateChannelData()
@@ -409,7 +409,7 @@ export function ChannelsScreen() {
     setBusyId(site.id)
     setError('')
     try {
-      await apiRequest<Site>(`/sites/${site.id}`, {
+      await apiRequest<Site>(`/admin/sites/${site.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           name: site.name,
@@ -508,7 +508,7 @@ export function ChannelsScreen() {
           ? [{ credential_id: selectedCredentialId, enabled: true }]
           : form.credentials.filter((item) => item.enabled && item.api_key.trim()).map((item) => ({ credential_id: item.id, enabled: true })),
       }
-      const models = await apiRequest<SiteModelFetchItem[]>('/sites/fetch-models', {
+      const models = await apiRequest<SiteModelFetchItem[]>('/admin/site-model-discoveries', {
         method: 'POST',
         body: JSON.stringify(payload),
       })

@@ -39,23 +39,35 @@ Lens 是一个基于 Python + Next.js 的模型网关与管理后台，当前只
 
 管理 API：
 
-- `POST /api/auth/login`
-- `GET /api/auth/me`
-- `GET /api/overview`
-- `GET /api/request-logs`
-- `GET /api/sites`
-- `POST /api/sites`
-- `PUT /api/sites/{site_id}`
-- `DELETE /api/sites/{site_id}`
-- `GET /api/router`
-- `POST /api/router/preview`
-- `GET /api/model-groups`
-- `GET /api/model-groups/stats`
-- `POST /api/model-groups`
-- `PUT /api/model-groups/{group_id}`
-- `DELETE /api/model-groups/{group_id}`
-- `GET /api/settings`
-- `PUT /api/settings`
+- `POST /api/admin/session`
+- `GET /api/admin/session`
+- `PUT /api/admin/password`
+- `GET /api/admin/app-info`
+- `GET /api/admin/overview`
+- `GET /api/admin/overview-summary`
+- `GET /api/admin/overview-daily`
+- `GET /api/admin/overview-models`
+- `GET /api/admin/request-logs`
+- `DELETE /api/admin/request-logs`
+- `GET /api/admin/request-logs/{log_id}`
+- `GET /api/admin/sites`
+- `POST /api/admin/sites`
+- `PUT /api/admin/sites/{site_id}`
+- `DELETE /api/admin/sites/{site_id}`
+- `POST /api/admin/site-model-discoveries`
+- `GET /api/admin/routes`
+- `POST /api/admin/route-previews`
+- `GET /api/admin/model-groups`
+- `GET /api/admin/model-group-stats`
+- `POST /api/admin/model-group-candidates`
+- `POST /api/admin/model-groups`
+- `PUT /api/admin/model-groups/{group_id}`
+- `DELETE /api/admin/model-groups/{group_id}`
+- `GET /api/admin/model-prices`
+- `PUT /api/admin/model-prices/{model_key}`
+- `POST /api/admin/model-price-sync-jobs`
+- `GET /api/admin/settings`
+- `PUT /api/admin/settings`
 
 ## 技术栈
 
@@ -71,8 +83,8 @@ conda activate temp
 cd D:\Projects\PYprojects\lens
 python -m pip install -e .[dev]
 alembic upgrade head
-python scripts/seed_admin.py
-python -m lens.main
+python scripts/seed_admin.py --username admin --password admin
+python -m lens_api.main
 ```
 
 如果 `data/data.db` 已经存在，但不是由当前 Alembic 迁移流程创建的，请先删除后再执行 `alembic upgrade head`。
@@ -100,12 +112,15 @@ pnpm dev
 
 ## 默认管理员
 
-执行 `python scripts/seed_admin.py` 后会写入默认管理员：
+执行 `python scripts/seed_admin.py --username <name> --password <password>` 后会显式写入管理员。
 
-- username: `admin`
-- password: `admin`
+本地开发示例：
 
-在任何非本地场景中使用前，请修改 `LENS_AUTH_SECRET_KEY` 和默认管理员密码。
+```powershell
+python scripts/seed_admin.py --username admin --password admin
+```
+
+应用启动不会再自动创建管理员，也不会自动导入统计文件、自动清理日志或自动同步价格。在任何非本地场景中使用前，请修改 `LENS_AUTH_SECRET_KEY`，并显式设置你自己的管理员密码。
 
 ## 环境变量
 
@@ -118,8 +133,6 @@ LENS_DATABASE_URL=sqlite+aiosqlite:///data/data.db
 LENS_AUTH_SECRET_KEY=change-me-in-production-and-make-it-longer-than-32-bytes
 LENS_AUTH_ALGORITHM=HS256
 LENS_AUTH_ACCESS_TOKEN_MINUTES=720
-LENS_ADMIN_DEFAULT_USERNAME=admin
-LENS_ADMIN_DEFAULT_PASSWORD=admin
 LENS_ANTHROPIC_VERSION=2023-06-01
 LENS_REQUEST_TIMEOUT_SECONDS=180
 LENS_CONNECT_TIMEOUT_SECONDS=10

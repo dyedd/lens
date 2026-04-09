@@ -150,7 +150,7 @@ function EditablePriceRow({
 export function ModelPricesScreen() {
   const queryClient = useQueryClient()
   const { locale } = useI18n()
-  const { data, isLoading } = useQuery({ queryKey: ['model-prices'], queryFn: () => apiRequest<ModelPriceListResponse>('/model-prices') })
+  const { data, isLoading } = useQuery({ queryKey: ['model-prices'], queryFn: () => apiRequest<ModelPriceListResponse>('/admin/model-prices') })
   const [drafts, setDrafts] = useState<ModelPriceDraft>({})
   const [busyKey, setBusyKey] = useState('')
   const [editingKey, setEditingKey] = useState('')
@@ -164,7 +164,7 @@ export function ModelPricesScreen() {
     setError('')
     setSaved('')
     try {
-      await apiRequest<void>('/model-prices/sync', { method: 'POST' })
+      await apiRequest<void>('/admin/model-price-sync-jobs', { method: 'POST' })
       setSaved(locale === 'zh-CN' ? '价格同步成功' : 'Prices synced successfully')
       await queryClient.invalidateQueries({ queryKey: ['model-prices'] })
     } catch (e) {
@@ -223,7 +223,7 @@ export function ModelPricesScreen() {
     setError('')
     setSaved('')
     try {
-      await apiRequest<ModelPriceItem>('/model-prices/' + encodeURIComponent(item.model_key), {
+      await apiRequest<ModelPriceItem>('/admin/model-prices/' + encodeURIComponent(item.model_key), {
         method: 'PUT',
         body: JSON.stringify({
           model_key: item.model_key,

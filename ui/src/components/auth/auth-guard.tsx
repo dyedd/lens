@@ -51,7 +51,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const profile = await apiRequest<AdminProfile>('/auth/me')
+        const profile = await apiRequest<AdminProfile>('/admin/session')
         if (!cancelled) {
           writeCachedProfile(profile)
           setState({ ready: true, profile })

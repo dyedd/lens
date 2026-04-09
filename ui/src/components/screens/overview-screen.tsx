@@ -55,10 +55,10 @@ export function OverviewScreen() {
   const [heatMetric, setHeatMetric] = useState<HeatMetric>('requests')
   const [modelPanel, setModelPanel] = useState<ModelPanel>('distribution')
 
-  const { data: metrics } = useQuery({ queryKey: ['overview'], queryFn: () => apiRequest<OverviewMetrics>('/overview') })
-  const { data: summary } = useQuery({ queryKey: ['overview-summary'], queryFn: () => apiRequest<OverviewSummary>('/overview/summary') })
-  const { data: daily } = useQuery({ queryKey: ['overview-daily'], queryFn: () => apiRequest<OverviewDailyPoint[]>('/overview/daily') })
-  const { data: models } = useQuery({ queryKey: ['overview-models'], queryFn: () => apiRequest<OverviewModelAnalytics>('/overview/models') })
+  const { data: metrics } = useQuery({ queryKey: ['overview'], queryFn: () => apiRequest<OverviewMetrics>('/admin/overview') })
+  const { data: summary } = useQuery({ queryKey: ['overview-summary'], queryFn: () => apiRequest<OverviewSummary>('/admin/overview-summary') })
+  const { data: daily } = useQuery({ queryKey: ['overview-daily'], queryFn: () => apiRequest<OverviewDailyPoint[]>('/admin/overview-daily') })
+  const { data: models } = useQuery({ queryKey: ['overview-models'], queryFn: () => apiRequest<OverviewModelAnalytics>('/admin/overview-models') })
 
   const summaryCards = [
     {

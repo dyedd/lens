@@ -194,6 +194,10 @@ class DomainStore:
             protocols_by_key.setdefault(key, set()).add(ProtocolKind(str(protocol)))
             display_names_by_key.setdefault(key, str(name))
 
+        for key, price_entity in prices_by_key.items():
+            if key not in display_names_by_key:
+                display_names_by_key[key] = str(price_entity.display_name or key)
+
         items: list[ModelPriceItem] = []
         for key in sorted(display_names_by_key, key=lambda item: display_names_by_key[item].lower()):
             price_entity = prices_by_key.get(key)
@@ -360,7 +364,8 @@ class DomainStore:
             channel_items = list(dict.fromkeys(models_by_channel.get(channel.id, [])))
             for credential_id, model_name in channel_items:
                 candidate_key = (channel.id, credential_id, model_name)
-                if candidate_key in seen or candidate_key in excluded:
+                wildcard_key = (channel.id, "", model_name)
+                if candidate_key in seen or candidate_key in excluded or wildcard_key in excluded:
                     continue
                 seen.add(candidate_key)
                 meta = channel_meta_by_id.get(channel.id, {})

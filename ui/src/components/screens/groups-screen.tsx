@@ -329,15 +329,15 @@ export function GroupsScreen() {
   const [cardDraggingKey, setCardDraggingKey] = useState<string | null>(null)
   const [showEnabledOnly, setShowEnabledOnly] = useState(false)
 
-  const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/model-groups') })
-  const { data: sites } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/sites') })
+  const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/admin/model-groups') })
+  const { data: sites } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(() => ({
     protocol: form.protocol,
     exclude_items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }), [form])
   const { data: candidateResponse, refetch: refetchCandidates, isFetching: isFetchingCandidates } = useQuery({
     queryKey: ['group-candidates', candidatePayload],
-    queryFn: () => apiRequest<ModelGroupCandidatesResponse>('/model-groups/candidates', {
+    queryFn: () => apiRequest<ModelGroupCandidatesResponse>('/admin/model-group-candidates', {
       method: 'POST',
       body: JSON.stringify(candidatePayload),
     }),
@@ -476,7 +476,7 @@ export function GroupsScreen() {
   }
 
   async function saveGroup(payload: FormState, groupId: string | null) {
-    const savedGroup = await apiRequest<ModelGroup>(groupId ? '/model-groups/' + groupId : '/model-groups', {
+    const savedGroup = await apiRequest<ModelGroup>(groupId ? '/admin/model-groups/' + groupId : '/admin/model-groups', {
       method: groupId ? 'PUT' : 'POST',
       body: JSON.stringify(toPayload(payload)),
     })
@@ -501,7 +501,7 @@ export function GroupsScreen() {
     setBusyId(item.id)
     setError('')
     try {
-      await apiRequest<void>('/model-groups/' + item.id, { method: 'DELETE' })
+      await apiRequest<void>('/admin/model-groups/' + item.id, { method: 'DELETE' })
       setDeleteTarget(null)
       await invalidateGroupData()
     } catch (e) {

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 
-from lens.core.db import Base, create_engine, create_session_factory
-from lens.core.model_prices import build_group_price_payloads, build_models_dev_price_index
-from lens.models import ModelGroupCreate, ProtocolKind, RoutingStrategy
-from lens.persistence.domain_store import DomainStore
+from lens_api.core.db import Base, create_engine, create_session_factory
+from lens_api.core.model_prices import build_group_price_payloads, build_models_dev_price_index
+from lens_api.models import ModelGroupCreate, ProtocolKind, RoutingStrategy
+from lens_api.persistence.domain_store import DomainStore
 
 
 def test_build_group_price_payloads_matches_group_name():
