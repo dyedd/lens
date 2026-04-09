@@ -21,6 +21,9 @@ dev = [
     "pytest>=8.3.0",
 ]
 
+[project.scripts]
+lens = "lens_api.cli:main"
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
