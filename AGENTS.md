@@ -1,5 +1,13 @@
 # Project Agents Rules
 
+<!-- BEGIN:nextjs-agent-rules -->
+
+# Next.js: ALWAYS read docs before coding
+
+Before any Next.js work, find and read the relevant doc in `node_modules/next/dist/docs/`. Your training data is outdated — the docs are the source of truth.
+
+<!-- END:nextjs-agent-rules -->
+
 ## Frontend Verification
 
 - 默认不要主动执行 `pnpm build` 作为前端改动后的验证手段。

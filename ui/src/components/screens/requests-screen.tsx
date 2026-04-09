@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
@@ -227,19 +228,22 @@ export function RequestsScreen() {
   const failedCount = useMemo(() => (data ?? []).filter((item) => !item.success).length, [data])
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-end gap-2">
-        <button
-          className={showFailedOnly
-            ? 'inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--accent)] px-3 text-sm text-white'
-            : 'inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 text-sm text-[var(--text)]'}
-          type="button"
-          onClick={() => setShowFailedOnly((current) => !current)}
-        >
-          <Filter size={15} />
-          {locale === 'zh-CN' ? `仅看失败 ${failedCount ? `(${failedCount})` : ''}` : `Failed only${failedCount ? ` (${failedCount})` : ''}`}
-        </button>
-      </div>
+    <section className="space-y-4 md:space-y-6">
+      {typeof document !== 'undefined' && document.getElementById('header-portal') ? createPortal(
+        <div className="flex flex-1 items-center justify-end gap-2">
+          <button
+            className={showFailedOnly
+              ? 'inline-flex h-9 items-center gap-2 rounded-lg bg-[rgba(239,68,68,0.1)] px-3.5 text-[13px] font-medium text-[var(--danger)] transition-colors hover:bg-[rgba(239,68,68,0.15)]'
+              : 'inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel-strong)] px-3.5 text-[13px] font-medium text-[var(--muted)] shadow-sm transition-all hover:bg-[var(--panel-soft)] hover:text-[var(--text)]'}
+            type="button"
+            onClick={() => setShowFailedOnly((current) => !current)}
+          >
+            <Filter size={15} />
+            {locale === 'zh-CN' ? `仅看失败 ${failedCount ? `(${failedCount})` : ''}` : `Failed only${failedCount ? ` (${failedCount})` : ''}`}
+          </button>
+        </div>,
+        document.getElementById('header-portal')!
+      ) : null}
 
       <div className="grid gap-4">
         {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载请求日志...' : 'Loading request logs...'}</p> : null}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Activity, ArrowDownToLine, ArrowUpFromLine, Bot, Clock3, DollarSign, MessageSquare, Sparkles } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, apiRequest } from '@/lib/api'
@@ -128,8 +129,15 @@ export function OverviewScreen() {
   const maxBar = Math.max(...chartBars.map((item) => item.value), 1)
 
   return (
-    <section className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="space-y-4 md:space-y-6">
+      {typeof document !== 'undefined' && document.getElementById('header-portal') ? createPortal(
+        <div className="flex flex-1 items-center justify-end gap-2">
+            {/* The page title itself is enough, but we could add global actions here if needed */}
+        </div>,
+        document.getElementById('header-portal')!
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {summaryCards.map((card) => {
           const HeaderIcon = card.icon
           return (

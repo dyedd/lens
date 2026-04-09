@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import { FormEvent, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, CircleAlert, Copy, ImageIcon, Info, KeyRound, Palette, RotateCcw, Save, ServerCog, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
@@ -406,9 +407,9 @@ export function SettingsScreen() {
     return (
       <SettingCard icon={Palette} title={titleForLocale(locale, '外观', 'Appearance')}>
         <Field label={titleForLocale(locale, '语言', 'Language')}>
-          <div className="inline-flex rounded-xl border border-[var(--line)] bg-[var(--panel)] p-1">
-            <button type="button" onClick={() => setLocale('zh-CN')} className={locale === 'zh-CN' ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)]'}>简体中文</button>
-            <button type="button" onClick={() => setLocale('en-US')} className={locale === 'en-US' ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)]'}>English</button>
+          <div className="inline-flex gap-2">
+            <button type="button" onClick={() => setLocale('zh-CN')} className={locale === 'zh-CN' ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--panel-soft)]'}>简体中文</button>
+            <button type="button" onClick={() => setLocale('en-US')} className={locale === 'en-US' ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--panel-soft)]'}>English</button>
           </div>
         </Field>
         <Field label={titleForLocale(locale, '站点名称', 'Site name')}>
@@ -459,9 +460,9 @@ export function SettingsScreen() {
     return (
       <SettingCard icon={CircleAlert} title={titleForLocale(locale, '日志', 'Logs')}>
         <Field label={titleForLocale(locale, '保留日志', 'Keep logs')}>
-          <div className="inline-flex rounded-xl border border-[var(--line)] bg-[var(--panel)] p-1">
-            <button type="button" onClick={() => setDraftValue('relayLogKeepEnabled', true)} className={draft.relayLogKeepEnabled ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)]'}>{titleForLocale(locale, '开启', 'On')}</button>
-            <button type="button" onClick={() => setDraftValue('relayLogKeepEnabled', false)} className={!draft.relayLogKeepEnabled ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)]'}>{titleForLocale(locale, '关闭', 'Off')}</button>
+          <div className="inline-flex gap-2">
+            <button type="button" onClick={() => setDraftValue('relayLogKeepEnabled', true)} className={draft.relayLogKeepEnabled ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--panel-soft)]'}>{titleForLocale(locale, '开启', 'On')}</button>
+            <button type="button" onClick={() => setDraftValue('relayLogKeepEnabled', false)} className={!draft.relayLogKeepEnabled ? 'rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white' : 'rounded-lg px-3 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--panel-soft)]'}>{titleForLocale(locale, '关闭', 'Off')}</button>
           </div>
         </Field>
         <Field label={titleForLocale(locale, '保留天数', 'Keep days')}>
@@ -532,25 +533,27 @@ export function SettingsScreen() {
 
   return (
     <section className="space-y-4">
-      <form className="space-y-4" onSubmit={submit}>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <button className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 text-sm text-[var(--text)] transition-colors hover:bg-[var(--panel)]" type="button" onClick={() => void refresh()}>
-            <RotateCcw size={15} />
-            {titleForLocale(locale, '刷新', 'Refresh')}
-          </button>
-          <button className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--accent)] px-3 text-sm font-medium text-white disabled:opacity-60" type="submit" disabled={saving}>
-            <Save size={15} />
-            {saveButtonLabel(locale, saving)}
-          </button>
-        </div>
+      <form className="space-y-6" onSubmit={(e) => void submit(e)}>
+        {typeof document !== 'undefined' && document.getElementById('header-portal') ? createPortal(
+          <div className="flex flex-1 items-center justify-end gap-2">
+            <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel-strong)] px-3.5 text-[13px] font-medium text-[var(--muted)] shadow-sm transition-all hover:bg-[var(--panel-soft)] hover:text-[var(--text)]" type="button" onClick={() => void refresh()}>
+              <RotateCcw size={15} />
+              <span className="hidden sm:inline">{titleForLocale(locale, '刷新', 'Refresh')}</span>
+            </button>
+            <button className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--accent)] px-3.5 text-[13px] font-medium text-white shadow-sm transition-colors hover:opacity-90 disabled:opacity-60" type="submit" disabled={saving}>
+              <Save size={15} />
+              {saveButtonLabel(locale, saving)}
+            </button>
+          </div>,
+          document.getElementById('header-portal')!
+        ) : null}
 
-        <div className="space-y-4 md:hidden">
+        <div className="space-y-4 md:hidden mt-2">
           {renderInfoCard()}
           {renderAccountCard()}
           {renderLogCard()}
           {renderAppearanceCard()}
           {renderApiKeyCard()}
-          {renderPriceCard()}
           {renderSystemCard()}
           {renderCircuitCard()}
         </div>
@@ -565,7 +568,6 @@ export function SettingsScreen() {
           <SettingsColumn>
             {renderLogCard()}
             {renderApiKeyCard()}
-            {renderPriceCard()}
             {renderCircuitCard()}
           </SettingsColumn>
         </div>

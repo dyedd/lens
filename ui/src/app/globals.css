@@ -1,21 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #eef3fb;
-  --bg-2: #f7faff;
-  --panel: #fbfdff;
+  --bg: #f8fafc;
+  --bg-2: #ffffff;
+  --panel: #ffffff;
   --panel-strong: #ffffff;
-  --panel-soft: #f2f6fc;
-  --line: rgba(37, 99, 235, 0.10);
-  --line-strong: rgba(37, 99, 235, 0.18);
-  --text: #18253d;
-  --muted: #6b7a96;
+  --panel-soft: #f1f5f9;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --text: #0f172a;
+  --muted: #64748b;
   --accent: #2563eb;
-  --accent-2: #dbe9ff;
-  --danger: #d96f5d;
-  --success: #2563eb;
-  --shadow-lg: 0 18px 42px rgba(24, 37, 61, 0.10);
-  --shadow-sm: 0 8px 24px rgba(24, 37, 61, 0.06);
+  --accent-2: #eff6ff;
+  --danger: #ef4444;
+  --success: #10b981;
+  --shadow-lg: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 4px 6px -1px rgba(15, 23, 42, 0.03), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+  --radius-lg: 1.25rem;
+  --radius-md: 0.875rem;
+  --radius-sm: 0.5rem;
 }
 
 * {
@@ -53,35 +57,20 @@ body {
   min-height: 100%;
   color: var(--text);
   font-family: var(--font-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 13px;
-  line-height: 1.45;
-  background:
-    radial-gradient(circle at 78% 10%, rgba(37, 99, 235, 0.15), transparent 18%),
-    radial-gradient(circle at 15% 82%, rgba(59, 130, 246, 0.10), transparent 18%),
-    linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 100%);
+  font-size: 13.5px;
+  line-height: 1.5;
+  background-color: var(--bg);
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(220,89%,48%,0.04) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(240,89%,48%,0.03) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, hsla(220,89%,48%,0.04) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, hsla(240,89%,48%,0.03) 0px, transparent 50%);
+  background-attachment: fixed;
 }
 
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 78% 10%, rgba(37, 99, 235, 0.08), transparent 22%),
-    radial-gradient(circle at 18% 78%, rgba(96, 165, 250, 0.08), transparent 22%);
-}
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  display: none;
 }
 
 a {
@@ -120,10 +109,15 @@ button {
   to { opacity: 1; }
 }
 
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes dialogIn {
   from {
     opacity: 0;
-    transform: translate3d(-50%, -46%, 0) scale(0.98);
+    transform: translate3d(-50%, -46%, 0) scale(0.97);
   }
   to {
     opacity: 1;
@@ -139,5 +133,5 @@ samp {
 }
 
 ::selection {
-  background: rgba(47, 111, 237, 0.18);
+  background: rgba(37, 99, 235, 0.2);
 }
