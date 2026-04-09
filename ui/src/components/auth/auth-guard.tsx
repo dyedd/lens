@@ -7,6 +7,7 @@ import { clearStoredToken, getStoredToken } from '@/lib/auth'
 
 const SESSION_CACHE_KEY = 'lens_admin_profile_cache'
 const SESSION_CACHE_TTL_MS = 60_000
+const SESSION_CACHE_VERSION = 1
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -19,8 +20,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       try {
         const raw = window.sessionStorage.getItem(SESSION_CACHE_KEY)
         if (!raw) return null
-        const parsed = JSON.parse(raw) as { profile: AdminProfile; expiresAt: number }
-        if (!parsed?.profile || typeof parsed.expiresAt !== 'number' || parsed.expiresAt < Date.now()) {
+        const parsed = JSON.parse(raw) as { version?: number; profile: AdminProfile; expiresAt: number }
+        if (parsed.version !== SESSION_CACHE_VERSION || !parsed?.profile || typeof parsed.expiresAt !== 'number' || parsed.expiresAt < Date.now()) {
           window.sessionStorage.removeItem(SESSION_CACHE_KEY)
           return null
         }
@@ -33,6 +34,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
     function writeCachedProfile(profile: AdminProfile) {
       window.sessionStorage.setItem(SESSION_CACHE_KEY, JSON.stringify({
+        version: SESSION_CACHE_VERSION,
         profile,
         expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
       }))

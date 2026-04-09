@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 
 export type Locale = 'zh-CN' | 'en-US'
 
@@ -74,14 +74,11 @@ type I18nValue = {
 const I18nContext = createContext<I18nValue | null>(null)
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>('zh-CN')
-
-  useEffect(() => {
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    if (typeof window === 'undefined') return 'zh-CN'
     const stored = window.localStorage.getItem('lens_locale') as Locale | null
-    if (stored === 'zh-CN' || stored === 'en-US') {
-      setLocaleState(stored)
-    }
-  }, [])
+    return (stored === 'zh-CN' || stored === 'en-US') ? stored : 'zh-CN'
+  })
 
   const value = useMemo<I18nValue>(() => ({
     locale,

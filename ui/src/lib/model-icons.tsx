@@ -65,3 +65,8 @@ export function getModelGroupAvatar(name: string): AvatarComponent {
   }
   return fallbackAvatar
 }
+
+export function ModelAvatar({ name, size }: { name: string; size?: number }) {
+  const avatarFn = getModelGroupAvatar(name)
+  return avatarFn({ size })
+}

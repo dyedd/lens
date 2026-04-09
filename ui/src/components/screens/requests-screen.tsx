@@ -17,7 +17,7 @@ import {
 import { RequestLogDetail, RequestLogItem, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/cn'
-import { getModelGroupAvatar } from '@/lib/model-icons'
+import { ModelAvatar } from '@/lib/model-icons'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 
 function formatMs(value: number) {
@@ -160,7 +160,7 @@ function RequestCard({
   locale: 'zh-CN' | 'en-US'
   onToggle: () => void
 }) {
-  const Avatar = getModelGroupAvatar(item.requested_model || item.resolved_model || '')
+  const modelName = item.requested_model || item.resolved_model || ''
 
   return (
     <article
@@ -176,7 +176,7 @@ function RequestCard({
       >
         <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 px-5 py-5 lg:px-6">
           <div className="row-span-2 flex h-12 w-12 shrink-0 items-center justify-center self-start rounded-2xl border border-[var(--line)] bg-[var(--panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
-              <Avatar size={28} />
+              <ModelAvatar name={modelName} size={28} />
           </div>
 
           <div className="min-w-0 self-center">
