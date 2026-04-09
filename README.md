@@ -21,8 +21,8 @@
 ```bash
 pip install -e .[dev]
 lens db upgrade
-python scripts/seed_admin.py --username admin --password admin
-python -m lens_api.main
+lens seed-admin --username admin --password admin
+lens serve
 ```
 
 后端默认监听 `http://127.0.0.1:18080`。
