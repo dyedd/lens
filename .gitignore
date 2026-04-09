@@ -10,3 +10,6 @@ build/
 data/lens.db
 data/data.db
 *.tsbuildinfo
+AGENTS.md
+CLAUDE.md
+GEMINI.md
