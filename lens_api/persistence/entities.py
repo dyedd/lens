@@ -24,7 +24,17 @@ class SiteEntity(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
-    base_url: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+
+class SiteBaseUrlEntity(Base):
+    __tablename__ = "site_base_urls"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class SiteCredentialEntity(Base):
@@ -49,6 +59,7 @@ class SiteProtocolConfigEntity(Base):
     channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
     match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    base_url_id: Mapped[str] = mapped_column(String(80), nullable=False, default="")
 
 
 class SiteProtocolCredentialBindingEntity(Base):

@@ -12,6 +12,8 @@ from ..models import (
     ChannelDiscoveredModel,
     ChannelKeyItem,
     ChannelStatus,
+    SiteBaseUrl,
+    SiteBaseUrlInput,
     SiteConfig,
     SiteCreate,
     SiteCredential,
@@ -26,6 +28,7 @@ from ..models import (
 )
 from .entities import (
     ModelGroupItemEntity,
+    SiteBaseUrlEntity,
     SiteCredentialEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
@@ -60,7 +63,7 @@ class ChannelStore:
         async with self._session_factory() as session:
             await self._ensure_site_name_unique(session, payload.name)
             site_id = str(uuid.uuid4())
-            await self._upsert_site_payload(session, site_id, payload.name, payload.base_url, payload.credentials, payload.protocols)
+            await self._upsert_site_payload(session, site_id, payload.name, payload.base_urls, payload.credentials, payload.protocols)
             await session.commit()
         return await self.get_site(site_id)
 
@@ -70,7 +73,7 @@ class ChannelStore:
             if site is None:
                 raise KeyError(site_id)
             await self._ensure_site_name_unique(session, payload.name, exclude_site_id=site_id)
-            await self._upsert_site_payload(session, site_id, payload.name, payload.base_url, payload.credentials, payload.protocols)
+            await self._upsert_site_payload(session, site_id, payload.name, payload.base_urls, payload.credentials, payload.protocols)
             await session.commit()
         return await self.get_site(site_id)
 
@@ -89,6 +92,7 @@ class ChannelStore:
                 await session.execute(delete(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(protocol_ids)))
             if credential_ids:
                 await session.execute(delete(SiteCredentialEntity).where(SiteCredentialEntity.id.in_(credential_ids)))
+            await session.execute(delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id))
             await session.delete(site)
             await session.commit()
 
@@ -118,6 +122,13 @@ class ChannelStore:
             return []
 
         ids = [item.id for item in site_rows]
+        base_url_rows = (
+            await session.execute(
+                select(SiteBaseUrlEntity)
+                .where(SiteBaseUrlEntity.site_id.in_(ids))
+                .order_by(SiteBaseUrlEntity.site_id.asc(), SiteBaseUrlEntity.sort_order.asc(), SiteBaseUrlEntity.id.asc())
+            )
+        ).scalars().all()
         credential_rows = (
             await session.execute(
                 select(SiteCredentialEntity)
@@ -153,6 +164,19 @@ class ChannelStore:
 
         credentials_by_site: dict[str, list[SiteCredential]] = defaultdict(list)
         credentials_by_id: dict[str, SiteCredential] = {}
+
+        base_urls_by_site: dict[str, list[SiteBaseUrl]] = defaultdict(list)
+        for row in base_url_rows:
+            base_urls_by_site[row.site_id].append(
+                SiteBaseUrl(
+                    id=row.id,
+                    url=row.url,
+                    name=row.name,
+                    enabled=bool(row.enabled),
+                    sort_order=row.sort_order,
+                )
+            )
+
         for row in credential_rows:
             item = SiteCredential(
                 id=row.id,
@@ -201,6 +225,7 @@ class ChannelStore:
                     channel_proxy=row.channel_proxy,
                     param_override=row.param_override,
                     match_regex=row.match_regex,
+                    base_url_id=row.base_url_id,
                     bindings=bindings_by_protocol.get(row.id, []),
                     models=models_by_protocol.get(row.id, []),
                 )
@@ -210,7 +235,7 @@ class ChannelStore:
             SiteConfig(
                 id=row.id,
                 name=row.name,
-                base_url=row.base_url,
+                base_urls=base_urls_by_site.get(row.id, []),
                 credentials=credentials_by_site.get(row.id, []),
                 protocols=protocols_by_site.get(row.id, []),
             )
@@ -222,28 +247,40 @@ class ChannelStore:
         session: AsyncSession,
         site_id: str,
         name: str,
-        base_url: str,
+        base_urls: list[SiteBaseUrlInput],
         credentials: list[SiteCredentialInput],
         protocols: list[SiteProtocolConfigInput],
     ) -> None:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError('Site name is required')
-        normalized_base_url = str(base_url).strip()
-        if not normalized_base_url:
-            raise ValueError('Site base URL is required')
+        if not base_urls:
+            raise ValueError('At least one base URL is required')
         if not protocols:
             raise ValueError('At least one protocol config is required')
 
+        normalized_base_urls = self._normalize_base_urls(base_urls)
         normalized_credentials = self._normalize_credentials(credentials)
         credential_ids = {item.id for item in normalized_credentials}
 
         site = await self._get_site_entity(session, site_id)
         if site is None:
-            session.add(SiteEntity(id=site_id, name=normalized_name, base_url=normalized_base_url))
+            session.add(SiteEntity(id=site_id, name=normalized_name))
         else:
             site.name = normalized_name
-            site.base_url = normalized_base_url
+
+        await session.execute(delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id))
+        for index, item in enumerate(normalized_base_urls):
+            session.add(
+                SiteBaseUrlEntity(
+                    id=item.id,
+                    site_id=site_id,
+                    url=str(item.url),
+                    name=item.name,
+                    enabled=1 if item.enabled else 0,
+                    sort_order=index,
+                )
+            )
 
         current_protocol_ids = set(await self._site_protocol_ids(session, site_id))
         current_credential_ids = set(await self._site_credential_ids(session, site_id))
@@ -283,6 +320,7 @@ class ChannelStore:
                     channel_proxy=protocol.channel_proxy,
                     param_override=protocol.param_override,
                     match_regex=protocol.match_regex,
+                    base_url_id=protocol.base_url_id,
                 )
                 session.add(existing_protocol)
             else:
@@ -293,6 +331,7 @@ class ChannelStore:
                 existing_protocol.channel_proxy = protocol.channel_proxy
                 existing_protocol.param_override = protocol.param_override
                 existing_protocol.match_regex = protocol.match_regex
+                existing_protocol.base_url_id = protocol.base_url_id
 
             await session.execute(delete(SiteProtocolCredentialBindingEntity).where(SiteProtocolCredentialBindingEntity.protocol_config_id == protocol_id))
             bindings = protocol.bindings or [
@@ -352,8 +391,12 @@ class ChannelStore:
 
     def _flatten_site(self, site: SiteConfig) -> list[ChannelConfig]:
         credentials_by_id = {item.id: item for item in site.credentials}
+        base_urls_by_id = {item.id: item for item in site.base_urls}
+        default_base_url = next((item.url for item in site.base_urls if item.enabled), site.base_urls[0].url if site.base_urls else 'http://localhost')
         items: list[ChannelConfig] = []
         for protocol in site.protocols:
+            bound_base_url = base_urls_by_id.get(protocol.base_url_id)
+            active_base_url = bound_base_url.url if bound_base_url else default_base_url
             binding_credentials = [
                 credentials_by_id[binding.credential_id]
                 for binding in protocol.bindings
@@ -385,7 +428,7 @@ class ChannelStore:
                     id=protocol.id,
                     name=site.name,
                     protocol=protocol.protocol,
-                    base_url=site.base_url,
+                    base_url=active_base_url,
                     api_key=active_key.key if active_key else 'placeholder-key',
                     status=ChannelStatus.ENABLED if protocol.enabled else ChannelStatus.DISABLED,
                     headers=protocol.headers,
@@ -420,6 +463,25 @@ class ChannelStore:
             )
         if not normalized:
             raise ValueError('At least one credential is required')
+        return normalized
+
+    def _normalize_base_urls(self, items: list[SiteBaseUrlInput]) -> list[SiteBaseUrl]:
+        normalized: list[SiteBaseUrl] = []
+        for index, item in enumerate(items):
+            url_str = str(item.url).strip()
+            if not url_str:
+                raise ValueError('Base URL is required')
+            normalized.append(
+                SiteBaseUrl(
+                    id=item.id or str(uuid.uuid4()),
+                    url=item.url,
+                    name=item.name.strip(),
+                    enabled=item.enabled,
+                    sort_order=index,
+                )
+            )
+        if not normalized:
+            raise ValueError('At least one base URL is required')
         return normalized
 
     async def _ensure_site_name_unique(self, session: AsyncSession, name: str, exclude_site_id: str | None = None) -> None:
