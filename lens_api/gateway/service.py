@@ -344,20 +344,24 @@ async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetri
     return metrics.model_copy(update={"enabled_channels": sum(1 for item in channels if item.status.value == "enabled")})
 
 
-async def overview_summary(_: Any = Depends(get_current_admin)) -> OverviewSummary:
-    return await app_state.domain_store.get_overview_summary()
+async def overview_summary(days: int = 7, _: Any = Depends(get_current_admin)) -> OverviewSummary:
+    return await app_state.domain_store.get_overview_summary(days=days)
 
 
-async def overview_daily(_: Any = Depends(get_current_admin)) -> list[OverviewDailyPoint]:
-    return await app_state.domain_store.list_overview_daily()
+async def overview_daily(days: int = 0, _: Any = Depends(get_current_admin)) -> list[OverviewDailyPoint]:
+    return await app_state.domain_store.list_overview_daily(days=days)
 
 
-async def overview_models(_: Any = Depends(get_current_admin)) -> OverviewModelAnalytics:
-    return await app_state.domain_store.get_model_analytics()
+async def overview_models(days: int = 7, _: Any = Depends(get_current_admin)) -> OverviewModelAnalytics:
+    return await app_state.domain_store.get_model_analytics(days=days)
 
 
 async def request_logs(_: Any = Depends(get_current_admin)) -> list[RequestLogItem]:
     return await app_state.domain_store.list_request_logs()
+
+
+async def overview_logs(days: int = 7, limit: int = 50, offset: int = 0, _: Any = Depends(get_current_admin)) -> list[RequestLogItem]:
+    return await app_state.domain_store.list_request_logs(limit=limit, days=days, offset=offset)
 
 
 async def clear_request_logs(_: Any = Depends(get_current_admin)) -> Response:
