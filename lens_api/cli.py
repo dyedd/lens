@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -46,6 +47,27 @@ def db_stamp(args: argparse.Namespace) -> None:
     command.stamp(_alembic_cfg(), args.revision)
 
 
+def serve(_args: argparse.Namespace) -> None:
+    import uvicorn
+    from .gateway.service import app
+    uvicorn.run(app, host=settings.host, port=settings.port)
+
+
+def seed_admin(args: argparse.Namespace) -> None:
+    from .core.db import create_engine, create_session_factory
+    from .persistence.admin_store import AdminStore
+
+    async def _run() -> None:
+        engine = create_engine(settings.database_url)
+        session_factory = create_session_factory(engine)
+        store = AdminStore(session_factory)
+        await store.ensure_default_admin(args.username, args.password)
+        await engine.dispose()
+        print(f"seeded admin: {args.username}")
+
+    asyncio.run(_run())
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="lens", description="Lens CLI")
     sub = parser.add_subparsers(dest="group")
@@ -76,6 +98,14 @@ def main(argv: list[str] | None = None) -> None:
     stmp = db_sub.add_parser("stamp", help="Stamp database with a revision without running migrations")
     stmp.add_argument("revision", nargs="?", default="head")
     stmp.set_defaults(func=db_stamp)
+
+    srv = sub.add_parser("serve", help="Start the API server")
+    srv.set_defaults(func=serve)
+
+    seed = sub.add_parser("seed-admin", help="Create or update an admin user")
+    seed.add_argument("--username", required=True, help="Admin username")
+    seed.add_argument("--password", required=True, help="Admin password")
+    seed.set_defaults(func=seed_admin)
 
     args = parser.parse_args(argv)
 
