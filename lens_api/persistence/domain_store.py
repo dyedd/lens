@@ -793,13 +793,18 @@ class DomainStore:
             await session.refresh(entity)
             return self._to_request_log(entity)
 
-    async def list_request_logs(self, limit: int = 100) -> list[RequestLogItem]:
+    async def list_request_logs(self, limit: int = 100, days: int = 0, offset: int = 0) -> list[RequestLogItem]:
         async with self._session_factory() as session:
-            result = await session.execute(
+            stmt = (
                 select(RequestLogEntity)
                 .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+                .offset(offset)
                 .limit(limit)
             )
+            if days > 0:
+                since = datetime.utcnow() - timedelta(days=days)
+                stmt = stmt.where(RequestLogEntity.created_at >= since)
+            result = await session.execute(stmt)
             return [self._to_request_log(item) for item in result.scalars().all()]
 
     async def get_request_log(self, log_id: int) -> RequestLogDetail:
@@ -855,28 +860,42 @@ class DomainStore:
             enabled_channels=0,
         )
 
-    async def get_overview_summary(self) -> OverviewSummary:
+    async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
         async with self._session_factory() as session:
-            imported_total = await session.get(ImportedStatsTotalEntity, 1)
-            recent = await self._recent_log_totals(session, days=7)
-            previous = await self._recent_log_totals(session, days=14, offset_days=7)
+            if days > 0:
+                recent = await self._recent_log_totals(session, days=days)
+                previous = await self._recent_log_totals(session, days=days, offset_days=days)
+            else:
+                # days=0 means "all": try imported total first, then fall back to all logs
+                imported_total = await session.get(ImportedStatsTotalEntity, 1)
+                if imported_total is not None:
+                    request_count = int(imported_total.request_success + imported_total.request_failed)
+                    wait_time_ms = int(imported_total.wait_time)
+                    input_tokens = int(imported_total.input_token)
+                    output_tokens = int(imported_total.output_token)
+                    total_cost_usd = float(imported_total.input_cost + imported_total.output_cost)
+                    input_cost_usd = float(imported_total.input_cost)
+                    output_cost_usd = float(imported_total.output_cost)
+                    return OverviewSummary(
+                        request_count=OverviewSummaryMetric(value=request_count),
+                        wait_time_ms=OverviewSummaryMetric(value=wait_time_ms),
+                        total_tokens=OverviewSummaryMetric(value=input_tokens + output_tokens),
+                        total_cost_usd=OverviewSummaryMetric(value=total_cost_usd),
+                        input_tokens=OverviewSummaryMetric(value=input_tokens),
+                        input_cost_usd=OverviewSummaryMetric(value=input_cost_usd),
+                        output_tokens=OverviewSummaryMetric(value=output_tokens),
+                        output_cost_usd=OverviewSummaryMetric(value=output_cost_usd),
+                    )
+                recent = await self._all_log_totals(session)
+                previous = self._zero_totals()
 
-        if imported_total is not None:
-            request_count = int(imported_total.request_success + imported_total.request_failed)
-            wait_time_ms = int(imported_total.wait_time)
-            input_tokens = int(imported_total.input_token)
-            output_tokens = int(imported_total.output_token)
-            total_cost_usd = float(imported_total.input_cost + imported_total.output_cost)
-            input_cost_usd = float(imported_total.input_cost)
-            output_cost_usd = float(imported_total.output_cost)
-        else:
-            request_count = int(recent["request_count"])
-            wait_time_ms = int(recent["wait_time_ms"])
-            input_tokens = int(recent["input_tokens"])
-            output_tokens = int(recent["output_tokens"])
-            total_cost_usd = float(recent["total_cost_usd"])
-            input_cost_usd = float(recent["input_cost_usd"])
-            output_cost_usd = float(recent["output_cost_usd"])
+        request_count = int(recent["request_count"])
+        wait_time_ms = int(recent["wait_time_ms"])
+        input_tokens = int(recent["input_tokens"])
+        output_tokens = int(recent["output_tokens"])
+        total_cost_usd = float(recent["total_cost_usd"])
+        input_cost_usd = float(recent["input_cost_usd"])
+        output_cost_usd = float(recent["output_cost_usd"])
 
         return OverviewSummary(
             request_count=OverviewSummaryMetric(value=request_count, delta=self._delta_percent(request_count, previous["request_count"])),
@@ -889,40 +908,44 @@ class DomainStore:
             output_cost_usd=OverviewSummaryMetric(value=output_cost_usd, delta=self._delta_percent(output_cost_usd, previous["output_cost_usd"])),
         )
 
-    async def list_overview_daily(self) -> list[OverviewDailyPoint]:
+    async def list_overview_daily(self, days: int = 0) -> list[OverviewDailyPoint]:
         async with self._session_factory() as session:
-            imported_rows = (
-                await session.execute(select(ImportedStatsDailyEntity).order_by(ImportedStatsDailyEntity.date.asc()))
-            ).scalars().all()
-            if imported_rows:
-                return [
-                    OverviewDailyPoint(
-                        date=item.date,
-                        request_count=int(item.request_success + item.request_failed),
-                        total_tokens=int(item.input_token + item.output_token),
-                        total_cost_usd=float(item.input_cost + item.output_cost),
-                        wait_time_ms=int(item.wait_time),
-                        successful_requests=int(item.request_success),
-                        failed_requests=int(item.request_failed),
-                    )
-                    for item in imported_rows
-                ]
+            # Only use imported stats when requesting all data (days=0)
+            if days == 0:
+                imported_rows = (
+                    await session.execute(select(ImportedStatsDailyEntity).order_by(ImportedStatsDailyEntity.date.asc()))
+                ).scalars().all()
+                if imported_rows:
+                    return [
+                        OverviewDailyPoint(
+                            date=item.date,
+                            request_count=int(item.request_success + item.request_failed),
+                            total_tokens=int(item.input_token + item.output_token),
+                            total_cost_usd=float(item.input_cost + item.output_cost),
+                            wait_time_ms=int(item.wait_time),
+                            successful_requests=int(item.request_success),
+                            failed_requests=int(item.request_failed),
+                        )
+                        for item in imported_rows
+                    ]
 
-            rows = (
-                await session.execute(
-                    select(
-                        func.strftime('%Y%m%d', RequestLogEntity.created_at),
-                        func.count(),
-                        func.sum(RequestLogEntity.total_tokens),
-                        func.sum(RequestLogEntity.total_cost_usd),
-                        func.sum(RequestLogEntity.latency_ms),
-                        func.sum(RequestLogEntity.success),
-                    )
-                    .select_from(RequestLogEntity)
-                    .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
-                    .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
+            stmt = (
+                select(
+                    func.strftime('%Y%m%d', RequestLogEntity.created_at),
+                    func.count(),
+                    func.sum(RequestLogEntity.total_tokens),
+                    func.sum(RequestLogEntity.total_cost_usd),
+                    func.sum(RequestLogEntity.latency_ms),
+                    func.sum(RequestLogEntity.success),
                 )
-            ).all()
+                .select_from(RequestLogEntity)
+                .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
+                .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
+            )
+            if days > 0:
+                since = datetime.utcnow() - timedelta(days=days)
+                stmt = stmt.where(RequestLogEntity.created_at >= since)
+            rows = (await session.execute(stmt)).all()
             points: list[OverviewDailyPoint] = []
             for date_value, request_count, total_tokens, total_cost_usd, wait_time_ms, successful_requests in rows:
                 total_value = int(request_count or 0)
@@ -940,58 +963,58 @@ class DomainStore:
                 )
             return points
 
-    async def get_model_analytics(self, days: int = 30) -> OverviewModelAnalytics:
-        since = datetime.utcnow() - timedelta(days=days)
+    async def get_model_analytics(self, days: int = 7) -> OverviewModelAnalytics:
+        since = datetime.utcnow() - timedelta(days=days) if days > 0 else None
         model_expr = func.coalesce(RequestLogEntity.resolved_model, RequestLogEntity.requested_model, RequestLogEntity.matched_group_name)
         async with self._session_factory() as session:
-            distribution_rows = (
-                await session.execute(
-                    select(
-                        model_expr,
-                        func.count(),
-                        func.sum(RequestLogEntity.total_tokens),
-                        func.sum(RequestLogEntity.total_cost_usd),
-                    )
-                    .where(RequestLogEntity.success == 1)
-                    .where(model_expr.is_not(None))
-                    .where(RequestLogEntity.created_at >= since)
-                    .group_by(model_expr)
-                    .order_by(func.sum(RequestLogEntity.total_cost_usd).desc(), func.count().desc())
-                    .limit(12)
+            dist_stmt = (
+                select(
+                    model_expr,
+                    func.count(),
+                    func.sum(RequestLogEntity.total_tokens),
+                    func.sum(RequestLogEntity.total_cost_usd),
                 )
-            ).all()
+                .where(RequestLogEntity.success == 1)
+                .where(model_expr.is_not(None))
+                .group_by(model_expr)
+                .order_by(func.sum(RequestLogEntity.total_cost_usd).desc(), func.count().desc())
+                .limit(12)
+            )
+            if since is not None:
+                dist_stmt = dist_stmt.where(RequestLogEntity.created_at >= since)
+            distribution_rows = (await session.execute(dist_stmt)).all()
 
-            ranking_rows = (
-                await session.execute(
-                    select(
-                        model_expr,
-                        func.count(),
-                        func.sum(RequestLogEntity.total_tokens),
-                        func.sum(RequestLogEntity.total_cost_usd),
-                    )
-                    .where(RequestLogEntity.success == 1)
-                    .where(model_expr.is_not(None))
-                    .where(RequestLogEntity.created_at >= since)
-                    .group_by(model_expr)
-                    .order_by(func.count().desc(), func.sum(RequestLogEntity.total_cost_usd).desc())
-                    .limit(10)
+            rank_stmt = (
+                select(
+                    model_expr,
+                    func.count(),
+                    func.sum(RequestLogEntity.total_tokens),
+                    func.sum(RequestLogEntity.total_cost_usd),
                 )
-            ).all()
+                .where(RequestLogEntity.success == 1)
+                .where(model_expr.is_not(None))
+                .group_by(model_expr)
+                .order_by(func.count().desc(), func.sum(RequestLogEntity.total_cost_usd).desc())
+                .limit(10)
+            )
+            if since is not None:
+                rank_stmt = rank_stmt.where(RequestLogEntity.created_at >= since)
+            ranking_rows = (await session.execute(rank_stmt)).all()
 
-            trend_rows = (
-                await session.execute(
-                    select(
-                        func.strftime('%Y%m%d', RequestLogEntity.created_at),
-                        model_expr,
-                        func.sum(RequestLogEntity.total_cost_usd),
-                    )
-                    .where(RequestLogEntity.success == 1)
-                    .where(model_expr.is_not(None))
-                    .where(RequestLogEntity.created_at >= since)
-                    .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
-                    .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
+            trend_stmt = (
+                select(
+                    func.strftime('%Y%m%d', RequestLogEntity.created_at),
+                    model_expr,
+                    func.sum(RequestLogEntity.total_cost_usd),
                 )
-            ).all()
+                .where(RequestLogEntity.success == 1)
+                .where(model_expr.is_not(None))
+                .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
+                .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
+            )
+            if since is not None:
+                trend_stmt = trend_stmt.where(RequestLogEntity.created_at >= since)
+            trend_rows = (await session.execute(trend_stmt)).all()
 
         distribution = [
             OverviewModelMetricPoint(
@@ -1070,6 +1093,43 @@ class DomainStore:
             "input_cost_usd": float(row[4] or 0),
             "output_cost_usd": float(row[5] or 0),
             "total_cost_usd": float(row[6] or 0),
+        }
+
+    async def _all_log_totals(self, session: AsyncSession) -> dict[str, float]:
+        row = (
+            await session.execute(
+                select(
+                    func.count(),
+                    func.sum(RequestLogEntity.latency_ms),
+                    func.sum(RequestLogEntity.input_tokens),
+                    func.sum(RequestLogEntity.output_tokens),
+                    func.sum(RequestLogEntity.input_cost_usd),
+                    func.sum(RequestLogEntity.output_cost_usd),
+                    func.sum(RequestLogEntity.total_cost_usd),
+                )
+                .select_from(RequestLogEntity)
+            )
+        ).one()
+        return {
+            "request_count": float(row[0] or 0),
+            "wait_time_ms": float(row[1] or 0),
+            "input_tokens": float(row[2] or 0),
+            "output_tokens": float(row[3] or 0),
+            "input_cost_usd": float(row[4] or 0),
+            "output_cost_usd": float(row[5] or 0),
+            "total_cost_usd": float(row[6] or 0),
+        }
+
+    @staticmethod
+    def _zero_totals() -> dict[str, float]:
+        return {
+            "request_count": 0.0,
+            "wait_time_ms": 0.0,
+            "input_tokens": 0.0,
+            "output_tokens": 0.0,
+            "input_cost_usd": 0.0,
+            "output_cost_usd": 0.0,
+            "total_cost_usd": 0.0,
         }
 
     @staticmethod
