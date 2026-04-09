@@ -71,6 +71,29 @@ class ChannelConfig(BaseModel):
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
 
+class SiteBaseUrl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    url: HttpUrl
+    name: str = ""
+    enabled: bool = True
+    sort_order: int = Field(default=0, ge=0)
+
+    _normalize_url = field_validator("url", mode="before")(normalize_base_url)
+
+
+class SiteBaseUrlInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    url: HttpUrl
+    name: str = ""
+    enabled: bool = True
+
+    _normalize_url = field_validator("url", mode="before")(normalize_base_url)
+
+
 class SiteCredential(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -136,6 +159,7 @@ class SiteProtocolConfig(BaseModel):
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
+    base_url_id: str = ""
     bindings: list[SiteProtocolCredentialBinding] = Field(default_factory=list)
     models: list[SiteModel] = Field(default_factory=list)
 
@@ -150,6 +174,7 @@ class SiteProtocolConfigInput(BaseModel):
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
+    base_url_id: str = ""
     bindings: list[SiteProtocolCredentialBindingInput] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
 
@@ -170,33 +195,27 @@ class SiteConfig(BaseModel):
 
     id: str
     name: str
-    base_url: HttpUrl
+    base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
-
-    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
 
 class SiteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    base_url: HttpUrl
+    base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
-
-    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
 
 class SiteUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    base_url: HttpUrl
+    base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
-
-    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
 
 class SiteModelFetchRequest(BaseModel):

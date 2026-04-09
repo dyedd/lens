@@ -45,6 +45,21 @@ export type ModelGroupCandidateItem = {
   model_name: string
 }
 
+export type SiteBaseUrl = {
+  id: string
+  url: string
+  name: string
+  enabled: boolean
+  sort_order: number
+}
+
+export type SiteBaseUrlInput = {
+  id?: string | null
+  url: string
+  name: string
+  enabled: boolean
+}
+
 export type SiteCredential = {
   id: string
   name: string
@@ -96,6 +111,7 @@ export type SiteProtocolConfig = {
   channel_proxy: string
   param_override: string
   match_regex: string
+  base_url_id: string
   bindings: SiteProtocolCredentialBinding[]
   models: SiteModel[]
 }
@@ -108,6 +124,7 @@ export type SiteProtocolConfigInput = {
   channel_proxy: string
   param_override: string
   match_regex: string
+  base_url_id: string
   bindings: SiteProtocolCredentialBindingInput[]
   models: SiteModelInput[]
 }
@@ -115,14 +132,14 @@ export type SiteProtocolConfigInput = {
 export type Site = {
   id: string
   name: string
-  base_url: string
+  base_urls: SiteBaseUrl[]
   credentials: SiteCredential[]
   protocols: SiteProtocolConfig[]
 }
 
 export type SitePayload = {
   name: string
-  base_url: string
+  base_urls: SiteBaseUrlInput[]
   credentials: SiteCredentialInput[]
   protocols: SiteProtocolConfigInput[]
 }

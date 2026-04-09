@@ -9,6 +9,7 @@ import {
   ProtocolKind,
   RequestLogItem,
   Site,
+  SiteBaseUrlInput,
   SiteCredentialInput,
   SiteModelFetchItem,
   SiteModelFetchPayload,
@@ -33,12 +34,20 @@ const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
 
 type HeaderItem = { key: string; value: string }
 type FormCredential = Omit<SiteCredentialInput, 'id'> & { id: string }
+type FormBaseUrl = Omit<SiteBaseUrlInput, 'id'> & { id: string }
 
 function createCredentialId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
   return `credential-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function createBaseUrlId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `baseurl-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 type FormProtocol = {
@@ -49,6 +58,7 @@ type FormProtocol = {
   channel_proxy: string
   param_override: string
   match_regex: string
+  base_url_id: string
   bindings: SiteProtocolCredentialBindingInput[]
   models: SiteModelInput[]
   expanded: boolean
@@ -57,7 +67,7 @@ type FormProtocol = {
 
 type FormState = {
   name: string
-  base_url: string
+  base_urls: FormBaseUrl[]
   credentials: FormCredential[]
   protocols: FormProtocol[]
 }
@@ -95,6 +105,7 @@ const emptyProtocol = (): FormProtocol => ({
   channel_proxy: '',
   param_override: '',
   match_regex: '',
+  base_url_id: '',
   bindings: [],
   models: [],
   expanded: true,
@@ -103,7 +114,7 @@ const emptyProtocol = (): FormProtocol => ({
 
 const emptyForm = (): FormState => ({
   name: '',
-  base_url: '',
+  base_urls: [{ id: createBaseUrlId(), url: '', name: '', enabled: true }],
   credentials: [{ id: createCredentialId(), name: '', api_key: '', enabled: true }],
   protocols: [emptyProtocol()],
 })
@@ -159,7 +170,9 @@ function siteSubtitle(site: Site) {
 }
 
 function siteEndpointSummary(site: Site) {
-  return site.base_url || ''
+  const enabled = site.base_urls.filter((item) => item.enabled)
+  if (enabled.length) return enabled[0].url
+  return site.base_urls[0]?.url || ''
 }
 
 function siteModelCount(site: Site) {
@@ -220,7 +233,9 @@ function buildSiteStats(logs: RequestLogItem[] | undefined, sites: Site[] | unde
 function toForm(site: Site): FormState {
   return {
     name: site.name,
-    base_url: safeText(site.base_url),
+    base_urls: site.base_urls.length
+      ? site.base_urls.map((item) => ({ id: item.id, url: item.url, name: item.name, enabled: item.enabled }))
+      : [{ id: createBaseUrlId(), url: '', name: '', enabled: true }],
     credentials: site.credentials.map((item) => ({ id: item.id, name: isGeneratedCredentialName(item.name) ? '' : item.name, api_key: item.api_key, enabled: item.enabled })),
     protocols: site.protocols.map((item) => ({
       id: item.id,
@@ -230,6 +245,7 @@ function toForm(site: Site): FormState {
       channel_proxy: item.channel_proxy,
       param_override: item.param_override,
       match_regex: safeText(item.match_regex),
+      base_url_id: item.base_url_id,
       bindings: item.bindings.map((binding) => ({ credential_id: binding.credential_id, enabled: binding.enabled })),
       models: item.models.map((model) => ({ id: model.id, credential_id: model.credential_id, model_name: model.model_name, enabled: model.enabled })),
       expanded: true,
@@ -241,7 +257,9 @@ function toForm(site: Site): FormState {
 function toPayload(form: FormState): SitePayload {
   return {
     name: form.name.trim(),
-    base_url: safeText(form.base_url).trim(),
+    base_urls: form.base_urls
+      .map((item) => ({ id: item.id, url: item.url.trim(), name: item.name.trim(), enabled: item.enabled }))
+      .filter((item) => item.url),
     credentials: form.credentials
       .map((item, index) => ({ id: item.id, name: item.name.trim() || fallbackCredentialName(index), api_key: item.api_key.trim(), enabled: item.enabled }))
       .filter((item) => item.api_key),
@@ -253,6 +271,7 @@ function toPayload(form: FormState): SitePayload {
       channel_proxy: item.channel_proxy.trim(),
       param_override: item.param_override.trim(),
       match_regex: safeText(item.match_regex).trim(),
+      base_url_id: item.base_url_id,
       bindings: item.bindings.filter((binding) => binding.credential_id),
       models: item.models.map((model) => ({ id: model.id, credential_id: model.credential_id, model_name: model.model_name.trim(), enabled: model.enabled })).filter((model) => model.credential_id && model.model_name),
     })),
@@ -413,7 +432,7 @@ export function ChannelsScreen() {
         method: 'PUT',
         body: JSON.stringify({
           name: site.name,
-          base_url: site.base_url,
+          base_urls: site.base_urls.map((item) => ({ id: item.id, url: item.url, name: item.name, enabled: item.enabled })),
           credentials: site.credentials.map((item) => ({ id: item.id, name: item.name, api_key: item.api_key, enabled: item.enabled })),
           protocols: site.protocols.map((item) => ({
             id: item.id,
@@ -423,6 +442,7 @@ export function ChannelsScreen() {
             channel_proxy: item.channel_proxy,
             param_override: item.param_override,
             match_regex: item.match_regex,
+            base_url_id: item.base_url_id,
             bindings: item.bindings.map((binding) => ({ credential_id: binding.credential_id, enabled: binding.enabled })),
             models: item.models.map((model) => ({ id: model.id, credential_id: model.credential_id, model_name: model.model_name, enabled: model.enabled })),
           })),
@@ -487,46 +507,15 @@ export function ChannelsScreen() {
     setPickerSelectedModelKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])
   }
 
-  async function fetchProtocolModels(protocolIndex: number) {
-    const protocol = form.protocols[protocolIndex]
-    if (!protocol) return
-    const activeCredentials = form.credentials.filter((item, index) => item.enabled && item.api_key.trim()).map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
-    const selectedCredentialId = activeCredentials.some((item) => item.id === protocol.model_filter_credential_id)
-      ? protocol.model_filter_credential_id || ''
-      : activeCredentials[0]?.id || ''
-    setFetchingProtocolIndex(protocolIndex)
-    setError('')
-    try {
-      const payload: SiteModelFetchPayload = {
-        protocol: protocol.protocol,
-        base_url: safeText(form.base_url).trim(),
-        headers: Object.fromEntries(protocol.headers.map((entry) => [entry.key.trim(), entry.value] as const).filter(([key]) => key)),
-        channel_proxy: protocol.channel_proxy.trim(),
-        match_regex: safeText(protocol.match_regex).trim(),
-        credentials: form.credentials.map((item, index) => ({ id: item.id, name: item.name.trim() || fallbackCredentialName(index), api_key: item.api_key.trim(), enabled: item.enabled })).filter((item) => item.api_key),
-        bindings: selectedCredentialId
-          ? [{ credential_id: selectedCredentialId, enabled: true }]
-          : form.credentials.filter((item) => item.enabled && item.api_key.trim()).map((item) => ({ credential_id: item.id, enabled: true })),
-      }
-      const models = await apiRequest<SiteModelFetchItem[]>('/admin/site-model-discoveries', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-      const nextAvailableModels = models.map((item) => ({ credential_id: item.credential_id, model_name: item.model_name }))
-      const existingKeys = new Set(protocol.models.map((item) => `${item.credential_id}:${item.model_name}`))
-      setAvailableModels(nextAvailableModels)
-      setPickerSelectedModelKeys(nextAvailableModels.map((item) => `${item.credential_id}:${item.model_name}`).filter((key) => !existingKeys.has(key)))
-      setModelPickerProtocolIndex(protocolIndex)
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '刷新模型失败' : 'Failed to refresh models'))
-    } finally {
-      setFetchingProtocolIndex(null)
-    }
+  function closeModelPicker() {
+    setModelPickerProtocolIndex(null)
+    setAvailableModels([])
+    setPickerSelectedModelKeys([])
   }
 
-  function confirmModelSelection() {
+  function applyModelSelection(selectedKeys: string[]) {
     if (modelPickerProtocolIndex === null) return
-    const selectedModels = availableModels.filter((item) => pickerSelectedModelKeys.includes(`${item.credential_id}:${item.model_name}`))
+    const selectedModels = availableModels.filter((item) => selectedKeys.includes(`${item.credential_id}:${item.model_name}`))
     setForm((current) => ({
       ...current,
       protocols: current.protocols.map((item, itemIndex) => {
@@ -542,9 +531,53 @@ export function ChannelsScreen() {
         return { ...item, models: merged, expanded: true }
       }),
     }))
-    setModelPickerProtocolIndex(null)
-    setAvailableModels([])
-    setPickerSelectedModelKeys([])
+    closeModelPicker()
+  }
+
+  async function fetchProtocolModels(protocolIndex: number) {
+    const protocol = form.protocols[protocolIndex]
+    if (!protocol) return
+    const activeCredentials = form.credentials.filter((item, index) => item.enabled && item.api_key.trim()).map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
+    const selectedCredentialId = activeCredentials.some((item) => item.id === protocol.model_filter_credential_id)
+      ? protocol.model_filter_credential_id || ''
+      : activeCredentials[0]?.id || ''
+    setFetchingProtocolIndex(protocolIndex)
+    setError('')
+    try {
+      const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
+      const activeBaseUrl = boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
+      const payload: SiteModelFetchPayload = {
+        protocol: protocol.protocol,
+        base_url: safeText(activeBaseUrl).trim(),
+        headers: Object.fromEntries(protocol.headers.map((entry) => [entry.key.trim(), entry.value] as const).filter(([key]) => key)),
+        channel_proxy: protocol.channel_proxy.trim(),
+        match_regex: safeText(protocol.match_regex).trim(),
+        credentials: form.credentials.map((item, index) => ({ id: item.id, name: item.name.trim() || fallbackCredentialName(index), api_key: item.api_key.trim(), enabled: item.enabled })).filter((item) => item.api_key),
+        bindings: selectedCredentialId
+          ? [{ credential_id: selectedCredentialId, enabled: true }]
+          : form.credentials.filter((item) => item.enabled && item.api_key.trim()).map((item) => ({ credential_id: item.id, enabled: true })),
+      }
+      const models = await apiRequest<SiteModelFetchItem[]>('/admin/site-model-discoveries', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      const nextAvailableModels = models.map((item) => ({ credential_id: item.credential_id, model_name: item.model_name }))
+      setAvailableModels(nextAvailableModels)
+      setPickerSelectedModelKeys([])
+      setModelPickerProtocolIndex(protocolIndex)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '刷新模型失败' : 'Failed to refresh models'))
+    } finally {
+      setFetchingProtocolIndex(null)
+    }
+  }
+
+  function confirmModelSelection() {
+    applyModelSelection(pickerSelectedModelKeys)
+  }
+
+  function confirmAllModelSelection() {
+    applyModelSelection(availableModels.map((item) => `${item.credential_id}:${item.model_name}`))
   }
 
   const detailStats = detailTarget ? buildDetailStats(detailTarget, siteStats.get(detailTarget.id)) : null
@@ -672,15 +705,24 @@ export function ChannelsScreen() {
               <section className="grid gap-4">
                 <div className="text-lg font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '基本信息' : 'Channel and keys'}</div>
                 <div className="grid gap-4">
-                  <div className="grid gap-4 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-                    <label className="grid gap-2">
-                      <span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '渠道名称' : 'Channel name'}</span>
-                      <input className={inputClassName()} value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '请求地址' : 'Base URL'}</span>
-                      <input className={inputClassName()} value={form.base_url} onChange={(event) => setForm((current) => ({ ...current, base_url: event.target.value }))} placeholder="https://api.example.com" />
-                    </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '渠道名称' : 'Channel name'}</span>
+                    <input className={inputClassName()} value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
+                  </label>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '请求地址' : 'Base URLs'}</div>
+                      <button type="button" onClick={() => setForm((current) => ({ ...current, base_urls: [...current.base_urls, { id: createBaseUrlId(), url: '', name: '', enabled: true }] }))} className="text-sm text-[var(--accent)]">+ {locale === 'zh-CN' ? '添加' : 'Add'}</button>
+                    </div>
+                    {form.base_urls.map((baseUrl, index) => (
+                      <div key={baseUrl.id} className="grid gap-3 md:grid-cols-[1.4fr_0.7fr_auto_auto] md:items-center">
+                        <input className={inputClassName()} value={baseUrl.url} onChange={(event) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, url: event.target.value } : item) }))} placeholder="https://api.example.com" />
+                        <input className={inputClassName()} value={baseUrl.name} onChange={(event) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, name: event.target.value } : item) }))} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
+                        <SwitchButton checked={baseUrl.enabled} onChange={(checked) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, enabled: checked } : item) }))} />
+                        <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--line)] text-[var(--muted)]" onClick={() => setForm((current) => ({ ...current, base_urls: current.base_urls.length > 1 ? current.base_urls.filter((_, i) => i !== index) : current.base_urls }))} disabled={form.base_urls.length <= 1}><X size={16} /></button>
+                      </div>
+                    ))}
                   </div>
 
                   <div className="space-y-3">
@@ -719,12 +761,16 @@ export function ChannelsScreen() {
                     return (
                       <div key={protocol.id || protocolIndex} className="py-2">
                         <div className="flex flex-col gap-3">
-                          <div className="grid gap-3 lg:grid-cols-[180px_180px_auto_auto_auto_1fr] lg:items-center">
+                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto_auto] lg:items-center">
                             <select className={inputClassName()} value={protocol.protocol} onChange={(event) => updateProtocol(protocolIndex, { protocol: event.target.value as ProtocolKind })}>
                               {protocolOptions.map((option) => {
                                 const takenByOtherRow = form.protocols.some((item, itemIndex) => itemIndex !== protocolIndex && item.protocol === option.value)
                                 return <option key={option.value} value={option.value} disabled={takenByOtherRow}>{option.label}</option>
                               })}
+                            </select>
+                            <select className={inputClassName()} value={protocol.base_url_id} onChange={(event) => updateProtocol(protocolIndex, { base_url_id: event.target.value })}>
+                              <option value="">{locale === 'zh-CN' ? '默认地址' : 'Default'}</option>
+                              {form.base_urls.map((item) => <option key={item.id} value={item.id}>{item.name || item.url}</option>)}
                             </select>
                             <select className={inputClassName()} value={selectedCredentialId} onChange={(event) => updateProtocol(protocolIndex, { model_filter_credential_id: event.target.value || null })}>
                               {credentialOptions.length ? credentialOptions.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>) : <option value="">{locale === 'zh-CN' ? '无可用密钥' : 'No key'}</option>}
@@ -752,7 +798,7 @@ export function ChannelsScreen() {
                                   placeholder={locale === 'zh-CN' ? '匹配规则' : 'Match regex'}
                                 />
                                 <button type="button" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length} className="h-10 rounded-xl border border-[rgba(217,111,93,0.28)] px-3 text-sm text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60">{locale === 'zh-CN' ? '删除所有模型' : 'Remove all'}</button>
-                                <button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !safeText(form.base_url).trim() || !activeCredentialIds.size} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
+                                <button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
                                   <RefreshCcw size={14} className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
                                   {locale === 'zh-CN' ? '刷新模型' : 'Refresh models'}
                                 </button>
@@ -843,9 +889,7 @@ export function ChannelsScreen() {
 
       <Dialog.Root open={modelPickerProtocolIndex !== null} onOpenChange={(open) => {
         if (!open) {
-          setModelPickerProtocolIndex(null)
-          setAvailableModels([])
-          setPickerSelectedModelKeys([])
+          closeModelPicker()
         }
       }}>
         {modelPickerProtocolIndex !== null ? (
@@ -867,11 +911,10 @@ export function ChannelsScreen() {
               </div>
               <div className="flex justify-end gap-3">
                 <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)]" onClick={() => {
-                  setModelPickerProtocolIndex(null)
-                  setAvailableModels([])
-                  setPickerSelectedModelKeys([])
+                  closeModelPicker()
                 }}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-                <button type="button" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white" onClick={confirmModelSelection}>{locale === 'zh-CN' ? '加入模型' : 'Add models'}</button>
+                <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-60" onClick={confirmAllModelSelection} disabled={!availableModels.length}>{locale === 'zh-CN' ? '加入全部模型' : 'Add all models'}</button>
+                <button type="button" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60" onClick={confirmModelSelection} disabled={!pickerSelectedModelKeys.length}>{locale === 'zh-CN' ? '加入模型' : 'Add models'}</button>
               </div>
             </div>
           </AppDialogContent>

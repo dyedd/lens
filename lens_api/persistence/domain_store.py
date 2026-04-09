@@ -328,13 +328,26 @@ class DomainStore:
                 ).scalars().all()
             channel_rows = []
             if channel_ids:
+                from .entities import SiteBaseUrlEntity
                 channel_rows = (
                     await session.execute(
-                        select(SiteProtocolConfigEntity.id, SiteEntity.name, SiteEntity.base_url)
+                        select(SiteProtocolConfigEntity.id, SiteEntity.name, SiteEntity.id.label("site_id"))
                         .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
                         .where(SiteProtocolConfigEntity.id.in_(channel_ids))
                     )
                 ).all()
+                site_ids_for_urls = sorted({row.site_id for row in channel_rows})
+                base_url_rows = (
+                    await session.execute(
+                        select(SiteBaseUrlEntity)
+                        .where(SiteBaseUrlEntity.site_id.in_(site_ids_for_urls), SiteBaseUrlEntity.enabled == 1)
+                        .order_by(SiteBaseUrlEntity.site_id.asc(), SiteBaseUrlEntity.sort_order.asc())
+                    )
+                ).scalars().all() if site_ids_for_urls else []
+                first_url_by_site: dict[str, str] = {}
+                for row in base_url_rows:
+                    if row.site_id not in first_url_by_site:
+                        first_url_by_site[row.site_id] = row.url
 
         candidates: list[ModelGroupCandidateItem] = []
         seen: set[tuple[str, str, str]] = set()
@@ -355,9 +368,9 @@ class DomainStore:
         channel_meta_by_id = {
             channel_id: {
                 "name": site_name,
-                "base_url": base_url,
+                "base_url": first_url_by_site.get(site_id, ""),
             }
-            for channel_id, site_name, base_url in channel_rows
+            for channel_id, site_name, site_id in channel_rows
         }
 
         for channel in channels:
