@@ -833,9 +833,11 @@ class DomainStore:
         async with self._session_factory() as session:
             imported_total = await session.get(ImportedStatsTotalEntity, 1)
             if imported_total is not None:
-                total_value = int(imported_total.request_success + imported_total.request_failed)
-                success_value = int(imported_total.request_success)
-                avg_latency = int(imported_total.wait_time / total_value) if total_value else 0
+                extra_totals = await self._request_log_totals_excluding_imported_days(session)
+                total_value = int(imported_total.request_success + imported_total.request_failed + extra_totals["request_count"])
+                success_value = int(imported_total.request_success + extra_totals["successful_requests"])
+                total_wait_time = int(imported_total.wait_time + extra_totals["wait_time_ms"])
+                avg_latency = int(total_wait_time / total_value) if total_value else 0
             else:
                 total_requests = await session.scalar(select(func.count()).select_from(RequestLogEntity))
                 successful_requests = await session.scalar(
@@ -863,30 +865,10 @@ class DomainStore:
     async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
         async with self._session_factory() as session:
             if days > 0:
-                recent = await self._recent_log_totals(session, days=days)
-                previous = await self._recent_log_totals(session, days=days, offset_days=days)
+                recent = await self._merged_period_totals(session, days=days)
+                previous = await self._merged_period_totals(session, days=days, offset_days=days)
             else:
-                # days=0 means "all": try imported total first, then fall back to all logs
-                imported_total = await session.get(ImportedStatsTotalEntity, 1)
-                if imported_total is not None:
-                    request_count = int(imported_total.request_success + imported_total.request_failed)
-                    wait_time_ms = int(imported_total.wait_time)
-                    input_tokens = int(imported_total.input_token)
-                    output_tokens = int(imported_total.output_token)
-                    total_cost_usd = float(imported_total.input_cost + imported_total.output_cost)
-                    input_cost_usd = float(imported_total.input_cost)
-                    output_cost_usd = float(imported_total.output_cost)
-                    return OverviewSummary(
-                        request_count=OverviewSummaryMetric(value=request_count),
-                        wait_time_ms=OverviewSummaryMetric(value=wait_time_ms),
-                        total_tokens=OverviewSummaryMetric(value=input_tokens + output_tokens),
-                        total_cost_usd=OverviewSummaryMetric(value=total_cost_usd),
-                        input_tokens=OverviewSummaryMetric(value=input_tokens),
-                        input_cost_usd=OverviewSummaryMetric(value=input_cost_usd),
-                        output_tokens=OverviewSummaryMetric(value=output_tokens),
-                        output_cost_usd=OverviewSummaryMetric(value=output_cost_usd),
-                    )
-                recent = await self._all_log_totals(session)
+                recent = await self._merged_period_totals(session, days=0)
                 previous = self._zero_totals()
 
         request_count = int(recent["request_count"])
@@ -910,58 +892,7 @@ class DomainStore:
 
     async def list_overview_daily(self, days: int = 0) -> list[OverviewDailyPoint]:
         async with self._session_factory() as session:
-            # Only use imported stats when requesting all data (days=0)
-            if days == 0:
-                imported_rows = (
-                    await session.execute(select(ImportedStatsDailyEntity).order_by(ImportedStatsDailyEntity.date.asc()))
-                ).scalars().all()
-                if imported_rows:
-                    return [
-                        OverviewDailyPoint(
-                            date=item.date,
-                            request_count=int(item.request_success + item.request_failed),
-                            total_tokens=int(item.input_token + item.output_token),
-                            total_cost_usd=float(item.input_cost + item.output_cost),
-                            wait_time_ms=int(item.wait_time),
-                            successful_requests=int(item.request_success),
-                            failed_requests=int(item.request_failed),
-                        )
-                        for item in imported_rows
-                    ]
-
-            stmt = (
-                select(
-                    func.strftime('%Y%m%d', RequestLogEntity.created_at),
-                    func.count(),
-                    func.sum(RequestLogEntity.total_tokens),
-                    func.sum(RequestLogEntity.total_cost_usd),
-                    func.sum(RequestLogEntity.latency_ms),
-                    func.sum(RequestLogEntity.success),
-                )
-                .select_from(RequestLogEntity)
-                .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
-                .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
-            )
-            if days > 0:
-                since = datetime.utcnow() - timedelta(days=days)
-                stmt = stmt.where(RequestLogEntity.created_at >= since)
-            rows = (await session.execute(stmt)).all()
-            points: list[OverviewDailyPoint] = []
-            for date_value, request_count, total_tokens, total_cost_usd, wait_time_ms, successful_requests in rows:
-                total_value = int(request_count or 0)
-                success_value = int(successful_requests or 0)
-                points.append(
-                    OverviewDailyPoint(
-                        date=str(date_value),
-                        request_count=total_value,
-                        total_tokens=int(total_tokens or 0),
-                        total_cost_usd=float(total_cost_usd or 0.0),
-                        wait_time_ms=int(wait_time_ms or 0),
-                        successful_requests=success_value,
-                        failed_requests=max(total_value - success_value, 0),
-                    )
-                )
-            return points
+            return await self._merged_daily_points(session, days=days)
 
     async def get_model_analytics(self, days: int = 7) -> OverviewModelAnalytics:
         since = datetime.utcnow() - timedelta(days=days) if days > 0 else None
@@ -1066,50 +997,183 @@ class DomainStore:
         total_cost = input_cost + output_cost
         return round(input_cost, 8), round(output_cost, 8), round(total_cost, 8)
 
-    async def _recent_log_totals(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> dict[str, float]:
-        end_at = datetime.utcnow() - timedelta(days=offset_days)
-        start_at = end_at - timedelta(days=days)
-        row = (
-            await session.execute(
-                select(
-                    func.count(),
-                    func.sum(RequestLogEntity.latency_ms),
-                    func.sum(RequestLogEntity.input_tokens),
-                    func.sum(RequestLogEntity.output_tokens),
-                    func.sum(RequestLogEntity.input_cost_usd),
-                    func.sum(RequestLogEntity.output_cost_usd),
-                    func.sum(RequestLogEntity.total_cost_usd),
-                )
-                .select_from(RequestLogEntity)
-                .where(RequestLogEntity.created_at >= start_at)
-                .where(RequestLogEntity.created_at < end_at)
+    async def _merged_daily_points(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[OverviewDailyPoint]:
+        imported_points = await self._imported_daily_points(session, days=days, offset_days=offset_days)
+        imported_dates = {item.date for item in imported_points}
+        request_log_points = await self._request_log_daily_points(session, days=days, offset_days=offset_days, exclude_dates=imported_dates)
+        merged = {item.date: item for item in imported_points}
+        for item in request_log_points:
+            merged[item.date] = item
+        return [merged[date] for date in sorted(merged)]
+
+    async def _imported_daily_points(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[OverviewDailyPoint]:
+        stmt = select(ImportedStatsDailyEntity).order_by(ImportedStatsDailyEntity.date.asc())
+        if days > 0:
+            end_at = (datetime.utcnow() - timedelta(days=offset_days)).strftime("%Y%m%d")
+            start_at = (datetime.utcnow() - timedelta(days=offset_days + days)).strftime("%Y%m%d")
+            stmt = stmt.where(ImportedStatsDailyEntity.date >= start_at).where(ImportedStatsDailyEntity.date < end_at)
+        rows = (await session.execute(stmt)).scalars().all()
+        return [
+            OverviewDailyPoint(
+                date=item.date,
+                request_count=int(item.request_success + item.request_failed),
+                total_tokens=int(item.input_token + item.output_token),
+                total_cost_usd=float(item.input_cost + item.output_cost),
+                wait_time_ms=int(item.wait_time),
+                successful_requests=int(item.request_success),
+                failed_requests=int(item.request_failed),
             )
-        ).one()
+            for item in rows
+        ]
+
+    async def _request_log_daily_points(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        offset_days: int = 0,
+        exclude_dates: set[str] | None = None,
+    ) -> list[OverviewDailyPoint]:
+        stmt = (
+            select(
+                func.strftime('%Y%m%d', RequestLogEntity.created_at),
+                func.count(),
+                func.sum(RequestLogEntity.total_tokens),
+                func.sum(RequestLogEntity.total_cost_usd),
+                func.sum(RequestLogEntity.latency_ms),
+                func.sum(RequestLogEntity.success),
+            )
+            .select_from(RequestLogEntity)
+            .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
+            .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
+        )
+        if days > 0:
+            end_at = datetime.utcnow() - timedelta(days=offset_days)
+            start_at = end_at - timedelta(days=days)
+            stmt = stmt.where(RequestLogEntity.created_at >= start_at).where(RequestLogEntity.created_at < end_at)
+        if exclude_dates:
+            stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
+        rows = (await session.execute(stmt)).all()
+        points: list[OverviewDailyPoint] = []
+        for date_value, request_count, total_tokens, total_cost_usd, wait_time_ms, successful_requests in rows:
+            total_value = int(request_count or 0)
+            success_value = int(successful_requests or 0)
+            points.append(
+                OverviewDailyPoint(
+                    date=str(date_value),
+                    request_count=total_value,
+                    total_tokens=int(total_tokens or 0),
+                    total_cost_usd=float(total_cost_usd or 0.0),
+                    wait_time_ms=int(wait_time_ms or 0),
+                    successful_requests=success_value,
+                    failed_requests=max(total_value - success_value, 0),
+                )
+            )
+        return points
+
+    async def _request_log_totals_excluding_imported_days(self, session: AsyncSession) -> dict[str, float]:
+        imported_dates = {
+            row[0]
+            for row in (await session.execute(select(ImportedStatsDailyEntity.date))).all()
+        }
+        return await self._request_log_period_totals(session, days=0, exclude_dates=imported_dates)
+
+    async def _merged_period_totals(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> dict[str, float]:
+        imported_totals = await self._imported_period_totals(session, days=days, offset_days=offset_days)
+        request_log_totals = await self._request_log_period_totals(
+            session,
+            days=days,
+            offset_days=offset_days,
+            exclude_dates=imported_totals["covered_dates"],
+        )
         return {
-            "request_count": float(row[0] or 0),
-            "wait_time_ms": float(row[1] or 0),
-            "input_tokens": float(row[2] or 0),
-            "output_tokens": float(row[3] or 0),
-            "input_cost_usd": float(row[4] or 0),
-            "output_cost_usd": float(row[5] or 0),
-            "total_cost_usd": float(row[6] or 0),
+            "request_count": imported_totals["request_count"] + request_log_totals["request_count"],
+            "wait_time_ms": imported_totals["wait_time_ms"] + request_log_totals["wait_time_ms"],
+            "input_tokens": imported_totals["input_tokens"] + request_log_totals["input_tokens"],
+            "output_tokens": imported_totals["output_tokens"] + request_log_totals["output_tokens"],
+            "input_cost_usd": imported_totals["input_cost_usd"] + request_log_totals["input_cost_usd"],
+            "output_cost_usd": imported_totals["output_cost_usd"] + request_log_totals["output_cost_usd"],
+            "total_cost_usd": imported_totals["total_cost_usd"] + request_log_totals["total_cost_usd"],
         }
 
-    async def _all_log_totals(self, session: AsyncSession) -> dict[str, float]:
-        row = (
+    async def _imported_period_totals(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> dict[str, float | set[str]]:
+        if days == 0:
+            imported_total = await session.get(ImportedStatsTotalEntity, 1)
+            covered_dates = {
+                row[0]
+                for row in (await session.execute(select(ImportedStatsDailyEntity.date))).all()
+            }
+            if imported_total is None:
+                return {
+                    "request_count": 0.0,
+                    "wait_time_ms": 0.0,
+                    "input_tokens": 0.0,
+                    "output_tokens": 0.0,
+                    "input_cost_usd": 0.0,
+                    "output_cost_usd": 0.0,
+                    "total_cost_usd": 0.0,
+                    "covered_dates": covered_dates,
+                }
+            return {
+                "request_count": float(imported_total.request_success + imported_total.request_failed),
+                "wait_time_ms": float(imported_total.wait_time),
+                "input_tokens": float(imported_total.input_token),
+                "output_tokens": float(imported_total.output_token),
+                "input_cost_usd": float(imported_total.input_cost),
+                "output_cost_usd": float(imported_total.output_cost),
+                "total_cost_usd": float(imported_total.input_cost + imported_total.output_cost),
+                "covered_dates": covered_dates,
+            }
+
+        end_at = (datetime.utcnow() - timedelta(days=offset_days)).strftime("%Y%m%d")
+        start_at = (datetime.utcnow() - timedelta(days=offset_days + days)).strftime("%Y%m%d")
+        rows = (
             await session.execute(
-                select(
-                    func.count(),
-                    func.sum(RequestLogEntity.latency_ms),
-                    func.sum(RequestLogEntity.input_tokens),
-                    func.sum(RequestLogEntity.output_tokens),
-                    func.sum(RequestLogEntity.input_cost_usd),
-                    func.sum(RequestLogEntity.output_cost_usd),
-                    func.sum(RequestLogEntity.total_cost_usd),
-                )
-                .select_from(RequestLogEntity)
+                select(ImportedStatsDailyEntity)
+                .where(ImportedStatsDailyEntity.date >= start_at)
+                .where(ImportedStatsDailyEntity.date < end_at)
             )
-        ).one()
+        ).scalars().all()
+        covered_dates = {item.date for item in rows}
+        return {
+            "request_count": float(sum(item.request_success + item.request_failed for item in rows)),
+            "wait_time_ms": float(sum(item.wait_time for item in rows)),
+            "input_tokens": float(sum(item.input_token for item in rows)),
+            "output_tokens": float(sum(item.output_token for item in rows)),
+            "input_cost_usd": float(sum(item.input_cost for item in rows)),
+            "output_cost_usd": float(sum(item.output_cost for item in rows)),
+            "total_cost_usd": float(sum(item.input_cost + item.output_cost for item in rows)),
+            "covered_dates": covered_dates,
+        }
+
+    async def _request_log_period_totals(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        offset_days: int = 0,
+        exclude_dates: set[str] | None = None,
+    ) -> dict[str, float]:
+        stmt = (
+            select(
+                func.count(),
+                func.sum(RequestLogEntity.latency_ms),
+                func.sum(RequestLogEntity.input_tokens),
+                func.sum(RequestLogEntity.output_tokens),
+                func.sum(RequestLogEntity.input_cost_usd),
+                func.sum(RequestLogEntity.output_cost_usd),
+                func.sum(RequestLogEntity.total_cost_usd),
+                func.sum(RequestLogEntity.success),
+            )
+            .select_from(RequestLogEntity)
+        )
+        if days > 0:
+            end_at = datetime.utcnow() - timedelta(days=offset_days)
+            start_at = end_at - timedelta(days=days)
+            stmt = stmt.where(RequestLogEntity.created_at >= start_at).where(RequestLogEntity.created_at < end_at)
+        if exclude_dates:
+            stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
+        row = (await session.execute(stmt)).one()
         return {
             "request_count": float(row[0] or 0),
             "wait_time_ms": float(row[1] or 0),
@@ -1118,6 +1182,7 @@ class DomainStore:
             "input_cost_usd": float(row[4] or 0),
             "output_cost_usd": float(row[5] or 0),
             "total_cost_usd": float(row[6] or 0),
+            "successful_requests": float(row[7] or 0),
         }
 
     @staticmethod
@@ -1244,4 +1309,3 @@ class DomainStore:
         if not isinstance(payload, list):
             return []
         return [item for item in payload if isinstance(item, dict)]
-

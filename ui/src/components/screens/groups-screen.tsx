@@ -347,11 +347,12 @@ export function GroupsScreen() {
   const channelMap = useMemo(() => {
     const map = new Map<string, ProtocolMeta>()
     for (const site of sites ?? []) {
+      const activeBaseUrl = site.base_urls.find((item) => item.enabled)?.url || site.base_urls[0]?.url || ''
       for (const protocol of site.protocols) {
         map.set(protocol.id, {
           id: protocol.id,
           name: site.name,
-          base_url: site.base_url,
+          base_url: activeBaseUrl,
           protocol: protocol.protocol,
         })
       }
