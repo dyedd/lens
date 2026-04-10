@@ -71,8 +71,63 @@ def test_openai_responses_stream_log_detail_distills_completed_response(tmp_path
     asyncio.run(_run_openai_responses_stream_log_detail_distills_completed_response(tmp_path))
 
 
+def test_openai_responses_stream_log_detail_restores_empty_completed_output(tmp_path: Path):
+    asyncio.run(_run_openai_responses_stream_log_detail_restores_empty_completed_output(tmp_path))
+
+
 def test_request_log_detail_api(tmp_path: Path):
     asyncio.run(_run_request_log_detail_api(tmp_path))
+
+
+def test_gemini_stream_usage_extracts_from_sse_payload():
+    from lens_api.gateway import service as service_module
+    from lens_api.models import ProtocolKind
+
+    raw_content = (
+        'data: {"candidates":[{"content":{"parts":[{"text":"Hello"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":12},"modelVersion":"gemini-2.5-flash","responseId":"resp_1"}\n\n'
+        'data: {"candidates":[{"content":{"parts":[{"text":" world"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":7,"totalTokenCount":19},"modelVersion":"gemini-2.5-flash","responseId":"resp_1"}\n\n'
+    )
+
+    payload = service_module._extract_stream_usage(ProtocolKind.GEMINI, raw_content)
+
+    assert payload == {
+        'resolved_model': 'gemini-2.5-flash',
+        'input_tokens': 12,
+        'output_tokens': 7,
+        'total_tokens': 19,
+    }
+
+
+def test_transport_error_detail_includes_type_and_redacted_url():
+    from lens_api.gateway import service as service_module
+
+    request = httpx.Request('POST', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=secret-key')
+    exc = httpx.ConnectTimeout('timed out', request=request)
+
+    detail = service_module._format_transport_error(exc, 'https://fallback.invalid/path?key=other-secret')
+
+    assert detail == (
+        'Transport error (ConnectTimeout) while requesting '
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent: timed out'
+    )
+
+
+def test_channel_error_uses_channel_name_not_internal_id():
+    from lens_api.gateway import service as service_module
+    from lens_api.models import ChannelConfig, ProtocolKind
+
+    channel = ChannelConfig(
+        id='openai_responses-3',
+        name='OpenAI Responses Primary',
+        protocol=ProtocolKind.OPENAI_RESPONSES,
+        base_url='https://api.openai.com',
+        api_key='test-key',
+    )
+
+    message = service_module._format_channel_error(channel, 'Transport error (ConnectTimeout) while requesting https://api.openai.com/v1/responses')
+
+    assert message == 'OpenAI Responses Primary: Transport error (ConnectTimeout) while requesting https://api.openai.com/v1/responses'
+    assert 'openai_responses-3' not in message
 
 
 async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
@@ -905,6 +960,141 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
             assert distilled['output'][0]['content'][0]['text'] == 'OK'
             assert 'data:' not in payload['response_content']
             assert 'very long hidden instructions' not in payload['response_content']
+    finally:
+        service_module.app_state.http.send = original_send
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_openai_responses_stream_log_detail_restores_empty_completed_output(tmp_path: Path):
+    service_module, app, config = await _build_test_app(tmp_path / 'api-openai-responses-stream-empty-output.db')
+
+    sse_body = (
+        'event: response.created\n'
+        'data: {"type":"response.created","response":{"id":"resp_456","model":"gpt-5.4","instructions":"hidden instructions"}}\n\n'
+        'event: response.output_item.added\n'
+        'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_456","type":"message","role":"assistant","content":[]}}\n\n'
+        'event: response.output_text.delta\n'
+        'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"item_id":"msg_456","delta":"O"}\n\n'
+        'event: response.output_text.delta\n'
+        'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"item_id":"msg_456","delta":"K"}\n\n'
+        'event: response.output_text.done\n'
+        'data: {"type":"response.output_text.done","output_index":0,"content_index":0,"item_id":"msg_456","text":"OK"}\n\n'
+        'event: response.completed\n'
+        'data: {"type":"response.completed","response":{"id":"resp_456","object":"response","model":"gpt-5.4","output":[],"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}\n\n'
+        'data: [DONE]\n\n'
+    ).encode()
+
+    async def fake_send(request, **kwargs):
+        if request.method == 'GET' and str(request.url) == 'https://models.dev/api.json':
+            return httpx.Response(200, request=request, json={})
+        return httpx.Response(
+            200,
+            request=request,
+            headers={'content-type': 'text/event-stream', 'x-request-id': 'req_stream_empty_output'},
+            content=sse_body,
+        )
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    original_send = service_module.app_state.http.send
+    service_module.app_state.http.send = fake_send
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            admin_headers = {'authorization': f'Bearer {token}'}
+
+            updated_settings = await client.put(
+                '/api/admin/settings',
+                headers=admin_headers,
+                json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
+            )
+            assert updated_settings.status_code == 200
+
+            created_site = await client.post(
+                '/api/admin/sites',
+                headers=admin_headers,
+                json=_site_create_payload(
+                    'Responses Stream Empty Output Site',
+                    credentials=[{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    protocols=[{
+                        'protocol': 'openai_responses',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [],
+                        'models': [],
+                    }],
+                ),
+            )
+            assert created_site.status_code == 201
+            site = created_site.json()
+            credential = site['credentials'][0]
+            protocol = site['protocols'][0]
+
+            updated_site = await client.put(
+                f"/api/admin/sites/{site['id']}",
+                headers=admin_headers,
+                json=_site_update_payload(
+                    site,
+                    credentials=[{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    protocols=[{
+                        'id': protocol['id'],
+                        'protocol': 'openai_responses',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                        'models': [{'credential_id': credential['id'], 'model_name': 'gpt-5.4', 'enabled': True}],
+                    }],
+                ),
+            )
+            assert updated_site.status_code == 200
+
+            created_group = await client.post(
+                '/api/admin/model-groups',
+                headers=admin_headers,
+                json={
+                    'name': 'gpt-5.4',
+                    'protocol': 'openai_responses',
+                    'strategy': 'round_robin',
+                    'items': [{
+                        'channel_id': protocol['id'],
+                        'credential_id': credential['id'],
+                        'model_name': 'gpt-5.4',
+                        'enabled': True,
+                    }],
+                },
+            )
+            assert created_group.status_code == 201
+
+            gateway_response = await client.post(
+                '/v1/responses',
+                headers={'authorization': 'Bearer test-gateway-key'},
+                json={'model': 'gpt-5.4', 'input': 'Reply with exactly OK.'},
+            )
+            assert gateway_response.status_code == 200
+            assert 'OK' in gateway_response.text
+
+            summary = await client.get('/api/admin/request-logs', headers=admin_headers)
+            assert summary.status_code == 200
+            latest_id = summary.json()[0]['id']
+
+            detail = await client.get(f'/api/admin/request-logs/{latest_id}', headers=admin_headers)
+            assert detail.status_code == 200
+            payload = detail.json()
+            distilled = json.loads(payload['response_content'])
+            assert distilled['model'] == 'gpt-5.4'
+            assert distilled['usage']['total_tokens'] == 12
+            assert distilled['output'][0]['id'] == 'msg_456'
+            assert distilled['output'][0]['content'][0]['text'] == 'OK'
+            assert 'hidden instructions' not in payload['response_content']
+            assert 'data:' not in payload['response_content']
     finally:
         service_module.app_state.http.send = original_send
         await service_module._close_app_state(service_module.app_state)
