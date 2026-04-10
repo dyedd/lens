@@ -3,9 +3,25 @@ from __future__ import annotations
 import asyncio
 
 from lens_api.core.db import Base, create_engine, create_session_factory
-from lens_api.models import ModelGroupCandidatesRequest, ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate
+from lens_api.models import ModelGroupCandidatesRequest, ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate, SiteUpdate
 from lens_api.persistence.domain_store import DomainStore
 from lens_api.persistence.channel_store import ChannelStore
+
+
+def _base_urls(url: str) -> list[dict[str, object]]:
+    return [{"url": url, "name": "", "enabled": True}]
+
+
+def _site_base_urls(site) -> list[dict[str, object]]:
+    return [
+        {
+            "id": item.id,
+            "url": str(item.url),
+            "name": item.name,
+            "enabled": item.enabled,
+        }
+        for item in site.base_urls
+    ]
 
 
 def test_create_group_persists_ordered_model_items(tmp_path):
@@ -26,7 +42,7 @@ async def _run_group_store_test(tmp_path):
     site_one = await channel_store.create_site(
         SiteCreate(
             name="Anthropic A",
-            base_url="https://a.example.com",
+            base_urls=_base_urls("https://a.example.com"),
             credentials=[{"name": "Key 1", "api_key": "sk-a", "enabled": True}],
             protocols=[{
                 "protocol": ProtocolKind.ANTHROPIC,
@@ -44,9 +60,9 @@ async def _run_group_store_test(tmp_path):
     provider_one = site_one.protocols[0]
     site_one = await channel_store.update_site(
         site_one.id,
-        SiteCreate(
+        SiteUpdate(
             name=site_one.name,
-            base_url=site_one.base_url,
+            base_urls=_site_base_urls(site_one),
             credentials=[{"id": credential_one.id, "name": credential_one.name, "api_key": credential_one.api_key, "enabled": True}],
             protocols=[{
                 "id": provider_one.id,
@@ -69,7 +85,7 @@ async def _run_group_store_test(tmp_path):
     site_two = await channel_store.create_site(
         SiteCreate(
             name="Anthropic B",
-            base_url="https://b.example.com",
+            base_urls=_base_urls("https://b.example.com"),
             credentials=[{"name": "Key 1", "api_key": "sk-b", "enabled": True}],
             protocols=[{
                 "protocol": ProtocolKind.ANTHROPIC,
@@ -87,9 +103,9 @@ async def _run_group_store_test(tmp_path):
     provider_two = site_two.protocols[0]
     site_two = await channel_store.update_site(
         site_two.id,
-        SiteCreate(
+        SiteUpdate(
             name=site_two.name,
-            base_url=site_two.base_url,
+            base_urls=_site_base_urls(site_two),
             credentials=[{"id": credential_two.id, "name": credential_two.name, "api_key": credential_two.api_key, "enabled": True}],
             protocols=[{
                 "id": provider_two.id,
@@ -144,7 +160,7 @@ async def _run_group_store_test(tmp_path):
     openai_site = await channel_store.create_site(
         SiteCreate(
             name="OpenAI A",
-            base_url="https://openai.example.com",
+            base_urls=_base_urls("https://openai.example.com"),
             credentials=[{"name": "Key 1", "api_key": "sk-openai", "enabled": True}],
             protocols=[{
                 "protocol": ProtocolKind.OPENAI_CHAT,
@@ -162,9 +178,9 @@ async def _run_group_store_test(tmp_path):
     openai_channel = openai_site.protocols[0]
     openai_site = await channel_store.update_site(
         openai_site.id,
-        SiteCreate(
+        SiteUpdate(
             name=openai_site.name,
-            base_url=openai_site.base_url,
+            base_urls=_site_base_urls(openai_site),
             credentials=[{"id": openai_credential.id, "name": openai_credential.name, "api_key": openai_credential.api_key, "enabled": True}],
             protocols=[{
                 "id": openai_channel.id,

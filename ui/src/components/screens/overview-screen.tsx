@@ -90,6 +90,20 @@ export function OverviewScreen() {
   const { data: latestLogs } = useQuery({ queryKey: ["overview-logs", days, logOffset], queryFn: () => apiRequest<RequestLogItem[]>(`/admin/overview-logs?days=${days}&limit=50&offset=${logOffset}`) })
   const logs = latestLogs ?? []
 
+  const periodMetrics = useMemo(() => {
+    const source = daily ?? []
+    const totalRequests = source.reduce((sum, item) => sum + item.request_count, 0)
+    const successfulRequests = source.reduce((sum, item) => sum + item.successful_requests, 0)
+    const totalWaitTime = source.reduce((sum, item) => sum + item.wait_time_ms, 0)
+
+    return {
+      totalRequests,
+      successfulRequests,
+      successRate: totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 0,
+      avgLatencyMs: totalRequests > 0 ? Math.round(totalWaitTime / totalRequests) : 0,
+    }
+  }, [daily])
+
   const summaryCards = [
     {
       key: "request_count",
@@ -271,11 +285,11 @@ export function OverviewScreen() {
           </div>
           <div>
             <div className="text-[12px] text-[var(--muted)]">{zh ? "成功请求" : "Success"}</div>
-            <div className="text-[18px] font-semibold text-[var(--text)]">{formatCompact(metrics?.successful_requests ?? 0)}</div>
+            <div className="text-[18px] font-semibold text-[var(--text)]">{formatCompact(periodMetrics.successfulRequests)}</div>
           </div>
           <div>
             <div className="text-[12px] text-[var(--muted)]">{zh ? "平均延迟" : "Latency"}</div>
-            <div className="text-[18px] font-semibold text-[var(--text)]">{metrics?.avg_latency_ms ?? 0} ms</div>
+            <div className="text-[18px] font-semibold text-[var(--text)]">{periodMetrics.avgLatencyMs} ms</div>
           </div>
         </div>
 
@@ -394,11 +408,11 @@ export function OverviewScreen() {
         <div className="mt-4 grid grid-cols-1 gap-3 text-center md:grid-cols-3">
           <div className="rounded-2xl bg-[var(--panel)] px-3 py-4">
             <div className="text-[12px] text-[var(--muted)]">{zh ? "总请求" : "Requests"}</div>
-            <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(metrics?.total_requests ?? 0)}</div>
+            <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(periodMetrics.totalRequests)}</div>
           </div>
           <div className="rounded-2xl bg-[var(--panel)] px-3 py-4">
             <div className="text-[12px] text-[var(--muted)]">{zh ? "成功率" : "Success rate"}</div>
-            <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{metrics?.total_requests ? Math.round(((metrics?.successful_requests ?? 0) / metrics.total_requests) * 100) + "%" : "0%"}</div>
+            <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{periodMetrics.successRate}%</div>
           </div>
           <div className="rounded-2xl bg-[var(--panel)] px-3 py-4">
             <div className="text-[12px] text-[var(--muted)]">{zh ? "服务 API Key" : "Service keys"}</div>

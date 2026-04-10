@@ -8,8 +8,28 @@ from lens_api.persistence.domain_store import DomainStore
 from lens_api.persistence.channel_store import ChannelStore
 
 
+def _base_urls(url: str) -> list[dict[str, object]]:
+    return [{"url": url, "name": "", "enabled": True}]
+
+
+def _site_base_urls(site) -> list[dict[str, object]]:
+    return [
+        {
+            "id": item.id,
+            "url": str(item.url),
+            "name": item.name,
+            "enabled": item.enabled,
+        }
+        for item in site.base_urls
+    ]
+
+
 def test_list_group_stats_returns_aggregated_metrics(tmp_path):
     asyncio.run(_run_group_stats_test(tmp_path))
+
+
+def test_overview_metrics_merge_imported_stats_with_request_logs(tmp_path):
+    asyncio.run(_run_overview_metrics_merge_test(tmp_path))
 
 
 async def _run_group_stats_test(tmp_path):
@@ -27,7 +47,7 @@ async def _run_group_stats_test(tmp_path):
     primary_site = await channel_store.create_site(
         SiteCreate(
             name="Primary Claude",
-            base_url="https://primary.example.com",
+            base_urls=_base_urls("https://primary.example.com"),
             credentials=[{"name": "Key 1", "api_key": "sk-primary", "enabled": True}],
             protocols=[{"protocol": ProtocolKind.OPENAI_CHAT, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [], "models": []}],
         )
@@ -38,7 +58,7 @@ async def _run_group_stats_test(tmp_path):
         primary_site.id,
         SiteUpdate(
             name=primary_site.name,
-            base_url=primary_site.base_url,
+            base_urls=_site_base_urls(primary_site),
             credentials=[{"id": primary_credential.id, "name": primary_credential.name, "api_key": primary_credential.api_key, "enabled": True}],
             protocols=[{"id": primary_protocol.id, "protocol": primary_protocol.protocol, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [{"credential_id": primary_credential.id, "enabled": True}], "models": [{"credential_id": primary_credential.id, "model_name": "claude-opus-4-6-2026-03-31", "enabled": True}, {"credential_id": primary_credential.id, "model_name": "gpt-4.1-2026-03-30", "enabled": True}]}],
         ),
@@ -48,7 +68,7 @@ async def _run_group_stats_test(tmp_path):
     fallback_site = await channel_store.create_site(
         SiteCreate(
             name="Fallback Claude",
-            base_url="https://fallback.example.com",
+            base_urls=_base_urls("https://fallback.example.com"),
             credentials=[{"name": "Key 1", "api_key": "sk-fallback", "enabled": True}],
             protocols=[{"protocol": ProtocolKind.OPENAI_CHAT, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [], "models": []}],
         )
@@ -59,7 +79,7 @@ async def _run_group_stats_test(tmp_path):
         fallback_site.id,
         SiteUpdate(
             name=fallback_site.name,
-            base_url=fallback_site.base_url,
+            base_urls=_site_base_urls(fallback_site),
             credentials=[{"id": fallback_credential.id, "name": fallback_credential.name, "api_key": fallback_credential.api_key, "enabled": True}],
             protocols=[{"id": fallback_protocol.id, "protocol": fallback_protocol.protocol, "enabled": True, "headers": {}, "channel_proxy": "", "param_override": "", "match_regex": "", "bindings": [{"credential_id": fallback_credential.id, "enabled": True}], "models": [{"credential_id": fallback_credential.id, "model_name": "claude-opus-4-6-2026-03-31", "enabled": True}]}],
         ),
@@ -213,6 +233,83 @@ async def _run_group_name_price_test(tmp_path):
     assert input_cost == 0.002
     assert output_cost == 0.004
     assert total_cost == 0.006
+
+    await engine.dispose()
+
+
+async def _run_overview_metrics_merge_test(tmp_path):
+    database_path = tmp_path / 'overview-merge.db'
+    engine = create_engine(f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}")
+    session_factory = create_session_factory(engine)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    domain_store = DomainStore(session_factory)
+    await domain_store.replace_imported_stats(
+        total={
+            'input_token': 100,
+            'output_token': 50,
+            'input_cost': 1.5,
+            'output_cost': 2.5,
+            'wait_time': 900,
+            'request_success': 2,
+            'request_failed': 1,
+        },
+        daily=[
+            {
+                'date': '20250101',
+                'input_token': 100,
+                'output_token': 50,
+                'input_cost': 1.5,
+                'output_cost': 2.5,
+                'wait_time': 900,
+                'request_success': 2,
+                'request_failed': 1,
+            }
+        ],
+        model_prices=[],
+    )
+    await domain_store.create_request_log(
+        protocol=ProtocolKind.OPENAI_CHAT.value,
+        requested_model='gpt-4.1',
+        matched_group_name='gpt-4.1',
+        channel_id='channel-a',
+        channel_name='Channel A',
+        gateway_key_id='gw-a',
+        status_code=200,
+        success=True,
+        is_stream=False,
+        first_token_latency_ms=0,
+        latency_ms=100,
+        resolved_model='gpt-4.1',
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        input_cost_usd=0.1,
+        output_cost_usd=0.2,
+        total_cost_usd=0.3,
+        request_content='{"model":"gpt-4.1"}',
+        response_content='{"model":"gpt-4.1"}',
+        attempts=[],
+        error_message=None,
+    )
+
+    metrics = await domain_store.get_overview_metrics()
+    assert metrics.total_requests == 4
+    assert metrics.successful_requests == 3
+    assert metrics.failed_requests == 1
+    assert metrics.avg_latency_ms == 250
+
+    summary = await domain_store.get_overview_summary(days=0)
+    assert summary.request_count.value == 4
+    assert summary.wait_time_ms.value == 1000
+    assert summary.total_tokens.value == 165
+    assert summary.total_cost_usd.value == 4.3
+
+    daily_points = await domain_store.list_overview_daily(days=0)
+    assert any(item.date == '20250101' and item.request_count == 3 for item in daily_points)
+    assert any(item.date != '20250101' and item.request_count == 1 and item.successful_requests == 1 for item in daily_points)
 
     await engine.dispose()
 
