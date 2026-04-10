@@ -11,8 +11,40 @@ TEST_ADMIN_USERNAME = 'admin'
 TEST_ADMIN_PASSWORD = 'admin'
 
 
+def _site_create_payload(name: str, credentials: list[dict], protocols: list[dict], base_url: str = 'https://api.openai.com') -> dict:
+    return {
+        'name': name,
+        'base_urls': [
+            {'url': base_url, 'name': '', 'enabled': True},
+        ],
+        'credentials': credentials,
+        'protocols': protocols,
+    }
+
+
+def _site_update_payload(site: dict, credentials: list[dict], protocols: list[dict]) -> dict:
+    return {
+        'name': site['name'],
+        'base_urls': [
+            {
+                'id': item['id'],
+                'url': item['url'],
+                'name': item['name'],
+                'enabled': item['enabled'],
+            }
+            for item in site['base_urls']
+        ],
+        'credentials': credentials,
+        'protocols': protocols,
+    }
+
+
 def test_api_bootstrap_and_site_crud(tmp_path: Path):
     asyncio.run(_run_api_bootstrap_and_site_crud(tmp_path))
+
+
+def test_app_info_api(tmp_path: Path):
+    asyncio.run(_run_app_info_api(tmp_path))
 
 
 def test_model_group_candidates_include_credential_dimension(tmp_path: Path):
@@ -62,13 +94,12 @@ async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
             created = await client.post(
                 '/api/admin/sites',
                 headers=headers,
-                json={
-                    'name': 'Test Site',
-                    'base_url': 'https://api.openai.com',
-                    'credentials': [
+                json=_site_create_payload(
+                    'Test Site',
+                    credentials=[
                         {'name': 'Key A', 'api_key': 'key-a', 'enabled': True},
                     ],
-                    'protocols': [
+                    protocols=[
                         {
                             'protocol': 'openai_chat',
                             'enabled': True,
@@ -80,7 +111,7 @@ async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
                             'models': [],
                         }
                     ],
-                },
+                ),
             )
             assert created.status_code == 201
             payload = created.json()
@@ -103,6 +134,30 @@ async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
         await service_module._close_app_state(service_module.app_state)
 
 
+async def _run_app_info_api(tmp_path: Path):
+    service_module, app, config = await _build_test_app(tmp_path / 'api-app-info.db')
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            headers = {'authorization': f'Bearer {token}'}
+
+            response = await client.get('/api/admin/app-info', headers=headers)
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload['backend_version'] == service_module.backend_version
+            assert isinstance(payload['frontend_version'], str)
+            assert payload['frontend_version']
+            assert payload['app_env'] == config.app_env
+            assert payload['site_name'] == 'Lens'
+    finally:
+        await service_module._close_app_state(service_module.app_state)
+
+
 async def _run_model_group_candidates_include_credential_dimension(tmp_path: Path):
     service_module, app, config = await _build_test_app(tmp_path / 'api-candidates.db')
 
@@ -118,14 +173,13 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
             created = await client.post(
                 '/api/admin/sites',
                 headers=headers,
-                json={
-                    'name': 'Candidate Site',
-                    'base_url': 'https://api.openai.com',
-                    'credentials': [
+                json=_site_create_payload(
+                    'Candidate Site',
+                    credentials=[
                         {'name': 'Alpha', 'api_key': 'alpha-key', 'enabled': True},
                         {'name': 'Beta', 'api_key': 'beta-key', 'enabled': True},
                     ],
-                    'protocols': [
+                    protocols=[
                         {
                             'protocol': 'openai_chat',
                             'enabled': True,
@@ -137,7 +191,7 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
                             'models': [],
                         }
                     ],
-                },
+                ),
             )
             assert created.status_code == 201
             site = created.json()
@@ -148,14 +202,13 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
             updated = await client.put(
                 f"/api/admin/sites/{site['id']}",
                 headers=headers,
-                json={
-                    'name': site['name'],
-                    'base_url': site['base_url'],
-                    'credentials': [
+                json=_site_update_payload(
+                    site,
+                    credentials=[
                         {'id': alpha['id'], 'name': alpha['name'], 'api_key': alpha['api_key'], 'enabled': True},
                         {'id': beta['id'], 'name': beta['name'], 'api_key': beta['api_key'], 'enabled': True},
                     ],
-                    'protocols': [
+                    protocols=[
                         {
                             'id': protocol['id'],
                             'protocol': protocol['protocol'],
@@ -175,7 +228,7 @@ async def _run_model_group_candidates_include_credential_dimension(tmp_path: Pat
                             ],
                         }
                     ],
-                },
+                ),
             )
             assert updated.status_code == 200
 
@@ -214,11 +267,10 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
             created_site = await client.post(
                 '/api/admin/sites',
                 headers=headers,
-                json={
-                    'name': 'Stats Site',
-                    'base_url': 'https://api.openai.com',
-                    'credentials': [{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
-                    'protocols': [{
+                json=_site_create_payload(
+                    'Stats Site',
+                    credentials=[{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    protocols=[{
                         'protocol': 'openai_chat',
                         'enabled': True,
                         'headers': {},
@@ -228,7 +280,7 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
                         'bindings': [],
                         'models': [],
                     }],
-                },
+                ),
             )
             assert created_site.status_code == 201
             site = created_site.json()
@@ -238,11 +290,10 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
             updated_site = await client.put(
                 f"/api/admin/sites/{site['id']}",
                 headers=headers,
-                json={
-                    'name': site['name'],
-                    'base_url': site['base_url'],
-                    'credentials': [{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
-                    'protocols': [{
+                json=_site_update_payload(
+                    site,
+                    credentials=[{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    protocols=[{
                         'id': protocol['id'],
                         'protocol': protocol['protocol'],
                         'enabled': True,
@@ -253,7 +304,7 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
                         'bindings': [{'credential_id': credential['id'], 'enabled': True}],
                         'models': [{'credential_id': credential['id'], 'model_name': 'gpt-4.1', 'enabled': True}],
                     }],
-                },
+                ),
             )
             assert updated_site.status_code == 200
 
@@ -428,11 +479,10 @@ async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
             created_site = await client.post(
                 '/api/admin/sites',
                 headers=admin_headers,
-                json={
-                    'name': 'Mixed OpenAI Site',
-                    'base_url': 'https://api.openai.com',
-                    'credentials': [{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
-                    'protocols': [
+                json=_site_create_payload(
+                    'Mixed OpenAI Site',
+                    credentials=[{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    protocols=[
                         {
                             'protocol': 'openai_chat',
                             'enabled': True,
@@ -454,7 +504,7 @@ async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
                             'models': [],
                         },
                     ],
-                },
+                ),
             )
             assert created_site.status_code == 201
             site = created_site.json()
@@ -465,11 +515,10 @@ async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
             updated_site = await client.put(
                 f"/api/admin/sites/{site['id']}",
                 headers=admin_headers,
-                json={
-                    'name': site['name'],
-                    'base_url': site['base_url'],
-                    'credentials': [{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
-                    'protocols': [
+                json=_site_update_payload(
+                    site,
+                    credentials=[{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    protocols=[
                         {
                             'id': chat_protocol['id'],
                             'protocol': 'openai_chat',
@@ -493,7 +542,7 @@ async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
                             'models': [{'credential_id': credential['id'], 'model_name': 'gpt-5.4', 'enabled': True}],
                         },
                     ],
-                },
+                ),
             )
             assert updated_site.status_code == 200
 
@@ -585,11 +634,10 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
             created_site = await client.post(
                 '/api/admin/sites',
                 headers=admin_headers,
-                json={
-                    'name': 'Responses Site',
-                    'base_url': 'https://api.openai.com',
-                    'credentials': [{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
-                    'protocols': [{
+                json=_site_create_payload(
+                    'Responses Site',
+                    credentials=[{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    protocols=[{
                         'protocol': 'openai_responses',
                         'enabled': True,
                         'headers': {},
@@ -599,7 +647,7 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
                         'bindings': [],
                         'models': [],
                     }],
-                },
+                ),
             )
             assert created_site.status_code == 201
             site = created_site.json()
@@ -609,11 +657,10 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
             updated_site = await client.put(
                 f"/api/admin/sites/{site['id']}",
                 headers=admin_headers,
-                json={
-                    'name': site['name'],
-                    'base_url': site['base_url'],
-                    'credentials': [{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
-                    'protocols': [{
+                json=_site_update_payload(
+                    site,
+                    credentials=[{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    protocols=[{
                         'id': protocol['id'],
                         'protocol': 'openai_responses',
                         'enabled': True,
@@ -624,7 +671,7 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
                         'bindings': [{'credential_id': credential['id'], 'enabled': True}],
                         'models': [{'credential_id': credential['id'], 'model_name': 'gpt-5.4', 'enabled': True}],
                     }],
-                },
+                ),
             )
             assert updated_site.status_code == 200
 
@@ -776,11 +823,10 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
             created_site = await client.post(
                 '/api/admin/sites',
                 headers=admin_headers,
-                json={
-                    'name': 'Responses Stream Site',
-                    'base_url': 'https://api.openai.com',
-                    'credentials': [{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
-                    'protocols': [{
+                json=_site_create_payload(
+                    'Responses Stream Site',
+                    credentials=[{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    protocols=[{
                         'protocol': 'openai_responses',
                         'enabled': True,
                         'headers': {},
@@ -790,7 +836,7 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
                         'bindings': [],
                         'models': [],
                     }],
-                },
+                ),
             )
             assert created_site.status_code == 201
             site = created_site.json()
@@ -800,11 +846,10 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
             updated_site = await client.put(
                 f"/api/admin/sites/{site['id']}",
                 headers=admin_headers,
-                json={
-                    'name': site['name'],
-                    'base_url': site['base_url'],
-                    'credentials': [{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
-                    'protocols': [{
+                json=_site_update_payload(
+                    site,
+                    credentials=[{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    protocols=[{
                         'id': protocol['id'],
                         'protocol': 'openai_responses',
                         'enabled': True,
@@ -815,7 +860,7 @@ async def _run_openai_responses_stream_log_detail_distills_completed_response(tm
                         'bindings': [{'credential_id': credential['id'], 'enabled': True}],
                         'models': [{'credential_id': credential['id'], 'model_name': 'gpt-5.4', 'enabled': True}],
                     }],
-                },
+                ),
             )
             assert updated_site.status_code == 200
 
