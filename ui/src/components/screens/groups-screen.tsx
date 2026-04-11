@@ -510,10 +510,8 @@ export function GroupsScreen() {
       if (current.items.some((member) => itemKey(member) === key)) {
         return current
       }
-      const nextProtocol = channelMap.get(item.channel_id)?.protocol || current.protocol
       return {
         ...current,
-        protocol: nextProtocol,
         items: [...current.items, { channel_id: item.channel_id, channel_name: item.channel_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }],
       }
     })
@@ -740,12 +738,11 @@ export function GroupsScreen() {
         {detailTarget ? (
           <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '模型组详情' : 'Group detail'}>
             <div className="space-y-5 overflow-y-auto pr-1">
-              <div className={panelClassName('p-5')}>
+              <div className={panelClassName('border-transparent p-5')}>
                 <div className="mb-4 flex items-center gap-3">
                   {DetailAvatar ? <DetailAvatar size={44} /> : null}
                   <div className="min-w-0">
                     <div className="truncate text-base font-semibold text-[var(--text)]">{detailTarget.name}</div>
-                    <div className="text-xs text-[var(--muted)]">{protocolLabel(detailTarget.protocol, locale)}</div>
                   </div>
                 </div>
                 <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '基础信息' : 'Overview'}</div>

@@ -57,6 +57,10 @@ def test_model_group_detail_and_stats_api(tmp_path: Path):
     asyncio.run(_run_model_group_detail_and_stats_api(tmp_path))
 
 
+def test_model_group_update_keeps_protocol_when_adding_convertible_channel(tmp_path: Path):
+    asyncio.run(_run_model_group_update_keeps_protocol_when_adding_convertible_channel(tmp_path))
+
+
 def test_model_price_api(tmp_path: Path):
     asyncio.run(_run_model_price_api(tmp_path))
 
@@ -475,6 +479,138 @@ async def _run_model_group_detail_and_stats_api(tmp_path: Path):
             assert target['success_count'] == 1
             assert target['failed_count'] == 0
             assert target['last_resolved_model'] == 'gpt-4.1'
+    finally:
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_model_group_update_keeps_protocol_when_adding_convertible_channel(tmp_path: Path):
+    service_module, app, _config = await _build_test_app(tmp_path / 'api-group-keep-protocol.db')
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            headers = {'authorization': f'Bearer {token}'}
+
+            created_site = await client.post(
+                '/api/admin/sites',
+                headers=headers,
+                json=_site_create_payload(
+                    'Convertible Site',
+                    credentials=[{'name': 'Key A', 'api_key': 'key-a', 'enabled': True}],
+                    protocols=[
+                        {
+                            'protocol': 'anthropic',
+                            'enabled': True,
+                            'headers': {},
+                            'channel_proxy': '',
+                            'param_override': '',
+                            'match_regex': '',
+                            'bindings': [],
+                            'models': [],
+                        },
+                        {
+                            'protocol': 'openai_chat',
+                            'enabled': True,
+                            'headers': {},
+                            'channel_proxy': '',
+                            'param_override': '',
+                            'match_regex': '',
+                            'bindings': [],
+                            'models': [],
+                        },
+                    ],
+                ),
+            )
+            assert created_site.status_code == 201
+            site = created_site.json()
+            credential = site['credentials'][0]
+            anthropic_protocol = next(item for item in site['protocols'] if item['protocol'] == 'anthropic')
+            chat_protocol = next(item for item in site['protocols'] if item['protocol'] == 'openai_chat')
+
+            updated_site = await client.put(
+                f"/api/admin/sites/{site['id']}",
+                headers=headers,
+                json=_site_update_payload(
+                    site,
+                    credentials=[{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    protocols=[
+                        {
+                            'id': anthropic_protocol['id'],
+                            'protocol': 'anthropic',
+                            'enabled': True,
+                            'headers': {},
+                            'channel_proxy': '',
+                            'param_override': '',
+                            'match_regex': '',
+                            'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                            'models': [{'credential_id': credential['id'], 'model_name': 'claude-sonnet-4-5', 'enabled': True}],
+                        },
+                        {
+                            'id': chat_protocol['id'],
+                            'protocol': 'openai_chat',
+                            'enabled': True,
+                            'headers': {},
+                            'channel_proxy': '',
+                            'param_override': '',
+                            'match_regex': '',
+                            'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                            'models': [{'credential_id': credential['id'], 'model_name': 'claude-sonnet-4-5', 'enabled': True}],
+                        },
+                    ],
+                ),
+            )
+            assert updated_site.status_code == 200
+
+            created_group = await client.post(
+                '/api/admin/model-groups',
+                headers=headers,
+                json={
+                    'name': 'claude-sonnet-4-5',
+                    'protocol': 'anthropic',
+                    'strategy': 'round_robin',
+                    'items': [{
+                        'channel_id': anthropic_protocol['id'],
+                        'credential_id': credential['id'],
+                        'model_name': 'claude-sonnet-4-5',
+                        'enabled': True,
+                    }],
+                },
+            )
+            assert created_group.status_code == 201
+            group = created_group.json()
+
+            updated_group = await client.put(
+                f"/api/admin/model-groups/{group['id']}",
+                headers=headers,
+                json={
+                    'name': group['name'],
+                    'protocol': 'anthropic',
+                    'strategy': group['strategy'],
+                    'match_regex': group['match_regex'],
+                    'items': [
+                        {
+                            'channel_id': anthropic_protocol['id'],
+                            'credential_id': credential['id'],
+                            'model_name': 'claude-sonnet-4-5',
+                            'enabled': True,
+                        },
+                        {
+                            'channel_id': chat_protocol['id'],
+                            'credential_id': credential['id'],
+                            'model_name': 'claude-sonnet-4-5',
+                            'enabled': True,
+                        },
+                    ],
+                },
+            )
+            assert updated_group.status_code == 200
+            payload = updated_group.json()
+            assert payload['protocol'] == 'anthropic'
+            assert {item['channel_id'] for item in payload['items']} == {anthropic_protocol['id'], chat_protocol['id']}
     finally:
         await service_module._close_app_state(service_module.app_state)
 
