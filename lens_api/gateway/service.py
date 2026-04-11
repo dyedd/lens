@@ -15,6 +15,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.exc import OperationalError
 from starlette.background import BackgroundTask
 
 from ..core.auth import create_access_token, decode_access_token
@@ -152,9 +153,37 @@ async def lifespan(_: FastAPI):
 auth_scheme = HTTPBearer(auto_error=False)
 
 
+def _is_sqlite_database_locked(exc: OperationalError) -> bool:
+    message = str(getattr(exc, "orig", exc)).lower()
+    return "database is locked" in message
+
+
+def _database_error_status_and_detail(exc: OperationalError) -> tuple[int, str]:
+    if _is_sqlite_database_locked(exc):
+        return status.HTTP_503_SERVICE_UNAVAILABLE, "Database is busy, please retry"
+    return status.HTTP_500_INTERNAL_SERVER_ERROR, "Database operation failed"
+
+
+def _database_error_response(exc: OperationalError) -> JSONResponse:
+    status_code, detail = _database_error_status_and_detail(exc)
+    return JSONResponse(status_code=status_code, content={"detail": detail})
+
+
+def _raise_database_http_error(exc: OperationalError) -> None:
+    status_code, detail = _database_error_status_and_detail(exc)
+    raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
+async def handle_operational_error(_: Request, exc: OperationalError) -> JSONResponse:
+    return _database_error_response(exc)
+
+
 async def dynamic_cors_middleware(request: Request, call_next):
     response = await call_next(request)
-    runtime = await app_state.domain_store.get_runtime_settings()
+    try:
+        runtime = await app_state.domain_store.get_runtime_settings()
+    except OperationalError as exc:
+        return _database_error_response(exc)
     allow_origins = runtime["cors_allow_origins"]
     origin = request.headers.get("origin", "")
     if allow_origins == ["*"]:
@@ -169,7 +198,10 @@ async def dynamic_cors_middleware(request: Request, call_next):
 
 
 async def cors_preflight(path: str, request: Request) -> Response:
-    runtime = await app_state.domain_store.get_runtime_settings()
+    try:
+        runtime = await app_state.domain_store.get_runtime_settings()
+    except OperationalError as exc:
+        return _database_error_response(exc)
     allow_origins = runtime["cors_allow_origins"]
     origin = request.headers.get("origin", "")
     headers = {
@@ -220,7 +252,10 @@ async def get_current_gateway_key(request: Request) -> str:
     elif x_goog_api_key:
         secret = x_goog_api_key.strip()
 
-    gateway_auth = await app_state.domain_store.get_gateway_auth_config()
+    try:
+        gateway_auth = await app_state.domain_store.get_gateway_auth_config()
+    except OperationalError as exc:
+        _raise_database_http_error(exc)
     if not gateway_auth["require_api_key"]:
         return secret or "anonymous"
 
