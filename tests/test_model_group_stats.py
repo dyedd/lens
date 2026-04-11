@@ -8,6 +8,7 @@ from lens_api.models import ModelGroupCreate, ModelGroupItemInput, ProtocolKind,
 from lens_api.persistence.domain_store import DomainStore
 from lens_api.persistence.channel_store import ChannelStore
 from lens_api.persistence.entities import RequestLogEntity
+from lens_api.models import SettingItem
 
 
 def _base_urls(url: str) -> list[dict[str, object]]:
@@ -36,6 +37,10 @@ def test_overview_metrics_merge_imported_stats_with_request_logs(tmp_path):
 
 def test_overview_today_range_filters_current_day(tmp_path):
     asyncio.run(_run_overview_today_range_test(tmp_path))
+
+
+def test_clear_request_logs_keeps_archived_overview_stats(tmp_path):
+    asyncio.run(_run_clear_request_logs_keeps_archived_stats_test(tmp_path))
 
 
 async def _run_group_stats_test(tmp_path):
@@ -458,6 +463,99 @@ async def _run_overview_today_range_test(tmp_path):
 
     logs = await domain_store.list_request_logs(days=-1)
     assert [item.id for item in logs] == [today_success.id, today_failed.id]
+
+    await engine.dispose()
+
+
+async def _run_clear_request_logs_keeps_archived_stats_test(tmp_path):
+    database_path = tmp_path / 'clear-logs-keeps-stats.db'
+    engine = create_engine(f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}")
+    session_factory = create_session_factory(engine)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    domain_store = DomainStore(session_factory)
+    await domain_store.upsert_settings([
+        SettingItem(key='stats_save_interval', value='999999'),
+    ])
+
+    await domain_store.create_request_log(
+        protocol=ProtocolKind.OPENAI_CHAT.value,
+        requested_model='gpt-4.1',
+        matched_group_name='gpt-4.1',
+        channel_id='channel-a',
+        channel_name='Channel A',
+        gateway_key_id='gw-a',
+        status_code=200,
+        success=True,
+        is_stream=False,
+        first_token_latency_ms=0,
+        latency_ms=120,
+        resolved_model='gpt-4.1',
+        input_tokens=20,
+        output_tokens=10,
+        total_tokens=30,
+        input_cost_usd=0.2,
+        output_cost_usd=0.3,
+        total_cost_usd=0.5,
+        request_content='{"model":"gpt-4.1"}',
+        response_content='{"model":"gpt-4.1"}',
+        attempts=[],
+        error_message=None,
+    )
+    await domain_store.create_request_log(
+        protocol=ProtocolKind.OPENAI_CHAT.value,
+        requested_model='gpt-4.1',
+        matched_group_name='gpt-4.1',
+        channel_id='channel-a',
+        channel_name='Channel A',
+        gateway_key_id='gw-a',
+        status_code=500,
+        success=False,
+        is_stream=False,
+        first_token_latency_ms=0,
+        latency_ms=80,
+        resolved_model=None,
+        input_tokens=5,
+        output_tokens=0,
+        total_tokens=5,
+        input_cost_usd=0.0,
+        output_cost_usd=0.0,
+        total_cost_usd=0.0,
+        request_content='{"model":"gpt-4.1"}',
+        response_content=None,
+        attempts=[],
+        error_message='boom',
+    )
+
+    before_clear = await domain_store.get_overview_summary(days=0)
+    assert before_clear.request_count.value == 2
+    assert before_clear.total_tokens.value == 35
+    assert before_clear.total_cost_usd.value == 0.5
+
+    await domain_store.clear_request_logs()
+
+    logs = await domain_store.list_request_logs()
+    assert logs == []
+
+    after_clear = await domain_store.get_overview_summary(days=0)
+    assert after_clear.request_count.value == 2
+    assert after_clear.wait_time_ms.value == 200
+    assert after_clear.total_tokens.value == 35
+    assert after_clear.total_cost_usd.value == 0.5
+
+    metrics = await domain_store.get_overview_metrics()
+    assert metrics.total_requests == 2
+    assert metrics.successful_requests == 1
+    assert metrics.failed_requests == 1
+    assert metrics.avg_latency_ms == 100
+
+    analytics = await domain_store.get_model_analytics(days=0)
+    assert analytics.available_models == ['gpt-4.1']
+    assert analytics.distribution[0].requests == 1
+    assert analytics.distribution[0].total_tokens == 30
+    assert analytics.distribution[0].total_cost_usd == 0.5
 
     await engine.dispose()
 

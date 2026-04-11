@@ -11,7 +11,6 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from "@/components/ui/chart"
 
 type TimeRange = "-1" | "7" | "30" | "0"
-type HeatMetric = "requests" | "tokens" | "cost"
 type PieMetric = "cost" | "requests" | "tokens"
 
 const CHART_COLORS = [
@@ -52,32 +51,11 @@ function formatDuration(ms: number) {
   return ms + "ms"
 }
 
-function dailyValue(item: OverviewDailyPoint, metric: HeatMetric) {
-  if (metric === "tokens") return item.total_tokens
-  if (metric === "cost") return item.total_cost_usd
-  return item.request_count
-}
-
-function heatLevel(value: number, maxValue: number) {
-  if (value <= 0 || maxValue <= 0) return 0
-  const ratio = value / maxValue
-  if (ratio >= 0.8) return 4
-  if (ratio >= 0.5) return 3
-  if (ratio >= 0.2) return 2
-  return 1
-}
-
-function HeatCell({ level }: { level: number }) {
-  const palette = ["#edf3ff", "#dbe9ff", "#bfd6ff", "#7aa7ff", "#2563eb"]
-  return <span className="block h-3.5 w-3.5 rounded-[4px]" style={{ backgroundColor: palette[level] }} />
-}
-
 export function OverviewScreen() {
   const { locale } = useI18n()
   const zh = locale === "zh-CN"
 
   const [timeRange, setTimeRange] = useState<TimeRange>("-1")
-  const [heatMetric, setHeatMetric] = useState<HeatMetric>("requests")
   const [pieMetric, setPieMetric] = useState<PieMetric>("cost")
   const [logOffset, setLogOffset] = useState(0)
 
@@ -142,16 +120,6 @@ export function OverviewScreen() {
       ],
     },
   ]
-
-  const heatmap = useMemo(() => {
-    const source = daily ?? []
-    const maxValue = source.reduce((max, item) => Math.max(max, dailyValue(item, heatMetric)), 0)
-    return source.map((item) => ({
-      date: item.date,
-      level: heatLevel(dailyValue(item, heatMetric), maxValue),
-      value: dailyValue(item, heatMetric),
-    }))
-  }, [daily, heatMetric])
 
   // --- Pie chart data ---
   const pieData = useMemo(() => {
@@ -377,48 +345,18 @@ export function OverviewScreen() {
         </div>
       </section>
 
-      {/* Heatmap */}
-      <section className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
-        <div className="flex flex-col gap-3 pb-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h3 className="text-[13px] font-semibold text-[var(--text)]">{zh ? "活跃热力图" : "Activity heatmap"}</h3>
-            <p className="mt-1 text-[12px] text-[var(--muted)]">{zh ? "支持查看每日请求、Token 与费用" : "Switch between requests, tokens, and cost"}</p>
-          </div>
-          <div className="overflow-x-auto pb-1">
-            <SegmentedControl
-              value={heatMetric}
-              onValueChange={setHeatMetric}
-              options={[
-                { value: "requests", label: zh ? "请求" : "Requests" },
-                { value: "tokens", label: "Token" },
-                { value: "cost", label: zh ? "费用" : "Cost" },
-              ]}
-            />
-          </div>
+      <section className="grid grid-cols-1 gap-3 text-center md:grid-cols-3">
+        <div className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-4 shadow-[var(--shadow-sm)]">
+          <div className="text-[12px] text-[var(--muted)]">{zh ? "总请求" : "Requests"}</div>
+          <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(periodMetrics.totalRequests)}</div>
         </div>
-
-        <div className="overflow-x-auto rounded-[22px] bg-[var(--panel)] p-4">
-          <div className="ml-auto grid w-fit grid-flow-col grid-cols-[repeat(54,0.875rem)] grid-rows-[repeat(7,0.875rem)] gap-1">
-            {Array.from({ length: 54 * 7 }, (_, index) => {
-              const item = heatmap[index] ?? { level: 0, date: "", value: 0 }
-              return <HeatCell key={index} level={item.level} />
-            })}
-          </div>
+        <div className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-4 shadow-[var(--shadow-sm)]">
+          <div className="text-[12px] text-[var(--muted)]">{zh ? "成功率" : "Success rate"}</div>
+          <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{periodMetrics.successRate}%</div>
         </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 text-center md:grid-cols-3">
-          <div className="rounded-2xl bg-[var(--panel)] px-3 py-4">
-            <div className="text-[12px] text-[var(--muted)]">{zh ? "总请求" : "Requests"}</div>
-            <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(periodMetrics.totalRequests)}</div>
-          </div>
-          <div className="rounded-2xl bg-[var(--panel)] px-3 py-4">
-            <div className="text-[12px] text-[var(--muted)]">{zh ? "成功率" : "Success rate"}</div>
-            <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{periodMetrics.successRate}%</div>
-          </div>
-          <div className="rounded-2xl bg-[var(--panel)] px-3 py-4">
-            <div className="text-[12px] text-[var(--muted)]">{zh ? "服务 API Key" : "Service keys"}</div>
-            <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(metrics?.active_gateway_keys ?? 0)}</div>
-          </div>
+        <div className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-4 shadow-[var(--shadow-sm)]">
+          <div className="text-[12px] text-[var(--muted)]">{zh ? "服务 API Key" : "Service keys"}</div>
+          <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(metrics?.active_gateway_keys ?? 0)}</div>
         </div>
       </section>
 
