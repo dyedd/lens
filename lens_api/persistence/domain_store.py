@@ -801,9 +801,7 @@ class DomainStore:
                 .offset(offset)
                 .limit(limit)
             )
-            if days > 0:
-                since = datetime.utcnow() - timedelta(days=days)
-                stmt = stmt.where(RequestLogEntity.created_at >= since)
+            stmt = self._apply_request_log_window(stmt, days=days)
             result = await session.execute(stmt)
             return [self._to_request_log(item) for item in result.scalars().all()]
 
@@ -864,9 +862,10 @@ class DomainStore:
 
     async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
         async with self._session_factory() as session:
-            if days > 0:
+            if days != 0:
+                comparison_offset = 1 if days == -1 else days
                 recent = await self._merged_period_totals(session, days=days)
-                previous = await self._merged_period_totals(session, days=days, offset_days=days)
+                previous = await self._merged_period_totals(session, days=days, offset_days=comparison_offset)
             else:
                 recent = await self._merged_period_totals(session, days=0)
                 previous = self._zero_totals()
@@ -895,7 +894,6 @@ class DomainStore:
             return await self._merged_daily_points(session, days=days)
 
     async def get_model_analytics(self, days: int = 7) -> OverviewModelAnalytics:
-        since = datetime.utcnow() - timedelta(days=days) if days > 0 else None
         model_expr = func.coalesce(RequestLogEntity.resolved_model, RequestLogEntity.requested_model, RequestLogEntity.matched_group_name)
         async with self._session_factory() as session:
             dist_stmt = (
@@ -911,8 +909,7 @@ class DomainStore:
                 .order_by(func.sum(RequestLogEntity.total_cost_usd).desc(), func.count().desc())
                 .limit(12)
             )
-            if since is not None:
-                dist_stmt = dist_stmt.where(RequestLogEntity.created_at >= since)
+            dist_stmt = self._apply_request_log_window(dist_stmt, days=days)
             distribution_rows = (await session.execute(dist_stmt)).all()
 
             rank_stmt = (
@@ -928,8 +925,7 @@ class DomainStore:
                 .order_by(func.count().desc(), func.sum(RequestLogEntity.total_cost_usd).desc())
                 .limit(10)
             )
-            if since is not None:
-                rank_stmt = rank_stmt.where(RequestLogEntity.created_at >= since)
+            rank_stmt = self._apply_request_log_window(rank_stmt, days=days)
             ranking_rows = (await session.execute(rank_stmt)).all()
 
             trend_stmt = (
@@ -943,8 +939,7 @@ class DomainStore:
                 .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
                 .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
             )
-            if since is not None:
-                trend_stmt = trend_stmt.where(RequestLogEntity.created_at >= since)
+            trend_stmt = self._apply_request_log_window(trend_stmt, days=days)
             trend_rows = (await session.execute(trend_stmt)).all()
 
         distribution = [
@@ -1008,9 +1003,8 @@ class DomainStore:
 
     async def _imported_daily_points(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[OverviewDailyPoint]:
         stmt = select(ImportedStatsDailyEntity).order_by(ImportedStatsDailyEntity.date.asc())
-        if days > 0:
-            end_at = (datetime.utcnow() - timedelta(days=offset_days)).strftime("%Y%m%d")
-            start_at = (datetime.utcnow() - timedelta(days=offset_days + days)).strftime("%Y%m%d")
+        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days)
+        if start_at is not None and end_at is not None:
             stmt = stmt.where(ImportedStatsDailyEntity.date >= start_at).where(ImportedStatsDailyEntity.date < end_at)
         rows = (await session.execute(stmt)).scalars().all()
         return [
@@ -1047,10 +1041,7 @@ class DomainStore:
             .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
             .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
         )
-        if days > 0:
-            end_at = datetime.utcnow() - timedelta(days=offset_days)
-            start_at = end_at - timedelta(days=days)
-            stmt = stmt.where(RequestLogEntity.created_at >= start_at).where(RequestLogEntity.created_at < end_at)
+        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
         if exclude_dates:
             stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
         rows = (await session.execute(stmt)).all()
@@ -1125,8 +1116,7 @@ class DomainStore:
                 "covered_dates": covered_dates,
             }
 
-        end_at = (datetime.utcnow() - timedelta(days=offset_days)).strftime("%Y%m%d")
-        start_at = (datetime.utcnow() - timedelta(days=offset_days + days)).strftime("%Y%m%d")
+        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days)
         rows = (
             await session.execute(
                 select(ImportedStatsDailyEntity)
@@ -1167,10 +1157,7 @@ class DomainStore:
             )
             .select_from(RequestLogEntity)
         )
-        if days > 0:
-            end_at = datetime.utcnow() - timedelta(days=offset_days)
-            start_at = end_at - timedelta(days=days)
-            stmt = stmt.where(RequestLogEntity.created_at >= start_at).where(RequestLogEntity.created_at < end_at)
+        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
         if exclude_dates:
             stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
         row = (await session.execute(stmt)).one()
@@ -1196,6 +1183,35 @@ class DomainStore:
             "output_cost_usd": 0.0,
             "total_cost_usd": 0.0,
         }
+
+    @staticmethod
+    def _resolve_request_log_window(days: int, *, offset_days: int = 0) -> tuple[datetime | None, datetime | None]:
+        if days == 0:
+            return None, None
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        if days == -1:
+            start_at = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=offset_days)
+            return start_at, start_at + timedelta(days=1)
+
+        end_at = now - timedelta(days=offset_days)
+        return end_at - timedelta(days=days), end_at
+
+    @classmethod
+    def _resolve_imported_date_window(cls, days: int, *, offset_days: int = 0) -> tuple[str | None, str | None]:
+        start_at, end_at = cls._resolve_request_log_window(days, offset_days=offset_days)
+        if start_at is None or end_at is None:
+            return None, None
+        return start_at.strftime("%Y%m%d"), end_at.strftime("%Y%m%d")
+
+    @classmethod
+    def _apply_request_log_window(cls, stmt: Any, *, days: int, offset_days: int = 0) -> Any:
+        start_at, end_at = cls._resolve_request_log_window(days, offset_days=offset_days)
+        if start_at is not None:
+            stmt = stmt.where(RequestLogEntity.created_at >= start_at)
+        if end_at is not None:
+            stmt = stmt.where(RequestLogEntity.created_at < end_at)
+        return stmt
 
     @staticmethod
     def _delta_percent(current: float, previous: float) -> float:
