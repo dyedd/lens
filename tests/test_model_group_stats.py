@@ -559,3 +559,92 @@ async def _run_clear_request_logs_keeps_archived_stats_test(tmp_path):
 
     await engine.dispose()
 
+
+def test_model_analytics_merges_same_model_across_days(tmp_path):
+    asyncio.run(_run_model_analytics_merge_same_model_test(tmp_path))
+
+
+async def _run_model_analytics_merge_same_model_test(tmp_path):
+    database_path = tmp_path / 'model-analytics-merge.db'
+    engine = create_engine(f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}")
+    session_factory = create_session_factory(engine)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    domain_store = DomainStore(session_factory)
+    await domain_store.upsert_settings([
+        SettingItem(key='stats_save_interval', value='999999'),
+    ])
+
+    first = await domain_store.create_request_log(
+        protocol=ProtocolKind.OPENAI_CHAT.value,
+        requested_model='gpt-5.4',
+        matched_group_name='gpt-5.4',
+        channel_id='channel-a',
+        channel_name='Channel A',
+        gateway_key_id='gw-a',
+        status_code=200,
+        success=True,
+        is_stream=False,
+        first_token_latency_ms=0,
+        latency_ms=100,
+        resolved_model='gpt-5.4',
+        input_tokens=100,
+        output_tokens=50,
+        total_tokens=150,
+        input_cost_usd=0.1,
+        output_cost_usd=0.2,
+        total_cost_usd=0.3,
+        request_content='{"model":"gpt-5.4"}',
+        response_content='{"model":"gpt-5.4"}',
+        attempts=[],
+        error_message=None,
+    )
+    second = await domain_store.create_request_log(
+        protocol=ProtocolKind.OPENAI_CHAT.value,
+        requested_model='gpt-5.4',
+        matched_group_name='gpt-5.4',
+        channel_id='channel-a',
+        channel_name='Channel A',
+        gateway_key_id='gw-a',
+        status_code=200,
+        success=True,
+        is_stream=False,
+        first_token_latency_ms=0,
+        latency_ms=110,
+        resolved_model='gpt-5.4',
+        input_tokens=120,
+        output_tokens=60,
+        total_tokens=180,
+        input_cost_usd=0.2,
+        output_cost_usd=0.3,
+        total_cost_usd=0.5,
+        request_content='{"model":"gpt-5.4"}',
+        response_content='{"model":"gpt-5.4"}',
+        attempts=[],
+        error_message=None,
+    )
+
+    now = datetime.now(UTC).replace(tzinfo=None, hour=12, minute=0, second=0, microsecond=0)
+    async with session_factory() as session:
+        first_entity = await session.get(RequestLogEntity, first.id)
+        second_entity = await session.get(RequestLogEntity, second.id)
+        assert first_entity is not None
+        assert second_entity is not None
+        first_entity.created_at = now - timedelta(days=1)
+        second_entity.created_at = now
+        await session.commit()
+
+    analytics = await domain_store.get_model_analytics(days=7)
+    assert analytics.available_models == ['gpt-5.4']
+    assert len(analytics.distribution) == 1
+    assert len(analytics.request_ranking) == 1
+    assert analytics.distribution[0].model == 'gpt-5.4'
+    assert analytics.distribution[0].requests == 2
+    assert analytics.distribution[0].total_tokens == 330
+    assert analytics.distribution[0].total_cost_usd == 0.8
+    assert len(analytics.trend) == 2
+
+    await engine.dispose()
+
