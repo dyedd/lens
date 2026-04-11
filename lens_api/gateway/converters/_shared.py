@@ -1,10 +1,7 @@
-"""Shared utilities for protocol conversion between OpenAI Chat and other formats."""
-
 from __future__ import annotations
 
 import json
 from typing import Any
-
 
 FINISH_REASON_CHAT_TO_ANTHROPIC: dict[str | None, str] = {
     "stop": "end_turn",
@@ -50,36 +47,47 @@ def anthropic_content_to_chat_messages(
                 if source.get("type") == "base64":
                     mt = source.get("media_type", "image/png")
                     data = source.get("data", "")
-                    image_parts.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mt};base64,{data}"},
-                    })
+                    image_parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mt};base64,{data}"},
+                        }
+                    )
                 elif source.get("type") == "url":
-                    image_parts.append({
-                        "type": "image_url",
-                        "image_url": {"url": source.get("url", "")},
-                    })
+                    image_parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": source.get("url", "")},
+                        }
+                    )
             elif bt == "tool_use":
-                tool_calls.append({
-                    "id": block.get("id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name", ""),
-                        "arguments": json.dumps(block.get("input", {}), ensure_ascii=False),
-                    },
-                })
+                tool_calls.append(
+                    {
+                        "id": block.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": block.get("name", ""),
+                            "arguments": json.dumps(
+                                block.get("input", {}), ensure_ascii=False
+                            ),
+                        },
+                    }
+                )
             elif bt == "tool_result":
                 trc = block.get("content", "")
                 if isinstance(trc, list):
                     trc = "\n".join(
-                        p.get("text", "") for p in trc
+                        p.get("text", "")
+                        for p in trc
                         if isinstance(p, dict) and p.get("type") == "text"
                     )
-                tool_results.append({
-                    "role": "tool",
-                    "tool_call_id": block.get("tool_use_id", ""),
-                    "content": str(trc),
-                })
+                tool_results.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": block.get("tool_use_id", ""),
+                        "content": str(trc),
+                    }
+                )
 
         if role == "assistant" and tool_calls:
             msg_out: dict[str, Any] = {"role": "assistant", "content": None}
@@ -131,7 +139,9 @@ def anthropic_tool_choice_to_chat(tool_choice: Any) -> Any:
     return "auto"
 
 
-def chat_tool_calls_to_anthropic_content(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def chat_tool_calls_to_anthropic_content(
+    tool_calls: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
     for tc in tool_calls:
         func = tc.get("function", {})
@@ -139,16 +149,20 @@ def chat_tool_calls_to_anthropic_content(tool_calls: list[dict[str, Any]]) -> li
             parsed_input = json.loads(func.get("arguments", "{}"))
         except (json.JSONDecodeError, TypeError):
             parsed_input = {}
-        blocks.append({
-            "type": "tool_use",
-            "id": tc.get("id", ""),
-            "name": func.get("name", ""),
-            "input": parsed_input,
-        })
+        blocks.append(
+            {
+                "type": "tool_use",
+                "id": tc.get("id", ""),
+                "name": func.get("name", ""),
+                "input": parsed_input,
+            }
+        )
     return blocks
 
 
-def responses_input_to_chat_messages(input_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def responses_input_to_chat_messages(
+    input_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for item in input_items:
         role = item.get("role", "user")
@@ -156,26 +170,32 @@ def responses_input_to_chat_messages(input_items: list[dict[str, Any]]) -> list[
         item_type = item.get("type")
 
         if item_type == "function_call_output":
-            result.append({
-                "role": "tool",
-                "tool_call_id": item.get("call_id", ""),
-                "content": item.get("output", ""),
-            })
+            result.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": item.get("call_id", ""),
+                    "content": item.get("output", ""),
+                }
+            )
             continue
 
         if item_type == "function_call":
-            result.append({
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [{
-                    "id": item.get("call_id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": item.get("name", ""),
-                        "arguments": item.get("arguments", "{}"),
-                    },
-                }],
-            })
+            result.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": item.get("call_id", ""),
+                            "type": "function",
+                            "function": {
+                                "name": item.get("name", ""),
+                                "arguments": item.get("arguments", "{}"),
+                            },
+                        }
+                    ],
+                }
+            )
             continue
 
         if isinstance(content, str):
