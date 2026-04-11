@@ -310,8 +310,8 @@ export function OverviewScreen() {
             <div className="rounded-[24px] bg-[var(--panel)] p-4">
               <h4 className="text-[13px] font-medium text-[var(--text)]">{zh ? "调用排行" : "Calls rank"}</h4>
               <div className="mt-3 space-y-3">
-                {models?.request_ranking.slice(0, 6).map((item) => (
-                  <div key={item.model} className="rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-3">
+                {models?.request_ranking.slice(0, 6).map((item, index) => (
+                  <div key={`${item.model}-${index}`} className="rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-3">
                     <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model}</div>
                     <div className="mt-2 flex items-center justify-between text-[12px] text-[var(--muted)]">
                       <span>{zh ? "请求" : "Requests"} {formatCompact(item.requests)}</span>

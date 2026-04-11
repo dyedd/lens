@@ -1049,10 +1049,27 @@ class DomainStore:
             current["total_tokens"] = float(current["total_tokens"]) + float(total_tokens or 0)
             current["total_cost_usd"] = float(current["total_cost_usd"]) + float(total_cost or 0.0)
 
-        aggregated = list(merged_rows.values())
-        distribution_rows = sorted(aggregated, key=lambda item: (-float(item["total_cost_usd"]), -float(item["requests"])))
-        ranking_rows = sorted(aggregated, key=lambda item: (-float(item["requests"]), -float(item["total_cost_usd"])))
-        trend_rows = sorted(aggregated, key=lambda item: (str(item["date"]), str(item["model"])))
+        trend_rows = sorted(merged_rows.values(), key=lambda item: (str(item["date"]), str(item["model"])))
+
+        model_rows: dict[str, dict[str, float | str]] = {}
+        for item in merged_rows.values():
+            model_key = str(item["model"])
+            current = model_rows.get(model_key)
+            if current is None:
+                model_rows[model_key] = {
+                    "model": model_key,
+                    "requests": float(item["requests"]),
+                    "total_tokens": float(item["total_tokens"]),
+                    "total_cost_usd": float(item["total_cost_usd"]),
+                }
+                continue
+            current["requests"] = float(current["requests"]) + float(item["requests"])
+            current["total_tokens"] = float(current["total_tokens"]) + float(item["total_tokens"])
+            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(item["total_cost_usd"])
+
+        aggregated_models = list(model_rows.values())
+        distribution_rows = sorted(aggregated_models, key=lambda item: (-float(item["total_cost_usd"]), -float(item["requests"])))
+        ranking_rows = sorted(aggregated_models, key=lambda item: (-float(item["requests"]), -float(item["total_cost_usd"])))
 
         distribution = [
             OverviewModelMetricPoint(
