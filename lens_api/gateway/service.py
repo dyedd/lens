@@ -1373,8 +1373,9 @@ def _extract_stream_usage(protocol: ProtocolKind, raw_content: str | None) -> di
 
 
 def _parse_sse_payloads(raw_content: str) -> list[dict[str, Any]]:
+    normalized = _normalize_event_stream_newlines(raw_content)
     payloads: list[dict[str, Any]] = []
-    for block in raw_content.split("\n\n"):
+    for block in normalized.split("\n\n"):
         data_lines = [line[5:].strip() for line in block.splitlines() if line.startswith("data:")]
         if not data_lines:
             continue
@@ -1392,7 +1393,7 @@ def _parse_sse_payloads(raw_content: str) -> list[dict[str, Any]]:
 
 def _parse_ndjson_payloads(raw_content: str) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
-    for line in raw_content.splitlines():
+    for line in _normalize_event_stream_newlines(raw_content).splitlines():
         line = line.strip()
         if not line:
             continue
@@ -1403,6 +1404,10 @@ def _parse_ndjson_payloads(raw_content: str) -> list[dict[str, Any]]:
         if isinstance(payload, dict):
             payloads.append(payload)
     return payloads
+
+
+def _normalize_event_stream_newlines(raw_content: str) -> str:
+    return raw_content.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _extract_usage_from_payload(protocol: ProtocolKind, payload: dict[str, Any]) -> dict[str, int | str | None]:

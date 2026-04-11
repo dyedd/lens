@@ -130,6 +130,40 @@ def test_channel_error_uses_channel_name_not_internal_id():
     assert 'openai_responses-3' not in message
 
 
+def test_openai_responses_stream_parsing_supports_crlf_event_separators():
+    from lens_api.gateway import service as service_module
+    from lens_api.models import ProtocolKind
+
+    raw_content = (
+        'event: response.created\r\n'
+        'data: {"type":"response.created","response":{"id":"resp_1","model":"gpt-5.4"}}\r\n\r\n'
+        'event: response.output_item.added\r\n'
+        'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"rs_1","type":"reasoning","summary":[]}}\r\n\r\n'
+        'event: response.web_search_call.in_progress\r\n'
+        'data: {"type":"response.web_search_call.in_progress","item_id":"ws_1"}\r\n\r\n'
+        'event: response.completed\r\n'
+        'data: {"type":"response.completed","response":{"id":"resp_1","object":"response","model":"gpt-5.4","output":[{"id":"rs_1","type":"reasoning","summary":[]},{"id":"ws_1","type":"web_search_call","status":"completed"}],"usage":{"input_tokens":11,"output_tokens":22,"total_tokens":33}}}\r\n\r\n'
+    )
+
+    payloads = service_module._parse_sse_payloads(raw_content)
+    usage = service_module._extract_stream_usage(ProtocolKind.OPENAI_RESPONSES, raw_content)
+    distilled = service_module._distill_stream_response_content(ProtocolKind.OPENAI_RESPONSES, raw_content)
+
+    assert len(payloads) == 4
+    assert usage == {
+        'resolved_model': 'gpt-5.4',
+        'input_tokens': 11,
+        'output_tokens': 22,
+        'total_tokens': 33,
+    }
+    assert distilled == (
+        '{"id":"resp_1","object":"response","model":"gpt-5.4","output":'
+        '[{"id":"rs_1","type":"reasoning","summary":[]},'
+        '{"id":"ws_1","type":"web_search_call","status":"completed"}],'
+        '"usage":{"input_tokens":11,"output_tokens":22,"total_tokens":33}}'
+    )
+
+
 async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
     service_module, app, config = await _build_test_app(tmp_path / 'api-crud.db')
 
