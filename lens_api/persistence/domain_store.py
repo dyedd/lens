@@ -5,12 +5,13 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
 from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, SettingItem
-from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
+from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
 SETTING_GATEWAY_API_KEYS = "gateway_api_keys"
@@ -18,6 +19,7 @@ SETTING_GATEWAY_API_KEY_HINT = "gateway_api_key_hint"
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
 SETTING_PROXY_URL = "proxy_url"
 SETTING_STATS_SAVE_INTERVAL = "stats_save_interval"
+SETTING_STATS_LAST_PERSIST_AT = "stats_last_persist_at"
 SETTING_CORS_ALLOW_ORIGINS = "cors_allow_origins"
 SETTING_RELAY_LOG_KEEP_ENABLED = "relay_log_keep_enabled"
 SETTING_RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
@@ -32,6 +34,11 @@ class DomainStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
+    @staticmethod
+    def _is_missing_sqlite_table(exc: OperationalError, table_name: str) -> bool:
+        message = str(getattr(exc, "orig", exc)).lower()
+        return f"no such table: {table_name}" in message
+
     async def replace_imported_stats(
         self,
         *,
@@ -42,7 +49,10 @@ class DomainStore:
         async with self._session_factory() as session:
             await session.execute(delete(ImportedStatsDailyEntity))
             await session.execute(delete(ImportedStatsTotalEntity))
+            await session.execute(delete(RequestLogDailyStatsEntity))
+            await session.execute(delete(OverviewModelDailyStatsEntity))
             await session.execute(delete(ModelPriceEntity))
+            await session.execute(update(RequestLogEntity).values(stats_archived=0))
 
             total_item = self._normalize_total_payload(total)
 
@@ -737,6 +747,123 @@ class DomainStore:
             result = await session.execute(select(SettingEntity).order_by(SettingEntity.key))
             return [SettingItem(key=item.key, value=item.value) for item in result.scalars().all()]
 
+    async def persist_request_log_stats(self, *, force: bool = False) -> None:
+        runtime = await self.get_runtime_settings()
+        interval_seconds = max(int(runtime["stats_save_interval"]), 1)
+        now = datetime.now(UTC).replace(tzinfo=None)
+
+        async with self._session_factory() as session:
+            try:
+                await session.execute(select(RequestLogDailyStatsEntity.date).limit(1))
+                await session.execute(select(OverviewModelDailyStatsEntity.date).limit(1))
+            except OperationalError as exc:
+                if self._is_missing_sqlite_table(exc, "request_log_daily_stats") or self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
+                    return
+                raise
+
+            if not force:
+                last_persist_setting = await session.get(SettingEntity, SETTING_STATS_LAST_PERSIST_AT)
+                if last_persist_setting is None:
+                    session.add(SettingEntity(key=SETTING_STATS_LAST_PERSIST_AT, value=now.isoformat()))
+                    await session.commit()
+                    return
+                try:
+                    last_persist_at = datetime.fromisoformat(last_persist_setting.value.strip()) if last_persist_setting.value.strip() else None
+                except ValueError:
+                    last_persist_setting.value = now.isoformat()
+                    await session.commit()
+                    return
+                if last_persist_at is None or (now - last_persist_at).total_seconds() < interval_seconds:
+                    return
+
+            unarchived_stmt = (
+                select(
+                    func.strftime('%Y%m%d', RequestLogEntity.created_at).label('date'),
+                    func.count().label('request_count'),
+                    func.sum(RequestLogEntity.success).label('successful_requests'),
+                    (func.count() - func.sum(RequestLogEntity.success)).label('failed_requests'),
+                    func.sum(RequestLogEntity.latency_ms).label('wait_time_ms'),
+                    func.sum(RequestLogEntity.input_tokens).label('input_tokens'),
+                    func.sum(RequestLogEntity.output_tokens).label('output_tokens'),
+                    func.sum(RequestLogEntity.total_tokens).label('total_tokens'),
+                    func.sum(RequestLogEntity.input_cost_usd).label('input_cost_usd'),
+                    func.sum(RequestLogEntity.output_cost_usd).label('output_cost_usd'),
+                    func.sum(RequestLogEntity.total_cost_usd).label('total_cost_usd'),
+                )
+                .where(RequestLogEntity.stats_archived == 0)
+                .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
+            )
+            daily_rows = (await session.execute(unarchived_stmt)).all()
+
+            model_expr = func.coalesce(RequestLogEntity.resolved_model, RequestLogEntity.requested_model, RequestLogEntity.matched_group_name)
+            model_stmt = (
+                select(
+                    func.strftime('%Y%m%d', RequestLogEntity.created_at).label('date'),
+                    model_expr.label('model'),
+                    func.sum(RequestLogEntity.success).label('requests'),
+                    func.sum(RequestLogEntity.total_tokens).label('total_tokens'),
+                    func.sum(RequestLogEntity.total_cost_usd).label('total_cost_usd'),
+                )
+                .where(RequestLogEntity.stats_archived == 0)
+                .where(RequestLogEntity.success == 1)
+                .where(model_expr.is_not(None))
+                .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
+            )
+            model_rows = (await session.execute(model_stmt)).all()
+
+            for row in daily_rows:
+                entity = await session.get(RequestLogDailyStatsEntity, str(row.date))
+                if entity is None:
+                    entity = RequestLogDailyStatsEntity(
+                        date=str(row.date),
+                        request_count=0,
+                        successful_requests=0,
+                        failed_requests=0,
+                        wait_time_ms=0,
+                        input_tokens=0,
+                        output_tokens=0,
+                        total_tokens=0,
+                        input_cost_usd=0.0,
+                        output_cost_usd=0.0,
+                        total_cost_usd=0.0,
+                    )
+                    session.add(entity)
+                entity.request_count += int(row.request_count or 0)
+                entity.successful_requests += int(row.successful_requests or 0)
+                entity.failed_requests += int(row.failed_requests or 0)
+                entity.wait_time_ms += int(row.wait_time_ms or 0)
+                entity.input_tokens += int(row.input_tokens or 0)
+                entity.output_tokens += int(row.output_tokens or 0)
+                entity.total_tokens += int(row.total_tokens or 0)
+                entity.input_cost_usd += float(row.input_cost_usd or 0.0)
+                entity.output_cost_usd += float(row.output_cost_usd or 0.0)
+                entity.total_cost_usd += float(row.total_cost_usd or 0.0)
+
+            for row in model_rows:
+                key = {"date": str(row.date), "model": str(row.model)}
+                entity = await session.get(OverviewModelDailyStatsEntity, key)
+                if entity is None:
+                    entity = OverviewModelDailyStatsEntity(**key, requests=0, total_tokens=0, total_cost_usd=0.0)
+                    session.add(entity)
+                entity.requests += int(row.requests or 0)
+                entity.total_tokens += int(row.total_tokens or 0)
+                entity.total_cost_usd += float(row.total_cost_usd or 0.0)
+
+            if daily_rows or model_rows:
+                await session.execute(
+                    update(RequestLogEntity)
+                    .where(RequestLogEntity.stats_archived == 0)
+                    .values(stats_archived=1)
+                )
+
+            last_persist_setting = await session.get(SettingEntity, SETTING_STATS_LAST_PERSIST_AT)
+            if last_persist_setting is None:
+                session.add(SettingEntity(key=SETTING_STATS_LAST_PERSIST_AT, value=now.isoformat()))
+            else:
+                last_persist_setting.value = now.isoformat()
+
+            await session.commit()
+
     async def create_request_log(
         self,
         *,
@@ -763,6 +890,7 @@ class DomainStore:
         attempts: list[dict[str, Any]] | None,
         error_message: str | None,
     ) -> RequestLogItem:
+        item: RequestLogItem
         async with self._session_factory() as session:
             entity = RequestLogEntity(
                 protocol=protocol,
@@ -787,11 +915,14 @@ class DomainStore:
                 response_content=response_content,
                 attempts_json=json.dumps(attempts or [], ensure_ascii=True),
                 error_message=error_message,
+                stats_archived=0,
             )
             session.add(entity)
             await session.commit()
             await session.refresh(entity)
-            return self._to_request_log(entity)
+            item = self._to_request_log(entity)
+        await self.persist_request_log_stats()
+        return item
 
     async def list_request_logs(self, limit: int = 100, days: int = 0, offset: int = 0) -> list[RequestLogItem]:
         async with self._session_factory() as session:
@@ -813,6 +944,7 @@ class DomainStore:
             return self._to_request_log_detail(entity)
 
     async def clear_request_logs(self) -> None:
+        await self.persist_request_log_stats(force=True)
         async with self._session_factory() as session:
             await session.execute(delete(RequestLogEntity))
             await session.commit()
@@ -821,6 +953,7 @@ class DomainStore:
         runtime = await self.get_runtime_settings()
         if not runtime["relay_log_keep_enabled"]:
             return
+        await self.persist_request_log_stats(force=True)
         keep_days = max(int(runtime["relay_log_keep_period"]), 1)
         cutoff = datetime.utcnow() - timedelta(days=keep_days)
         async with self._session_factory() as session:
@@ -837,14 +970,12 @@ class DomainStore:
                 total_wait_time = int(imported_total.wait_time + extra_totals["wait_time_ms"])
                 avg_latency = int(total_wait_time / total_value) if total_value else 0
             else:
-                total_requests = await session.scalar(select(func.count()).select_from(RequestLogEntity))
-                successful_requests = await session.scalar(
-                    select(func.count()).select_from(RequestLogEntity).where(RequestLogEntity.success == 1)
-                )
-                avg_latency_value = await session.scalar(select(func.avg(RequestLogEntity.latency_ms)).select_from(RequestLogEntity))
-                total_value = int(total_requests or 0)
-                success_value = int(successful_requests or 0)
-                avg_latency = int(avg_latency_value or 0)
+                archived_totals = await self._archived_period_totals(session, days=0)
+                live_totals = await self._request_log_period_totals(session, days=0)
+                total_value = int(archived_totals["request_count"] + live_totals["request_count"])
+                success_value = int(archived_totals["successful_requests"] + live_totals["successful_requests"])
+                total_wait_time = int(archived_totals["wait_time_ms"] + live_totals["wait_time_ms"])
+                avg_latency = int(total_wait_time / total_value) if total_value else 0
 
             enabled_groups = await session.scalar(select(func.count()).select_from(ModelGroupEntity))
 
@@ -894,80 +1025,58 @@ class DomainStore:
             return await self._merged_daily_points(session, days=days)
 
     async def get_model_analytics(self, days: int = 7) -> OverviewModelAnalytics:
-        model_expr = func.coalesce(RequestLogEntity.resolved_model, RequestLogEntity.requested_model, RequestLogEntity.matched_group_name)
         async with self._session_factory() as session:
-            dist_stmt = (
-                select(
-                    model_expr,
-                    func.count(),
-                    func.sum(RequestLogEntity.total_tokens),
-                    func.sum(RequestLogEntity.total_cost_usd),
-                )
-                .where(RequestLogEntity.success == 1)
-                .where(model_expr.is_not(None))
-                .group_by(model_expr)
-                .order_by(func.sum(RequestLogEntity.total_cost_usd).desc(), func.count().desc())
-                .limit(12)
-            )
-            dist_stmt = self._apply_request_log_window(dist_stmt, days=days)
-            distribution_rows = (await session.execute(dist_stmt)).all()
+            window_start, window_end = self._resolve_imported_date_window(days)
+            archived_model_rows = await self._overview_model_daily_rows(session, start_at=window_start, end_at=window_end)
+            live_model_rows = await self._request_log_model_daily_rows(session, days=days)
 
-            rank_stmt = (
-                select(
-                    model_expr,
-                    func.count(),
-                    func.sum(RequestLogEntity.total_tokens),
-                    func.sum(RequestLogEntity.total_cost_usd),
-                )
-                .where(RequestLogEntity.success == 1)
-                .where(model_expr.is_not(None))
-                .group_by(model_expr)
-                .order_by(func.count().desc(), func.sum(RequestLogEntity.total_cost_usd).desc())
-                .limit(10)
-            )
-            rank_stmt = self._apply_request_log_window(rank_stmt, days=days)
-            ranking_rows = (await session.execute(rank_stmt)).all()
+        merged_rows: dict[tuple[str, str], dict[str, float | str]] = {}
+        for date_value, model, requests, total_tokens, total_cost in [*archived_model_rows, *live_model_rows]:
+            if not model:
+                continue
+            key = (str(date_value), str(model))
+            current = merged_rows.get(key)
+            if current is None:
+                merged_rows[key] = {
+                    "date": str(date_value),
+                    "model": str(model),
+                    "requests": float(requests or 0),
+                    "total_tokens": float(total_tokens or 0),
+                    "total_cost_usd": float(total_cost or 0.0),
+                }
+                continue
+            current["requests"] = float(current["requests"]) + float(requests or 0)
+            current["total_tokens"] = float(current["total_tokens"]) + float(total_tokens or 0)
+            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(total_cost or 0.0)
 
-            trend_stmt = (
-                select(
-                    func.strftime('%Y%m%d', RequestLogEntity.created_at),
-                    model_expr,
-                    func.sum(RequestLogEntity.total_cost_usd),
-                )
-                .where(RequestLogEntity.success == 1)
-                .where(model_expr.is_not(None))
-                .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
-                .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
-            )
-            trend_stmt = self._apply_request_log_window(trend_stmt, days=days)
-            trend_rows = (await session.execute(trend_stmt)).all()
+        aggregated = list(merged_rows.values())
+        distribution_rows = sorted(aggregated, key=lambda item: (-float(item["total_cost_usd"]), -float(item["requests"])))
+        ranking_rows = sorted(aggregated, key=lambda item: (-float(item["requests"]), -float(item["total_cost_usd"])))
+        trend_rows = sorted(aggregated, key=lambda item: (str(item["date"]), str(item["model"])))
 
         distribution = [
             OverviewModelMetricPoint(
-                model=str(model),
-                requests=int(requests or 0),
-                total_tokens=int(total_tokens or 0),
-                total_cost_usd=float(total_cost or 0.0),
+                model=str(item["model"]),
+                requests=int(item["requests"]),
+                total_tokens=int(item["total_tokens"]),
+                total_cost_usd=float(item["total_cost_usd"]),
             )
-            for model, requests, total_tokens, total_cost in distribution_rows
-            if model
+            for item in distribution_rows[:12]
         ]
 
         ranking = [
             OverviewModelMetricPoint(
-                model=str(model),
-                requests=int(requests or 0),
-                total_tokens=int(total_tokens or 0),
-                total_cost_usd=float(total_cost or 0.0),
+                model=str(item["model"]),
+                requests=int(item["requests"]),
+                total_tokens=int(item["total_tokens"]),
+                total_cost_usd=float(item["total_cost_usd"]),
             )
-            for model, requests, total_tokens, total_cost in ranking_rows
-            if model
+            for item in ranking_rows[:10]
         ]
 
         trend = [
-            OverviewModelTrendPoint(date=str(date_value), model=str(model), value=float(value or 0.0))
-            for date_value, model, value in trend_rows
-            if model
+            OverviewModelTrendPoint(date=str(item["date"]), model=str(item["model"]), value=float(item["total_cost_usd"]))
+            for item in trend_rows
         ]
 
         available_models = sorted({item.model for item in distribution} | {item.model for item in ranking} | {item.model for item in trend})
@@ -995,8 +1104,17 @@ class DomainStore:
     async def _merged_daily_points(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[OverviewDailyPoint]:
         imported_points = await self._imported_daily_points(session, days=days, offset_days=offset_days)
         imported_dates = {item.date for item in imported_points}
-        request_log_points = await self._request_log_daily_points(session, days=days, offset_days=offset_days, exclude_dates=imported_dates)
+        archived_points = await self._archived_daily_points(session, days=days, offset_days=offset_days, exclude_dates=imported_dates)
+        archived_dates = {item.date for item in archived_points}
+        request_log_points = await self._request_log_daily_points(
+            session,
+            days=days,
+            offset_days=offset_days,
+            exclude_dates=imported_dates | archived_dates,
+        )
         merged = {item.date: item for item in imported_points}
+        for item in archived_points:
+            merged[item.date] = item
         for item in request_log_points:
             merged[item.date] = item
         return [merged[date] for date in sorted(merged)]
@@ -1016,6 +1134,39 @@ class DomainStore:
                 wait_time_ms=int(item.wait_time),
                 successful_requests=int(item.request_success),
                 failed_requests=int(item.request_failed),
+            )
+            for item in rows
+        ]
+
+    async def _archived_daily_points(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        offset_days: int = 0,
+        exclude_dates: set[str] | None = None,
+    ) -> list[OverviewDailyPoint]:
+        stmt = select(RequestLogDailyStatsEntity).order_by(RequestLogDailyStatsEntity.date.asc())
+        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days)
+        if start_at is not None and end_at is not None:
+            stmt = stmt.where(RequestLogDailyStatsEntity.date >= start_at).where(RequestLogDailyStatsEntity.date < end_at)
+        if exclude_dates:
+            stmt = stmt.where(RequestLogDailyStatsEntity.date.not_in(sorted(exclude_dates)))
+        try:
+            rows = (await session.execute(stmt)).scalars().all()
+        except OperationalError as exc:
+            if self._is_missing_sqlite_table(exc, "request_log_daily_stats"):
+                return []
+            raise
+        return [
+            OverviewDailyPoint(
+                date=item.date,
+                request_count=int(item.request_count),
+                total_tokens=int(item.total_tokens),
+                total_cost_usd=float(item.total_cost_usd),
+                wait_time_ms=int(item.wait_time_ms),
+                successful_requests=int(item.successful_requests),
+                failed_requests=int(item.failed_requests),
             )
             for item in rows
         ]
@@ -1041,6 +1192,7 @@ class DomainStore:
             .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
             .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
         )
+        stmt = stmt.where(RequestLogEntity.stats_archived == 0)
         stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
         if exclude_dates:
             stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
@@ -1067,10 +1219,127 @@ class DomainStore:
             row[0]
             for row in (await session.execute(select(ImportedStatsDailyEntity.date))).all()
         }
-        return await self._request_log_period_totals(session, days=0, exclude_dates=imported_dates)
+        archived_totals = await self._archived_period_totals(session, days=0, exclude_dates=imported_dates)
+        live_totals = await self._request_log_period_totals(session, days=0, exclude_dates=imported_dates)
+        return {
+            "request_count": archived_totals["request_count"] + live_totals["request_count"],
+            "wait_time_ms": archived_totals["wait_time_ms"] + live_totals["wait_time_ms"],
+            "input_tokens": archived_totals["input_tokens"] + live_totals["input_tokens"],
+            "output_tokens": archived_totals["output_tokens"] + live_totals["output_tokens"],
+            "input_cost_usd": archived_totals["input_cost_usd"] + live_totals["input_cost_usd"],
+            "output_cost_usd": archived_totals["output_cost_usd"] + live_totals["output_cost_usd"],
+            "total_cost_usd": archived_totals["total_cost_usd"] + live_totals["total_cost_usd"],
+            "successful_requests": archived_totals["successful_requests"] + live_totals["successful_requests"],
+        }
+
+    async def _archived_period_totals(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        offset_days: int = 0,
+        exclude_dates: set[str] | None = None,
+    ) -> dict[str, float]:
+        stmt = (
+            select(
+                func.sum(RequestLogDailyStatsEntity.request_count),
+                func.sum(RequestLogDailyStatsEntity.wait_time_ms),
+                func.sum(RequestLogDailyStatsEntity.input_tokens),
+                func.sum(RequestLogDailyStatsEntity.output_tokens),
+                func.sum(RequestLogDailyStatsEntity.input_cost_usd),
+                func.sum(RequestLogDailyStatsEntity.output_cost_usd),
+                func.sum(RequestLogDailyStatsEntity.total_cost_usd),
+                func.sum(RequestLogDailyStatsEntity.successful_requests),
+            )
+            .select_from(RequestLogDailyStatsEntity)
+        )
+        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days)
+        if start_at is not None:
+            stmt = stmt.where(RequestLogDailyStatsEntity.date >= start_at)
+        if end_at is not None:
+            stmt = stmt.where(RequestLogDailyStatsEntity.date < end_at)
+        if exclude_dates:
+            stmt = stmt.where(RequestLogDailyStatsEntity.date.not_in(sorted(exclude_dates)))
+        try:
+            row = (await session.execute(stmt)).one()
+        except OperationalError as exc:
+            if self._is_missing_sqlite_table(exc, "request_log_daily_stats"):
+                return {
+                    "request_count": 0.0,
+                    "wait_time_ms": 0.0,
+                    "input_tokens": 0.0,
+                    "output_tokens": 0.0,
+                    "input_cost_usd": 0.0,
+                    "output_cost_usd": 0.0,
+                    "total_cost_usd": 0.0,
+                    "successful_requests": 0.0,
+                }
+            raise
+        return {
+            "request_count": float(row[0] or 0),
+            "wait_time_ms": float(row[1] or 0),
+            "input_tokens": float(row[2] or 0),
+            "output_tokens": float(row[3] or 0),
+            "input_cost_usd": float(row[4] or 0),
+            "output_cost_usd": float(row[5] or 0),
+            "total_cost_usd": float(row[6] or 0),
+            "successful_requests": float(row[7] or 0),
+        }
+
+    async def _overview_model_daily_rows(
+        self,
+        session: AsyncSession,
+        *,
+        start_at: str | None,
+        end_at: str | None,
+    ) -> list[tuple[str, str, int, int, float]]:
+        stmt = select(
+            OverviewModelDailyStatsEntity.date,
+            OverviewModelDailyStatsEntity.model,
+            OverviewModelDailyStatsEntity.requests,
+            OverviewModelDailyStatsEntity.total_tokens,
+            OverviewModelDailyStatsEntity.total_cost_usd,
+        )
+        if start_at is not None:
+            stmt = stmt.where(OverviewModelDailyStatsEntity.date >= start_at)
+        if end_at is not None:
+            stmt = stmt.where(OverviewModelDailyStatsEntity.date < end_at)
+        try:
+            rows = (await session.execute(stmt.order_by(OverviewModelDailyStatsEntity.date.asc()))).all()
+        except OperationalError as exc:
+            if self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
+                return []
+            raise
+        return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows]
+
+    async def _request_log_model_daily_rows(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[tuple[str, str, int, int, float]]:
+        model_expr = func.coalesce(RequestLogEntity.resolved_model, RequestLogEntity.requested_model, RequestLogEntity.matched_group_name)
+        stmt = (
+            select(
+                func.strftime('%Y%m%d', RequestLogEntity.created_at),
+                model_expr,
+                func.sum(RequestLogEntity.success),
+                func.sum(RequestLogEntity.total_tokens),
+                func.sum(RequestLogEntity.total_cost_usd),
+            )
+            .where(RequestLogEntity.stats_archived == 0)
+            .where(RequestLogEntity.success == 1)
+            .where(model_expr.is_not(None))
+            .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
+            .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
+        )
+        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        rows = (await session.execute(stmt)).all()
+        return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows if model]
 
     async def _merged_period_totals(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> dict[str, float]:
         imported_totals = await self._imported_period_totals(session, days=days, offset_days=offset_days)
+        archived_totals = await self._archived_period_totals(
+            session,
+            days=days,
+            offset_days=offset_days,
+            exclude_dates=imported_totals["covered_dates"],
+        )
         request_log_totals = await self._request_log_period_totals(
             session,
             days=days,
@@ -1078,13 +1347,13 @@ class DomainStore:
             exclude_dates=imported_totals["covered_dates"],
         )
         return {
-            "request_count": imported_totals["request_count"] + request_log_totals["request_count"],
-            "wait_time_ms": imported_totals["wait_time_ms"] + request_log_totals["wait_time_ms"],
-            "input_tokens": imported_totals["input_tokens"] + request_log_totals["input_tokens"],
-            "output_tokens": imported_totals["output_tokens"] + request_log_totals["output_tokens"],
-            "input_cost_usd": imported_totals["input_cost_usd"] + request_log_totals["input_cost_usd"],
-            "output_cost_usd": imported_totals["output_cost_usd"] + request_log_totals["output_cost_usd"],
-            "total_cost_usd": imported_totals["total_cost_usd"] + request_log_totals["total_cost_usd"],
+            "request_count": imported_totals["request_count"] + archived_totals["request_count"] + request_log_totals["request_count"],
+            "wait_time_ms": imported_totals["wait_time_ms"] + archived_totals["wait_time_ms"] + request_log_totals["wait_time_ms"],
+            "input_tokens": imported_totals["input_tokens"] + archived_totals["input_tokens"] + request_log_totals["input_tokens"],
+            "output_tokens": imported_totals["output_tokens"] + archived_totals["output_tokens"] + request_log_totals["output_tokens"],
+            "input_cost_usd": imported_totals["input_cost_usd"] + archived_totals["input_cost_usd"] + request_log_totals["input_cost_usd"],
+            "output_cost_usd": imported_totals["output_cost_usd"] + archived_totals["output_cost_usd"] + request_log_totals["output_cost_usd"],
+            "total_cost_usd": imported_totals["total_cost_usd"] + archived_totals["total_cost_usd"] + request_log_totals["total_cost_usd"],
         }
 
     async def _imported_period_totals(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> dict[str, float | set[str]]:
@@ -1157,6 +1426,7 @@ class DomainStore:
             )
             .select_from(RequestLogEntity)
         )
+        stmt = stmt.where(RequestLogEntity.stats_archived == 0)
         stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
         if exclude_dates:
             stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))

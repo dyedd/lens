@@ -328,7 +328,14 @@ export function SettingsScreen() {
       const message = titleForLocale(locale, '请求日志已清空', 'Request logs cleared')
       setSaved(message)
       toast.success(message)
-      await queryClient.invalidateQueries({ queryKey: ['request-logs'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['request-logs'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-daily'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-models'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-logs'] }),
+      ])
     } catch (requestError) {
       const message = requestError instanceof ApiError ? requestError.message : titleForLocale(locale, '清空请求日志失败', 'Failed to clear request logs')
       setError(message)
@@ -446,7 +453,7 @@ export function SettingsScreen() {
         <Field label={titleForLocale(locale, '全局代理地址', 'Global proxy URL')}>
           <input className={inputClassName()} value={draft.proxyUrl} onChange={(event) => setDraftValue('proxyUrl', event.target.value)} placeholder="http://127.0.0.1:7890" />
         </Field>
-        <Field label={titleForLocale(locale, '统计保存周期', 'Stats save interval')}>
+        <Field label={titleForLocale(locale, '统计保存周期(s)', 'Stats save interval (s)')}>
           <input className={inputClassName()} type="number" min="1" value={draft.statsSaveInterval} onChange={(event) => setDraftValue('statsSaveInterval', event.target.value)} />
         </Field>
         <Field label={titleForLocale(locale, 'CORS 跨域名单', 'CORS allow origins')}>

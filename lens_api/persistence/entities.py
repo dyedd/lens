@@ -138,6 +138,7 @@ class RequestLogEntity(Base):
     response_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempts_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stats_archived: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False, index=True)
 
 
@@ -176,3 +177,29 @@ class ImportedStatsDailyEntity(Base):
     wait_time: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     request_success: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     request_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class RequestLogDailyStatsEntity(Base):
+    __tablename__ = "request_log_daily_stats"
+
+    date: Mapped[str] = mapped_column(String(8), primary_key=True)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    successful_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    wait_time_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    output_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+
+class OverviewModelDailyStatsEntity(Base):
+    __tablename__ = "overview_model_daily_stats"
+
+    date: Mapped[str] = mapped_column(String(8), primary_key=True)
+    model: Mapped[str] = mapped_column(String(200), primary_key=True)
+    requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
