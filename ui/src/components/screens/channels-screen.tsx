@@ -50,6 +50,10 @@ function createBaseUrlId() {
   return `baseurl-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+function usesCompleteEndpointMarker(value: string) {
+  return value.trim().endsWith('#')
+}
+
 type FormProtocol = {
   id?: string | null
   protocol: ProtocolKind
@@ -570,6 +574,9 @@ export function ChannelsScreen() {
     try {
       const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
       const activeBaseUrl = boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
+      if (usesCompleteEndpointMarker(activeBaseUrl)) {
+        throw new Error(locale === 'zh-CN' ? '地址以 # 结尾时不支持自动刷新模型' : 'Base URL ending with # does not support automatic model refresh')
+      }
       const payload: SiteModelFetchPayload = {
         protocol: protocol.protocol,
         base_url: safeText(activeBaseUrl).trim(),
@@ -736,7 +743,16 @@ export function ChannelsScreen() {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '请求地址' : 'Base URLs'}</div>
+                      <div className="flex items-center gap-2 text-sm font-medium text-[var(--text)]">
+                        <span>{locale === 'zh-CN' ? '请求地址' : 'Base URLs'}</span>
+                        <button
+                          type="button"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--line)] text-[11px] text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                          title={locale === 'zh-CN' ? '地址以 # 结尾时，表示该地址已是完整接口地址，系统不会再自动拼接协议路径' : 'When the URL ends with #, it is treated as a complete endpoint and no protocol path will be appended'}
+                        >
+                          !
+                        </button>
+                      </div>
                       <button type="button" onClick={() => setForm((current) => ({ ...current, base_urls: [...current.base_urls, { id: createBaseUrlId(), url: '', name: '', enabled: true }] }))} className="text-sm text-[var(--accent)]">+ {locale === 'zh-CN' ? '添加' : 'Add'}</button>
                     </div>
                     {form.base_urls.map((baseUrl, index) => (
@@ -775,6 +791,9 @@ export function ChannelsScreen() {
                     const credentialOptions = form.credentials
                       .map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
                       .filter((item) => activeCredentialIds.has(item.id))
+                    const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
+                    const activeBaseUrl = boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
+                    const modelRefreshBlocked = usesCompleteEndpointMarker(activeBaseUrl)
                     const selectedCredentialId = credentialOptions.some((item) => item.id === protocol.model_filter_credential_id)
                       ? protocol.model_filter_credential_id || ''
                       : credentialOptions[0]?.id || ''
@@ -841,7 +860,7 @@ export function ChannelsScreen() {
                                   {locale === 'zh-CN' ? '加入' : 'Add'}
                                 </button>
                                 <button type="button" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length} className="h-10 rounded-xl border border-[rgba(217,111,93,0.28)] px-3 text-sm text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60">{locale === 'zh-CN' ? '删除所有模型' : 'Remove all'}</button>
-                                <button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
+                                <button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size || modelRefreshBlocked} title={modelRefreshBlocked ? (locale === 'zh-CN' ? '地址以 # 结尾时不支持自动刷新模型' : 'Base URL ending with # does not support automatic model refresh') : undefined} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
                                   <RefreshCcw size={14} className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
                                   {locale === 'zh-CN' ? '刷新模型' : 'Refresh models'}
                                 </button>

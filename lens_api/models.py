@@ -10,11 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 def normalize_base_url(value: Any) -> Any:
     if value is None:
         return value
-    text = str(value).strip().rstrip("/")
+    text = str(value).strip()
+    has_complete_endpoint_marker = text.endswith("#")
+    if has_complete_endpoint_marker:
+        text = text[:-1].rstrip()
+    text = text.rstrip("/")
     if text.endswith("/v1beta"):
         text = text[:-7]
     elif text.endswith("/v1"):
         text = text[:-3]
+    if has_complete_endpoint_marker:
+        text = f"{text}#"
     return text
 
 

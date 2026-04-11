@@ -23,14 +23,14 @@ def build_upstream_request(
     body: dict[str, Any],
     settings: Settings,
 ) -> UpstreamRequest:
-    base_url = _resolve_base_url(channel)
     api_key = _resolve_api_key(channel)
     proxy_url = _resolve_proxy_url(channel)
+    target_url = _protocol_request_url(channel, body)
 
     if channel.protocol == ProtocolKind.OPENAI_CHAT:
         return UpstreamRequest(
             method="POST",
-            url=f"{_protocol_base_url(channel).rstrip('/')}/chat/completions",
+            url=target_url,
             headers={
                 "authorization": f"Bearer {api_key}",
                 "content-type": "application/json",
@@ -43,7 +43,7 @@ def build_upstream_request(
     if channel.protocol == ProtocolKind.OPENAI_RESPONSES:
         return UpstreamRequest(
             method="POST",
-            url=f"{_protocol_base_url(channel).rstrip('/')}/responses",
+            url=target_url,
             headers={
                 "authorization": f"Bearer {api_key}",
                 "content-type": "application/json",
@@ -56,7 +56,7 @@ def build_upstream_request(
     if channel.protocol == ProtocolKind.ANTHROPIC:
         return UpstreamRequest(
             method="POST",
-            url=f"{_protocol_base_url(channel).rstrip('/')}/messages",
+            url=target_url,
             headers={
                 "x-api-key": api_key,
                 "anthropic-version": settings.anthropic_version,
@@ -76,10 +76,7 @@ def build_upstream_request(
         payload = {key: value for key, value in body.items() if key not in {"model", "stream"}}
         return UpstreamRequest(
             method="POST",
-            url=(
-                f"{_protocol_base_url(channel).rstrip('/')}/models/{model_name}:{path}"
-                f"?key={api_key}"
-            ),
+            url=_gemini_request_url(channel, model_name, path, api_key),
             headers={
                 "content-type": "application/json",
                 **channel.headers,
@@ -105,7 +102,40 @@ def protocol_for_path(path: str) -> ProtocolKind:
 
 
 def _resolve_base_url(channel: ChannelConfig) -> str:
+    return _strip_complete_endpoint_marker(_normalize_base_url(str(channel.base_url)))
+
+
+def _resolve_configured_url(channel: ChannelConfig) -> str:
     return _normalize_base_url(str(channel.base_url))
+
+
+def _uses_complete_endpoint(channel: ChannelConfig) -> bool:
+    return _resolve_configured_url(channel).endswith("#")
+
+
+def _strip_complete_endpoint_marker(value: str) -> str:
+    return value[:-1] if value.endswith("#") else value
+
+
+def _protocol_request_url(channel: ChannelConfig, body: dict[str, Any]) -> str:
+    if _uses_complete_endpoint(channel):
+        return _strip_complete_endpoint_marker(_resolve_configured_url(channel)).rstrip("/")
+
+    protocol_base = _protocol_base_url(channel).rstrip("/")
+    if channel.protocol == ProtocolKind.OPENAI_CHAT:
+        return f"{protocol_base}/chat/completions"
+    if channel.protocol == ProtocolKind.OPENAI_RESPONSES:
+        return f"{protocol_base}/responses"
+    if channel.protocol == ProtocolKind.ANTHROPIC:
+        return f"{protocol_base}/messages"
+    raise HTTPException(status_code=500, detail=f"Unsupported protocol={channel.protocol.value}")
+
+
+def _gemini_request_url(channel: ChannelConfig, model_name: str, path: str, api_key: str) -> str:
+    if _uses_complete_endpoint(channel):
+        separator = "&" if "?" in _resolve_base_url(channel) else "?"
+        return f"{_resolve_base_url(channel)}{separator}key={api_key}"
+    return f"{_protocol_base_url(channel).rstrip('/')}/models/{model_name}:{path}?key={api_key}"
 
 
 def _protocol_base_url(channel: ChannelConfig) -> str:
@@ -118,11 +148,17 @@ def _protocol_base_url(channel: ChannelConfig) -> str:
 
 
 def _normalize_base_url(value: str) -> str:
-    normalized = value.strip().rstrip("/")
+    normalized = value.strip()
+    has_complete_endpoint_marker = normalized.endswith("#")
+    if has_complete_endpoint_marker:
+        normalized = normalized[:-1].rstrip()
+    normalized = normalized.rstrip("/")
     if normalized.endswith("/v1beta"):
         return normalized[:-7]
     if normalized.endswith("/v1"):
         return normalized[:-3]
+    if has_complete_endpoint_marker:
+        return f"{normalized}#"
     return normalized
 
 
@@ -150,6 +186,10 @@ def resolve_upstream_proxy_url(channel: ChannelConfig, global_proxy_url: str | N
 
 def resolve_channel_base_url(channel: ChannelConfig) -> str:
     return _resolve_base_url(channel)
+
+
+def uses_complete_endpoint(channel: ChannelConfig) -> bool:
+    return _uses_complete_endpoint(channel)
 
 
 def resolve_channel_api_key(channel: ChannelConfig) -> str:

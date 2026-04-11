@@ -7,8 +7,7 @@ node_modules/
 dist/
 build/
 .env
-data/lens.db
-data/data.db
+data/
 *.tsbuildinfo
 AGENTS.md
 CLAUDE.md
