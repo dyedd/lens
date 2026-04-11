@@ -302,7 +302,7 @@ export function ModelPricesScreen() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(180deg,rgba(234,241,255,0.95),rgba(225,235,255,0.92))]">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px]">
                       <Avatar size={28} />
                     </span>
 
