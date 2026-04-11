@@ -5,7 +5,7 @@ import { createPortal } from "react-dom"
 import { Activity, ArrowDownToLine, ArrowUpFromLine, Bot, Clock3, DollarSign, MessageSquare, Sparkles } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { Pie, PieChart, Cell, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
-import { OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, RequestLogItem, apiRequest } from "@/lib/api"
+import { OverviewDailyPoint, OverviewModelAnalytics, OverviewSummary, RequestLogItem, apiRequest } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from "@/components/ui/chart"
@@ -61,7 +61,6 @@ export function OverviewScreen() {
 
   const days = Number(timeRange)
 
-  const { data: metrics } = useQuery({ queryKey: ["overview"], queryFn: () => apiRequest<OverviewMetrics>("/admin/overview") })
   const { data: summary } = useQuery({ queryKey: ["overview-summary", days], queryFn: () => apiRequest<OverviewSummary>(`/admin/overview-summary?days=${days}`) })
   const { data: daily } = useQuery({ queryKey: ["overview-daily", days], queryFn: () => apiRequest<OverviewDailyPoint[]>(`/admin/overview-daily?days=${days}`) })
   const { data: models } = useQuery({ queryKey: ["overview-models", days], queryFn: () => apiRequest<OverviewModelAnalytics>(`/admin/overview-models?days=${days}`) })
@@ -249,12 +248,16 @@ export function OverviewScreen() {
 
         <div className="flex flex-wrap items-center gap-5 border-b border-[var(--line)] pb-4 text-[13px]">
           <div>
-            <div className="text-[12px] text-[var(--muted)]">{zh ? "模型数" : "Models"}</div>
-            <div className="text-[18px] font-semibold text-[var(--text)]">{models?.available_models.length ?? 0}</div>
+            <div className="text-[12px] text-[var(--muted)]">{zh ? "总请求" : "Requests"}</div>
+            <div className="text-[18px] font-semibold text-[var(--text)]">{formatCompact(periodMetrics.totalRequests)}</div>
           </div>
           <div>
             <div className="text-[12px] text-[var(--muted)]">{zh ? "成功请求" : "Success"}</div>
             <div className="text-[18px] font-semibold text-[var(--text)]">{formatCompact(periodMetrics.successfulRequests)}</div>
+          </div>
+          <div>
+            <div className="text-[12px] text-[var(--muted)]">{zh ? "成功率" : "Success rate"}</div>
+            <div className="text-[18px] font-semibold text-[var(--text)]">{periodMetrics.successRate}%</div>
           </div>
           <div>
             <div className="text-[12px] text-[var(--muted)]">{zh ? "平均延迟" : "Latency"}</div>
@@ -342,21 +345,6 @@ export function OverviewScreen() {
               <div className="flex h-[280px] w-full items-center justify-center text-sm text-[var(--muted)]">{zh ? "暂无模型日志数据" : "No model logs yet"}</div>
             )}
           </div>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-3 text-center md:grid-cols-3">
-        <div className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-4 shadow-[var(--shadow-sm)]">
-          <div className="text-[12px] text-[var(--muted)]">{zh ? "总请求" : "Requests"}</div>
-          <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(periodMetrics.totalRequests)}</div>
-        </div>
-        <div className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-4 shadow-[var(--shadow-sm)]">
-          <div className="text-[12px] text-[var(--muted)]">{zh ? "成功率" : "Success rate"}</div>
-          <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{periodMetrics.successRate}%</div>
-        </div>
-        <div className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-4 shadow-[var(--shadow-sm)]">
-          <div className="text-[12px] text-[var(--muted)]">{zh ? "服务 API Key" : "Service keys"}</div>
-          <div className="mt-1 text-[18px] font-semibold text-[var(--text)]">{formatCompact(metrics?.active_gateway_keys ?? 0)}</div>
         </div>
       </section>
 
