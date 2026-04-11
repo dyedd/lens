@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from lens_api.core.db import Base, create_engine, create_session_factory
 from lens_api.models import ModelGroupCreate, ModelGroupItemInput, ProtocolKind, RoutingStrategy, SiteCreate, SiteUpdate
 from lens_api.persistence.domain_store import DomainStore
 from lens_api.persistence.channel_store import ChannelStore
+from lens_api.persistence.entities import RequestLogEntity
 
 
 def _base_urls(url: str) -> list[dict[str, object]]:
@@ -30,6 +32,10 @@ def test_list_group_stats_returns_aggregated_metrics(tmp_path):
 
 def test_overview_metrics_merge_imported_stats_with_request_logs(tmp_path):
     asyncio.run(_run_overview_metrics_merge_test(tmp_path))
+
+
+def test_overview_today_range_filters_current_day(tmp_path):
+    asyncio.run(_run_overview_today_range_test(tmp_path))
 
 
 async def _run_group_stats_test(tmp_path):
@@ -310,6 +316,148 @@ async def _run_overview_metrics_merge_test(tmp_path):
     daily_points = await domain_store.list_overview_daily(days=0)
     assert any(item.date == '20250101' and item.request_count == 3 for item in daily_points)
     assert any(item.date != '20250101' and item.request_count == 1 and item.successful_requests == 1 for item in daily_points)
+
+    await engine.dispose()
+
+
+async def _run_overview_today_range_test(tmp_path):
+    database_path = tmp_path / "overview-today.db"
+    engine = create_engine(f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}")
+    session_factory = create_session_factory(engine)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    domain_store = DomainStore(session_factory)
+    now = datetime.now(UTC).replace(tzinfo=None, hour=12, minute=0, second=0, microsecond=0)
+    today = now.strftime("%Y%m%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y%m%d")
+
+    await domain_store.replace_imported_stats(
+        total=None,
+        daily=[
+            {
+                "date": yesterday,
+                "input_token": 100,
+                "output_token": 50,
+                "input_cost": 0.4,
+                "output_cost": 0.6,
+                "wait_time": 400,
+                "request_success": 3,
+                "request_failed": 1,
+            }
+        ],
+        model_prices=[],
+    )
+
+    today_success = await domain_store.create_request_log(
+        protocol=ProtocolKind.OPENAI_CHAT.value,
+        requested_model="gpt-4.1",
+        matched_group_name="gpt-4.1",
+        channel_id="channel-today-success",
+        channel_name="Today Success",
+        gateway_key_id="gw-today",
+        status_code=200,
+        success=True,
+        is_stream=False,
+        first_token_latency_ms=0,
+        latency_ms=120,
+        resolved_model="gpt-4.1",
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        input_cost_usd=0.1,
+        output_cost_usd=0.2,
+        total_cost_usd=0.3,
+        request_content='{"model":"gpt-4.1"}',
+        response_content='{"model":"gpt-4.1"}',
+        attempts=[],
+        error_message=None,
+    )
+    today_failed = await domain_store.create_request_log(
+        protocol=ProtocolKind.OPENAI_CHAT.value,
+        requested_model="gpt-4.1",
+        matched_group_name="gpt-4.1",
+        channel_id="channel-today-failed",
+        channel_name="Today Failed",
+        gateway_key_id="gw-today",
+        status_code=500,
+        success=False,
+        is_stream=False,
+        first_token_latency_ms=0,
+        latency_ms=60,
+        resolved_model=None,
+        input_tokens=5,
+        output_tokens=0,
+        total_tokens=5,
+        input_cost_usd=0.0,
+        output_cost_usd=0.0,
+        total_cost_usd=0.0,
+        request_content='{"model":"gpt-4.1"}',
+        response_content=None,
+        attempts=[],
+        error_message="boom",
+    )
+    yesterday_log = await domain_store.create_request_log(
+        protocol=ProtocolKind.OPENAI_CHAT.value,
+        requested_model="claude-3-7-sonnet",
+        matched_group_name="claude-3-7-sonnet",
+        channel_id="channel-yesterday",
+        channel_name="Yesterday",
+        gateway_key_id="gw-yesterday",
+        status_code=200,
+        success=True,
+        is_stream=False,
+        first_token_latency_ms=0,
+        latency_ms=200,
+        resolved_model="claude-3-7-sonnet",
+        input_tokens=20,
+        output_tokens=10,
+        total_tokens=30,
+        input_cost_usd=0.2,
+        output_cost_usd=0.3,
+        total_cost_usd=0.5,
+        request_content='{"model":"claude-3-7-sonnet"}',
+        response_content='{"model":"claude-3-7-sonnet"}',
+        attempts=[],
+        error_message=None,
+    )
+
+    async with session_factory() as session:
+        today_success_entity = await session.get(RequestLogEntity, today_success.id)
+        today_failed_entity = await session.get(RequestLogEntity, today_failed.id)
+        yesterday_entity = await session.get(RequestLogEntity, yesterday_log.id)
+        assert today_success_entity is not None
+        assert today_failed_entity is not None
+        assert yesterday_entity is not None
+        today_success_entity.created_at = now
+        today_failed_entity.created_at = now - timedelta(hours=1)
+        yesterday_entity.created_at = now - timedelta(days=1)
+        await session.commit()
+
+    summary = await domain_store.get_overview_summary(days=-1)
+    assert summary.request_count.value == 2
+    assert summary.request_count.delta == -50.0
+    assert summary.wait_time_ms.value == 180
+    assert summary.total_tokens.value == 20
+    assert summary.total_cost_usd.value == 0.3
+
+    daily_points = await domain_store.list_overview_daily(days=-1)
+    assert len(daily_points) == 1
+    assert daily_points[0].date == today
+    assert daily_points[0].request_count == 2
+    assert daily_points[0].successful_requests == 1
+    assert daily_points[0].failed_requests == 1
+
+    model_analytics = await domain_store.get_model_analytics(days=-1)
+    assert model_analytics.available_models == ["gpt-4.1"]
+    assert len(model_analytics.distribution) == 1
+    assert model_analytics.distribution[0].model == "gpt-4.1"
+    assert model_analytics.distribution[0].requests == 1
+    assert all(point.date == today for point in model_analytics.trend)
+
+    logs = await domain_store.list_request_logs(days=-1)
+    assert [item.id for item in logs] == [today_success.id, today_failed.id]
 
     await engine.dispose()
 

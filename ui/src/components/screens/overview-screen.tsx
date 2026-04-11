@@ -10,7 +10,7 @@ import { useI18n } from "@/lib/i18n"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from "@/components/ui/chart"
 
-type TimeRange = "7" | "30" | "0"
+type TimeRange = "-1" | "7" | "30" | "0"
 type HeatMetric = "requests" | "tokens" | "cost"
 type PieMetric = "cost" | "requests" | "tokens"
 
@@ -76,7 +76,7 @@ export function OverviewScreen() {
   const { locale } = useI18n()
   const zh = locale === "zh-CN"
 
-  const [timeRange, setTimeRange] = useState<TimeRange>("7")
+  const [timeRange, setTimeRange] = useState<TimeRange>("-1")
   const [heatMetric, setHeatMetric] = useState<HeatMetric>("requests")
   const [pieMetric, setPieMetric] = useState<PieMetric>("cost")
   const [logOffset, setLogOffset] = useState(0)
@@ -227,6 +227,7 @@ export function OverviewScreen() {
             value={timeRange}
             onValueChange={(v) => { setTimeRange(v as TimeRange); setLogOffset(0) }}
             options={[
+              { value: "-1", label: zh ? "今天" : "Today" },
               { value: "7", label: zh ? "近7天" : "7 days" },
               { value: "30", label: zh ? "近30天" : "30 days" },
               { value: "0", label: zh ? "全部" : "All" },
