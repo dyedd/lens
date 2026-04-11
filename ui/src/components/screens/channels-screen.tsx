@@ -58,6 +58,7 @@ type FormProtocol = {
   channel_proxy: string
   param_override: string
   match_regex: string
+  manual_model_name: string
   base_url_id: string
   bindings: SiteProtocolCredentialBindingInput[]
   models: SiteModelInput[]
@@ -105,6 +106,7 @@ const emptyProtocol = (): FormProtocol => ({
   channel_proxy: '',
   param_override: '',
   match_regex: '',
+  manual_model_name: '',
   base_url_id: '',
   bindings: [],
   models: [],
@@ -245,6 +247,7 @@ function toForm(site: Site): FormState {
       channel_proxy: item.channel_proxy,
       param_override: item.param_override,
       match_regex: safeText(item.match_regex),
+      manual_model_name: '',
       base_url_id: item.base_url_id,
       bindings: item.bindings.map((binding) => ({ credential_id: binding.credential_id, enabled: binding.enabled })),
       models: item.models.map((model) => ({ id: model.id, credential_id: model.credential_id, model_name: model.model_name, enabled: model.enabled })),
@@ -500,6 +503,27 @@ export function ChannelsScreen() {
     setForm((current) => ({
       ...current,
       protocols: current.protocols.map((item, itemIndex) => itemIndex !== protocolIndex ? item : { ...item, models: item.models.map((model, currentModelIndex) => currentModelIndex === modelIndex ? { ...model, ...patch } : model) }),
+    }))
+  }
+
+  function addManualProtocolModel(protocolIndex: number, credentialId: string) {
+    setForm((current) => ({
+      ...current,
+      protocols: current.protocols.map((item, itemIndex) => {
+        if (itemIndex !== protocolIndex) return item
+        const modelName = item.manual_model_name.trim()
+        if (!credentialId || !modelName) return item
+        const exists = item.models.some((model) => model.credential_id === credentialId && model.model_name === modelName)
+        if (exists) {
+          return { ...item, manual_model_name: '', expanded: true }
+        }
+        return {
+          ...item,
+          manual_model_name: '',
+          expanded: true,
+          models: [...item.models, { id: null, credential_id: credentialId, model_name: modelName, enabled: true }],
+        }
+      }),
     }))
   }
 
@@ -790,13 +814,32 @@ export function ChannelsScreen() {
 
                           {protocol.expanded ? (
                             <div className="grid gap-3 border-t border-[var(--line)] pt-3">
-                              <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center">
+                              <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] xl:items-center">
+                                <input
+                                  className="h-10 min-w-[180px] rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]"
+                                  value={protocol.manual_model_name}
+                                  onChange={(event) => updateProtocol(protocolIndex, { manual_model_name: event.target.value })}
+                                  onKeyDown={(event) => {
+                                    if (event.key !== 'Enter') return
+                                    event.preventDefault()
+                                    addManualProtocolModel(protocolIndex, selectedCredentialId)
+                                  }}
+                                  placeholder={locale === 'zh-CN' ? '模型名称' : 'Model name'}
+                                />
                                 <input
                                   className="h-10 min-w-[180px] rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]"
                                   value={protocol.match_regex}
                                   onChange={(event) => updateProtocol(protocolIndex, { match_regex: event.target.value })}
                                   placeholder={locale === 'zh-CN' ? '匹配规则' : 'Match regex'}
                                 />
+                                <button
+                                  type="button"
+                                  onClick={() => addManualProtocolModel(protocolIndex, selectedCredentialId)}
+                                  disabled={!selectedCredentialId || !protocol.manual_model_name.trim()}
+                                  className="h-10 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {locale === 'zh-CN' ? '加入' : 'Add'}
+                                </button>
                                 <button type="button" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length} className="h-10 rounded-xl border border-[rgba(217,111,93,0.28)] px-3 text-sm text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60">{locale === 'zh-CN' ? '删除所有模型' : 'Remove all'}</button>
                                 <button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
                                   <RefreshCcw size={14} className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
