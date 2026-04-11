@@ -175,7 +175,6 @@ class RoundRobinRouter:
                 target
                 for target in route_targets
                 if target.channel.status == ChannelStatus.ENABLED
-                and target.channel.protocol == protocol
                 and (allowed_channel_ids is None or target.channel.id in allowed_channel_ids)
             ]
 

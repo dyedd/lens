@@ -581,9 +581,14 @@ class DomainStore:
         if missing_channel_ids:
             raise ValueError(f'Channels not found: {", ".join(missing_channel_ids)}')
 
-        invalid_channel_ids = [channel.id for channel in channel_rows if channel.protocol != protocol]
+        from ..gateway.converters import can_reach_protocol
+        from ..models import ProtocolKind
+        invalid_channel_ids = [
+            channel.id for channel in channel_rows
+            if not can_reach_protocol(ProtocolKind(channel.protocol), ProtocolKind(protocol))
+        ]
         if invalid_channel_ids:
-            raise ValueError(f'Channels must match protocol={protocol}: {", ".join(invalid_channel_ids)}')
+            raise ValueError(f'Channels cannot reach protocol={protocol}: {", ".join(invalid_channel_ids)}')
 
         model_rows = (
             await session.execute(

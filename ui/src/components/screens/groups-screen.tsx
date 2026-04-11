@@ -89,6 +89,17 @@ const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> = {
   gemini: { zh: 'Gemini', en: 'Gemini' },
 }
 
+function protocolLabel(protocol: ProtocolKind, locale: 'zh-CN' | 'en-US') {
+  return protocolLabels[protocol][locale === 'zh-CN' ? 'zh' : 'en']
+}
+
+function protocolOptions(locale: 'zh-CN' | 'en-US') {
+  return (Object.keys(protocolLabels) as ProtocolKind[]).map((value) => ({
+    value,
+    label: protocolLabel(value, locale),
+  }))
+}
+
 function inputClassName() {
   return 'h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-[13px] text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
 }
@@ -109,17 +120,6 @@ function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
   const [target] = nextItems.splice(fromIndex, 1)
   nextItems.splice(toIndex, 0, target)
   return nextItems
-}
-
-function protocolLabel(protocol: ProtocolKind, locale: 'zh-CN' | 'en-US') {
-  return protocolLabels[protocol][locale === 'zh-CN' ? 'zh' : 'en']
-}
-
-function protocolOptions(locale: 'zh-CN' | 'en-US') {
-  return (Object.keys(protocolLabels) as ProtocolKind[]).map((value) => ({
-    value,
-    label: protocolLabel(value, locale),
-  }))
 }
 
 type ProtocolMeta = {
@@ -332,7 +332,6 @@ export function GroupsScreen() {
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/admin/model-groups') })
   const { data: sites } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(() => ({
-    protocol: form.protocol,
     exclude_items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }), [form])
   const { data: candidateResponse, refetch: refetchCandidates, isFetching: isFetchingCandidates } = useQuery({
@@ -378,13 +377,6 @@ export function GroupsScreen() {
   }, [detailTarget])
   const DetailAvatar = detailIconMeta
 
-  const duplicateNameSet = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const group of groups ?? []) {
-      counts.set(group.name, (counts.get(group.name) ?? 0) + 1)
-    }
-    return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([name]) => name))
-  }, [groups])
 
   const groupedCandidates = useMemo(() => {
     const keyword = candidateSearch.trim().toLowerCase()
@@ -679,7 +671,6 @@ export function GroupsScreen() {
                     <GroupAvatar size={36} />
                     <div className="min-w-0">
                       <div className="truncate text-[15px] font-semibold text-[var(--text)]">{group.name}</div>
-                      {duplicateNameSet.has(group.name) ? <div className="mt-1 text-xs text-[var(--muted)]">{protocolLabel(group.protocol, locale)}</div> : null}
                     </div>
                   </div>
                 </button>

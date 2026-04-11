@@ -22,6 +22,7 @@ from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
 from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
+from .converters import convert_request, convert_response, convert_stream_iterator, needs_conversion
 from ..models import AdminLoginRequest, AdminPasswordChangeRequest, AdminProfile, AppInfo, AuthTokenResponse, ErrorResponse, ModelGroup, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewSummary, ProtocolKind, PublicBranding, ChannelConfig, RequestLogDetail, RequestLogItem, RoutePreviewRequest, RoutingStrategy, SettingItem, SettingsUpdate, SiteConfig, SiteCreate, SiteModelFetchItem, SiteModelFetchRequest, SiteUpdate
 from ..persistence.admin_store import AdminStore
 from ..persistence.domain_store import DomainStore, SETTING_GATEWAY_API_KEY_HINT, SETTING_GATEWAY_API_KEYS, SETTING_SITE_LOGO_URL, SETTING_SITE_NAME
@@ -627,12 +628,16 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
     for target in [selection.primary, *selection.fallbacks]:
         channel = target.channel
         attempt_started_at = perf_counter()
-        upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
+        if needs_conversion(protocol, channel.protocol):
+            upstream_body = convert_request(protocol, channel.protocol, body, target.model_name)
+        else:
+            upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
         try:
             result = await _call_channel(
                 channel,
                 upstream_body,
                 matched_group_name=plan.matched_group.name if plan.matched_group else None,
+                client_protocol=protocol,
             )
             attempts.append(
                 AttemptLog(
@@ -732,7 +737,12 @@ async def _proxy_protocol(protocol: ProtocolKind, body: dict[str, Any], gateway_
     return JSONResponse(status_code=502, content=error_body.model_dump(mode="json"))
 
 
-async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_group_name: str | None = None) -> UpstreamResult:
+async def _call_channel(
+    channel: ChannelConfig,
+    body: dict[str, Any],
+    matched_group_name: str | None = None,
+    client_protocol: ProtocolKind | None = None,
+) -> UpstreamResult:
     upstream = build_upstream_request(channel, body, settings)
     request_content = _dump_json(upstream.json_body)
     client = app_state.http
@@ -776,6 +786,7 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
 
         if _is_event_stream_response(response):
             capture = StreamCapture()
+            do_convert = client_protocol is not None and needs_conversion(client_protocol, channel.protocol)
 
             async def iterator():
                 try:
@@ -788,12 +799,21 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
                 finally:
                     await response.aclose()
 
+            if do_convert:
+                converted_iter = convert_stream_iterator(
+                    client_protocol, channel.protocol, iterator(), body.get("model", ""),
+                )
+                stream_media = "text/event-stream"
+            else:
+                converted_iter = iterator()
+                stream_media = response.headers.get("content-type")
+
             resolved_model = body.get("model")
             return UpstreamResult(
                 response=StreamingResponse(
-                    iterator(),
+                    converted_iter,
                     status_code=response.status_code,
-                    media_type=response.headers.get("content-type"),
+                    media_type=stream_media,
                     headers=_passthrough_headers(response.headers),
                 ),
                 is_stream=True,
@@ -808,6 +828,9 @@ async def _call_channel(channel: ChannelConfig, body: dict[str, Any], matched_gr
         content = response.content if hasattr(response, "content") else await response.aread()
 
         parsed = _extract_response_usage(channel.protocol, response)
+        if client_protocol is not None and needs_conversion(client_protocol, channel.protocol):
+            content = convert_response(client_protocol, channel.protocol, content, body.get("model", ""))
+
         input_cost_usd, output_cost_usd, total_cost_usd = await app_state.domain_store.estimate_model_cost(
             matched_group_name or parsed["resolved_model"],
             parsed["input_tokens"],
@@ -1010,8 +1033,8 @@ async def _resolve_routing_plan(protocol: ProtocolKind, requested_model: str | N
             cursor_key=f"{protocol.value}:{matched_group.id}",
         )
 
-    if requested_model and protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}:
-        raise LookupError(f"No model group matched protocol={protocol.value} model={requested_model}")
+    if requested_model and protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES, ProtocolKind.ANTHROPIC}:
+        raise LookupError(f"No model group matched model={requested_model}")
 
     return RoutingPlan(
         requested_model=requested_model,
