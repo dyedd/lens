@@ -29,7 +29,7 @@ from ..persistence.domain_store import DomainStore, SETTING_GATEWAY_API_KEY_HINT
 from ..persistence.channel_store import ChannelStore
 from ..api import create_app
 from .router import RoundRobinRouter, RouteTarget
-from .upstreams import build_upstream_request, resolve_channel_api_key, resolve_channel_base_url, resolve_upstream_proxy_url
+from .upstreams import build_upstream_request, resolve_channel_api_key, resolve_channel_base_url, resolve_upstream_proxy_url, uses_complete_endpoint
 from .. import __version__ as backend_version
 
 
@@ -955,6 +955,9 @@ async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
 
 
 def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
+    if uses_complete_endpoint(channel):
+        raise ValueError("Base URL ending with # does not support automatic model discovery")
+
     base_url = resolve_channel_base_url(channel).rstrip("/")
     api_key = resolve_channel_api_key(channel)
     headers = dict(channel.headers)

@@ -69,6 +69,14 @@ def test_openai_responses_proxy_standard_request(tmp_path: Path):
     asyncio.run(_run_openai_responses_proxy_standard_request(tmp_path))
 
 
+def test_anthropic_proxy_supports_complete_endpoint_marker(tmp_path: Path):
+    asyncio.run(_run_anthropic_proxy_supports_complete_endpoint_marker(tmp_path))
+
+
+def test_model_discovery_rejects_complete_endpoint_marker(tmp_path: Path):
+    asyncio.run(_run_model_discovery_rejects_complete_endpoint_marker(tmp_path))
+
+
 def test_openai_responses_stream_log_detail_distills_completed_response(tmp_path: Path):
     asyncio.run(_run_openai_responses_stream_log_detail_distills_completed_response(tmp_path))
 
@@ -816,6 +824,162 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
             }
     finally:
         service_module.app_state.http.request = original_request
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_anthropic_proxy_supports_complete_endpoint_marker(tmp_path: Path):
+    service_module, app, _config = await _build_test_app(tmp_path / 'api-anthropic-complete-endpoint.db')
+
+    upstream_calls: list[dict[str, object]] = []
+
+    async def fake_request(method, url, headers=None, json=None, **kwargs):
+        upstream_calls.append({'method': method, 'url': url, 'headers': headers, 'json': json})
+        request = httpx.Request(method, url, headers=headers, json=json)
+        if method == 'GET' and url == 'https://models.dev/api.json':
+            return httpx.Response(200, request=request, json={})
+        return httpx.Response(
+            200,
+            request=request,
+            headers={'content-type': 'application/json', 'request-id': 'anthropic_req'},
+            json={
+                'id': 'msg_123',
+                'type': 'message',
+                'role': 'assistant',
+                'model': 'claude-3-5-sonnet',
+                'content': [{'type': 'text', 'text': 'hello'}],
+                'usage': {'input_tokens': 12, 'output_tokens': 8},
+            },
+        )
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    original_request = service_module.app_state.http.request
+    service_module.app_state.http.request = fake_request
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            admin_headers = {'authorization': f'Bearer {token}'}
+
+            updated_settings = await client.put(
+                '/api/admin/settings',
+                headers=admin_headers,
+                json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
+            )
+            assert updated_settings.status_code == 200
+
+            created_site = await client.post(
+                '/api/admin/sites',
+                headers=admin_headers,
+                json=_site_create_payload(
+                    'Anthropic Complete Endpoint Site',
+                    credentials=[{'name': 'Key A', 'api_key': 'anthropic-key', 'enabled': True}],
+                    protocols=[{
+                        'protocol': 'anthropic',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [],
+                        'models': [],
+                    }],
+                    base_url='https://aiping.cn/api/v1/anthropic#',
+                ),
+            )
+            assert created_site.status_code == 201
+            site = created_site.json()
+            credential = site['credentials'][0]
+            protocol = site['protocols'][0]
+
+            updated_site = await client.put(
+                f"/api/admin/sites/{site['id']}",
+                headers=admin_headers,
+                json=_site_update_payload(
+                    site,
+                    credentials=[{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    protocols=[{
+                        'id': protocol['id'],
+                        'protocol': 'anthropic',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                        'models': [{'credential_id': credential['id'], 'model_name': 'claude-3-5-sonnet', 'enabled': True}],
+                    }],
+                ),
+            )
+            assert updated_site.status_code == 200
+
+            created_group = await client.post(
+                '/api/admin/model-groups',
+                headers=admin_headers,
+                json={
+                    'name': 'claude-3-5-sonnet',
+                    'protocol': 'anthropic',
+                    'strategy': 'round_robin',
+                    'items': [{
+                        'channel_id': protocol['id'],
+                        'credential_id': credential['id'],
+                        'model_name': 'claude-3-5-sonnet',
+                        'enabled': True,
+                    }],
+                },
+            )
+            assert created_group.status_code == 201
+
+            gateway_response = await client.post(
+                '/v1/messages',
+                headers={'x-api-key': 'test-gateway-key'},
+                json={
+                    'model': 'claude-3-5-sonnet',
+                    'max_tokens': 64,
+                    'messages': [{'role': 'user', 'content': 'hello'}],
+                },
+            )
+            assert gateway_response.status_code == 200
+            assert gateway_response.json()['content'][0]['text'] == 'hello'
+
+            post_call = next(item for item in upstream_calls if item['method'] == 'POST')
+            assert post_call['url'] == 'https://aiping.cn/api/v1/anthropic'
+            assert post_call['headers']['x-api-key'] == 'anthropic-key'
+            assert post_call['headers']['anthropic-version'] == service_module.settings.anthropic_version
+    finally:
+        service_module.app_state.http.request = original_request
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_model_discovery_rejects_complete_endpoint_marker(tmp_path: Path):
+    service_module, app, _config = await _build_test_app(tmp_path / 'api-complete-endpoint-discovery.db')
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            admin_headers = {'authorization': f'Bearer {token}'}
+
+            response = await client.post(
+                '/api/admin/site-model-discoveries',
+                headers=admin_headers,
+                json={
+                    'protocol': 'anthropic',
+                    'base_url': 'https://aiping.cn/api/v1/anthropic#',
+                    'headers': {},
+                    'channel_proxy': '',
+                    'match_regex': '',
+                    'credentials': [{'id': 'credential-a', 'name': 'Key A', 'api_key': 'anthropic-key', 'enabled': True}],
+                    'bindings': [{'credential_id': 'credential-a', 'enabled': True}],
+                },
+            )
+            assert response.status_code == 400
+            assert response.json()['detail'] == 'Base URL ending with # does not support automatic model discovery'
+    finally:
         await service_module._close_app_state(service_module.app_state)
 
 
