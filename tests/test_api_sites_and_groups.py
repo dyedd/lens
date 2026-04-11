@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+import sqlite3
 
 import httpx
+from sqlalchemy.exc import OperationalError
 
 
 TEST_ADMIN_USERNAME = 'admin'
@@ -77,6 +79,14 @@ def test_openai_responses_stream_log_detail_restores_empty_completed_output(tmp_
 
 def test_request_log_detail_api(tmp_path: Path):
     asyncio.run(_run_request_log_detail_api(tmp_path))
+
+
+def test_gateway_request_returns_503_when_database_is_locked(tmp_path: Path):
+    asyncio.run(_run_gateway_request_returns_503_when_database_is_locked(tmp_path))
+
+
+def test_gateway_request_still_returns_401_for_missing_api_key(tmp_path: Path):
+    asyncio.run(_run_gateway_request_still_returns_401_for_missing_api_key(tmp_path))
 
 
 def test_gemini_stream_usage_extracts_from_sse_payload():
@@ -864,6 +874,49 @@ async def _run_request_log_detail_api(tmp_path: Path):
 
             missing = await client.get('/api/admin/request-logs/999999', headers=headers)
             assert missing.status_code == 404
+    finally:
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_gateway_request_returns_503_when_database_is_locked(tmp_path: Path):
+    service_module, app, _config = await _build_test_app(tmp_path / 'api-db-locked.db')
+
+    original_list_settings = service_module.app_state.domain_store.list_settings
+
+    async def locked_list_settings():
+        raise OperationalError(
+            'SELECT settings."key", settings.value FROM settings ORDER BY settings."key"',
+            {},
+            sqlite3.OperationalError('database is locked'),
+        )
+
+    service_module.app_state.domain_store.list_settings = locked_list_settings
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            response = await client.get('/v1/models')
+            assert response.status_code == 503
+            assert response.json() == {'detail': 'Database is busy, please retry'}
+    finally:
+        service_module.app_state.domain_store.list_settings = original_list_settings
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_gateway_request_still_returns_401_for_missing_api_key(tmp_path: Path):
+    service_module, app, _config = await _build_test_app(tmp_path / 'api-missing-gateway-key.db')
+
+    await service_module.app_state.domain_store.upsert_settings([
+        service_module.SettingItem(key='gateway_api_keys', value='test-gateway-key'),
+    ])
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            response = await client.get('/v1/models')
+            assert response.status_code == 401
+            assert response.json() == {'detail': 'Missing gateway API key'}
     finally:
         await service_module._close_app_state(service_module.app_state)
 
