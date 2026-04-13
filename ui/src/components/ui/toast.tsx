@@ -1,13 +1,14 @@
 "use client"
 
-import { createContext, useContext, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, CircleAlert, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-type ToastKind = 'success' | 'error'
+type ToastTone = 'success' | 'error'
 
 type ToastItem = {
-  id: number
-  kind: ToastKind
+  id: string
+  tone: ToastTone
   message: string
 }
 
@@ -18,63 +19,64 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
-function toastTone(kind: ToastKind) {
-  if (kind === 'success') {
-    return {
-      icon: CheckCircle2,
-      iconClassName: 'text-[var(--success)]',
-      borderClassName: 'border-[rgba(34,197,94,0.18)]',
-    }
-  }
-
-  return {
-    icon: CircleAlert,
-    iconClassName: 'text-[var(--danger)]',
-    borderClassName: 'border-[rgba(217,111,93,0.18)]',
-  }
+function ToastViewport({
+  items,
+  onDismiss,
+}: {
+  items: ToastItem[]
+  onDismiss: (id: string) => void
+}) {
+  return (
+    <div className="pointer-events-none fixed right-4 top-4 z-[80] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
+      {items.map((item) => {
+        const danger = item.tone === 'error'
+        return (
+          <div
+            key={item.id}
+            className={cn(
+              'pointer-events-auto flex items-start gap-3 rounded-lg border bg-white px-4 py-3 shadow-sm',
+              danger ? 'border-red-200' : 'border-border'
+            )}
+          >
+            <span className={cn('mt-0.5', danger ? 'text-red-500' : 'text-emerald-500')}>
+              {danger ? <CircleAlert size={16} /> : <CheckCircle2 size={16} />}
+            </span>
+            <div className="min-w-0 flex-1 text-sm text-slate-800">{item.message}</div>
+            <button type="button" className="text-slate-400 transition hover:text-slate-700" onClick={() => onDismiss(item.id)}>
+              <X size={14} />
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const nextIdRef = useRef(1)
   const [items, setItems] = useState<ToastItem[]>([])
+  const timers = useRef<Record<string, number>>({})
 
-  function remove(id: number) {
+  const dismiss = useCallback((id: string) => {
+    window.clearTimeout(timers.current[id])
+    delete timers.current[id]
     setItems((current) => current.filter((item) => item.id !== id))
-  }
+  }, [])
 
-  function push(kind: ToastKind, message: string) {
-    const id = nextIdRef.current++
-    setItems((current) => [...current, { id, kind, message }])
-    window.setTimeout(() => remove(id), 2200)
-  }
+  const push = useCallback((tone: ToastTone, message: string) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    setItems((current) => [...current, { id, tone, message }])
+    timers.current[id] = window.setTimeout(() => dismiss(id), 2200)
+  }, [dismiss])
 
   const value = useMemo<ToastContextValue>(() => ({
     success: (message) => push('success', message),
     error: (message) => push('error', message),
-  }), [])
+  }), [push])
 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed right-4 top-4 z-[80] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
-        {items.map((item) => {
-          const tone = toastTone(item.kind)
-          const Icon = tone.icon
-          return (
-            <div key={item.id} className={`pointer-events-auto flex items-start gap-3 rounded-2xl border bg-[var(--panel-strong)] px-4 py-3 shadow-[var(--shadow-lg)] ${tone.borderClassName}`}>
-              <Icon size={18} className={`mt-0.5 shrink-0 ${tone.iconClassName}`} />
-              <div className="min-w-0 flex-1 text-sm leading-6 text-[var(--text)]">{item.message}</div>
-              <button
-                type="button"
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--muted)] transition-colors hover:bg-[var(--panel)] hover:text-[var(--text)]"
-                onClick={() => remove(item.id)}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )
-        })}
-      </div>
+      <ToastViewport items={items} onDismiss={dismiss} />
     </ToastContext.Provider>
   )
 }
