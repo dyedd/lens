@@ -43,6 +43,10 @@ def test_clear_request_logs_keeps_archived_overview_stats(tmp_path):
     asyncio.run(_run_clear_request_logs_keeps_archived_stats_test(tmp_path))
 
 
+def test_model_analytics_prefers_group_name_over_resolved_model(tmp_path):
+    asyncio.run(_run_model_analytics_prefers_group_name_test(tmp_path))
+
+
 async def _run_group_stats_test(tmp_path):
     database_path = tmp_path / "group-stats.db"
     database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -556,6 +560,69 @@ async def _run_clear_request_logs_keeps_archived_stats_test(tmp_path):
     assert analytics.distribution[0].requests == 1
     assert analytics.distribution[0].total_tokens == 30
     assert analytics.distribution[0].total_cost_usd == 0.5
+
+    await engine.dispose()
+
+
+async def _run_model_analytics_prefers_group_name_test(tmp_path):
+    database_path = tmp_path / 'model-analytics-group-name.db'
+    engine = create_engine(f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}")
+    session_factory = create_session_factory(engine)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    domain_store = DomainStore(session_factory)
+    await domain_store.upsert_settings([
+        SettingItem(key='stats_save_interval', value='999999'),
+    ])
+
+    for resolved_model, total_tokens, total_cost_usd in [
+        ('claude-opus-4-6-20260331', 150, 0.3),
+        ('claude-opus-4-6-20260407', 210, 0.5),
+    ]:
+        await domain_store.create_request_log(
+            protocol=ProtocolKind.ANTHROPIC.value,
+            requested_model='claude-opus-4.6',
+            matched_group_name='claude-opus-4.6',
+            channel_id='channel-a',
+            channel_name='Channel A',
+            gateway_key_id='gw-a',
+            status_code=200,
+            success=True,
+            is_stream=False,
+            first_token_latency_ms=0,
+            latency_ms=120,
+            resolved_model=resolved_model,
+            input_tokens=total_tokens // 2,
+            output_tokens=total_tokens // 2,
+            total_tokens=total_tokens,
+            input_cost_usd=total_cost_usd / 2,
+            output_cost_usd=total_cost_usd / 2,
+            total_cost_usd=total_cost_usd,
+            request_content='{"model":"claude-opus-4.6"}',
+            response_content=f'{{"model":"{resolved_model}"}}',
+            attempts=[],
+            error_message=None,
+        )
+
+    live_analytics = await domain_store.get_model_analytics(days=0)
+    assert live_analytics.available_models == ['claude-opus-4.6']
+    assert len(live_analytics.distribution) == 1
+    assert live_analytics.distribution[0].model == 'claude-opus-4.6'
+    assert live_analytics.distribution[0].requests == 2
+    assert live_analytics.distribution[0].total_tokens == 360
+    assert live_analytics.distribution[0].total_cost_usd == 0.8
+
+    await domain_store.persist_request_log_stats(force=True)
+
+    archived_analytics = await domain_store.get_model_analytics(days=0)
+    assert archived_analytics.available_models == ['claude-opus-4.6']
+    assert len(archived_analytics.distribution) == 1
+    assert archived_analytics.distribution[0].model == 'claude-opus-4.6'
+    assert archived_analytics.distribution[0].requests == 2
+    assert archived_analytics.distribution[0].total_tokens == 360
+    assert archived_analytics.distribution[0].total_cost_usd == 0.8
 
     await engine.dispose()
 

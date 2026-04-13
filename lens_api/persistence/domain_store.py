@@ -800,7 +800,7 @@ class DomainStore:
             )
             daily_rows = (await session.execute(unarchived_stmt)).all()
 
-            model_expr = func.coalesce(RequestLogEntity.resolved_model, RequestLogEntity.requested_model, RequestLogEntity.matched_group_name)
+            model_expr = func.coalesce(RequestLogEntity.matched_group_name, RequestLogEntity.resolved_model, RequestLogEntity.requested_model)
             model_stmt = (
                 select(
                     func.strftime('%Y%m%d', RequestLogEntity.created_at).label('date'),
@@ -1335,7 +1335,7 @@ class DomainStore:
         return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows]
 
     async def _request_log_model_daily_rows(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[tuple[str, str, int, int, float]]:
-        model_expr = func.coalesce(RequestLogEntity.resolved_model, RequestLogEntity.requested_model, RequestLogEntity.matched_group_name)
+        model_expr = func.coalesce(RequestLogEntity.matched_group_name, RequestLogEntity.resolved_model, RequestLogEntity.requested_model)
         stmt = (
             select(
                 func.strftime('%Y%m%d', RequestLogEntity.created_at),
