@@ -1,10 +1,15 @@
 import type { Metadata } from 'next'
-import { Noto_Sans_SC, IBM_Plex_Mono } from 'next/font/google'
+import { Geist, Geist_Mono, Noto_Serif } from 'next/font/google'
 import './globals.css'
 import { AppProviders } from '@/components/app-providers'
+import { cn } from '@/lib/utils'
 
-const sans = Noto_Sans_SC({ subsets: ['latin'], variable: '--font-sans', weight: ['400', '500', '600', '700'] })
-const mono = IBM_Plex_Mono({ subsets: ['latin'], variable: '--font-mono', weight: ['400', '500'] })
+const notoSerif = Noto_Serif({subsets:['latin'],variable:'--font-serif'});
+
+const notoSerifHeading = Noto_Serif({subsets:['latin'],variable:'--font-heading'});
+
+const sans = Geist({ subsets: ['latin'], variable: '--font-sans', weight: ['400', '500', '600', '700'] })
+const geistMono = Geist_Mono({subsets:['latin'],variable:'--font-mono'})
 
 export const metadata: Metadata = {
   title: 'Lens',
@@ -13,7 +18,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="zh-CN" className={cn(sans.variable, geistMono.variable, notoSerifHeading.variable, notoSerif.variable)}>
       <body>
         <AppProviders>{children}</AppProviders>
       </body>

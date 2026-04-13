@@ -1,7 +1,6 @@
 "use client"
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, GripVertical, Pencil, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import {
@@ -17,9 +16,28 @@ import {
   apiRequest,
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
-import { cn } from '@/lib/cn'
+import { cn } from '@/lib/utils'
 import { getModelGroupAvatar } from '@/lib/model-icons'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from '@/components/ui/item'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
 
 type FormItem = {
   channel_id: string
@@ -100,12 +118,12 @@ function protocolOptions(locale: 'zh-CN' | 'en-US') {
   }))
 }
 
-function inputClassName() {
-  return 'h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-[13px] text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
+function panelClassName(extra = '') {
+  return cn('rounded-lg bg-muted/10', extra)
 }
 
-function panelClassName(extra = '') {
-  return cn('rounded-[24px] border border-[var(--line)] bg-[var(--panel)]', extra)
+function selectClassName() {
+  return 'w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground'
 }
 
 function itemKey(item: Pick<FormItem, 'channel_id' | 'credential_id' | 'model_name'>) {
@@ -165,25 +183,40 @@ function toPayload(form: FormState): ModelGroupPayload {
 }
 
 function SwitchButton({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
+  return <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
+}
+
+function StrategyToggle({
+  value,
+  locale,
+  disabled = false,
+  onChange,
+}: {
+  value: RoutingStrategy
+  locale: 'zh-CN' | 'en-US'
+  disabled?: boolean
+  onChange: (value: RoutingStrategy) => void
+}) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative h-6 w-11 rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60',
-        checked ? 'bg-[var(--accent)]' : 'bg-[var(--line-strong)]'
-      )}
+    <ToggleGroup
+      type="single"
+      value={value}
+      onValueChange={(nextValue) => {
+        if (nextValue) {
+          onChange(nextValue as RoutingStrategy)
+        }
+      }}
+      variant="outline"
+      size="default"
+      spacing={1}
+      className="flex-wrap"
     >
-      <span
-        className={cn(
-          'absolute top-1 h-4 w-4 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.18)] transition-all duration-200',
-          checked ? 'right-1' : 'left-1'
-        )}
-      />
-    </button>
+      {strategyOptions.map((option) => (
+        <ToggleGroupItem key={option.value} value={option.value} disabled={disabled}>
+          {locale === 'zh-CN' ? option.zh : option.en}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   )
 }
 
@@ -197,20 +230,21 @@ function CandidateRow({
   onClick: () => void
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      className={cn(
+        'h-8 w-full justify-between rounded-md px-3 text-left',
+        active ? 'cursor-not-allowed opacity-60' : 'hover:bg-muted'
+      )}
       onClick={onClick}
       disabled={active}
-      className={cn(
-        'flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-2.5 text-left transition',
-        active ? 'cursor-not-allowed opacity-60' : 'hover:bg-[var(--panel-soft)]'
-      )}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
+        <div className="truncate text-sm font-medium text-foreground">{item.model_name}</div>
       </div>
-      <span className="shrink-0 text-[var(--muted)]">{active ? <Check size={15} className="text-[var(--accent)]" /> : <Plus size={15} />}</span>
-    </button>
+      <span className="shrink-0 text-muted-foreground">{active ? <Check size={15} className="text-primary" /> : <Plus size={15} />}</span>
+    </Button>
   )
 }
 
@@ -243,71 +277,25 @@ function SelectedMemberRow({
       onDragOver={(event) => event.preventDefault()}
       onDragEnd={onDragEnd}
       className={cn(
-        'flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-strong)] px-2.5 py-2 transition',
-        dragging && 'opacity-60 shadow-[var(--shadow-sm)]',
+        'flex items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0',
+        dragging && 'opacity-60 shadow-sm',
         !item.enabled && 'opacity-55'
       )}
     >
-      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-[var(--accent-2)] text-[11px] font-semibold text-[var(--accent)]">{index + 1}</span>
-      <span className="cursor-grab text-[var(--muted)] active:cursor-grabbing">
+      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">{index + 1}</span>
+      <span className="cursor-grab text-muted-foreground active:cursor-grabbing">
         <GripVertical size={14} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="truncate text-[11px] text-[var(--muted)]">{item.channel_name}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="truncate text-sm font-medium text-foreground">{item.model_name}</div>
+        <div className="truncate text-xs text-muted-foreground">{item.channel_name}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
-      <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
-      <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[rgba(217,111,93,0.08)] hover:text-[var(--danger)]" onClick={onRemove}>
+      <div className="flex h-8 w-8 items-center justify-center">
+        <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
+      </div>
+      <Button type="button" variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={onRemove}>
         <X size={13} />
-      </button>
-    </div>
-  )
-}
-
-function CardMemberRow({
-  item,
-  index,
-  dragging,
-  busy,
-  onToggle,
-  onDragStart,
-  onDrop,
-  onDragEnd,
-}: {
-  item: FormItem
-  index: number
-  dragging: boolean
-  busy: boolean
-  onToggle: () => void
-  onDragStart: () => void
-  onDrop: () => void
-  onDragEnd: () => void
-}) {
-  return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault()
-        onDrop()
-      }}
-      onDragEnd={onDragEnd}
-      className={cn(
-        'flex items-start gap-3 rounded-2xl bg-[var(--panel-soft)] px-3 py-2.5 transition',
-        dragging && 'opacity-60 shadow-[var(--shadow-sm)]',
-        !item.enabled && 'opacity-55'
-      )}
-    >
-      <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-md bg-[rgba(37,99,235,0.12)] text-[11px] text-[var(--accent)]">{index + 1}</span>
-      <span className="mt-0.5 cursor-grab text-[var(--muted)] active:cursor-grabbing">
-        <GripVertical size={14} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-[var(--text)]">{item.model_name}</div>
-        <div className="mt-1 truncate text-xs text-[var(--muted)]">{item.channel_name}{!item.enabled ? ' · 已关闭' : ''}</div>
-      </div>
-      <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
+      </Button>
     </div>
   )
 }
@@ -326,7 +314,6 @@ export function GroupsScreen() {
   const [detailTarget, setDetailTarget] = useState<ModelGroup | null>(null)
   const [expandedChannels, setExpandedChannels] = useState<string[]>([])
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
-  const [cardDraggingKey, setCardDraggingKey] = useState<string | null>(null)
   const [showEnabledOnly, setShowEnabledOnly] = useState(false)
 
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/admin/model-groups') })
@@ -546,7 +533,6 @@ export function GroupsScreen() {
       setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '更新模型组失败' : 'Failed to update group'))
     } finally {
       setBusyId(null)
-      setCardDraggingKey(null)
     }
   }
 
@@ -555,24 +541,6 @@ export function GroupsScreen() {
       return
     }
     await updateGroupPartial(group, { strategy })
-  }
-
-  async function reorderCardItems(group: ModelGroup, fromIndex: number, toIndex: number) {
-    const orderedItems = toForm(group).items
-    const nextItems = moveItems(orderedItems, fromIndex, toIndex)
-    if (nextItems === orderedItems) {
-      setCardDraggingKey(null)
-      return
-    }
-    await updateGroupPartial(group, { items: nextItems })
-  }
-
-  function updateCardDrag(groupId: string, index: number) {
-    setCardDraggingKey(`${groupId}:${index}`)
-  }
-
-  function resetCardDrag() {
-    setCardDraggingKey(null)
   }
 
   async function toggleMember(group: ModelGroup, index: number) {
@@ -629,202 +597,216 @@ export function GroupsScreen() {
   }
 
   return (
-    <section className="space-y-4">
-      {typeof document !== 'undefined' && document.getElementById('header-portal') ? createPortal(
-        <div className="flex flex-1 items-center justify-end gap-2">
-          <div className="flex h-9 w-full max-w-sm items-center rounded-lg border border-[var(--line)] bg-[var(--panel-strong)] px-3 shadow-sm transition-colors focus-within:border-[var(--accent)]">
-            <Search size={15} className="text-[var(--muted)]" />
-            <input className="ml-2 h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型组' : 'Search groups'} />
-            {search ? <button type="button" className="text-[var(--muted)] hover:text-[var(--text)]" onClick={() => setSearch('')}><X size={14} /></button> : null}
-          </div>
-          <button className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-sm transition-colors hover:opacity-90" type="button" onClick={openCreate}>
+    <section className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '模型组' : 'Groups'}</h1>
+        <div className="flex items-center gap-2">
+          <ToolbarSearchInput
+            value={search}
+            onChange={setSearch}
+            onClear={() => setSearch('')}
+            placeholder={locale === 'zh-CN' ? '搜索模型组' : 'Search groups'}
+          />
+          <Button className="rounded-lg" size="icon-sm" type="button" onClick={openCreate}>
             <Plus size={18} />
-          </button>
-        </div>,
-        document.getElementById('header-portal')!
-      ) : null}
+          </Button>
+        </div>
+      </div>
 
       <div className="mt-2">
-        {error ? <p className="text-sm text-[var(--danger)] mb-4">{error}</p> : null}
-        {isLoading ? <p className="text-sm text-[var(--muted)] mb-4">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</p> : null}
+        {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
+        {isLoading ? <p className="mb-4 text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</p> : null}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        {visibleGroups.map((group) => {
-          const GroupAvatar = getModelGroupAvatar(group.name)
-          const items = group.items.slice().sort((a, b) => a.sort_order - b.sort_order)
-          const cardItems = items.map((item) => ({
-            channel_id: item.channel_id,
-            channel_name: item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id,
-            credential_id: item.credential_id,
-            credential_name: item.credential_name,
-            model_name: item.model_name,
-            enabled: item.enabled,
-          }))
-          return (
-            <article key={group.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)]">
-              <div className="flex items-start justify-between gap-3">
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetailTarget(group)}>
-                  <div className="flex items-center gap-3">
-                    <GroupAvatar size={36} />
-                    <div className="min-w-0">
-                      <div className="truncate text-[15px] font-semibold text-[var(--text)]">{group.name}</div>
+      {visibleGroups.length ? (
+        <div className="rounded-xl border bg-card p-3">
+          <ItemGroup className="gap-3">
+            {visibleGroups.map((group) => {
+              const GroupAvatar = getModelGroupAvatar(group.name)
+              const items = group.items.slice().sort((a, b) => a.sort_order - b.sort_order)
+              const cardItems = items.map((item) => ({
+                channel_id: item.channel_id,
+                channel_name: item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id,
+                credential_id: item.credential_id,
+                credential_name: item.credential_name,
+                model_name: item.model_name,
+                enabled: item.enabled,
+              }))
+              const previewItems = cardItems.slice(0, 3)
+              return (
+                <Item key={group.id} variant="outline" className="gap-4 px-4 py-4">
+                  <ItemMedia variant="icon" className="flex size-11 rounded-xl bg-muted/40">
+                    <GroupAvatar size={30} />
+                  </ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ItemTitle className="truncate">{group.name}</ItemTitle>
+                      <Badge variant="secondary" className="px-2.5 py-0.5 text-xs font-medium">
+                        {protocolLabel(group.protocol, locale)}
+                      </Badge>
+                      <Badge variant="outline" className="px-2.5 py-0.5 text-xs font-medium">
+                        {items.length}
+                        {locale === 'zh-CN' ? ' 个成员' : ' members'}
+                      </Badge>
                     </div>
-                  </div>
-                </button>
-                <div className="flex items-center gap-1.5">
-                  <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => openEdit(group)}><Pencil size={15} /></button>
-                  <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--danger)] transition hover:bg-[rgba(217,111,93,0.08)]" onClick={() => setDeleteTarget(group)}><Trash2 size={15} /></button>
-                </div>
-              </div>
+                    <ItemDescription className="mt-1">
+                      {group.match_regex || (locale === 'zh-CN' ? '未设置匹配规则，默认按模型组名称匹配。' : 'No match regex, matching by group name.')}
+                    </ItemDescription>
+                    <ItemFooter className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                      <StrategyToggle
+                        value={group.strategy}
+                        locale={locale}
+                        disabled={busyId === group.id}
+                        onChange={(value) => void changeStrategy(group, value)}
+                      />
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {previewItems.map((item, index) => (
+                          <Button
+                            key={itemKey(item)}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className={cn('h-auto rounded-full px-3 py-1.5', !item.enabled && 'opacity-55')}
+                            onClick={() => {
+                              void toggleMember(group, index)
+                            }}
+                            disabled={busyId === group.id}
+                          >
+                            {item.model_name}
+                          </Button>
+                        ))}
+                        {cardItems.length > previewItems.length ? (
+                          <Badge variant="outline" className="px-2.5 py-1 text-xs font-medium">
+                            +{cardItems.length - previewItems.length}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </ItemFooter>
+                  </ItemContent>
+                  <ItemActions className="ml-auto self-start">
+                    <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={() => setDetailTarget(group)}>
+                      <Search size={15} />
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={() => openEdit(group)}><Pencil size={15} /></Button>
+                    <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(group)}><Trash2 size={15} /></Button>
+                  </ItemActions>
+                </Item>
+              )
+            })}
+          </ItemGroup>
+        </div>
+      ) : null}
 
-              <div className="mt-4 flex gap-1">
-                {strategyOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    disabled={busyId === group.id}
-                    onClick={() => void changeStrategy(group, option.value)}
-                    className={cn(
-                      'flex-1 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-                      option.value === group.strategy
-                        ? 'bg-[var(--accent)] text-white'
-                        : 'bg-[var(--panel-soft)] text-[var(--text)] hover:bg-[var(--panel)]'
-                    )}
-                  >
-                    {locale === 'zh-CN' ? option.zh : option.en}
-                  </button>
-                ))}
-              </div>
+      {!isLoading && !visibleGroups.length ? (
+        <div className="rounded-xl border border-dashed bg-card px-6 py-12 text-center text-sm text-muted-foreground">
+          {search.trim()
+            ? (locale === 'zh-CN' ? '没有匹配的模型组。' : 'No matching groups.')
+            : (locale === 'zh-CN' ? '当前还没有模型组。' : 'No groups yet.')}
+        </div>
+      ) : null}
 
-              <div className={panelClassName('mt-4 p-3')}>
-                <button type="button" className="w-full text-left" onClick={() => setDetailTarget(group)}>
-                <div className="flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
-                  <span>{locale === 'zh-CN' ? '模型成员' : 'Members'}</span>
-                  <span>{items.length}</span>
-                </div>
-                </button>
-                <div className="mt-3 space-y-2">
-                  {cardItems.length ? cardItems.map((item, index) => (
-                    <CardMemberRow
-                      key={itemKey(item)}
-                      item={item}
-                      index={index}
-                      dragging={cardDraggingKey === `${group.id}:${index}`}
-                      busy={busyId === group.id}
-                      onToggle={() => void toggleMember(group, index)}
-                      onDragStart={() => updateCardDrag(group.id, index)}
-                      onDrop={() => {
-                        const prefix = `${group.id}:`
-                        if (!cardDraggingKey?.startsWith(prefix)) return
-                        const fromIndex = Number.parseInt(cardDraggingKey.slice(prefix.length), 10)
-                        if (Number.isNaN(fromIndex) || fromIndex === index) {
-                          resetCardDrag()
-                          return
-                        }
-                        void reorderCardItems(group, fromIndex, index)
-                      }}
-                      onDragEnd={resetCardDrag}
-                    />
-                  )) : <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无成员' : 'No members'}</p>}
-                </div>
-              </div>
-            </article>
-          )
-        })}
-      </div>
-
-      <Dialog.Root open={Boolean(detailTarget)} onOpenChange={(open) => { if (!open) setDetailTarget(null) }}>
+      <Dialog open={Boolean(detailTarget)} onOpenChange={(open) => { if (!open) setDetailTarget(null) }}>
         {detailTarget ? (
           <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '模型组详情' : 'Group detail'}>
-            <div className="space-y-5 overflow-y-auto pr-1">
-              <div className={panelClassName('border-transparent p-5')}>
+            <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+              <div className={panelClassName('p-4')}>
                 <div className="mb-4 flex items-center gap-3">
                   {DetailAvatar ? <DetailAvatar size={44} /> : null}
                   <div className="min-w-0">
-                    <div className="truncate text-base font-semibold text-[var(--text)]">{detailTarget.name}</div>
+                    <div className="truncate text-sm font-semibold text-foreground">{detailTarget.name}</div>
                   </div>
                 </div>
-                <div className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{locale === 'zh-CN' ? '基础信息' : 'Overview'}</div>
-                <div className="mt-4 grid gap-x-8 gap-y-4 text-sm text-[var(--text)] md:grid-cols-2">
-                  <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '名称' : 'Name'}</div><div className="mt-1">{detailTarget.name}</div></div>
-                  <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '协议' : 'Protocol'}</div><div className="mt-1">{protocolLabel(detailTarget.protocol, locale)}</div></div>
-                  <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '策略' : 'Strategy'}</div><div className="mt-1">{strategyOptions.find((item) => item.value === detailTarget.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</div></div>
-                  <div><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '成员数量' : 'Members'}</div><div className="mt-1">{detailTarget.items.length}</div></div>
-                  <div className="md:col-span-2"><div className="text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '匹配正则' : 'Match regex'}</div><div className="mt-1 break-all">{detailTarget.match_regex || (locale === 'zh-CN' ? '未设置，按名称匹配' : 'Not set, match by name')}</div></div>
+                <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{locale === 'zh-CN' ? '基础信息' : 'Overview'}</div>
+                <div className="mt-3 grid gap-x-6 gap-y-3 text-sm text-foreground md:grid-cols-2">
+                  <div><div className="text-xs text-muted-foreground">{locale === 'zh-CN' ? '名称' : 'Name'}</div><div className="mt-1">{detailTarget.name}</div></div>
+                  <div><div className="text-xs text-muted-foreground">{locale === 'zh-CN' ? '协议' : 'Protocol'}</div><div className="mt-1">{protocolLabel(detailTarget.protocol, locale)}</div></div>
+                  <div><div className="text-xs text-muted-foreground">{locale === 'zh-CN' ? '策略' : 'Strategy'}</div><div className="mt-1">{strategyOptions.find((item) => item.value === detailTarget.strategy)?.[locale === 'zh-CN' ? 'zh' : 'en']}</div></div>
+                  <div><div className="text-xs text-muted-foreground">{locale === 'zh-CN' ? '成员数量' : 'Members'}</div><div className="mt-1">{detailTarget.items.length}</div></div>
+                  <div className="md:col-span-2"><div className="text-xs text-muted-foreground">{locale === 'zh-CN' ? '匹配正则' : 'Match regex'}</div><div className="mt-1 break-all">{detailTarget.match_regex || (locale === 'zh-CN' ? '未设置，按名称匹配' : 'Not set, match by name')}</div></div>
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <button className="h-12 rounded-2xl bg-[var(--accent)] text-sm font-medium text-white" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑模型组' : 'Edit group'}</button>
-                <button className="h-12 rounded-2xl bg-[var(--danger)] text-sm font-medium text-white" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除模型组' : 'Delete group'}</button>
+                <Button className="h-11" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑模型组' : 'Edit group'}</Button>
+                <Button className="h-11" variant="destructive" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除模型组' : 'Delete group'}</Button>
               </div>
             </div>
           </AppDialogContent>
         ) : null}
-      </Dialog.Root>
+      </Dialog>
 
-      <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <AppDialogContent className="max-w-6xl" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
           <form className="flex h-full min-h-0 flex-col overflow-hidden" onSubmit={submit}>
-            <div className="hide-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto pr-1" style={{ maxHeight: 'calc(88vh - 210px)' }}>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '协议' : 'Protocol'}</span>
-                <select className={inputClassName()} value={form.protocol} onChange={(e) => changeProtocol(e.target.value as ProtocolKind)}>
-                  {protocolOptions(locale).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '模型组名称' : 'Group name'}</span>
-                <input className={inputClassName()} placeholder={locale === 'zh-CN' ? '例如 claude-sonnet-4-6' : 'For example claude-sonnet-4-6'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '匹配正则' : 'Match regex'}</span>
-                <input className={inputClassName()} placeholder={locale === 'zh-CN' ? '留空则按模型组名称匹配' : 'Optional, otherwise match by group name'} value={form.match_regex} onChange={(e) => setForm({ ...form, match_regex: e.target.value })} />
-              </label>
-              </div>
+            <div className="hide-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" style={{ maxHeight: 'calc(88vh - 210px)' }}>
+              <section className="grid gap-4">
+                <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '基本信息' : 'Group settings'}</div>
+                <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <Field>
+                    <FieldLabel htmlFor="group-protocol">{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
+                    <NativeSelect id="group-protocol" className={selectClassName()} value={form.protocol} onChange={(e) => changeProtocol(e.target.value as ProtocolKind)}>
+                      {protocolOptions(locale).map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
+                    </NativeSelect>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="group-name">{locale === 'zh-CN' ? '模型组名称' : 'Group name'}</FieldLabel>
+                    <Input id="group-name" placeholder={locale === 'zh-CN' ? '例如 claude-sonnet-4-6' : 'For example claude-sonnet-4-6'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="group-match-regex">{locale === 'zh-CN' ? '匹配正则' : 'Match regex'}</FieldLabel>
+                    <Input id="group-match-regex" placeholder={locale === 'zh-CN' ? '留空则按模型组名称匹配' : 'Optional, otherwise match by group name'} value={form.match_regex} onChange={(e) => setForm({ ...form, match_regex: e.target.value })} />
+                    <FieldDescription>{locale === 'zh-CN' ? '用于自动批量匹配模型，也用于路由匹配。' : 'Used for bulk matching and routing.'}</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '路由策略' : 'Routing strategy'}</FieldLabel>
+                    <StrategyToggle value={form.strategy} locale={locale} onChange={(value) => setForm((current) => ({ ...current, strategy: value }))} />
+                  </Field>
+                </FieldGroup>
+              </section>
+
+              <Separator />
 
               <div className="grid min-h-0 gap-4 overflow-hidden lg:grid-cols-[1.05fr_0.95fr]">
               <section className={panelClassName('flex min-h-0 flex-col overflow-hidden')}>
-                <div className="grid gap-3 border-b border-[var(--line)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3">
-                    <Search size={14} className="text-[var(--muted)]" />
-                    <input className="h-9 min-w-0 flex-1 bg-transparent text-[13px] outline-none" value={candidateSearch} onChange={(e) => setCandidateSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型' : 'Search models'} />
+                <div className="grid gap-3 px-2 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                  <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
+                    <Search size={14} className="text-muted-foreground" />
+                    <Input className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0" value={candidateSearch} onChange={(e) => setCandidateSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型' : 'Search models'} />
                   </div>
                   <div className="flex items-center justify-end gap-2">
-                    <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-[12px] text-[var(--text)] disabled:opacity-50" onClick={addMatchedItems} disabled={!matchedCandidates.length}>
+                    <Button type="button" variant="outline" onClick={addMatchedItems} disabled={!matchedCandidates.length}>
                       <Sparkles size={13} />
                       {locale === 'zh-CN' ? `批量加入 ${matchedCandidates.length}` : `Add matched ${matchedCandidates.length}`}
-                    </button>
-                    <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-[12px] text-[var(--text)] disabled:opacity-50" onClick={() => void refetchCandidates()} disabled={isFetchingCandidates}>
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => void refetchCandidates()} disabled={isFetchingCandidates}>
                       <RefreshCcw size={13} />
                       {locale === 'zh-CN' ? '刷新列表' : 'Refresh'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
-                <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-                  <div className="space-y-2">
+                <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+                  <div className="flex flex-col gap-2">
                     {groupedCandidates.map((channel) => {
                       const currentChannel = channelMap.get(channel.channel_id)
                       const isOpen = expandedChannels.includes(channel.channel_id)
                       const endpoint = channelEndpoint(currentChannel)
                       return (
-                        <div key={channel.channel_id} className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--panel-strong)]">
-                          <button type="button" className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-[var(--panel-soft)]" onClick={() => toggleChannel(channel.channel_id)}>
+                        <div key={channel.channel_id} className="border-b pb-2 last:border-b-0 last:pb-0">
+                          <Button type="button" variant="ghost" className="h-auto w-full justify-start gap-3 rounded-none px-3 py-3 text-left hover:bg-muted" onClick={() => toggleChannel(channel.channel_id)}>
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-[13px] font-medium text-[var(--text)]">{channel.channel_name}</div>
-                              <div className="mt-1 truncate text-[11px] text-[var(--muted)]">{endpoint}</div>
+                              <div className="truncate text-sm font-medium text-foreground">{channel.channel_name}</div>
+                              <div className="mt-1 truncate text-xs text-muted-foreground">{endpoint}</div>
                             </div>
-                            <span className="rounded-full bg-[var(--panel-soft)] px-2 py-0.5 text-[11px] text-[var(--muted)]">{channel.credentials.reduce((total, credential) => total + credential.items.length, 0)}</span>
-                            <ChevronDown size={15} className={cn('text-[var(--muted)] transition-transform', isOpen && 'rotate-180')} />
-                          </button>
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{channel.credentials.reduce((total, credential) => total + credential.items.length, 0)}</span>
+                            <ChevronDown size={15} className={cn('text-muted-foreground transition-transform', isOpen && 'rotate-180')} />
+                          </Button>
                           {isOpen ? (
-                            <div className="space-y-1.5 border-t border-[var(--line)] px-3 py-3">
+                            <div className="flex flex-col gap-2 px-3 py-2.5">
+                              <Separator />
                               {channel.credentials.map((credential) => (
-                                <div key={`${channel.channel_id}-${credential.credential_id}`} className="space-y-1.5 rounded-xl bg-[var(--panel-soft)] p-2.5">
-                                  <div className="px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">{credential.credential_name || (locale === 'zh-CN' ? '未命名 Key' : 'Unnamed key')}</div>
+                                <div key={`${channel.channel_id}-${credential.credential_id}`} className="flex flex-col gap-1.5 py-1.5">
+                                  <div className="px-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{credential.credential_name || (locale === 'zh-CN' ? '未命名 Key' : 'Unnamed key')}</div>
                                   {credential.items.map((item) => (
                                     <CandidateRow key={`${item.channel_id}-${item.credential_id}-${item.model_name}`} item={item} active={form.items.some((member) => itemKey(member) === itemKey(item))} onClick={() => addItem(item)} />
                                   ))}
@@ -835,23 +817,23 @@ export function GroupsScreen() {
                         </div>
                       )
                     })}
-                    {!groupedCandidates.length ? <p className="px-1 py-6 text-center text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '暂无可选模型' : 'No candidates found'}</p> : null}
+                    {!groupedCandidates.length ? <p className="px-1 py-6 text-center text-sm text-muted-foreground">{locale === 'zh-CN' ? '暂无可选模型' : 'No candidates found'}</p> : null}
                   </div>
                 </div>
               </section>
 
               <section className={panelClassName('flex min-h-0 flex-col overflow-hidden')}>
-                <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
-                  <div className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
-                  <div className="flex items-center gap-2">
-                    <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-2.5 py-1 text-xs text-[var(--muted)]" onClick={() => setAllMembersEnabled(true)}>{locale === 'zh-CN' ? '全开' : 'Enable all'}</button>
-                    <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-2.5 py-1 text-xs text-[var(--muted)]" onClick={() => setAllMembersEnabled(false)}>{locale === 'zh-CN' ? '全关' : 'Disable all'}</button>
-                    <button type="button" className={cn('rounded-xl border px-2.5 py-1 text-xs', showEnabledOnly ? 'border-[var(--accent)] bg-[var(--panel-soft)] text-[var(--accent)]' : 'border-[var(--line)] bg-[var(--panel)] text-[var(--muted)]')} onClick={() => setShowEnabledOnly((current) => !current)}>{locale === 'zh-CN' ? '仅看启用' : 'Enabled only'}</button>
-                    <span className="rounded-full bg-[var(--panel-soft)] px-2.5 py-1 text-xs text-[var(--muted)]">{visibleSelectedItems.length}/{form.items.length}</span>
+                <div className="flex items-center justify-between px-2 py-1">
+                  <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button type="button" variant="outline" className="text-muted-foreground" onClick={() => setAllMembersEnabled(true)}>{locale === 'zh-CN' ? '全开' : 'Enable all'}</Button>
+                    <Button type="button" variant="outline" className="text-muted-foreground" onClick={() => setAllMembersEnabled(false)}>{locale === 'zh-CN' ? '全关' : 'Disable all'}</Button>
+                    <Button type="button" variant={showEnabledOnly ? 'default' : 'outline'} className={cn(!showEnabledOnly && 'text-muted-foreground')} onClick={() => setShowEnabledOnly((current) => !current)}>{locale === 'zh-CN' ? '仅看启用' : 'Enabled only'}</Button>
+                    <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{visibleSelectedItems.length}/{form.items.length}</span>
                   </div>
                 </div>
-                <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
-                  <div className="space-y-1.5">
+                <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2 pt-1">
+                  <div className="flex flex-col gap-1.5">
                     {visibleSelectedItems.length ? visibleSelectedItems.map((item) => {
                       const index = form.items.findIndex((candidate) => itemKey(candidate) === itemKey(item))
                       return (
@@ -874,36 +856,35 @@ export function GroupsScreen() {
                         }}
                         onDragEnd={() => setDraggingIndex(null)}
                       />
-                    )}) : <p className="px-1 py-6 text-center text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前筛选下没有成员' : 'No members under current filter'}</p>}
+                    )}) : <p className="px-1 py-6 text-center text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前筛选下没有成员' : 'No members under current filter'}</p>}
                   </div>
                 </div>
               </section>
             </div>
             </div>
 
-            <div className="mt-4 shrink-0 border-t border-[var(--line)] bg-[var(--panel-strong)] pt-4">
-              {error ? <p className="mb-3 text-sm text-[var(--danger)]">{error}</p> : null}
+            <div className="mt-4 shrink-0 border-t bg-background pt-4">
+              {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
               <div className="flex justify-end gap-3">
-              <button className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)]" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-              <button className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white" type="submit">{editingId ? (locale === 'zh-CN' ? '保存模型组' : 'Save group') : (locale === 'zh-CN' ? '创建模型组' : 'Create group')}</button>
+                <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
+                <Button type="submit">{editingId ? (locale === 'zh-CN' ? '保存模型组' : 'Save group') : (locale === 'zh-CN' ? '创建模型组' : 'Create group')}</Button>
               </div>
             </div>
           </form>
         </AppDialogContent>
-      </Dialog.Root>
+      </Dialog>
 
-      <Dialog.Root open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
         <AppDialogContent className="max-w-lg" title={locale === 'zh-CN' ? '确认删除模型组' : 'Delete group'} description={locale === 'zh-CN' ? '删除后，该模型组名称将不再参与路由匹配。' : 'This group will no longer participate in routing.'}>
           <div className="grid gap-5 overflow-y-auto pr-1">
-            <div className="rounded-2xl bg-[var(--panel)] p-4"><strong>{deleteTarget?.name}</strong></div>
+            <div className="rounded-md border bg-muted/30 p-4"><strong>{deleteTarget?.name}</strong></div>
             <div className="flex justify-end gap-3">
-              <button className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)]" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-              <button className="rounded-xl bg-[var(--danger)] px-4 py-2.5 text-sm font-medium text-white" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</button>
+              <Button variant="outline" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
+              <Button variant="destructive" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</Button>
             </div>
           </div>
         </AppDialogContent>
-      </Dialog.Root>
+      </Dialog>
     </section>
   )
 }
-

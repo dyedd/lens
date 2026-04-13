@@ -1,9 +1,8 @@
 "use client"
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ChevronDown, Ellipsis, KeyRound, Pencil, Plus, RefreshCcw, Search, Server, Trash2, Waypoints, X } from 'lucide-react'
+import { Activity, ChevronDown, Ellipsis, Info, KeyRound, Pencil, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
 import {
   ApiError,
   ProtocolKind,
@@ -19,11 +18,27 @@ import {
   apiRequest,
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
-import { cn } from '@/lib/cn'
+import { cn } from '@/lib/utils'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
-import { SegmentedControl } from '@/components/ui/segmented-control'
-
-type ViewMode = 'cards' | 'list'
+import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from '@/components/ui/item'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
   { value: 'openai_chat', label: 'OpenAI Chat' },
@@ -125,25 +140,8 @@ const emptyForm = (): FormState => ({
   protocols: [emptyProtocol()],
 })
 
-function inputClassName() {
-  return 'h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
-}
-
-function textareaClassName() {
-  return 'min-h-24 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]'
-}
-
-function panelClassName(extra = '') {
-  return cn('rounded-[24px] border border-[var(--line)] bg-[var(--panel)]', extra)
-}
-
 function protocolLabel(protocol: ProtocolKind) {
   return protocolOptions.find((item) => item.value === protocol)?.label ?? protocol
-}
-
-function maskKey(value: string) {
-  if (value.length <= 10) return value
-  return `${value.slice(0, 6)}...${value.slice(-4)}`
 }
 
 function isGeneratedCredentialName(value: string) {
@@ -167,8 +165,12 @@ function safeText(value: string | null | undefined) {
 
 function modelBadgeClassName(enabled: boolean) {
   return enabled
-    ? 'inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:border-[var(--line-strong)]'
-    : 'inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-sm font-medium text-[var(--muted)]'
+    ? 'inline-flex h-8 items-center gap-2 rounded-full border bg-background px-3 text-sm font-medium text-foreground transition hover:bg-muted'
+    : 'inline-flex h-8 items-center gap-2 rounded-full border bg-muted/40 px-3 text-sm font-medium text-muted-foreground'
+}
+
+function selectClassName() {
+  return 'w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground'
 }
 
 function siteSubtitle(site: Site) {
@@ -202,15 +204,32 @@ function isSiteEnabled(site: Site) {
 
 function MetricCard({ icon, label, value, tone = 'default' }: { icon: React.ReactNode; label: string; value: string; tone?: 'default' | 'accent' | 'danger' }) {
   const valueClassName = tone === 'accent'
-    ? 'text-[var(--accent)]'
+    ? 'text-primary'
     : tone === 'danger'
-      ? 'text-[var(--danger)]'
-      : 'text-[var(--text)]'
+      ? 'text-destructive'
+      : 'text-foreground'
 
   return (
-    <div className="rounded-[22px] border border-[var(--line)] bg-[var(--panel)] px-4 py-4">
-      <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--muted)]">{icon}{label}</div>
-      <div className={cn('mt-4 text-[18px] font-semibold leading-none sm:text-[22px]', valueClassName)}>{value}</div>
+    <div className="rounded-md border bg-muted/30 px-4 py-4">
+      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">{icon}{label}</div>
+      <div className={cn('mt-4 text-base font-semibold leading-none', valueClassName)}>{value}</div>
+    </div>
+  )
+}
+
+function ChannelMetric({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+}) {
+  return (
+    <div className="inline-flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
+      <span className="inline-flex size-4.5 items-center justify-center">{icon}</span>
+      <span className="truncate">{label} {value}</span>
     </div>
   )
 }
@@ -294,27 +313,12 @@ function duplicateProtocolKinds(protocols: FormProtocol[]) {
 }
 
 function SwitchButton({ checked, onChange, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative h-6 w-11 rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60',
-        checked ? 'bg-[var(--accent)]' : 'bg-[var(--line-strong)]'
-      )}
-    >
-      <span className={cn('absolute top-1 h-4 w-4 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.18)] transition-all duration-200', checked ? 'right-1' : 'left-1')} />
-    </button>
-  )
+  return <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
 }
 
 export function ChannelsScreen() {
   const queryClient = useQueryClient()
   const { locale } = useI18n()
-  const [viewMode, setViewMode] = useState<ViewMode>('cards')
   const [search, setSearch] = useState('')
   const [detailTarget, setDetailTarget] = useState<SiteRow | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -503,13 +507,6 @@ export function ChannelsScreen() {
     }))
   }
 
-  function updateProtocolModel(protocolIndex: number, modelIndex: number, patch: Partial<SiteModelInput>) {
-    setForm((current) => ({
-      ...current,
-      protocols: current.protocols.map((item, itemIndex) => itemIndex !== protocolIndex ? item : { ...item, models: item.models.map((model, currentModelIndex) => currentModelIndex === modelIndex ? { ...model, ...patch } : model) }),
-    }))
-  }
-
   function addManualProtocolModel(protocolIndex: number, credentialId: string) {
     setForm((current) => ({
       ...current,
@@ -565,7 +562,7 @@ export function ChannelsScreen() {
   async function fetchProtocolModels(protocolIndex: number) {
     const protocol = form.protocols[protocolIndex]
     if (!protocol) return
-    const activeCredentials = form.credentials.filter((item, index) => item.enabled && item.api_key.trim()).map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
+    const activeCredentials = form.credentials.filter((item) => item.enabled && item.api_key.trim()).map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
     const selectedCredentialId = activeCredentials.some((item) => item.id === protocol.model_filter_credential_id)
       ? protocol.model_filter_credential_id || ''
       : activeCredentials[0]?.id || ''
@@ -614,116 +611,94 @@ export function ChannelsScreen() {
   const detailStats = detailTarget ? buildDetailStats(detailTarget, siteStats.get(detailTarget.id)) : null
 
   return (
-    <section className="space-y-4">
-      {typeof document !== 'undefined' && document.getElementById('header-portal') ? createPortal(
-        <div className="flex flex-1 items-center justify-end gap-2">
-          <div className="flex h-9 w-full max-w-sm items-center rounded-lg border border-[var(--line)] bg-[var(--panel-strong)] px-3 shadow-sm transition-colors focus-within:border-[var(--accent)]">
-            <Search size={15} className="text-[var(--muted)]" />
-            <input className="ml-2 h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索渠道 / 协议 / 模型' : 'Search channels, models...'} />
-            {search ? <button type="button" className="text-[var(--muted)] hover:text-[var(--text)]" onClick={() => setSearch('')}><X size={14} /></button> : null}
-          </div>
-          <SegmentedControl value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)} options={[{ value: 'cards', label: locale === 'zh-CN' ? '卡片' : 'Cards' }, { value: 'list', label: locale === 'zh-CN' ? '列表' : 'List' }]} />
-          <button type="button" onClick={openCreate} className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-sm transition-colors hover:opacity-90" title={locale === 'zh-CN' ? '新建渠道' : 'New channel'}>
+    <section className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '渠道' : 'Channels'}</h1>
+        <div className="flex items-center gap-2">
+          <ToolbarSearchInput
+            value={search}
+            onChange={setSearch}
+            onClear={() => setSearch('')}
+            placeholder={locale === 'zh-CN' ? '搜索渠道 / 协议 / 模型' : 'Search channels, models...'}
+          />
+          <Button type="button" onClick={openCreate} className="rounded-lg" size="icon-sm" title={locale === 'zh-CN' ? '新建渠道' : 'New channel'}>
             <Plus size={18} />
-          </button>
-        </div>,
-        document.getElementById('header-portal')!
-      ) : null}
-
-      <div className="grid gap-4 mt-2">
-        {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
-        {isLoading ? <p className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</p> : null}
+          </Button>
+        </div>
       </div>
 
-      {viewMode === 'cards' ? (
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          {visibleSites.map((site) => {
-            const stats = siteStats.get(site.id)
-            return (
-              <article key={site.id} className="rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[var(--shadow-sm)] transition-colors hover:bg-[var(--panel-soft)]">
-                <div className="flex items-start justify-between gap-3">
-                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetailTarget(site)}>
-                    <div className="truncate text-[17px] font-semibold text-[var(--text)]">{site.name}</div>
-                  </button>
-                  <div className="flex items-center gap-2">
-                    <SwitchButton checked={isSiteEnabled(site)} disabled={busyId === site.id} onChange={(checked) => void toggleSiteEnabled(site, checked)} />
-                    <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => openEdit(site)}><Pencil size={15} /></button>
-                    <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--danger)] transition hover:bg-[rgba(217,111,93,0.08)]" onClick={() => setDeleteTarget(site)}><Trash2 size={15} /></button>
-                  </div>
-                </div>
+      <div className="grid gap-4 mt-2">
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {isLoading ? <p className="text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</p> : null}
+      </div>
 
-                <button type="button" className="mt-4 grid w-full gap-3 text-left" onClick={() => setDetailTarget(site)}>
-                  <div className="flex items-center justify-between rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
-                    <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(37,99,235,0.12)] text-[var(--accent)]"><Activity className="h-4 w-4" /></span><span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '请求数' : 'Requests'}</span></div>
-                    <strong className="text-base text-[var(--text)]">{stats?.requestCount ?? 0}</strong>
-                  </div>
-                  <div className="flex items-center justify-between rounded-[22px] border border-[var(--line)] bg-[var(--panel)] p-3">
-                    <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(37,99,235,0.12)] text-[var(--accent)]"><Waypoints className="h-4 w-4" /></span><span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '协议 / 模型' : 'Protocols / Models'}</span></div>
-                    <strong className="text-base text-[var(--text)]">{site.protocol_count} / {site.model_count}</strong>
-                  </div>
-                </button>
-              </article>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-[28px] border border-[var(--line)] bg-[var(--panel-strong)] shadow-[var(--shadow-sm)]">
-          <div className="grid grid-cols-[minmax(0,1.1fr)_1fr_110px_120px_110px] gap-4 border-b border-[var(--line)] px-5 py-3 text-xs font-semibold text-[var(--muted)]">
-            <span>{locale === 'zh-CN' ? '渠道' : 'Channel'}</span>
-            <span>{locale === 'zh-CN' ? '概览' : 'Overview'}</span>
-            <span>{locale === 'zh-CN' ? '请求数' : 'Requests'}</span>
-            <span>{locale === 'zh-CN' ? '协议 / 模型' : 'Protocols / Models'}</span>
-            <span>{locale === 'zh-CN' ? '操作' : 'Actions'}</span>
-          </div>
-          <div className="divide-y divide-[var(--line)]">
+      {visibleSites.length ? (
+        <div className="rounded-xl border bg-card p-3">
+          <ItemGroup className="gap-3">
             {visibleSites.map((site) => {
               const stats = siteStats.get(site.id)
               return (
-                <div key={site.id} className="grid grid-cols-[minmax(0,1.1fr)_1fr_110px_120px_110px] gap-4 px-5 py-4 text-sm text-[var(--text)]">
-                  <button type="button" className="min-w-0 text-left" onClick={() => setDetailTarget(site)}>
-                    <div className="truncate font-semibold">{site.name}</div>
-                  </button>
-                  <button type="button" className="min-w-0 text-left" onClick={() => setDetailTarget(site)}>
-                    <div className="truncate text-xs text-[var(--muted)]">{locale === 'zh-CN' ? '渠道概览' : 'Channel overview'}</div>
-                    <div className="mt-1 truncate">{locale === 'zh-CN' ? `${site.protocol_count} 个协议，${site.model_count} 个模型` : `${site.protocol_count} protocols, ${site.model_count} models`}</div>
-                  </button>
-                  <div className="flex items-center text-[var(--muted)]">{stats?.requestCount ?? 0}</div>
-                  <div className="flex items-center text-[var(--muted)]">{site.protocol_count} / {site.model_count}</div>
-                  <div className="flex items-center justify-end gap-2">
+                <Item key={site.id} variant="outline" className="gap-4 px-4 py-4">
+                  <ItemMedia variant="icon" className="flex size-11 rounded-xl bg-primary/10 text-primary">
+                    <Waypoints className="h-5 w-5" />
+                  </ItemMedia>
+                  <Button type="button" variant="ghost" className="h-auto min-w-0 flex-1 justify-start p-0 text-left hover:bg-transparent" onClick={() => setDetailTarget(site)}>
+                    <ItemContent className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <ItemTitle className="truncate">{site.name}</ItemTitle>
+                      </div>
+                      <ItemDescription className="mt-1 truncate">{site.subtitle || site.endpoint_summary || (locale === 'zh-CN' ? '未配置协议' : 'No protocols')}</ItemDescription>
+                      <ItemFooter className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <ChannelMetric icon={<Activity size={14} />} label={locale === 'zh-CN' ? '请求数' : 'Requests'} value={String(stats?.requestCount ?? 0)} />
+                        <ChannelMetric icon={<Waypoints size={14} />} label={locale === 'zh-CN' ? '协议' : 'Protocols'} value={String(site.protocol_count)} />
+                        <ChannelMetric icon={<Server size={14} />} label={locale === 'zh-CN' ? '模型' : 'Models'} value={String(site.model_count)} />
+                        <ChannelMetric icon={<KeyRound size={14} />} label={locale === 'zh-CN' ? '密钥' : 'Keys'} value={String(site.credential_count)} />
+                      </ItemFooter>
+                    </ItemContent>
+                  </Button>
+                  <ItemActions className="ml-auto self-start">
                     <SwitchButton checked={isSiteEnabled(site)} disabled={busyId === site.id} onChange={(checked) => void toggleSiteEnabled(site, checked)} />
-                    <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--text)]" onClick={() => openEdit(site)}><Pencil size={15} /></button>
-                    <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-transparent text-[var(--danger)] transition hover:bg-[rgba(217,111,93,0.08)]" onClick={() => setDeleteTarget(site)}><Trash2 size={15} /></button>
-                  </div>
-                </div>
+                    <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={() => openEdit(site)}><Pencil size={15} /></Button>
+                    <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(site)}><Trash2 size={15} /></Button>
+                  </ItemActions>
+                </Item>
               )
             })}
-          </div>
+          </ItemGroup>
         </div>
-      )}
+      ) : null}
 
-      <Dialog.Root open={Boolean(detailTarget)} onOpenChange={(open) => { if (!open) setDetailTarget(null) }}>
+      {!isLoading && !visibleSites.length ? (
+        <div className="rounded-xl border border-dashed bg-card px-6 py-12 text-center text-sm text-muted-foreground">
+          {search.trim()
+            ? (locale === 'zh-CN' ? '没有匹配的渠道。' : 'No matching channels.')
+            : (locale === 'zh-CN' ? '当前还没有渠道。' : 'No channels yet.')}
+        </div>
+      ) : null}
+
+      <Dialog open={Boolean(detailTarget)} onOpenChange={(open) => { if (!open) setDetailTarget(null) }}>
         {detailTarget && detailStats ? (
           <AppDialogContent className="max-w-4xl" title={locale === 'zh-CN' ? '渠道详情' : 'Channel detail'}>
-            <div className="space-y-6">
+            <div className="flex flex-col gap-6">
               <div className="grid gap-3 sm:grid-cols-2">
-                <MetricCard icon={<Activity className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '总请求' : 'Requests'} value={String(detailStats.requestCount)} tone="accent" />
-                <MetricCard icon={<Server className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '模型数' : 'Models'} value={String(detailStats.modelCount)} />
-                <MetricCard icon={<Waypoints className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '协议数' : 'Protocols'} value={String(detailStats.protocolCount)} />
-                <MetricCard icon={<KeyRound className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '密钥数' : 'Keys'} value={String(detailStats.credentialCount)} />
-                <MetricCard icon={<Activity className="h-4 w-4 text-[var(--accent)]" />} label={locale === 'zh-CN' ? '成功' : 'Success'} value={String(detailStats.successCount)} />
-                <MetricCard icon={<Activity className="h-4 w-4 text-[var(--danger)]" />} label={locale === 'zh-CN' ? '失败' : 'Failed'} value={String(detailStats.failedCount)} tone="danger" />
+                <MetricCard icon={<Activity className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '总请求' : 'Requests'} value={String(detailStats.requestCount)} tone="accent" />
+                <MetricCard icon={<Server className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '模型数' : 'Models'} value={String(detailStats.modelCount)} />
+                <MetricCard icon={<Waypoints className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '协议数' : 'Protocols'} value={String(detailStats.protocolCount)} />
+                <MetricCard icon={<KeyRound className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '密钥数' : 'Keys'} value={String(detailStats.credentialCount)} />
+                <MetricCard icon={<Activity className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '成功' : 'Success'} value={String(detailStats.successCount)} />
+                <MetricCard icon={<Activity className="h-4 w-4 text-destructive" />} label={locale === 'zh-CN' ? '失败' : 'Failed'} value={String(detailStats.failedCount)} tone="danger" />
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <button className="h-12 rounded-[18px] bg-[var(--accent)] text-sm font-medium text-white" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑渠道' : 'Edit channel'}</button>
-                <button className="h-12 rounded-[18px] bg-[var(--danger)] text-sm font-medium text-white" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除渠道' : 'Delete channel'}</button>
+                <Button className="h-11" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑渠道' : 'Edit channel'}</Button>
+                <Button className="h-11" variant="destructive" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除渠道' : 'Delete channel'}</Button>
               </div>
             </div>
           </AppDialogContent>
         ) : null}
-      </Dialog.Root>
+      </Dialog>
 
-      <Dialog.Root open={dialogOpen} onOpenChange={(open) => {
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
         if (!open && hasUnsavedChanges) {
           const confirmed = window.confirm(locale === 'zh-CN' ? '当前有未保存修改，确定关闭吗？' : 'You have unsaved changes. Close anyway?')
           if (!confirmed) return
@@ -731,60 +706,113 @@ export function ChannelsScreen() {
         setDialogOpen(open)
       }}>
         <AppDialogContent className="max-w-4xl" title={editingSiteId ? (locale === 'zh-CN' ? '编辑渠道' : 'Edit channel') : (locale === 'zh-CN' ? '新建渠道' : 'Create channel')}>
-          <form className="grid gap-6" onSubmit={submit}>
-            <div className="grid gap-5">
-              <section className="grid gap-4">
-                <div className="text-lg font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '基本信息' : 'Channel and keys'}</div>
-                <div className="grid gap-4">
-                  <label className="grid gap-2">
-                    <span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '渠道名称' : 'Channel name'}</span>
-                    <input className={inputClassName()} value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
-                  </label>
+          <form className="grid gap-5" onSubmit={submit}>
+            <div className="grid gap-4">
+              <section className="grid gap-5">
+                <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '基本信息' : 'Channel and keys'}</div>
+                <FieldGroup className="gap-4">
+                  <Field>
+                    <FieldLabel htmlFor="channel-name">{locale === 'zh-CN' ? '渠道名称' : 'Channel name'}</FieldLabel>
+                    <Input id="channel-name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
+                  </Field>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm font-medium text-[var(--text)]">
-                        <span>{locale === 'zh-CN' ? '请求地址' : 'Base URLs'}</span>
-                        <button
-                          type="button"
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--line)] text-[11px] text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                          title={locale === 'zh-CN' ? '地址以 # 结尾时，表示该地址已是完整接口地址，系统不会再自动拼接协议路径' : 'When the URL ends with #, it is treated as a complete endpoint and no protocol path will be appended'}
-                        >
-                          !
-                        </button>
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <section className="grid gap-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                          <span>{locale === 'zh-CN' ? '请求地址' : 'Base URLs'}</span>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  className="rounded-full text-muted-foreground hover:text-primary"
+                                  aria-label={locale === 'zh-CN' ? '查看地址说明' : 'View base URL help'}
+                                >
+                                  <Info size={12} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent sideOffset={6}>
+                                {locale === 'zh-CN'
+                                  ? '地址以 # 结尾时，表示该地址已是完整接口地址，系统不会再自动拼接协议路径'
+                                  : 'When the URL ends with #, it is treated as a complete endpoint and no protocol path will be appended'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setForm((current) => ({ ...current, base_urls: [...current.base_urls, { id: createBaseUrlId(), url: '', name: '', enabled: true }] }))}>
+                          <Plus data-icon="inline-start" />
+                          {locale === 'zh-CN' ? '添加' : 'Add'}
+                        </Button>
                       </div>
-                      <button type="button" onClick={() => setForm((current) => ({ ...current, base_urls: [...current.base_urls, { id: createBaseUrlId(), url: '', name: '', enabled: true }] }))} className="text-sm text-[var(--accent)]">+ {locale === 'zh-CN' ? '添加' : 'Add'}</button>
-                    </div>
-                    {form.base_urls.map((baseUrl, index) => (
-                      <div key={baseUrl.id} className="grid gap-3 md:grid-cols-[1.4fr_0.7fr_auto_auto] md:items-center">
-                        <input className={inputClassName()} value={baseUrl.url} onChange={(event) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, url: event.target.value } : item) }))} placeholder="https://api.example.com" />
-                        <input className={inputClassName()} value={baseUrl.name} onChange={(event) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, name: event.target.value } : item) }))} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
-                        <SwitchButton checked={baseUrl.enabled} onChange={(checked) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, enabled: checked } : item) }))} />
-                        <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--line)] text-[var(--muted)]" onClick={() => setForm((current) => ({ ...current, base_urls: current.base_urls.length > 1 ? current.base_urls.filter((_, i) => i !== index) : current.base_urls }))} disabled={form.base_urls.length <= 1}><X size={16} /></button>
-                      </div>
-                    ))}
-                  </div>
+                      <FieldGroup className="gap-3">
+                        {form.base_urls.map((baseUrl, index) => (
+                          <div key={baseUrl.id} className="grid gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
+                            <FieldGroup className="gap-3 contents">
+                              <Field>
+                                <FieldLabel>{locale === 'zh-CN' ? '地址' : 'URL'}</FieldLabel>
+                                <Input value={baseUrl.url} onChange={(event) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, url: event.target.value } : item) }))} placeholder="https://api.example.com" />
+                              </Field>
+                              <Field>
+                                <FieldLabel>{locale === 'zh-CN' ? '备注' : 'Remark'}</FieldLabel>
+                                <Input value={baseUrl.name} onChange={(event) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, name: event.target.value } : item) }))} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
+                              </Field>
+                              <div className="flex h-8 w-8 items-center justify-center">
+                                <SwitchButton checked={baseUrl.enabled} onChange={(checked) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, enabled: checked } : item) }))} />
+                              </div>
+                              <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => setForm((current) => ({ ...current, base_urls: current.base_urls.length > 1 ? current.base_urls.filter((_, i) => i !== index) : current.base_urls }))} disabled={form.base_urls.length <= 1}><X size={16} /></Button>
+                            </FieldGroup>
+                          </div>
+                        ))}
+                      </FieldGroup>
+                    </section>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '密钥' : 'API Keys'}</div>
-                      <button type="button" onClick={() => setForm((current) => ({ ...current, credentials: [...current.credentials, { id: createCredentialId(), name: '', api_key: '', enabled: true }] }))} className="text-sm text-[var(--accent)]">+ {locale === 'zh-CN' ? '添加' : 'Add'}</button>
-                    </div>
-                    {form.credentials.map((credential, index) => (
-                      <div key={credential.id} className="grid gap-3 md:grid-cols-[1.4fr_0.7fr_auto_auto] md:items-center">
-                        <input className={inputClassName()} value={credential.api_key} onChange={(event) => updateCredential(index, { api_key: event.target.value })} placeholder="sk-..." />
-                        <input className={inputClassName()} value={credential.name} onChange={(event) => updateCredential(index, { name: event.target.value })} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
-                        <SwitchButton checked={credential.enabled} onChange={(checked) => updateCredential(index, { enabled: checked })} />
-                        <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--line)] text-[var(--muted)]" onClick={() => removeCredential(index)}><X size={16} /></button>
+                    <section className="grid gap-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '密钥' : 'API Keys'}</div>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setForm((current) => ({ ...current, credentials: [...current.credentials, { id: createCredentialId(), name: '', api_key: '', enabled: true }] }))}>
+                          <Plus data-icon="inline-start" />
+                          {locale === 'zh-CN' ? '添加' : 'Add'}
+                        </Button>
                       </div>
-                    ))}
+                      <FieldGroup className="gap-3">
+                        {form.credentials.map((credential, index) => (
+                          <div key={credential.id} className="grid gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
+                            <FieldGroup className="gap-3 contents">
+                              <Field>
+                                <FieldLabel>{locale === 'zh-CN' ? '密钥' : 'API key'}</FieldLabel>
+                                <Input value={credential.api_key} onChange={(event) => updateCredential(index, { api_key: event.target.value })} placeholder="sk-..." />
+                              </Field>
+                              <Field>
+                                <FieldLabel>{locale === 'zh-CN' ? '备注' : 'Remark'}</FieldLabel>
+                                <Input value={credential.name} onChange={(event) => updateCredential(index, { name: event.target.value })} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
+                              </Field>
+                              <div className="flex h-8 w-8 items-center justify-center">
+                                <SwitchButton checked={credential.enabled} onChange={(checked) => updateCredential(index, { enabled: checked })} />
+                              </div>
+                              <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => removeCredential(index)}><X size={16} /></Button>
+                            </FieldGroup>
+                          </div>
+                        ))}
+                      </FieldGroup>
+                    </section>
                   </div>
-                </div>
+                </FieldGroup>
               </section>
 
+              <Separator />
+
               <section className="grid gap-4">
-                <div className="text-lg font-semibold text-[var(--text)]">{locale === 'zh-CN' ? '协议列表' : 'Protocol configs'}</div>
-                <div className="space-y-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '协议列表' : 'Protocol configs'}</div>
+                  <Button type="button" variant="outline" className="justify-start border-dashed" onClick={() => setForm((current) => ({ ...current, protocols: [...current.protocols, emptyProtocol()] }))}>
+                    <Plus data-icon="inline-start" />
+                    {locale === 'zh-CN' ? '增加一个协议' : 'Add protocol config'}
+                  </Button>
+                </div>
+                <div className="flex flex-col gap-3">
                   {form.protocols.map((protocol, protocolIndex) => {
                     const duplicatedProtocols = duplicateProtocolKinds(form.protocols)
                     const activeCredentialIds = new Set(form.credentials.filter((item) => item.enabled && item.api_key.trim()).map((item) => item.id))
@@ -802,82 +830,95 @@ export function ChannelsScreen() {
                       .filter(({ model }) => !selectedCredentialId || model.credential_id === selectedCredentialId)
 
                     return (
-                      <div key={protocol.id || protocolIndex} className="py-2">
+                      <div key={protocol.id || protocolIndex} className="grid gap-3 border-b pb-4 last:border-b-0 last:pb-0">
                         <div className="flex flex-col gap-3">
-                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto_auto] lg:items-center">
-                            <select className={inputClassName()} value={protocol.protocol} onChange={(event) => updateProtocol(protocolIndex, { protocol: event.target.value as ProtocolKind })}>
-                              {protocolOptions.map((option) => {
-                                const takenByOtherRow = form.protocols.some((item, itemIndex) => itemIndex !== protocolIndex && item.protocol === option.value)
-                                return <option key={option.value} value={option.value} disabled={takenByOtherRow}>{option.label}</option>
-                              })}
-                            </select>
-                            <select className={inputClassName()} value={protocol.base_url_id} onChange={(event) => updateProtocol(protocolIndex, { base_url_id: event.target.value })}>
-                              <option value="">{locale === 'zh-CN' ? '默认地址' : 'Default'}</option>
-                              {form.base_urls.map((item) => <option key={item.id} value={item.id}>{item.name || item.url}</option>)}
-                            </select>
-                            <select className={inputClassName()} value={selectedCredentialId} onChange={(event) => updateProtocol(protocolIndex, { model_filter_credential_id: event.target.value || null })}>
-                              {credentialOptions.length ? credentialOptions.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>) : <option value="">{locale === 'zh-CN' ? '无可用密钥' : 'No key'}</option>}
-                            </select>
-                            <SwitchButton checked={protocol.enabled} onChange={(checked) => updateProtocol(protocolIndex, { enabled: checked })} />
-                            <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--line)] text-[var(--muted)]" onClick={() => setAdvancedProtocolIndex(protocolIndex)}><Ellipsis size={16} /></button>
-                            <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--line)] text-[var(--danger)]" onClick={() => setForm((current) => ({ ...current, protocols: current.protocols.length > 1 ? current.protocols.filter((_, currentIndex) => currentIndex !== protocolIndex) : current.protocols }))}><X size={16} /></button>
-                            <div className="flex items-center justify-end">
-                              <button type="button" onClick={() => updateProtocol(protocolIndex, { expanded: !protocol.expanded })} className="inline-flex items-center gap-2 text-sm text-[var(--muted)] transition hover:text-[var(--text)]">
+                          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px_auto] xl:items-end">
+                            <Field>
+                              <FieldLabel>{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
+                              <NativeSelect className={selectClassName()} value={protocol.protocol} onChange={(event) => updateProtocol(protocolIndex, { protocol: event.target.value as ProtocolKind })}>
+                                {protocolOptions.map((option) => {
+                                  const takenByOtherRow = form.protocols.some((item, itemIndex) => itemIndex !== protocolIndex && item.protocol === option.value)
+                                  return <NativeSelectOption key={option.value} value={option.value} disabled={takenByOtherRow}>{option.label}</NativeSelectOption>
+                                })}
+                              </NativeSelect>
+                            </Field>
+                            <Field>
+                              <FieldLabel>{locale === 'zh-CN' ? '地址来源' : 'Base URL'}</FieldLabel>
+                              <NativeSelect className={selectClassName()} value={protocol.base_url_id} onChange={(event) => updateProtocol(protocolIndex, { base_url_id: event.target.value })}>
+                                <NativeSelectOption value="">{locale === 'zh-CN' ? '默认地址' : 'Default'}</NativeSelectOption>
+                                {form.base_urls.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.name || item.url}</NativeSelectOption>)}
+                              </NativeSelect>
+                            </Field>
+                            <Field>
+                              <FieldLabel>{locale === 'zh-CN' ? '模型筛选密钥' : 'Model key'}</FieldLabel>
+                              <NativeSelect className={selectClassName()} value={selectedCredentialId} onChange={(event) => updateProtocol(protocolIndex, { model_filter_credential_id: event.target.value || null })}>
+                                {credentialOptions.length ? credentialOptions.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.display_name}</NativeSelectOption>) : <NativeSelectOption value="">{locale === 'zh-CN' ? '无可用密钥' : 'No key'}</NativeSelectOption>}
+                              </NativeSelect>
+                            </Field>
+                            <div className="flex h-8 w-8 items-center justify-center xl:self-end">
+                              <SwitchButton checked={protocol.enabled} onChange={(checked) => updateProtocol(protocolIndex, { enabled: checked })} />
+                            </div>
+                            <div className="flex flex-wrap items-center justify-end gap-2 xl:col-start-5 xl:row-start-1 xl:self-end">
+                              <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => setAdvancedProtocolIndex(protocolIndex)}><Ellipsis size={16} /></Button>
+                              <Button type="button" variant="outline" size="icon" className="text-destructive hover:text-destructive" onClick={() => setForm((current) => ({ ...current, protocols: current.protocols.length > 1 ? current.protocols.filter((_, currentIndex) => currentIndex !== protocolIndex) : current.protocols }))}><X size={16} /></Button>
+                              <Button type="button" variant="ghost" size="default" className="text-muted-foreground hover:text-foreground" onClick={() => updateProtocol(protocolIndex, { expanded: !protocol.expanded })}>
                                 <span>{locale === 'zh-CN' ? '模型列表' : 'Models'}</span>
                                 <ChevronDown size={16} className={cn('transition-transform', protocol.expanded ? 'rotate-180' : '')} />
-                              </button>
+                              </Button>
                             </div>
                           </div>
 
-                          {duplicatedProtocols.has(protocol.protocol) ? <div className="text-sm text-[var(--danger)]">{locale === 'zh-CN' ? '协议类型重复' : 'Duplicate protocol'}</div> : null}
+                          {duplicatedProtocols.has(protocol.protocol) ? <div className="text-sm text-destructive">{locale === 'zh-CN' ? '协议类型重复' : 'Duplicate protocol'}</div> : null}
 
                           {protocol.expanded ? (
-                            <div className="grid gap-3 border-t border-[var(--line)] pt-3">
-                              <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] xl:items-center">
-                                <input
-                                  className="h-10 min-w-[180px] rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]"
-                                  value={protocol.manual_model_name}
-                                  onChange={(event) => updateProtocol(protocolIndex, { manual_model_name: event.target.value })}
-                                  onKeyDown={(event) => {
-                                    if (event.key !== 'Enter') return
-                                    event.preventDefault()
-                                    addManualProtocolModel(protocolIndex, selectedCredentialId)
-                                  }}
-                                  placeholder={locale === 'zh-CN' ? '模型名称' : 'Model name'}
-                                />
-                                <input
-                                  className="h-10 min-w-[180px] rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] outline-none transition focus:border-[var(--accent)]"
-                                  value={protocol.match_regex}
-                                  onChange={(event) => updateProtocol(protocolIndex, { match_regex: event.target.value })}
-                                  placeholder={locale === 'zh-CN' ? '匹配规则' : 'Match regex'}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => addManualProtocolModel(protocolIndex, selectedCredentialId)}
-                                  disabled={!selectedCredentialId || !protocol.manual_model_name.trim()}
-                                  className="h-10 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 text-sm text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-60"
-                                >
+                            <div className="grid gap-3 pt-1">
+                              <Separator />
+                              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] xl:items-end">
+                                <Field>
+                                  <FieldLabel>{locale === 'zh-CN' ? '模型名称' : 'Model name'}</FieldLabel>
+                                  <Input
+                                    className="min-w-[180px]"
+                                    value={protocol.manual_model_name}
+                                    onChange={(event) => updateProtocol(protocolIndex, { manual_model_name: event.target.value })}
+                                    onKeyDown={(event) => {
+                                      if (event.key !== 'Enter') return
+                                      event.preventDefault()
+                                      addManualProtocolModel(protocolIndex, selectedCredentialId)
+                                    }}
+                                    placeholder={locale === 'zh-CN' ? '模型名称' : 'Model name'}
+                                  />
+                                </Field>
+                                <Field>
+                                  <FieldLabel>{locale === 'zh-CN' ? '匹配规则' : 'Match regex'}</FieldLabel>
+                                  <Input
+                                    className="min-w-[180px]"
+                                    value={protocol.match_regex}
+                                    onChange={(event) => updateProtocol(protocolIndex, { match_regex: event.target.value })}
+                                    placeholder={locale === 'zh-CN' ? '匹配规则' : 'Match regex'}
+                                  />
+                                </Field>
+                                <Button type="button" variant="outline" onClick={() => addManualProtocolModel(protocolIndex, selectedCredentialId)} disabled={!selectedCredentialId || !protocol.manual_model_name.trim()}>
                                   {locale === 'zh-CN' ? '加入' : 'Add'}
-                                </button>
-                                <button type="button" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length} className="h-10 rounded-xl border border-[rgba(217,111,93,0.28)] px-3 text-sm text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-60">{locale === 'zh-CN' ? '删除所有模型' : 'Remove all'}</button>
-                                <button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size || modelRefreshBlocked} title={modelRefreshBlocked ? (locale === 'zh-CN' ? '地址以 # 结尾时不支持自动刷新模型' : 'Base URL ending with # does not support automatic model refresh') : undefined} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
+                                </Button>
+                                <Button type="button" variant="destructive" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length}>{locale === 'zh-CN' ? '删除所有模型' : 'Remove all'}</Button>
+                                <Button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size || modelRefreshBlocked} title={modelRefreshBlocked ? (locale === 'zh-CN' ? '地址以 # 结尾时不支持自动刷新模型' : 'Base URL ending with # does not support automatic model refresh') : undefined}>
                                   <RefreshCcw size={14} className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
                                   {locale === 'zh-CN' ? '刷新模型' : 'Refresh models'}
-                                </button>
+                                </Button>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2.5">
                                 {visibleModels.length ? (
                                   <>
                                   {visibleModels.map(({ model, modelIndex }) => (
-                                    <button key={model.id || `${model.credential_id}-${model.model_name}-${modelIndex}`} type="button" className={modelBadgeClassName(model.enabled)} onClick={() => updateProtocol(protocolIndex, { models: protocol.models.filter((_, currentIndex) => currentIndex !== modelIndex) })}>
+                                    <Button key={model.id || `${model.credential_id}-${model.model_name}-${modelIndex}`} type="button" variant="outline" size="sm" className={cn('rounded-full', modelBadgeClassName(model.enabled))} onClick={() => updateProtocol(protocolIndex, { models: protocol.models.filter((_, currentIndex) => currentIndex !== modelIndex) })}>
                                       <span>{model.model_name}</span>
                                       <X size={14} />
-                                    </button>
+                                    </Button>
                                   ))}
                                   </>
                                 ) : (
-                                  <div className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '当前没有模型' : 'No models selected'}</div>
+                                  <div className="text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前没有模型' : 'No models selected'}</div>
                                 )}
                               </div>
                             </div>
@@ -886,70 +927,77 @@ export function ChannelsScreen() {
                       </div>
                     )
                   })}
-
-                  <button type="button" className="inline-flex h-10 items-center justify-center gap-2 text-sm font-medium text-[var(--accent)]" onClick={() => setForm((current) => ({ ...current, protocols: [...current.protocols, emptyProtocol()] }))}>
-                    <Plus size={16} />
-                    {locale === 'zh-CN' ? '增加一个协议' : 'Add protocol config'}
-                  </button>
                 </div>
               </section>
             </div>
 
-            {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-3">
-              <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-2.5 text-sm text-[var(--text)]" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-              <button type="submit" className="rounded-xl bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white">{editingSiteId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</button>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
+              <Button type="submit">{editingSiteId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</Button>
             </div>
           </form>
         </AppDialogContent>
-      </Dialog.Root>
+      </Dialog>
 
-      <Dialog.Root open={advancedProtocolIndex !== null} onOpenChange={(open) => { if (!open) setAdvancedProtocolIndex(null) }}>
+      <Dialog open={advancedProtocolIndex !== null} onOpenChange={(open) => { if (!open) setAdvancedProtocolIndex(null) }}>
         {advancedProtocolIndex !== null && form.protocols[advancedProtocolIndex] ? (
           <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '更多设置' : 'More settings'}>
             <div className="grid gap-4">
-              <label className="grid gap-2">
-                <span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '代理地址' : 'Proxy'}</span>
-                <input className={inputClassName()} value={form.protocols[advancedProtocolIndex].channel_proxy} onChange={(event) => updateProtocol(advancedProtocolIndex, { channel_proxy: event.target.value })} placeholder="http://127.0.0.1:7890" />
-              </label>
-              <div className="space-y-3">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="protocol-proxy">{locale === 'zh-CN' ? '代理地址' : 'Proxy'}</FieldLabel>
+                  <Input id="protocol-proxy" value={form.protocols[advancedProtocolIndex].channel_proxy} onChange={(event) => updateProtocol(advancedProtocolIndex, { channel_proxy: event.target.value })} placeholder="http://127.0.0.1:7890" />
+                </Field>
+              </FieldGroup>
+              <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium text-[var(--text)]">{locale === 'zh-CN' ? '请求头' : 'Headers'}</div>
-                  <button type="button" className="text-sm text-[var(--accent)]" onClick={() => updateProtocol(advancedProtocolIndex, { headers: [...form.protocols[advancedProtocolIndex].headers, { key: '', value: '' }] })}>+ {locale === 'zh-CN' ? '添加' : 'Add'}</button>
+                  <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '请求头' : 'Headers'}</div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => updateProtocol(advancedProtocolIndex, { headers: [...form.protocols[advancedProtocolIndex].headers, { key: '', value: '' }] })}>
+                    <Plus data-icon="inline-start" />
+                    {locale === 'zh-CN' ? '添加' : 'Add'}
+                  </Button>
                 </div>
                 {form.protocols[advancedProtocolIndex].headers.map((header, headerIndex) => (
-                  <div key={headerIndex} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                    <input className={inputClassName()} value={header.key} onChange={(event) => updateProtocolHeader(advancedProtocolIndex, headerIndex, { key: event.target.value })} placeholder={locale === 'zh-CN' ? '请求头名称' : 'Header-Key'} />
-                    <input className={inputClassName()} value={header.value} onChange={(event) => updateProtocolHeader(advancedProtocolIndex, headerIndex, { value: event.target.value })} placeholder={locale === 'zh-CN' ? '请求头值' : 'Header-Value'} />
-                    <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--line)] text-[var(--muted)]" onClick={() => updateProtocol(advancedProtocolIndex, { headers: form.protocols[advancedProtocolIndex].headers.length > 1 ? form.protocols[advancedProtocolIndex].headers.filter((_, currentIndex) => currentIndex !== headerIndex) : form.protocols[advancedProtocolIndex].headers })}><X size={16} /></button>
+                  <div key={headerIndex} className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                    <Field>
+                      <FieldLabel>{locale === 'zh-CN' ? '请求头名称' : 'Header key'}</FieldLabel>
+                      <Input value={header.key} onChange={(event) => updateProtocolHeader(advancedProtocolIndex, headerIndex, { key: event.target.value })} placeholder={locale === 'zh-CN' ? '请求头名称' : 'Header-Key'} />
+                    </Field>
+                    <Field>
+                      <FieldLabel>{locale === 'zh-CN' ? '请求头值' : 'Header value'}</FieldLabel>
+                      <Input value={header.value} onChange={(event) => updateProtocolHeader(advancedProtocolIndex, headerIndex, { value: event.target.value })} placeholder={locale === 'zh-CN' ? '请求头值' : 'Header-Value'} />
+                    </Field>
+                    <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => updateProtocol(advancedProtocolIndex, { headers: form.protocols[advancedProtocolIndex].headers.length > 1 ? form.protocols[advancedProtocolIndex].headers.filter((_, currentIndex) => currentIndex !== headerIndex) : form.protocols[advancedProtocolIndex].headers })}><X size={16} /></Button>
                   </div>
                 ))}
               </div>
-              <label className="grid gap-2">
-                <span className="text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '参数覆盖' : 'Param Override'}</span>
-                <textarea className={textareaClassName()} value={form.protocols[advancedProtocolIndex].param_override} onChange={(event) => updateProtocol(advancedProtocolIndex, { param_override: event.target.value })} />
-              </label>
+              <Field>
+                <FieldLabel htmlFor="protocol-param-override">{locale === 'zh-CN' ? '参数覆盖' : 'Param Override'}</FieldLabel>
+                <Textarea id="protocol-param-override" className="min-h-24" value={form.protocols[advancedProtocolIndex].param_override} onChange={(event) => updateProtocol(advancedProtocolIndex, { param_override: event.target.value })} />
+                <FieldDescription>{locale === 'zh-CN' ? '填写 JSON 片段用于覆盖请求参数。' : 'Use a JSON snippet to override request params.'}</FieldDescription>
+              </Field>
             </div>
           </AppDialogContent>
         ) : null}
-      </Dialog.Root>
+      </Dialog>
 
-      <Dialog.Root open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
         <AppDialogContent className="max-w-lg" title={locale === 'zh-CN' ? '确认删除渠道' : 'Delete channel'} description={locale === 'zh-CN' ? '删除后该渠道下的协议、模型和模型组成员会一起移除。' : 'Protocol configs, models, and group members under this channel will be removed together.'}>
           <div className="grid gap-5">
-            <div className="rounded-[24px] border border-[var(--line)] bg-[var(--panel)] p-4">
-              <strong className="text-[var(--text)]">{deleteTarget?.name}</strong>
-              <p className="mt-2 text-sm text-[var(--muted)]">{deleteTarget ? siteSubtitle(deleteTarget) : ''}</p>
+            <div className="rounded-md border bg-muted/30 p-4">
+              <strong className="text-foreground">{deleteTarget?.name}</strong>
+              <p className="mt-2 text-xs text-muted-foreground">{deleteTarget ? siteSubtitle(deleteTarget) : ''}</p>
             </div>
             <div className="flex justify-end gap-3">
-              <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)]" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-              <button type="button" className="rounded-xl bg-[var(--danger)] px-4 py-2.5 text-sm font-medium text-white" onClick={() => deleteTarget && void removeSite(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</button>
+              <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
+              <Button type="button" variant="destructive" onClick={() => deleteTarget && void removeSite(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</Button>
             </div>
           </div>
         </AppDialogContent>
-      </Dialog.Root>
+      </Dialog>
 
-      <Dialog.Root open={modelPickerProtocolIndex !== null} onOpenChange={(open) => {
+      <Dialog open={modelPickerProtocolIndex !== null} onOpenChange={(open) => {
         if (!open) {
           closeModelPicker()
         }
@@ -963,26 +1011,25 @@ export function ChannelsScreen() {
                     const key = `${model.credential_id}:${model.model_name}`
                     const checked = pickerSelectedModelKeys.includes(key)
                     return (
-                      <button key={key} type="button" onClick={() => togglePickerModel(key)} className={cn(modelBadgeClassName(checked), checked ? 'border-[var(--accent)] text-[var(--accent)]' : '')}>
-                        <span className="truncate">{model.model_name}</span>
+                      <Button key={key} type="button" variant="outline" size="sm" className={cn('max-w-full rounded-full', modelBadgeClassName(checked), checked ? 'border-primary text-primary' : '')} onClick={() => togglePickerModel(key)}>
+                        <span className="max-w-[220px] truncate">{model.model_name}</span>
                         <span className="text-xs">{checked ? '✓' : '+'}</span>
-                      </button>
+                      </Button>
                     )
-                  }) : <div className="px-3 py-6 text-sm text-[var(--muted)]">{locale === 'zh-CN' ? '未获取到可选模型' : 'No models fetched.'}</div>}
+                  }) : <div className="px-3 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '未获取到可选模型' : 'No models fetched.'}</div>}
                 </div>
               </div>
               <div className="flex justify-end gap-3">
-                <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)]" onClick={() => {
+                <Button type="button" variant="outline" onClick={() => {
                   closeModelPicker()
-                }}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</button>
-                <button type="button" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-60" onClick={confirmAllModelSelection} disabled={!availableModels.length}>{locale === 'zh-CN' ? '加入全部模型' : 'Add all models'}</button>
-                <button type="button" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60" onClick={confirmModelSelection} disabled={!pickerSelectedModelKeys.length}>{locale === 'zh-CN' ? '加入模型' : 'Add models'}</button>
+                }}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
+                <Button type="button" variant="outline" onClick={confirmAllModelSelection} disabled={!availableModels.length}>{locale === 'zh-CN' ? '加入全部模型' : 'Add all models'}</Button>
+                <Button type="button" onClick={confirmModelSelection} disabled={!pickerSelectedModelKeys.length}>{locale === 'zh-CN' ? '加入模型' : 'Add models'}</Button>
               </div>
             </div>
           </AppDialogContent>
         ) : null}
-      </Dialog.Root>
+      </Dialog>
     </section>
   )
 }
-

@@ -1,6 +1,6 @@
 "use client"
 
-import { cn } from '@/lib/cn'
+import { cn } from '@/lib/utils'
 
 export function SegmentedControl<T extends string>({
   value,
@@ -12,22 +12,25 @@ export function SegmentedControl<T extends string>({
   options: Array<{ value: T; label: string }>
 }) {
   return (
-    <div className="inline-flex rounded-xl bg-[var(--panel-soft)] p-1">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onValueChange(option.value)}
-          className={cn(
-            'rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
-            option.value === value
-              ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
-              : 'text-[var(--muted)] hover:text-[var(--text)]'
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
+    <div className="inline-flex max-w-full items-center gap-1 rounded-xl border bg-muted p-0.5">
+      {options.map((option) => {
+        const active = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={cn(
+              'h-7 min-w-0 max-w-[6.75rem] truncate rounded-lg px-3 text-sm font-medium leading-none transition-colors',
+              active
+                ? 'bg-background text-foreground shadow-sm'
+                : 'bg-transparent text-muted-foreground hover:text-foreground'
+            )}
+            onClick={() => onValueChange(option.value)}
+          >
+            {option.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

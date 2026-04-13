@@ -72,7 +72,7 @@ function DashboardViewShellInner() {
   return (
     <DashboardShell activeView={activeView} onViewChange={handleViewChange} onViewIntent={handleViewIntent}>
       <div key={activeView} className="min-h-[calc(100vh-10rem)] animate-[fadeIn_.16s_ease-out]">
-        <Suspense fallback={<div className="py-10 text-sm text-[var(--muted)]">Loading...</div>}>
+        <Suspense fallback={<div className="py-10 text-sm text-muted-foreground flex justify-center animate-pulse">Loading...</div>}>
           <ActiveScreen />
         </Suspense>
       </div>
