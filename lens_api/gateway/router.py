@@ -54,7 +54,7 @@ class RoundRobinRouter:
         if not active:
             detail = f"No enabled channels available for protocol={protocol.value}"
             if requested_model:
-                detail = f"No enabled channels matched protocol={protocol.value} model={requested_model}"
+                detail = f"No enabled channels matched {requested_model}"
             raise LookupError(detail)
 
         route_key = cursor_key or protocol.value
