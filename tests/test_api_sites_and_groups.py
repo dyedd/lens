@@ -73,12 +73,16 @@ def test_openai_responses_proxy_standard_request(tmp_path: Path):
     asyncio.run(_run_openai_responses_proxy_standard_request(tmp_path))
 
 
-def test_anthropic_proxy_supports_complete_endpoint_marker(tmp_path: Path):
-    asyncio.run(_run_anthropic_proxy_supports_complete_endpoint_marker(tmp_path))
+def test_anthropic_proxy_ignores_trailing_marker_in_base_url(tmp_path: Path):
+    asyncio.run(_run_anthropic_proxy_ignores_trailing_marker_in_base_url(tmp_path))
 
 
-def test_model_discovery_rejects_complete_endpoint_marker(tmp_path: Path):
-    asyncio.run(_run_model_discovery_rejects_complete_endpoint_marker(tmp_path))
+def test_anthropic_non_stream_request_distills_event_stream_response(tmp_path: Path):
+    asyncio.run(_run_anthropic_non_stream_request_distills_event_stream_response(tmp_path))
+
+
+def test_model_discovery_ignores_trailing_marker_in_base_url(tmp_path: Path):
+    asyncio.run(_run_model_discovery_ignores_trailing_marker_in_base_url(tmp_path))
 
 
 def test_openai_responses_stream_log_detail_distills_completed_response(tmp_path: Path):
@@ -184,6 +188,29 @@ def test_openai_responses_stream_parsing_supports_crlf_event_separators():
         '{"id":"ws_1","type":"web_search_call","status":"completed"}],'
         '"usage":{"input_tokens":11,"output_tokens":22,"total_tokens":33}}'
     )
+
+
+def test_anthropic_stream_usage_reads_input_tokens_from_message_delta():
+    from lens_api.gateway import service as service_module
+    from lens_api.models import ProtocolKind
+
+    raw_content = (
+        'event: message_start\n'
+        'data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-4-6","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"output_tokens":1}}}\n\n'
+        'event: message_delta\n'
+        'data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":37685,"output_tokens":87}}\n\n'
+        'event: message_stop\n'
+        'data: {"type":"message_stop"}\n\n'
+    )
+
+    usage = service_module._extract_stream_usage(ProtocolKind.ANTHROPIC, raw_content)
+
+    assert usage == {
+        'resolved_model': 'claude-opus-4-6',
+        'input_tokens': 37685,
+        'output_tokens': 87,
+        'total_tokens': 37772,
+    }
 
 
 async def _run_api_bootstrap_and_site_crud(tmp_path: Path):
@@ -817,7 +844,7 @@ async def _run_openai_requests_require_matching_group_protocol(tmp_path: Path):
             assert gateway_response.status_code == 503
             payload = gateway_response.json()
             assert payload['error']['type'] == 'routing_error'
-            assert payload['error']['message'] == 'No model group matched protocol=openai_chat model=gpt-5.4'
+            assert payload['error']['message'] == 'No model group matched gpt-5.4'
     finally:
         service_module.app_state.http.request = original_request
         await service_module._close_app_state(service_module.app_state)
@@ -963,8 +990,8 @@ async def _run_openai_responses_proxy_standard_request(tmp_path: Path):
         await service_module._close_app_state(service_module.app_state)
 
 
-async def _run_anthropic_proxy_supports_complete_endpoint_marker(tmp_path: Path):
-    service_module, app, _config = await _build_test_app(tmp_path / 'api-anthropic-complete-endpoint.db')
+async def _run_anthropic_proxy_ignores_trailing_marker_in_base_url(tmp_path: Path):
+    service_module, app, _config = await _build_test_app(tmp_path / 'api-anthropic-trailing-marker.db')
 
     upstream_calls: list[dict[str, object]] = []
 
@@ -1009,7 +1036,7 @@ async def _run_anthropic_proxy_supports_complete_endpoint_marker(tmp_path: Path)
                 '/api/admin/sites',
                 headers=admin_headers,
                 json=_site_create_payload(
-                    'Anthropic Complete Endpoint Site',
+                    'Anthropic Trailing Marker Site',
                     credentials=[{'name': 'Key A', 'api_key': 'anthropic-key', 'enabled': True}],
                     protocols=[{
                         'protocol': 'anthropic',
@@ -1080,7 +1107,7 @@ async def _run_anthropic_proxy_supports_complete_endpoint_marker(tmp_path: Path)
             assert gateway_response.json()['content'][0]['text'] == 'hello'
 
             post_call = next(item for item in upstream_calls if item['method'] == 'POST')
-            assert post_call['url'] == 'https://aiping.cn/api/v1/anthropic'
+            assert post_call['url'] == 'https://aiping.cn/api/v1/anthropic/v1/messages'
             assert post_call['headers']['x-api-key'] == 'anthropic-key'
             assert post_call['headers']['anthropic-version'] == service_module.settings.anthropic_version
     finally:
@@ -1088,11 +1115,186 @@ async def _run_anthropic_proxy_supports_complete_endpoint_marker(tmp_path: Path)
         await service_module._close_app_state(service_module.app_state)
 
 
-async def _run_model_discovery_rejects_complete_endpoint_marker(tmp_path: Path):
-    service_module, app, _config = await _build_test_app(tmp_path / 'api-complete-endpoint-discovery.db')
+async def _run_anthropic_non_stream_request_distills_event_stream_response(tmp_path: Path):
+    service_module, app, _config = await _build_test_app(tmp_path / 'api-anthropic-event-stream-fallback.db')
+
+    sse_body = (
+        'event: ping\n'
+        'data: {"type":"ping"}\n\n'
+        'event: message_start\n'
+        'data: {"type":"message_start","message":{"id":"msg_a27096a84cae45c09877a923b3d4be00","type":"message","role":"assistant","model":"claude-opus-4-6","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":220,"output_tokens":1}}}\n\n'
+        'event: content_block_start\n'
+        'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tooluse_NPUq21JA2kGPbG6Tjb7bEx","name":"Read","input":{}}}\n\n'
+        'event: content_block_delta\n'
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"file_path\\": \\"D:/Projects/PYprojects/lens/lens_api/models.py\\", \\"limit\\": 20, \\"offset\\": 386}"}}\n\n'
+        'event: content_block_stop\n'
+        'data: {"type":"content_block_stop","index":0}\n\n'
+        'event: message_delta\n'
+        'data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":26}}\n\n'
+        'event: message_stop\n'
+        'data: {"type":"message_stop"}\n\n'
+    ).encode()
+
+    async def fake_request(method, url, headers=None, json=None, **kwargs):
+        request = httpx.Request(method, url, headers=headers, json=json)
+        if method == 'GET' and url == 'https://models.dev/api.json':
+            return httpx.Response(200, request=request, json={})
+        return httpx.Response(
+            200,
+            request=request,
+            headers={'content-type': 'text/event-stream', 'anthropic-request-id': 'anthropic_stream_req'},
+            content=sse_body,
+        )
 
     transport = httpx.ASGITransport(app=app)
     await service_module._startup_app_state(service_module.app_state)
+    original_request = service_module.app_state.http.request
+    service_module.app_state.http.request = fake_request
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            admin_headers = {'authorization': f'Bearer {token}'}
+
+            updated_settings = await client.put(
+                '/api/admin/settings',
+                headers=admin_headers,
+                json={'items': [{'key': 'gateway_api_keys', 'value': 'test-gateway-key'}]},
+            )
+            assert updated_settings.status_code == 200
+
+            created_site = await client.post(
+                '/api/admin/sites',
+                headers=admin_headers,
+                json=_site_create_payload(
+                    'Anthropic Event Stream Fallback Site',
+                    credentials=[{'name': 'Key A', 'api_key': 'anthropic-key', 'enabled': True}],
+                    protocols=[{
+                        'protocol': 'anthropic',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [],
+                        'models': [],
+                    }],
+                    base_url='https://api.anthropic.com',
+                ),
+            )
+            assert created_site.status_code == 201
+            site = created_site.json()
+            credential = site['credentials'][0]
+            protocol = site['protocols'][0]
+
+            updated_site = await client.put(
+                f"/api/admin/sites/{site['id']}",
+                headers=admin_headers,
+                json=_site_update_payload(
+                    site,
+                    credentials=[{'id': credential['id'], 'name': credential['name'], 'api_key': credential['api_key'], 'enabled': True}],
+                    protocols=[{
+                        'id': protocol['id'],
+                        'protocol': 'anthropic',
+                        'enabled': True,
+                        'headers': {},
+                        'channel_proxy': '',
+                        'param_override': '',
+                        'match_regex': '',
+                        'bindings': [{'credential_id': credential['id'], 'enabled': True}],
+                        'models': [{'credential_id': credential['id'], 'model_name': 'claude-opus-4-6', 'enabled': True}],
+                    }],
+                ),
+            )
+            assert updated_site.status_code == 200
+
+            created_group = await client.post(
+                '/api/admin/model-groups',
+                headers=admin_headers,
+                json={
+                    'name': 'claude-opus-4-6',
+                    'protocol': 'anthropic',
+                    'strategy': 'round_robin',
+                    'items': [{
+                        'channel_id': protocol['id'],
+                        'credential_id': credential['id'],
+                        'model_name': 'claude-opus-4-6',
+                        'enabled': True,
+                    }],
+                },
+            )
+            assert created_group.status_code == 201
+
+            gateway_response = await client.post(
+                '/v1/messages',
+                headers={'x-api-key': 'test-gateway-key'},
+                json={
+                    'model': 'claude-opus-4-6',
+                    'max_tokens': 64,
+                    'messages': [{'role': 'user', 'content': 'hello'}],
+                },
+            )
+            assert gateway_response.status_code == 200
+            assert gateway_response.headers['content-type'].startswith('application/json')
+
+            payload = gateway_response.json()
+            assert payload['type'] == 'message'
+            assert payload['model'] == 'claude-opus-4-6'
+            assert payload['stop_reason'] == 'tool_use'
+            assert payload['usage']['input_tokens'] == 220
+            assert payload['usage']['output_tokens'] == 26
+            assert payload['content'] == [{
+                'type': 'tool_use',
+                'id': 'tooluse_NPUq21JA2kGPbG6Tjb7bEx',
+                'name': 'Read',
+                'input': {
+                    'file_path': 'D:/Projects/PYprojects/lens/lens_api/models.py',
+                    'limit': 20,
+                    'offset': 386,
+                },
+            }]
+            assert 'event:' not in gateway_response.text
+
+            summary = await client.get('/api/admin/request-logs', headers=admin_headers)
+            assert summary.status_code == 200
+            latest_id = summary.json()[0]['id']
+
+            detail = await client.get(f'/api/admin/request-logs/{latest_id}', headers=admin_headers)
+            assert detail.status_code == 200
+            detail_payload = detail.json()
+            assert detail_payload['protocol'] == 'anthropic'
+            assert detail_payload['is_stream'] is False
+            assert detail_payload['response_content']
+            assert 'event:' not in detail_payload['response_content']
+            assert json.loads(detail_payload['response_content'])['content'][0]['name'] == 'Read'
+    finally:
+        service_module.app_state.http.request = original_request
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_model_discovery_ignores_trailing_marker_in_base_url(tmp_path: Path):
+    service_module, app, _config = await _build_test_app(tmp_path / 'api-trailing-marker-discovery.db')
+
+    upstream_calls: list[dict[str, object]] = []
+
+    async def fake_request(method, url, headers=None, json=None, **kwargs):
+        upstream_calls.append({'method': method, 'url': url, 'headers': headers, 'json': json})
+        request = httpx.Request(method, url, headers=headers, json=json)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                'data': [
+                    {'id': 'claude-opus-4-6', 'name': 'claude-opus-4-6'},
+                ],
+            },
+        )
+
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    original_request = service_module.app_state.http.request
+    service_module.app_state.http.request = fake_request
     try:
         async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
             login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
@@ -1113,9 +1315,16 @@ async def _run_model_discovery_rejects_complete_endpoint_marker(tmp_path: Path):
                     'bindings': [{'credential_id': 'credential-a', 'enabled': True}],
                 },
             )
-            assert response.status_code == 400
-            assert response.json()['detail'] == 'Base URL ending with # does not support automatic model discovery'
+            assert response.status_code == 200
+            assert response.json() == [{
+                'credential_id': 'credential-a',
+                'credential_name': 'Key A',
+                'model_name': 'claude-opus-4-6',
+            }]
+            get_call = next(item for item in upstream_calls if item['method'] == 'GET')
+            assert get_call['url'] == 'https://aiping.cn/api/v1/anthropic/v1/models'
     finally:
+        service_module.app_state.http.request = original_request
         await service_module._close_app_state(service_module.app_state)
 
 

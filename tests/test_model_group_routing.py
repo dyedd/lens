@@ -108,3 +108,19 @@ def test_failover_always_starts_from_first_target():
     assert second.primary.channel.id == "openai-1"
     assert [target.channel.id for target in first.fallbacks] == ["openai-2"]
 
+
+def test_select_error_message_uses_model_name_only():
+    router = RoundRobinRouter()
+    provider = _channel("openai-1", "OpenAI A", ["gpt-4.1"])
+
+    try:
+        router.select(
+            [provider],
+            ProtocolKind.OPENAI_CHAT,
+            "gpt-5.4",
+        )
+    except LookupError as exc:
+        assert str(exc) == "No enabled channels matched gpt-5.4"
+    else:
+        raise AssertionError("Expected routing selection to fail when no channel matches the model")
+

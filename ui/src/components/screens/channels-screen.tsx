@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ChevronDown, Ellipsis, Info, KeyRound, Pencil, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
+import { Activity, ChevronDown, Ellipsis, KeyRound, Pencil, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
 import {
   ApiError,
   ProtocolKind,
@@ -38,7 +38,6 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
   { value: 'openai_chat', label: 'OpenAI Chat' },
@@ -63,10 +62,6 @@ function createBaseUrlId() {
     return crypto.randomUUID()
   }
   return `baseurl-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function usesCompleteEndpointMarker(value: string) {
-  return value.trim().endsWith('#')
 }
 
 type FormProtocol = {
@@ -571,9 +566,6 @@ export function ChannelsScreen() {
     try {
       const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
       const activeBaseUrl = boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
-      if (usesCompleteEndpointMarker(activeBaseUrl)) {
-        throw new Error(locale === 'zh-CN' ? '地址以 # 结尾时不支持自动刷新模型' : 'Base URL ending with # does not support automatic model refresh')
-      }
       const payload: SiteModelFetchPayload = {
         protocol: protocol.protocol,
         base_url: safeText(activeBaseUrl).trim(),
@@ -719,29 +711,7 @@ export function ChannelsScreen() {
                   <div className="grid gap-4 xl:grid-cols-2">
                     <section className="grid gap-3">
                       <div className="mb-3 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                          <span>{locale === 'zh-CN' ? '请求地址' : 'Base URLs'}</span>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  className="rounded-full text-muted-foreground hover:text-primary"
-                                  aria-label={locale === 'zh-CN' ? '查看地址说明' : 'View base URL help'}
-                                >
-                                  <Info size={12} />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent sideOffset={6}>
-                                {locale === 'zh-CN'
-                                  ? '地址以 # 结尾时，表示该地址已是完整接口地址，系统不会再自动拼接协议路径'
-                                  : 'When the URL ends with #, it is treated as a complete endpoint and no protocol path will be appended'}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
+                        <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '请求地址' : 'Base URLs'}</div>
                         <Button type="button" variant="outline" size="sm" onClick={() => setForm((current) => ({ ...current, base_urls: [...current.base_urls, { id: createBaseUrlId(), url: '', name: '', enabled: true }] }))}>
                           <Plus data-icon="inline-start" />
                           {locale === 'zh-CN' ? '添加' : 'Add'}
@@ -819,9 +789,6 @@ export function ChannelsScreen() {
                     const credentialOptions = form.credentials
                       .map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
                       .filter((item) => activeCredentialIds.has(item.id))
-                    const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
-                    const activeBaseUrl = boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
-                    const modelRefreshBlocked = usesCompleteEndpointMarker(activeBaseUrl)
                     const selectedCredentialId = credentialOptions.some((item) => item.id === protocol.model_filter_credential_id)
                       ? protocol.model_filter_credential_id || ''
                       : credentialOptions[0]?.id || ''
@@ -901,7 +868,7 @@ export function ChannelsScreen() {
                                   {locale === 'zh-CN' ? '加入' : 'Add'}
                                 </Button>
                                 <Button type="button" variant="destructive" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length}>{locale === 'zh-CN' ? '删除所有模型' : 'Remove all'}</Button>
-                                <Button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size || modelRefreshBlocked} title={modelRefreshBlocked ? (locale === 'zh-CN' ? '地址以 # 结尾时不支持自动刷新模型' : 'Base URL ending with # does not support automatic model refresh') : undefined}>
+                                <Button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size}>
                                   <RefreshCcw size={14} className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
                                   {locale === 'zh-CN' ? '刷新模型' : 'Refresh models'}
                                 </Button>
