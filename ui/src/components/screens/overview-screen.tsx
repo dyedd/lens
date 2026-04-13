@@ -122,7 +122,7 @@ export function OverviewScreen() {
   const pieChartConfig = useMemo(() => {
     const config: ChartConfig = {}
     models?.distribution.forEach((item, i) => {
-      config[safeKey(item.model)] = {
+      config[item.model] = {
         label: item.model,
         color: CHART_COLORS[i % CHART_COLORS.length],
       }
@@ -305,7 +305,7 @@ export function OverviewScreen() {
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
-                  <ChartLegend content={<ChartLegendContent nameKey="model" />} />
+                  <ChartLegend content={<ChartLegendContent nameKey="model" className="flex-nowrap gap-3 text-[11px]" />} />
                 </PieChart>
               </ChartContainer>
             ) : (
@@ -345,7 +345,7 @@ export function OverviewScreen() {
                 <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={11} />
                 <YAxis tickLine={false} axisLine={false} fontSize={11} tickFormatter={(value: number) => formatMoney(value)} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <ChartLegend content={<ChartLegendContent />} />
+                <ChartLegend content={<ChartLegendContent className="pb-3" />} />
                 {barModels.map((key) => (
                   <Bar key={key} dataKey={key} stackId="a" fill={barConfig[key]?.color} radius={[3, 3, 0, 0]} />
                 ))}
