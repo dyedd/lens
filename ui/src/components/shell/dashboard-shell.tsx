@@ -104,6 +104,7 @@ export function DashboardShell({
                 alt={siteName}
                 width={48}
                 height={48}
+                loading="eager"
                 className="size-10 shrink-0 object-contain"
                 unoptimized={logoUrl !== '/logo.svg'}
               />
