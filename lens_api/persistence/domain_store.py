@@ -10,7 +10,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
-from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, SettingItem
+from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem
 from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
@@ -941,6 +941,29 @@ class DomainStore:
             result = await session.execute(stmt)
             return [self._to_request_log(item) for item in result.scalars().all()]
 
+    async def list_request_log_page(self, limit: int = 100, days: int = 0, offset: int = 0) -> RequestLogPage:
+        async with self._session_factory() as session:
+            items_stmt = (
+                select(RequestLogEntity)
+                .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+            items_stmt = self._apply_request_log_window(items_stmt, days=days)
+
+            total_stmt = select(func.count()).select_from(RequestLogEntity)
+            total_stmt = self._apply_request_log_window(total_stmt, days=days)
+
+            items_result = await session.execute(items_stmt)
+            total = await session.scalar(total_stmt)
+
+            return RequestLogPage(
+                items=[self._to_request_log(item) for item in items_result.scalars().all()],
+                total=int(total or 0),
+                limit=limit,
+                offset=offset,
+            )
+
     async def get_request_log(self, log_id: int) -> RequestLogDetail:
         async with self._session_factory() as session:
             entity = await session.get(RequestLogEntity, log_id)
@@ -1570,6 +1593,7 @@ class DomainStore:
 
     @staticmethod
     def _to_request_log(entity: RequestLogEntity) -> RequestLogItem:
+        attempts = DomainStore._parse_attempts_json(entity.attempts_json)
         return RequestLogItem(
             id=entity.id,
             protocol=entity.protocol,
@@ -1590,6 +1614,7 @@ class DomainStore:
             input_cost_usd=entity.input_cost_usd,
             output_cost_usd=entity.output_cost_usd,
             total_cost_usd=entity.total_cost_usd,
+            attempt_count=len(attempts),
             error_message=entity.error_message,
             created_at=entity.created_at.replace(tzinfo=UTC).isoformat(),
         )

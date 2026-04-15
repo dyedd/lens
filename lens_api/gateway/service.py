@@ -49,6 +49,7 @@ from ..models import (
     PublicBranding,
     RequestLogDetail,
     RequestLogItem,
+    RequestLogPage,
     RoutePreviewRequest,
     RoutingStrategy,
     SettingItem,
@@ -489,8 +490,16 @@ async def overview_models(
     return await app_state.domain_store.get_model_analytics(days=days)
 
 
-async def request_logs(_: Any = Depends(get_current_admin)) -> list[RequestLogItem]:
-    return await app_state.domain_store.list_request_logs()
+async def request_logs(
+    limit: int = 100, offset: int = 0, _: Any = Depends(get_current_admin)
+) -> list[RequestLogItem]:
+    return await app_state.domain_store.list_request_logs(limit=limit, offset=offset)
+
+
+async def request_log_page(
+    limit: int = 100, offset: int = 0, _: Any = Depends(get_current_admin)
+) -> RequestLogPage:
+    return await app_state.domain_store.list_request_log_page(limit=limit, offset=offset)
 
 
 async def overview_logs(

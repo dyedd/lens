@@ -508,6 +508,7 @@ class RequestLogItem(BaseModel):
     input_cost_usd: float = 0.0
     output_cost_usd: float = 0.0
     total_cost_usd: float = 0.0
+    attempt_count: int = 0
     error_message: str | None = None
     created_at: str
 
@@ -526,6 +527,13 @@ class RequestLogDetail(RequestLogItem):
     request_content: str | None = None
     response_content: str | None = None
     attempts: list[RequestLogAttempt] = Field(default_factory=list)
+
+
+class RequestLogPage(BaseModel):
+    items: list[RequestLogItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 0
+    offset: int = 0
 
 
 class OverviewMetrics(BaseModel):

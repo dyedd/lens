@@ -312,6 +312,7 @@ export type RequestLogItem = {
   input_cost_usd: number
   output_cost_usd: number
   total_cost_usd: number
+  attempt_count: number
   error_message?: string | null
   created_at: string
 }
@@ -330,6 +331,13 @@ export type RequestLogDetail = RequestLogItem & {
   request_content?: string | null
   response_content?: string | null
   attempts: RequestLogAttempt[]
+}
+
+export type RequestLogPage = {
+  items: RequestLogItem[]
+  total: number
+  limit: number
+  offset: number
 }
 
 function getToken() {
@@ -390,4 +398,3 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
 
   return response.json() as Promise<T>
 }
-
