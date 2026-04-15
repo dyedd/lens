@@ -25,6 +25,7 @@ class _RouteCursor:
 class RouteTarget:
     channel: ChannelConfig
     model_name: str | None = None
+    credential_id: str | None = None
 
 
 @dataclass
