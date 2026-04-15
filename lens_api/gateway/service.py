@@ -819,6 +819,7 @@ async def _proxy_protocol(
                     plan.matched_group.name if plan.matched_group else None
                 ),
                 client_protocol=protocol,
+                credential_id=target.credential_id,
             )
             attempts.append(
                 AttemptLog(
@@ -929,8 +930,11 @@ async def _call_channel(
     body: dict[str, Any],
     matched_group_name: str | None = None,
     client_protocol: ProtocolKind | None = None,
+    credential_id: str | None = None,
 ) -> UpstreamResult:
-    upstream = build_upstream_request(channel, body, settings)
+    upstream = build_upstream_request(
+        channel, body, settings, credential_id=credential_id
+    )
     request_content = _dump_json(upstream.json_body)
     client = app_state.http
     close_client = False
@@ -1299,7 +1303,9 @@ async def _resolve_routing_plan(
         channel_map = {channel.id: channel for channel in channels}
         route_targets = [
             RouteTarget(
-                channel=channel_map[item.channel_id], model_name=item.model_name
+                channel=channel_map[item.channel_id],
+                model_name=item.model_name,
+                credential_id=item.credential_id or None,
             )
             for item in matched_group.items
             if item.enabled and item.channel_id in channel_map

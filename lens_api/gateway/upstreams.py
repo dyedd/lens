@@ -22,8 +22,9 @@ def build_upstream_request(
     channel: ChannelConfig,
     body: dict[str, Any],
     settings: Settings,
+    credential_id: str | None = None,
 ) -> UpstreamRequest:
-    api_key = _resolve_api_key(channel)
+    api_key = _resolve_api_key(channel, credential_id=credential_id)
     proxy_url = _resolve_proxy_url(channel)
     target_url = _protocol_request_url(channel, body)
 
@@ -141,7 +142,16 @@ def _normalize_base_url(value: str) -> str:
     return normalized
 
 
-def _resolve_api_key(channel: ChannelConfig) -> str:
+def _resolve_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:
+    if credential_id:
+        for item in channel.keys:
+            if item.id == credential_id and item.enabled and item.key.strip():
+                return item.key.strip()
+        raise HTTPException(
+            status_code=503,
+            detail=f"Credential {credential_id} is not available for channel {channel.name}",
+        )
+
     for item in channel.keys:
         if item.enabled and item.key.strip():
             return item.key.strip()
@@ -167,8 +177,8 @@ def resolve_channel_base_url(channel: ChannelConfig) -> str:
     return _resolve_base_url(channel)
 
 
-def resolve_channel_api_key(channel: ChannelConfig) -> str:
-    return _resolve_api_key(channel)
+def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:
+    return _resolve_api_key(channel, credential_id=credential_id)
 
 
 def resolve_channel_proxy_url(channel: ChannelConfig) -> str | None:
