@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, Filter, GripVertical, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Filter, GripVertical, LayoutGrid, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -18,7 +18,7 @@ import {
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
-import { getModelGroupAvatar } from '@/lib/model-icons'
+import { getModelGroupAvatar, ModelAvatar } from '@/lib/model-icons'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -77,6 +77,75 @@ type GroupRow = ModelGroup & {
   channel_names: string[]
 }
 
+const MODEL_SERIES_PRESETS = [
+  {
+    key: 'openai',
+    zh: 'OpenAI',
+    en: 'OpenAI',
+    sampleModel: 'gpt-5.4',
+    prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai'],
+  },
+  {
+    key: 'claude',
+    zh: 'Claude',
+    en: 'Claude',
+    sampleModel: 'claude-opus-4-6',
+    prefixes: ['claude', 'anthropic'],
+  },
+  {
+    key: 'gemini',
+    zh: 'Gemini',
+    en: 'Gemini',
+    sampleModel: 'gemini-2.5-pro',
+    prefixes: ['gemini', 'gemma', 'google'],
+  },
+  {
+    key: 'deepseek',
+    zh: 'DeepSeek',
+    en: 'DeepSeek',
+    sampleModel: 'deepseek-v3',
+    prefixes: ['deepseek'],
+  },
+  {
+    key: 'qwen',
+    zh: 'Qwen',
+    en: 'Qwen',
+    sampleModel: 'qwen-max',
+    prefixes: ['qwen', 'qwq', 'alibaba'],
+  },
+  {
+    key: 'kimi',
+    zh: 'Kimi',
+    en: 'Kimi',
+    sampleModel: 'kimi-k2',
+    prefixes: ['moonshot', 'kimi'],
+  },
+  {
+    key: 'glm',
+    zh: 'GLM',
+    en: 'GLM',
+    sampleModel: 'glm-4.5',
+    prefixes: ['glm', 'chatglm', 'zhipu', 'z-ai'],
+  },
+  {
+    key: 'minimax',
+    zh: 'MiniMax',
+    en: 'MiniMax',
+    sampleModel: 'minimax-text-01',
+    prefixes: ['minimax', 'abab', 'minmax'],
+  },
+  {
+    key: 'other',
+    zh: '其他',
+    en: 'Other',
+    sampleModel: 'other',
+    prefixes: [],
+  },
+] as const
+
+type ModelSeriesKey = typeof MODEL_SERIES_PRESETS[number]['key']
+type SelectedSeries = 'all' | ModelSeriesKey
+
 const emptyForm: FormState = {
   name: '',
   protocol: 'openai_chat',
@@ -104,6 +173,19 @@ function matchesCandidate(modelName: string, groupName: string, matchRegex: stri
     return false
   }
   return normalizeMatchValue(modelName).includes(normalizedGroupName)
+}
+
+function normalizeModelName(value: string | null | undefined) {
+  return (value || '').trim().toLowerCase()
+}
+
+function getSeriesPreset(name: string) {
+  const normalized = normalizeModelName(name)
+  return MODEL_SERIES_PRESETS.find((item) => item.key !== 'other' && item.prefixes.some((prefix) => normalized.startsWith(prefix))) ?? MODEL_SERIES_PRESETS.find((item) => item.key === 'other')!
+}
+
+function getSeriesKey(group: Pick<ModelGroup, 'name'>): ModelSeriesKey {
+  return getSeriesPreset(group.name).key
 }
 
 const strategyOptions: Array<{ value: RoutingStrategy; zh: string; en: string }> = [
@@ -334,9 +416,47 @@ function SelectedMemberRow({
   )
 }
 
+function SeriesChip({
+  selected,
+  label,
+  sampleModel,
+  onClick,
+  isAll = false,
+}: {
+  selected: boolean
+  label: string
+  sampleModel: string
+  onClick: () => void
+  isAll?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'group flex min-w-[108px] snap-start flex-col items-center justify-center gap-2 rounded-[22px] border bg-card px-4 py-4 text-center transition-all',
+        selected
+          ? 'border-primary bg-primary/[0.05] shadow-[0_0_0_1px_rgba(37,99,235,0.08)]'
+          : 'border-border/70 hover:border-primary/25 hover:bg-muted/20'
+      )}
+    >
+      <span
+        className={cn(
+          'flex size-11 items-center justify-center rounded-2xl border bg-background',
+          selected ? 'border-primary/20 bg-primary/[0.06]' : 'border-border/60'
+        )}
+      >
+        {isAll ? <LayoutGrid size={20} className={selected ? 'text-primary' : 'text-muted-foreground'} /> : <ModelAvatar name={sampleModel} size={28} />}
+      </span>
+      <div className="text-sm font-medium text-foreground">{label}</div>
+    </button>
+  )
+}
+
 export function GroupsScreen() {
   const queryClient = useQueryClient()
   const { locale } = useI18n()
+  const [selectedSeries, setSelectedSeries] = useState<SelectedSeries>('all')
   const [search, setSearch] = useState('')
   const [protocolFilter, setProtocolFilter] = useState<'all' | ProtocolKind>('all')
   const [strategyFilter, setStrategyFilter] = useState<'all' | RoutingStrategy>('all')
@@ -398,9 +518,36 @@ export function GroupsScreen() {
     })
   ), [channelMap, groups])
 
+  const seriesOptions = useMemo(() => {
+    const availableKeys = new Set<ModelSeriesKey>()
+    for (const group of groupRows) {
+      availableKeys.add(getSeriesKey(group))
+    }
+
+    const available = MODEL_SERIES_PRESETS.filter((item) => item.key !== 'other' && availableKeys.has(item.key))
+    if (availableKeys.has('other')) {
+      const other = MODEL_SERIES_PRESETS.find((item) => item.key === 'other')
+      if (other) {
+        available.push(other)
+      }
+    }
+
+    return [{
+      key: 'all' as const,
+      zh: '全部',
+      en: 'All',
+      sampleModel: 'all',
+    }, ...available]
+  }, [groupRows])
+
+  const effectiveSelectedSeries = seriesOptions.some((item) => item.key === selectedSeries)
+    ? selectedSeries
+    : 'all'
+
   const visibleGroups = useMemo<GroupRow[]>(() => {
     const keyword = search.trim().toLowerCase()
     const filtered = groupRows.filter((group) => {
+      if (effectiveSelectedSeries !== 'all' && getSeriesKey(group) !== effectiveSelectedSeries) return false
       if (protocolFilter !== 'all' && group.protocol !== protocolFilter) return false
       if (strategyFilter !== 'all' && group.strategy !== strategyFilter) return false
       if (!keyword) return true
@@ -420,8 +567,9 @@ export function GroupsScreen() {
       if (sortBy === 'enabled-desc') return right.enabled_member_count - left.enabled_member_count || left.name.localeCompare(right.name, locale)
       return right.member_count - left.member_count || left.name.localeCompare(right.name, locale)
     })
-  }, [groupRows, locale, protocolFilter, search, sortBy, strategyFilter])
+  }, [effectiveSelectedSeries, groupRows, locale, protocolFilter, search, sortBy, strategyFilter])
   const activeFilterCount = [
+    effectiveSelectedSeries !== 'all',
     Boolean(search.trim()),
     protocolFilter !== 'all',
     strategyFilter !== 'all',
@@ -701,6 +849,7 @@ export function GroupsScreen() {
   }
 
   function resetFilters() {
+    setSelectedSeries('all')
     setSearch('')
     setProtocolFilter('all')
     setStrategyFilter('all')
@@ -718,138 +867,161 @@ export function GroupsScreen() {
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
-        <Card className="min-h-[calc(100dvh-12rem)] overflow-hidden py-0">
-          <CardContent className="max-h-[calc(100dvh-12rem)] overflow-y-auto px-3 py-3">
-            {isLoading ? (
-              <div className="px-2 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</div>
-            ) : visibleGroups.length ? (
-              <ItemGroup className="gap-3">
-                {visibleGroups.map((group) => {
-                  const GroupAvatar = getModelGroupAvatar(group.name)
-                  return (
-                    <Item
-                      key={group.id}
-                      variant="outline"
-                      role="button"
-                      tabIndex={0}
-                      className="items-start gap-3 rounded-2xl border-border/80 bg-background px-4 py-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
-                      onClick={() => openEdit(group)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          openEdit(group)
-                        }
-                      }}
-                    >
-                      <ItemMedia variant="icon" className="mt-0.5 flex size-11 self-start rounded-xl bg-muted/40">
-                        <GroupAvatar size={30} />
-                      </ItemMedia>
-                      <ItemContent className="min-w-0">
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <ItemTitle className="truncate text-base">{group.name}</ItemTitle>
-                            <Badge variant="outline" className={cn('px-2.5 py-0.5', protocolBadgeClassName(group.protocol))}>
-                              {protocolLabel(group.protocol, locale)}
-                            </Badge>
-                          </div>
-                        </div>
-                        <ItemFooter
-                          className="mt-3 flex flex-wrap items-center gap-2.5"
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => event.stopPropagation()}
-                        >
-                          <StrategyToggle
-                            value={group.strategy}
-                            locale={locale}
-                            disabled={busyId === group.id}
-                            size="sm"
-                            className="w-fit"
-                            onChange={(value) => void changeStrategy(group, value)}
-                          />
-                        </ItemFooter>
-                        <div
-                          className="mt-3 flex flex-wrap items-center gap-2"
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => event.stopPropagation()}
-                        >
-                          {group.items.length ? group.items.map((item, index) => {
-                            const channelName = item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id
-                            return (
-                              <div
-                                key={itemKey(item)}
-                                className={cn(
-                                  'flex max-w-full items-center rounded-full border bg-background',
-                                  !item.enabled && 'opacity-55',
-                                  cardDragging?.groupId === group.id && cardDragging.index === index && 'opacity-60'
-                                )}
-                                title={`${channelName} · ${item.model_name}`}
-                              >
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  draggable={busyId !== group.id}
-                                  className="h-auto max-w-full rounded-full rounded-r-none border-0 px-3 py-1.5 cursor-grab active:cursor-grabbing"
-                                  onDragStart={() => setCardDragging({ groupId: group.id, index })}
-                                  onDragOver={(event) => event.preventDefault()}
-                                  onDrop={() => {
-                                    if (!cardDragging || cardDragging.groupId !== group.id) return
-                                    void reorderGroupItems(group, cardDragging.index, index)
-                                  }}
-                                  onDragEnd={() => setCardDragging(null)}
-                                >
-                                  <GripVertical data-icon="inline-start" />
-                                  <span className="truncate">{item.model_name}</span>
-                                  <span className="truncate text-muted-foreground">· {channelName}</span>
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
-                                  disabled={busyId === group.id}
-                                  onClick={() => void removeGroupItem(group, index)}
-                                >
-                                  <X />
-                                </Button>
-                              </div>
-                            )
-                          }) : (
-                            <ItemDescription className="text-sm">
-                              {locale === 'zh-CN' ? '暂无成员' : 'No members'}
-                            </ItemDescription>
-                          )}
-                        </div>
-                      </ItemContent>
-                      <ItemActions
-                        className="ml-auto self-start"
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        <SwitchButton
-                          checked={isGroupEnabled(group)}
-                          disabled={busyId === group.id || !group.items.length}
-                          onChange={(checked) => void toggleGroupEnabled(group, checked)}
-                        />
-                        <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(group)}>
-                          <Trash2 data-icon="inline-start" />
-                          {locale === 'zh-CN' ? '删除' : 'Delete'}
-                        </Button>
-                      </ItemActions>
-                    </Item>
-                  )
-                })}
-              </ItemGroup>
-            ) : (
-              <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-                {search.trim() || protocolFilter !== 'all' || strategyFilter !== 'all'
-                  ? (locale === 'zh-CN' ? '没有匹配的模型组。' : 'No matching groups.')
-                  : (locale === 'zh-CN' ? '当前还没有模型组。' : 'No groups yet.')}
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
+        <div className="order-2 grid gap-4 xl:order-1">
+          <div className="rounded-2xl border bg-card px-4 py-4 sm:px-5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '选择模型系列' : 'Choose model series'}</div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+
+            <div className="flex snap-x gap-3 overflow-x-auto pb-1">
+              {seriesOptions.map((option) => (
+                <SeriesChip
+                  key={option.key}
+                  selected={effectiveSelectedSeries === option.key}
+                  label={locale === 'zh-CN' ? option.zh : option.en}
+                  sampleModel={option.sampleModel}
+                  isAll={option.key === 'all'}
+                  onClick={() => setSelectedSeries(option.key)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <Card className="min-h-[calc(100dvh-18rem)] overflow-hidden py-0">
+            <CardContent className="max-h-[calc(100dvh-18rem)] overflow-y-auto px-3 py-3">
+              {isLoading ? (
+                <div className="px-2 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</div>
+              ) : visibleGroups.length ? (
+                <ItemGroup className="gap-3">
+                  {visibleGroups.map((group) => {
+                    const GroupAvatar = getModelGroupAvatar(group.name)
+                    return (
+                      <Item
+                        key={group.id}
+                        variant="outline"
+                        role="button"
+                        tabIndex={0}
+                        className="items-start gap-3 rounded-2xl border-border/80 bg-background px-4 py-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
+                        onClick={() => openEdit(group)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            openEdit(group)
+                          }
+                        }}
+                      >
+                        <ItemMedia variant="icon" className="mt-0.5 flex size-11 self-start rounded-xl bg-muted/40">
+                          <GroupAvatar size={30} />
+                        </ItemMedia>
+                        <ItemContent className="min-w-0">
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <ItemTitle className="truncate text-base">{group.name}</ItemTitle>
+                              <Badge variant="outline" className={cn('px-2.5 py-0.5', protocolBadgeClassName(group.protocol))}>
+                                {protocolLabel(group.protocol, locale)}
+                              </Badge>
+                            </div>
+                          </div>
+                          <ItemFooter
+                            className="mt-3 flex flex-wrap items-center gap-2.5"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            <StrategyToggle
+                              value={group.strategy}
+                              locale={locale}
+                              disabled={busyId === group.id}
+                              size="sm"
+                              className="w-fit"
+                              onChange={(value) => void changeStrategy(group, value)}
+                            />
+                          </ItemFooter>
+                          <div
+                            className="mt-3 flex flex-wrap items-center gap-2"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            {group.items.length ? group.items.map((item, index) => {
+                              const channelName = item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id
+                              return (
+                                <div
+                                  key={itemKey(item)}
+                                  className={cn(
+                                    'flex max-w-full items-center rounded-full border bg-background',
+                                    !item.enabled && 'opacity-55',
+                                    cardDragging?.groupId === group.id && cardDragging.index === index && 'opacity-60'
+                                  )}
+                                  title={`${channelName} · ${item.model_name}`}
+                                >
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    draggable={busyId !== group.id}
+                                    className="h-auto max-w-full rounded-full rounded-r-none border-0 px-3 py-1.5 cursor-grab active:cursor-grabbing"
+                                    onDragStart={() => setCardDragging({ groupId: group.id, index })}
+                                    onDragOver={(event) => event.preventDefault()}
+                                    onDrop={() => {
+                                      if (!cardDragging || cardDragging.groupId !== group.id) return
+                                      void reorderGroupItems(group, cardDragging.index, index)
+                                    }}
+                                    onDragEnd={() => setCardDragging(null)}
+                                  >
+                                    <GripVertical data-icon="inline-start" />
+                                    <span className="truncate">{item.model_name}</span>
+                                    <span className="truncate text-muted-foreground">· {channelName}</span>
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+                                    disabled={busyId === group.id}
+                                    onClick={() => void removeGroupItem(group, index)}
+                                  >
+                                    <X />
+                                  </Button>
+                                </div>
+                              )
+                            }) : (
+                              <ItemDescription className="text-sm">
+                                {locale === 'zh-CN' ? '暂无成员' : 'No members'}
+                              </ItemDescription>
+                            )}
+                          </div>
+                        </ItemContent>
+                        <ItemActions
+                          className="ml-auto self-start"
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
+                          <SwitchButton
+                            checked={isGroupEnabled(group)}
+                            disabled={busyId === group.id || !group.items.length}
+                            onChange={(checked) => void toggleGroupEnabled(group, checked)}
+                          />
+                          <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(group)}>
+                            <Trash2 data-icon="inline-start" />
+                            {locale === 'zh-CN' ? '删除' : 'Delete'}
+                          </Button>
+                        </ItemActions>
+                      </Item>
+                    )
+                  })}
+                </ItemGroup>
+              ) : (
+                <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
+                  {effectiveSelectedSeries !== 'all' || search.trim() || protocolFilter !== 'all' || strategyFilter !== 'all'
+                    ? (locale === 'zh-CN' ? '没有匹配的模型组。' : 'No matching groups.')
+                    : (locale === 'zh-CN' ? '当前还没有模型组。' : 'No groups yet.')}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         <aside className="order-1 xl:order-2">
           <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
