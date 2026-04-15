@@ -20,7 +20,7 @@ import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, DollarSign, Globe2, Layers3, LayoutDashboard, LogOut, PanelLeftClose, Settings2, Waypoints } from 'lucide-react'
+import { Activity, Globe2, Layers3, LayoutDashboard, LogOut, PanelLeftClose, Settings2, Waypoints } from 'lucide-react'
 import Image from 'next/image'
 import { useEffect, useMemo } from 'react'
 
@@ -70,7 +70,6 @@ export function DashboardShell({
       items: [
         { key: 'channels' as DashboardView, label: t.channels, icon: Waypoints },
         { key: 'groups' as DashboardView, label: t.groups, icon: Layers3 },
-        { key: 'model-prices' as DashboardView, label: t.modelPrices, icon: DollarSign },
       ],
     },
     {

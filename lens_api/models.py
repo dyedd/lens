@@ -344,6 +344,10 @@ class ModelGroup(BaseModel):
     protocol: ProtocolKind
     strategy: RoutingStrategy
     match_regex: str = ""
+    input_price_per_million: float = 0.0
+    output_price_per_million: float = 0.0
+    cache_read_price_per_million: float = 0.0
+    cache_write_price_per_million: float = 0.0
     items: list["ModelGroupItem"] = Field(default_factory=list)
 
 
@@ -503,6 +507,8 @@ class RequestLogItem(BaseModel):
     latency_ms: int
     resolved_model: str | None = None
     input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
     input_cost_usd: float = 0.0

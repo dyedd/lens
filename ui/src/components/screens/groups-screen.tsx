@@ -39,6 +39,7 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
 
 type FormItem = {
@@ -55,6 +56,10 @@ type FormState = {
   protocol: ProtocolKind
   strategy: RoutingStrategy
   match_regex: string
+  input_price_per_million: string
+  output_price_per_million: string
+  cache_read_price_per_million: string
+  cache_write_price_per_million: string
   items: FormItem[]
 }
 
@@ -151,6 +156,10 @@ const emptyForm: FormState = {
   protocol: 'openai_chat',
   strategy: 'round_robin',
   match_regex: '',
+  input_price_per_million: '0',
+  output_price_per_million: '0',
+  cache_read_price_per_million: '0',
+  cache_write_price_per_million: '0',
   items: [],
 }
 
@@ -230,6 +239,42 @@ function panelClassName(extra = '') {
   return cn('rounded-lg bg-muted/10', extra)
 }
 
+function formatMoney(value: number) {
+  if (value === 0) return '0'
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: value >= 1 ? 2 : 0,
+    maximumFractionDigits: 4,
+  }).format(value)
+}
+
+function metricLabel(
+  key: 'input' | 'output' | 'cache_read' | 'cache_write',
+  locale: 'zh-CN' | 'en-US'
+) {
+  const labels: Record<'input' | 'output' | 'cache_read' | 'cache_write', { zh: string; en: string }> = {
+    input: { zh: '输入', en: 'Input' },
+    output: { zh: '输出', en: 'Output' },
+    cache_read: { zh: '缓存读取', en: 'Cache Read' },
+    cache_write: { zh: '缓存写入', en: 'Cache Write' },
+  }
+
+  return labels[key][locale === 'zh-CN' ? 'zh' : 'en']
+}
+
+function compactMetricLabel(
+  key: 'input' | 'output' | 'cache_read' | 'cache_write',
+  locale: 'zh-CN' | 'en-US'
+) {
+  const labels: Record<'input' | 'output' | 'cache_read' | 'cache_write', { zh: string; en: string }> = {
+    input: { zh: '输入', en: 'IN' },
+    output: { zh: '输出', en: 'OUT' },
+    cache_read: { zh: '读', en: 'CR' },
+    cache_write: { zh: '写', en: 'CW' },
+  }
+
+  return labels[key][locale === 'zh-CN' ? 'zh' : 'en']
+}
+
 function selectClassName() {
   return 'w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground'
 }
@@ -270,6 +315,10 @@ function toForm(group: ModelGroup): FormState {
     protocol: group.protocol,
     strategy: group.strategy,
     match_regex: group.match_regex,
+    input_price_per_million: String(group.input_price_per_million),
+    output_price_per_million: String(group.output_price_per_million),
+    cache_read_price_per_million: String(group.cache_read_price_per_million),
+    cache_write_price_per_million: String(group.cache_write_price_per_million),
     items: group.items
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -296,6 +345,73 @@ function toPayload(form: FormState): ModelGroupPayload {
 
 function SwitchButton({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
   return <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
+}
+
+function CompactPriceSummary({
+  locale,
+  inputPrice,
+  outputPrice,
+  cacheReadPrice,
+  cacheWritePrice,
+}: {
+  locale: 'zh-CN' | 'en-US'
+  inputPrice: number
+  outputPrice: number
+  cacheReadPrice: number
+  cacheWritePrice: number
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          <span>{compactMetricLabel('input', locale)} ${formatMoney(inputPrice)}</span>
+          <span>{compactMetricLabel('output', locale)} ${formatMoney(outputPrice)}</span>
+          <span>{compactMetricLabel('cache_read', locale)} ${formatMoney(cacheReadPrice)}</span>
+          <span>{compactMetricLabel('cache_write', locale)} ${formatMoney(cacheWritePrice)}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start">
+        <div className="grid gap-1">
+          <div>{metricLabel('input', locale)}: ${formatMoney(inputPrice)} / 1M tokens</div>
+          <div>{metricLabel('output', locale)}: ${formatMoney(outputPrice)} / 1M tokens</div>
+          <div>{metricLabel('cache_read', locale)}: ${formatMoney(cacheReadPrice)} / 1M tokens</div>
+          <div>{metricLabel('cache_write', locale)}: ${formatMoney(cacheWritePrice)} / 1M tokens</div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function EditablePriceRow({
+  locale,
+  primaryLabel,
+  primaryValue,
+  secondaryLabel,
+  secondaryValue,
+  onPrimaryChange,
+  onSecondaryChange,
+}: {
+  locale: 'zh-CN' | 'en-US'
+  primaryLabel: 'input' | 'output'
+  primaryValue: string
+  secondaryLabel: 'cache_read' | 'cache_write'
+  secondaryValue: string
+  onPrimaryChange: (value: string) => void
+  onSecondaryChange: (value: string) => void
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Field className="min-w-0">
+        <FieldLabel>${metricLabel(primaryLabel, locale)}</FieldLabel>
+        <Input className="mt-2" value={primaryValue} onChange={(event) => onPrimaryChange(event.target.value)} />
+      </Field>
+
+      <Field className="min-w-0">
+        <FieldLabel>${metricLabel(secondaryLabel, locale)}</FieldLabel>
+        <Input className="mt-2" value={secondaryValue} onChange={(event) => onSecondaryChange(event.target.value)} />
+      </Field>
+    </div>
+  )
 }
 
 function StrategyToggle({
@@ -472,6 +588,7 @@ export function GroupsScreen() {
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
   const [cardDragging, setCardDragging] = useState<{ groupId: string; index: number } | null>(null)
   const [showEnabledOnly, setShowEnabledOnly] = useState(false)
+  const [syncingPrices, setSyncingPrices] = useState(false)
 
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/admin/model-groups') })
   const { data: sites } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
@@ -674,11 +791,53 @@ export function GroupsScreen() {
     return savedGroup
   }
 
+  async function saveGroupPrice(groupName: string, payload: {
+    input_price_per_million: number
+    output_price_per_million: number
+    cache_read_price_per_million: number
+    cache_write_price_per_million: number
+  }) {
+    await apiRequest('/admin/model-prices/' + encodeURIComponent(groupName), {
+      method: 'PUT',
+      body: JSON.stringify({
+        model_key: groupName,
+        display_name: groupName,
+        ...payload,
+      }),
+    })
+    await queryClient.invalidateQueries({ queryKey: ['groups'] })
+  }
+
+  function parsePriceForm(payload: FormState) {
+    const input = Number(payload.input_price_per_million)
+    const output = Number(payload.output_price_per_million)
+    const cacheRead = Number(payload.cache_read_price_per_million)
+    const cacheWrite = Number(payload.cache_write_price_per_million)
+
+    if (
+      !Number.isFinite(input) || input < 0 ||
+      !Number.isFinite(output) || output < 0 ||
+      !Number.isFinite(cacheRead) || cacheRead < 0 ||
+      !Number.isFinite(cacheWrite) || cacheWrite < 0
+    ) {
+      throw new Error(locale === 'zh-CN' ? '价格必须是大于等于 0 的数字' : 'Prices must be numbers greater than or equal to 0')
+    }
+
+    return {
+      input_price_per_million: input,
+      output_price_per_million: output,
+      cache_read_price_per_million: cacheRead,
+      cache_write_price_per_million: cacheWrite,
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
     try {
-      await saveGroup(form, editingId)
+      const pricePayload = parsePriceForm(form)
+      const savedGroup = await saveGroup(form, editingId)
+      await saveGroupPrice(savedGroup.name, pricePayload)
       toast.success(editingId
         ? (locale === 'zh-CN' ? '模型组已更新' : 'Group updated')
         : (locale === 'zh-CN' ? '模型组已创建' : 'Group created'))
@@ -686,9 +845,29 @@ export function GroupsScreen() {
       setEditingId(null)
       setForm(emptyForm)
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存模型组失败' : 'Failed to save group')
+      const message = e instanceof ApiError
+        ? e.message
+        : e instanceof Error
+          ? e.message
+          : (locale === 'zh-CN' ? '保存模型组失败' : 'Failed to save group')
       setError(message)
       toast.error(message)
+    }
+  }
+
+  async function syncPrices() {
+    setSyncingPrices(true)
+    setError('')
+    try {
+      await apiRequest('/admin/model-price-sync-jobs', { method: 'POST' })
+      await queryClient.invalidateQueries({ queryKey: ['groups'] })
+      toast.success(locale === 'zh-CN' ? '模型价格已同步' : 'Model prices synced')
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '同步模型价格失败' : 'Failed to sync model prices')
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSyncingPrices(false)
     }
   }
 
@@ -860,9 +1039,17 @@ export function GroupsScreen() {
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '模型组' : 'Groups'}</h1>
-        <Button className="rounded-full" size="icon-sm" type="button" onClick={openCreate}>
-          <Plus size={18} />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => void syncPrices()} disabled={syncingPrices}>
+            <RefreshCcw data-icon="inline-start" className={syncingPrices ? 'animate-spin' : ''} />
+            {syncingPrices
+              ? (locale === 'zh-CN' ? '同步中...' : 'Syncing...')
+              : (locale === 'zh-CN' ? '同步价格' : 'Sync prices')}
+          </Button>
+          <Button className="rounded-full" size="icon-sm" type="button" onClick={openCreate}>
+            <Plus size={18} />
+          </Button>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -924,6 +1111,13 @@ export function GroupsScreen() {
                                 {protocolLabel(group.protocol, locale)}
                               </Badge>
                             </div>
+                            <CompactPriceSummary
+                              locale={locale}
+                              inputPrice={group.input_price_per_million}
+                              outputPrice={group.output_price_per_million}
+                              cacheReadPrice={group.cache_read_price_per_million}
+                              cacheWritePrice={group.cache_write_price_per_million}
+                            />
                           </div>
                           <ItemFooter
                             className="mt-3 flex flex-wrap items-center gap-2.5"
@@ -1101,9 +1295,9 @@ export function GroupsScreen() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AppDialogContent className="max-w-6xl" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
-          <form className="flex h-full min-h-0 flex-col overflow-hidden" onSubmit={submit}>
-            <div className="hide-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" style={{ maxHeight: 'calc(88vh - 210px)' }}>
+        <AppDialogContent className="max-w-6xl h-[88vh]" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
+          <form className="flex flex-col gap-4 pr-1" onSubmit={submit}>
+            <div className="flex flex-col gap-4">
               <section className="grid gap-4">
                 <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '基本信息' : 'Group settings'}</div>
                 <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1130,8 +1324,34 @@ export function GroupsScreen() {
 
               <Separator />
 
-              <div className="grid min-h-0 gap-4 overflow-hidden lg:grid-cols-[1.05fr_0.95fr]">
-              <section className={panelClassName('flex min-h-0 flex-col overflow-hidden')}>
+              <section className="grid gap-4">
+                <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '价格' : 'Pricing'}</div>
+                <div className="grid gap-3 xl:grid-cols-2">
+                  <EditablePriceRow
+                    locale={locale}
+                    primaryLabel="input"
+                    primaryValue={form.input_price_per_million}
+                    secondaryLabel="cache_read"
+                    secondaryValue={form.cache_read_price_per_million}
+                    onPrimaryChange={(value) => setForm((current) => ({ ...current, input_price_per_million: value }))}
+                    onSecondaryChange={(value) => setForm((current) => ({ ...current, cache_read_price_per_million: value }))}
+                  />
+                  <EditablePriceRow
+                    locale={locale}
+                    primaryLabel="output"
+                    primaryValue={form.output_price_per_million}
+                    secondaryLabel="cache_write"
+                    secondaryValue={form.cache_write_price_per_million}
+                    onPrimaryChange={(value) => setForm((current) => ({ ...current, output_price_per_million: value }))}
+                    onSecondaryChange={(value) => setForm((current) => ({ ...current, cache_write_price_per_million: value }))}
+                  />
+                </div>
+              </section>
+
+              <Separator />
+
+              <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+              <section className={panelClassName('flex flex-col')}>
                 <div className="grid gap-3 px-2 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
                     <Search size={14} className="text-muted-foreground" />
@@ -1149,7 +1369,7 @@ export function GroupsScreen() {
                   </div>
                 </div>
 
-                <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+                <div className="px-2 pb-2">
                   <div className="flex flex-col gap-2">
                     {groupedCandidates.map((channel) => {
                       const currentChannel = channelMap.get(channel.channel_id)
@@ -1186,7 +1406,7 @@ export function GroupsScreen() {
                 </div>
               </section>
 
-              <section className={panelClassName('flex min-h-0 flex-col overflow-hidden')}>
+              <section className={panelClassName('flex flex-col')}>
                 <div className="flex items-center justify-between px-2 py-1">
                   <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
                   <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1196,7 +1416,7 @@ export function GroupsScreen() {
                     <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{visibleSelectedItems.length}/{form.items.length}</span>
                   </div>
                 </div>
-                <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2 pt-1">
+                <div className="px-2 pb-2 pt-1">
                   <div className="flex flex-col gap-1.5">
                     {visibleSelectedItems.length ? visibleSelectedItems.map((item) => {
                       const index = form.items.findIndex((candidate) => itemKey(candidate) === itemKey(item))
@@ -1227,7 +1447,7 @@ export function GroupsScreen() {
             </div>
             </div>
 
-            <div className="mt-4 shrink-0 border-t bg-background pt-4">
+            <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">
               {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
               <div className="flex justify-end gap-3">
                 <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>

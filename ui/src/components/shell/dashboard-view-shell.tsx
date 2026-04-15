@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { DashboardShell } from '@/components/shell/dashboard-shell'
 import { lazyWithPreload } from '@/lib/lazy-with-preload'
 
-export type DashboardView = 'overview' | 'requests' | 'channels' | 'groups' | 'model-prices' | 'settings'
+export type DashboardView = 'overview' | 'requests' | 'channels' | 'groups' | 'settings'
 
 type LazyScreen = ReturnType<typeof lazyWithPreload>
 
@@ -13,7 +13,6 @@ const OverviewModule = lazyWithPreload(() => import('@/components/screens/overvi
 const RequestsModule = lazyWithPreload(() => import('@/components/screens/requests-screen').then((m) => ({ default: m.RequestsScreen })))
 const ChannelsModule = lazyWithPreload(() => import('@/components/screens/channels-screen').then((m) => ({ default: m.ChannelsScreen })))
 const GroupsModule = lazyWithPreload(() => import('@/components/screens/groups-screen').then((m) => ({ default: m.GroupsScreen })))
-const ModelPricesModule = lazyWithPreload(() => import('@/components/screens/model-prices-screen').then((m) => ({ default: m.ModelPricesScreen })))
 const SettingsModule = lazyWithPreload(() => import('@/components/screens/settings-screen').then((m) => ({ default: m.SettingsScreen })))
 
 const VIEW_COMPONENTS: Record<DashboardView, LazyScreen> = {
@@ -21,12 +20,11 @@ const VIEW_COMPONENTS: Record<DashboardView, LazyScreen> = {
   requests: RequestsModule,
   channels: ChannelsModule,
   groups: GroupsModule,
-  'model-prices': ModelPricesModule,
   settings: SettingsModule,
 }
 
 function isDashboardView(value: string | null): value is DashboardView {
-  return value === 'overview' || value === 'requests' || value === 'channels' || value === 'groups' || value === 'model-prices' || value === 'settings'
+  return value === 'overview' || value === 'requests' || value === 'channels' || value === 'groups' || value === 'settings'
 }
 
 function DashboardViewShellInner() {
@@ -46,7 +44,6 @@ function DashboardViewShellInner() {
     VIEW_COMPONENTS.overview.preload()
     VIEW_COMPONENTS.channels.preload()
     VIEW_COMPONENTS.groups.preload()
-    VIEW_COMPONENTS['model-prices'].preload()
     VIEW_COMPONENTS.requests.preload()
   }, [])
 

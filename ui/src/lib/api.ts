@@ -18,6 +18,10 @@ export type ModelGroup = {
   protocol: ProtocolKind
   strategy: RoutingStrategy
   match_regex: string
+  input_price_per_million: number
+  output_price_per_million: number
+  cache_read_price_per_million: number
+  cache_write_price_per_million: number
   items: ModelGroupItem[]
 }
 
@@ -307,6 +311,8 @@ export type RequestLogItem = {
   latency_ms: number
   resolved_model?: string | null
   input_tokens: number
+  cache_read_input_tokens: number
+  cache_write_input_tokens: number
   output_tokens: number
   total_tokens: number
   input_cost_usd: number

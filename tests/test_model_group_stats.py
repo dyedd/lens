@@ -249,6 +249,17 @@ async def _run_group_name_price_test(tmp_path):
     assert output_cost == 0.004
     assert total_cost == 0.006
 
+    cached_input_cost, cached_output_cost, cached_total_cost = await domain_store.estimate_model_cost(
+        'gpt-5.4',
+        1000,
+        500,
+        cache_read_input_tokens=400,
+        cache_write_input_tokens=100,
+    )
+    assert cached_input_cost == 0.0013
+    assert cached_output_cost == 0.004
+    assert cached_total_cost == 0.0053
+
     await engine.dispose()
 
 

@@ -299,8 +299,8 @@ class DomainStore:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
                 raise KeyError(group_id)
-            items = await self._load_group_items(session, [group_id])
-            return self._to_group(entity, items.get(group_id, []))
+            hydrated = await self._hydrate_groups(session, [entity])
+            return hydrated[0]
 
     async def find_group_by_name(self, protocol: str, name: str | None) -> ModelGroup | None:
         if not name:
@@ -316,8 +316,8 @@ class DomainStore:
             entity = result.scalar_one_or_none()
             if entity is None:
                 return None
-            items = await self._load_group_items(session, [entity.id])
-            return self._to_group(entity, items.get(entity.id, []))
+            hydrated = await self._hydrate_groups(session, [entity])
+            return hydrated[0]
 
     async def list_group_candidates(self, payload: ModelGroupCandidatesRequest) -> ModelGroupCandidatesResponse:
         async with self._session_factory() as session:
@@ -616,7 +616,31 @@ class DomainStore:
         if not entities:
             return []
         items_by_group = await self._load_group_items(session, [item.id for item in entities])
-        return [self._to_group(item, items_by_group.get(item.id, [])) for item in entities]
+        prices_by_key = await self._load_model_prices_by_keys(
+            session, [normalize_model_key(item.name) for item in entities]
+        )
+        return [
+            self._to_group(
+                item,
+                items_by_group.get(item.id, []),
+                prices_by_key.get(normalize_model_key(item.name)),
+            )
+            for item in entities
+        ]
+
+    async def _load_model_prices_by_keys(
+        self, session: AsyncSession, keys: list[str]
+    ) -> dict[str, ModelPriceEntity]:
+        normalized_keys = [key for key in dict.fromkeys(keys) if key]
+        if not normalized_keys:
+            return {}
+
+        rows = (
+            await session.execute(
+                select(ModelPriceEntity).where(ModelPriceEntity.model_key.in_(normalized_keys))
+            )
+        ).scalars().all()
+        return {row.model_key: row for row in rows}
 
     async def _load_group_items(self, session: AsyncSession, group_ids: list[str]) -> dict[str, list[ModelGroupItem]]:
         if not group_ids:
@@ -890,10 +914,12 @@ class DomainStore:
         input_cost_usd: float,
         output_cost_usd: float,
         total_cost_usd: float,
-        request_content: str | None,
-        response_content: str | None,
-        attempts: list[dict[str, Any]] | None,
-        error_message: str | None,
+        cache_read_input_tokens: int = 0,
+        cache_write_input_tokens: int = 0,
+        request_content: str | None = None,
+        response_content: str | None = None,
+        attempts: list[dict[str, Any]] | None = None,
+        error_message: str | None = None,
     ) -> RequestLogItem:
         item: RequestLogItem
         async with self._session_factory() as session:
@@ -911,6 +937,8 @@ class DomainStore:
                 latency_ms=latency_ms,
                 resolved_model=resolved_model,
                 input_tokens=max(input_tokens, 0),
+                cache_read_input_tokens=max(cache_read_input_tokens, 0),
+                cache_write_input_tokens=max(cache_write_input_tokens, 0),
                 output_tokens=max(output_tokens, 0),
                 total_tokens=max(total_tokens, 0),
                 input_cost_usd=max(input_cost_usd, 0.0),
@@ -1132,7 +1160,14 @@ class DomainStore:
             available_models=available_models,
         )
 
-    async def estimate_model_cost(self, model_name: str | None, input_tokens: int, output_tokens: int) -> tuple[float, float, float]:
+    async def estimate_model_cost(
+        self,
+        model_name: str | None,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_input_tokens: int = 0,
+        cache_write_input_tokens: int = 0,
+    ) -> tuple[float, float, float]:
         if not model_name:
             return 0.0, 0.0, 0.0
 
@@ -1141,7 +1176,16 @@ class DomainStore:
             if entity is None:
                 return 0.0, 0.0, 0.0
 
-        input_cost = (max(input_tokens, 0) / 1_000_000) * float(entity.input_price_per_million)
+        total_input_tokens = max(input_tokens, 0)
+        cache_read_tokens = max(cache_read_input_tokens, 0)
+        cache_write_tokens = max(cache_write_input_tokens, 0)
+        regular_input_tokens = max(
+            total_input_tokens - cache_read_tokens - cache_write_tokens, 0
+        )
+
+        input_cost = (regular_input_tokens / 1_000_000) * float(entity.input_price_per_million)
+        input_cost += (cache_read_tokens / 1_000_000) * float(entity.cache_read_price_per_million)
+        input_cost += (cache_write_tokens / 1_000_000) * float(entity.cache_write_price_per_million)
         output_cost = (max(output_tokens, 0) / 1_000_000) * float(entity.output_price_per_million)
         total_cost = input_cost + output_cost
         return round(input_cost, 8), round(output_cost, 8), round(total_cost, 8)
@@ -1581,13 +1625,21 @@ class DomainStore:
             return default
 
     @staticmethod
-    def _to_group(entity: ModelGroupEntity, items: list[ModelGroupItem]) -> ModelGroup:
+    def _to_group(
+        entity: ModelGroupEntity,
+        items: list[ModelGroupItem],
+        price: ModelPriceEntity | None = None,
+    ) -> ModelGroup:
         return ModelGroup(
             id=entity.id,
             name=entity.name,
             protocol=entity.protocol,
             strategy=entity.strategy,
             match_regex=entity.match_regex,
+            input_price_per_million=float(price.input_price_per_million) if price is not None else 0.0,
+            output_price_per_million=float(price.output_price_per_million) if price is not None else 0.0,
+            cache_read_price_per_million=float(price.cache_read_price_per_million) if price is not None else 0.0,
+            cache_write_price_per_million=float(price.cache_write_price_per_million) if price is not None else 0.0,
             items=items,
         )
 
@@ -1609,6 +1661,8 @@ class DomainStore:
             latency_ms=entity.latency_ms,
             resolved_model=entity.resolved_model,
             input_tokens=entity.input_tokens,
+            cache_read_input_tokens=entity.cache_read_input_tokens,
+            cache_write_input_tokens=entity.cache_write_input_tokens,
             output_tokens=entity.output_tokens,
             total_tokens=entity.total_tokens,
             input_cost_usd=entity.input_cost_usd,
