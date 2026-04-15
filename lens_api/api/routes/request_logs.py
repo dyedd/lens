@@ -11,6 +11,12 @@ def register(app: FastAPI, service_module) -> None:
         response_model=list[service_module.RequestLogItem],
     )
     app.add_api_route(
+        "/api/admin/request-logs/page",
+        service_module.request_log_page,
+        methods=["GET"],
+        response_model=service_module.RequestLogPage,
+    )
+    app.add_api_route(
         "/api/admin/request-logs",
         service_module.clear_request_logs,
         methods=["DELETE"],

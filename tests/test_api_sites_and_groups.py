@@ -97,6 +97,10 @@ def test_request_log_detail_api(tmp_path: Path):
     asyncio.run(_run_request_log_detail_api(tmp_path))
 
 
+def test_request_log_page_api(tmp_path: Path):
+    asyncio.run(_run_request_log_page_api(tmp_path))
+
+
 def test_gateway_request_returns_503_when_database_is_locked(tmp_path: Path):
     asyncio.run(_run_gateway_request_returns_503_when_database_is_locked(tmp_path))
 
@@ -1693,6 +1697,108 @@ async def _run_openai_responses_stream_log_detail_restores_empty_completed_outpu
             assert 'data:' not in payload['response_content']
     finally:
         service_module.app_state.http.send = original_send
+        await service_module._close_app_state(service_module.app_state)
+
+
+async def _run_request_log_page_api(tmp_path: Path):
+    service_module, app, _ = await _build_test_app(tmp_path / 'api-request-log-page.db')
+    transport = httpx.ASGITransport(app=app)
+    await service_module._startup_app_state(service_module.app_state)
+    try:
+        await service_module.app_state.domain_store.create_request_log(
+            protocol='openai_chat',
+            requested_model='gpt-5.4',
+            matched_group_name='gpt-5.4',
+            channel_id='channel-a',
+            channel_name='Channel A',
+            gateway_key_id='gateway-key',
+            status_code=200,
+            success=True,
+            is_stream=False,
+            first_token_latency_ms=120,
+            latency_ms=640,
+            resolved_model='gpt-5.4',
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+            input_cost_usd=0.01,
+            output_cost_usd=0.02,
+            total_cost_usd=0.03,
+            request_content='{"model":"gpt-5.4"}',
+            response_content='{"id":"resp_1"}',
+            attempts=[],
+            error_message=None,
+        )
+        await service_module.app_state.domain_store.create_request_log(
+            protocol='openai_chat',
+            requested_model='gpt-4.1',
+            matched_group_name='gpt-4.1',
+            channel_id='channel-b',
+            channel_name='Channel B',
+            gateway_key_id='gateway-key',
+            status_code=200,
+            success=True,
+            is_stream=False,
+            first_token_latency_ms=110,
+            latency_ms=520,
+            resolved_model='gpt-4.1',
+            input_tokens=12,
+            output_tokens=6,
+            total_tokens=18,
+            input_cost_usd=0.011,
+            output_cost_usd=0.021,
+            total_cost_usd=0.032,
+            request_content='{"model":"gpt-4.1"}',
+            response_content='{"id":"resp_2"}',
+            attempts=[],
+            error_message=None,
+        )
+        await service_module.app_state.domain_store.create_request_log(
+            protocol='anthropic',
+            requested_model='claude-opus-4-6',
+            matched_group_name='claude-opus-4-6',
+            channel_id='channel-c',
+            channel_name='Channel C',
+            gateway_key_id='gateway-key',
+            status_code=500,
+            success=False,
+            is_stream=False,
+            first_token_latency_ms=0,
+            latency_ms=400,
+            resolved_model='claude-opus-4-6',
+            input_tokens=20,
+            output_tokens=0,
+            total_tokens=20,
+            input_cost_usd=0.05,
+            output_cost_usd=0.0,
+            total_cost_usd=0.05,
+            request_content='{"model":"claude-opus-4-6"}',
+            response_content='{"error":"failed"}',
+            attempts=[],
+            error_message='upstream failed',
+        )
+
+        async with httpx.AsyncClient(transport=transport, base_url='http://testserver') as client:
+            login = await client.post('/api/admin/session', json={'username': TEST_ADMIN_USERNAME, 'password': TEST_ADMIN_PASSWORD})
+            assert login.status_code == 200
+            token = login.json()['access_token']
+            headers = {'authorization': f'Bearer {token}'}
+
+            summary = await client.get('/api/admin/request-logs', headers=headers)
+            assert summary.status_code == 200
+            assert isinstance(summary.json(), list)
+            assert len(summary.json()) == 3
+
+            page = await client.get('/api/admin/request-logs/page?limit=2&offset=0', headers=headers)
+            assert page.status_code == 200
+            payload = page.json()
+            assert payload['total'] == 3
+            assert payload['limit'] == 2
+            assert payload['offset'] == 0
+            assert len(payload['items']) == 2
+            assert payload['items'][0]['matched_group_name'] == 'claude-opus-4-6'
+            assert payload['items'][1]['matched_group_name'] == 'gpt-4.1'
+    finally:
         await service_module._close_app_state(service_module.app_state)
 
 
