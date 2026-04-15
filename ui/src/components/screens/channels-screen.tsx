@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ChevronDown, Ellipsis, Filter, KeyRound, Pencil, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
+import { Activity, ChevronDown, Ellipsis, Filter, KeyRound, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -20,6 +20,7 @@ import {
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -185,19 +186,43 @@ function isSiteEnabled(site: Site) {
   return site.protocols.some((item) => item.enabled)
 }
 
+function protocolBadgeClassName(protocol: ProtocolKind) {
+  switch (protocol) {
+    case 'openai_chat':
+      return 'border-transparent bg-sky-500/10 text-sky-700'
+    case 'openai_responses':
+      return 'border-transparent bg-indigo-500/10 text-indigo-700'
+    case 'anthropic':
+      return 'border-transparent bg-amber-500/10 text-amber-700'
+    case 'gemini':
+      return 'border-transparent bg-emerald-500/10 text-emerald-700'
+    default:
+      return 'border-transparent bg-secondary text-secondary-foreground'
+  }
+}
+
 function ChannelMetric({
   icon,
   label,
   value,
+  tone = 'default',
 }: {
   icon: React.ReactNode
   label: string
   value: string
+  tone?: 'default' | 'accent'
 }) {
   return (
-    <div className="inline-flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
+    <div
+      className={cn(
+        'inline-flex min-h-8 items-center gap-2 rounded-full border px-3 text-xs',
+        tone === 'accent'
+          ? 'border-primary/20 bg-primary/[0.07] text-primary'
+          : 'border-border/70 bg-muted/25 text-muted-foreground'
+      )}
+    >
       <span className="inline-flex size-4.5 items-center justify-center">{icon}</span>
-      <span className="truncate">{label} {value}</span>
+      <span className="truncate font-medium">{label} {value}</span>
     </div>
   )
 }
@@ -697,26 +722,52 @@ export function ChannelsScreen() {
                 {visibleSites.map((site) => {
                   const stats = siteStats.get(site.id)
                   return (
-                    <Item key={site.id} variant="outline" className="items-start gap-4 px-4 py-4">
+                    <Item
+                      key={site.id}
+                      variant="outline"
+                      role="button"
+                      tabIndex={0}
+                      className="items-start gap-4 rounded-2xl border-border/80 bg-gradient-to-r from-background to-muted/[0.18] px-5 py-5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
+                      onClick={() => openEdit(site)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          openEdit(site)
+                        }
+                      }}
+                    >
                       <ItemContent className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <ItemTitle className="truncate">{site.name}</ItemTitle>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <ItemTitle className="truncate text-base">{site.name}</ItemTitle>
+                            {site.protocols.map((protocol) => (
+                              <Badge
+                                key={protocol.id}
+                                variant="outline"
+                                className={cn('px-2.5 py-0.5', protocolBadgeClassName(protocol.protocol))}
+                              >
+                                {protocolLabel(protocol.protocol)}
+                              </Badge>
+                            ))}
+                          </div>
+                          <ItemDescription className="truncate text-sm">
+                            {site.endpoint_summary || (locale === 'zh-CN' ? '未配置请求地址' : 'No endpoint configured')}
+                          </ItemDescription>
                         </div>
-                        <ItemDescription className="mt-1 truncate">{site.subtitle || site.endpoint_summary || (locale === 'zh-CN' ? '未配置协议' : 'No protocols')}</ItemDescription>
-                        <ItemFooter className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <ItemFooter className="mt-4 flex flex-wrap items-center gap-2.5">
                           <ChannelMetric icon={<Activity size={14} />} label={locale === 'zh-CN' ? '请求数' : 'Requests'} value={String(stats?.requestCount ?? 0)} />
                           <ChannelMetric icon={<Waypoints size={14} />} label={locale === 'zh-CN' ? '协议' : 'Protocols'} value={String(site.protocol_count)} />
                           <ChannelMetric icon={<Server size={14} />} label={locale === 'zh-CN' ? '模型' : 'Models'} value={String(site.model_count)} />
                           <ChannelMetric icon={<KeyRound size={14} />} label={locale === 'zh-CN' ? '密钥' : 'Keys'} value={String(site.credential_count)} />
                         </ItemFooter>
                       </ItemContent>
-                      <ItemActions className="ml-auto self-start">
+                      <ItemActions
+                        className="ml-auto self-start"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
                         <SwitchButton checked={isSiteEnabled(site)} disabled={busyId === site.id} onChange={(checked) => void toggleSiteEnabled(site, checked)} />
-                        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => openEdit(site)}>
-                          <Pencil data-icon="inline-start" />
-                          {locale === 'zh-CN' ? '编辑' : 'Edit'}
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(site)}>
+                        <Button type="button" variant="ghost" size="sm" className="rounded-full text-destructive hover:text-destructive" onClick={() => setDeleteTarget(site)}>
                           <Trash2 data-icon="inline-start" />
                           {locale === 'zh-CN' ? '删除' : 'Delete'}
                         </Button>
