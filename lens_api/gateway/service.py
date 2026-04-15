@@ -136,6 +136,8 @@ class UpstreamResult:
     first_token_latency_ms: int = 0
     resolved_model: str | None = None
     input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
     input_cost_usd: float = 0.0
@@ -163,6 +165,8 @@ class StreamCapture:
     first_token_latency_ms: int = 0
     response_content: str | None = None
     input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
     resolved_model: str | None = None
@@ -994,6 +998,8 @@ async def _call_channel(
                         matched_group_name or parsed["resolved_model"],
                         parsed["input_tokens"],
                         parsed["output_tokens"],
+                        parsed["cache_read_input_tokens"],
+                        parsed["cache_write_input_tokens"],
                     )
                 )
 
@@ -1009,6 +1015,8 @@ async def _call_channel(
                     first_token_latency_ms=0,
                     resolved_model=parsed["resolved_model"],
                     input_tokens=parsed["input_tokens"],
+                    cache_read_input_tokens=parsed["cache_read_input_tokens"],
+                    cache_write_input_tokens=parsed["cache_write_input_tokens"],
                     output_tokens=parsed["output_tokens"],
                     total_tokens=parsed["total_tokens"],
                     input_cost_usd=input_cost_usd,
@@ -1082,6 +1090,8 @@ async def _call_channel(
                 matched_group_name or parsed["resolved_model"],
                 parsed["input_tokens"],
                 parsed["output_tokens"],
+                parsed["cache_read_input_tokens"],
+                parsed["cache_write_input_tokens"],
             )
         )
 
@@ -1097,6 +1107,8 @@ async def _call_channel(
             first_token_latency_ms=0,
             resolved_model=parsed["resolved_model"],
             input_tokens=parsed["input_tokens"],
+            cache_read_input_tokens=parsed["cache_read_input_tokens"],
+            cache_write_input_tokens=parsed["cache_write_input_tokens"],
             output_tokens=parsed["output_tokens"],
             total_tokens=parsed["total_tokens"],
             input_cost_usd=input_cost_usd,
@@ -1393,6 +1405,8 @@ async def _record_stream_request_log(
     distilled_content = _distill_stream_response_content(protocol, raw_content)
     resolved_model = parsed["resolved_model"] or result.resolved_model
     input_tokens = parsed["input_tokens"]
+    cache_read_input_tokens = parsed["cache_read_input_tokens"]
+    cache_write_input_tokens = parsed["cache_write_input_tokens"]
     output_tokens = parsed["output_tokens"]
     total_tokens = parsed["total_tokens"]
     input_cost_usd, output_cost_usd, total_cost_usd = (
@@ -1400,6 +1414,8 @@ async def _record_stream_request_log(
             matched_group_name or resolved_model,
             input_tokens,
             output_tokens,
+            cache_read_input_tokens,
+            cache_write_input_tokens,
         )
     )
     await _record_request_log(
@@ -1420,6 +1436,8 @@ async def _record_stream_request_log(
         latency_ms=_elapsed_ms(started_at),
         resolved_model=resolved_model,
         input_tokens=input_tokens,
+        cache_read_input_tokens=cache_read_input_tokens,
+        cache_write_input_tokens=cache_write_input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
         input_cost_usd=input_cost_usd,
@@ -1447,6 +1465,8 @@ async def _record_request_log(
     latency_ms: int,
     resolved_model: str | None = None,
     input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
+    cache_write_input_tokens: int = 0,
     output_tokens: int = 0,
     total_tokens: int = 0,
     input_cost_usd: float = 0.0,
@@ -1471,6 +1491,8 @@ async def _record_request_log(
         latency_ms=latency_ms,
         resolved_model=resolved_model,
         input_tokens=input_tokens,
+        cache_read_input_tokens=cache_read_input_tokens,
+        cache_write_input_tokens=cache_write_input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
         input_cost_usd=input_cost_usd,
@@ -1860,6 +1882,8 @@ def _extract_stream_usage(
         return {
             "resolved_model": None,
             "input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_write_input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
         }
@@ -1874,6 +1898,8 @@ def _extract_stream_usage(
         return {
             "resolved_model": None,
             "input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_write_input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
         }
@@ -1882,6 +1908,8 @@ def _extract_stream_usage(
     merged = {
         "resolved_model": None,
         "input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_write_input_tokens": 0,
         "output_tokens": 0,
         "total_tokens": 0,
     }
@@ -1890,11 +1918,27 @@ def _extract_stream_usage(
         if parsed["resolved_model"]:
             merged["resolved_model"] = parsed["resolved_model"]
         if parsed["input_tokens"]:
-            merged["input_tokens"] = parsed["input_tokens"]
+            merged["input_tokens"] = max(
+                int(merged["input_tokens"] or 0), int(parsed["input_tokens"] or 0)
+            )
+        if parsed["cache_read_input_tokens"]:
+            merged["cache_read_input_tokens"] = max(
+                int(merged["cache_read_input_tokens"] or 0),
+                int(parsed["cache_read_input_tokens"] or 0),
+            )
+        if parsed["cache_write_input_tokens"]:
+            merged["cache_write_input_tokens"] = max(
+                int(merged["cache_write_input_tokens"] or 0),
+                int(parsed["cache_write_input_tokens"] or 0),
+            )
         if parsed["output_tokens"]:
-            merged["output_tokens"] = parsed["output_tokens"]
+            merged["output_tokens"] = max(
+                int(merged["output_tokens"] or 0), int(parsed["output_tokens"] or 0)
+            )
         if parsed["total_tokens"]:
-            merged["total_tokens"] = parsed["total_tokens"]
+            merged["total_tokens"] = max(
+                int(merged["total_tokens"] or 0), int(parsed["total_tokens"] or 0)
+            )
     if not merged["total_tokens"]:
         merged["total_tokens"] = int(merged["input_tokens"] or 0) + int(
             merged["output_tokens"] or 0
@@ -1947,9 +1991,14 @@ def _extract_usage_from_payload(
 ) -> dict[str, int | str | None]:
     if protocol == ProtocolKind.OPENAI_CHAT:
         usage = payload.get("usage") or {}
+        details = usage.get("prompt_tokens_details") or {}
+        cache_read_input_tokens = int(details.get("cached_tokens") or 0)
+        input_tokens = int(usage.get("prompt_tokens") or 0)
         return {
             "resolved_model": payload.get("model"),
-            "input_tokens": int(usage.get("prompt_tokens") or 0),
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+            "cache_write_input_tokens": 0,
             "output_tokens": int(usage.get("completion_tokens") or 0),
             "total_tokens": int(usage.get("total_tokens") or 0),
         }
@@ -1957,16 +2006,26 @@ def _extract_usage_from_payload(
         if payload.get("type") == "response.completed":
             response_payload = payload.get("response") or {}
             usage = response_payload.get("usage") or {}
+            details = usage.get("input_tokens_details") or usage.get("input_token_details") or {}
+            cache_read_input_tokens = int(details.get("cached_tokens") or 0)
+            input_tokens = int(usage.get("input_tokens") or 0)
             return {
                 "resolved_model": response_payload.get("model") or payload.get("model"),
-                "input_tokens": int(usage.get("input_tokens") or 0),
+                "input_tokens": input_tokens,
+                "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+                "cache_write_input_tokens": 0,
                 "output_tokens": int(usage.get("output_tokens") or 0),
                 "total_tokens": int(usage.get("total_tokens") or 0),
             }
         usage = payload.get("usage") or {}
+        details = usage.get("input_tokens_details") or usage.get("input_token_details") or {}
+        cache_read_input_tokens = int(details.get("cached_tokens") or 0)
+        input_tokens = int(usage.get("input_tokens") or 0)
         return {
             "resolved_model": payload.get("model"),
-            "input_tokens": int(usage.get("input_tokens") or 0),
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+            "cache_write_input_tokens": 0,
             "output_tokens": int(usage.get("output_tokens") or 0),
             "total_tokens": int(usage.get("total_tokens") or 0),
         }
@@ -1974,36 +2033,54 @@ def _extract_usage_from_payload(
         if payload.get("type") == "message_start":
             message = payload.get("message") or {}
             usage = message.get("usage") or {}
-            input_tokens = int(usage.get("input_tokens") or 0)
+            base_input_tokens = int(usage.get("input_tokens") or 0)
+            cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
+            cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
+            input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
             output_tokens = int(usage.get("output_tokens") or 0)
             return {
                 "resolved_model": message.get("model"),
                 "input_tokens": input_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+                "cache_write_input_tokens": cache_write_input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
             }
         if payload.get("type") == "message_delta":
             delta = payload.get("usage") or {}
-            input_tokens = int(delta.get("input_tokens") or 0)
+            base_input_tokens = int(delta.get("input_tokens") or 0)
+            cache_read_input_tokens = int(delta.get("cache_read_input_tokens") or 0)
+            cache_write_input_tokens = int(delta.get("cache_creation_input_tokens") or 0)
+            input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
             output_tokens = int(delta.get("output_tokens") or 0)
             return {
                 "resolved_model": None,
                 "input_tokens": input_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+                "cache_write_input_tokens": cache_write_input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
             }
         usage = payload.get("usage") or {}
-        input_tokens = int(usage.get("input_tokens") or 0)
+        base_input_tokens = int(usage.get("input_tokens") or 0)
+        cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
+        cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
+        input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
         output_tokens = int(usage.get("output_tokens") or 0)
         return {
             "resolved_model": payload.get("model"),
             "input_tokens": input_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+            "cache_write_input_tokens": cache_write_input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
         }
     usage = payload.get("usageMetadata") or {}
     input_tokens = int(
         usage.get("promptTokenCount") or usage.get("inputTokenCount") or 0
+    )
+    cache_read_input_tokens = int(
+        usage.get("cachedContentTokenCount") or 0
     )
     output_tokens = int(
         usage.get("candidatesTokenCount") or usage.get("outputTokenCount") or 0
@@ -2012,6 +2089,8 @@ def _extract_usage_from_payload(
     return {
         "resolved_model": payload.get("modelVersion") or payload.get("model"),
         "input_tokens": input_tokens,
+        "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+        "cache_write_input_tokens": 0,
         "output_tokens": output_tokens,
         "total_tokens": total_tokens,
     }
@@ -2024,29 +2103,44 @@ def _extract_response_usage(
 
     if protocol == ProtocolKind.OPENAI_CHAT:
         usage = payload.get("usage") or {}
+        details = usage.get("prompt_tokens_details") or {}
+        cache_read_input_tokens = int(details.get("cached_tokens") or 0)
+        input_tokens = int(usage.get("prompt_tokens") or 0)
         return {
             "resolved_model": payload.get("model"),
-            "input_tokens": int(usage.get("prompt_tokens") or 0),
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+            "cache_write_input_tokens": 0,
             "output_tokens": int(usage.get("completion_tokens") or 0),
             "total_tokens": int(usage.get("total_tokens") or 0),
         }
 
     if protocol == ProtocolKind.OPENAI_RESPONSES:
         usage = payload.get("usage") or {}
+        details = usage.get("input_tokens_details") or usage.get("input_token_details") or {}
+        cache_read_input_tokens = int(details.get("cached_tokens") or 0)
+        input_tokens = int(usage.get("input_tokens") or 0)
         return {
             "resolved_model": payload.get("model"),
-            "input_tokens": int(usage.get("input_tokens") or 0),
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+            "cache_write_input_tokens": 0,
             "output_tokens": int(usage.get("output_tokens") or 0),
             "total_tokens": int(usage.get("total_tokens") or 0),
         }
 
     if protocol == ProtocolKind.ANTHROPIC:
         usage = payload.get("usage") or {}
-        input_tokens = int(usage.get("input_tokens") or 0)
+        base_input_tokens = int(usage.get("input_tokens") or 0)
+        cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
+        cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
+        input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
         output_tokens = int(usage.get("output_tokens") or 0)
         return {
             "resolved_model": payload.get("model"),
             "input_tokens": input_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+            "cache_write_input_tokens": cache_write_input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
         }
@@ -2055,6 +2149,9 @@ def _extract_response_usage(
     input_tokens = int(
         usage.get("promptTokenCount") or usage.get("inputTokenCount") or 0
     )
+    cache_read_input_tokens = int(
+        usage.get("cachedContentTokenCount") or 0
+    )
     output_tokens = int(
         usage.get("candidatesTokenCount") or usage.get("outputTokenCount") or 0
     )
@@ -2062,6 +2159,8 @@ def _extract_response_usage(
     return {
         "resolved_model": payload.get("modelVersion") or payload.get("model"),
         "input_tokens": input_tokens,
+        "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+        "cache_write_input_tokens": 0,
         "output_tokens": output_tokens,
         "total_tokens": total_tokens,
     }

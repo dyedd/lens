@@ -5,12 +5,6 @@ from fastapi import FastAPI
 
 def register(app: FastAPI, service_module) -> None:
     app.add_api_route(
-        "/api/admin/model-prices",
-        service_module.list_model_prices,
-        methods=["GET"],
-        response_model=service_module.ModelPriceListResponse,
-    )
-    app.add_api_route(
         "/api/admin/model-prices/{model_key}",
         service_module.update_model_price,
         methods=["PUT"],

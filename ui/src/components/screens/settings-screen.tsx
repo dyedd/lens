@@ -3,10 +3,10 @@
 import Image from 'next/image'
 import { FormEvent, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, CircleAlert, Copy, ImageIcon, Info, KeyRound, Palette, RotateCcw, Save, ServerCog, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { Check, CircleAlert, Copy, ImageIcon, Info, Palette, RotateCcw, Save, ServerCog, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/toast'
-import { ApiError, type AdminPasswordChangePayload, type AdminProfile, type AppInfo, type ModelPriceListResponse, type SettingItem, apiRequest } from '@/lib/api'
+import { ApiError, type AdminPasswordChangePayload, type AdminProfile, type AppInfo, type SettingItem, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -133,17 +133,6 @@ function saveButtonLabel(locale: Locale, saving: boolean) {
   return titleForLocale(locale, '保存设置', 'Save settings')
 }
 
-function formatLastSynced(value: string | null | undefined, locale: Locale) {
-  if (!value) {
-    return titleForLocale(locale, '未同步', 'Never synced')
-  }
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return titleForLocale(locale, '未同步', 'Never synced')
-  }
-  return date.toLocaleString(locale)
-}
-
 function SettingCard({
   icon: Icon,
   title,
@@ -194,7 +183,6 @@ export function SettingsScreen() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => apiRequest<SettingItem[]>('/admin/settings') })
   const { data: profile } = useQuery({ queryKey: ['auth-me'], queryFn: () => apiRequest<AdminProfile>('/admin/session') })
   const { data: appInfo } = useQuery({ queryKey: ['app-info'], queryFn: () => apiRequest<AppInfo>('/admin/app-info') })
-  const { data: modelPrices } = useQuery({ queryKey: ['model-prices'], queryFn: () => apiRequest<ModelPriceListResponse>('/admin/model-prices') })
 
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT)
   const [gatewayKeys, setGatewayKeys] = useState<string[]>([])
@@ -207,7 +195,6 @@ export function SettingsScreen() {
   const [changingPassword, setChangingPassword] = useState(false)
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
   const [copiedKey, setCopiedKey] = useState('')
-  const [syncingPrices, setSyncingPrices] = useState(false)
 
   useEffect(() => {
     const parsed = parseSettings(settings)
@@ -253,7 +240,6 @@ export function SettingsScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['settings'] }),
       queryClient.invalidateQueries({ queryKey: ['app-info'] }),
-      queryClient.invalidateQueries({ queryKey: ['model-prices'] }),
       queryClient.invalidateQueries({ queryKey: ['public-branding'] }),
     ])
   }
@@ -356,25 +342,6 @@ export function SettingsScreen() {
       toast.error(message)
     } finally {
       setChangingPassword(false)
-    }
-  }
-
-  async function syncPrices() {
-    setSyncingPrices(true)
-    setError('')
-    setSaved('')
-    try {
-      await apiRequest<ModelPriceListResponse>('/admin/model-price-sync-jobs', { method: 'POST' })
-      const message = titleForLocale(locale, '模型价格已同步', 'Model prices synced')
-      setSaved(message)
-      toast.success(message)
-      await queryClient.invalidateQueries({ queryKey: ['model-prices'] })
-    } catch (requestError) {
-      const message = requestError instanceof ApiError ? requestError.message : titleForLocale(locale, '同步模型价格失败', 'Failed to sync model prices')
-      setError(message)
-      toast.error(message)
-    } finally {
-      setSyncingPrices(false)
     }
   }
 
@@ -511,15 +478,6 @@ export function SettingsScreen() {
     )
   }
 
-  function renderPriceCard() {
-    return (
-      <SettingCard icon={KeyRound} title={titleForLocale(locale, '模型价格', 'Model prices')}>
-        <ReadonlyRow label={titleForLocale(locale, '最近同步', 'Last sync')} value={formatLastSynced(modelPrices?.last_synced_at, locale)} />
-        <Button type="button" variant="outline" onClick={() => void syncPrices()} disabled={syncingPrices}>{syncingPrices ? titleForLocale(locale, '同步中...', 'Syncing...') : titleForLocale(locale, '同步价格', 'Sync prices')}</Button>
-      </SettingCard>
-    )
-  }
-
   return (
     <section className="flex flex-col gap-4">
       <form className="flex flex-col gap-6" onSubmit={(e) => void submit(e)}>
@@ -545,7 +503,6 @@ export function SettingsScreen() {
           {renderApiKeyCard()}
           {renderSystemCard()}
           {renderCircuitCard()}
-          {renderPriceCard()}
         </div>
 
         <div className="hidden gap-4 md:grid md:grid-cols-2 md:items-start">
@@ -559,7 +516,6 @@ export function SettingsScreen() {
             {renderLogCard()}
             {renderApiKeyCard()}
             {renderCircuitCard()}
-            {renderPriceCard()}
           </SettingsColumn>
         </div>
 

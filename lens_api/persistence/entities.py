@@ -129,6 +129,8 @@ class RequestLogEntity(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     resolved_model: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_read_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_write_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

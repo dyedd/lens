@@ -114,8 +114,8 @@ def test_gemini_stream_usage_extracts_from_sse_payload():
     from lens_api.models import ProtocolKind
 
     raw_content = (
-        'data: {"candidates":[{"content":{"parts":[{"text":"Hello"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":12},"modelVersion":"gemini-2.5-flash","responseId":"resp_1"}\n\n'
-        'data: {"candidates":[{"content":{"parts":[{"text":" world"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":7,"totalTokenCount":19},"modelVersion":"gemini-2.5-flash","responseId":"resp_1"}\n\n'
+        'data: {"candidates":[{"content":{"parts":[{"text":"Hello"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":12,"cachedContentTokenCount":5},"modelVersion":"gemini-2.5-flash","responseId":"resp_1"}\n\n'
+        'data: {"candidates":[{"content":{"parts":[{"text":" world"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":12,"cachedContentTokenCount":5,"candidatesTokenCount":7,"totalTokenCount":19},"modelVersion":"gemini-2.5-flash","responseId":"resp_1"}\n\n'
     )
 
     payload = service_module._extract_stream_usage(ProtocolKind.GEMINI, raw_content)
@@ -123,8 +123,40 @@ def test_gemini_stream_usage_extracts_from_sse_payload():
     assert payload == {
         'resolved_model': 'gemini-2.5-flash',
         'input_tokens': 12,
+        'cache_read_input_tokens': 5,
+        'cache_write_input_tokens': 0,
         'output_tokens': 7,
         'total_tokens': 19,
+    }
+
+
+def test_gemini_response_usage_extracts_cached_tokens():
+    from lens_api.gateway import service as service_module
+    from lens_api.models import ProtocolKind
+
+    payload = service_module._extract_response_usage(
+        ProtocolKind.GEMINI,
+        httpx.Response(
+            200,
+            json={
+                'modelVersion': 'gemini-2.5-pro',
+                'usageMetadata': {
+                    'promptTokenCount': 2400,
+                    'cachedContentTokenCount': 1800,
+                    'candidatesTokenCount': 600,
+                    'totalTokenCount': 3000,
+                },
+            },
+        ),
+    )
+
+    assert payload == {
+        'resolved_model': 'gemini-2.5-pro',
+        'input_tokens': 2400,
+        'cache_read_input_tokens': 1800,
+        'cache_write_input_tokens': 0,
+        'output_tokens': 600,
+        'total_tokens': 3000,
     }
 
 
@@ -183,6 +215,8 @@ def test_openai_responses_stream_parsing_supports_crlf_event_separators():
     assert usage == {
         'resolved_model': 'gpt-5.4',
         'input_tokens': 11,
+        'cache_read_input_tokens': 0,
+        'cache_write_input_tokens': 0,
         'output_tokens': 22,
         'total_tokens': 33,
     }
@@ -212,8 +246,70 @@ def test_anthropic_stream_usage_reads_input_tokens_from_message_delta():
     assert usage == {
         'resolved_model': 'claude-opus-4-6',
         'input_tokens': 37685,
+        'cache_read_input_tokens': 0,
+        'cache_write_input_tokens': 0,
         'output_tokens': 87,
         'total_tokens': 37772,
+    }
+
+
+def test_openai_responses_usage_extracts_cached_tokens():
+    from lens_api.gateway import service as service_module
+    from lens_api.models import ProtocolKind
+
+    payload = service_module._extract_response_usage(
+        ProtocolKind.OPENAI_RESPONSES,
+        httpx.Response(
+            200,
+            json={
+                'model': 'gpt-5.4',
+                'usage': {
+                    'input_tokens': 1200,
+                    'input_tokens_details': {'cached_tokens': 1000},
+                    'output_tokens': 300,
+                    'total_tokens': 1500,
+                },
+            },
+        ),
+    )
+
+    assert payload == {
+        'resolved_model': 'gpt-5.4',
+        'input_tokens': 1200,
+        'cache_read_input_tokens': 1000,
+        'cache_write_input_tokens': 0,
+        'output_tokens': 300,
+        'total_tokens': 1500,
+    }
+
+
+def test_anthropic_usage_extracts_cache_breakdown():
+    from lens_api.gateway import service as service_module
+    from lens_api.models import ProtocolKind
+
+    payload = service_module._extract_response_usage(
+        ProtocolKind.ANTHROPIC,
+        httpx.Response(
+            200,
+            json={
+                'model': 'claude-opus-4-6',
+                'usage': {
+                    'input_tokens': 200,
+                    'cache_read_input_tokens': 800,
+                    'cache_creation_input_tokens': 1000,
+                    'output_tokens': 50,
+                },
+            },
+        ),
+    )
+
+    assert payload == {
+        'resolved_model': 'claude-opus-4-6',
+        'input_tokens': 2000,
+        'cache_read_input_tokens': 800,
+        'cache_write_input_tokens': 1000,
+        'output_tokens': 50,
+        'total_tokens': 2050,
     }
 
 
@@ -684,11 +780,12 @@ async def _run_model_price_api(tmp_path: Path):
             )
             assert created_group.status_code == 201
 
-            prices = await client.get('/api/admin/model-prices', headers=headers)
-            assert prices.status_code == 200
-            assert prices.json()['items'][0]['model_key'] == 'gpt-5.4'
-            assert prices.json()['items'][0]['cache_read_price_per_million'] == 0.5
-            assert prices.json()['items'][0]['cache_write_price_per_million'] == 1.5
+            groups = await client.get('/api/admin/model-groups', headers=headers)
+            assert groups.status_code == 200
+            assert groups.json()[0]['name'] == 'gpt-5.4'
+            assert groups.json()[0]['input_price_per_million'] == 1.0
+            assert groups.json()[0]['cache_read_price_per_million'] == 0.5
+            assert groups.json()[0]['cache_write_price_per_million'] == 1.5
 
             updated = await client.put(
                 '/api/admin/model-prices/gpt-5.4',
@@ -705,6 +802,11 @@ async def _run_model_price_api(tmp_path: Path):
             assert updated.status_code == 200
             assert updated.json()['input_price_per_million'] == 2.5
             assert updated.json()['cache_read_price_per_million'] == 0.8
+
+            groups_after_update = await client.get('/api/admin/model-groups', headers=headers)
+            assert groups_after_update.status_code == 200
+            assert groups_after_update.json()[0]['input_price_per_million'] == 2.5
+            assert groups_after_update.json()[0]['cache_read_price_per_million'] == 0.8
 
             missing = await client.put(
                 '/api/admin/model-prices/not-a-group',
@@ -723,6 +825,7 @@ async def _run_model_price_api(tmp_path: Path):
             synced = await client.post('/api/admin/model-price-sync-jobs', headers=headers)
             assert synced.status_code == 200
             assert synced.json()['last_synced_at'] == '2026-04-05T00:00:00+00:00'
+            assert synced.json()['items'][0]['model_key'] == 'gpt-5.4'
     finally:
         await service_module._close_app_state(service_module.app_state)
 
