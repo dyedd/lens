@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ChevronDown, Ellipsis, KeyRound, Pencil, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
+import { Activity, ChevronDown, Ellipsis, Filter, KeyRound, Pencil, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   ApiError,
   ProtocolKind,
@@ -21,7 +22,8 @@ import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Card, CardContent } from '@/components/ui/card'
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Item,
@@ -30,7 +32,6 @@ import {
   ItemDescription,
   ItemFooter,
   ItemGroup,
-  ItemMedia,
   ItemTitle,
 } from '@/components/ui/item'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -106,11 +107,9 @@ type SiteRow = Site & {
   endpoint_summary: string
 }
 
-type SiteDetailStats = SiteStats & {
-  protocolCount: number
-  credentialCount: number
-  modelCount: number
-}
+type ChannelStatusFilter = 'all' | 'enabled' | 'disabled'
+type ChannelSort = 'requests-desc' | 'name-asc' | 'name-desc' | 'models-desc' | 'protocols-desc'
+type SiteProtocolLike = Site['protocols'][number]
 
 const emptyProtocol = (): FormProtocol => ({
   id: null,
@@ -182,34 +181,8 @@ function siteModelCount(site: Site) {
   return site.protocols.reduce((total, protocol) => total + protocol.models.filter((item) => item.enabled).length, 0)
 }
 
-function buildDetailStats(site: Site, stats?: SiteStats): SiteDetailStats {
-  return {
-    requestCount: stats?.requestCount ?? 0,
-    successCount: stats?.successCount ?? 0,
-    failedCount: stats?.failedCount ?? 0,
-    protocolCount: site.protocols.length,
-    credentialCount: site.credentials.length,
-    modelCount: siteModelCount(site),
-  }
-}
-
 function isSiteEnabled(site: Site) {
   return site.protocols.some((item) => item.enabled)
-}
-
-function MetricCard({ icon, label, value, tone = 'default' }: { icon: React.ReactNode; label: string; value: string; tone?: 'default' | 'accent' | 'danger' }) {
-  const valueClassName = tone === 'accent'
-    ? 'text-primary'
-    : tone === 'danger'
-      ? 'text-destructive'
-      : 'text-foreground'
-
-  return (
-    <div className="rounded-md border bg-muted/30 px-4 py-4">
-      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">{icon}{label}</div>
-      <div className={cn('mt-4 text-base font-semibold leading-none', valueClassName)}>{value}</div>
-    </div>
-  )
 }
 
 function ChannelMetric({
@@ -250,6 +223,42 @@ function buildSiteStats(logs: RequestLogItem[] | undefined, sites: Site[] | unde
   return grouped
 }
 
+function protocolFilterStorageKey(siteId: string, protocolId: string) {
+  return `lens:channel-model-filter:${siteId}:${protocolId}`
+}
+
+function readStoredProtocolFilter(siteId: string, protocolId: string) {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem(protocolFilterStorageKey(siteId, protocolId))
+}
+
+function writeStoredProtocolFilter(siteId: string, protocolId: string, credentialId: string | null) {
+  if (typeof window === 'undefined') return
+  const key = protocolFilterStorageKey(siteId, protocolId)
+  if (!credentialId) {
+    window.localStorage.removeItem(key)
+    return
+  }
+  window.localStorage.setItem(key, credentialId)
+}
+
+function inferProtocolFilterCredential(siteId: string, protocol: SiteProtocolLike) {
+  const availableCredentialIds = new Set(protocol.bindings.filter((binding) => binding.enabled).map((binding) => binding.credential_id))
+  const stored = readStoredProtocolFilter(siteId, protocol.id)
+  if (stored && availableCredentialIds.has(stored)) {
+    return stored
+  }
+
+  const modelCredentialId = protocol.models.find((model) => model.enabled && availableCredentialIds.has(model.credential_id))?.credential_id
+    ?? protocol.models.find((model) => availableCredentialIds.has(model.credential_id))?.credential_id
+  if (modelCredentialId) {
+    return modelCredentialId
+  }
+
+  const firstEnabledBinding = protocol.bindings.find((binding) => binding.enabled)?.credential_id
+  return firstEnabledBinding ?? null
+}
+
 function toForm(site: Site): FormState {
   return {
     name: site.name,
@@ -270,7 +279,7 @@ function toForm(site: Site): FormState {
       bindings: item.bindings.map((binding) => ({ credential_id: binding.credential_id, enabled: binding.enabled })),
       models: item.models.map((model) => ({ id: model.id, credential_id: model.credential_id, model_name: model.model_name, enabled: model.enabled })),
       expanded: true,
-      model_filter_credential_id: null,
+      model_filter_credential_id: inferProtocolFilterCredential(site.id, item),
     })),
   }
 }
@@ -315,7 +324,9 @@ export function ChannelsScreen() {
   const queryClient = useQueryClient()
   const { locale } = useI18n()
   const [search, setSearch] = useState('')
-  const [detailTarget, setDetailTarget] = useState<SiteRow | null>(null)
+  const [statusFilter, setStatusFilter] = useState<ChannelStatusFilter>('all')
+  const [protocolFilter, setProtocolFilter] = useState<'all' | ProtocolKind>('all')
+  const [sortBy, setSortBy] = useState<ChannelSort>('requests-desc')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null)
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null)
@@ -333,9 +344,8 @@ export function ChannelsScreen() {
   const { data: requestLogs } = useQuery({ queryKey: ['request-logs'], queryFn: () => apiRequest<RequestLogItem[]>('/admin/request-logs') })
 
   const siteStats = useMemo(() => buildSiteStats(requestLogs, sites), [requestLogs, sites])
-  const visibleSites = useMemo<SiteRow[]>(() => {
-    const keyword = search.trim().toLowerCase()
-    const rows = (sites ?? []).map((site) => ({
+  const siteRows = useMemo<SiteRow[]>(() => (
+    (sites ?? []).map((site) => ({
       ...site,
       subtitle: siteSubtitle(site),
       protocol_count: site.protocols.length,
@@ -343,12 +353,31 @@ export function ChannelsScreen() {
       model_count: siteModelCount(site),
       endpoint_summary: siteEndpointSummary(site),
     }))
-    if (!keyword) return rows
-    return rows.filter((site) => {
+  ), [sites])
+  const visibleSites = useMemo<SiteRow[]>(() => {
+    const keyword = search.trim().toLowerCase()
+    const filtered = siteRows.filter((site) => {
+      if (statusFilter === 'enabled' && !isSiteEnabled(site)) return false
+      if (statusFilter === 'disabled' && isSiteEnabled(site)) return false
+      if (protocolFilter !== 'all' && !site.protocols.some((item) => item.protocol === protocolFilter)) return false
+      if (!keyword) return true
       const stack = [site.name, site.subtitle, site.endpoint_summary, ...site.protocols.flatMap((item) => item.models.map((model) => model.model_name))].join(' ').toLowerCase()
       return stack.includes(keyword)
     })
-  }, [sites, search])
+
+    return [...filtered].sort((left, right) => {
+      if (sortBy === 'name-asc') return left.name.localeCompare(right.name, locale)
+      if (sortBy === 'name-desc') return right.name.localeCompare(left.name, locale)
+      if (sortBy === 'models-desc') return right.model_count - left.model_count || left.name.localeCompare(right.name, locale)
+      if (sortBy === 'protocols-desc') return right.protocol_count - left.protocol_count || left.name.localeCompare(right.name, locale)
+      return (siteStats.get(right.id)?.requestCount ?? 0) - (siteStats.get(left.id)?.requestCount ?? 0) || left.name.localeCompare(right.name, locale)
+    })
+  }, [locale, protocolFilter, search, siteRows, siteStats, sortBy, statusFilter])
+  const activeFilterCount = [
+    Boolean(search.trim()),
+    statusFilter !== 'all',
+    protocolFilter !== 'all',
+  ].filter(Boolean).length
   const currentSnapshot = useMemo(() => JSON.stringify(toPayload(form)), [form])
   const hasUnsavedChanges = dialogOpen && currentSnapshot !== formSnapshot
 
@@ -371,24 +400,51 @@ export function ChannelsScreen() {
     ])
   }
 
-  function openCreate() {
-    setEditingSiteId(null)
-    const nextForm = emptyForm()
+  function applyPreparedForm(nextForm: FormState) {
     setForm(nextForm)
     setFormSnapshot(JSON.stringify(toPayload(nextForm)))
     setError('')
-    setDetailTarget(null)
+  }
+
+  function confirmDiscardChanges() {
+    if (!hasUnsavedChanges) return true
+    return window.confirm(locale === 'zh-CN' ? '当前有未保存修改，确定离开吗？' : 'You have unsaved changes. Leave anyway?')
+  }
+
+  function openCreate() {
+    if (!confirmDiscardChanges()) return
+    setEditingSiteId(null)
+    applyPreparedForm(emptyForm())
     setDialogOpen(true)
   }
 
   function openEdit(site: Site) {
+    if (!confirmDiscardChanges()) return
     setEditingSiteId(site.id)
-    const nextForm = toForm(site)
-    setForm(nextForm)
-    setFormSnapshot(JSON.stringify(toPayload(nextForm)))
-    setError('')
-    setDetailTarget(null)
+    applyPreparedForm(toForm(site))
     setDialogOpen(true)
+  }
+
+  function closeEditor() {
+    if (!confirmDiscardChanges()) return
+    setDialogOpen(false)
+    setEditingSiteId(null)
+    setError('')
+  }
+
+  function updateProtocolFilter(protocolIndex: number, credentialId: string | null) {
+    const protocol = form.protocols[protocolIndex]
+    if (editingSiteId && protocol?.id) {
+      writeStoredProtocolFilter(editingSiteId, protocol.id, credentialId)
+    }
+    updateProtocol(protocolIndex, { model_filter_credential_id: credentialId })
+  }
+
+  function resetFilters() {
+    setSearch('')
+    setStatusFilter('all')
+    setProtocolFilter('all')
+    setSortBy('requests-desc')
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -396,22 +452,32 @@ export function ChannelsScreen() {
     setError('')
     const duplicatedProtocols = duplicateProtocolKinds(form.protocols)
     if (duplicatedProtocols.size) {
-      setError(locale === 'zh-CN' ? '同一个渠道内不允许重复协议' : 'Duplicate protocols are not allowed in one channel')
+      const message = locale === 'zh-CN' ? '同一个渠道内不允许重复协议' : 'Duplicate protocols are not allowed in one channel'
+      setError(message)
+      toast.error(message)
       return
     }
     try {
-      await apiRequest<Site>(editingSiteId ? `/admin/sites/${editingSiteId}` : '/admin/sites', {
+      const savedSite = await apiRequest<Site>(editingSiteId ? `/admin/sites/${editingSiteId}` : '/admin/sites', {
         method: editingSiteId ? 'PUT' : 'POST',
         body: JSON.stringify(toPayload(form)),
       })
+      queryClient.setQueryData<Site[]>(['sites'], (current) => {
+        const rows = current ?? []
+        const exists = rows.some((site) => site.id === savedSite.id)
+        return exists ? rows.map((site) => site.id === savedSite.id ? savedSite : site) : [savedSite, ...rows]
+      })
+      applyPreparedForm(toForm(savedSite))
       setDialogOpen(false)
       setEditingSiteId(null)
-      const nextForm = emptyForm()
-      setForm(nextForm)
-      setFormSnapshot(JSON.stringify(toPayload(nextForm)))
+      toast.success(editingSiteId
+        ? (locale === 'zh-CN' ? '渠道已更新' : 'Channel updated')
+        : (locale === 'zh-CN' ? '渠道已创建' : 'Channel created'))
       await invalidateChannelData()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存渠道失败' : 'Failed to save channel'))
+      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存渠道失败' : 'Failed to save channel')
+      setError(message)
+      toast.error(message)
     }
   }
 
@@ -420,11 +486,17 @@ export function ChannelsScreen() {
     setError('')
     try {
       await apiRequest<void>(`/admin/sites/${site.id}`, { method: 'DELETE' })
+      queryClient.setQueryData<Site[]>(['sites'], (current) => (current ?? []).filter((item) => item.id !== site.id))
       setDeleteTarget(null)
-      setDetailTarget(null)
+      if (editingSiteId === site.id) {
+        setDialogOpen(false)
+        setEditingSiteId(null)
+      }
+      toast.success(locale === 'zh-CN' ? '渠道已删除' : 'Channel deleted')
       await invalidateChannelData()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除渠道失败' : 'Failed to delete channel'))
+      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除渠道失败' : 'Failed to delete channel')
+      toast.error(message)
     } finally {
       setBusyId(null)
     }
@@ -432,9 +504,8 @@ export function ChannelsScreen() {
 
   async function toggleSiteEnabled(site: Site, enabled: boolean) {
     setBusyId(site.id)
-    setError('')
     try {
-      await apiRequest<Site>(`/admin/sites/${site.id}`, {
+      const updatedSite = await apiRequest<Site>(`/admin/sites/${site.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           name: site.name,
@@ -454,12 +525,14 @@ export function ChannelsScreen() {
           })),
         }),
       })
-      if (detailTarget?.id === site.id) {
-        setDetailTarget((current) => current ? { ...current, protocols: current.protocols.map((item) => ({ ...item, enabled })) } : current)
-      }
+      queryClient.setQueryData<Site[]>(['sites'], (current) => (current ?? []).map((item) => item.id === updatedSite.id ? updatedSite : item))
+      toast.success(enabled
+        ? (locale === 'zh-CN' ? '渠道已启用' : 'Channel enabled')
+        : (locale === 'zh-CN' ? '渠道已停用' : 'Channel disabled'))
       await invalidateChannelData()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '更新渠道状态失败' : 'Failed to update channel status'))
+      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '更新渠道状态失败' : 'Failed to update channel status')
+      toast.error(message)
     } finally {
       setBusyId(null)
     }
@@ -552,6 +625,9 @@ export function ChannelsScreen() {
       }),
     }))
     closeModelPicker()
+    if (selectedModels.length) {
+      toast.success(locale === 'zh-CN' ? `已加入 ${selectedModels.length} 个模型` : `Added ${selectedModels.length} models`)
+    }
   }
 
   async function fetchProtocolModels(protocolIndex: number) {
@@ -585,8 +661,10 @@ export function ChannelsScreen() {
       setAvailableModels(nextAvailableModels)
       setPickerSelectedModelKeys([])
       setModelPickerProtocolIndex(protocolIndex)
+      toast.success(locale === 'zh-CN' ? `已获取 ${models.length} 个模型` : `Fetched ${models.length} models`)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '刷新模型失败' : 'Failed to refresh models'))
+      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '刷新模型失败' : 'Failed to refresh models')
+      toast.error(message)
     } finally {
       setFetchingProtocolIndex(null)
     }
@@ -600,95 +678,152 @@ export function ChannelsScreen() {
     applyModelSelection(availableModels.map((item) => `${item.credential_id}:${item.model_name}`))
   }
 
-  const detailStats = detailTarget ? buildDetailStats(detailTarget, siteStats.get(detailTarget.id)) : null
-
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '渠道' : 'Channels'}</h1>
-        <div className="flex items-center gap-2">
-          <ToolbarSearchInput
-            value={search}
-            onChange={setSearch}
-            onClear={() => setSearch('')}
-            placeholder={locale === 'zh-CN' ? '搜索渠道 / 协议 / 模型' : 'Search channels, models...'}
-          />
-          <Button type="button" onClick={openCreate} className="rounded-lg" size="icon-sm" title={locale === 'zh-CN' ? '新建渠道' : 'New channel'}>
-            <Plus size={18} />
-          </Button>
-        </div>
+        <Button type="button" onClick={openCreate} className="rounded-full" size="icon-sm" title={locale === 'zh-CN' ? '新建渠道' : 'New channel'}>
+          <Plus size={18} />
+        </Button>
       </div>
 
-      <div className="grid gap-4 mt-2">
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        {isLoading ? <p className="text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</p> : null}
-      </div>
-
-      {visibleSites.length ? (
-        <div className="rounded-xl border bg-card p-3">
-          <ItemGroup className="gap-3">
-            {visibleSites.map((site) => {
-              const stats = siteStats.get(site.id)
-              return (
-                <Item key={site.id} variant="outline" className="gap-4 px-4 py-4">
-                  <ItemMedia variant="icon" className="flex size-11 rounded-xl bg-primary/10 text-primary">
-                    <Waypoints className="h-5 w-5" />
-                  </ItemMedia>
-                  <Button type="button" variant="ghost" className="h-auto min-w-0 flex-1 justify-start p-0 text-left hover:bg-transparent" onClick={() => setDetailTarget(site)}>
-                    <ItemContent className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <ItemTitle className="truncate">{site.name}</ItemTitle>
-                      </div>
-                      <ItemDescription className="mt-1 truncate">{site.subtitle || site.endpoint_summary || (locale === 'zh-CN' ? '未配置协议' : 'No protocols')}</ItemDescription>
-                      <ItemFooter className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                        <ChannelMetric icon={<Activity size={14} />} label={locale === 'zh-CN' ? '请求数' : 'Requests'} value={String(stats?.requestCount ?? 0)} />
-                        <ChannelMetric icon={<Waypoints size={14} />} label={locale === 'zh-CN' ? '协议' : 'Protocols'} value={String(site.protocol_count)} />
-                        <ChannelMetric icon={<Server size={14} />} label={locale === 'zh-CN' ? '模型' : 'Models'} value={String(site.model_count)} />
-                        <ChannelMetric icon={<KeyRound size={14} />} label={locale === 'zh-CN' ? '密钥' : 'Keys'} value={String(site.credential_count)} />
-                      </ItemFooter>
-                    </ItemContent>
-                  </Button>
-                  <ItemActions className="ml-auto self-start">
-                    <SwitchButton checked={isSiteEnabled(site)} disabled={busyId === site.id} onChange={(checked) => void toggleSiteEnabled(site, checked)} />
-                    <Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground" onClick={() => openEdit(site)}><Pencil size={15} /></Button>
-                    <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(site)}><Trash2 size={15} /></Button>
-                  </ItemActions>
-                </Item>
-              )
-            })}
-          </ItemGroup>
-        </div>
-      ) : null}
-
-      {!isLoading && !visibleSites.length ? (
-        <div className="rounded-xl border border-dashed bg-card px-6 py-12 text-center text-sm text-muted-foreground">
-          {search.trim()
-            ? (locale === 'zh-CN' ? '没有匹配的渠道。' : 'No matching channels.')
-            : (locale === 'zh-CN' ? '当前还没有渠道。' : 'No channels yet.')}
-        </div>
-      ) : null}
-
-      <Dialog open={Boolean(detailTarget)} onOpenChange={(open) => { if (!open) setDetailTarget(null) }}>
-        {detailTarget && detailStats ? (
-          <AppDialogContent className="max-w-4xl" title={locale === 'zh-CN' ? '渠道详情' : 'Channel detail'}>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <MetricCard icon={<Activity className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '总请求' : 'Requests'} value={String(detailStats.requestCount)} tone="accent" />
-                <MetricCard icon={<Server className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '模型数' : 'Models'} value={String(detailStats.modelCount)} />
-                <MetricCard icon={<Waypoints className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '协议数' : 'Protocols'} value={String(detailStats.protocolCount)} />
-                <MetricCard icon={<KeyRound className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '密钥数' : 'Keys'} value={String(detailStats.credentialCount)} />
-                <MetricCard icon={<Activity className="h-4 w-4 text-primary" />} label={locale === 'zh-CN' ? '成功' : 'Success'} value={String(detailStats.successCount)} />
-                <MetricCard icon={<Activity className="h-4 w-4 text-destructive" />} label={locale === 'zh-CN' ? '失败' : 'Failed'} value={String(detailStats.failedCount)} tone="danger" />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
+        <Card className="min-h-[calc(100dvh-12rem)] overflow-hidden py-0">
+          <CardContent className="max-h-[calc(100dvh-12rem)] overflow-y-auto px-3 py-3">
+            {isLoading ? (
+              <div className="px-2 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</div>
+            ) : visibleSites.length ? (
+              <ItemGroup className="gap-3">
+                {visibleSites.map((site) => {
+                  const stats = siteStats.get(site.id)
+                  return (
+                    <Item key={site.id} variant="outline" className="items-start gap-4 px-4 py-4">
+                      <ItemContent className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <ItemTitle className="truncate">{site.name}</ItemTitle>
+                        </div>
+                        <ItemDescription className="mt-1 truncate">{site.subtitle || site.endpoint_summary || (locale === 'zh-CN' ? '未配置协议' : 'No protocols')}</ItemDescription>
+                        <ItemFooter className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                          <ChannelMetric icon={<Activity size={14} />} label={locale === 'zh-CN' ? '请求数' : 'Requests'} value={String(stats?.requestCount ?? 0)} />
+                          <ChannelMetric icon={<Waypoints size={14} />} label={locale === 'zh-CN' ? '协议' : 'Protocols'} value={String(site.protocol_count)} />
+                          <ChannelMetric icon={<Server size={14} />} label={locale === 'zh-CN' ? '模型' : 'Models'} value={String(site.model_count)} />
+                          <ChannelMetric icon={<KeyRound size={14} />} label={locale === 'zh-CN' ? '密钥' : 'Keys'} value={String(site.credential_count)} />
+                        </ItemFooter>
+                      </ItemContent>
+                      <ItemActions className="ml-auto self-start">
+                        <SwitchButton checked={isSiteEnabled(site)} disabled={busyId === site.id} onChange={(checked) => void toggleSiteEnabled(site, checked)} />
+                        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => openEdit(site)}>
+                          <Pencil data-icon="inline-start" />
+                          {locale === 'zh-CN' ? '编辑' : 'Edit'}
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(site)}>
+                          <Trash2 data-icon="inline-start" />
+                          {locale === 'zh-CN' ? '删除' : 'Delete'}
+                        </Button>
+                      </ItemActions>
+                    </Item>
+                  )
+                })}
+              </ItemGroup>
+            ) : (
+              <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
+                {search.trim()
+                  ? (locale === 'zh-CN' ? '没有匹配的渠道。' : 'No matching channels.')
+                  : (locale === 'zh-CN' ? '当前还没有渠道。' : 'No channels yet.')}
               </div>
+            )}
+          </CardContent>
+        </Card>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Button className="h-11" type="button" onClick={() => openEdit(detailTarget)}>{locale === 'zh-CN' ? '编辑渠道' : 'Edit channel'}</Button>
-                <Button className="h-11" variant="destructive" type="button" onClick={() => setDeleteTarget(detailTarget)}>{locale === 'zh-CN' ? '删除渠道' : 'Delete channel'}</Button>
+        <aside className="order-1 xl:order-2">
+          <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary/[0.08] text-primary">
+                  <Filter size={16} />
+                </span>
+                <div>
+                  <div className="text-sm font-semibold text-foreground">{locale === 'zh-CN' ? '筛选' : 'Filters'}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {locale === 'zh-CN' ? `已启用 ${activeFilterCount} 项` : `${activeFilterCount} active`}
+                  </div>
+                </div>
               </div>
+              <Button type="button" variant="ghost" size="sm" onClick={resetFilters} disabled={!activeFilterCount && sortBy === 'requests-desc'}>
+                {locale === 'zh-CN' ? '清空' : 'Clear'}
+              </Button>
             </div>
-          </AppDialogContent>
-        ) : null}
-      </Dialog>
+
+            <FieldSet className="gap-4">
+              <FieldLegend>{locale === 'zh-CN' ? '筛选条件' : 'Refine results'}</FieldLegend>
+              <FieldGroup className="gap-4">
+                <Field>
+                  <FieldLabel>{locale === 'zh-CN' ? '关键词' : 'Keyword'}</FieldLabel>
+                  <ToolbarSearchInput
+                    value={search}
+                    onChange={setSearch}
+                    onClear={() => setSearch('')}
+                    placeholder={locale === 'zh-CN' ? '渠道 / 协议 / 模型' : 'Channel / protocol / model'}
+                    className="max-w-none"
+                  />
+                </Field>
+
+                <Field>
+                  <FieldLabel>{locale === 'zh-CN' ? '状态' : 'Status'}</FieldLabel>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { key: 'all' as const, label: locale === 'zh-CN' ? '全部' : 'All' },
+                      { key: 'enabled' as const, label: locale === 'zh-CN' ? '启用' : 'Enabled' },
+                      { key: 'disabled' as const, label: locale === 'zh-CN' ? '停用' : 'Disabled' },
+                    ].map((option) => (
+                      <Button
+                        key={option.key}
+                        type="button"
+                        variant={statusFilter === option.key ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setStatusFilter(option.key)}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </div>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="channels-protocol-filter">{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
+                  <NativeSelect
+                    id="channels-protocol-filter"
+                    className="w-full"
+                    value={protocolFilter}
+                    onChange={(event) => setProtocolFilter(event.target.value as 'all' | ProtocolKind)}
+                  >
+                    <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
+                    {protocolOptions.map((option) => (
+                      <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="channels-sort">{locale === 'zh-CN' ? '排序' : 'Sort by'}</FieldLabel>
+                  <NativeSelect
+                    id="channels-sort"
+                    className="w-full"
+                    value={sortBy}
+                    onChange={(event) => setSortBy(event.target.value as ChannelSort)}
+                  >
+                    <NativeSelectOption value="requests-desc">{locale === 'zh-CN' ? '请求优先' : 'Requests first'}</NativeSelectOption>
+                    <NativeSelectOption value="models-desc">{locale === 'zh-CN' ? '模型优先' : 'Models first'}</NativeSelectOption>
+                    <NativeSelectOption value="protocols-desc">{locale === 'zh-CN' ? '协议优先' : 'Protocols first'}</NativeSelectOption>
+                    <NativeSelectOption value="name-asc">{locale === 'zh-CN' ? '名称升序' : 'Name asc'}</NativeSelectOption>
+                    <NativeSelectOption value="name-desc">{locale === 'zh-CN' ? '名称降序' : 'Name desc'}</NativeSelectOption>
+                  </NativeSelect>
+                </Field>
+              </FieldGroup>
+            </FieldSet>
+          </div>
+        </aside>
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         if (!open && hasUnsavedChanges) {
@@ -696,6 +831,10 @@ export function ChannelsScreen() {
           if (!confirmed) return
         }
         setDialogOpen(open)
+        if (!open) {
+          setEditingSiteId(null)
+          setError('')
+        }
       }}>
         <AppDialogContent className="max-w-4xl" title={editingSiteId ? (locale === 'zh-CN' ? '编辑渠道' : 'Edit channel') : (locale === 'zh-CN' ? '新建渠道' : 'Create channel')}>
           <form className="grid gap-5" onSubmit={submit}>
@@ -818,7 +957,7 @@ export function ChannelsScreen() {
                             </Field>
                             <Field>
                               <FieldLabel>{locale === 'zh-CN' ? '模型筛选密钥' : 'Model key'}</FieldLabel>
-                              <NativeSelect className={selectClassName()} value={selectedCredentialId} onChange={(event) => updateProtocol(protocolIndex, { model_filter_credential_id: event.target.value || null })}>
+                              <NativeSelect className={selectClassName()} value={selectedCredentialId} onChange={(event) => updateProtocolFilter(protocolIndex, event.target.value || null)}>
                                 {credentialOptions.length ? credentialOptions.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.display_name}</NativeSelectOption>) : <NativeSelectOption value="">{locale === 'zh-CN' ? '无可用密钥' : 'No key'}</NativeSelectOption>}
                               </NativeSelect>
                             </Field>
@@ -900,7 +1039,7 @@ export function ChannelsScreen() {
 
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-3">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
+              <Button type="button" variant="outline" onClick={closeEditor}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
               <Button type="submit">{editingSiteId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</Button>
             </div>
           </form>
