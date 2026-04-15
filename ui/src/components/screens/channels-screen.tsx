@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ChevronDown, Ellipsis, Filter, KeyRound, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
+import { Activity, ChevronDown, Ellipsis, Filter, Globe2, KeyRound, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -33,6 +33,7 @@ import {
   ItemDescription,
   ItemFooter,
   ItemGroup,
+  ItemMedia,
   ItemTitle,
 } from '@/components/ui/item'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -224,6 +225,44 @@ function ChannelMetric({
       <span className="inline-flex size-4.5 items-center justify-center">{icon}</span>
       <span className="truncate font-medium">{label} {value}</span>
     </div>
+  )
+}
+
+function getSiteFaviconCandidates(url: string) {
+  try {
+    const parsed = new URL(url)
+    return [
+      `${parsed.origin}/favicon.ico`,
+      `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=64`,
+    ]
+  } catch {
+    return []
+  }
+}
+
+function SiteFavicon({ url, name }: { url: string; name: string }) {
+  const [candidateIndex, setCandidateIndex] = useState(0)
+  const candidates = useMemo(() => getSiteFaviconCandidates(url), [url])
+  const currentSrc = candidates[candidateIndex]
+
+  return (
+    <span className="flex size-11 items-center justify-center rounded-xl border bg-background/80">
+      {currentSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={currentSrc}
+          alt=""
+          className="size-5 rounded-sm object-contain"
+          loading="lazy"
+          onError={() => {
+            setCandidateIndex((current) => (current < candidates.length - 1 ? current + 1 : current))
+          }}
+        />
+      ) : (
+        <Globe2 aria-hidden="true" className="text-muted-foreground" />
+      )}
+      <span className="sr-only">{name}</span>
+    </span>
   )
 }
 
@@ -736,6 +775,9 @@ export function ChannelsScreen() {
                         }
                       }}
                     >
+                      <ItemMedia variant="icon" className="mt-0.5 self-start">
+                        <SiteFavicon key={site.endpoint_summary} url={site.endpoint_summary} name={site.name} />
+                      </ItemMedia>
                       <ItemContent className="min-w-0">
                         <div className="flex flex-col gap-2">
                           <div className="flex flex-wrap items-center gap-2">
