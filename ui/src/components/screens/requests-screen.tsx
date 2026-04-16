@@ -149,6 +149,52 @@ function formatDate(value: string, locale: 'zh-CN' | 'en-US') {
   })
 }
 
+function tryParseJsonValue(value: string) {
+  try {
+    return JSON.parse(value) as JsonLike
+  } catch {
+    return null
+  }
+}
+
+function formatHtmlErrorContent(value: string) {
+  return value
+    .replace(/>\s*</g, '>\n<')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|section|article|header|footer|main|h1|h2|h3|h4|h5|h6|li|ul|ol|pre|code)>/gi, '$&\n')
+    .trim()
+}
+
+function formatJsonErrorContent(prefix: string, value: JsonLike) {
+  const jsonText = JSON.stringify(value, null, 2)
+  if (!jsonText) return prefix.trim() || null
+  return jsonText
+}
+
+function formatErrorDisplay(value: string | null | undefined) {
+  const raw = value?.trim()
+  if (!raw) return null
+
+  const directParsed = tryParseJsonValue(raw)
+  if (directParsed !== null) {
+    return formatJsonErrorContent('', directParsed)
+  }
+
+  const jsonStart = raw.indexOf('{')
+  if (jsonStart > 0) {
+    const nestedParsed = tryParseJsonValue(raw.slice(jsonStart))
+    if (nestedParsed !== null) {
+      return formatJsonErrorContent(raw.slice(0, jsonStart), nestedParsed)
+    }
+  }
+
+  if (/<!doctype html|<html|<head|<body|<title/i.test(raw)) {
+    return formatHtmlErrorContent(raw)
+  }
+
+  return raw
+}
+
 function getPrimaryModelName(item: Pick<RequestLogItem, 'matched_group_name' | 'requested_model' | 'resolved_model'>) {
   return item.matched_group_name || item.requested_model || item.resolved_model || 'n/a'
 }
@@ -189,8 +235,16 @@ function buildPaginationItems(currentPage: number, totalPages: number) {
   return [1, currentPage, currentPage + 1, currentPage + 2, 'ellipsis', totalPages] as const
 }
 
-function StatusBadge({ success, locale }: { success: boolean; locale: 'zh-CN' | 'en-US' }) {
-  return (
+function StatusBadge({
+  success,
+  locale,
+  errorMessage,
+}: {
+  success: boolean
+  locale: 'zh-CN' | 'en-US'
+  errorMessage?: string | null
+}) {
+  const content = (
     <Badge
       variant="outline"
       className={cn(
@@ -201,22 +255,8 @@ function StatusBadge({ success, locale }: { success: boolean; locale: 'zh-CN' | 
       {success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
     </Badge>
   )
-}
 
-function StatusCodeBadge({
-  statusCode,
-  errorMessage,
-}: {
-  statusCode: number | null | undefined
-  errorMessage?: string | null
-}) {
-  const content = (
-    <Badge variant="secondary" className="px-2.5 py-0.5 text-xs font-medium">
-      {statusCode ?? '-'}
-    </Badge>
-  )
-
-  if (!errorMessage?.trim()) {
+  if (success || !errorMessage?.trim()) {
     return content
   }
 
@@ -229,6 +269,18 @@ function StatusCodeBadge({
         {errorMessage}
       </TooltipContent>
     </Tooltip>
+  )
+}
+
+function StatusCodeBadge({
+  statusCode,
+}: {
+  statusCode: number | null | undefined
+}) {
+  return (
+    <Badge variant="secondary" className="px-2.5 py-0.5 text-xs font-medium">
+      {statusCode ?? '-'}
+    </Badge>
   )
 }
 
@@ -588,25 +640,28 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
 
   return (
     <ItemGroup className="gap-2.5">
-      {attempts.map((attempt, index) => (
-        <Item key={`${attempt.channel_id}-${index}`} variant="outline" className="gap-3 px-4 py-3.5">
-          <ItemMedia variant="icon" className="flex size-7 rounded-full bg-muted text-xs font-semibold text-muted-foreground">
-            {index + 1}
-          </ItemMedia>
-          <ItemContent className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <ItemTitle className="max-w-[220px] truncate font-medium">{attempt.channel_name}</ItemTitle>
-              {attempt.model_name ? <ItemDescription className="max-w-[220px] truncate">{attempt.model_name}</ItemDescription> : null}
-              <StatusBadge success={attempt.success} locale={locale} />
-            </div>
-            {attempt.error_message ? <div className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{attempt.error_message}</div> : null}
-          </ItemContent>
-          <ItemActions className="ml-auto text-xs text-muted-foreground">
-            <StatusCodeBadge statusCode={attempt.status_code} errorMessage={attempt.error_message} />
-            <span>{formatMs(attempt.duration_ms)}</span>
-          </ItemActions>
-        </Item>
-      ))}
+      {attempts.map((attempt, index) => {
+        const errorDisplay = formatErrorDisplay(attempt.error_message)
+        return (
+          <Item key={`${attempt.channel_id}-${index}`} variant="outline" className="gap-3 px-4 py-3.5">
+            <ItemMedia variant="icon" className="flex size-7 rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+              {index + 1}
+            </ItemMedia>
+            <ItemContent className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <ItemTitle className="max-w-[220px] truncate font-medium">{attempt.channel_name}</ItemTitle>
+                {attempt.model_name ? <ItemDescription className="max-w-[220px] truncate">{attempt.model_name}</ItemDescription> : null}
+                <StatusBadge success={attempt.success} locale={locale} errorMessage={errorDisplay} />
+              </div>
+              {errorDisplay ? <div className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words">{errorDisplay}</div> : null}
+            </ItemContent>
+            <ItemActions className="ml-auto text-xs text-muted-foreground">
+              <StatusCodeBadge statusCode={attempt.status_code} />
+              <span>{formatMs(attempt.duration_ms)}</span>
+            </ItemActions>
+          </Item>
+        )
+      })}
     </ItemGroup>
   )
 }
@@ -626,6 +681,7 @@ function RequestCard({
   const secondaryModelName = getSecondaryModelName(item)
   const attemptCount = Number.isFinite(item.attempt_count) ? item.attempt_count : 0
   const showAttemptButton = attemptCount > 1
+  const errorDisplay = formatErrorDisplay(item.error_message)
 
   return (
     <Item
@@ -657,8 +713,8 @@ function RequestCard({
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <ItemTitle className="min-w-0 max-w-full truncate text-[15px] leading-6">{primaryModelName}</ItemTitle>
                 <ProtocolBadge protocol={item.protocol} />
-                <StatusCodeBadge statusCode={item.status_code} errorMessage={item.error_message} />
-                <StatusBadge success={item.success} locale={locale} />
+                <StatusCodeBadge statusCode={item.status_code} />
+                <StatusBadge success={item.success} locale={locale} errorMessage={errorDisplay} />
               </div>
             </div>
 
@@ -1125,11 +1181,11 @@ export function RequestsScreen() {
             </div>
           ) : (
             <div className="grid gap-4">
-              {attemptDetail.error_message ? (
+              {formatErrorDisplay(attemptDetail.error_message) ? (
                 <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-4 text-sm text-destructive">
                   <div className="flex items-start gap-3">
                     <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                    <span>{attemptDetail.error_message}</span>
+                    <span className="whitespace-pre-wrap break-words">{formatErrorDisplay(attemptDetail.error_message)}</span>
                   </div>
                 </div>
               ) : null}
