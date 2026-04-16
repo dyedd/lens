@@ -203,6 +203,19 @@ class SiteConfig(BaseModel):
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
 
 
+class SiteRuntimeSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    site_id: str
+    site_name: str
+    latest_request_at: str | None = None
+    latest_success: bool | None = None
+    latest_status_code: int | None = None
+    latest_error_message: str | None = None
+    latest_channel_id: str | None = None
+    latest_channel_name: str | None = None
+
+
 class SiteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

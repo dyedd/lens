@@ -13,6 +13,7 @@ import {
   DollarSign,
   Filter,
   LayoutGrid,
+  RefreshCcw,
   RotateCcw,
   ServerCog,
   Waypoints,
@@ -202,11 +203,32 @@ function StatusBadge({ success, locale }: { success: boolean; locale: 'zh-CN' | 
   )
 }
 
-function StatusCodeBadge({ statusCode }: { statusCode: number }) {
-  return (
+function StatusCodeBadge({
+  statusCode,
+  errorMessage,
+}: {
+  statusCode: number | null | undefined
+  errorMessage?: string | null
+}) {
+  const content = (
     <Badge variant="secondary" className="px-2.5 py-0.5 text-xs font-medium">
-      {statusCode}
+      {statusCode ?? '-'}
     </Badge>
+  )
+
+  if (!errorMessage?.trim()) {
+    return content
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">{content}</span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm whitespace-pre-wrap break-words" side="bottom">
+        {errorMessage}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -580,7 +602,7 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
             {attempt.error_message ? <div className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{attempt.error_message}</div> : null}
           </ItemContent>
           <ItemActions className="ml-auto text-xs text-muted-foreground">
-            <span>{attempt.status_code ?? '-'}</span>
+            <StatusCodeBadge statusCode={attempt.status_code} errorMessage={attempt.error_message} />
             <span>{formatMs(attempt.duration_ms)}</span>
           </ItemActions>
         </Item>
@@ -635,7 +657,7 @@ function RequestCard({
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <ItemTitle className="min-w-0 max-w-full truncate text-[15px] leading-6">{primaryModelName}</ItemTitle>
                 <ProtocolBadge protocol={item.protocol} />
-                <StatusCodeBadge statusCode={item.status_code} />
+                <StatusCodeBadge statusCode={item.status_code} errorMessage={item.error_message} />
                 <StatusBadge success={item.success} locale={locale} />
               </div>
             </div>
@@ -696,24 +718,29 @@ export function RequestsScreen() {
   const [keyword, setKeyword] = useState('')
   const deferredKeyword = useDeferredValue(keyword.trim().toLowerCase())
 
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    isFetching,
+    refetch: refetchRequestLogs,
+  } = useQuery({
     queryKey: ['request-logs', page],
     queryFn: () => apiRequest<RequestLogPage>(`/admin/request-logs/page?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`),
     refetchInterval: 5000,
   })
 
-  const { data: allModels } = useQuery({
+  const { data: allModels, refetch: refetchAllModels } = useQuery({
     queryKey: ['overview-models', 'requests-screen'],
     queryFn: () => apiRequest<OverviewModelAnalytics>('/admin/overview-models?days=0'),
   })
 
-  const { data: detail, isLoading: detailLoading } = useQuery({
+  const { data: detail, isLoading: detailLoading, refetch: refetchDetail } = useQuery({
     queryKey: ['request-log-detail', detailId],
     queryFn: () => apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
     enabled: detailId !== null,
   })
 
-  const { data: attemptDetail, isLoading: attemptDetailLoading } = useQuery({
+  const { data: attemptDetail, isLoading: attemptDetailLoading, refetch: refetchAttemptDetail } = useQuery({
     queryKey: ['request-log-attempt-detail', attemptDetailId],
     queryFn: () => apiRequest<RequestLogDetail>(`/admin/request-logs/${attemptDetailId}`),
     enabled: attemptDetailId !== null,
@@ -846,13 +873,27 @@ export function RequestsScreen() {
     setPage(0)
   }
 
+  async function refreshLogs() {
+    await Promise.all([
+      refetchRequestLogs(),
+      refetchAllModels(),
+      detailId !== null ? refetchDetail() : Promise.resolve(),
+      attemptDetailId !== null ? refetchAttemptDetail() : Promise.resolve(),
+    ])
+  }
+
   return (
-    <section className="flex flex-col gap-4 md:gap-5">
+    <TooltipProvider>
+      <section className="flex flex-col gap-4 md:gap-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '请求日志' : 'Requests'}</h1>
         </div>
         <div className="flex items-center gap-2 self-start lg:self-auto">
+          <Button type="button" variant="outline" onClick={() => void refreshLogs()} disabled={isFetching}>
+            <RefreshCcw data-icon="inline-start" className={cn(isFetching && 'animate-spin')} />
+            {locale === 'zh-CN' ? '刷新' : 'Refresh'}
+          </Button>
           <Button type="button" variant="outline" onClick={resetFilters} disabled={!activeFilterCount && sortMode === 'latest'}>
             <RotateCcw data-icon="inline-start" />
             {locale === 'zh-CN' ? '重置' : 'Reset'}
@@ -1099,25 +1140,24 @@ export function RequestsScreen() {
       </Dialog>
 
       {showBackToTop ? (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-lg"
-                className="fixed right-6 bottom-6 z-40 rounded-full shadow-sm"
-                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              >
-                <ArrowUp />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">
-              {locale === 'zh-CN' ? '返回顶部' : 'Back to top'}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-lg"
+              className="fixed right-6 bottom-6 z-40 rounded-full shadow-sm"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            >
+              <ArrowUp />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            {locale === 'zh-CN' ? '返回顶部' : 'Back to top'}
+          </TooltipContent>
+        </Tooltip>
       ) : null}
-    </section>
+      </section>
+    </TooltipProvider>
   )
 }
