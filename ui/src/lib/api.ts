@@ -141,6 +141,17 @@ export type Site = {
   protocols: SiteProtocolConfig[]
 }
 
+export type SiteRuntimeSummary = {
+  site_id: string
+  site_name: string
+  latest_request_at?: string | null
+  latest_success?: boolean | null
+  latest_status_code?: number | null
+  latest_error_message?: string | null
+  latest_channel_id?: string | null
+  latest_channel_name?: string | null
+}
+
 export type SitePayload = {
   name: string
   base_urls: SiteBaseUrlInput[]

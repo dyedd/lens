@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ChevronDown, Ellipsis, Filter, Globe2, KeyRound, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
+import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock3, Ellipsis, Filter, Globe2, KeyRound, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -16,6 +16,7 @@ import {
   SitePayload,
   SiteProtocolCredentialBindingInput,
   SiteModelInput,
+  SiteRuntimeSummary,
   apiRequest,
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -40,6 +41,7 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
 
 const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
@@ -287,6 +289,88 @@ function buildSiteStats(logs: RequestLogItem[] | undefined, sites: Site[] | unde
   return grouped
 }
 
+function formatRuntimeTimestamp(value: string, locale: 'zh-CN' | 'en-US') {
+  return new Date(value).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+}
+
+function summarizeErrorMessage(value: string, maxLength = 120) {
+  const singleLine = value.replace(/\s+/g, ' ').trim()
+  if (singleLine.length <= maxLength) return singleLine
+  return `${singleLine.slice(0, maxLength)}...`
+}
+
+function RecentRequestPreview({
+  summary,
+  locale,
+}: {
+  summary?: SiteRuntimeSummary
+  locale: 'zh-CN' | 'en-US'
+}) {
+  if (!summary?.latest_request_at || summary.latest_success === null || summary.latest_success === undefined) {
+    return (
+      <div className="mt-3 text-xs text-muted-foreground">
+        {locale === 'zh-CN' ? '最近暂无请求记录' : 'No recent requests'}
+      </div>
+    )
+  }
+
+  const isFailed = !summary.latest_success
+  const errorMessage = summary.latest_error_message?.trim() || ''
+
+  return (
+    <div className="mt-3 grid gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant="outline"
+          className={cn(
+            'rounded-full border-0 px-2.5 py-0.5 text-xs font-medium',
+            isFailed ? 'bg-destructive/12 text-destructive' : 'bg-primary/10 text-primary'
+          )}
+        >
+          {isFailed
+            ? (locale === 'zh-CN' ? '最近失败' : 'Latest failed')
+            : (locale === 'zh-CN' ? '最近成功' : 'Latest success')}
+        </Badge>
+        {summary.latest_status_code !== null && summary.latest_status_code !== undefined ? (
+          <Badge variant="secondary" className="px-2.5 py-0.5 text-xs font-medium">
+            {summary.latest_status_code}
+          </Badge>
+        ) : null}
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock3 size={12} />
+          {formatRuntimeTimestamp(summary.latest_request_at, locale)}
+        </span>
+      </div>
+
+      {isFailed && errorMessage ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex max-w-full items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <span className="truncate">{summarizeErrorMessage(errorMessage)}</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-sm whitespace-pre-wrap break-words" side="bottom" align="start">
+            {errorMessage}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <div className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+          <span>{locale === 'zh-CN' ? '最近一次请求正常' : 'The latest request completed normally'}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function protocolFilterStorageKey(siteId: string, protocolId: string) {
   return `lens:channel-model-filter:${siteId}:${protocolId}`
 }
@@ -406,8 +490,17 @@ export function ChannelsScreen() {
 
   const { data: sites, isLoading } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
   const { data: requestLogs } = useQuery({ queryKey: ['request-logs'], queryFn: () => apiRequest<RequestLogItem[]>('/admin/request-logs') })
+  const { data: siteRuntimeSummaries } = useQuery({
+    queryKey: ['site-runtime-summaries'],
+    queryFn: () => apiRequest<SiteRuntimeSummary[]>('/admin/sites/runtime'),
+    refetchInterval: 5000,
+  })
 
   const siteStats = useMemo(() => buildSiteStats(requestLogs, sites), [requestLogs, sites])
+  const siteRuntimeById = useMemo(
+    () => new Map((siteRuntimeSummaries ?? []).map((item) => [item.site_id, item] as const)),
+    [siteRuntimeSummaries]
+  )
   const siteRows = useMemo<SiteRow[]>(() => (
     (sites ?? []).map((site) => ({
       ...site,
@@ -460,6 +553,7 @@ export function ChannelsScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['sites'] }),
       queryClient.invalidateQueries({ queryKey: ['request-logs'] }),
+      queryClient.invalidateQueries({ queryKey: ['site-runtime-summaries'] }),
       queryClient.invalidateQueries({ queryKey: ['group-candidates'] }),
     ])
   }
@@ -743,7 +837,8 @@ export function ChannelsScreen() {
   }
 
   return (
-    <section className="flex flex-col gap-4">
+    <TooltipProvider>
+      <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '渠道' : 'Channels'}</h1>
         <Button type="button" onClick={openCreate} className="rounded-full" size="icon-sm" title={locale === 'zh-CN' ? '新建渠道' : 'New channel'}>
@@ -760,6 +855,7 @@ export function ChannelsScreen() {
               <ItemGroup className="gap-3">
                 {visibleSites.map((site) => {
                   const stats = siteStats.get(site.id)
+                  const runtimeSummary = siteRuntimeById.get(site.id)
                   return (
                     <Item
                       key={site.id}
@@ -795,6 +891,7 @@ export function ChannelsScreen() {
                           <ItemDescription className="truncate text-sm">
                             {site.endpoint_summary || (locale === 'zh-CN' ? '未配置请求地址' : 'No endpoint configured')}
                           </ItemDescription>
+                          <RecentRequestPreview summary={runtimeSummary} locale={locale} />
                         </div>
                         <ItemFooter className="mt-4 flex flex-wrap items-center gap-2.5">
                           <ChannelMetric icon={<Activity size={14} />} label={locale === 'zh-CN' ? '请求数' : 'Requests'} value={String(stats?.requestCount ?? 0)} />
@@ -1229,6 +1326,7 @@ export function ChannelsScreen() {
           </AppDialogContent>
         ) : null}
       </Dialog>
-    </section>
+      </section>
+    </TooltipProvider>
   )
 }

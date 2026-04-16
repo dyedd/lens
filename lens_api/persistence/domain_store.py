@@ -10,7 +10,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
-from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem
+from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem, SiteRuntimeSummary
 from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
@@ -991,6 +991,90 @@ class DomainStore:
                 limit=limit,
                 offset=offset,
             )
+
+    async def list_site_runtime_summaries(self) -> list[SiteRuntimeSummary]:
+        async with self._session_factory() as session:
+            site_rows = (
+                await session.execute(select(SiteEntity).order_by(SiteEntity.name.asc()))
+            ).scalars().all()
+            if not site_rows:
+                return []
+
+            ranked_logs = (
+                select(
+                    SiteProtocolConfigEntity.site_id.label("site_id"),
+                    RequestLogEntity.channel_id.label("channel_id"),
+                    RequestLogEntity.channel_name.label("channel_name"),
+                    RequestLogEntity.status_code.label("status_code"),
+                    RequestLogEntity.success.label("success"),
+                    RequestLogEntity.error_message.label("error_message"),
+                    RequestLogEntity.created_at.label("created_at"),
+                    func.row_number().over(
+                        partition_by=SiteProtocolConfigEntity.site_id,
+                        order_by=(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()),
+                    ).label("row_number"),
+                )
+                .join(
+                    SiteProtocolConfigEntity,
+                    SiteProtocolConfigEntity.id == RequestLogEntity.channel_id,
+                )
+                .subquery()
+            )
+
+            latest_rows = await session.execute(
+                select(
+                    ranked_logs.c.site_id,
+                    ranked_logs.c.channel_id,
+                    ranked_logs.c.channel_name,
+                    ranked_logs.c.status_code,
+                    ranked_logs.c.success,
+                    ranked_logs.c.error_message,
+                    ranked_logs.c.created_at,
+                ).where(ranked_logs.c.row_number == 1)
+            )
+            latest_by_site = {
+                str(row.site_id): row
+                for row in latest_rows.all()
+            }
+
+            items: list[SiteRuntimeSummary] = []
+            for site in site_rows:
+                latest = latest_by_site.get(site.id)
+                items.append(
+                    SiteRuntimeSummary(
+                        site_id=site.id,
+                        site_name=site.name,
+                        latest_request_at=(
+                            latest.created_at.replace(tzinfo=UTC).isoformat()
+                            if latest is not None and latest.created_at is not None
+                            else None
+                        ),
+                        latest_success=(
+                            bool(latest.success) if latest is not None and latest.success is not None else None
+                        ),
+                        latest_status_code=(
+                            int(latest.status_code)
+                            if latest is not None and latest.status_code is not None
+                            else None
+                        ),
+                        latest_error_message=(
+                            str(latest.error_message)
+                            if latest is not None and latest.error_message is not None
+                            else None
+                        ),
+                        latest_channel_id=(
+                            str(latest.channel_id)
+                            if latest is not None and latest.channel_id is not None
+                            else None
+                        ),
+                        latest_channel_name=(
+                            str(latest.channel_name)
+                            if latest is not None and latest.channel_name is not None
+                            else None
+                        ),
+                    )
+                )
+            return items
 
     async def get_request_log(self, log_id: int) -> RequestLogDetail:
         async with self._session_factory() as session:

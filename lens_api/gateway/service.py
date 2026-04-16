@@ -58,6 +58,7 @@ from ..models import (
     SiteCreate,
     SiteModelFetchItem,
     SiteModelFetchRequest,
+    SiteRuntimeSummary,
     SiteUpdate,
 )
 from ..persistence.admin_store import AdminStore
@@ -390,6 +391,12 @@ async def change_password(
 
 async def list_sites(_: Any = Depends(get_current_admin)) -> list[SiteConfig]:
     return await app_state.store.list_sites()
+
+
+async def site_runtime_summaries(
+    _: Any = Depends(get_current_admin),
+) -> list[SiteRuntimeSummary]:
+    return await app_state.domain_store.list_site_runtime_summaries()
 
 
 async def create_site(
