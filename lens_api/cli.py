@@ -47,10 +47,13 @@ def db_stamp(args: argparse.Namespace) -> None:
     command.stamp(_alembic_cfg(), args.revision)
 
 
-def serve(_args: argparse.Namespace) -> None:
+def serve(args: argparse.Namespace) -> None:
     import uvicorn
-    from .gateway.service import app
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    if args.reload:
+        uvicorn.run("lens_api.gateway.service:app", host=settings.host, port=settings.port, reload=True)
+    else:
+        from .gateway.service import app
+        uvicorn.run(app, host=settings.host, port=settings.port)
 
 
 def seed_admin(args: argparse.Namespace) -> None:
@@ -100,6 +103,7 @@ def main(argv: list[str] | None = None) -> None:
     stmp.set_defaults(func=db_stamp)
 
     srv = sub.add_parser("serve", help="Start the API server")
+    srv.add_argument("--reload", action="store_true", help="Enable auto-reload on code changes")
     srv.set_defaults(func=serve)
 
     seed = sub.add_parser("seed-admin", help="Create or update an admin user")

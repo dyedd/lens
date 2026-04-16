@@ -22,10 +22,14 @@
 pip install -e .[dev]
 lens db upgrade
 lens seed-admin --username admin --password admin
-lens serve
+
+# 开发模式（支持热重载）
+lens serve --reload
 ```
 
 后端默认监听 `http://127.0.0.1:18080`。
+
+生产环境使用 `lens serve`（不带 `--reload`）。
 
 ### 前端
 
