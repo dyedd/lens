@@ -13,7 +13,12 @@ const geistMono = Geist_Mono({subsets:['latin'],variable:'--font-mono'})
 
 export const metadata: Metadata = {
   title: 'Lens',
-  description: '渠道、模型组与系统配置管理后台'
+  description: '渠道、模型组与系统配置管理后台',
+  icons: {
+    icon: '/logo.svg',
+    shortcut: '/logo.svg',
+    apple: '/logo.svg',
+  },
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

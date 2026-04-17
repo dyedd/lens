@@ -1084,7 +1084,7 @@ export function GroupsScreen() {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '模型组管理' : 'Group Management'}</h1>
+        <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '模型组' : 'Groups'}</h1>
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" onClick={() => void syncPrices()} disabled={syncingPrices}>
             <RefreshCcw data-icon="inline-start" className={syncingPrices ? 'animate-spin' : ''} />

@@ -1,6 +1,7 @@
 "use client"
 
 import type { DashboardView } from '@/components/shell/dashboard-view-shell'
+import { Button } from '@/components/ui/button'
 import {
   Sidebar,
   SidebarContent,
@@ -14,7 +15,6 @@ import {
   SidebarProvider,
   useSidebar,
 } from '@/components/ui/sidebar'
-import { Button } from '@/components/ui/button'
 import { apiRequest, type PublicBranding } from '@/lib/api'
 import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
@@ -95,19 +95,19 @@ export function DashboardShell({
   return (
     <SidebarProvider className="h-dvh">
       <Sidebar collapsible="icon" className="z-20">
-        <SidebarHeader className="h-14 px-3">
+        <SidebarHeader className="min-h-[4.5rem] px-4 py-3">
           <div className="flex w-full items-center justify-between gap-2 group-data-[collapsible=icon]:justify-center">
             <div className="flex min-w-0 items-center gap-2 group-data-[collapsible=icon]:hidden">
               <Image
                 src={logoUrl}
                 alt={siteName}
-                width={48}
-                height={48}
+                width={36}
+                height={36}
                 loading="eager"
-                className="size-10 shrink-0 object-contain"
+                className="shrink-0 object-contain"
                 unoptimized={logoUrl !== '/logo.svg'}
               />
-              <span className="truncate text-sm font-semibold text-sidebar-foreground">
+              <span className="truncate text-base font-semibold text-sidebar-foreground">
                 {siteName}
               </span>
             </div>
