@@ -764,9 +764,11 @@ export function GroupsScreen() {
     return Array.from(groupsByChannel.values()).sort((a, b) => a.channel_name.localeCompare(b.channel_name))
   }, [channelMap, filteredCandidates])
 
-  const visibleSelectedItems = useMemo(() => {
-    if (!showEnabledOnly) return form.items
-    return form.items.filter((item) => item.enabled)
+  const visibleSelectedMembers = useMemo(() => {
+    if (!showEnabledOnly) {
+      return form.items.map((item, index) => ({ item, index }))
+    }
+    return form.items.flatMap((item, index) => (item.enabled ? [{ item, index }] : []))
   }, [form.items, showEnabledOnly])
 
   useEffect(() => {
@@ -1082,7 +1084,7 @@ export function GroupsScreen() {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '模型组' : 'Groups'}</h1>
+        <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '模型组管理' : 'Group Management'}</h1>
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" onClick={() => void syncPrices()} disabled={syncingPrices}>
             <RefreshCcw data-icon="inline-start" className={syncingPrices ? 'animate-spin' : ''} />
@@ -1201,7 +1203,7 @@ export function GroupsScreen() {
                               const channelName = item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id
                               return (
                                 <div
-                                  key={itemKey(item)}
+                                  key={`${itemKey(item)}::${index}`}
                                   className={cn(
                                     'flex max-w-full items-center rounded-full border bg-background',
                                     !item.enabled && 'opacity-55',
@@ -1477,16 +1479,14 @@ export function GroupsScreen() {
                     <Button type="button" variant="outline" className="text-muted-foreground" onClick={() => setAllMembersEnabled(true)}>{locale === 'zh-CN' ? '全开' : 'Enable all'}</Button>
                     <Button type="button" variant="outline" className="text-muted-foreground" onClick={() => setAllMembersEnabled(false)}>{locale === 'zh-CN' ? '全关' : 'Disable all'}</Button>
                     <Button type="button" variant={showEnabledOnly ? 'default' : 'outline'} className={cn(!showEnabledOnly && 'text-muted-foreground')} onClick={() => setShowEnabledOnly((current) => !current)}>{locale === 'zh-CN' ? '仅看启用' : 'Enabled only'}</Button>
-                    <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{visibleSelectedItems.length}/{form.items.length}</span>
+                    <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{visibleSelectedMembers.length}/{form.items.length}</span>
                   </div>
                 </div>
                 <div className="px-2 pb-2 pt-1">
                   <div className="flex flex-col gap-1.5">
-                    {visibleSelectedItems.length ? visibleSelectedItems.map((item) => {
-                      const index = form.items.findIndex((candidate) => itemKey(candidate) === itemKey(item))
-                      return (
+                    {visibleSelectedMembers.length ? visibleSelectedMembers.map(({ item, index }) => (
                       <SelectedMemberRow
-                        key={itemKey(item)}
+                        key={`${itemKey(item)}::${index}`}
                         item={item}
                         index={index}
                         dragging={draggingIndex === index}
@@ -1504,7 +1504,7 @@ export function GroupsScreen() {
                         }}
                         onDragEnd={() => setDraggingIndex(null)}
                       />
-                    )}) : <p className="px-1 py-6 text-center text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前筛选下没有成员' : 'No members under current filter'}</p>}
+                    )) : <p className="px-1 py-6 text-center text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前筛选下没有成员' : 'No members under current filter'}</p>}
                   </div>
                 </div>
               </section>
