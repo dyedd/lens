@@ -112,7 +112,14 @@ export function LoginScreen() {
         </Card>
 
         <footer className="text-center text-xs text-muted-foreground">
-          powered by <span className="font-medium text-foreground">lens</span>
+          <a
+            href="https://github.com/dyedd/lens"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-foreground hover:underline"
+          >
+            powered by lens
+          </a>
         </footer>
       </div>
     </div>

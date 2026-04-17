@@ -6,13 +6,15 @@ export function SegmentedControl<T extends string>({
   value,
   onValueChange,
   options,
+  className,
 }: {
   value: T
   onValueChange: (value: T) => void
   options: Array<{ value: T; label: string }>
+  className?: string
 }) {
   return (
-    <div className="inline-flex max-w-full items-center gap-1 rounded-xl border bg-muted p-0.5">
+    <div className={cn("inline-flex w-fit max-w-full self-start items-center gap-1 rounded-xl border bg-muted p-0.5", className)}>
       {options.map((option) => {
         const active = option.value === value
         return (

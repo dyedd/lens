@@ -220,9 +220,7 @@ export type PublicBranding = {
 }
 
 export type AppInfo = {
-  backend_version: string
-  frontend_version: string
-  app_env: string
+  system_version: string
   site_name: string
   logo_url: string
 }
@@ -236,6 +234,19 @@ export type AdminProfile = {
 export type AdminPasswordChangePayload = {
   current_password: string
   new_password: string
+}
+
+export type AdminProfileUpdatePayload = {
+  username: string
+  current_password: string
+  new_password: string
+}
+
+export type AdminProfileUpdateResponse = {
+  access_token: string
+  token_type: string
+  expires_in: number
+  profile: AdminProfile
 }
 
 export type RouteSnapshot = {

@@ -18,7 +18,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import OperationalError
 from starlette.background import BackgroundTask
 
-from .. import __version__ as backend_version
 from ..api import create_app
 from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
@@ -26,6 +25,8 @@ from ..core.db import create_engine, create_session_factory
 from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
 from ..models import (
     AdminLoginRequest,
+    AdminProfileUpdateRequest,
+    AdminProfileUpdateResponse,
     AdminPasswordChangeRequest,
     AdminProfile,
     AppInfo,
@@ -86,7 +87,7 @@ from .upstreams import (
 
 
 @lru_cache(maxsize=1)
-def _read_frontend_version() -> str:
+def _read_system_version() -> str:
     package_file = Path(__file__).resolve().parents[2] / "ui" / "package.json"
     try:
         payload = json.loads(package_file.read_text(encoding="utf-8"))
@@ -355,9 +356,7 @@ async def public_branding() -> PublicBranding:
 async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
     branding = await app_state.domain_store.get_branding_settings()
     return AppInfo(
-        backend_version=backend_version,
-        frontend_version=_read_frontend_version(),
-        app_env=settings.app_env,
+        system_version=_read_system_version(),
         site_name=branding["site_name"],
         logo_url=branding["site_logo_url"],
     )
@@ -377,6 +376,33 @@ async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
 
 async def current_admin(admin=Depends(get_current_admin)) -> AdminProfile:
     return AdminProfile(id=admin.id, username=admin.username)
+
+
+async def update_profile(
+    payload: AdminProfileUpdateRequest, admin=Depends(get_current_admin)
+) -> AdminProfileUpdateResponse:
+    normalized_username = payload.username.strip()
+    if not normalized_username:
+        raise HTTPException(status_code=400, detail="Username is required")
+
+    try:
+        updated_admin = await app_state.admin_store.update_profile(
+            admin.username,
+            normalized_username,
+            payload.current_password,
+            payload.new_password,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Admin not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    access_token, expires_in = create_access_token(updated_admin.username, settings)
+    return AdminProfileUpdateResponse(
+        access_token=access_token,
+        expires_in=expires_in,
+        profile=AdminProfile(id=updated_admin.id, username=updated_admin.username),
+    )
 
 
 async def change_password(
