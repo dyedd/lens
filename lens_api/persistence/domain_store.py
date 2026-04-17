@@ -1245,9 +1245,17 @@ class DomainStore:
 
     async def get_model_analytics(self, days: int = 7) -> OverviewModelAnalytics:
         async with self._session_factory() as session:
-            window_start, window_end = self._resolve_imported_date_window(days)
-            archived_model_rows = await self._overview_model_daily_rows(session, start_at=window_start, end_at=window_end)
-            live_model_rows = await self._request_log_model_daily_rows(session, days=days)
+            if days == -1:
+                archived_model_rows = []
+                live_model_rows = await self._request_log_model_hourly_rows(session, days=days)
+            else:
+                window_start, window_end = self._resolve_imported_date_window(days)
+                archived_model_rows = await self._overview_model_daily_rows(
+                    session,
+                    start_at=window_start,
+                    end_at=window_end,
+                )
+                live_model_rows = await self._request_log_model_daily_rows(session, days=days)
 
         merged_rows: dict[tuple[str, str], dict[str, float | str]] = {}
         for date_value, model, requests, total_tokens, total_cost in [*archived_model_rows, *live_model_rows]:
@@ -1583,6 +1591,31 @@ class DomainStore:
         stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
         rows = (await session.execute(stmt)).all()
         return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows if model]
+
+    async def _request_log_model_hourly_rows(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[tuple[str, str, int, int, float]]:
+        model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
+        hourly_bucket = func.strftime('%Y%m%d%H', RequestLogEntity.created_at)
+        stmt = (
+            select(
+                hourly_bucket,
+                model_expr,
+                func.sum(RequestLogEntity.success),
+                func.sum(RequestLogEntity.total_tokens),
+                func.sum(RequestLogEntity.total_cost_usd),
+            )
+            .where(RequestLogEntity.stats_archived == 0)
+            .where(RequestLogEntity.success == 1)
+            .where(model_expr.is_not(None))
+            .group_by(hourly_bucket, model_expr)
+            .order_by(hourly_bucket.asc())
+        )
+        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        rows = (await session.execute(stmt)).all()
+        return [
+            (str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0))
+            for date_value, model, requests, total_tokens, total_cost in rows
+            if model
+        ]
 
     async def _merged_period_totals(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> dict[str, float]:
         imported_totals = await self._imported_period_totals(session, days=days, offset_days=offset_days)
