@@ -282,8 +282,8 @@ class RouteState(BaseModel):
 
 class RoutePreview(BaseModel):
     protocol: ProtocolKind
-    requested_model: str | None = None
-    matched_group_name: str | None = None
+    requested_group_name: str | None = None
+    resolved_group_name: str | None = None
     strategy: RoutingStrategy | None = None
     matched_channel_ids: list[str] = Field(default_factory=list)
     items: list["RoutePreviewItem"] = Field(default_factory=list)
@@ -356,7 +356,8 @@ class ModelGroup(BaseModel):
     name: str
     protocol: ProtocolKind
     strategy: RoutingStrategy
-    match_regex: str = ""
+    route_group_id: str = ""
+    route_group_name: str = ""
     input_price_per_million: float = 0.0
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
@@ -391,19 +392,8 @@ class ModelGroupCreate(BaseModel):
     name: str
     protocol: ProtocolKind
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
-    match_regex: str = ""
+    route_group_id: str = ""
     items: list[ModelGroupItemInput] = Field(default_factory=list)
-
-    @field_validator("match_regex")
-    @classmethod
-    def validate_match_regex(cls, pattern: str) -> str:
-        if not pattern:
-            return pattern
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
-        return pattern
 
 
 class ModelGroupUpdate(BaseModel):
@@ -412,19 +402,8 @@ class ModelGroupUpdate(BaseModel):
     name: str | None = None
     protocol: ProtocolKind | None = None
     strategy: RoutingStrategy | None = None
-    match_regex: str | None = None
+    route_group_id: str | None = None
     items: list[ModelGroupItemInput] | None = None
-
-    @field_validator("match_regex")
-    @classmethod
-    def validate_match_regex(cls, pattern: str | None) -> str | None:
-        if not pattern:
-            return pattern
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
-        return pattern
 
 
 class ModelGroupStats(BaseModel):
@@ -508,8 +487,9 @@ class SettingsUpdate(BaseModel):
 class RequestLogItem(BaseModel):
     id: int
     protocol: ProtocolKind
-    requested_model: str | None = None
-    matched_group_name: str | None = None
+    requested_group_name: str | None = None
+    resolved_group_name: str | None = None
+    upstream_model_name: str | None = None
     channel_id: str | None = None
     channel_name: str | None = None
     gateway_key_id: str | None = None
@@ -518,7 +498,6 @@ class RequestLogItem(BaseModel):
     is_stream: bool = False
     first_token_latency_ms: int = 0
     latency_ms: int
-    resolved_model: str | None = None
     input_tokens: int = 0
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0

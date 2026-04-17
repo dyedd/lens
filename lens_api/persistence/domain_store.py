@@ -106,7 +106,11 @@ class DomainStore:
 
     async def list_group_names(self) -> list[str]:
         async with self._session_factory() as session:
-            rows = await session.execute(select(ModelGroupEntity.name).order_by(ModelGroupEntity.name.asc()))
+            rows = await session.execute(
+                select(ModelGroupEntity.name)
+                .where(ModelGroupEntity.route_group_id == "")
+                .order_by(ModelGroupEntity.name.asc())
+            )
             return [str(item) for item in rows.scalars().all() if str(item).strip()]
 
     async def prune_model_prices_to_groups(self) -> None:
@@ -190,7 +194,11 @@ class DomainStore:
                 await session.execute(select(ModelPriceEntity).order_by(ModelPriceEntity.display_name.asc(), ModelPriceEntity.model_key.asc()))
             ).scalars().all()
             group_rows = (
-                await session.execute(select(ModelGroupEntity.name, ModelGroupEntity.protocol).order_by(ModelGroupEntity.name.asc()))
+                await session.execute(
+                    select(ModelGroupEntity.name, ModelGroupEntity.protocol)
+                    .where(ModelGroupEntity.route_group_id == "")
+                    .order_by(ModelGroupEntity.name.asc())
+                )
             ).all()
             last_synced_at = await session.get(SettingEntity, SETTING_MODEL_PRICE_LAST_SYNC_AT)
 
@@ -235,7 +243,10 @@ class DomainStore:
 
         async with self._session_factory() as session:
             group_rows = (
-                await session.execute(select(ModelGroupEntity.name, ModelGroupEntity.protocol))
+                await session.execute(
+                    select(ModelGroupEntity.name, ModelGroupEntity.protocol)
+                    .where(ModelGroupEntity.route_group_id == "")
+                )
             ).all()
             matched_groups = [
                 (str(name), ProtocolKind(str(protocol)))
@@ -413,26 +424,26 @@ class DomainStore:
             grouped_rows = (
                 await session.execute(
                     select(
-                        RequestLogEntity.matched_group_name,
+                        RequestLogEntity.resolved_group_name,
                         func.count(RequestLogEntity.id),
                         func.sum(RequestLogEntity.success),
                         func.sum(RequestLogEntity.total_tokens),
                         func.sum(RequestLogEntity.total_cost_usd),
                         func.avg(RequestLogEntity.latency_ms),
                     )
-                    .where(RequestLogEntity.matched_group_name.is_not(None))
-                    .group_by(RequestLogEntity.matched_group_name)
+                    .where(RequestLogEntity.resolved_group_name.is_not(None))
+                    .group_by(RequestLogEntity.resolved_group_name)
                 )
             ).all()
 
             last_model_rows = (
                 await session.execute(
                     select(
-                        RequestLogEntity.matched_group_name,
-                        RequestLogEntity.resolved_model,
+                        RequestLogEntity.resolved_group_name,
+                        RequestLogEntity.upstream_model_name,
                     )
-                    .where(RequestLogEntity.matched_group_name.is_not(None))
-                    .where(RequestLogEntity.resolved_model.is_not(None))
+                    .where(RequestLogEntity.resolved_group_name.is_not(None))
+                    .where(RequestLogEntity.upstream_model_name.is_not(None))
                     .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
                 )
             ).all()
@@ -450,12 +461,12 @@ class DomainStore:
         }
 
         last_models: dict[str, str] = {}
-        for group_name, resolved_model in last_model_rows:
-            if not group_name or not resolved_model:
+        for group_name, upstream_model_name in last_model_rows:
+            if not group_name or not upstream_model_name:
                 continue
             key = str(group_name)
             if key not in last_models:
-                last_models[key] = str(resolved_model)
+                last_models[key] = str(upstream_model_name)
 
         items: list[ModelGroupStats] = []
         for group in groups:
@@ -478,21 +489,28 @@ class DomainStore:
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:
-            channels_by_id, channel_site_names = await self._validate_group_payload(session, payload.protocol.value, payload.name, payload.items)
+            route_group, channels_by_id, channel_site_names = await self._validate_group_payload(
+                session,
+                payload.protocol.value,
+                payload.name,
+                payload.items,
+                payload.route_group_id,
+            )
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
                 protocol=payload.protocol.value,
                 strategy=payload.strategy.value,
-                match_regex=payload.match_regex,
+                route_group_id=route_group.id if route_group is not None else "",
             )
             session.add(entity)
             await session.flush()
-            await self._replace_group_items(session, entity.id, payload.items, channels_by_id, channel_site_names)
+            if route_group is None:
+                await self._replace_group_items(session, entity.id, payload.items, channels_by_id, channel_site_names)
             await session.commit()
             await session.refresh(entity)
-            items = await self._load_group_items(session, [entity.id])
-            return self._to_group(entity, items.get(entity.id, []))
+            hydrated = await self._hydrate_groups(session, [entity])
+            return hydrated[0]
 
     async def update_group(self, group_id: str, payload: ModelGroupUpdate) -> ModelGroup:
         async with self._session_factory() as session:
@@ -502,12 +520,35 @@ class DomainStore:
 
             next_protocol = payload.protocol.value if payload.protocol is not None else entity.protocol
             next_name = payload.name if payload.name is not None else entity.name
+            next_route_group_id = payload.route_group_id if payload.route_group_id is not None else entity.route_group_id
+            inbound_route_group_result = await session.execute(
+                select(ModelGroupEntity.id)
+                .where(ModelGroupEntity.route_group_id == group_id)
+                .where(ModelGroupEntity.id != group_id)
+                .limit(1)
+            )
+            has_inbound_route_group = (
+                inbound_route_group_result.scalar_one_or_none() is not None
+            )
+            if next_protocol != entity.protocol and has_inbound_route_group:
+                raise ValueError('Execution groups referenced by route groups cannot change protocol')
+            if next_route_group_id and has_inbound_route_group:
+                raise ValueError('Execution groups referenced by route groups cannot become route groups')
             current_items = await self._load_group_items(session, [group_id])
-            next_items = payload.items if payload.items is not None else [
-                ModelGroupItemInput(channel_id=item.channel_id, credential_id=item.credential_id, model_name=item.model_name, enabled=item.enabled)
-                for item in current_items.get(group_id, [])
-            ]
-            channels_by_id, channel_site_names = await self._validate_group_payload(session, next_protocol, next_name, next_items, exclude_group_id=group_id)
+            next_items = [] if next_route_group_id else (
+                payload.items if payload.items is not None else [
+                    ModelGroupItemInput(channel_id=item.channel_id, credential_id=item.credential_id, model_name=item.model_name, enabled=item.enabled)
+                    for item in current_items.get(group_id, [])
+                ]
+            )
+            route_group, channels_by_id, channel_site_names = await self._validate_group_payload(
+                session,
+                next_protocol,
+                next_name,
+                next_items,
+                next_route_group_id,
+                exclude_group_id=group_id,
+            )
 
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
@@ -517,23 +558,34 @@ class DomainStore:
                     entity.strategy = value.value
                 elif key == "items" and value is not None:
                     continue
+                elif key == "route_group_id":
+                    entity.route_group_id = route_group.id if route_group is not None else ""
                 else:
                     setattr(entity, key, value)
 
-            if payload.items is not None or payload.protocol is not None:
+            if payload.items is not None or payload.protocol is not None or payload.route_group_id is not None:
                 await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
-                await self._replace_group_items(session, group_id, next_items, channels_by_id, channel_site_names)
+                if route_group is None:
+                    await self._replace_group_items(session, group_id, next_items, channels_by_id, channel_site_names)
 
             await session.commit()
             await session.refresh(entity)
-            items = await self._load_group_items(session, [entity.id])
-            return self._to_group(entity, items.get(entity.id, []))
+            hydrated = await self._hydrate_groups(session, [entity])
+            return hydrated[0]
 
     async def delete_group(self, group_id: str) -> None:
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
                 raise KeyError(group_id)
+            inbound_route_group = await session.execute(
+                select(ModelGroupEntity.id)
+                .where(ModelGroupEntity.route_group_id == group_id)
+                .where(ModelGroupEntity.id != group_id)
+                .limit(1)
+            )
+            if inbound_route_group.scalar_one_or_none() is not None:
+                raise ValueError('Model group is still referenced by route groups')
             await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
             await session.delete(entity)
             await session.commit()
@@ -544,8 +596,9 @@ class DomainStore:
         protocol: str,
         name: str,
         items: list[ModelGroupItemInput],
+        route_group_id: str = "",
         exclude_group_id: str | None = None,
-    ) -> tuple[dict[str, SiteProtocolConfigEntity], dict[str, str]]:
+    ) -> tuple[ModelGroupEntity | None, dict[str, SiteProtocolConfigEntity], dict[str, str]]:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError('Model group name is required')
@@ -560,8 +613,23 @@ class DomainStore:
         if existing_id is not None and existing_id != exclude_group_id:
             raise ValueError(f'Model group already exists for protocol={protocol}: {normalized_name}')
 
+        normalized_route_group_id = route_group_id.strip()
+        if normalized_route_group_id:
+            if exclude_group_id is not None and normalized_route_group_id == exclude_group_id:
+                raise ValueError('Model group cannot route to itself')
+            route_group = await session.get(ModelGroupEntity, normalized_route_group_id)
+            if route_group is None:
+                raise ValueError(f'Route target model group not found: {normalized_route_group_id}')
+            if route_group.protocol != protocol:
+                raise ValueError(f'Route target protocol mismatch: {route_group.name}')
+            if route_group.route_group_id.strip():
+                raise ValueError(f'Route target must be an execution group: {route_group.name}')
+            if items:
+                raise ValueError('Route groups cannot define channel members')
+            return route_group, {}, {}
+
         if not items:
-            return {}, {}
+            return None, {}, {}
 
         channel_ids = list(dict.fromkeys(item.channel_id for item in items))
         channel_result = await session.execute(select(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(channel_ids)))
@@ -610,12 +678,22 @@ class DomainStore:
             elif not any(model_name == item.model_name for _, model_name in channel_models):
                 raise ValueError(f'Model not found in channel {item.channel_id}: {item.model_name}')
 
-        return channels_by_id, channel_site_names
+        return None, channels_by_id, channel_site_names
 
     async def _hydrate_groups(self, session: AsyncSession, entities: list[ModelGroupEntity]) -> list[ModelGroup]:
         if not entities:
             return []
         items_by_group = await self._load_group_items(session, [item.id for item in entities])
+        route_group_ids = [item.route_group_id for item in entities if item.route_group_id.strip()]
+        route_name_by_id: dict[str, str] = {}
+        if route_group_ids:
+            route_rows = (
+                await session.execute(
+                    select(ModelGroupEntity.id, ModelGroupEntity.name)
+                    .where(ModelGroupEntity.id.in_(sorted(set(route_group_ids))))
+                )
+            ).all()
+            route_name_by_id = {str(group_id): str(group_name) for group_id, group_name in route_rows}
         prices_by_key = await self._load_model_prices_by_keys(
             session, [normalize_model_key(item.name) for item in entities]
         )
@@ -624,6 +702,7 @@ class DomainStore:
                 item,
                 items_by_group.get(item.id, []),
                 prices_by_key.get(normalize_model_key(item.name)),
+                route_name_by_id.get(item.route_group_id, ""),
             )
             for item in entities
         ]
@@ -824,7 +903,7 @@ class DomainStore:
             )
             daily_rows = (await session.execute(unarchived_stmt)).all()
 
-            model_expr = func.coalesce(RequestLogEntity.matched_group_name, RequestLogEntity.resolved_model, RequestLogEntity.requested_model)
+            model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
             model_stmt = (
                 select(
                     func.strftime('%Y%m%d', RequestLogEntity.created_at).label('date'),
@@ -897,8 +976,9 @@ class DomainStore:
         self,
         *,
         protocol: str,
-        requested_model: str | None,
-        matched_group_name: str | None,
+        requested_group_name: str | None,
+        resolved_group_name: str | None,
+        upstream_model_name: str | None,
         channel_id: str | None,
         channel_name: str | None,
         gateway_key_id: str | None,
@@ -907,7 +987,6 @@ class DomainStore:
         is_stream: bool,
         first_token_latency_ms: int,
         latency_ms: int,
-        resolved_model: str | None,
         input_tokens: int,
         output_tokens: int,
         total_tokens: int,
@@ -925,8 +1004,9 @@ class DomainStore:
         async with self._session_factory() as session:
             entity = RequestLogEntity(
                 protocol=protocol,
-                requested_model=requested_model,
-                matched_group_name=matched_group_name,
+                requested_group_name=requested_group_name,
+                resolved_group_name=resolved_group_name,
+                upstream_model_name=upstream_model_name,
                 channel_id=channel_id,
                 channel_name=channel_name,
                 gateway_key_id=gateway_key_id,
@@ -935,7 +1015,6 @@ class DomainStore:
                 is_stream=1 if is_stream else 0,
                 first_token_latency_ms=max(first_token_latency_ms, 0),
                 latency_ms=latency_ms,
-                resolved_model=resolved_model,
                 input_tokens=max(input_tokens, 0),
                 cache_read_input_tokens=max(cache_read_input_tokens, 0),
                 cache_write_input_tokens=max(cache_write_input_tokens, 0),
@@ -1486,7 +1565,7 @@ class DomainStore:
         return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows]
 
     async def _request_log_model_daily_rows(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[tuple[str, str, int, int, float]]:
-        model_expr = func.coalesce(RequestLogEntity.matched_group_name, RequestLogEntity.resolved_model, RequestLogEntity.requested_model)
+        model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
         stmt = (
             select(
                 func.strftime('%Y%m%d', RequestLogEntity.created_at),
@@ -1713,13 +1792,15 @@ class DomainStore:
         entity: ModelGroupEntity,
         items: list[ModelGroupItem],
         price: ModelPriceEntity | None = None,
+        route_group_name: str = "",
     ) -> ModelGroup:
         return ModelGroup(
             id=entity.id,
             name=entity.name,
             protocol=entity.protocol,
             strategy=entity.strategy,
-            match_regex=entity.match_regex,
+            route_group_id=entity.route_group_id,
+            route_group_name=route_group_name,
             input_price_per_million=float(price.input_price_per_million) if price is not None else 0.0,
             output_price_per_million=float(price.output_price_per_million) if price is not None else 0.0,
             cache_read_price_per_million=float(price.cache_read_price_per_million) if price is not None else 0.0,
@@ -1733,8 +1814,9 @@ class DomainStore:
         return RequestLogItem(
             id=entity.id,
             protocol=entity.protocol,
-            requested_model=entity.requested_model,
-            matched_group_name=entity.matched_group_name,
+            requested_group_name=entity.requested_group_name,
+            resolved_group_name=entity.resolved_group_name,
+            upstream_model_name=entity.upstream_model_name,
             channel_id=entity.channel_id,
             channel_name=entity.channel_name,
             gateway_key_id=entity.gateway_key_id,
@@ -1743,7 +1825,6 @@ class DomainStore:
             is_stream=bool(entity.is_stream),
             first_token_latency_ms=entity.first_token_latency_ms,
             latency_ms=entity.latency_ms,
-            resolved_model=entity.resolved_model,
             input_tokens=entity.input_tokens,
             cache_read_input_tokens=entity.cache_read_input_tokens,
             cache_write_input_tokens=entity.cache_write_input_tokens,

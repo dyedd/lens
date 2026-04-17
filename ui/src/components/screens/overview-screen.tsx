@@ -380,7 +380,7 @@ export function OverviewScreen() {
                   {logs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell className="px-3 py-2.5 whitespace-nowrap text-foreground">{log.created_at.slice(5, 16).replace("T", " ")}</TableCell>
-                      <TableCell className="max-w-[180px] truncate px-3 py-2.5 text-foreground">{log.resolved_model || log.requested_model || "-"}</TableCell>
+                      <TableCell className="max-w-[180px] truncate px-3 py-2.5 text-foreground">{log.resolved_group_name || log.requested_group_name || "-"}</TableCell>
                       <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">
                         <span className="text-muted-foreground">{formatCompact(log.input_tokens)}</span>
                         <span className="mx-0.5 text-border">/</span>

@@ -17,7 +17,8 @@ export type ModelGroup = {
   name: string
   protocol: ProtocolKind
   strategy: RoutingStrategy
-  match_regex: string
+  route_group_id?: string
+  route_group_name?: string
   input_price_per_million: number
   output_price_per_million: number
   cache_read_price_per_million: number
@@ -36,7 +37,7 @@ export type ModelGroupPayload = {
   name: string
   protocol: ProtocolKind
   strategy: RoutingStrategy
-  match_regex: string
+  route_group_id?: string
   items: ModelGroupItemPayload[]
 }
 
@@ -244,8 +245,8 @@ export type RouteSnapshot = {
 
 export type RoutePreview = {
   protocol: ProtocolKind
-  requested_model?: string | null
-  matched_group_name?: string | null
+  requested_group_name?: string | null
+  resolved_group_name?: string | null
   strategy?: RoutingStrategy | null
   matched_channel_ids: string[]
   items: Array<{ channel_id: string; channel_name: string; model_name?: string | null }>
@@ -310,8 +311,9 @@ export type OverviewModelAnalytics = {
 export type RequestLogItem = {
   id: number
   protocol: ProtocolKind
-  requested_model?: string | null
-  matched_group_name?: string | null
+  requested_group_name?: string | null
+  resolved_group_name?: string | null
+  upstream_model_name?: string | null
   channel_id?: string | null
   channel_name?: string | null
   gateway_key_id?: string | null
@@ -320,7 +322,6 @@ export type RequestLogItem = {
   is_stream: boolean
   first_token_latency_ms: number
   latency_ms: number
-  resolved_model?: string | null
   input_tokens: number
   cache_read_input_tokens: number
   cache_write_input_tokens: number
