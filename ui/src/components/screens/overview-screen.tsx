@@ -54,6 +54,21 @@ function formatDuration(ms: number) {
   return ms + "ms"
 }
 
+function formatTrendLabel(bucket: string) {
+  if (bucket.length >= 10) {
+    return `${bucket.slice(8, 10)}:00`
+  }
+  return `${bucket.slice(4, 6)}/${bucket.slice(6, 8)}`
+}
+
+function getTodayBucketPrefix() {
+  const now = new Date()
+  const year = String(now.getFullYear())
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const day = String(now.getDate()).padStart(2, "0")
+  return `${year}${month}${day}`
+}
+
 export function OverviewScreen() {
   const { locale } = useI18n()
   const zh = locale === "zh-CN"
@@ -133,7 +148,9 @@ export function OverviewScreen() {
   const { barData, barConfig, barModels } = useMemo(() => {
     if (!models) return { barData: [], barConfig: {} as ChartConfig, barModels: [] as string[] }
 
+    const isHourlyTrend = days === -1
     const modelSet = [...new Set(models.trend.map((point) => point.model))].slice(0, 12)
+    if (!modelSet.length) return { barData: [], barConfig: {} as ChartConfig, barModels: [] as string[] }
     const dateMap = new Map<string, Record<string, number>>()
 
     for (const point of models.trend) {
@@ -145,9 +162,12 @@ export function OverviewScreen() {
     }
 
     const sortedDates = [...dateMap.keys()].sort()
-    const data = sortedDates.map((date) => ({
-      date: `${date.slice(4, 6)}/${date.slice(6, 8)}`,
-      ...dateMap.get(date)!,
+    const trendBuckets = isHourlyTrend
+      ? Array.from({ length: 24 }, (_, hour) => `${getTodayBucketPrefix()}${String(hour).padStart(2, "0")}`)
+      : sortedDates
+    const data = trendBuckets.map((bucket) => ({
+      date: formatTrendLabel(bucket),
+      ...(dateMap.get(bucket) ?? {}),
     }))
 
     const config: ChartConfig = {}
@@ -162,7 +182,7 @@ export function OverviewScreen() {
     })
 
     return { barData: data, barConfig: config, barModels: safeModels }
-  }, [models])
+  }, [days, models])
 
   return (
     <section className="flex flex-col gap-3 md:gap-4">
