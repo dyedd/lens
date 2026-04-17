@@ -17,6 +17,12 @@ def register(app: FastAPI, service_module) -> None:
         response_model=service_module.AdminProfile,
     )
     app.add_api_route(
+        "/api/admin/profile",
+        service_module.update_profile,
+        methods=["PUT"],
+        response_model=service_module.AdminProfileUpdateResponse,
+    )
+    app.add_api_route(
         "/api/admin/password",
         service_module.change_password,
         methods=["PUT"],

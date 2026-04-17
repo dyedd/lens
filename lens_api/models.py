@@ -336,15 +336,28 @@ class AdminPasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=1)
 
 
+class AdminProfileUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=1)
+    current_password: str = ""
+    new_password: str = ""
+
+
+class AdminProfileUpdateResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    profile: AdminProfile
+
+
 class PublicBranding(BaseModel):
     site_name: str
     logo_url: str = ""
 
 
 class AppInfo(BaseModel):
-    backend_version: str
-    frontend_version: str
-    app_env: str
+    system_version: str
     site_name: str
     logo_url: str = ""
 

@@ -58,3 +58,42 @@ class AdminStore:
                 raise ValueError("Current password is incorrect")
             user.password_hash = hash_password(new_password)
             await session.commit()
+
+    async def update_profile(
+        self,
+        current_username: str,
+        next_username: str,
+        current_password: str,
+        new_password: str,
+    ) -> AdminUserEntity:
+        normalized_username = next_username.strip()
+        normalized_new_password = new_password.strip()
+
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(AdminUserEntity).where(AdminUserEntity.username == current_username).limit(1)
+            )
+            user = result.scalar_one_or_none()
+            if user is None or user.is_active != 1:
+                raise KeyError(current_username)
+
+            if normalized_username != user.username:
+                duplicate = await session.execute(
+                    select(AdminUserEntity.id)
+                    .where(AdminUserEntity.username == normalized_username, AdminUserEntity.id != user.id)
+                    .limit(1)
+                )
+                if duplicate.scalar_one_or_none() is not None:
+                    raise ValueError("Username already exists")
+                user.username = normalized_username
+
+            if normalized_new_password:
+                if not current_password:
+                    raise ValueError("Current password is required")
+                if not verify_password(current_password, user.password_hash):
+                    raise ValueError("Current password is incorrect")
+                user.password_hash = hash_password(normalized_new_password)
+
+            await session.commit()
+            await session.refresh(user)
+            return user
