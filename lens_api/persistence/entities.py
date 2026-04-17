@@ -90,7 +90,7 @@ class ModelGroupEntity(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     strategy: Mapped[str] = mapped_column(String(32), nullable=False, default="round_robin")
-    match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    route_group_id: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
 
 
 class ModelGroupItemEntity(Base):
@@ -117,8 +117,9 @@ class RequestLogEntity(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
-    requested_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    matched_group_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    requested_group_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    resolved_group_name: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    upstream_model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     channel_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     channel_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     gateway_key_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
@@ -127,7 +128,6 @@ class RequestLogEntity(Base):
     is_stream: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     first_token_latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    resolved_model: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cache_read_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cache_write_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

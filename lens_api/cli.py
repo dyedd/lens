@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 import sys
 from pathlib import Path
 
@@ -23,6 +24,19 @@ def _alembic_cfg() -> Config:
     return cfg
 
 
+def _next_numeric_revision() -> str:
+    max_revision = 0
+    versions_dir = MIGRATIONS_DIR / "versions"
+    for path in versions_dir.glob("*.py"):
+        if path.name == "__init__.py":
+            continue
+        match = re.match(r"^(\d{4})(?=\D|$)", path.stem)
+        if match is None:
+            continue
+        max_revision = max(max_revision, int(match.group(1)))
+    return f"{max_revision + 1:04d}"
+
+
 def db_upgrade(args: argparse.Namespace) -> None:
     command.upgrade(_alembic_cfg(), args.revision)
 
@@ -32,7 +46,12 @@ def db_downgrade(args: argparse.Namespace) -> None:
 
 
 def db_revision(args: argparse.Namespace) -> None:
-    command.revision(_alembic_cfg(), message=args.message, autogenerate=args.autogenerate)
+    command.revision(
+        _alembic_cfg(),
+        message=args.message,
+        autogenerate=args.autogenerate,
+        rev_id=_next_numeric_revision(),
+    )
 
 
 def db_current(_args: argparse.Namespace) -> None:

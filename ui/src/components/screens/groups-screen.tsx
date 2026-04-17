@@ -55,7 +55,7 @@ type FormState = {
   name: string
   protocol: ProtocolKind
   strategy: RoutingStrategy
-  match_regex: string
+  route_group_id: string
   input_price_per_million: string
   output_price_per_million: string
   cache_read_price_per_million: string
@@ -80,6 +80,7 @@ type GroupRow = ModelGroup & {
   enabled_member_count: number
   channel_summary: string
   channel_names: string[]
+  is_route_group: boolean
 }
 
 const MODEL_SERIES_PRESETS = [
@@ -155,7 +156,7 @@ const emptyForm: FormState = {
   name: '',
   protocol: 'openai_chat',
   strategy: 'round_robin',
-  match_regex: '',
+  route_group_id: '',
   input_price_per_million: '0',
   output_price_per_million: '0',
   cache_read_price_per_million: '0',
@@ -163,25 +164,44 @@ const emptyForm: FormState = {
   items: [],
 }
 
-function normalizeMatchValue(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
-}
-
-function matchesCandidate(modelName: string, groupName: string, matchRegex: string) {
-  const regexValue = matchRegex.trim()
-  if (regexValue) {
+function compileCandidateSearchRegex(value: string) {
+  const normalized = value.trim()
+  if (!normalized) {
+    return null
+  }
+  if (normalized.startsWith('re:')) {
     try {
-      return new RegExp(regexValue, 'i').test(modelName)
+      return new RegExp(normalized.slice(3).trim(), 'i')
     } catch {
-      return false
+      return null
     }
   }
-
-  const normalizedGroupName = normalizeMatchValue(groupName)
-  if (!normalizedGroupName) {
-    return false
+  if (!normalized.startsWith('/')) {
+    return null
   }
-  return normalizeMatchValue(modelName).includes(normalizedGroupName)
+  const lastSlashIndex = normalized.lastIndexOf('/')
+  if (lastSlashIndex <= 0) {
+    return null
+  }
+  const pattern = normalized.slice(1, lastSlashIndex)
+  const flags = normalized.slice(lastSlashIndex + 1) || 'i'
+  try {
+    return new RegExp(pattern, flags)
+  } catch {
+    return null
+  }
+}
+
+function matchesCandidateSearch(haystack: string, keyword: string) {
+  const normalizedKeyword = keyword.trim()
+  if (!normalizedKeyword) {
+    return true
+  }
+  const regex = compileCandidateSearchRegex(normalizedKeyword)
+  if (regex) {
+    return regex.test(haystack)
+  }
+  return haystack.toLowerCase().includes(normalizedKeyword.toLowerCase())
 }
 
 function normalizeModelName(value: string | null | undefined) {
@@ -283,8 +303,8 @@ function itemKey(item: Pick<FormItem, 'channel_id' | 'credential_id' | 'model_na
   return `${item.channel_id}::${item.credential_id}::${item.model_name}`
 }
 
-function isGroupEnabled(group: Pick<GroupRow, 'enabled_member_count'>) {
-  return group.enabled_member_count > 0
+function isGroupEnabled(group: Pick<GroupRow, 'enabled_member_count' | 'is_route_group'>) {
+  return group.is_route_group || group.enabled_member_count > 0
 }
 
 function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
@@ -314,7 +334,7 @@ function toForm(group: ModelGroup): FormState {
     name: group.name,
     protocol: group.protocol,
     strategy: group.strategy,
-    match_regex: group.match_regex,
+    route_group_id: group.route_group_id ?? '',
     input_price_per_million: String(group.input_price_per_million),
     output_price_per_million: String(group.output_price_per_million),
     cache_read_price_per_million: String(group.cache_read_price_per_million),
@@ -338,7 +358,7 @@ function toPayload(form: FormState): ModelGroupPayload {
     name: form.name.trim(),
     protocol: form.protocol,
     strategy: form.strategy,
-    match_regex: form.match_regex.trim(),
+    route_group_id: form.route_group_id.trim(),
     items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }
 }
@@ -593,15 +613,16 @@ export function GroupsScreen() {
   const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/admin/model-groups') })
   const { data: sites } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(() => ({
+    protocol: form.protocol,
     exclude_items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
-  }), [form])
+  }), [form.items, form.protocol])
   const { data: candidateResponse, refetch: refetchCandidates, isFetching: isFetchingCandidates } = useQuery({
     queryKey: ['group-candidates', candidatePayload],
     queryFn: () => apiRequest<ModelGroupCandidatesResponse>('/admin/model-group-candidates', {
       method: 'POST',
       body: JSON.stringify(candidatePayload),
     }),
-    enabled: dialogOpen,
+    enabled: dialogOpen && !form.route_group_id,
   })
 
   const channelMap = useMemo(() => {
@@ -622,18 +643,28 @@ export function GroupsScreen() {
 
   const groupRows = useMemo<GroupRow[]>(() => (
     (groups ?? []).map((group) => {
+      const isRouteGroup = Boolean(group.route_group_id)
       const items = group.items.slice().sort((a, b) => a.sort_order - b.sort_order)
-      const channelNames = [...new Set(items.map((item) => item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id).filter(Boolean))]
+      const channelNames = isRouteGroup
+        ? [group.route_group_name || group.route_group_id || '']
+        : [...new Set(items.map((item) => item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id).filter(Boolean))]
       return {
         ...group,
         items,
-        member_count: items.length,
-        enabled_member_count: items.filter((item) => item.enabled).length,
+        member_count: isRouteGroup ? 1 : items.length,
+        enabled_member_count: isRouteGroup ? 1 : items.filter((item) => item.enabled).length,
         channel_summary: channelNames.slice(0, 2).join(' · '),
         channel_names: channelNames,
+        is_route_group: isRouteGroup,
       }
     })
   ), [channelMap, groups])
+
+  const routeTargetOptions = useMemo(() => (
+    (groups ?? [])
+      .filter((group) => group.protocol === form.protocol && !group.route_group_id && group.id !== editingId)
+      .sort((left, right) => left.name.localeCompare(right.name, locale))
+  ), [editingId, form.protocol, groups, locale])
 
   const seriesOptions = useMemo(() => {
     const availableKeys = new Set<ModelSeriesKey>()
@@ -671,7 +702,6 @@ export function GroupsScreen() {
       const haystack = [
         group.name,
         group.channel_summary,
-        group.match_regex,
         ...group.channel_names,
         ...group.items.map((item) => item.model_name),
       ].join(' ').toLowerCase()
@@ -692,18 +722,24 @@ export function GroupsScreen() {
     strategyFilter !== 'all',
   ].filter(Boolean).length
 
-  const groupedCandidates = useMemo(() => {
-    const keyword = candidateSearch.trim().toLowerCase()
-    const groupsByChannel = new Map<string, CandidateChannel>()
-
-    for (const item of candidateResponse?.candidates ?? []) {
+  const filteredCandidates = useMemo(() => {
+    return (candidateResponse?.candidates ?? []).filter((item) => {
       const channel = channelMap.get(item.channel_id)
       const channelName = channel?.name || item.channel_name
       const endpoint = channelEndpoint(channel)
-      const matchItem = !keyword || `${item.model_name} ${channelName} ${item.credential_name} ${endpoint}`.toLowerCase().includes(keyword)
-      if (!matchItem) {
-        continue
-      }
+      return matchesCandidateSearch(
+        `${item.model_name} ${channelName} ${item.credential_name} ${endpoint}`,
+        candidateSearch,
+      )
+    })
+  }, [candidateResponse, candidateSearch, channelMap])
+
+  const groupedCandidates = useMemo(() => {
+    const groupsByChannel = new Map<string, CandidateChannel>()
+
+    for (const item of filteredCandidates) {
+      const channel = channelMap.get(item.channel_id)
+      const channelName = channel?.name || item.channel_name
       const existing = groupsByChannel.get(item.channel_id)
       if (existing) {
         const existingCredential = existing.credentials.find((credential) => credential.credential_id === item.credential_id)
@@ -726,16 +762,12 @@ export function GroupsScreen() {
     }
 
     return Array.from(groupsByChannel.values()).sort((a, b) => a.channel_name.localeCompare(b.channel_name))
-  }, [candidateResponse, candidateSearch, channelMap])
+  }, [channelMap, filteredCandidates])
 
   const visibleSelectedItems = useMemo(() => {
     if (!showEnabledOnly) return form.items
     return form.items.filter((item) => item.enabled)
   }, [form.items, showEnabledOnly])
-
-  const matchedCandidates = useMemo(() => {
-    return (candidateResponse?.candidates ?? []).filter((item) => matchesCandidate(item.model_name, form.name, form.match_regex))
-  }, [candidateResponse, form.name, form.match_regex])
 
   useEffect(() => {
     if (!dialogOpen) {
@@ -835,9 +867,11 @@ export function GroupsScreen() {
     event.preventDefault()
     setError('')
     try {
-      const pricePayload = parsePriceForm(form)
       const savedGroup = await saveGroup(form, editingId)
-      await saveGroupPrice(savedGroup.name, pricePayload)
+      if (!savedGroup.route_group_id) {
+        const pricePayload = parsePriceForm(form)
+        await saveGroupPrice(savedGroup.name, pricePayload)
+      }
       toast.success(editingId
         ? (locale === 'zh-CN' ? '模型组已更新' : 'Group updated')
         : (locale === 'zh-CN' ? '模型组已创建' : 'Group created'))
@@ -935,7 +969,7 @@ export function GroupsScreen() {
   }
 
   async function reorderGroupItems(group: GroupRow, fromIndex: number, toIndex: number) {
-    if (fromIndex === toIndex || busyId === group.id) {
+    if (group.is_route_group || fromIndex === toIndex || busyId === group.id) {
       return
     }
     const nextItems = moveItems(toForm(group).items, fromIndex, toIndex)
@@ -946,7 +980,7 @@ export function GroupsScreen() {
   }
 
   async function changeStrategy(group: GroupRow, strategy: RoutingStrategy) {
-    if (busyId === group.id || group.strategy === strategy) {
+    if (group.is_route_group || busyId === group.id || group.strategy === strategy) {
       return
     }
     const updated = await updateGroupPartial(group, { strategy })
@@ -956,7 +990,7 @@ export function GroupsScreen() {
   }
 
   async function toggleGroupEnabled(group: GroupRow, enabled: boolean) {
-    if (!group.items.length || busyId === group.id || isGroupEnabled(group) === enabled) {
+    if (group.is_route_group || !group.items.length || busyId === group.id || isGroupEnabled(group) === enabled) {
       return
     }
     const nextItems = toForm(group).items.map((item) => ({ ...item, enabled }))
@@ -969,7 +1003,7 @@ export function GroupsScreen() {
   }
 
   async function removeGroupItem(group: GroupRow, index: number) {
-    if (busyId === group.id) {
+    if (group.is_route_group || busyId === group.id) {
       return
     }
     const nextItems = toForm(group).items.filter((_, itemIndex) => itemIndex !== index)
@@ -984,12 +1018,12 @@ export function GroupsScreen() {
   }
 
   function addMatchedItems() {
-    if (!matchedCandidates.length) {
+    if (!filteredCandidates.length) {
       return
     }
     setForm((current) => {
       const existing = new Set(current.items.map((item) => itemKey(item)))
-      const additions = matchedCandidates
+      const additions = filteredCandidates
         .filter((item) => !existing.has(itemKey(item)))
         .map((item) => ({
           channel_id: item.channel_id,
@@ -1014,9 +1048,19 @@ export function GroupsScreen() {
       return {
         ...current,
         protocol,
+        route_group_id: '',
         items: [],
       }
     })
+    setExpandedChannels([])
+  }
+
+  function changeRouteTarget(routeGroupId: string) {
+    setForm((current) => ({
+      ...current,
+      route_group_id: routeGroupId,
+      items: routeGroupId ? [] : current.items,
+    }))
     setExpandedChannels([])
   }
 
@@ -1051,8 +1095,6 @@ export function GroupsScreen() {
           </Button>
         </div>
       </div>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
         <div className="order-2 grid gap-4 xl:order-1">
@@ -1110,35 +1152,52 @@ export function GroupsScreen() {
                               <Badge variant="outline" className={cn('px-2.5 py-0.5', protocolBadgeClassName(group.protocol))}>
                                 {protocolLabel(group.protocol, locale)}
                               </Badge>
+                              {group.is_route_group ? (
+                                <Badge variant="outline" className="px-2.5 py-0.5">
+                                  {locale === 'zh-CN' ? '路由组' : 'Route group'}
+                                </Badge>
+                              ) : null}
                             </div>
-                            <CompactPriceSummary
-                              locale={locale}
-                              inputPrice={group.input_price_per_million}
-                              outputPrice={group.output_price_per_million}
-                              cacheReadPrice={group.cache_read_price_per_million}
-                              cacheWritePrice={group.cache_write_price_per_million}
-                            />
+                            {group.is_route_group ? (
+                              <ItemDescription className="text-sm">
+                                {`${group.name} -> ${group.route_group_name || group.route_group_id || 'n/a'}`}
+                              </ItemDescription>
+                            ) : (
+                              <CompactPriceSummary
+                                locale={locale}
+                                inputPrice={group.input_price_per_million}
+                                outputPrice={group.output_price_per_million}
+                                cacheReadPrice={group.cache_read_price_per_million}
+                                cacheWritePrice={group.cache_write_price_per_million}
+                              />
+                            )}
                           </div>
-                          <ItemFooter
-                            className="mt-3 flex flex-wrap items-center gap-2.5"
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => event.stopPropagation()}
-                          >
-                            <StrategyToggle
-                              value={group.strategy}
-                              locale={locale}
-                              disabled={busyId === group.id}
-                              size="sm"
-                              className="w-fit"
-                              onChange={(value) => void changeStrategy(group, value)}
-                            />
-                          </ItemFooter>
+                          {!group.is_route_group ? (
+                            <ItemFooter
+                              className="mt-3 flex flex-wrap items-center gap-2.5"
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              <StrategyToggle
+                                value={group.strategy}
+                                locale={locale}
+                                disabled={busyId === group.id}
+                                size="sm"
+                                className="w-fit"
+                                onChange={(value) => void changeStrategy(group, value)}
+                              />
+                            </ItemFooter>
+                          ) : null}
                           <div
                             className="mt-3 flex flex-wrap items-center gap-2"
                             onClick={(event) => event.stopPropagation()}
                             onKeyDown={(event) => event.stopPropagation()}
                           >
-                            {group.items.length ? group.items.map((item, index) => {
+                            {group.is_route_group ? (
+                              <Badge variant="outline" className="px-3 py-1.5">
+                                {group.route_group_name || group.route_group_id || 'n/a'}
+                              </Badge>
+                            ) : group.items.length ? group.items.map((item, index) => {
                               const channelName = item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id
                               return (
                                 <div
@@ -1194,7 +1253,7 @@ export function GroupsScreen() {
                         >
                           <SwitchButton
                             checked={isGroupEnabled(group)}
-                            disabled={busyId === group.id || !group.items.length}
+                            disabled={group.is_route_group || busyId === group.id || !group.items.length}
                             onChange={(checked) => void toggleGroupEnabled(group, checked)}
                           />
                           <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(group)}>
@@ -1312,55 +1371,60 @@ export function GroupsScreen() {
                     <Input id="group-name" placeholder={locale === 'zh-CN' ? '例如 claude-sonnet-4-6' : 'For example claude-sonnet-4-6'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="group-match-regex">{locale === 'zh-CN' ? '匹配正则' : 'Match regex'}</FieldLabel>
-                    <Input id="group-match-regex" placeholder={locale === 'zh-CN' ? '留空则按模型组名称匹配' : 'Optional, otherwise match by group name'} value={form.match_regex} onChange={(e) => setForm({ ...form, match_regex: e.target.value })} />
+                    <FieldLabel htmlFor="group-route-target">{locale === 'zh-CN' ? '路由目标模型组' : 'Route target group'}</FieldLabel>
+                    <NativeSelect id="group-route-target" className={selectClassName()} value={form.route_group_id} onChange={(event) => changeRouteTarget(event.target.value)}>
+                      <NativeSelectOption value="">{locale === 'zh-CN' ? '不启用模型组路由' : 'No group routing'}</NativeSelectOption>
+                      {routeTargetOptions.map((group) => <NativeSelectOption key={group.id} value={group.id}>{group.name}</NativeSelectOption>)}
+                    </NativeSelect>
                   </Field>
                   <Field>
-                    <FieldLabel>{locale === 'zh-CN' ? '路由策略' : 'Routing strategy'}</FieldLabel>
-                    <StrategyToggle value={form.strategy} locale={locale} onChange={(value) => setForm((current) => ({ ...current, strategy: value }))} />
+                    <FieldLabel>{locale === 'zh-CN' ? '模型组策略' : 'Group strategy'}</FieldLabel>
+                    <StrategyToggle value={form.strategy} locale={locale} disabled={Boolean(form.route_group_id)} onChange={(value) => setForm((current) => ({ ...current, strategy: value }))} />
                   </Field>
                 </FieldGroup>
               </section>
 
-              <Separator />
+              {!form.route_group_id ? (
+                <>
+                  <Separator />
 
-              <section className="grid gap-4">
-                <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '价格' : 'Pricing'}</div>
-                <div className="grid gap-3 xl:grid-cols-2">
-                  <EditablePriceRow
-                    locale={locale}
-                    primaryLabel="input"
-                    primaryValue={form.input_price_per_million}
-                    secondaryLabel="cache_read"
-                    secondaryValue={form.cache_read_price_per_million}
-                    onPrimaryChange={(value) => setForm((current) => ({ ...current, input_price_per_million: value }))}
-                    onSecondaryChange={(value) => setForm((current) => ({ ...current, cache_read_price_per_million: value }))}
-                  />
-                  <EditablePriceRow
-                    locale={locale}
-                    primaryLabel="output"
-                    primaryValue={form.output_price_per_million}
-                    secondaryLabel="cache_write"
-                    secondaryValue={form.cache_write_price_per_million}
-                    onPrimaryChange={(value) => setForm((current) => ({ ...current, output_price_per_million: value }))}
-                    onSecondaryChange={(value) => setForm((current) => ({ ...current, cache_write_price_per_million: value }))}
-                  />
-                </div>
-              </section>
+                  <section className="grid gap-4">
+                    <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '价格' : 'Pricing'}</div>
+                    <div className="grid gap-3 xl:grid-cols-2">
+                      <EditablePriceRow
+                        locale={locale}
+                        primaryLabel="input"
+                        primaryValue={form.input_price_per_million}
+                        secondaryLabel="cache_read"
+                        secondaryValue={form.cache_read_price_per_million}
+                        onPrimaryChange={(value) => setForm((current) => ({ ...current, input_price_per_million: value }))}
+                        onSecondaryChange={(value) => setForm((current) => ({ ...current, cache_read_price_per_million: value }))}
+                      />
+                      <EditablePriceRow
+                        locale={locale}
+                        primaryLabel="output"
+                        primaryValue={form.output_price_per_million}
+                        secondaryLabel="cache_write"
+                        secondaryValue={form.cache_write_price_per_million}
+                        onPrimaryChange={(value) => setForm((current) => ({ ...current, output_price_per_million: value }))}
+                        onSecondaryChange={(value) => setForm((current) => ({ ...current, cache_write_price_per_million: value }))}
+                      />
+                    </div>
+                  </section>
 
-              <Separator />
+                  <Separator />
 
-              <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-              <section className={panelClassName('flex flex-col')}>
+                  <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+                  <section className={panelClassName('flex flex-col')}>
                 <div className="grid gap-3 px-2 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
                     <Search size={14} className="text-muted-foreground" />
-                    <Input className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0" value={candidateSearch} onChange={(e) => setCandidateSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型' : 'Search models'} />
+                    <Input className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0" value={candidateSearch} onChange={(e) => setCandidateSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型或 /正则/' : 'Search models or /regex/'} />
                   </div>
                   <div className="flex items-center justify-end gap-2">
-                    <Button type="button" variant="outline" onClick={addMatchedItems} disabled={!matchedCandidates.length}>
+                    <Button type="button" variant="outline" onClick={addMatchedItems} disabled={!filteredCandidates.length}>
                       <Sparkles size={13} />
-                      {locale === 'zh-CN' ? `批量加入 ${matchedCandidates.length}` : `Add matched ${matchedCandidates.length}`}
+                      {locale === 'zh-CN' ? `加入当前筛选 ${filteredCandidates.length}` : `Add filtered ${filteredCandidates.length}`}
                     </Button>
                     <Button type="button" variant="outline" onClick={() => void refetchCandidates()} disabled={isFetchingCandidates}>
                       <RefreshCcw size={13} />
@@ -1445,6 +1509,8 @@ export function GroupsScreen() {
                 </div>
               </section>
             </div>
+            </>
+              ) : null}
             </div>
 
             <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">

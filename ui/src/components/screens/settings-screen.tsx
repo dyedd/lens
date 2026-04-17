@@ -250,7 +250,7 @@ export function SettingsScreen() {
     setError('')
     setSaved('')
     try {
-      const items: FieldSpec[] = [
+      const items: SettingItem[] = [
         { key: GATEWAY_API_KEYS, value: gatewayKeys.join('\n') },
         { key: GATEWAY_API_KEY_HINT, value: '' },
         { key: PROXY_URL, value: draft.proxyUrl.trim() },

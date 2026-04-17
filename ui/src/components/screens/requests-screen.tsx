@@ -195,14 +195,24 @@ function formatErrorDisplay(value: string | null | undefined) {
   return raw
 }
 
-function getPrimaryModelName(item: Pick<RequestLogItem, 'matched_group_name' | 'requested_model' | 'resolved_model'>) {
-  return item.matched_group_name || item.requested_model || item.resolved_model || 'n/a'
+function getResolvedGroupName(item: Pick<RequestLogItem, 'requested_group_name' | 'resolved_group_name' | 'upstream_model_name'>) {
+  return item.resolved_group_name || item.requested_group_name || item.upstream_model_name || 'n/a'
 }
 
-function getSecondaryModelName(item: Pick<RequestLogItem, 'matched_group_name' | 'requested_model' | 'resolved_model'>) {
-  const primary = getPrimaryModelName(item)
-  if (item.resolved_model && item.resolved_model !== primary) {
-    return item.resolved_model
+function getModelChain(item: Pick<RequestLogItem, 'requested_group_name' | 'resolved_group_name' | 'upstream_model_name'>) {
+  const requested = item.requested_group_name?.trim()
+  const resolved = item.resolved_group_name?.trim()
+  if (requested && resolved && requested !== resolved) {
+    return `${requested} -> ${resolved}`
+  }
+  return resolved || requested || item.upstream_model_name || 'n/a'
+}
+
+function getSecondaryModelName(item: Pick<RequestLogItem, 'requested_group_name' | 'resolved_group_name' | 'upstream_model_name'>) {
+  const resolved = item.resolved_group_name?.trim()
+  const upstream = item.upstream_model_name?.trim()
+  if (upstream && upstream !== resolved) {
+    return upstream
   }
   return null
 }
@@ -216,8 +226,8 @@ function getSeriesPreset(name: string) {
   return MODEL_SERIES_PRESETS.find((item) => item.key !== 'other' && item.prefixes.some((prefix) => normalized.startsWith(prefix))) ?? MODEL_SERIES_PRESETS.find((item) => item.key === 'other')!
 }
 
-function getSeriesKey(item: Pick<RequestLogItem, 'matched_group_name' | 'requested_model' | 'resolved_model'>): ModelSeriesKey {
-  return getSeriesPreset(getPrimaryModelName(item)).key
+function getSeriesKey(item: Pick<RequestLogItem, 'requested_group_name' | 'resolved_group_name' | 'upstream_model_name'>): ModelSeriesKey {
+  return getSeriesPreset(getResolvedGroupName(item)).key
 }
 
 function buildPaginationItems(currentPage: number, totalPages: number) {
@@ -627,11 +637,11 @@ function SeriesChip({
 
 function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'zh-CN' | 'en-US' }) {
   const attempts = detail.attempts.length
-    ? detail.attempts
-    : [{
+      ? detail.attempts
+      : [{
         channel_id: detail.channel_id || 'n/a',
         channel_name: detail.channel_name || detail.channel_id || 'n/a',
-        model_name: detail.resolved_model || detail.requested_model || null,
+        model_name: detail.upstream_model_name || detail.resolved_group_name || detail.requested_group_name || null,
         status_code: detail.status_code,
         success: detail.success,
         duration_ms: detail.latency_ms,
@@ -677,7 +687,8 @@ function RequestCard({
   onOpenDetail: () => void
   onOpenAttempts: () => void
 }) {
-  const primaryModelName = getPrimaryModelName(item)
+  const primaryModelName = getResolvedGroupName(item)
+  const modelChain = getModelChain(item)
   const secondaryModelName = getSecondaryModelName(item)
   const attemptCount = Number.isFinite(item.attempt_count) ? item.attempt_count : 0
   const showAttemptButton = attemptCount > 1
@@ -711,7 +722,7 @@ function RequestCard({
           <div className="grid gap-2.5">
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <ItemTitle className="min-w-0 max-w-full truncate text-[15px] leading-6">{primaryModelName}</ItemTitle>
+                <ItemTitle className="min-w-0 max-w-full truncate text-[15px] leading-6">{modelChain}</ItemTitle>
                 <ProtocolBadge protocol={item.protocol} />
                 <StatusCodeBadge statusCode={item.status_code} />
                 <StatusBadge success={item.success} locale={locale} errorMessage={errorDisplay} />
@@ -810,8 +821,10 @@ export function RequestsScreen() {
       if (channelFilter !== 'all' && (item.channel_name || item.channel_id || 'n/a') !== channelFilter) return false
       if (deferredKeyword) {
         const haystack = [
-          getPrimaryModelName(item),
-          item.resolved_model,
+          getModelChain(item),
+          item.requested_group_name,
+          item.resolved_group_name,
+          item.upstream_model_name,
           item.channel_name,
           item.channel_id,
           item.gateway_key_id,

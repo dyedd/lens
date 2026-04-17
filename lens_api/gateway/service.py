@@ -121,8 +121,10 @@ class AppState:
 
 @dataclass
 class RoutingPlan:
-    requested_model: str | None
-    matched_group: ModelGroup | None
+    requested_group_name: str | None
+    resolved_group_name: str | None
+    requested_group: ModelGroup | None
+    resolved_group: ModelGroup | None
     strategy: RoutingStrategy
     route_targets: list[RouteTarget] | None
     use_model_matching: bool
@@ -135,7 +137,7 @@ class UpstreamResult:
     status_code: int
     is_stream: bool = False
     first_token_latency_ms: int = 0
-    resolved_model: str | None = None
+    upstream_model_name: str | None = None
     input_tokens: int = 0
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0
@@ -550,12 +552,13 @@ async def router_preview(
     return app_state.router.preview(
         channels,
         payload.protocol,
-        payload.model,
+        plan.resolved_group_name or payload.model,
         strategy=plan.strategy,
         allowed_channel_ids=available_channel_ids,
         route_targets=plan.route_targets,
         use_model_matching=plan.use_model_matching,
-        matched_group_name=plan.matched_group.name if plan.matched_group else None,
+        requested_group_name=plan.requested_group_name,
+        resolved_group_name=plan.resolved_group_name,
     ).model_dump(mode="json")
 
 
@@ -650,6 +653,8 @@ async def delete_model_group(
         raise HTTPException(
             status_code=404, detail=f"Model group not found: {group_id}"
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return Response(status_code=204)
 
 
@@ -768,7 +773,7 @@ async def _proxy_protocol(
         selection = app_state.router.select(
             channels,
             protocol,
-            plan.requested_model,
+            plan.resolved_group_name,
             strategy=plan.strategy,
             allowed_channel_ids=available_channel_ids,
             route_targets=plan.route_targets,
@@ -778,14 +783,13 @@ async def _proxy_protocol(
     except LookupError as exc:
         await _record_request_log(
             protocol=protocol,
-            requested_model=(
-                plan.requested_model if plan is not None else requested_model
+            requested_group_name=(
+                plan.requested_group_name if plan is not None else requested_model
             ),
-            matched_group_name=(
-                plan.matched_group.name
-                if plan is not None and plan.matched_group
-                else None
+            resolved_group_name=(
+                plan.resolved_group_name if plan is not None else None
             ),
+            upstream_model_name=None,
             channel_id=None,
             channel_name=None,
             gateway_key=gateway_key,
@@ -807,6 +811,7 @@ async def _proxy_protocol(
         )
         return JSONResponse(status_code=503, content=error_body.model_dump(mode="json"))
 
+    pricing_group_name = plan.resolved_group_name
     errors: list[str] = []
 
     for target in [selection.primary, *selection.fallbacks]:
@@ -822,9 +827,7 @@ async def _proxy_protocol(
             result = await _call_channel(
                 channel,
                 upstream_body,
-                matched_group_name=(
-                    plan.matched_group.name if plan.matched_group else None
-                ),
+                pricing_group_name=pricing_group_name,
                 client_protocol=protocol,
                 credential_id=target.credential_id,
             )
@@ -842,10 +845,8 @@ async def _proxy_protocol(
                 result.response.background = BackgroundTask(
                     _record_stream_request_log,
                     protocol=protocol,
-                    requested_model=plan.requested_model,
-                    matched_group_name=(
-                        plan.matched_group.name if plan.matched_group else None
-                    ),
+                    requested_group_name=plan.requested_group_name,
+                    resolved_group_name=plan.resolved_group_name,
                     channel=channel,
                     gateway_key=gateway_key,
                     started_at=started_at,
@@ -856,10 +857,9 @@ async def _proxy_protocol(
                 return result.response
             await _record_request_log(
                 protocol=protocol,
-                requested_model=plan.requested_model,
-                matched_group_name=(
-                    plan.matched_group.name if plan.matched_group else None
-                ),
+                requested_group_name=plan.requested_group_name,
+                resolved_group_name=plan.resolved_group_name,
+                upstream_model_name=result.upstream_model_name,
                 channel_id=channel.id,
                 channel_name=channel.name,
                 gateway_key=gateway_key,
@@ -868,7 +868,6 @@ async def _proxy_protocol(
                 is_stream=result.is_stream,
                 first_token_latency_ms=result.first_token_latency_ms,
                 latency_ms=_elapsed_ms(started_at),
-                resolved_model=result.resolved_model,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 total_tokens=result.total_tokens,
@@ -904,10 +903,9 @@ async def _proxy_protocol(
             )
             await _record_request_log(
                 protocol=protocol,
-                requested_model=plan.requested_model,
-                matched_group_name=(
-                    plan.matched_group.name if plan.matched_group else None
-                ),
+                requested_group_name=plan.requested_group_name,
+                resolved_group_name=plan.resolved_group_name,
+                upstream_model_name=None,
                 channel_id=channel.id,
                 channel_name=channel.name,
                 gateway_key=gateway_key,
@@ -935,7 +933,7 @@ async def _proxy_protocol(
 async def _call_channel(
     channel: ChannelConfig,
     body: dict[str, Any],
-    matched_group_name: str | None = None,
+    pricing_group_name: str | None = None,
     client_protocol: ProtocolKind | None = None,
     credential_id: str | None = None,
 ) -> UpstreamResult:
@@ -1006,7 +1004,7 @@ async def _call_channel(
 
                 input_cost_usd, output_cost_usd, total_cost_usd = (
                     await app_state.domain_store.estimate_model_cost(
-                        matched_group_name or parsed["resolved_model"],
+                        pricing_group_name,
                         parsed["input_tokens"],
                         parsed["output_tokens"],
                         parsed["cache_read_input_tokens"],
@@ -1024,7 +1022,7 @@ async def _call_channel(
                     status_code=response.status_code,
                     is_stream=False,
                     first_token_latency_ms=0,
-                    resolved_model=parsed["resolved_model"],
+                    upstream_model_name=parsed["resolved_model"],
                     input_tokens=parsed["input_tokens"],
                     cache_read_input_tokens=parsed["cache_read_input_tokens"],
                     cache_write_input_tokens=parsed["cache_write_input_tokens"],
@@ -1067,7 +1065,7 @@ async def _call_channel(
                 converted_iter = iterator()
                 stream_media = response.headers.get("content-type")
 
-            resolved_model = body.get("model")
+            upstream_model_name = body.get("model")
             return UpstreamResult(
                 response=StreamingResponse(
                     converted_iter,
@@ -1077,7 +1075,7 @@ async def _call_channel(
                 ),
                 is_stream=True,
                 status_code=response.status_code,
-                resolved_model=resolved_model,
+                upstream_model_name=upstream_model_name,
                 first_token_latency_ms=0,
                 request_content=request_content,
                 response_content=None,
@@ -1098,7 +1096,7 @@ async def _call_channel(
 
         input_cost_usd, output_cost_usd, total_cost_usd = (
             await app_state.domain_store.estimate_model_cost(
-                matched_group_name or parsed["resolved_model"],
+                pricing_group_name,
                 parsed["input_tokens"],
                 parsed["output_tokens"],
                 parsed["cache_read_input_tokens"],
@@ -1116,7 +1114,7 @@ async def _call_channel(
             status_code=response.status_code,
             is_stream=False,
             first_token_latency_ms=0,
-            resolved_model=parsed["resolved_model"],
+            upstream_model_name=parsed["resolved_model"],
             input_tokens=parsed["input_tokens"],
             cache_read_input_tokens=parsed["cache_read_input_tokens"],
             cache_write_input_tokens=parsed["cache_write_input_tokens"],
@@ -1306,6 +1304,20 @@ async def _resolve_routing_plan(
         protocol.value, requested_model
     )
     if matched_group is not None:
+        resolved_group = matched_group
+        if matched_group.route_group_id.strip():
+            try:
+                resolved_group = await app_state.domain_store.get_group(
+                    matched_group.route_group_id
+                )
+            except KeyError as exc:
+                raise LookupError(
+                    f"Route target model group not found: {matched_group.route_group_id}"
+                ) from exc
+            if resolved_group.route_group_id.strip():
+                raise LookupError(
+                    f"Route target must be an execution group: {resolved_group.name}"
+                )
         channels = await app_state.store.list()
         channel_map = {channel.id: channel for channel in channels}
         route_targets = [
@@ -1314,28 +1326,28 @@ async def _resolve_routing_plan(
                 model_name=item.model_name,
                 credential_id=item.credential_id or None,
             )
-            for item in matched_group.items
+            for item in resolved_group.items
             if item.enabled and item.channel_id in channel_map
         ]
         return RoutingPlan(
-            requested_model=requested_model,
-            matched_group=matched_group,
-            strategy=matched_group.strategy,
+            requested_group_name=matched_group.name,
+            resolved_group_name=resolved_group.name,
+            requested_group=matched_group,
+            resolved_group=resolved_group,
+            strategy=resolved_group.strategy,
             route_targets=route_targets,
             use_model_matching=False,
-            cursor_key=f"{protocol.value}:{matched_group.id}",
+            cursor_key=f"{protocol.value}:{resolved_group.id}",
         )
 
-    if requested_model and protocol in {
-        ProtocolKind.OPENAI_CHAT,
-        ProtocolKind.OPENAI_RESPONSES,
-        ProtocolKind.ANTHROPIC,
-    }:
+    if requested_model:
         raise LookupError(f"No model group matched {requested_model}")
 
     return RoutingPlan(
-        requested_model=requested_model,
-        matched_group=None,
+        requested_group_name=requested_model,
+        resolved_group_name=None,
+        requested_group=None,
+        resolved_group=None,
         strategy=RoutingStrategy.ROUND_ROBIN,
         route_targets=None,
         use_model_matching=True,
@@ -1401,8 +1413,8 @@ def _elapsed_ms(started_at: float) -> int:
 async def _record_stream_request_log(
     *,
     protocol: ProtocolKind,
-    requested_model: str | None,
-    matched_group_name: str | None,
+    requested_group_name: str | None,
+    resolved_group_name: str | None,
     channel: ChannelConfig,
     gateway_key: str,
     started_at: float,
@@ -1416,7 +1428,7 @@ async def _record_stream_request_log(
     )
     parsed = _extract_stream_usage(protocol, raw_content)
     distilled_content = _distill_stream_response_content(protocol, raw_content)
-    resolved_model = parsed["resolved_model"] or result.resolved_model
+    upstream_model_name = parsed["resolved_model"] or result.upstream_model_name
     input_tokens = parsed["input_tokens"]
     cache_read_input_tokens = parsed["cache_read_input_tokens"]
     cache_write_input_tokens = parsed["cache_write_input_tokens"]
@@ -1424,7 +1436,7 @@ async def _record_stream_request_log(
     total_tokens = parsed["total_tokens"]
     input_cost_usd, output_cost_usd, total_cost_usd = (
         await app_state.domain_store.estimate_model_cost(
-            matched_group_name or resolved_model,
+            resolved_group_name,
             input_tokens,
             output_tokens,
             cache_read_input_tokens,
@@ -1433,8 +1445,9 @@ async def _record_stream_request_log(
     )
     await _record_request_log(
         protocol=protocol,
-        requested_model=requested_model,
-        matched_group_name=matched_group_name,
+        requested_group_name=requested_group_name,
+        resolved_group_name=resolved_group_name,
+        upstream_model_name=upstream_model_name,
         channel_id=channel.id,
         channel_name=channel.name,
         gateway_key=gateway_key,
@@ -1447,7 +1460,6 @@ async def _record_stream_request_log(
             else result.first_token_latency_ms
         ),
         latency_ms=_elapsed_ms(started_at),
-        resolved_model=resolved_model,
         input_tokens=input_tokens,
         cache_read_input_tokens=cache_read_input_tokens,
         cache_write_input_tokens=cache_write_input_tokens,
@@ -1466,8 +1478,9 @@ async def _record_stream_request_log(
 async def _record_request_log(
     *,
     protocol: ProtocolKind,
-    requested_model: str | None,
-    matched_group_name: str | None,
+    requested_group_name: str | None,
+    resolved_group_name: str | None,
+    upstream_model_name: str | None,
     channel_id: str | None,
     channel_name: str | None,
     gateway_key: str,
@@ -1476,7 +1489,6 @@ async def _record_request_log(
     is_stream: bool,
     first_token_latency_ms: int,
     latency_ms: int,
-    resolved_model: str | None = None,
     input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
     cache_write_input_tokens: int = 0,
@@ -1492,8 +1504,9 @@ async def _record_request_log(
 ) -> None:
     await app_state.domain_store.create_request_log(
         protocol=protocol.value,
-        requested_model=requested_model,
-        matched_group_name=matched_group_name,
+        requested_group_name=requested_group_name,
+        resolved_group_name=resolved_group_name,
+        upstream_model_name=upstream_model_name,
         channel_id=channel_id,
         channel_name=channel_name,
         gateway_key_id=gateway_key,
@@ -1502,7 +1515,6 @@ async def _record_request_log(
         is_stream=is_stream,
         first_token_latency_ms=first_token_latency_ms,
         latency_ms=latency_ms,
-        resolved_model=resolved_model,
         input_tokens=input_tokens,
         cache_read_input_tokens=cache_read_input_tokens,
         cache_write_input_tokens=cache_write_input_tokens,

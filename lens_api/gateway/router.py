@@ -141,14 +141,15 @@ class RoundRobinRouter:
         strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN,
         allowed_channel_ids: set[str] | None = None,
         use_model_matching: bool = True,
-        matched_group_name: str | None = None,
+        requested_group_name: str | None = None,
+        resolved_group_name: str | None = None,
         route_targets: list[RouteTarget] | None = None,
     ) -> RoutePreview:
         pool = self._build_active_pool(channels, protocol, requested_model, allowed_channel_ids, use_model_matching, route_targets)
         return RoutePreview(
             protocol=protocol,
-            requested_model=requested_model,
-            matched_group_name=matched_group_name,
+            requested_group_name=requested_group_name,
+            resolved_group_name=resolved_group_name,
             strategy=strategy,
             matched_channel_ids=[target.channel.id for target in pool],
             items=[
