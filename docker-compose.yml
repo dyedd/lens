@@ -1,0 +1,20 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        LENS_UI_BACKEND_BASE_URL: ${LENS_UI_BACKEND_BASE_URL:-http://127.0.0.1:18080}
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+      - "18080:18080"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/healthz', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s

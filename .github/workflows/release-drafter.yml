@@ -1,0 +1,231 @@
+name: Draft Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: Override version bump strategy
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+jobs:
+  draft_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Prepare draft release
+        id: prepare
+        shell: bash
+        env:
+          VERSION_BUMP: ${{ inputs.version_bump }}
+        run: |
+          set -euo pipefail
+
+          commit_type() {
+            local subject="$1"
+
+            case "$subject" in
+              feat:*|feat\(*:*) echo "feat" ;;
+              fix:*|fix\(*:*) echo "fix" ;;
+              perf:*|perf\(*:*) echo "perf" ;;
+              refactor:*|refactor\(*:*) echo "refactor" ;;
+              docs:*|docs\(*:*) echo "docs" ;;
+              chore:*|chore\(*:*) echo "chore" ;;
+              style:*|style\(*:*) echo "style" ;;
+              test:*|test\(*:*) echo "test" ;;
+              ci:*|ci\(*:*) echo "ci" ;;
+              build:*|build\(*:*) echo "build" ;;
+              *) echo "other" ;;
+            esac
+          }
+
+          is_breaking_change() {
+            local subject="$1"
+            local body="$2"
+
+            if [[ "$subject" == *"!:"* ]] || [[ "$body" == *"BREAKING CHANGE"* ]]; then
+              return 0
+            fi
+
+            return 1
+          }
+
+          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -n "$last_tag" ]; then
+            range="${last_tag}..HEAD"
+            base_version="${last_tag#v}"
+          else
+            range="HEAD"
+            base_version="0.0.0"
+          fi
+
+          commit_count="$(git rev-list --count "$range")"
+          if [ "$commit_count" -eq 0 ]; then
+            echo "No commits found for draft release" >&2
+            exit 1
+          fi
+
+          if ! [[ "$base_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported base version: $base_version" >&2
+            exit 1
+          fi
+
+          IFS='.' read -r major minor patch <<< "$base_version"
+          bump="$VERSION_BUMP"
+          if [ "$bump" = "auto" ]; then
+            bump="patch"
+          fi
+
+          while IFS=$'\t' read -r sha subject; do
+            body="$(git log -1 --format=%b "$sha")"
+            type="$(commit_type "$subject")"
+
+            if is_breaking_change "$subject" "$body"; then
+              bump="major"
+              break
+            fi
+
+            if [ "$bump" != "minor" ] && [ "$type" = "feat" ]; then
+              bump="minor"
+            fi
+          done < <(git log --reverse --format='%H%x09%s' "$range")
+
+          case "$bump" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+            *)
+              echo "Unsupported version bump: $bump" >&2
+              exit 1
+              ;;
+          esac
+
+          next_tag="v${major}.${minor}.${patch}"
+          body_path="release-body.md"
+          features_file="$(mktemp)"
+          fixes_file="$(mktemp)"
+          refactors_file="$(mktemp)"
+          docs_file="$(mktemp)"
+          maintenance_file="$(mktemp)"
+          others_file="$(mktemp)"
+
+          while IFS=$'\t' read -r sha subject; do
+            short_sha="${sha:0:7}"
+            line="- ${subject} (${short_sha})"
+            type="$(commit_type "$subject")"
+
+            if [ "$type" = "feat" ]; then
+              echo "$line" >> "$features_file"
+            elif [ "$type" = "fix" ] || [ "$type" = "perf" ]; then
+              echo "$line" >> "$fixes_file"
+            elif [ "$type" = "refactor" ]; then
+              echo "$line" >> "$refactors_file"
+            elif [ "$type" = "docs" ]; then
+              echo "$line" >> "$docs_file"
+            elif [ "$type" = "chore" ] || [ "$type" = "style" ] || [ "$type" = "test" ] || [ "$type" = "ci" ] || [ "$type" = "build" ]; then
+              echo "$line" >> "$maintenance_file"
+            else
+              echo "$line" >> "$others_file"
+            fi
+          done < <(git log --reverse --format='%H%x09%s' "$range")
+
+          {
+            echo "## Changes"
+            echo
+
+            if [ -s "$features_file" ]; then
+              echo "### Features"
+              cat "$features_file"
+              echo
+            fi
+
+            if [ -s "$fixes_file" ]; then
+              echo "### Fixes"
+              cat "$fixes_file"
+              echo
+            fi
+
+            if [ -s "$refactors_file" ]; then
+              echo "### Refactors"
+              cat "$refactors_file"
+              echo
+            fi
+
+            if [ -s "$docs_file" ]; then
+              echo "### Documentation"
+              cat "$docs_file"
+              echo
+            fi
+
+            if [ -s "$maintenance_file" ]; then
+              echo "### Maintenance"
+              cat "$maintenance_file"
+              echo
+            fi
+
+            if [ -s "$others_file" ]; then
+              echo "### Others"
+              cat "$others_file"
+              echo
+            fi
+
+            if [ -n "$last_tag" ]; then
+              echo "## Range"
+              echo
+              echo "- From \`${last_tag}\` to \`${GITHUB_SHA::7}\`"
+            else
+              echo "## Range"
+              echo
+              echo "- Initial draft release from repository start to \`${GITHUB_SHA::7}\`"
+            fi
+          } > "$body_path"
+
+          echo "tag_name=${next_tag}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${next_tag}" >> "$GITHUB_OUTPUT"
+          echo "body_path=${body_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.prepare.outputs.tag_name }}
+          RELEASE_NAME: ${{ steps.prepare.outputs.release_name }}
+          BODY_PATH: ${{ steps.prepare.outputs.body_path }}
+          TARGET_COMMITISH: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" \
+              --title "$RELEASE_NAME" \
+              --notes-file "$BODY_PATH" \
+              --target "$TARGET_COMMITISH" \
+              --draft
+          else
+            gh release create "$TAG_NAME" \
+              --title "$RELEASE_NAME" \
+              --notes-file "$BODY_PATH" \
+              --target "$TARGET_COMMITISH" \
+              --draft
+          fi
