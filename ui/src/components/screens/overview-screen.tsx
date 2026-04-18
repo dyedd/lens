@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react"
 import { Activity, Bot, Clock3, DollarSign } from "lucide-react"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Bar, BarChart, CartesianGrid, Cell, Label, Pie, PieChart, XAxis, YAxis } from "recharts"
-import { OverviewDailyPoint, OverviewModelAnalytics, OverviewSummary, RequestLogItem, apiRequest } from "@/lib/api"
+import { OverviewDashboardData, apiRequest } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -90,11 +90,15 @@ export function OverviewScreen() {
         ? "Requests"
         : "Tokens"
 
-  const { data: summary } = useQuery({ queryKey: ["overview-summary", days], queryFn: () => apiRequest<OverviewSummary>(`/admin/overview-summary?days=${days}`) })
-  const { data: daily } = useQuery({ queryKey: ["overview-daily", days], queryFn: () => apiRequest<OverviewDailyPoint[]>(`/admin/overview-daily?days=${days}`) })
-  const { data: models } = useQuery({ queryKey: ["overview-models", days], queryFn: () => apiRequest<OverviewModelAnalytics>(`/admin/overview-models?days=${days}`) })
-  const { data: latestLogs } = useQuery({ queryKey: ["overview-logs", days, logOffset], queryFn: () => apiRequest<RequestLogItem[]>(`/admin/overview-logs?days=${days}&limit=50&offset=${logOffset}`) })
-  const logs = latestLogs ?? []
+  const { data: dashboardData } = useQuery({
+    queryKey: ["overview-dashboard", days, logOffset],
+    queryFn: () => apiRequest<OverviewDashboardData>(`/admin/overview-dashboard?days=${days}&log_limit=50&log_offset=${logOffset}`),
+    placeholderData: keepPreviousData,
+  })
+  const summary = dashboardData?.summary
+  const daily = dashboardData?.daily
+  const models = dashboardData?.models
+  const logs = dashboardData?.logs ?? []
 
   const periodMetrics = useMemo(() => {
     const source = daily ?? []
@@ -422,7 +426,7 @@ export function OverviewScreen() {
             )}
           </div>
 
-          {latestLogs && latestLogs.length >= 50 ? (
+          {logs.length >= 50 ? (
             <div className="mt-3 flex justify-center">
               <Button type="button" variant="outline" size="sm" onClick={() => setLogOffset((prev) => prev + 50)}>
                 {zh ? "加载更多" : "Load more"}

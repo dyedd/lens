@@ -145,6 +145,7 @@ export type Site = {
 export type SiteRuntimeSummary = {
   site_id: string
   site_name: string
+  recent_request_count: number
   latest_request_at?: string | null
   latest_success?: boolean | null
   latest_status_code?: number | null
@@ -317,6 +318,13 @@ export type OverviewModelAnalytics = {
   request_ranking: OverviewModelMetricPoint[]
   trend: OverviewModelTrendPoint[]
   available_models: string[]
+}
+
+export type OverviewDashboardData = {
+  summary: OverviewSummary
+  daily: OverviewDailyPoint[]
+  models: OverviewModelAnalytics
+  logs: RequestLogItem[]
 }
 
 export type RequestLogItem = {

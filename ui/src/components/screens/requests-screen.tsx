@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment, useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -793,24 +793,28 @@ export function RequestsScreen() {
   } = useQuery({
     queryKey: ['request-logs', page],
     queryFn: () => apiRequest<RequestLogPage>(`/admin/request-logs/page?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`),
-    refetchInterval: 5000,
+    placeholderData: keepPreviousData,
+    refetchInterval: page === 0 ? 5000 : false,
   })
 
   const { data: allModels, refetch: refetchAllModels } = useQuery({
     queryKey: ['overview-models', 'requests-screen'],
     queryFn: () => apiRequest<OverviewModelAnalytics>('/admin/overview-models?days=0'),
+    staleTime: 5 * 60_000,
   })
 
   const { data: detail, isLoading: detailLoading, refetch: refetchDetail } = useQuery({
     queryKey: ['request-log-detail', detailId],
     queryFn: () => apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
     enabled: detailId !== null,
+    staleTime: 60_000,
   })
 
   const { data: attemptDetail, isLoading: attemptDetailLoading, refetch: refetchAttemptDetail } = useQuery({
     queryKey: ['request-log-attempt-detail', attemptDetailId],
     queryFn: () => apiRequest<RequestLogDetail>(`/admin/request-logs/${attemptDetailId}`),
     enabled: attemptDetailId !== null,
+    staleTime: 60_000,
   })
 
   const filteredBaseData = useMemo(() => {

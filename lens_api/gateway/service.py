@@ -43,6 +43,7 @@ from ..models import (
     ModelPriceListResponse,
     ModelPriceUpdate,
     OverviewDailyPoint,
+    OverviewDashboardData,
     OverviewMetrics,
     OverviewModelAnalytics,
     OverviewSummary,
@@ -527,6 +528,26 @@ async def overview_models(
     days: int = 7, _: Any = Depends(get_current_admin)
 ) -> OverviewModelAnalytics:
     return await app_state.domain_store.get_model_analytics(days=days)
+
+
+async def overview_dashboard(
+    days: int = 7,
+    log_limit: int = 50,
+    log_offset: int = 0,
+    _: Any = Depends(get_current_admin),
+) -> OverviewDashboardData:
+    summary, daily, models, logs = await asyncio.gather(
+        app_state.domain_store.get_overview_summary(days=days),
+        app_state.domain_store.list_overview_daily(days=days),
+        app_state.domain_store.get_model_analytics(days=days),
+        app_state.domain_store.list_request_logs(limit=log_limit, days=days, offset=log_offset),
+    )
+    return OverviewDashboardData(
+        summary=summary,
+        daily=daily,
+        models=models,
+        logs=logs,
+    )
 
 
 async def request_logs(
