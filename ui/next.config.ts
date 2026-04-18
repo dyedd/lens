@@ -3,6 +3,7 @@ import type { NextConfig } from 'next'
 const backendBaseUrl = process.env.LENS_UI_BACKEND_BASE_URL || 'http://127.0.0.1:18080'
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   async rewrites() {
     return [
       {

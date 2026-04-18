@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     host: str = "127.0.0.1"
     port: int = 18080
-    auth_secret_key: str = "lens-dev-secret-key-change-me-32bytes"
+    auth_secret_key: str = "lens-dev-jwt-signing-secret-2026-default"
     auth_algorithm: str = "HS256"
     auth_access_token_minutes: int = 60 * 12
     request_timeout_seconds: float = 180.0
