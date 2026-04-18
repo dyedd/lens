@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import re
 import sys
 from pathlib import Path
 
@@ -10,31 +9,13 @@ from alembic import command
 from alembic.config import Config
 
 from .core.config import settings
-from .persistence.entities import Base
 
-MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+ALEMBIC_INI_PATH = PROJECT_DIR / "alembic.ini"
 
 
 def _alembic_cfg() -> Config:
-    cfg = Config()
-    cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
-    sync_url = settings.database_url.replace("+aiosqlite", "")
-    cfg.set_main_option("sqlalchemy.url", sync_url)
-    cfg.attributes["target_metadata"] = Base.metadata
-    return cfg
-
-
-def _next_numeric_revision() -> str:
-    max_revision = 0
-    versions_dir = MIGRATIONS_DIR / "versions"
-    for path in versions_dir.glob("*.py"):
-        if path.name == "__init__.py":
-            continue
-        match = re.match(r"^(\d{4})(?=\D|$)", path.stem)
-        if match is None:
-            continue
-        max_revision = max(max_revision, int(match.group(1)))
-    return f"{max_revision + 1:04d}"
+    return Config(str(ALEMBIC_INI_PATH))
 
 
 def db_upgrade(args: argparse.Namespace) -> None:
@@ -50,7 +31,6 @@ def db_revision(args: argparse.Namespace) -> None:
         _alembic_cfg(),
         message=args.message,
         autogenerate=args.autogenerate,
-        rev_id=_next_numeric_revision(),
     )
 
 

@@ -1,21 +1,37 @@
 from __future__ import annotations
 
+from logging.config import fileConfig
+
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from lens_api.core.config import settings
+from lens_api.core.db import Base
+from lens_api.persistence import entities as _entities  # noqa: F401
+
 config = context.config
 
-target_metadata = config.attributes.get("target_metadata")
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+target_metadata = Base.metadata
+
+
+def get_database_url() -> str:
+    return settings.database_url.replace("+aiosqlite", "", 1)
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    url = get_database_url()
+    config.set_main_option("sqlalchemy.url", url)
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        compare_server_default=True,
+        render_as_batch=True,
     )
 
     with context.begin_transaction():
@@ -23,8 +39,10 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    configuration = config.get_section(config.config_ini_section, {})
+    configuration["sqlalchemy.url"] = get_database_url()
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -34,6 +52,8 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            compare_server_default=True,
+            render_as_batch=connection.dialect.name == "sqlite",
         )
 
         with context.begin_transaction():
