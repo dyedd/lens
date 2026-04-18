@@ -260,6 +260,7 @@ export function SettingsScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["settings"] }),
       queryClient.invalidateQueries({ queryKey: ["public-branding"] }),
+      queryClient.invalidateQueries({ queryKey: ["app-info"] }),
     ])
   }
 
@@ -318,6 +319,7 @@ export function SettingsScreen() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
         queryClient.invalidateQueries({ queryKey: ["overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["overview-dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-summary"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-daily"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-models"] }),

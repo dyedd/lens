@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 from typing import Any
 
 from sqlalchemy import delete, func, select, update
@@ -33,6 +35,22 @@ SETTING_SITE_LOGO_URL = "site_logo_url"
 class DomainStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+        self._settings_cache: list[SettingItem] | None = None
+        self._settings_cache_at = 0.0
+        self._settings_cache_ttl_seconds = 2.0
+        self._settings_cache_lock = asyncio.Lock()
+
+    def _clone_settings_items(self, items: list[SettingItem]) -> list[SettingItem]:
+        return [SettingItem(key=item.key, value=item.value) for item in items]
+
+    def _store_settings_cache(self, items: list[SettingItem]) -> list[SettingItem]:
+        self._settings_cache = self._clone_settings_items(items)
+        self._settings_cache_at = monotonic()
+        return self._clone_settings_items(items)
+
+    def _clear_settings_cache(self) -> None:
+        self._settings_cache = None
+        self._settings_cache_at = 0.0
 
     @staticmethod
     def _is_missing_sqlite_table(exc: OperationalError, table_name: str) -> bool:
@@ -839,9 +857,19 @@ class DomainStore:
         }
 
     async def list_settings(self) -> list[SettingItem]:
-        async with self._session_factory() as session:
-            result = await session.execute(select(SettingEntity).order_by(SettingEntity.key))
-            return [SettingItem(key=item.key, value=item.value) for item in result.scalars().all()]
+        cached = self._settings_cache
+        if cached is not None and (monotonic() - self._settings_cache_at) < self._settings_cache_ttl_seconds:
+            return self._clone_settings_items(cached)
+
+        async with self._settings_cache_lock:
+            cached = self._settings_cache
+            if cached is not None and (monotonic() - self._settings_cache_at) < self._settings_cache_ttl_seconds:
+                return self._clone_settings_items(cached)
+
+            async with self._session_factory() as session:
+                result = await session.execute(select(SettingEntity).order_by(SettingEntity.key))
+                items = [SettingItem(key=item.key, value=item.value) for item in result.scalars().all()]
+            return self._store_settings_cache(items)
 
     async def upsert_settings(self, items: list[SettingItem]) -> list[SettingItem]:
         async with self._session_factory() as session:
@@ -853,7 +881,8 @@ class DomainStore:
                     entity.value = item.value
             await session.commit()
             result = await session.execute(select(SettingEntity).order_by(SettingEntity.key))
-            return [SettingItem(key=item.key, value=item.value) for item in result.scalars().all()]
+            stored_items = [SettingItem(key=item.key, value=item.value) for item in result.scalars().all()]
+        return self._store_settings_cache(stored_items)
 
     async def persist_request_log_stats(self, *, force: bool = False) -> None:
         runtime = await self.get_runtime_settings()
@@ -1079,6 +1108,30 @@ class DomainStore:
             if not site_rows:
                 return []
 
+            recent_request_logs = (
+                select(RequestLogEntity.channel_id.label("channel_id"))
+                .where(RequestLogEntity.channel_id.is_not(None))
+                .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+                .limit(100)
+                .subquery()
+            )
+            recent_count_rows = await session.execute(
+                select(
+                    SiteProtocolConfigEntity.site_id.label("site_id"),
+                    func.count().label("recent_request_count"),
+                )
+                .select_from(recent_request_logs)
+                .join(
+                    SiteProtocolConfigEntity,
+                    SiteProtocolConfigEntity.id == recent_request_logs.c.channel_id,
+                )
+                .group_by(SiteProtocolConfigEntity.site_id)
+            )
+            recent_request_count_by_site = {
+                str(row.site_id): int(row.recent_request_count or 0)
+                for row in recent_count_rows.all()
+            }
+
             ranked_logs = (
                 select(
                     SiteProtocolConfigEntity.site_id.label("site_id"),
@@ -1123,6 +1176,7 @@ class DomainStore:
                     SiteRuntimeSummary(
                         site_id=site.id,
                         site_name=site.name,
+                        recent_request_count=recent_request_count_by_site.get(site.id, 0),
                         latest_request_at=(
                             latest.created_at.replace(tzinfo=UTC).isoformat()
                             if latest is not None and latest.created_at is not None

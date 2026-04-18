@@ -21,7 +21,11 @@ type LoginResponse = {
 export function LoginScreen() {
   const router = useRouter()
   const { locale, setLocale, t } = useI18n()
-  const { data: branding } = useQuery({ queryKey: ['public-branding'], queryFn: () => apiRequest<PublicBranding>('/public/branding') })
+  const { data: branding } = useQuery({
+    queryKey: ['public-branding'],
+    queryFn: () => apiRequest<PublicBranding>('/public/branding'),
+    staleTime: 5 * 60_000,
+  })
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('admin')
   const [error, setError] = useState('')

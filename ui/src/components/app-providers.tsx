@@ -9,13 +9,13 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [client] = useState(() => new QueryClient({
-    defaultOptions: {
-      queries: {
-        staleTime: 30_000,
-        gcTime: 5 * 60_000,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-        refetchOnMount: false,
+      defaultOptions: {
+        queries: {
+          staleTime: 60_000,
+          gcTime: 15 * 60_000,
+          refetchOnWindowFocus: false,
+          refetchOnReconnect: false,
+          refetchOnMount: false,
         retry: 1,
       },
     },

@@ -7,7 +7,6 @@ import { toast } from 'sonner'
 import {
   ApiError,
   ProtocolKind,
-  RequestLogItem,
   Site,
   SiteBaseUrlInput,
   SiteCredentialInput,
@@ -95,12 +94,6 @@ type FormState = {
 type PickerModelItem = {
   credential_id: string
   model_name: string
-}
-
-type SiteStats = {
-  requestCount: number
-  successCount: number
-  failedCount: number
 }
 
 type SiteRow = Site & {
@@ -266,27 +259,6 @@ function SiteFavicon({ url, name }: { url: string; name: string }) {
       <span className="sr-only">{name}</span>
     </span>
   )
-}
-
-function buildSiteStats(logs: RequestLogItem[] | undefined, sites: Site[] | undefined) {
-  const protocolToSite = new Map<string, string>()
-  for (const site of sites ?? []) {
-    for (const protocol of site.protocols) {
-      protocolToSite.set(protocol.id, site.id)
-    }
-  }
-  const grouped = new Map<string, SiteStats>()
-  for (const row of logs ?? []) {
-    if (!row.channel_id) continue
-    const siteId = protocolToSite.get(row.channel_id)
-    if (!siteId) continue
-    const current = grouped.get(siteId) ?? { requestCount: 0, successCount: 0, failedCount: 0 }
-    current.requestCount += 1
-    current.successCount += row.success ? 1 : 0
-    current.failedCount += row.success ? 0 : 1
-    grouped.set(siteId, current)
-  }
-  return grouped
 }
 
 function formatRuntimeTimestamp(value: string, locale: 'zh-CN' | 'en-US') {
@@ -489,14 +461,12 @@ export function ChannelsScreen() {
   const [formSnapshot, setFormSnapshot] = useState('')
 
   const { data: sites, isLoading } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
-  const { data: requestLogs } = useQuery({ queryKey: ['request-logs'], queryFn: () => apiRequest<RequestLogItem[]>('/admin/request-logs') })
   const { data: siteRuntimeSummaries } = useQuery({
     queryKey: ['site-runtime-summaries'],
     queryFn: () => apiRequest<SiteRuntimeSummary[]>('/admin/sites/runtime'),
     refetchInterval: 5000,
   })
 
-  const siteStats = useMemo(() => buildSiteStats(requestLogs, sites), [requestLogs, sites])
   const siteRuntimeById = useMemo(
     () => new Map((siteRuntimeSummaries ?? []).map((item) => [item.site_id, item] as const)),
     [siteRuntimeSummaries]
@@ -522,14 +492,16 @@ export function ChannelsScreen() {
       return stack.includes(keyword)
     })
 
-    return [...filtered].sort((left, right) => {
-      if (sortBy === 'name-asc') return left.name.localeCompare(right.name, locale)
-      if (sortBy === 'name-desc') return right.name.localeCompare(left.name, locale)
-      if (sortBy === 'models-desc') return right.model_count - left.model_count || left.name.localeCompare(right.name, locale)
-      if (sortBy === 'protocols-desc') return right.protocol_count - left.protocol_count || left.name.localeCompare(right.name, locale)
-      return (siteStats.get(right.id)?.requestCount ?? 0) - (siteStats.get(left.id)?.requestCount ?? 0) || left.name.localeCompare(right.name, locale)
-    })
-  }, [locale, protocolFilter, search, siteRows, siteStats, sortBy, statusFilter])
+      return [...filtered].sort((left, right) => {
+        const leftRequestCount = siteRuntimeById.get(left.id)?.recent_request_count ?? 0
+        const rightRequestCount = siteRuntimeById.get(right.id)?.recent_request_count ?? 0
+        if (sortBy === 'name-asc') return left.name.localeCompare(right.name, locale)
+        if (sortBy === 'name-desc') return right.name.localeCompare(left.name, locale)
+        if (sortBy === 'models-desc') return right.model_count - left.model_count || left.name.localeCompare(right.name, locale)
+        if (sortBy === 'protocols-desc') return right.protocol_count - left.protocol_count || left.name.localeCompare(right.name, locale)
+        return rightRequestCount - leftRequestCount || left.name.localeCompare(right.name, locale)
+      })
+  }, [locale, protocolFilter, search, siteRows, siteRuntimeById, sortBy, statusFilter])
   const activeFilterCount = [
     Boolean(search.trim()),
     statusFilter !== 'all',
@@ -552,7 +524,6 @@ export function ChannelsScreen() {
   async function invalidateChannelData() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['sites'] }),
-      queryClient.invalidateQueries({ queryKey: ['request-logs'] }),
       queryClient.invalidateQueries({ queryKey: ['site-runtime-summaries'] }),
       queryClient.invalidateQueries({ queryKey: ['group-candidates'] }),
     ])
@@ -854,7 +825,6 @@ export function ChannelsScreen() {
             ) : visibleSites.length ? (
               <ItemGroup className="gap-3">
                 {visibleSites.map((site) => {
-                  const stats = siteStats.get(site.id)
                   const runtimeSummary = siteRuntimeById.get(site.id)
                   return (
                     <Item
@@ -894,7 +864,7 @@ export function ChannelsScreen() {
                           <RecentRequestPreview summary={runtimeSummary} locale={locale} />
                         </div>
                         <ItemFooter className="mt-4 flex flex-wrap items-center gap-2.5">
-                          <ChannelMetric icon={<Activity size={14} />} label={locale === 'zh-CN' ? '请求数' : 'Requests'} value={String(stats?.requestCount ?? 0)} />
+                          <ChannelMetric icon={<Activity size={14} />} label={locale === 'zh-CN' ? '请求数' : 'Requests'} value={String(runtimeSummary?.recent_request_count ?? 0)} />
                           <ChannelMetric icon={<Waypoints size={14} />} label={locale === 'zh-CN' ? '协议' : 'Protocols'} value={String(site.protocol_count)} />
                           <ChannelMetric icon={<Server size={14} />} label={locale === 'zh-CN' ? '模型' : 'Models'} value={String(site.model_count)} />
                           <ChannelMetric icon={<KeyRound size={14} />} label={locale === 'zh-CN' ? '密钥' : 'Keys'} value={String(site.credential_count)} />

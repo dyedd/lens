@@ -29,6 +29,12 @@ def register(app: FastAPI, service_module) -> None:
         response_model=service_module.OverviewModelAnalytics,
     )
     app.add_api_route(
+        "/api/admin/overview-dashboard",
+        service_module.overview_dashboard,
+        methods=["GET"],
+        response_model=service_module.OverviewDashboardData,
+    )
+    app.add_api_route(
         "/api/admin/overview-logs",
         service_module.overview_logs,
         methods=["GET"],

@@ -17,7 +17,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { DASHBOARD_ROUTES, getDashboardViewFromPathname, type DashboardView } from '@/components/shell/dashboard-routes'
-import { apiRequest, type AppInfo, type PublicBranding } from '@/lib/api'
+import { apiRequest, type AppInfo } from '@/lib/api'
 import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -56,16 +56,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { locale, setLocale, t } = useI18n()
-  const { data: branding } = useQuery({
-    queryKey: ['public-branding'],
-    queryFn: () => apiRequest<PublicBranding>('/public/branding'),
-  })
   const { data: appInfo } = useQuery({
     queryKey: ['app-info'],
     queryFn: () => apiRequest<AppInfo>('/admin/app-info'),
+    staleTime: 5 * 60_000,
   })
-  const siteName = branding?.site_name?.trim() || 'Lens'
-  const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
+  const siteName = appInfo?.site_name?.trim() || 'Lens'
+  const logoUrl = appInfo?.logo_url?.trim() || '/logo.svg'
   const activeView = useMemo(() => getDashboardViewFromPathname(pathname), [pathname])
   const currentVersion = appInfo?.system_version?.trim()
   const versionLabel = currentVersion

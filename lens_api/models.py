@@ -208,6 +208,7 @@ class SiteRuntimeSummary(BaseModel):
 
     site_id: str
     site_name: str
+    recent_request_count: int = 0
     latest_request_at: str | None = None
     latest_success: bool | None = None
     latest_status_code: int | None = None
@@ -601,3 +602,10 @@ class OverviewModelAnalytics(BaseModel):
     request_ranking: list[OverviewModelMetricPoint] = Field(default_factory=list)
     trend: list[OverviewModelTrendPoint] = Field(default_factory=list)
     available_models: list[str] = Field(default_factory=list)
+
+
+class OverviewDashboardData(BaseModel):
+    summary: OverviewSummary
+    daily: list[OverviewDailyPoint] = Field(default_factory=list)
+    models: OverviewModelAnalytics
+    logs: list[RequestLogItem] = Field(default_factory=list)
