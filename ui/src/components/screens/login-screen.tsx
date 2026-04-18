@@ -40,7 +40,7 @@ export function LoginScreen() {
         body: JSON.stringify({ username, password })
       })
       setStoredToken(data.access_token)
-      router.push('/dashboard')
+      router.push('/')
     } catch (requestError) {
       setError(requestError instanceof ApiError ? requestError.message : 'Login failed')
     } finally {

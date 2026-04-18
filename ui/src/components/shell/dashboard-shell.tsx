@@ -1,6 +1,5 @@
 "use client"
 
-import type { DashboardView } from '@/components/shell/dashboard-view-shell'
 import { Button } from '@/components/ui/button'
 import {
   Sidebar,
@@ -17,6 +16,7 @@ import {
   SidebarSeparator,
   useSidebar,
 } from '@/components/ui/sidebar'
+import { DASHBOARD_ROUTES, getDashboardViewFromPathname, type DashboardView } from '@/components/shell/dashboard-routes'
 import { apiRequest, type AppInfo, type PublicBranding } from '@/lib/api'
 import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
@@ -24,6 +24,8 @@ import { cn } from '@/lib/utils'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Globe2, Layers3, LayoutDashboard, LogOut, PanelLeftClose, Settings2, Waypoints } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo } from 'react'
 
 const GITHUB_REPO_URL = 'https://github.com/dyedd/lens'
@@ -50,17 +52,9 @@ function CollapseButton({ label, iconOnly = false }: { label: string; iconOnly?:
   )
 }
 
-export function DashboardShell({
-  children,
-  activeView,
-  onViewChange,
-  onViewIntent,
-}: {
-  children: React.ReactNode
-  activeView: DashboardView
-  onViewChange: (view: DashboardView) => void
-  onViewIntent?: (view: DashboardView) => void
-}) {
+export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const router = useRouter()
   const { locale, setLocale, t } = useI18n()
   const { data: branding } = useQuery({
     queryKey: ['public-branding'],
@@ -72,6 +66,7 @@ export function DashboardShell({
   })
   const siteName = branding?.site_name?.trim() || 'Lens'
   const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
+  const activeView = useMemo(() => getDashboardViewFromPathname(pathname), [pathname])
   const currentVersion = appInfo?.system_version?.trim()
   const versionLabel = currentVersion
     ? `${locale === 'zh-CN' ? '版本号' : 'Version'} ${currentVersion}`
@@ -81,21 +76,21 @@ export function DashboardShell({
     {
       label: locale === 'zh-CN' ? '监控' : 'Monitor',
       items: [
-        { key: 'overview' as DashboardView, label: t.dashboard, icon: LayoutDashboard },
-        { key: 'requests' as DashboardView, label: t.requests, icon: Activity },
+        { key: 'overview' as DashboardView, href: DASHBOARD_ROUTES.overview, label: t.dashboard, icon: LayoutDashboard },
+        { key: 'requests' as DashboardView, href: DASHBOARD_ROUTES.requests, label: t.requests, icon: Activity },
       ],
     },
     {
       label: locale === 'zh-CN' ? '管理' : 'Manage',
       items: [
-        { key: 'channels' as DashboardView, label: t.channels, icon: Waypoints },
-        { key: 'groups' as DashboardView, label: t.groups, icon: Layers3 },
+        { key: 'channels' as DashboardView, href: DASHBOARD_ROUTES.channels, label: t.channels, icon: Waypoints },
+        { key: 'groups' as DashboardView, href: DASHBOARD_ROUTES.groups, label: t.groups, icon: Layers3 },
       ],
     },
     {
       label: locale === 'zh-CN' ? '系统' : 'System',
       items: [
-        { key: 'settings' as DashboardView, label: t.settings, icon: Settings2 },
+        { key: 'settings' as DashboardView, href: DASHBOARD_ROUTES.settings, label: t.settings, icon: Settings2 },
       ],
     },
   ], [locale, t])
@@ -110,6 +105,10 @@ export function DashboardShell({
   function handleSignOut() {
     clearStoredToken()
     window.location.href = '/login'
+  }
+
+  function handleViewIntent(href: string) {
+    router.prefetch(href)
   }
 
   return (
@@ -149,14 +148,17 @@ export function DashboardShell({
                   return (
                     <SidebarMenuItem key={item.key}>
                       <SidebarMenuButton
+                        asChild
                         isActive={activeView === item.key}
                         tooltip={item.label}
-                        onClick={() => onViewChange(item.key)}
-                        onMouseEnter={() => onViewIntent?.(item.key)}
+                        onMouseEnter={() => handleViewIntent(item.href)}
+                        onFocus={() => handleViewIntent(item.href)}
                         className={cn(activeView === item.key && 'font-medium')}
                       >
-                        <Icon />
-                        <span>{item.label}</span>
+                        <Link href={item.href} scroll={false}>
+                          <Icon />
+                          <span>{item.label}</span>
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   )
@@ -208,7 +210,9 @@ export function DashboardShell({
         </header>
 
         <div className="hide-scrollbar h-full overflow-y-auto overscroll-contain bg-muted p-6 pb-8">
-          {children}
+          <div key={pathname} className="min-h-[calc(100vh-10rem)] animate-[fadeIn_.16s_ease-out]">
+            {children}
+          </div>
         </div>
       </SidebarInset>
     </SidebarProvider>
