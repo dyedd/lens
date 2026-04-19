@@ -24,6 +24,8 @@ RUN pnpm build
 
 FROM node:22-bookworm-slim AS runner
 
+LABEL org.opencontainers.image.source="https://github.com/dyedd/lens"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
