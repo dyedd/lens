@@ -610,8 +610,16 @@ export function GroupsScreen() {
   const [showEnabledOnly, setShowEnabledOnly] = useState(false)
   const [syncingPrices, setSyncingPrices] = useState(false)
 
-  const { data: groups, isLoading } = useQuery({ queryKey: ['groups'], queryFn: () => apiRequest<ModelGroup[]>('/admin/model-groups') })
-  const { data: sites } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
+  const { data: groups, isLoading } = useQuery({
+    queryKey: ['groups'],
+    queryFn: () => apiRequest<ModelGroup[]>('/admin/model-groups'),
+    staleTime: 2 * 60_000,
+  })
+  const { data: sites } = useQuery({
+    queryKey: ['sites'],
+    queryFn: () => apiRequest<Site[]>('/admin/sites'),
+    staleTime: 2 * 60_000,
+  })
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(() => ({
     protocol: form.protocol,
     exclude_items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
