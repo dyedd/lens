@@ -460,10 +460,15 @@ export function ChannelsScreen() {
   const [pickerSelectedModelKeys, setPickerSelectedModelKeys] = useState<string[]>([])
   const [formSnapshot, setFormSnapshot] = useState('')
 
-  const { data: sites, isLoading } = useQuery({ queryKey: ['sites'], queryFn: () => apiRequest<Site[]>('/admin/sites') })
+  const { data: sites, isLoading } = useQuery({
+    queryKey: ['sites'],
+    queryFn: () => apiRequest<Site[]>('/admin/sites'),
+    staleTime: 2 * 60_000,
+  })
   const { data: siteRuntimeSummaries } = useQuery({
     queryKey: ['site-runtime-summaries'],
     queryFn: () => apiRequest<SiteRuntimeSummary[]>('/admin/sites/runtime'),
+    staleTime: 5_000,
     refetchInterval: 5000,
   })
 

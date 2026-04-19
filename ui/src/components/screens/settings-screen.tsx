@@ -187,10 +187,12 @@ export function SettingsScreen() {
   const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
+    staleTime: 5 * 60_000,
   })
   const { data: profile } = useQuery({
     queryKey: ["auth-me"],
     queryFn: () => apiRequest<AdminProfile>("/admin/session"),
+    staleTime: 5 * 60_000,
   })
 
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT)
