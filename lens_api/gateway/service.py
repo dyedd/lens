@@ -164,6 +164,18 @@ class AttemptLog:
     error_message: str | None = None
 
 
+class UpstreamRequestError(HTTPException):
+    def __init__(
+        self,
+        status_code: int,
+        detail: Any,
+        *,
+        router_status_code: int | None,
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail)
+        self.router_status_code = router_status_code
+
+
 @dataclass
 class StreamCapture:
     saw_first_chunk: bool = False
@@ -235,6 +247,14 @@ def _raise_database_http_error(exc: OperationalError) -> None:
     raise HTTPException(status_code=status_code, detail=detail) from exc
 
 
+def _apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
+    app_state.router.configure_health_scoring(
+        health_window_seconds=int(runtime["health_window_seconds"]),
+        health_penalty_weight=float(runtime["health_penalty_weight"]),
+        health_min_samples=int(runtime["health_min_samples"]),
+    )
+
+
 async def handle_operational_error(_: Request, exc: OperationalError) -> JSONResponse:
     return _database_error_response(exc)
 
@@ -243,6 +263,7 @@ async def dynamic_cors_middleware(request: Request, call_next):
     response = await call_next(request)
     try:
         runtime = await app_state.domain_store.get_runtime_settings()
+        _apply_router_runtime_settings(runtime)
     except OperationalError as exc:
         return _database_error_response(exc)
     allow_origins = runtime["cors_allow_origins"]
@@ -261,6 +282,7 @@ async def dynamic_cors_middleware(request: Request, call_next):
 async def cors_preflight(path: str, request: Request) -> Response:
     try:
         runtime = await app_state.domain_store.get_runtime_settings()
+        _apply_router_runtime_settings(runtime)
     except OperationalError as exc:
         return _database_error_response(exc)
     allow_origins = runtime["cors_allow_origins"]
@@ -590,22 +612,19 @@ async def router_preview(
     payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)
 ) -> dict[str, Any]:
     channels = await app_state.store.list()
-    available_channel_ids = {
-        channel.id
-        for channel in channels
-        if app_state.router.is_channel_available(channel.id)
-    }
+    runtime = await app_state.domain_store.get_runtime_settings()
+    _apply_router_runtime_settings(runtime)
     plan = await _resolve_routing_plan(payload.protocol, payload.model)
     return app_state.router.preview(
         channels,
         payload.protocol,
         plan.resolved_group_name or payload.model,
         strategy=plan.strategy,
-        allowed_channel_ids=available_channel_ids,
         route_targets=plan.route_targets,
         use_model_matching=plan.use_model_matching,
         requested_group_name=plan.requested_group_name,
         resolved_group_name=plan.resolved_group_name,
+        cursor_key=plan.cursor_key,
     ).model_dump(mode="json")
 
 
@@ -805,11 +824,7 @@ async def _proxy_protocol(
 ) -> Response:
     channels = await app_state.store.list()
     runtime = await app_state.domain_store.get_runtime_settings()
-    available_channel_ids = {
-        channel.id
-        for channel in channels
-        if app_state.router.is_channel_available(channel.id)
-    }
+    _apply_router_runtime_settings(runtime)
     started_at = perf_counter()
     requested_model = _requested_model(protocol, body)
     request_content = _dump_json(body)
@@ -822,7 +837,6 @@ async def _proxy_protocol(
             protocol,
             plan.resolved_group_name,
             strategy=plan.strategy,
-            allowed_channel_ids=available_channel_ids,
             route_targets=plan.route_targets,
             use_model_matching=plan.use_model_matching,
             cursor_key=plan.cursor_key,
@@ -932,6 +946,9 @@ async def _proxy_protocol(
             app_state.router.record_failure(
                 channel.id,
                 message,
+                status_code=getattr(exc, "router_status_code", exc.status_code),
+                credential_id=target.credential_id,
+                channel_keys=channel.keys,
                 threshold=int(runtime["circuit_breaker_threshold"]),
                 cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
                 max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
@@ -1025,7 +1042,7 @@ async def _call_channel(
                 json=upstream.json_body,
             )
         response.raise_for_status()
-        app_state.router.record_success(channel.id)
+        app_state.router.record_success(channel.id, credential_id=credential_id)
 
         if _is_event_stream_response(response):
             if not is_stream_request and channel.protocol == ProtocolKind.ANTHROPIC:
@@ -1176,12 +1193,16 @@ async def _call_channel(
     except httpx.HTTPStatusError as exc:
         await exc.response.aread()
         detail = exc.response.text or f"HTTP {exc.response.status_code}"
-        raise HTTPException(
-            status_code=exc.response.status_code, detail=detail
+        raise UpstreamRequestError(
+            status_code=exc.response.status_code,
+            detail=detail,
+            router_status_code=exc.response.status_code,
         ) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=502, detail=_format_transport_error(exc, upstream.url)
+        raise UpstreamRequestError(
+            status_code=502,
+            detail=_format_transport_error(exc, upstream.url),
+            router_status_code=None,
         ) from exc
     finally:
         if close_client:

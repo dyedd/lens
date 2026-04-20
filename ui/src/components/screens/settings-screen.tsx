@@ -48,6 +48,9 @@ const RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
 const CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"
 const CIRCUIT_BREAKER_COOLDOWN = "circuit_breaker_cooldown"
 const CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown"
+const HEALTH_WINDOW_SECONDS = "health_window_seconds"
+const HEALTH_PENALTY_WEIGHT = "health_penalty_weight"
+const HEALTH_MIN_SAMPLES = "health_min_samples"
 const SITE_NAME = "site_name"
 const SITE_LOGO_URL = "site_logo_url"
 
@@ -60,6 +63,9 @@ type DraftState = {
   circuitBreakerThreshold: string
   circuitBreakerCooldown: string
   circuitBreakerMaxCooldown: string
+  healthWindowSeconds: string
+  healthPenaltyWeight: string
+  healthMinSamples: string
   siteName: string
   siteLogoUrl: string
 }
@@ -73,6 +79,9 @@ const EMPTY_DRAFT: DraftState = {
   circuitBreakerThreshold: "3",
   circuitBreakerCooldown: "60",
   circuitBreakerMaxCooldown: "600",
+  healthWindowSeconds: "300",
+  healthPenaltyWeight: "0.5",
+  healthMinSamples: "10",
   siteName: "Lens",
   siteLogoUrl: "",
 }
@@ -96,6 +105,9 @@ function parseSettings(items: SettingItem[] | undefined) {
       circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
       circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
       circuitBreakerMaxCooldown: mapping.get(CIRCUIT_BREAKER_MAX_COOLDOWN) ?? "600",
+      healthWindowSeconds: mapping.get(HEALTH_WINDOW_SECONDS) ?? "300",
+      healthPenaltyWeight: mapping.get(HEALTH_PENALTY_WEIGHT) ?? "0.5",
+      healthMinSamples: mapping.get(HEALTH_MIN_SAMPLES) ?? "10",
       siteName: mapping.get(SITE_NAME) ?? "Lens",
       siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
     } satisfies DraftState,
@@ -282,6 +294,9 @@ export function SettingsScreen() {
         { key: CIRCUIT_BREAKER_THRESHOLD, value: draft.circuitBreakerThreshold.trim() || "3" },
         { key: CIRCUIT_BREAKER_COOLDOWN, value: draft.circuitBreakerCooldown.trim() || "60" },
         { key: CIRCUIT_BREAKER_MAX_COOLDOWN, value: draft.circuitBreakerMaxCooldown.trim() || "600" },
+        { key: HEALTH_WINDOW_SECONDS, value: draft.healthWindowSeconds.trim() || "300" },
+        { key: HEALTH_PENALTY_WEIGHT, value: draft.healthPenaltyWeight.trim() || "0.5" },
+        { key: HEALTH_MIN_SAMPLES, value: draft.healthMinSamples.trim() || "10" },
         { key: SITE_NAME, value: draft.siteName.trim() || "Lens" },
         { key: SITE_LOGO_URL, value: draft.siteLogoUrl.trim() },
       ]
@@ -637,6 +652,34 @@ export function SettingsScreen() {
               min="0"
               value={draft.circuitBreakerMaxCooldown}
               onChange={(event) => setDraftValue("circuitBreakerMaxCooldown", event.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>{titleForLocale(locale, "健康窗口秒数", "Health window seconds")}</FieldLabel>
+            <Input
+              type="number"
+              min="1"
+              value={draft.healthWindowSeconds}
+              onChange={(event) => setDraftValue("healthWindowSeconds", event.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>{titleForLocale(locale, "健康惩罚权重", "Health penalty weight")}</FieldLabel>
+            <Input
+              type="number"
+              min="0"
+              step="0.1"
+              value={draft.healthPenaltyWeight}
+              onChange={(event) => setDraftValue("healthPenaltyWeight", event.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>{titleForLocale(locale, "健康最小样本数", "Health min samples")}</FieldLabel>
+            <Input
+              type="number"
+              min="1"
+              value={draft.healthMinSamples}
+              onChange={(event) => setDraftValue("healthMinSamples", event.target.value)}
             />
           </Field>
         </FieldGroup>

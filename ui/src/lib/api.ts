@@ -251,8 +251,35 @@ export type AdminProfileUpdateResponse = {
 }
 
 export type RouteSnapshot = {
-  routes: Array<{ protocol: ProtocolKind; next_index: number; channel_ids: string[] }>
-  health: Array<{ channel_id: string; consecutive_failures: number; last_error?: string | null }>
+  routes: Array<{
+    protocol: ProtocolKind
+    next_index: number
+    next_channel_id?: string | null
+    channel_ids: string[]
+    available_channel_ids: string[]
+    cooldown_channel_ids: string[]
+  }>
+  health: Array<{
+    channel_id: string
+    consecutive_failures: number
+    last_error?: string | null
+    last_error_category?: string | null
+    opened_until: number
+    cooldown_remaining_seconds: number
+    last_cooldown_seconds: number
+    score: number
+    available: boolean
+    available_key_count: number
+    cooled_key_count: number
+    key_health: Array<{
+      credential_id: string
+      consecutive_failures: number
+      cooled_until: number
+      cooldown_remaining_seconds: number
+      last_cooldown_seconds: number
+      available: boolean
+    }>
+  }>
 }
 
 export type RoutePreview = {
@@ -261,7 +288,16 @@ export type RoutePreview = {
   resolved_group_name?: string | null
   strategy?: RoutingStrategy | null
   matched_channel_ids: string[]
-  items: Array<{ channel_id: string; channel_name: string; model_name?: string | null }>
+  items: Array<{
+    channel_id: string
+    channel_name: string
+    model_name?: string | null
+    credential_id?: string | null
+    available: boolean
+    in_cooldown: boolean
+    cooldown_remaining_seconds: number
+    score: number
+  }>
 }
 
 export type OverviewMetrics = {
