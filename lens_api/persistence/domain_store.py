@@ -889,6 +889,7 @@ class DomainStore:
         runtime = await self.get_runtime_settings()
         interval_seconds = max(int(runtime["stats_save_interval"]), 1)
         now = datetime.now(UTC).replace(tzinfo=None)
+        today_key = now.strftime("%Y%m%d")
 
         async with self._session_factory() as session:
             try:
@@ -914,9 +915,23 @@ class DomainStore:
                 if last_persist_at is None or (now - last_persist_at).total_seconds() < interval_seconds:
                     return
 
+                await session.execute(
+                    delete(RequestLogDailyStatsEntity).where(RequestLogDailyStatsEntity.date == today_key)
+                )
+                await session.execute(
+                    delete(OverviewModelDailyStatsEntity).where(OverviewModelDailyStatsEntity.date == today_key)
+                )
+                await session.execute(
+                    update(RequestLogEntity)
+                    .where(RequestLogEntity.stats_archived == 1)
+                    .where(func.strftime('%Y%m%d', RequestLogEntity.created_at) == today_key)
+                    .values(stats_archived=0)
+                )
+
+            date_expr = func.strftime('%Y%m%d', RequestLogEntity.created_at)
             unarchived_stmt = (
                 select(
-                    func.strftime('%Y%m%d', RequestLogEntity.created_at).label('date'),
+                    date_expr.label('date'),
                     func.count().label('request_count'),
                     func.sum(RequestLogEntity.success).label('successful_requests'),
                     (func.count() - func.sum(RequestLogEntity.success)).label('failed_requests'),
@@ -929,14 +944,16 @@ class DomainStore:
                     func.sum(RequestLogEntity.total_cost_usd).label('total_cost_usd'),
                 )
                 .where(RequestLogEntity.stats_archived == 0)
-                .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
+                .group_by(date_expr)
             )
+            if not force:
+                unarchived_stmt = unarchived_stmt.where(date_expr < today_key)
             daily_rows = (await session.execute(unarchived_stmt)).all()
 
             model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
             model_stmt = (
                 select(
-                    func.strftime('%Y%m%d', RequestLogEntity.created_at).label('date'),
+                    date_expr.label('date'),
                     model_expr.label('model'),
                     func.sum(RequestLogEntity.success).label('requests'),
                     func.sum(RequestLogEntity.total_tokens).label('total_tokens'),
@@ -945,8 +962,10 @@ class DomainStore:
                 .where(RequestLogEntity.stats_archived == 0)
                 .where(RequestLogEntity.success == 1)
                 .where(model_expr.is_not(None))
-                .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
+                .group_by(date_expr, model_expr)
             )
+            if not force:
+                model_stmt = model_stmt.where(date_expr < today_key)
             model_rows = (await session.execute(model_stmt)).all()
 
             for row in daily_rows:
@@ -988,11 +1007,10 @@ class DomainStore:
                 entity.total_cost_usd += float(row.total_cost_usd or 0.0)
 
             if daily_rows or model_rows:
-                await session.execute(
-                    update(RequestLogEntity)
-                    .where(RequestLogEntity.stats_archived == 0)
-                    .values(stats_archived=1)
-                )
+                archive_stmt = update(RequestLogEntity).where(RequestLogEntity.stats_archived == 0)
+                if not force:
+                    archive_stmt = archive_stmt.where(date_expr < today_key)
+                await session.execute(archive_stmt.values(stats_archived=1))
 
             last_persist_setting = await session.get(SettingEntity, SETTING_STATS_LAST_PERSIST_AT)
             if last_persist_setting is None:
@@ -1420,18 +1438,29 @@ class DomainStore:
         imported_points = await self._imported_daily_points(session, days=days, offset_days=offset_days)
         imported_dates = {item.date for item in imported_points}
         archived_points = await self._archived_daily_points(session, days=days, offset_days=offset_days, exclude_dates=imported_dates)
-        archived_dates = {item.date for item in archived_points}
         request_log_points = await self._request_log_daily_points(
             session,
             days=days,
             offset_days=offset_days,
-            exclude_dates=imported_dates | archived_dates,
+            exclude_dates=imported_dates,
         )
-        merged = {item.date: item for item in imported_points}
+        merged = {item.date: item.model_copy(deep=True) for item in imported_points}
         for item in archived_points:
-            merged[item.date] = item
+            merged[item.date] = item.model_copy(deep=True)
         for item in request_log_points:
-            merged[item.date] = item
+            current = merged.get(item.date)
+            if current is None:
+                merged[item.date] = item.model_copy(deep=True)
+                continue
+            merged[item.date] = OverviewDailyPoint(
+                date=item.date,
+                request_count=current.request_count + item.request_count,
+                total_tokens=current.total_tokens + item.total_tokens,
+                total_cost_usd=current.total_cost_usd + item.total_cost_usd,
+                wait_time_ms=current.wait_time_ms + item.wait_time_ms,
+                successful_requests=current.successful_requests + item.successful_requests,
+                failed_requests=current.failed_requests + item.failed_requests,
+            )
         return [merged[date] for date in sorted(merged)]
 
     async def _imported_daily_points(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[OverviewDailyPoint]:
