@@ -168,10 +168,15 @@ function siteSubtitle(site: Site) {
   return site.protocols.map((item) => protocolLabel(item.protocol)).join(' / ')
 }
 
-function siteEndpointSummary(site: Site) {
+function siteEndpointSummary(site: Site, locale: string = 'zh-CN') {
   const enabled = site.base_urls.filter((item) => item.enabled)
-  if (enabled.length) return enabled[0].url
-  return site.base_urls[0]?.url || ''
+  const firstUrl = enabled[0]?.url ?? site.base_urls[0]?.url ?? ''
+  const extraCount = enabled.length > 1 ? enabled.length - 1 : (site.base_urls.length > 1 ? site.base_urls.length - 1 : 0)
+  if (extraCount > 0) {
+    const suffix = locale === 'zh-CN' ? ` + ${extraCount}个地址` : ` + ${extraCount} more`
+    return firstUrl + suffix
+  }
+  return firstUrl
 }
 
 function siteModelCount(site: Site) {
@@ -480,12 +485,12 @@ export function ChannelsScreen() {
     (sites ?? []).map((site) => ({
       ...site,
       subtitle: siteSubtitle(site),
-      protocol_count: site.protocols.length,
+      protocol_count: site.protocols.filter((p) => p.enabled).length,
       credential_count: site.credentials.length,
       model_count: siteModelCount(site),
-      endpoint_summary: siteEndpointSummary(site),
+      endpoint_summary: siteEndpointSummary(site, locale),
     }))
-  ), [sites])
+  ), [sites, locale])
   const visibleSites = useMemo<SiteRow[]>(() => {
     const keyword = search.trim().toLowerCase()
     const filtered = siteRows.filter((site) => {
