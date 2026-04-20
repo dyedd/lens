@@ -1069,7 +1069,6 @@ export function GroupsScreen() {
     setForm((current) => ({
       ...current,
       route_group_id: routeGroupId,
-      items: routeGroupId ? [] : current.items,
     }))
     setExpandedChannels([])
   }

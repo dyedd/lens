@@ -652,7 +652,7 @@ async def list_model_group_stats(
 async def list_model_prices(
     _: Any = Depends(get_current_admin),
 ) -> ModelPriceListResponse:
-    await app_state.domain_store.prune_model_prices_to_groups()
+    await app_state.domain_store.prune_model_prices_to_groups(include_routed=True)
     return await app_state.domain_store.list_model_prices()
 
 
@@ -2260,7 +2260,7 @@ def _extract_response_usage(
 
 
 async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) -> None:
-    group_names = await state.domain_store.list_group_names()
+    group_names = await state.domain_store.list_group_names(include_routed=True)
     if not group_names:
         await state.domain_store.replace_model_prices([])
         return

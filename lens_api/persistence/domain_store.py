@@ -125,17 +125,16 @@ class DomainStore:
 
             await session.commit()
 
-    async def list_group_names(self) -> list[str]:
+    async def list_group_names(self, *, include_routed: bool = False) -> list[str]:
         async with self._session_factory() as session:
-            rows = await session.execute(
-                select(ModelGroupEntity.name)
-                .where(ModelGroupEntity.route_group_id == "")
-                .order_by(ModelGroupEntity.name.asc())
-            )
+            query = select(ModelGroupEntity.name).order_by(ModelGroupEntity.name.asc())
+            if not include_routed:
+                query = query.where(ModelGroupEntity.route_group_id == "")
+            rows = await session.execute(query)
             return [str(item) for item in rows.scalars().all() if str(item).strip()]
 
-    async def prune_model_prices_to_groups(self) -> None:
-        group_names = await self.list_group_names()
+    async def prune_model_prices_to_groups(self, *, include_routed: bool = False) -> None:
+        group_names = await self.list_group_names(include_routed=include_routed)
         normalized_keys = {normalize_model_key(item) for item in group_names if normalize_model_key(item)}
         async with self._session_factory() as session:
             if normalized_keys:
@@ -526,8 +525,7 @@ class DomainStore:
             )
             session.add(entity)
             await session.flush()
-            if route_group is None:
-                await self._replace_group_items(session, entity.id, payload.items, channels_by_id, channel_site_names)
+            await self._replace_group_items(session, entity.id, payload.items, channels_by_id, channel_site_names)
             await session.commit()
             await session.refresh(entity)
             hydrated = await self._hydrate_groups(session, [entity])
@@ -556,7 +554,7 @@ class DomainStore:
             if next_route_group_id and has_inbound_route_group:
                 raise ValueError('Execution groups referenced by route groups cannot become route groups')
             current_items = await self._load_group_items(session, [group_id])
-            next_items = [] if next_route_group_id else (
+            next_items = (
                 payload.items if payload.items is not None else [
                     ModelGroupItemInput(channel_id=item.channel_id, credential_id=item.credential_id, model_name=item.model_name, enabled=item.enabled)
                     for item in current_items.get(group_id, [])
@@ -584,10 +582,9 @@ class DomainStore:
                 else:
                     setattr(entity, key, value)
 
-            if payload.items is not None or payload.protocol is not None or payload.route_group_id is not None:
+            if payload.items is not None or payload.protocol is not None:
                 await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
-                if route_group is None:
-                    await self._replace_group_items(session, group_id, next_items, channels_by_id, channel_site_names)
+                await self._replace_group_items(session, group_id, next_items, channels_by_id, channel_site_names)
 
             await session.commit()
             await session.refresh(entity)
@@ -635,6 +632,7 @@ class DomainStore:
             raise ValueError(f'Model group already exists for protocol={protocol}: {normalized_name}')
 
         normalized_route_group_id = route_group_id.strip()
+        route_group: ModelGroupEntity | None = None
         if normalized_route_group_id:
             if exclude_group_id is not None and normalized_route_group_id == exclude_group_id:
                 raise ValueError('Model group cannot route to itself')
@@ -645,12 +643,9 @@ class DomainStore:
                 raise ValueError(f'Route target protocol mismatch: {route_group.name}')
             if route_group.route_group_id.strip():
                 raise ValueError(f'Route target must be an execution group: {route_group.name}')
-            if items:
-                raise ValueError('Route groups cannot define channel members')
-            return route_group, {}, {}
 
         if not items:
-            return None, {}, {}
+            return route_group, {}, {}
 
         channel_ids = list(dict.fromkeys(item.channel_id for item in items))
         channel_result = await session.execute(select(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(channel_ids)))
@@ -699,7 +694,7 @@ class DomainStore:
             elif not any(model_name == item.model_name for _, model_name in channel_models):
                 raise ValueError(f'Model not found in channel {item.channel_id}: {item.model_name}')
 
-        return None, channels_by_id, channel_site_names
+        return route_group, channels_by_id, channel_site_names
 
     async def _hydrate_groups(self, session: AsyncSession, entities: list[ModelGroupEntity]) -> list[ModelGroup]:
         if not entities:
