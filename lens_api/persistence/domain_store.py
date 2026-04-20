@@ -28,6 +28,9 @@ SETTING_RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
 SETTING_CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"
 SETTING_CIRCUIT_BREAKER_COOLDOWN = "circuit_breaker_cooldown"
 SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown"
+SETTING_HEALTH_WINDOW_SECONDS = "health_window_seconds"
+SETTING_HEALTH_PENALTY_WEIGHT = "health_penalty_weight"
+SETTING_HEALTH_MIN_SAMPLES = "health_min_samples"
 SETTING_SITE_NAME = "site_name"
 SETTING_SITE_LOGO_URL = "site_logo_url"
 
@@ -845,6 +848,9 @@ class DomainStore:
             "circuit_breaker_threshold": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_THRESHOLD), default=3),
             "circuit_breaker_cooldown": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_COOLDOWN), default=60),
             "circuit_breaker_max_cooldown": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN), default=600),
+            "health_window_seconds": self._parse_int(mapping.get(SETTING_HEALTH_WINDOW_SECONDS), default=300),
+            "health_penalty_weight": self._parse_float(mapping.get(SETTING_HEALTH_PENALTY_WEIGHT), default=0.5),
+            "health_min_samples": self._parse_int(mapping.get(SETTING_HEALTH_MIN_SAMPLES), default=10),
             "site_name": mapping.get(SETTING_SITE_NAME, "Lens").strip() or "Lens",
             "site_logo_url": mapping.get(SETTING_SITE_LOGO_URL, "").strip(),
         }
@@ -1871,6 +1877,15 @@ class DomainStore:
             return default
         try:
             return int(value.strip())
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _parse_float(value: str | None, *, default: float) -> float:
+        if value is None:
+            return default
+        try:
+            return float(value.strip())
         except ValueError:
             return default
 
