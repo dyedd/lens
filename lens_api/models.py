@@ -524,6 +524,120 @@ class SettingsUpdate(BaseModel):
     items: list[SettingItem]
 
 
+class ConfigBackupImportedStatsTotal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input_token: int = 0
+    output_token: int = 0
+    input_cost: float = 0.0
+    output_cost: float = 0.0
+    wait_time: int = 0
+    request_success: int = 0
+    request_failed: int = 0
+
+
+class ConfigBackupImportedStatsDaily(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: str
+    input_token: int = 0
+    output_token: int = 0
+    input_cost: float = 0.0
+    output_cost: float = 0.0
+    wait_time: int = 0
+    request_success: int = 0
+    request_failed: int = 0
+
+
+class ConfigBackupRequestLogDailyStat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: str
+    request_count: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    wait_time_ms: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
+
+
+class ConfigBackupOverviewModelDailyStat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: str
+    model: str
+    requests: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+
+
+class ConfigBackupStatsSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    imported_total: ConfigBackupImportedStatsTotal | None = None
+    imported_daily: list[ConfigBackupImportedStatsDaily] = Field(default_factory=list)
+    request_daily: list[ConfigBackupRequestLogDailyStat] = Field(default_factory=list)
+    model_daily: list[ConfigBackupOverviewModelDailyStat] = Field(default_factory=list)
+
+
+class ConfigBackupRequestLog(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: ProtocolKind
+    requested_group_name: str | None = None
+    resolved_group_name: str | None = None
+    upstream_model_name: str | None = None
+    channel_id: str | None = None
+    channel_name: str | None = None
+    gateway_key_id: str | None = None
+    status_code: int
+    success: bool
+    is_stream: bool = False
+    first_token_latency_ms: int = 0
+    latency_ms: int = 0
+    input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
+    error_message: str | None = None
+    created_at: str
+    stats_archived: bool = False
+    request_content: str | None = None
+    response_content: str | None = None
+    attempts: list["RequestLogAttempt"] = Field(default_factory=list)
+
+
+class ConfigBackupDump(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = 1
+    exported_at: str
+    lens_version: str
+    include_request_logs: bool = False
+    include_gateway_api_keys: bool = False
+    settings: list[SettingItem] = Field(default_factory=list)
+    sites: list[SiteConfig] = Field(default_factory=list)
+    groups: list[ModelGroup] = Field(default_factory=list)
+    model_prices: list[ModelPriceItem] = Field(default_factory=list)
+    stats: ConfigBackupStatsSnapshot = Field(default_factory=ConfigBackupStatsSnapshot)
+    gateway_api_keys: list[str] = Field(default_factory=list)
+    request_logs: list[ConfigBackupRequestLog] = Field(default_factory=list)
+
+
+class ConfigImportResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rows_affected: dict[str, int] = Field(default_factory=dict)
+
+
 class RequestLogItem(BaseModel):
     id: int
     protocol: ProtocolKind

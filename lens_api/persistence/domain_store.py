@@ -55,6 +55,9 @@ class DomainStore:
         self._settings_cache = None
         self._settings_cache_at = 0.0
 
+    def invalidate_settings_cache(self) -> None:
+        self._clear_settings_cache()
+
     @staticmethod
     def _is_missing_sqlite_table(exc: OperationalError, table_name: str) -> bool:
         message = str(getattr(exc, "orig", exc)).lower()
