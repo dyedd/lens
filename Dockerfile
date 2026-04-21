@@ -22,15 +22,13 @@ ENV NODE_ENV=production \
 
 RUN pnpm build
 
-FROM node:22-bookworm-slim AS runner
+FROM python:3.11-slim-bookworm AS runner
 
 LABEL org.opencontainers.image.source="https://github.com/dyedd/lens"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    VIRTUAL_ENV=/opt/venv \
-    PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
@@ -40,7 +38,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends bash ca-certificates python3 python3-venv tini \
+    && apt-get install --yes --no-install-recommends \
+       bash ca-certificates curl tini \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install --yes --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md alembic.ini ./
@@ -48,20 +49,14 @@ COPY lens_api ./lens_api
 COPY migrations ./migrations
 COPY scripts/docker/app-entrypoint.sh /usr/local/bin/app-entrypoint
 
-RUN python3 -m venv /opt/venv \
-    && python -m pip install --upgrade pip \
-    && python -m pip install . \
+RUN pip install --upgrade pip \
+    && pip install . \
     && chmod +x /usr/local/bin/app-entrypoint \
-    && groupadd --system app \
-    && useradd --system --gid app --create-home --home-dir /home/app app \
-    && mkdir -p /app/data /app/ui/.next \
-    && chown -R app:app /app /home/app /opt/venv
+    && mkdir -p /app/data
 
-COPY --from=ui-builder --chown=app:app /app/ui/.next/standalone /app/ui
-COPY --from=ui-builder --chown=app:app /app/ui/.next/static /app/ui/.next/static
-COPY --from=ui-builder --chown=app:app /app/ui/public /app/ui/public
-
-USER app
+COPY --from=ui-builder /app/ui/.next/standalone /app/ui
+COPY --from=ui-builder /app/ui/.next/static /app/ui/.next/static
+COPY --from=ui-builder /app/ui/public /app/ui/public
 
 EXPOSE 3000 18080
 
