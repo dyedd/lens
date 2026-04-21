@@ -26,6 +26,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
+import { ConfigTransferCard } from "@/components/settings/config-transfer-card"
 import {
   ApiError,
   type AdminProfile,
@@ -767,10 +768,11 @@ export function SettingsScreen() {
         </div>
 
         <Tabs defaultValue="general" className="gap-4">
-          <TabsList className="grid h-auto w-full grid-cols-3">
+          <TabsList className="grid h-auto w-full grid-cols-4">
             <TabsTrigger value="general">{titleForLocale(locale, "站点", "General")}</TabsTrigger>
             <TabsTrigger value="gateway">{titleForLocale(locale, "系统", "System")}</TabsTrigger>
             <TabsTrigger value="access">{titleForLocale(locale, "密钥", "Keys")}</TabsTrigger>
+            <TabsTrigger value="transfer">{titleForLocale(locale, "导入导出", "Import/Export")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="mt-0">
@@ -790,6 +792,10 @@ export function SettingsScreen() {
 
           <TabsContent value="access" className="mt-0">
             {renderApiKeyCard()}
+          </TabsContent>
+
+          <TabsContent value="transfer" className="mt-0">
+            <ConfigTransferCard locale={locale} />
           </TabsContent>
         </Tabs>
 

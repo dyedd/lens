@@ -215,6 +215,104 @@ export type SettingItem = {
   value: string
 }
 
+export type ConfigBackupImportedStatsTotal = {
+  input_token: number
+  output_token: number
+  input_cost: number
+  output_cost: number
+  wait_time: number
+  request_success: number
+  request_failed: number
+}
+
+export type ConfigBackupImportedStatsDaily = {
+  date: string
+  input_token: number
+  output_token: number
+  input_cost: number
+  output_cost: number
+  wait_time: number
+  request_success: number
+  request_failed: number
+}
+
+export type ConfigBackupRequestLogDailyStat = {
+  date: string
+  request_count: number
+  successful_requests: number
+  failed_requests: number
+  wait_time_ms: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  input_cost_usd: number
+  output_cost_usd: number
+  total_cost_usd: number
+}
+
+export type ConfigBackupOverviewModelDailyStat = {
+  date: string
+  model: string
+  requests: number
+  total_tokens: number
+  total_cost_usd: number
+}
+
+export type ConfigBackupStatsSnapshot = {
+  imported_total?: ConfigBackupImportedStatsTotal | null
+  imported_daily: ConfigBackupImportedStatsDaily[]
+  request_daily: ConfigBackupRequestLogDailyStat[]
+  model_daily: ConfigBackupOverviewModelDailyStat[]
+}
+
+export type ConfigBackupRequestLog = {
+  protocol: ProtocolKind
+  requested_group_name?: string | null
+  resolved_group_name?: string | null
+  upstream_model_name?: string | null
+  channel_id?: string | null
+  channel_name?: string | null
+  gateway_key_id?: string | null
+  status_code: number
+  success: boolean
+  is_stream: boolean
+  first_token_latency_ms: number
+  latency_ms: number
+  input_tokens: number
+  cache_read_input_tokens: number
+  cache_write_input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  input_cost_usd: number
+  output_cost_usd: number
+  total_cost_usd: number
+  error_message?: string | null
+  created_at: string
+  stats_archived: boolean
+  request_content?: string | null
+  response_content?: string | null
+  attempts: RequestLogAttempt[]
+}
+
+export type ConfigBackupDump = {
+  version: number
+  exported_at: string
+  lens_version: string
+  include_request_logs: boolean
+  include_gateway_api_keys: boolean
+  settings: SettingItem[]
+  sites: Site[]
+  groups: ModelGroup[]
+  model_prices: ModelPriceItem[]
+  stats: ConfigBackupStatsSnapshot
+  gateway_api_keys: string[]
+  request_logs: ConfigBackupRequestLog[]
+}
+
+export type ConfigImportResult = {
+  rows_affected: Record<string, number>
+}
+
 export type PublicBranding = {
   site_name: string
   logo_url: string
@@ -449,9 +547,10 @@ async function readErrorMessage(response: Response): Promise<string> {
   return text || ('Request failed with status ' + response.status)
 }
 
-export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+function buildApiHeaders(init?: RequestInit) {
   const headers = new Headers(init?.headers)
-  if (init?.body && !headers.has('content-type')) {
+
+  if (typeof init?.body === 'string' && !headers.has('content-type')) {
     headers.set('content-type', 'application/json')
   }
 
@@ -460,14 +559,93 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     headers.set('authorization', 'Bearer ' + token)
   }
 
+  return headers
+}
+
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers = buildApiHeaders(init)
+
   const response = await fetch('/api' + path, { ...init, headers })
   if (!response.ok) {
     throw new ApiError(await readErrorMessage(response), response.status)
   }
+
+  return response
+}
+
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await apiFetch(path, init)
 
   if (response.status === 204) {
     return undefined as T
   }
 
   return response.json() as Promise<T>
+}
+
+function parseDownloadFilename(contentDisposition: string | null) {
+  if (!contentDisposition) {
+    return null
+  }
+  const match = contentDisposition.match(/filename="([^"]+)"/i)
+  return match?.[1] ?? null
+}
+
+function fallbackBackupFilename() {
+  const date = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const timestamp = [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join('')
+  return 'lens-backup-' + timestamp + '.json'
+}
+
+async function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+export async function downloadConfigBackup(options?: {
+  includeLogs?: boolean
+  includeGatewayApiKeys?: boolean
+}) {
+  const params = new URLSearchParams()
+  params.set('include_logs', String(Boolean(options?.includeLogs)))
+  params.set(
+    'include_gateway_api_keys',
+    String(Boolean(options?.includeGatewayApiKeys))
+  )
+
+  const response = await apiFetch('/admin/settings/export?' + params.toString(), {
+    method: 'GET',
+  })
+  const blob = await response.blob()
+  const filename =
+    parseDownloadFilename(response.headers.get('content-disposition')) ??
+    fallbackBackupFilename()
+  await downloadBlob(blob, filename)
+  return { filename }
+}
+
+export async function importConfigBackup(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return apiRequest<ConfigImportResult>('/admin/settings/import', {
+    method: 'POST',
+    body: formData,
+  })
 }

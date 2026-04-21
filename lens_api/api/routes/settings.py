@@ -16,3 +16,14 @@ def register(app: FastAPI, service_module) -> None:
         methods=["PUT"],
         response_model=list[service_module.SettingItem],
     )
+    app.add_api_route(
+        "/api/admin/settings/export",
+        service_module.export_settings_bundle,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/api/admin/settings/import",
+        service_module.import_settings_bundle,
+        methods=["POST"],
+        response_model=service_module.ConfigImportResult,
+    )

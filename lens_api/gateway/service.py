@@ -12,7 +12,7 @@ from time import perf_counter
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import OperationalError
@@ -32,6 +32,8 @@ from ..models import (
     AppInfo,
     AuthTokenResponse,
     ChannelConfig,
+    ConfigBackupDump,
+    ConfigImportResult,
     ErrorResponse,
     ModelGroup,
     ModelGroupCandidatesRequest,
@@ -64,6 +66,7 @@ from ..models import (
     SiteUpdate,
 )
 from ..persistence.admin_store import AdminStore
+from ..persistence.backup_store import BackupStore
 from ..persistence.channel_store import ChannelStore
 from ..persistence.domain_store import (
     SETTING_GATEWAY_API_KEY_HINT,
@@ -106,6 +109,7 @@ class AppState:
         self.admin_store = AdminStore(self.session_factory)
         self.domain_store = DomainStore(self.session_factory)
         self.store = ChannelStore(self.session_factory)
+        self.backup_store = BackupStore(self.session_factory)
         self.router = RoundRobinRouter()
 
     @staticmethod
@@ -749,6 +753,47 @@ async def update_settings(
             continue
         normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
     return await app_state.domain_store.upsert_settings(normalized_items)
+
+
+async def export_settings_bundle(
+    include_logs: bool = False,
+    include_gateway_api_keys: bool = False,
+    _: Any = Depends(get_current_admin),
+) -> JSONResponse:
+    dump = await app_state.backup_store.export_dump(
+        lens_version=_read_system_version(),
+        include_request_logs=include_logs,
+        include_gateway_api_keys=include_gateway_api_keys,
+    )
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    return JSONResponse(
+        content=dump.model_dump(mode="json"),
+        headers={
+            "content-disposition": f'attachment; filename="lens-backup-{timestamp}.json"',
+        },
+    )
+
+
+async def import_settings_bundle(
+    file: UploadFile = File(...), _: Any = Depends(get_current_admin)
+) -> ConfigImportResult:
+    try:
+        payload = await file.read()
+    finally:
+        await file.close()
+
+    try:
+        dump = ConfigBackupDump.model_validate_json(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid backup file") from exc
+
+    try:
+        result = await app_state.backup_store.import_dump(dump)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    app_state.domain_store.invalidate_settings_cache()
+    return result
 
 
 async def proxy_openai_chat(
