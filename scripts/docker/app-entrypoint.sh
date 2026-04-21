@@ -7,6 +7,8 @@ if [ "${LENS_SKIP_DB_UPGRADE:-0}" != "1" ]; then
   python -m lens_api.cli db upgrade
 fi
 
+python -m lens_api.cli seed-admin --username admin --password admin
+
 python -m lens_api.cli serve &
 backend_pid=$!
 

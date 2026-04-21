@@ -76,19 +76,15 @@ cp .env.example .env
 docker compose up --build
 ```
 
-首次启动后，如需初始化管理员账号：
-
-```bash
-docker compose exec app python -m lens_api.cli seed-admin --username admin --password admin
-```
-
 说明：
 
 - 单个容器会同时运行后端 API 和前端 Next 服务
 - 容器启动时会自动执行 `lens db upgrade`
+- 容器启动时会自动尝试初始化默认管理员 `admin/admin`；如果数据库里已存在任意管理员，则会跳过，不会覆盖现有账号
 - 宿主机 `./data` 会挂载到容器内 `/app/data`，SQLite 数据会持久化保留
 - 前端默认通过 `LENS_UI_BACKEND_BASE_URL=http://127.0.0.1:18080` 访问同容器内的后端服务；这个值在 Docker 中属于前端构建参数，如需覆盖，需要在根目录 `.env` 中修改后重新执行 `docker compose up --build`
 - 如需跳过启动时自动迁移，可为后端设置 `LENS_SKIP_DB_UPGRADE=1`
+- 首次登录后请尽快在设置页修改默认管理员用户名或密码
 - `http://127.0.0.1:3000` 提供管理后台，`http://127.0.0.1:18080` 仍可直接访问后端和网关接口
 
 ### 直接拉取镜像

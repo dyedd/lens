@@ -63,9 +63,12 @@ def seed_admin(args: argparse.Namespace) -> None:
         engine = create_engine(settings.database_url)
         session_factory = create_session_factory(engine)
         store = AdminStore(session_factory)
-        await store.ensure_default_admin(args.username, args.password)
+        created = await store.ensure_default_admin(args.username, args.password)
         await engine.dispose()
-        print(f"seeded admin: {args.username}")
+        if created:
+            print(f"seeded admin: {args.username}")
+        else:
+            print("admin user already exists; skipped seed")
 
     asyncio.run(_run())
 
@@ -105,7 +108,7 @@ def main(argv: list[str] | None = None) -> None:
     srv.add_argument("--reload", action="store_true", help="Enable auto-reload on code changes")
     srv.set_defaults(func=serve)
 
-    seed = sub.add_parser("seed-admin", help="Create or update an admin user")
+    seed = sub.add_parser("seed-admin", help="Create an initial admin user when none exists")
     seed.add_argument("--username", required=True, help="Admin username")
     seed.add_argument("--password", required=True, help="Admin password")
     seed.set_defaults(func=seed_admin)

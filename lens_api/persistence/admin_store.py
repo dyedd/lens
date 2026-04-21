@@ -11,12 +11,12 @@ class AdminStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
-    async def ensure_default_admin(self, username: str, password: str) -> None:
+    async def ensure_default_admin(self, username: str, password: str) -> bool:
         async with self._session_factory() as session:
             result = await session.execute(select(AdminUserEntity.id).limit(1))
             existing = result.scalar_one_or_none()
             if existing is not None:
-                return
+                return False
 
             session.add(
                 AdminUserEntity(
@@ -26,6 +26,7 @@ class AdminStore:
                 )
             )
             await session.commit()
+            return True
 
     async def authenticate(self, username: str, password: str) -> AdminUserEntity | None:
         async with self._session_factory() as session:
