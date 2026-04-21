@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+mkdir -p /app/data
+
 if [ "${LENS_SKIP_DB_UPGRADE:-0}" != "1" ]; then
   python -m lens_api.cli db upgrade
 fi
