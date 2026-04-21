@@ -3,6 +3,7 @@
 import Image from "next/image"
 import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   Check,
   CircleAlert,
@@ -25,7 +26,6 @@ import { Input } from "@/components/ui/input"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { useToast } from "@/components/ui/toast"
 import { ConfigTransferCard } from "@/components/settings/config-transfer-card"
 import {
   ApiError,
@@ -196,7 +196,6 @@ function SettingCard({
 export function SettingsScreen() {
   const queryClient = useQueryClient()
   const { locale, setLocale } = useI18n()
-  const toast = useToast()
   const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
@@ -217,8 +216,6 @@ export function SettingsScreen() {
     newPassword: "",
     confirmPassword: "",
   })
-  const [error, setError] = useState("")
-  const [saved, setSaved] = useState("")
   const [saving, setSaving] = useState(false)
   const [clearingLogs, setClearingLogs] = useState(false)
   const [updatingAccount, setUpdatingAccount] = useState(false)
@@ -266,7 +263,6 @@ export function SettingsScreen() {
       }, 1500)
     } catch {
       const message = titleForLocale(locale, "复制失败", "Failed to copy")
-      setError(message)
       toast.error(message)
     }
   }
@@ -281,8 +277,6 @@ export function SettingsScreen() {
 
   async function submitSettings() {
     setSaving(true)
-    setError("")
-    setSaved("")
     try {
       const items: SettingItem[] = [
         { key: GATEWAY_API_KEYS, value: gatewayKeys.join("\n") },
@@ -306,7 +300,6 @@ export function SettingsScreen() {
         body: JSON.stringify({ items }),
       })
       const message = titleForLocale(locale, "设置已保存", "Settings saved")
-      setSaved(message)
       toast.success(message)
       await refresh()
     } catch (requestError) {
@@ -314,7 +307,6 @@ export function SettingsScreen() {
         requestError instanceof ApiError
           ? requestError.message
           : titleForLocale(locale, "保存设置失败", "Failed to save settings")
-      setError(message)
       toast.error(message)
     } finally {
       setSaving(false)
@@ -327,12 +319,9 @@ export function SettingsScreen() {
       return
     }
     setClearingLogs(true)
-    setError("")
-    setSaved("")
     try {
       await apiRequest<void>("/admin/request-logs", { method: "DELETE" })
       const message = titleForLocale(locale, "请求日志已清空", "Request logs cleared")
-      setSaved(message)
       toast.success(message)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
@@ -348,7 +337,6 @@ export function SettingsScreen() {
         requestError instanceof ApiError
           ? requestError.message
           : titleForLocale(locale, "清空请求日志失败", "Failed to clear request logs")
-      setError(message)
       toast.error(message)
     } finally {
       setClearingLogs(false)
@@ -357,8 +345,6 @@ export function SettingsScreen() {
 
   async function submitAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setError("")
-    setSaved("")
 
     const nextUsername = accountForm.username.trim()
     const wantsPasswordUpdate = Boolean(
@@ -368,28 +354,24 @@ export function SettingsScreen() {
 
     if (!nextUsername) {
       const message = titleForLocale(locale, "用户名不能为空", "Username is required")
-      setError(message)
       toast.error(message)
       return
     }
 
     if (!usernameChanged && !wantsPasswordUpdate) {
       const message = titleForLocale(locale, "没有需要保存的账号变更", "No account changes to save")
-      setSaved(message)
       toast.success(message)
       return
     }
 
     if (wantsPasswordUpdate && (!accountForm.currentPassword || !accountForm.newPassword)) {
       const message = titleForLocale(locale, "请填写完整密码", "Please fill in both passwords")
-      setError(message)
       toast.error(message)
       return
     }
 
     if (accountForm.newPassword !== accountForm.confirmPassword) {
       const message = titleForLocale(locale, "两次新密码不一致", "The new passwords do not match")
-      setError(message)
       toast.error(message)
       return
     }
@@ -410,7 +392,6 @@ export function SettingsScreen() {
       queryClient.setQueryData(["auth-me"], response.profile)
       await queryClient.invalidateQueries({ queryKey: ["auth-me"] })
       const message = titleForLocale(locale, "账号已更新", "Account updated")
-      setSaved(message)
       toast.success(message)
       setAccountForm({
         username: response.profile.username,
@@ -423,7 +404,6 @@ export function SettingsScreen() {
         requestError instanceof ApiError
           ? requestError.message
           : titleForLocale(locale, "更新账号失败", "Failed to update account")
-      setError(message)
       toast.error(message)
     } finally {
       setUpdatingAccount(false)
@@ -798,9 +778,6 @@ export function SettingsScreen() {
             <ConfigTransferCard locale={locale} />
           </TabsContent>
         </Tabs>
-
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        {saved ? <p className="text-sm text-primary">{saved}</p> : null}
       </div>
     </section>
   )

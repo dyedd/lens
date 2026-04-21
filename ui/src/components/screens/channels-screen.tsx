@@ -456,7 +456,6 @@ export function ChannelsScreen() {
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null)
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
-  const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [fetchingProtocolIndex, setFetchingProtocolIndex] = useState<number | null>(null)
   const [advancedProtocolIndex, setAdvancedProtocolIndex] = useState<number | null>(null)
@@ -542,7 +541,6 @@ export function ChannelsScreen() {
   function applyPreparedForm(nextForm: FormState) {
     setForm(nextForm)
     setFormSnapshot(JSON.stringify(toPayload(nextForm)))
-    setError('')
   }
 
   function confirmDiscardChanges() {
@@ -568,7 +566,6 @@ export function ChannelsScreen() {
     if (!confirmDiscardChanges()) return
     setDialogOpen(false)
     setEditingSiteId(null)
-    setError('')
   }
 
   function updateProtocolFilter(protocolIndex: number, credentialId: string | null) {
@@ -588,11 +585,9 @@ export function ChannelsScreen() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setError('')
     const duplicatedProtocols = duplicateProtocolKinds(form.protocols)
     if (duplicatedProtocols.size) {
       const message = locale === 'zh-CN' ? '同一个渠道内不允许重复协议' : 'Duplicate protocols are not allowed in one channel'
-      setError(message)
       toast.error(message)
       return
     }
@@ -615,14 +610,12 @@ export function ChannelsScreen() {
       await invalidateChannelData()
     } catch (e) {
       const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '保存渠道失败' : 'Failed to save channel')
-      setError(message)
       toast.error(message)
     }
   }
 
   async function removeSite(site: Site) {
     setBusyId(site.id)
-    setError('')
     try {
       await apiRequest<void>(`/admin/sites/${site.id}`, { method: 'DELETE' })
       queryClient.setQueryData<Site[]>(['sites'], (current) => (current ?? []).filter((item) => item.id !== site.id))
@@ -777,7 +770,6 @@ export function ChannelsScreen() {
       ? protocol.model_filter_credential_id || ''
       : activeCredentials[0]?.id || ''
     setFetchingProtocolIndex(protocolIndex)
-    setError('')
     try {
       const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
       const activeBaseUrl = boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
@@ -1003,7 +995,6 @@ export function ChannelsScreen() {
         setDialogOpen(open)
         if (!open) {
           setEditingSiteId(null)
-          setError('')
         }
       }}>
         <AppDialogContent className="max-w-4xl" title={editingSiteId ? (locale === 'zh-CN' ? '编辑渠道' : 'Edit channel') : (locale === 'zh-CN' ? '新建渠道' : 'Create channel')}>
@@ -1206,8 +1197,6 @@ export function ChannelsScreen() {
                 </div>
               </section>
             </div>
-
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-3">
               <Button type="button" variant="outline" onClick={closeEditor}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
               <Button type="submit">{editingSiteId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</Button>

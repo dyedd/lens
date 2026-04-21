@@ -600,7 +600,6 @@ export function GroupsScreen() {
   const [candidateSearch, setCandidateSearch] = useState('')
   const [form, setForm] = useState<FormState>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null)
@@ -813,14 +812,12 @@ export function GroupsScreen() {
   function openCreate() {
     setEditingId(null)
     setForm(emptyForm)
-    setError('')
     setDialogOpen(true)
   }
 
   function openEdit(item: ModelGroup) {
     setEditingId(item.id)
     setForm(toForm(item))
-    setError('')
     setDialogOpen(true)
   }
 
@@ -875,7 +872,6 @@ export function GroupsScreen() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setError('')
     try {
       const savedGroup = await saveGroup(form, editingId)
       if (!savedGroup.route_group_id) {
@@ -894,21 +890,18 @@ export function GroupsScreen() {
         : e instanceof Error
           ? e.message
           : (locale === 'zh-CN' ? '保存模型组失败' : 'Failed to save group')
-      setError(message)
       toast.error(message)
     }
   }
 
   async function syncPrices() {
     setSyncingPrices(true)
-    setError('')
     try {
       await apiRequest('/admin/model-price-sync-jobs', { method: 'POST' })
       await queryClient.invalidateQueries({ queryKey: ['groups'] })
       toast.success(locale === 'zh-CN' ? '模型价格已同步' : 'Model prices synced')
     } catch (e) {
       const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '同步模型价格失败' : 'Failed to sync model prices')
-      setError(message)
       toast.error(message)
     } finally {
       setSyncingPrices(false)
@@ -917,7 +910,6 @@ export function GroupsScreen() {
 
   async function remove(item: ModelGroup) {
     setBusyId(item.id)
-    setError('')
     try {
       await apiRequest<void>('/admin/model-groups/' + item.id, { method: 'DELETE' })
       setDeleteTarget(null)
@@ -925,7 +917,6 @@ export function GroupsScreen() {
       toast.success(locale === 'zh-CN' ? '模型组已删除' : 'Group deleted')
     } catch (e) {
       const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除模型组失败' : 'Failed to delete group')
-      setError(message)
       toast.error(message)
     } finally {
       setBusyId(null)
@@ -964,13 +955,11 @@ export function GroupsScreen() {
 
   async function updateGroupPartial(group: ModelGroup, updates: Partial<FormState>) {
     setBusyId(group.id)
-    setError('')
     try {
       await saveGroup({ ...toForm(group), ...updates }, group.id)
       return true
     } catch (e) {
       const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '更新模型组失败' : 'Failed to update group')
-      setError(message)
       toast.error(message)
       return false
     } finally {
@@ -1521,7 +1510,6 @@ export function GroupsScreen() {
             </div>
 
             <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">
-              {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
               <div className="flex justify-end gap-3">
                 <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
                 <Button type="submit">{editingId ? (locale === 'zh-CN' ? '保存模型组' : 'Save group') : (locale === 'zh-CN' ? '创建模型组' : 'Create group')}</Button>

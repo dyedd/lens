@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
+import { toast } from 'sonner'
 import { ApiError, apiRequest, type PublicBranding } from '@/lib/api'
 import { setStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
@@ -28,7 +29,6 @@ export function LoginScreen() {
   })
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('admin')
-  const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const siteName = branding?.site_name?.trim() || 'Lens'
   const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
@@ -36,7 +36,6 @@ export function LoginScreen() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitting(true)
-    setError('')
 
     try {
       const data = await apiRequest<LoginResponse>('/admin/session', {
@@ -46,7 +45,7 @@ export function LoginScreen() {
       setStoredToken(data.access_token)
       router.push('/')
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Login failed')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Login failed')
     } finally {
       setSubmitting(false)
     }
@@ -105,9 +104,6 @@ export function LoginScreen() {
                   autoComplete="current-password"
                 />
               </label>
-
-              {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
               <Button className="h-10 w-full" type="submit" disabled={submitting}>
                 {submitting ? t.signingIn : t.signIn}
               </Button>

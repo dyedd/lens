@@ -2,6 +2,7 @@
 
 import { Fragment, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -27,7 +28,6 @@ import { cn } from '@/lib/utils'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { useToast } from '@/components/ui/toast'
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
 import {
   Item,
@@ -494,7 +494,6 @@ function JsonViewer({
   emptyText: string
   locale: 'zh-CN' | 'en-US'
 }) {
-  const toast = useToast()
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(true)
 
