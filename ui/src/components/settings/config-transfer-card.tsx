@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useRef, useState, useTransition } from "react"
+import { toast } from "sonner"
 import {
   CircleAlert,
   Database,
@@ -40,7 +41,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item"
 import { Switch } from "@/components/ui/switch"
-import { useToast } from "@/components/ui/toast"
 import {
   ApiError,
   type ConfigBackupDump,
@@ -164,7 +164,6 @@ function PreviewMeta({
 }
 
 export function ConfigTransferCard({ locale }: { locale: Locale }) {
-  const toast = useToast()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [isPreviewPending, startPreviewTransition] = useTransition()
