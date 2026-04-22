@@ -1,8 +1,9 @@
 "use client"
 
-import { Fragment, useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import JsonView from '@uiw/react-json-view'
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -19,7 +20,6 @@ import {
   ServerCog,
   Waypoints,
   Zap,
-  ChevronRight,
 } from 'lucide-react'
 import { OverviewModelAnalytics, ProtocolKind, RequestLogDetail, RequestLogItem, RequestLogPage, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -52,6 +52,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
 
 const PAGE_SIZE = 20
+const DETAIL_PREFETCH_HOVER_DELAY_MS = 120
 
 const MODEL_SERIES_PRESETS = [
   {
@@ -309,176 +310,101 @@ function ProtocolBadge({ protocol }: { protocol: RequestLogItem['protocol'] }) {
   )
 }
 
-function JsonKey({ children }: { children: React.ReactNode }) {
-  return <span className="text-sky-700 dark:text-sky-300">{children}</span>
+function normalizeLineBreaks(value: string) {
+  return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
 
-function JsonPrimitive({ value }: { value: JsonLike }) {
-  if (value === null) return <span className="text-muted-foreground">null</span>
-  if (typeof value === 'string') return <span className="text-emerald-700 dark:text-emerald-300">{'"'}{value}{'"'}</span>
-  if (typeof value === 'number') return <span className="text-amber-700 dark:text-amber-300">{String(value)}</span>
-  if (typeof value === 'boolean') return <span className="text-violet-700 dark:text-violet-300">{String(value)}</span>
-  return <span>{String(value)}</span>
+type JsonContainer = JsonLike[] | { [key: string]: JsonLike }
+type ParsedViewerContent =
+  | { isJson: true; data: JsonContainer }
+  | { isJson: false; data: string }
+
+const JSON_VIEW_STYLE = {
+  fontSize: '12px',
+  fontFamily: 'var(--font-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+  backgroundColor: 'transparent',
+  '--w-rjv-background-color': 'transparent',
+  '--w-rjv-font-family': 'var(--font-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+  '--w-rjv-color': 'var(--foreground)',
+  '--w-rjv-key-number': 'var(--primary)',
+  '--w-rjv-key-string': 'var(--primary)',
+  '--w-rjv-line-color': 'var(--border)',
+  '--w-rjv-arrow-color': 'var(--muted-foreground)',
+  '--w-rjv-info-color': 'var(--muted-foreground)',
+  '--w-rjv-curlybraces-color': 'var(--foreground)',
+  '--w-rjv-colon-color': 'var(--muted-foreground)',
+  '--w-rjv-brackets-color': 'var(--foreground)',
+  '--w-rjv-ellipsis-color': 'var(--muted-foreground)',
+  '--w-rjv-quotes-color': 'var(--muted-foreground)',
+  '--w-rjv-quotes-string-color': 'var(--chart-2)',
+  '--w-rjv-type-string-color': 'var(--chart-2)',
+  '--w-rjv-type-int-color': 'var(--chart-4)',
+  '--w-rjv-type-float-color': 'var(--chart-4)',
+  '--w-rjv-type-bigint-color': 'var(--chart-4)',
+  '--w-rjv-type-boolean-color': 'var(--chart-3)',
+  '--w-rjv-type-null-color': 'var(--muted-foreground)',
+  '--w-rjv-type-undefined-color': 'var(--muted-foreground)',
+} as CSSProperties
+
+function parseViewerContent(content: string): ParsedViewerContent {
+  try {
+    const parsed = JSON.parse(content) as JsonLike
+    if (parsed && typeof parsed === 'object') {
+      return { isJson: true, data: parsed }
+    }
+  } catch {
+    return { isJson: false, data: content }
+  }
+  return { isJson: false, data: content }
 }
 
-function isCollapsibleString(value: string) {
-  return value.length > 120 || value.includes('\n')
+function getJsonLineHeights(root: HTMLElement | null) {
+  if (!root) {
+    return []
+  }
+
+  const lineNodes = root.querySelectorAll<HTMLElement>(
+    '.w-rjv-inner > span, .w-rjv-line, .w-rjv-inner > div:not(.w-rjv-wrap)'
+  )
+
+  return Array.from(lineNodes, (node) => Math.max(Math.round(node.getBoundingClientRect().height), 24))
 }
 
-function stringPreview(value: string) {
-  const singleLine = value.replace(/\s+/g, ' ').trim()
-  if (singleLine.length <= 72) return `${'"'}${singleLine}${'"'}`
-  return `${'"'}${singleLine.slice(0, 72)}...${'"'}`
+function lineHeightsEqual(a: number[], b: number[]) {
+  return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
-function JsonLine({
-  lineNumber,
-  depth,
-  children,
-  summary = false,
-}: {
-  lineNumber: number
-  depth: number
-  children: React.ReactNode
-  summary?: boolean
-}) {
+function LineNumbersColumn({ lineHeights }: { lineHeights: number[] }) {
   return (
-    <div className={cn('grid grid-cols-[32px_minmax(0,1fr)] font-mono text-[12px] leading-6', summary && 'cursor-pointer')}>
-      <div className="select-none pr-2 text-right text-[11px] text-muted-foreground/70">{lineNumber}</div>
-      <div className="min-w-0" style={{ paddingLeft: `${4 + depth * 12}px` }}>
-        {children}
-      </div>
+    <div className="sticky left-0 z-10 border-r bg-background/95 py-3 backdrop-blur-xs">
+      {lineHeights.map((height, index) => (
+        <div
+          key={index}
+          className="flex select-none items-start justify-end pr-3 font-mono text-[11px] leading-6 text-muted-foreground/70"
+          style={{ height }}
+        >
+          {index + 1}
+        </div>
+      ))}
     </div>
   )
 }
 
-function jsonPreview(value: JsonLike) {
-  if (Array.isArray(value)) return `[${value.length}]`
-  if (value && typeof value === 'object') return `{${Object.keys(value).length}}`
-  if (typeof value === 'string') return `${'"'}${value}${'"'}`
-  return String(value)
-}
-
-function renderJsonNode({
-  name,
-  value,
-  depth,
-  counter,
-  defaultExpanded,
-}: {
-  name?: string
-  value: JsonLike
-  depth: number
-  counter: { value: number }
-  defaultExpanded: boolean
-}): React.ReactNode {
-  const isArray = Array.isArray(value)
-  const isObject = value !== null && typeof value === 'object'
-  const isLongString = typeof value === 'string' && isCollapsibleString(value)
-
-  if (isLongString) {
-    const openLine = counter.value++
-    const lines = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
-    const contentLineNumbers = lines.map(() => counter.value++)
-
-    return (
-      <details open={defaultExpanded} className="group/json-node">
-        <summary className="list-none [&::-webkit-details-marker]:hidden">
-          <JsonLine lineNumber={openLine} depth={depth} summary>
-            <span className="inline-flex size-4 items-center justify-center text-muted-foreground transition-transform group-open/json-node:rotate-90">
-              <ChevronRight size={14} />
-            </span>
-            {name ? (
-              <>
-                <JsonKey>{name.startsWith('[') ? name : <>{'"'}{name}{'"'}</>}</JsonKey>
-                <span className="text-muted-foreground">: </span>
-              </>
-            ) : null}
-            <span className="text-emerald-700 dark:text-emerald-300">{stringPreview(value)}</span>
-          </JsonLine>
-        </summary>
-        <div>
-          {lines.map((line, index) => (
-            <JsonLine key={`${contentLineNumbers[index]}-${index}`} lineNumber={contentLineNumbers[index]} depth={depth + 1}>
-              <span className="whitespace-pre-wrap break-words text-emerald-700 dark:text-emerald-300">
-                {index === 0 ? '"' : ''}
-                {line || ' '}
-                {index === lines.length - 1 ? '"' : ''}
-              </span>
-            </JsonLine>
-          ))}
-        </div>
-      </details>
-    )
-  }
-
-  if (!isObject) {
-    const lineNumber = counter.value++
-    return (
-      <JsonLine lineNumber={lineNumber} depth={depth}>
-        {name ? (
-          <>
-            <JsonKey>{name.startsWith('[') ? name : <>{'"'}{name}{'"'}</>}</JsonKey>
-            <span className="text-muted-foreground">: </span>
-          </>
-        ) : null}
-        <JsonPrimitive value={value} />
-      </JsonLine>
-    )
-  }
-
-  const entries = (isArray ? value.map((item, index) => [String(index), item] as const) : Object.entries(value)) as Array<[string, JsonLike]>
-  const openLine = counter.value++
-  const children = entries.map(([entryName, entryValue], index) => (
-    <Fragment key={`${entryName}-${index}`}>
-      {renderJsonNode({
-        name: isArray ? `[${entryName}]` : entryName,
-        value: entryValue,
-        depth: depth + 1,
-        counter,
-        defaultExpanded,
-      })}
-    </Fragment>
-  ))
-  const closeLine = counter.value++
+function LineNumberedCode({ text }: { text: string }) {
+  const lines = useMemo(() => normalizeLineBreaks(text).split('\n'), [text])
 
   return (
-    <details open={defaultExpanded} className="group/json-node">
-      <summary className="list-none [&::-webkit-details-marker]:hidden">
-        <JsonLine lineNumber={openLine} depth={depth} summary>
-          <span className="inline-flex size-4 items-center justify-center text-muted-foreground transition-transform group-open/json-node:rotate-90">
-            <ChevronRight size={14} />
-          </span>
-          {name ? (
-            <>
-              <JsonKey>{name.startsWith('[') ? name : <>{'"'}{name}{'"'}</>}</JsonKey>
-              <span className="text-muted-foreground">: </span>
-            </>
-          ) : null}
-          <span className="text-foreground">{isArray ? '[' : '{'}</span>
-          <span className="ml-2 text-[11px] text-muted-foreground">{jsonPreview(value)}</span>
-        </JsonLine>
-      </summary>
-      <div>
-        {children}
-        <JsonLine lineNumber={closeLine} depth={depth}>
-          <span className="text-foreground">{isArray ? ']' : '}'}</span>
-        </JsonLine>
+    <div className="max-h-[560px] overflow-auto">
+      <div className="min-w-full py-3">
+        {lines.map((line, index) => (
+          <div key={index} className="grid grid-cols-[44px_minmax(0,1fr)] font-mono text-xs leading-6">
+            <div className="select-none border-r bg-muted/20 pr-3 text-right text-[11px] text-muted-foreground/70">
+              {index + 1}
+            </div>
+            <pre className="m-0 min-w-0 whitespace-pre-wrap break-words px-4 text-foreground">{line || ' '}</pre>
+          </div>
+        ))}
       </div>
-    </details>
-  )
-}
-
-function RawTextPanel({ text }: { text: string }) {
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
-  return (
-    <div className="max-h-[560px] overflow-auto px-2 py-3">
-      {lines.map((line, index) => (
-        <div key={`${index}-${line}`} className="grid grid-cols-[32px_minmax(0,1fr)] font-mono text-[12px] leading-6">
-          <div className="select-none pr-2 text-right text-[11px] text-muted-foreground/70">{index + 1}</div>
-          <div className="whitespace-pre-wrap break-words pl-1 text-foreground">{line || ' '}</div>
-        </div>
-      ))}
     </div>
   )
 }
@@ -488,14 +414,28 @@ function JsonViewer({
   content,
   emptyText,
   locale,
+  className,
 }: {
   title: string
   content?: string | null
   emptyText: string
   locale: 'zh-CN' | 'en-US'
+  className?: string
 }) {
   const [copied, setCopied] = useState(false)
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
+  const [ready, setReady] = useState(false)
+  const [lineHeights, setLineHeights] = useState<number[]>([])
+  const jsonViewRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!content) {
+      return
+    }
+
+    const timer = window.setTimeout(() => setReady(true), 80)
+    return () => window.clearTimeout(timer)
+  }, [content])
 
   async function copyContent() {
     if (!content) return
@@ -509,29 +449,61 @@ function JsonViewer({
     }
   }
 
-  let parsed: JsonLike | null = null
-  let isJson = false
-  if (content) {
-    try {
-      parsed = JSON.parse(content) as JsonLike
-      isJson = true
-    } catch {
-      parsed = null
-      isJson = false
+  const parsed = useMemo(() => {
+    if (!ready || !content) {
+      return null
     }
-  }
+    return parseViewerContent(content)
+  }, [content, ready])
 
-  const counter = { value: 1 }
-  const tree = isJson && parsed !== null
-    ? renderJsonNode({ value: parsed, depth: 0, counter, defaultExpanded: expanded })
-    : null
+  useEffect(() => {
+    if (!parsed?.isJson || !jsonViewRef.current) {
+      return
+    }
+
+    const root = jsonViewRef.current
+    let frameId = 0
+
+    const measure = () => {
+      frameId = 0
+      const next = getJsonLineHeights(root)
+      setLineHeights((current) => lineHeightsEqual(current, next) ? current : next)
+    }
+
+    const scheduleMeasure = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId)
+      }
+      frameId = window.requestAnimationFrame(measure)
+    }
+
+    scheduleMeasure()
+
+    const mutationObserver = new MutationObserver(() => scheduleMeasure())
+    mutationObserver.observe(root, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+
+    const resizeObserver = new ResizeObserver(() => scheduleMeasure())
+    resizeObserver.observe(root)
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId)
+      }
+      mutationObserver.disconnect()
+      resizeObserver.disconnect()
+    }
+  }, [parsed])
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-background">
-      <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+    <section className={cn("flex min-h-[560px] min-w-0 flex-col bg-background", className)}>
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
         <div className="text-sm font-semibold text-foreground">{title}</div>
         <div className="flex items-center gap-2">
-          {isJson ? (
+          {parsed?.isJson ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => setExpanded((current) => !current)}>
               {expanded ? (locale === 'zh-CN' ? '折叠' : 'Collapse') : (locale === 'zh-CN' ? '展开' : 'Expand')}
             </Button>
@@ -541,18 +513,40 @@ function JsonViewer({
             {locale === 'zh-CN' ? '复制' : 'Copy'}
           </Button>
         </div>
-      </div>
+      </header>
 
-      {!content ? (
-        <div className="px-4 py-6 text-xs text-muted-foreground">{emptyText}</div>
-      ) : isJson && parsed !== null ? (
-        <div key={expanded ? 'expanded' : 'collapsed'} className="max-h-[560px] overflow-auto px-2 py-3">
-          {tree}
-        </div>
-      ) : (
-        <RawTextPanel text={content} />
-      )}
-    </div>
+      <div className="min-h-0 flex-1">
+        {!content ? (
+          <div className="px-4 py-6 text-xs text-muted-foreground">{emptyText}</div>
+        ) : !ready ? (
+          <div className="px-4 py-6 text-xs text-muted-foreground">
+            {locale === 'zh-CN' ? '正在准备内容...' : 'Preparing content...'}
+          </div>
+        ) : parsed?.isJson ? (
+          <div className="max-h-[560px] overflow-auto">
+            <div className="grid min-w-full grid-cols-[44px_minmax(0,1fr)]">
+              <LineNumbersColumn lineHeights={lineHeights} />
+              <div className="min-w-0 px-4 py-3">
+                <div ref={jsonViewRef} className="json-view-shell">
+                  <JsonView
+                    value={parsed.data as object}
+                    collapsed={expanded ? false : 2}
+                    displayDataTypes={false}
+                    displayObjectSize={false}
+                    enableClipboard={false}
+                    highlightUpdates={false}
+                    shortenTextAfterLength={220}
+                    style={JSON_VIEW_STYLE}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <LineNumberedCode text={parsed?.data ?? content} />
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -678,20 +672,46 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
 function RequestCard({
   item,
   locale,
+  onPrefetchDetail,
   onOpenDetail,
   onOpenAttempts,
 }: {
   item: RequestLogItem
   locale: 'zh-CN' | 'en-US'
+  onPrefetchDetail: () => void
   onOpenDetail: () => void
   onOpenAttempts: () => void
 }) {
+  const hoverPrefetchTimerRef = useRef<number | null>(null)
   const primaryModelName = getResolvedGroupName(item)
   const modelChain = getModelChain(item)
   const secondaryModelName = getSecondaryModelName(item)
   const attemptCount = Number.isFinite(item.attempt_count) ? item.attempt_count : 0
   const showAttemptButton = attemptCount > 1
   const errorDisplay = formatErrorDisplay(item.error_message)
+
+  useEffect(() => {
+    return () => {
+      if (hoverPrefetchTimerRef.current !== null) {
+        window.clearTimeout(hoverPrefetchTimerRef.current)
+      }
+    }
+  }, [])
+
+  function cancelHoverPrefetch() {
+    if (hoverPrefetchTimerRef.current !== null) {
+      window.clearTimeout(hoverPrefetchTimerRef.current)
+      hoverPrefetchTimerRef.current = null
+    }
+  }
+
+  function scheduleHoverPrefetch() {
+    cancelHoverPrefetch()
+    hoverPrefetchTimerRef.current = window.setTimeout(() => {
+      hoverPrefetchTimerRef.current = null
+      onPrefetchDetail()
+    }, DETAIL_PREFETCH_HOVER_DELAY_MS)
+  }
 
   return (
     <Item
@@ -704,6 +724,13 @@ function RequestCard({
       <div
         role="button"
         tabIndex={0}
+        onMouseEnter={scheduleHoverPrefetch}
+        onMouseLeave={cancelHoverPrefetch}
+        onFocus={() => {
+          cancelHoverPrefetch()
+          onPrefetchDetail()
+        }}
+        onBlur={cancelHoverPrefetch}
         onClick={onOpenDetail}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -771,6 +798,7 @@ function RequestCard({
 }
 
 export function RequestsScreen() {
+  const queryClient = useQueryClient()
   const { locale } = useI18n()
   const [detailId, setDetailId] = useState<number | null>(null)
   const [attemptDetailId, setAttemptDetailId] = useState<number | null>(null)
@@ -945,6 +973,25 @@ export function RequestsScreen() {
     setPage(0)
   }
 
+  function prefetchRequestDetail(id: number) {
+    const queryKey = ['request-log-detail', id] as const
+    const queryState = queryClient.getQueryState<RequestLogDetail>(queryKey)
+
+    if (queryState?.fetchStatus === 'fetching') {
+      return
+    }
+
+    if (queryClient.getQueryData<RequestLogDetail>(queryKey) !== undefined) {
+      return
+    }
+
+    void queryClient.prefetchQuery({
+      queryKey,
+      queryFn: () => apiRequest<RequestLogDetail>(`/admin/request-logs/${id}`),
+      staleTime: 60_000,
+    })
+  }
+
   async function refreshLogs() {
     await Promise.all([
       refetchRequestLogs(),
@@ -1014,6 +1061,7 @@ export function RequestsScreen() {
                     key={item.id}
                     item={item}
                     locale={locale}
+                    onPrefetchDetail={() => prefetchRequestDetail(item.id)}
                     onOpenDetail={() => setDetailId(item.id)}
                     onOpenAttempts={() => setAttemptDetailId(item.id)}
                   />
@@ -1170,8 +1218,9 @@ export function RequestsScreen() {
               {locale === 'zh-CN' ? '正在加载详情...' : 'Loading detail...'}
             </div>
           ) : (
-            <div className="grid gap-5 xl:grid-cols-2">
+            <div className="grid overflow-hidden rounded-xl border bg-background xl:grid-cols-2">
               <JsonViewer
+                key={`request-${detail.id}`}
                 title={locale === 'zh-CN' ? '请求内容' : 'Request'}
                 content={detail.request_content}
                 emptyText={locale === 'zh-CN' ? '无输入内容' : 'No request content'}
@@ -1179,6 +1228,8 @@ export function RequestsScreen() {
               />
 
               <JsonViewer
+                key={`response-${detail.id}`}
+                className="border-t xl:border-t-0 xl:border-l"
                 title={locale === 'zh-CN' ? '响应内容' : 'Response'}
                 content={detail.response_content}
                 emptyText={locale === 'zh-CN' ? '无输出内容' : 'No response content'}
@@ -1229,6 +1280,20 @@ export function RequestsScreen() {
           </TooltipContent>
         </Tooltip>
       ) : null}
+      <style jsx global>{`
+        .json-view-shell .w-rjv-inner > span,
+        .json-view-shell .w-rjv-line,
+        .json-view-shell .w-rjv-inner > div:not(.w-rjv-wrap) {
+          min-height: 1.5rem;
+          line-height: 1.5rem;
+        }
+
+        .json-view-shell .w-rjv-inner > span {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+      `}</style>
       </section>
     </TooltipProvider>
   )
