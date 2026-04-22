@@ -14,6 +14,7 @@ import {
   Copy,
   DollarSign,
   Filter,
+  KeyRound,
   LayoutGrid,
   RefreshCcw,
   RotateCcw,
@@ -21,7 +22,7 @@ import {
   Waypoints,
   Zap,
 } from 'lucide-react'
-import { OverviewModelAnalytics, ProtocolKind, RequestLogDetail, RequestLogItem, RequestLogPage, apiRequest } from '@/lib/api'
+import { GatewayApiKey, OverviewModelAnalytics, ProtocolKind, RequestLogDetail, RequestLogItem, RequestLogPage, apiRequest } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { ModelAvatar } from '@/lib/model-icons'
 import { cn } from '@/lib/utils'
@@ -148,6 +149,23 @@ function formatDate(value: string, locale: 'zh-CN' | 'en-US') {
     second: '2-digit',
     hour12: false,
   })
+}
+
+function shortenGatewayKeyId(value?: string | null) {
+  if (!value) return ''
+  if (value.length <= 10) return value
+  return `${value.slice(0, 4)}...${value.slice(-4)}`
+}
+
+function formatGatewayKeyLabel(
+  item: Pick<RequestLogItem, 'gateway_key_id' | 'gateway_key_remark'>,
+  locale: 'zh-CN' | 'en-US'
+) {
+  return item.gateway_key_remark?.trim() || shortenGatewayKeyId(item.gateway_key_id) || (locale === 'zh-CN' ? '未绑定 API Key' : 'No API key')
+}
+
+function formatGatewayKeyOptionLabel(item: Pick<GatewayApiKey, 'id' | 'remark'>) {
+  return item.remark.trim() || shortenGatewayKeyId(item.id)
 }
 
 function tryParseJsonValue(value: string) {
@@ -758,6 +776,7 @@ function RequestCard({
             <div className="flex flex-wrap items-center gap-2">
               <RequestMeta icon={<Clock3 size={13} />} value={formatDate(item.created_at, locale)} className="pl-0" />
               <RequestMeta icon={<Waypoints size={13} />} value={item.channel_name || item.channel_id || 'n/a'} />
+              {item.gateway_key_id ? <RequestMeta icon={<KeyRound size={13} />} value={formatGatewayKeyLabel(item, locale)} /> : null}
               {secondaryModelName ? <RequestMeta icon={<ServerCog size={13} />} value={secondaryModelName} /> : null}
             </div>
           </div>
@@ -808,9 +827,32 @@ export function RequestsScreen() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [protocolFilter, setProtocolFilter] = useState<'all' | ProtocolKind>('all')
   const [channelFilter, setChannelFilter] = useState('all')
+  const [selectedGatewayKeyId, setSelectedGatewayKeyId] = useState('all')
   const [sortMode, setSortMode] = useState<SortMode>('latest')
   const [keyword, setKeyword] = useState('')
   const deferredKeyword = useDeferredValue(keyword.trim().toLowerCase())
+  const effectiveGatewayKeyId = selectedGatewayKeyId === 'all' ? null : selectedGatewayKeyId
+
+  const requestLogsQuery = useMemo(() => {
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String(page * PAGE_SIZE),
+    })
+    if (effectiveGatewayKeyId) {
+      params.set('gateway_key_id', effectiveGatewayKeyId)
+    }
+    return `/admin/request-logs/page?${params.toString()}`
+  }, [effectiveGatewayKeyId, page])
+
+  const overviewModelsQuery = useMemo(() => {
+    const params = new URLSearchParams({
+      days: '0',
+    })
+    if (effectiveGatewayKeyId) {
+      params.set('gateway_key_id', effectiveGatewayKeyId)
+    }
+    return `/admin/overview-models?${params.toString()}`
+  }, [effectiveGatewayKeyId])
 
   const {
     data,
@@ -818,16 +860,22 @@ export function RequestsScreen() {
     isFetching,
     refetch: refetchRequestLogs,
   } = useQuery({
-    queryKey: ['request-logs', page],
-    queryFn: () => apiRequest<RequestLogPage>(`/admin/request-logs/page?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`),
+    queryKey: ['request-logs', page, effectiveGatewayKeyId],
+    queryFn: () => apiRequest<RequestLogPage>(requestLogsQuery),
     placeholderData: keepPreviousData,
     refetchInterval: page === 0 ? 5000 : false,
   })
 
   const { data: allModels, refetch: refetchAllModels } = useQuery({
-    queryKey: ['overview-models', 'requests-screen'],
-    queryFn: () => apiRequest<OverviewModelAnalytics>('/admin/overview-models?days=0'),
+    queryKey: ['overview-models', 'requests-screen', effectiveGatewayKeyId],
+    queryFn: () => apiRequest<OverviewModelAnalytics>(overviewModelsQuery),
     staleTime: 5 * 60_000,
+  })
+
+  const { data: gatewayApiKeys } = useQuery({
+    queryKey: ['gateway-api-keys', 'requests-screen'],
+    queryFn: () => apiRequest<GatewayApiKey[]>('/admin/gateway-api-keys'),
+    staleTime: 60_000,
   })
 
   const { data: detail, isLoading: detailLoading, refetch: refetchDetail } = useQuery({
@@ -859,6 +907,7 @@ export function RequestsScreen() {
           item.channel_name,
           item.channel_id,
           item.gateway_key_id,
+          item.gateway_key_remark,
           item.error_message,
           item.protocol,
           String(item.status_code),
@@ -916,6 +965,20 @@ export function RequestsScreen() {
     return [...new Set((data?.items ?? []).map((item) => item.channel_name || item.channel_id || 'n/a'))].sort((a, b) => a.localeCompare(b))
   }, [data?.items])
 
+  const gatewayKeyOptions = useMemo(() => {
+    const items = (gatewayApiKeys ?? []).map((item) => ({
+      id: item.id,
+      label: formatGatewayKeyOptionLabel(item),
+    }))
+    if (effectiveGatewayKeyId && !items.some((item) => item.id === effectiveGatewayKeyId)) {
+      items.unshift({
+        id: effectiveGatewayKeyId,
+        label: shortenGatewayKeyId(effectiveGatewayKeyId),
+      })
+    }
+    return items
+  }, [effectiveGatewayKeyId, gatewayApiKeys])
+
   const total = data?.total ?? 0
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1)
   const hasNextPage = page < totalPages - 1
@@ -925,6 +988,7 @@ export function RequestsScreen() {
     statusFilter !== 'all',
     protocolFilter !== 'all',
     channelFilter !== 'all',
+    effectiveGatewayKeyId !== null,
     !!keyword.trim(),
   ].filter(Boolean).length
 
@@ -958,6 +1022,11 @@ export function RequestsScreen() {
     setPage(0)
   }
 
+  function handleGatewayKeyChange(value: string) {
+    setSelectedGatewayKeyId(value)
+    setPage(0)
+  }
+
   function handleKeywordChange(value: string) {
     setKeyword(value)
     setPage(0)
@@ -968,6 +1037,7 @@ export function RequestsScreen() {
     setStatusFilter('all')
     setProtocolFilter('all')
     setChannelFilter('all')
+    setSelectedGatewayKeyId('all')
     setSortMode('latest')
     setKeyword('')
     setPage(0)
@@ -1099,7 +1169,7 @@ export function RequestsScreen() {
                     value={keyword}
                     onChange={handleKeywordChange}
                     onClear={() => handleKeywordChange('')}
-                    placeholder={locale === 'zh-CN' ? '模型 / 渠道 / 错误 / 状态码' : 'Model / channel / error / status'}
+                    placeholder={locale === 'zh-CN' ? '模型 / 渠道 / API Key / 错误 / 状态码' : 'Model / channel / API key / error / status'}
                     className="max-w-none"
                   />
                 </Field>
@@ -1141,6 +1211,14 @@ export function RequestsScreen() {
                   <NativeSelect id="request-log-channel" className="w-full" value={channelFilter} onChange={(event) => handleChannelChange(event.target.value)}>
                     <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部渠道' : 'All channels'}</NativeSelectOption>
                     {channelOptions.map((channel) => <NativeSelectOption key={channel} value={channel}>{channel}</NativeSelectOption>)}
+                  </NativeSelect>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="request-log-gateway-key">API Key</FieldLabel>
+                  <NativeSelect id="request-log-gateway-key" className="w-full" value={selectedGatewayKeyId} onChange={(event) => handleGatewayKeyChange(event.target.value)}>
+                    <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部 API Key' : 'All API keys'}</NativeSelectOption>
+                    {gatewayKeyOptions.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.label}</NativeSelectOption>)}
                   </NativeSelect>
                 </Field>
 
@@ -1218,23 +1296,30 @@ export function RequestsScreen() {
               {locale === 'zh-CN' ? '正在加载详情...' : 'Loading detail...'}
             </div>
           ) : (
-            <div className="grid overflow-hidden rounded-xl border bg-background xl:grid-cols-2">
-              <JsonViewer
-                key={`request-${detail.id}`}
-                title={locale === 'zh-CN' ? '请求内容' : 'Request'}
-                content={detail.request_content}
-                emptyText={locale === 'zh-CN' ? '无输入内容' : 'No request content'}
-                locale={locale}
-              />
+            <div className="grid gap-3">
+              <div className="flex flex-wrap gap-2">
+                <RequestMeta icon={<Clock3 size={13} />} value={formatDate(detail.created_at, locale)} className="pl-0" />
+                <RequestMeta icon={<Waypoints size={13} />} value={detail.channel_name || detail.channel_id || 'n/a'} />
+                {detail.gateway_key_id ? <RequestMeta icon={<KeyRound size={13} />} value={formatGatewayKeyLabel(detail, locale)} /> : null}
+              </div>
+              <div className="grid overflow-hidden rounded-xl border bg-background xl:grid-cols-2">
+                <JsonViewer
+                  key={`request-${detail.id}`}
+                  title={locale === 'zh-CN' ? '请求内容' : 'Request'}
+                  content={detail.request_content}
+                  emptyText={locale === 'zh-CN' ? '无输入内容' : 'No request content'}
+                  locale={locale}
+                />
 
-              <JsonViewer
-                key={`response-${detail.id}`}
-                className="border-t xl:border-t-0 xl:border-l"
-                title={locale === 'zh-CN' ? '响应内容' : 'Response'}
-                content={detail.response_content}
-                emptyText={locale === 'zh-CN' ? '无输出内容' : 'No response content'}
-                locale={locale}
-              />
+                <JsonViewer
+                  key={`response-${detail.id}`}
+                  className="border-t xl:border-t-0 xl:border-l"
+                  title={locale === 'zh-CN' ? '响应内容' : 'Response'}
+                  content={detail.response_content}
+                  emptyText={locale === 'zh-CN' ? '无输出内容' : 'No response content'}
+                  locale={locale}
+                />
+              </div>
             </div>
           )}
         </AppDialogContent>

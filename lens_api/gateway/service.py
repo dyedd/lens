@@ -51,6 +51,7 @@ from ..models import (
     OverviewDashboardData,
     OverviewMetrics,
     OverviewModelAnalytics,
+    OverviewPerformanceMetrics,
     OverviewSummary,
     ProtocolKind,
     PublicBranding,
@@ -210,6 +211,22 @@ async def _close_app_state(state: AppState) -> None:
 
 
 app_state = AppState()
+
+
+def _overview_window_minutes(days: int, daily_points: list[OverviewDailyPoint]) -> int:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if days == -1:
+        start_at = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return max(int((now - start_at).total_seconds() // 60), 1)
+    if days > 0:
+        return max(days * 24 * 60, 1)
+    if daily_points:
+        try:
+            start_at = datetime.strptime(daily_points[0].date, "%Y%m%d")
+        except ValueError:
+            return max(len(daily_points) * 24 * 60, 1)
+        return max(int((now - start_at).total_seconds() // 60), 1)
+    return 0
 
 
 @asynccontextmanager
@@ -574,43 +591,86 @@ async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetri
         update={
             "enabled_channels": sum(
                 1 for item in channels if item.status.value == "enabled"
-            )
+            ),
+            "total_channels": len(channels),
         }
     )
 
 
 async def overview_summary(
-    days: int = 7, _: Any = Depends(get_current_admin)
+    days: int = 7,
+    gateway_key_id: str | None = None,
+    _: Any = Depends(get_current_admin),
 ) -> OverviewSummary:
-    return await app_state.domain_store.get_overview_summary(days=days)
+    return await app_state.domain_store.get_overview_summary(
+        days=days,
+        gateway_key_id=gateway_key_id,
+    )
 
 
 async def overview_daily(
-    days: int = 0, _: Any = Depends(get_current_admin)
+    days: int = 0,
+    gateway_key_id: str | None = None,
+    _: Any = Depends(get_current_admin),
 ) -> list[OverviewDailyPoint]:
-    return await app_state.domain_store.list_overview_daily(days=days)
+    return await app_state.domain_store.list_overview_daily(
+        days=days,
+        gateway_key_id=gateway_key_id,
+    )
 
 
 async def overview_models(
-    days: int = 7, _: Any = Depends(get_current_admin)
+    days: int = 7,
+    gateway_key_id: str | None = None,
+    _: Any = Depends(get_current_admin),
 ) -> OverviewModelAnalytics:
-    return await app_state.domain_store.get_model_analytics(days=days)
+    return await app_state.domain_store.get_model_analytics(
+        days=days,
+        gateway_key_id=gateway_key_id,
+    )
 
 
 async def overview_dashboard(
     days: int = 7,
     log_limit: int = 50,
     log_offset: int = 0,
+    gateway_key_id: str | None = None,
     _: Any = Depends(get_current_admin),
 ) -> OverviewDashboardData:
     summary, daily, models, logs = await asyncio.gather(
-        app_state.domain_store.get_overview_summary(days=days),
-        app_state.domain_store.list_overview_daily(days=days),
-        app_state.domain_store.get_model_analytics(days=days),
-        app_state.domain_store.list_request_logs(limit=log_limit, days=days, offset=log_offset),
+        app_state.domain_store.get_overview_summary(
+            days=days,
+            gateway_key_id=gateway_key_id,
+        ),
+        app_state.domain_store.list_overview_daily(
+            days=days,
+            gateway_key_id=gateway_key_id,
+        ),
+        app_state.domain_store.get_model_analytics(
+            days=days,
+            gateway_key_id=gateway_key_id,
+        ),
+        app_state.domain_store.list_request_logs(
+            limit=log_limit,
+            days=days,
+            offset=log_offset,
+            gateway_key_id=gateway_key_id,
+        ),
+    )
+    total_requests = int(summary.request_count.value or 0)
+    total_tokens = float(summary.total_tokens.value or 0.0)
+    window_minutes = _overview_window_minutes(days, daily)
+    performance = OverviewPerformanceMetrics(
+        avg_requests_per_minute=round(total_requests / window_minutes, 2)
+        if window_minutes > 0
+        else 0.0,
+        avg_tokens_per_minute=round(total_tokens / window_minutes, 2)
+        if window_minutes > 0
+        else 0.0,
     )
     return OverviewDashboardData(
         summary=summary,
+        performance=performance,
         daily=daily,
         models=models,
         logs=logs,
@@ -618,22 +678,43 @@ async def overview_dashboard(
 
 
 async def request_logs(
-    limit: int = 100, offset: int = 0, _: Any = Depends(get_current_admin)
+    limit: int = 100,
+    offset: int = 0,
+    gateway_key_id: str | None = None,
+    _: Any = Depends(get_current_admin),
 ) -> list[RequestLogItem]:
-    return await app_state.domain_store.list_request_logs(limit=limit, offset=offset)
+    return await app_state.domain_store.list_request_logs(
+        limit=limit,
+        offset=offset,
+        gateway_key_id=gateway_key_id,
+    )
 
 
 async def request_log_page(
-    limit: int = 100, offset: int = 0, _: Any = Depends(get_current_admin)
+    limit: int = 100,
+    offset: int = 0,
+    gateway_key_id: str | None = None,
+    _: Any = Depends(get_current_admin),
 ) -> RequestLogPage:
-    return await app_state.domain_store.list_request_log_page(limit=limit, offset=offset)
+    return await app_state.domain_store.list_request_log_page(
+        limit=limit,
+        offset=offset,
+        gateway_key_id=gateway_key_id,
+    )
 
 
 async def overview_logs(
-    days: int = 7, limit: int = 50, offset: int = 0, _: Any = Depends(get_current_admin)
+    days: int = 7,
+    limit: int = 50,
+    offset: int = 0,
+    gateway_key_id: str | None = None,
+    _: Any = Depends(get_current_admin),
 ) -> list[RequestLogItem]:
     return await app_state.domain_store.list_request_logs(
-        limit=limit, days=days, offset=offset
+        limit=limit,
+        days=days,
+        offset=offset,
+        gateway_key_id=gateway_key_id,
     )
 
 
