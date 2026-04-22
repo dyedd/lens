@@ -178,8 +178,13 @@ export function AppDialogContent({
   title: React.ReactNode
   description?: React.ReactNode
 }) {
+  const descriptionProps = description ? {} : { "aria-describedby": undefined }
+
   return (
-    <DialogContent className={cn("flex flex-col max-h-[88vh] overflow-hidden", className)}>
+    <DialogContent
+      {...descriptionProps}
+      className={cn("flex flex-col max-h-[88vh] overflow-hidden", className)}
+    >
       <DialogHeader>
         <DialogTitle>{title}</DialogTitle>
         {description && <DialogDescription>{description}</DialogDescription>}
