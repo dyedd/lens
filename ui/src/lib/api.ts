@@ -215,6 +215,27 @@ export type SettingItem = {
   value: string
 }
 
+export type GatewayApiKey = {
+  id: string
+  remark: string
+  api_key: string
+  enabled: boolean
+  allowed_models: string[]
+  max_cost_usd: number
+  spent_cost_usd: number
+  expires_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type GatewayApiKeyPayload = {
+  remark: string
+  enabled: boolean
+  allowed_models: string[]
+  max_cost_usd: number
+  expires_at?: string | null
+}
+
 export type ConfigBackupImportedStatsTotal = {
   input_token: number
   output_token: number
@@ -265,6 +286,18 @@ export type ConfigBackupStatsSnapshot = {
   model_daily: ConfigBackupOverviewModelDailyStat[]
 }
 
+export type ConfigBackupGatewayApiKey = {
+  id: string
+  remark: string
+  api_key: string
+  enabled: boolean
+  allowed_models: string[]
+  max_cost_usd: number
+  expires_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
 export type ConfigBackupRequestLog = {
   protocol: ProtocolKind
   requested_group_name?: string | null
@@ -305,7 +338,7 @@ export type ConfigBackupDump = {
   groups: ModelGroup[]
   model_prices: ModelPriceItem[]
   stats: ConfigBackupStatsSnapshot
-  gateway_api_keys: string[]
+  gateway_api_keys: ConfigBackupGatewayApiKey[]
   request_logs: ConfigBackupRequestLog[]
 }
 

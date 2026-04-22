@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..core.model_prices import normalize_model_key
 from ..models import (
     ConfigBackupDump,
+    ConfigBackupGatewayApiKey,
     ConfigBackupImportedStatsDaily,
     ConfigBackupImportedStatsTotal,
     ConfigBackupOverviewModelDailyStat,
@@ -27,8 +28,6 @@ from .domain_store import (
     SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_THRESHOLD,
     SETTING_CORS_ALLOW_ORIGINS,
-    SETTING_GATEWAY_API_KEY_HINT,
-    SETTING_GATEWAY_API_KEYS,
     SETTING_HEALTH_MIN_SAMPLES,
     SETTING_HEALTH_PENALTY_WEIGHT,
     SETTING_HEALTH_WINDOW_SECONDS,
@@ -42,6 +41,7 @@ from .domain_store import (
     SETTING_STATS_SAVE_INTERVAL,
 )
 from .entities import (
+    GatewayApiKeyEntity,
     ImportedStatsDailyEntity,
     ImportedStatsTotalEntity,
     ModelGroupEntity,
@@ -59,7 +59,7 @@ from .entities import (
     SiteProtocolCredentialBindingEntity,
 )
 
-BACKUP_DUMP_VERSION = 1
+BACKUP_DUMP_VERSION = 2
 
 EXPORTABLE_SETTING_KEYS = (
     SETTING_PROXY_URL,
@@ -534,20 +534,44 @@ class BackupStore:
             session.add(SettingEntity(key=item.key, value=item.value))
 
     async def _replace_gateway_api_keys(
-        self, session: AsyncSession, gateway_api_keys: list[str]
+        self, session: AsyncSession, gateway_api_keys: list[ConfigBackupGatewayApiKey]
     ) -> None:
-        keys_value = "\n".join(
-            self._dedupe_lines(gateway_api_keys)
-        )
-        await session.execute(
-            delete(SettingEntity).where(
-                SettingEntity.key.in_(
-                    (SETTING_GATEWAY_API_KEYS, SETTING_GATEWAY_API_KEY_HINT)
+        await session.execute(delete(GatewayApiKeyEntity))
+        seen_ids: set[str] = set()
+        seen_keys: set[str] = set()
+        now = datetime.now(UTC).replace(tzinfo=None)
+
+        for item in gateway_api_keys:
+            key_id = item.id.strip()
+            api_key = item.api_key.strip()
+            if not key_id:
+                raise ValueError("Gateway API key id is required")
+            if not api_key:
+                raise ValueError("Gateway API key secret is required")
+            if key_id in seen_ids:
+                raise ValueError(f"Duplicate gateway API key id in backup: {key_id}")
+            if api_key in seen_keys:
+                raise ValueError("Duplicate gateway API key secret in backup")
+            seen_ids.add(key_id)
+            seen_keys.add(api_key)
+
+            session.add(
+                GatewayApiKeyEntity(
+                    id=key_id,
+                    remark=item.remark.strip(),
+                    api_key=api_key,
+                    enabled=1 if item.enabled else 0,
+                    allowed_models_json=json.dumps(
+                        item.allowed_models,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                    ),
+                    max_cost_usd=max(float(item.max_cost_usd), 0.0),
+                    expires_at=self._parse_optional_datetime(item.expires_at),
+                    created_at=self._parse_optional_datetime(item.created_at) or now,
+                    updated_at=self._parse_optional_datetime(item.updated_at) or now,
                 )
             )
-        )
-        session.add(SettingEntity(key=SETTING_GATEWAY_API_KEYS, value=keys_value))
-        session.add(SettingEntity(key=SETTING_GATEWAY_API_KEY_HINT, value=""))
 
     async def _replace_request_logs(
         self, session: AsyncSession, request_logs: list[ConfigBackupRequestLog]
@@ -955,11 +979,31 @@ class BackupStore:
             ],
         )
 
-    async def _load_gateway_api_keys(self, session: AsyncSession) -> list[str]:
-        entity = await session.get(SettingEntity, SETTING_GATEWAY_API_KEYS)
-        if entity is None or not entity.value.strip():
-            return []
-        return self._dedupe_lines(entity.value.replace("\r", "\n").split("\n"))
+    async def _load_gateway_api_keys(
+        self, session: AsyncSession
+    ) -> list[ConfigBackupGatewayApiKey]:
+        rows = (
+            await session.execute(
+                select(GatewayApiKeyEntity).order_by(
+                    GatewayApiKeyEntity.created_at.asc(),
+                    GatewayApiKeyEntity.id.asc(),
+                )
+            )
+        ).scalars().all()
+        return [
+            ConfigBackupGatewayApiKey(
+                id=row.id,
+                remark=row.remark,
+                api_key=row.api_key,
+                enabled=bool(row.enabled),
+                allowed_models=self._load_allowed_models(row.allowed_models_json),
+                max_cost_usd=max(float(row.max_cost_usd or 0.0), 0.0),
+                expires_at=self._format_optional_datetime(row.expires_at),
+                created_at=self._format_optional_datetime(row.created_at),
+                updated_at=self._format_optional_datetime(row.updated_at),
+            )
+            for row in rows
+        ]
 
     async def _load_request_logs(
         self, session: AsyncSession
@@ -1008,18 +1052,6 @@ class BackupStore:
         return logs
 
     @staticmethod
-    def _dedupe_lines(items: list[str]) -> list[str]:
-        result: list[str] = []
-        seen: set[str] = set()
-        for item in items:
-            normalized = item.strip()
-            if not normalized or normalized in seen:
-                continue
-            seen.add(normalized)
-            result.append(normalized)
-        return result
-
-    @staticmethod
     def _parse_backup_datetime(value: str) -> datetime:
         normalized = value.strip()
         if normalized.endswith("Z"):
@@ -1028,6 +1060,38 @@ class BackupStore:
         if parsed.tzinfo is None:
             return parsed
         return parsed.astimezone(UTC).replace(tzinfo=None)
+
+    @classmethod
+    def _parse_optional_datetime(cls, value: str | None) -> datetime | None:
+        if value is None or not value.strip():
+            return None
+        return cls._parse_backup_datetime(value)
+
+    @staticmethod
+    def _format_optional_datetime(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC).isoformat()
+
+    @staticmethod
+    def _load_allowed_models(raw_value: str | None) -> list[str]:
+        if not raw_value:
+            return []
+        try:
+            payload = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(payload, list):
+            return []
+        models: list[str] = []
+        seen: set[str] = set()
+        for item in payload:
+            normalized = str(item).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            models.append(normalized)
+        return models
 
     @staticmethod
     def _parse_attempts(raw_value: str | None) -> list[RequestLogAttempt]:

@@ -5,11 +5,8 @@ import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
-  Check,
   CircleAlert,
-  Copy,
   ImageIcon,
-  KeyRound,
   Palette,
   RotateCcw,
   Save,
@@ -19,6 +16,8 @@ import {
   UserRound,
 } from "lucide-react"
 
+import { ConfigTransferCard } from "@/components/settings/config-transfer-card"
+import { GatewayApiKeyManager } from "@/components/settings/gateway-api-key-manager"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
@@ -26,7 +25,6 @@ import { Input } from "@/components/ui/input"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { ConfigTransferCard } from "@/components/settings/config-transfer-card"
 import {
   ApiError,
   type AdminProfile,
@@ -39,8 +37,6 @@ import { setStoredToken } from "@/lib/auth"
 import { useI18n, type Locale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
-const GATEWAY_API_KEYS = "gateway_api_keys"
-const GATEWAY_API_KEY_HINT = "gateway_api_key_hint"
 const PROXY_URL = "proxy_url"
 const STATS_SAVE_INTERVAL = "stats_save_interval"
 const CORS_ALLOW_ORIGINS = "cors_allow_origins"
@@ -94,39 +90,22 @@ function titleForLocale(locale: Locale, zh: string, en: string) {
 function parseSettings(items: SettingItem[] | undefined) {
   const mapping = new Map((items ?? []).map((item) => [item.key, item.value]))
   return {
-    gatewayKeys: splitGatewayKeys(mapping.get(GATEWAY_API_KEYS) ?? ""),
-    draft: {
-      proxyUrl: mapping.get(PROXY_URL) ?? "",
-      statsSaveInterval: mapping.get(STATS_SAVE_INTERVAL) ?? "60",
-      corsAllowOrigins: mapping.get(CORS_ALLOW_ORIGINS) ?? "*",
-      relayLogKeepEnabled: !["0", "false", "no", "off"].includes(
-        (mapping.get(RELAY_LOG_KEEP_ENABLED) ?? "true").toLowerCase()
-      ),
-      relayLogKeepPeriod: mapping.get(RELAY_LOG_KEEP_PERIOD) ?? "7",
-      circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
-      circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
-      circuitBreakerMaxCooldown: mapping.get(CIRCUIT_BREAKER_MAX_COOLDOWN) ?? "600",
-      healthWindowSeconds: mapping.get(HEALTH_WINDOW_SECONDS) ?? "300",
-      healthPenaltyWeight: mapping.get(HEALTH_PENALTY_WEIGHT) ?? "0.5",
-      healthMinSamples: mapping.get(HEALTH_MIN_SAMPLES) ?? "10",
-      siteName: mapping.get(SITE_NAME) ?? "Lens",
-      siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
-    } satisfies DraftState,
-  }
-}
-
-function splitGatewayKeys(rawValue: string) {
-  const result: string[] = []
-  const seen = new Set<string>()
-  for (const item of rawValue.replace(/\r/g, "\n").split("\n")) {
-    const normalized = item.trim()
-    if (!normalized || seen.has(normalized)) {
-      continue
-    }
-    seen.add(normalized)
-    result.push(normalized)
-  }
-  return result
+    proxyUrl: mapping.get(PROXY_URL) ?? "",
+    statsSaveInterval: mapping.get(STATS_SAVE_INTERVAL) ?? "60",
+    corsAllowOrigins: mapping.get(CORS_ALLOW_ORIGINS) ?? "*",
+    relayLogKeepEnabled: !["0", "false", "no", "off"].includes(
+      (mapping.get(RELAY_LOG_KEEP_ENABLED) ?? "true").toLowerCase()
+    ),
+    relayLogKeepPeriod: mapping.get(RELAY_LOG_KEEP_PERIOD) ?? "7",
+    circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
+    circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
+    circuitBreakerMaxCooldown: mapping.get(CIRCUIT_BREAKER_MAX_COOLDOWN) ?? "600",
+    healthWindowSeconds: mapping.get(HEALTH_WINDOW_SECONDS) ?? "300",
+    healthPenaltyWeight: mapping.get(HEALTH_PENALTY_WEIGHT) ?? "0.5",
+    healthMinSamples: mapping.get(HEALTH_MIN_SAMPLES) ?? "10",
+    siteName: mapping.get(SITE_NAME) ?? "Lens",
+    siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
+  } satisfies DraftState
 }
 
 function normalizeOriginList(rawValue: string) {
@@ -146,20 +125,6 @@ function normalizeOriginList(rawValue: string) {
     return "*"
   }
   return items.join(",")
-}
-
-function maskGatewayKey(value: string) {
-  if (value.length <= 12) {
-    return value[0] + "*".repeat(Math.max(value.length - 2, 1)) + value.slice(-1)
-  }
-  return value.slice(0, 4) + "*".repeat(Math.max(value.length - 8, 4)) + value.slice(-4)
-}
-
-function generateGatewayKey() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return "sk-lens-" + crypto.randomUUID().replaceAll("-", "")
-  }
-  return "sk-lens-" + Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
 function saveButtonLabel(locale: Locale, saving: boolean) {
@@ -208,8 +173,6 @@ export function SettingsScreen() {
   })
 
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT)
-  const [gatewayKeys, setGatewayKeys] = useState<string[]>([])
-  const [newGatewayKey, setNewGatewayKey] = useState("")
   const [accountForm, setAccountForm] = useState({
     username: "admin",
     currentPassword: "",
@@ -219,12 +182,9 @@ export function SettingsScreen() {
   const [saving, setSaving] = useState(false)
   const [clearingLogs, setClearingLogs] = useState(false)
   const [updatingAccount, setUpdatingAccount] = useState(false)
-  const [copiedKey, setCopiedKey] = useState("")
 
   useEffect(() => {
-    const parsed = parseSettings(settings)
-    setDraft(parsed.draft)
-    setGatewayKeys(parsed.gatewayKeys)
+    setDraft(parseSettings(settings))
   }, [settings])
 
   useEffect(() => {
@@ -238,40 +198,13 @@ export function SettingsScreen() {
     setDraft((current) => ({ ...current, [key]: value }))
   }
 
-  function appendGatewayKey() {
-    const normalized = newGatewayKey.trim()
-    if (!normalized) {
-      return
-    }
-    setGatewayKeys((current) => (current.includes(normalized) ? current : [...current, normalized]))
-    setNewGatewayKey("")
-    toast.success(titleForLocale(locale, "API Key 已创建", "API key created"))
-  }
-
-  function removeGatewayKey(value: string) {
-    setGatewayKeys((current) => current.filter((item) => item !== value))
-    toast.success(titleForLocale(locale, "API Key 已删除", "API key deleted"))
-  }
-
-  async function copyGatewayKey(value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopiedKey(value)
-      toast.success(titleForLocale(locale, "API Key 已复制", "API key copied"))
-      setTimeout(() => {
-        setCopiedKey((current) => (current === value ? "" : current))
-      }, 1500)
-    } catch {
-      const message = titleForLocale(locale, "复制失败", "Failed to copy")
-      toast.error(message)
-    }
-  }
-
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["settings"] }),
       queryClient.invalidateQueries({ queryKey: ["public-branding"] }),
       queryClient.invalidateQueries({ queryKey: ["app-info"] }),
+      queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] }),
+      queryClient.invalidateQueries({ queryKey: ["model-groups"] }),
     ])
   }
 
@@ -279,8 +212,6 @@ export function SettingsScreen() {
     setSaving(true)
     try {
       const items: SettingItem[] = [
-        { key: GATEWAY_API_KEYS, value: gatewayKeys.join("\n") },
-        { key: GATEWAY_API_KEY_HINT, value: "" },
         { key: PROXY_URL, value: draft.proxyUrl.trim() },
         { key: STATS_SAVE_INTERVAL, value: draft.statsSaveInterval.trim() || "60" },
         { key: CORS_ALLOW_ORIGINS, value: normalizeOriginList(draft.corsAllowOrigins) || "*" },
@@ -299,8 +230,7 @@ export function SettingsScreen() {
         method: "PUT",
         body: JSON.stringify({ items }),
       })
-      const message = titleForLocale(locale, "设置已保存", "Settings saved")
-      toast.success(message)
+      toast.success(titleForLocale(locale, "设置已保存", "Settings saved"))
       await refresh()
     } catch (requestError) {
       const message =
@@ -321,8 +251,7 @@ export function SettingsScreen() {
     setClearingLogs(true)
     try {
       await apiRequest<void>("/admin/request-logs", { method: "DELETE" })
-      const message = titleForLocale(locale, "请求日志已清空", "Request logs cleared")
-      toast.success(message)
+      toast.success(titleForLocale(locale, "请求日志已清空", "Request logs cleared"))
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
         queryClient.invalidateQueries({ queryKey: ["overview"] }),
@@ -331,6 +260,7 @@ export function SettingsScreen() {
         queryClient.invalidateQueries({ queryKey: ["overview-daily"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-models"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-logs"] }),
+        queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] }),
       ])
     } catch (requestError) {
       const message =
@@ -353,26 +283,22 @@ export function SettingsScreen() {
     const usernameChanged = nextUsername !== (profile?.username || "admin")
 
     if (!nextUsername) {
-      const message = titleForLocale(locale, "用户名不能为空", "Username is required")
-      toast.error(message)
+      toast.error(titleForLocale(locale, "用户名不能为空", "Username is required"))
       return
     }
 
     if (!usernameChanged && !wantsPasswordUpdate) {
-      const message = titleForLocale(locale, "没有需要保存的账号变更", "No account changes to save")
-      toast.success(message)
+      toast.success(titleForLocale(locale, "没有需要保存的账号变更", "No account changes to save"))
       return
     }
 
     if (wantsPasswordUpdate && (!accountForm.currentPassword || !accountForm.newPassword)) {
-      const message = titleForLocale(locale, "请填写完整密码", "Please fill in both passwords")
-      toast.error(message)
+      toast.error(titleForLocale(locale, "请填写完整密码", "Please fill in both passwords"))
       return
     }
 
     if (accountForm.newPassword !== accountForm.confirmPassword) {
-      const message = titleForLocale(locale, "两次新密码不一致", "The new passwords do not match")
-      toast.error(message)
+      toast.error(titleForLocale(locale, "两次新密码不一致", "The new passwords do not match"))
       return
     }
 
@@ -391,8 +317,7 @@ export function SettingsScreen() {
       window.sessionStorage.removeItem("lens_admin_profile_cache")
       queryClient.setQueryData(["auth-me"], response.profile)
       await queryClient.invalidateQueries({ queryKey: ["auth-me"] })
-      const message = titleForLocale(locale, "账号已更新", "Account updated")
-      toast.success(message)
+      toast.success(titleForLocale(locale, "账号已更新", "Account updated"))
       setAccountForm({
         username: response.profile.username,
         currentPassword: "",
@@ -428,11 +353,7 @@ export function SettingsScreen() {
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "站点名称", "Site name")}</FieldLabel>
-            <Input
-              value={draft.siteName}
-              onChange={(event) => setDraftValue("siteName", event.target.value)}
-              placeholder="Lens"
-            />
+            <Input value={draft.siteName} onChange={(event) => setDraftValue("siteName", event.target.value)} placeholder="Lens" />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "Logo 地址", "Logo URL")}</FieldLabel>
@@ -478,9 +399,7 @@ export function SettingsScreen() {
               <FieldLabel>{titleForLocale(locale, "用户名", "Username")}</FieldLabel>
               <Input
                 value={accountForm.username}
-                onChange={(event) =>
-                  setAccountForm((current) => ({ ...current, username: event.target.value }))
-                }
+                onChange={(event) => setAccountForm((current) => ({ ...current, username: event.target.value }))}
                 autoComplete="username"
               />
             </Field>
@@ -489,9 +408,7 @@ export function SettingsScreen() {
               <Input
                 type="password"
                 value={accountForm.currentPassword}
-                onChange={(event) =>
-                  setAccountForm((current) => ({ ...current, currentPassword: event.target.value }))
-                }
+                onChange={(event) => setAccountForm((current) => ({ ...current, currentPassword: event.target.value }))}
                 autoComplete="current-password"
               />
             </Field>
@@ -500,9 +417,7 @@ export function SettingsScreen() {
               <Input
                 type="password"
                 value={accountForm.newPassword}
-                onChange={(event) =>
-                  setAccountForm((current) => ({ ...current, newPassword: event.target.value }))
-                }
+                onChange={(event) => setAccountForm((current) => ({ ...current, newPassword: event.target.value }))}
                 autoComplete="new-password"
               />
             </Field>
@@ -511,17 +426,13 @@ export function SettingsScreen() {
               <Input
                 type="password"
                 value={accountForm.confirmPassword}
-                onChange={(event) =>
-                  setAccountForm((current) => ({ ...current, confirmPassword: event.target.value }))
-                }
+                onChange={(event) => setAccountForm((current) => ({ ...current, confirmPassword: event.target.value }))}
                 autoComplete="new-password"
               />
             </Field>
           </FieldGroup>
           <Button type="submit" variant="outline" disabled={updatingAccount}>
-            {updatingAccount
-              ? titleForLocale(locale, "提交中...", "Updating...")
-              : titleForLocale(locale, "保存账号", "Save account")}
+            {updatingAccount ? titleForLocale(locale, "提交中...", "Updating...") : titleForLocale(locale, "保存账号", "Save account")}
           </Button>
         </form>
       </SettingCard>
@@ -534,20 +445,11 @@ export function SettingsScreen() {
         <FieldGroup>
           <Field>
             <FieldLabel>{titleForLocale(locale, "全局代理地址", "Global proxy URL")}</FieldLabel>
-            <Input
-              value={draft.proxyUrl}
-              onChange={(event) => setDraftValue("proxyUrl", event.target.value)}
-              placeholder="http://127.0.0.1:7890"
-            />
+            <Input value={draft.proxyUrl} onChange={(event) => setDraftValue("proxyUrl", event.target.value)} placeholder="http://127.0.0.1:7890" />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "统计保存周期(s)", "Stats save interval (s)")}</FieldLabel>
-            <Input
-              type="number"
-              min="1"
-              value={draft.statsSaveInterval}
-              onChange={(event) => setDraftValue("statsSaveInterval", event.target.value)}
-            />
+            <Input type="number" min="1" value={draft.statsSaveInterval} onChange={(event) => setDraftValue("statsSaveInterval", event.target.value)} />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "CORS 跨域名单", "CORS allow origins")}</FieldLabel>
@@ -610,58 +512,27 @@ export function SettingsScreen() {
         <FieldGroup>
           <Field>
             <FieldLabel>{titleForLocale(locale, "失败阈值", "Failure threshold")}</FieldLabel>
-            <Input
-              type="number"
-              min="0"
-              value={draft.circuitBreakerThreshold}
-              onChange={(event) => setDraftValue("circuitBreakerThreshold", event.target.value)}
-            />
+            <Input type="number" min="0" value={draft.circuitBreakerThreshold} onChange={(event) => setDraftValue("circuitBreakerThreshold", event.target.value)} />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "基础冷却秒数", "Cooldown seconds")}</FieldLabel>
-            <Input
-              type="number"
-              min="0"
-              value={draft.circuitBreakerCooldown}
-              onChange={(event) => setDraftValue("circuitBreakerCooldown", event.target.value)}
-            />
+            <Input type="number" min="0" value={draft.circuitBreakerCooldown} onChange={(event) => setDraftValue("circuitBreakerCooldown", event.target.value)} />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "最大冷却秒数", "Max cooldown seconds")}</FieldLabel>
-            <Input
-              type="number"
-              min="0"
-              value={draft.circuitBreakerMaxCooldown}
-              onChange={(event) => setDraftValue("circuitBreakerMaxCooldown", event.target.value)}
-            />
+            <Input type="number" min="0" value={draft.circuitBreakerMaxCooldown} onChange={(event) => setDraftValue("circuitBreakerMaxCooldown", event.target.value)} />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "健康窗口秒数", "Health window seconds")}</FieldLabel>
-            <Input
-              type="number"
-              min="1"
-              value={draft.healthWindowSeconds}
-              onChange={(event) => setDraftValue("healthWindowSeconds", event.target.value)}
-            />
+            <Input type="number" min="1" value={draft.healthWindowSeconds} onChange={(event) => setDraftValue("healthWindowSeconds", event.target.value)} />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "健康惩罚权重", "Health penalty weight")}</FieldLabel>
-            <Input
-              type="number"
-              min="0"
-              step="0.1"
-              value={draft.healthPenaltyWeight}
-              onChange={(event) => setDraftValue("healthPenaltyWeight", event.target.value)}
-            />
+            <Input type="number" min="0" step="0.1" value={draft.healthPenaltyWeight} onChange={(event) => setDraftValue("healthPenaltyWeight", event.target.value)} />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "健康最小样本数", "Health min samples")}</FieldLabel>
-            <Input
-              type="number"
-              min="1"
-              value={draft.healthMinSamples}
-              onChange={(event) => setDraftValue("healthMinSamples", event.target.value)}
-            />
+            <Input type="number" min="1" value={draft.healthMinSamples} onChange={(event) => setDraftValue("healthMinSamples", event.target.value)} />
           </Field>
         </FieldGroup>
       </SettingCard>
@@ -669,65 +540,7 @@ export function SettingsScreen() {
   }
 
   function renderApiKeyCard() {
-    return (
-      <SettingCard icon={KeyRound} title={titleForLocale(locale, "API 密钥", "API keys")}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "新增 Key", "New key")}</FieldLabel>
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
-              <Input
-                value={newGatewayKey}
-                onChange={(event) => setNewGatewayKey(event.target.value)}
-                placeholder={titleForLocale(locale, "输入或生成新的 API Key", "Enter or generate a new API key")}
-              />
-              <Button type="button" variant="secondary" onClick={() => setNewGatewayKey(generateGatewayKey())}>
-                {titleForLocale(locale, "生成", "Generate")}
-              </Button>
-              <Button type="button" onClick={appendGatewayKey}>
-                {titleForLocale(locale, "加入列表", "Add key")}
-              </Button>
-            </div>
-          </Field>
-        </FieldGroup>
-        <div className="grid gap-2">
-          {gatewayKeys.length ? (
-            gatewayKeys.map((item) => (
-              <div key={item} className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-foreground">{maskGatewayKey(item)}</div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={() => void copyGatewayKey(item)}
-                    title={titleForLocale(locale, "复制", "Copy")}
-                  >
-                    {copiedKey === item ? <Check className="text-primary" /> : <Copy />}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => removeGatewayKey(item)}
-                    title={titleForLocale(locale, "删除", "Delete")}
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="rounded-md border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-              {titleForLocale(locale, "当前没有 API 密钥", "No API keys")}
-            </div>
-          )}
-        </div>
-      </SettingCard>
-    )
+    return <GatewayApiKeyManager locale={locale} />
   }
 
   return (
