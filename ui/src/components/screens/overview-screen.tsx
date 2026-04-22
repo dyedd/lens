@@ -4,13 +4,12 @@ import { useMemo, useState, type ReactNode } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Activity, Bot, Boxes, Clock3, DollarSign, KeyRound, Waypoints } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Cell, Label, Pie, PieChart, XAxis, YAxis } from "recharts"
-import { GatewayApiKey, OverviewDashboardData, OverviewMetrics, apiRequest } from "@/lib/api"
+import { OverviewDashboardData, OverviewMetrics, apiRequest } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
@@ -77,16 +76,6 @@ function getTodayBucketPrefix() {
   return `${year}${month}${day}`
 }
 
-function shortenGatewayKeyId(value?: string | null) {
-  if (!value) return ""
-  if (value.length <= 10) return value
-  return `${value.slice(0, 4)}...${value.slice(-4)}`
-}
-
-function formatGatewayKeyOptionLabel(item: Pick<GatewayApiKey, "id" | "remark">) {
-  return item.remark.trim() || shortenGatewayKeyId(item.id)
-}
-
 function formatRatio(current: number, total: number) {
   return `${formatCompact(current, 0)}/${formatCompact(total, 0)}`
 }
@@ -126,10 +115,8 @@ export function OverviewScreen() {
   const [timeRange, setTimeRange] = useState<TimeRange>("-1")
   const [pieMetric, setPieMetric] = useState<PieMetric>("cost")
   const [logOffset, setLogOffset] = useState(0)
-  const [selectedGatewayKeyId, setSelectedGatewayKeyId] = useState("all")
 
   const days = Number(timeRange)
-  const effectiveGatewayKeyId = selectedGatewayKeyId === "all" ? null : selectedGatewayKeyId
   const pieMetricLabel = zh
     ? pieMetric === "cost"
       ? "费用"
@@ -148,14 +135,11 @@ export function OverviewScreen() {
       log_limit: "50",
       log_offset: String(logOffset),
     })
-    if (effectiveGatewayKeyId) {
-      params.set("gateway_key_id", effectiveGatewayKeyId)
-    }
     return `/admin/overview-dashboard?${params.toString()}`
-  }, [days, effectiveGatewayKeyId, logOffset])
+  }, [days, logOffset])
 
   const { data: dashboardData } = useQuery({
-    queryKey: ["overview-dashboard", days, logOffset, effectiveGatewayKeyId],
+    queryKey: ["overview-dashboard", days, logOffset],
     queryFn: () => apiRequest<OverviewDashboardData>(dashboardQuery),
     placeholderData: keepPreviousData,
   })
@@ -166,31 +150,11 @@ export function OverviewScreen() {
     staleTime: 30_000,
   })
 
-  const { data: gatewayApiKeys } = useQuery({
-    queryKey: ["gateway-api-keys", "overview-screen"],
-    queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
-    staleTime: 60_000,
-  })
-
   const summary = dashboardData?.summary
   const performance = dashboardData?.performance
   const daily = dashboardData?.daily
   const models = dashboardData?.models
   const logs = dashboardData?.logs ?? []
-
-  const gatewayKeyOptions = useMemo(() => {
-    const items = (gatewayApiKeys ?? []).map((item) => ({
-      id: item.id,
-      label: formatGatewayKeyOptionLabel(item),
-    }))
-    if (effectiveGatewayKeyId && !items.some((item) => item.id === effectiveGatewayKeyId)) {
-      items.unshift({
-        id: effectiveGatewayKeyId,
-        label: shortenGatewayKeyId(effectiveGatewayKeyId),
-      })
-    }
-    return items
-  }, [effectiveGatewayKeyId, gatewayApiKeys])
 
   const periodMetrics = useMemo(() => {
     const source = daily ?? []
@@ -281,35 +245,19 @@ export function OverviewScreen() {
     <section className="flex flex-col gap-3 md:gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-foreground">{zh ? "总览" : "Overview"}</h1>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <NativeSelect
-            aria-label={zh ? "API Key 筛选" : "API key filter"}
-            className="w-full sm:w-56"
-            value={selectedGatewayKeyId}
-            onChange={(event) => {
-              setSelectedGatewayKeyId(event.target.value)
-              setLogOffset(0)
-            }}
-          >
-            <NativeSelectOption value="all">{zh ? "全部 API Key" : "All API keys"}</NativeSelectOption>
-            {gatewayKeyOptions.map((item) => (
-              <NativeSelectOption key={item.id} value={item.id}>{item.label}</NativeSelectOption>
-            ))}
-          </NativeSelect>
-          <SegmentedControl
-            value={timeRange}
-            onValueChange={(value) => {
-              setTimeRange(value as TimeRange)
-              setLogOffset(0)
-            }}
-            options={[
-              { value: "-1", label: zh ? "今天" : "Today" },
-              { value: "7", label: zh ? "近7天" : "7 days" },
-              { value: "30", label: zh ? "近30天" : "30 days" },
-              { value: "0", label: zh ? "全部" : "All" },
-            ]}
-          />
-        </div>
+        <SegmentedControl
+          value={timeRange}
+          onValueChange={(value) => {
+            setTimeRange(value as TimeRange)
+            setLogOffset(0)
+          }}
+          options={[
+            { value: "-1", label: zh ? "今天" : "Today" },
+            { value: "7", label: zh ? "近7天" : "7 days" },
+            { value: "30", label: zh ? "近30天" : "30 days" },
+            { value: "0", label: zh ? "全部" : "All" },
+          ]}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">

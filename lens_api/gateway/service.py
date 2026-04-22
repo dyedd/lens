@@ -599,23 +599,19 @@ async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetri
 
 async def overview_summary(
     days: int = 7,
-    gateway_key_id: str | None = None,
     _: Any = Depends(get_current_admin),
 ) -> OverviewSummary:
     return await app_state.domain_store.get_overview_summary(
         days=days,
-        gateway_key_id=gateway_key_id,
     )
 
 
 async def overview_daily(
     days: int = 0,
-    gateway_key_id: str | None = None,
     _: Any = Depends(get_current_admin),
 ) -> list[OverviewDailyPoint]:
     return await app_state.domain_store.list_overview_daily(
         days=days,
-        gateway_key_id=gateway_key_id,
     )
 
 
@@ -634,27 +630,22 @@ async def overview_dashboard(
     days: int = 7,
     log_limit: int = 50,
     log_offset: int = 0,
-    gateway_key_id: str | None = None,
     _: Any = Depends(get_current_admin),
 ) -> OverviewDashboardData:
     summary, daily, models, logs = await asyncio.gather(
         app_state.domain_store.get_overview_summary(
             days=days,
-            gateway_key_id=gateway_key_id,
         ),
         app_state.domain_store.list_overview_daily(
             days=days,
-            gateway_key_id=gateway_key_id,
         ),
         app_state.domain_store.get_model_analytics(
             days=days,
-            gateway_key_id=gateway_key_id,
         ),
         app_state.domain_store.list_request_logs(
             limit=log_limit,
             days=days,
             offset=log_offset,
-            gateway_key_id=gateway_key_id,
         ),
     )
     total_requests = int(summary.request_count.value or 0)
@@ -707,14 +698,12 @@ async def overview_logs(
     days: int = 7,
     limit: int = 50,
     offset: int = 0,
-    gateway_key_id: str | None = None,
     _: Any = Depends(get_current_admin),
 ) -> list[RequestLogItem]:
     return await app_state.domain_store.list_request_logs(
         limit=limit,
         days=days,
         offset=offset,
-        gateway_key_id=gateway_key_id,
     )
 
 
