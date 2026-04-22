@@ -2258,7 +2258,7 @@ class DomainStore:
 
     @staticmethod
     async def _gateway_key_remarks_by_id(
-        self, session: AsyncSession, key_ids: list[str | None]
+        session: AsyncSession, key_ids: list[str | None]
     ) -> dict[str, str]:
         unique_ids = [
             item for item in dict.fromkeys(str(key_id).strip() for key_id in key_ids if key_id)
