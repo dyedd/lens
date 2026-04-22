@@ -435,10 +435,17 @@ export type OverviewMetrics = {
   total_requests: number
   successful_requests: number
   failed_requests: number
-  avg_latency_ms: number
-  active_gateway_keys: number
+  enabled_gateway_keys: number
+  total_gateway_keys: number
   enabled_groups: number
+  total_groups: number
   enabled_channels: number
+  total_channels: number
+}
+
+export type OverviewPerformanceMetrics = {
+  avg_requests_per_minute: number
+  avg_tokens_per_minute: number
 }
 
 export type OverviewSummaryMetric = {
@@ -489,6 +496,7 @@ export type OverviewModelAnalytics = {
 
 export type OverviewDashboardData = {
   summary: OverviewSummary
+  performance: OverviewPerformanceMetrics
   daily: OverviewDailyPoint[]
   models: OverviewModelAnalytics
   logs: RequestLogItem[]
@@ -503,6 +511,7 @@ export type RequestLogItem = {
   channel_id?: string | null
   channel_name?: string | null
   gateway_key_id?: string | null
+  gateway_key_remark?: string | null
   status_code: number
   success: boolean
   is_stream: boolean

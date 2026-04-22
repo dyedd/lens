@@ -1,16 +1,17 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Activity, Bot, Clock3, DollarSign } from "lucide-react"
+import { useMemo, useState, type ReactNode } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { Activity, Bot, Boxes, Clock3, DollarSign, KeyRound, Waypoints } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Cell, Label, Pie, PieChart, XAxis, YAxis } from "recharts"
-import { OverviewDashboardData, apiRequest } from "@/lib/api"
+import { GatewayApiKey, OverviewDashboardData, OverviewMetrics, apiRequest } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { SegmentedControl } from "@/components/ui/segmented-control"
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 type TimeRange = "-1" | "7" | "30" | "0"
@@ -51,7 +52,14 @@ function formatDuration(ms: number) {
   if (ms >= 3_600_000) return (ms / 3_600_000).toFixed(1) + "h"
   if (ms >= 60_000) return (ms / 60_000).toFixed(1) + "m"
   if (ms >= 1000) return (ms / 1000).toFixed(1) + "s"
-  return ms + "ms"
+  return Math.round(ms) + "ms"
+}
+
+function formatPerMinute(value: number) {
+  if (value >= 1000) return formatCompact(value, 1) + "/m"
+  if (value >= 100) return value.toFixed(0) + "/m"
+  if (value >= 10) return value.toFixed(1) + "/m"
+  return value.toFixed(2) + "/m"
 }
 
 function formatTrendLabel(bucket: string) {
@@ -69,6 +77,48 @@ function getTodayBucketPrefix() {
   return `${year}${month}${day}`
 }
 
+function shortenGatewayKeyId(value?: string | null) {
+  if (!value) return ""
+  if (value.length <= 10) return value
+  return `${value.slice(0, 4)}...${value.slice(-4)}`
+}
+
+function formatGatewayKeyOptionLabel(item: Pick<GatewayApiKey, "id" | "remark">) {
+  return item.remark.trim() || shortenGatewayKeyId(item.id)
+}
+
+function formatRatio(current: number, total: number) {
+  return `${formatCompact(current, 0)}/${formatCompact(total, 0)}`
+}
+
+function OverviewStatCard({
+  icon,
+  label,
+  value,
+  toneClassName,
+}: {
+  icon: ReactNode
+  label: string
+  value: string
+  toneClassName: string
+}) {
+  return (
+    <Card size="sm" className="py-0">
+      <CardContent className="px-4 pt-3 pb-3">
+        <div className="flex items-center gap-2.5">
+          <span className={`flex size-9 shrink-0 items-center justify-center rounded-full ${toneClassName}`}>
+            {icon}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground">{label}</div>
+            <div className="text-base font-semibold">{value}</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function OverviewScreen() {
   const { locale } = useI18n()
   const zh = locale === "zh-CN"
@@ -76,8 +126,10 @@ export function OverviewScreen() {
   const [timeRange, setTimeRange] = useState<TimeRange>("-1")
   const [pieMetric, setPieMetric] = useState<PieMetric>("cost")
   const [logOffset, setLogOffset] = useState(0)
+  const [selectedGatewayKeyId, setSelectedGatewayKeyId] = useState("all")
 
   const days = Number(timeRange)
+  const effectiveGatewayKeyId = selectedGatewayKeyId === "all" ? null : selectedGatewayKeyId
   const pieMetricLabel = zh
     ? pieMetric === "cost"
       ? "费用"
@@ -90,27 +142,64 @@ export function OverviewScreen() {
         ? "Requests"
         : "Tokens"
 
+  const dashboardQuery = useMemo(() => {
+    const params = new URLSearchParams({
+      days: String(days),
+      log_limit: "50",
+      log_offset: String(logOffset),
+    })
+    if (effectiveGatewayKeyId) {
+      params.set("gateway_key_id", effectiveGatewayKeyId)
+    }
+    return `/admin/overview-dashboard?${params.toString()}`
+  }, [days, effectiveGatewayKeyId, logOffset])
+
   const { data: dashboardData } = useQuery({
-    queryKey: ["overview-dashboard", days, logOffset],
-    queryFn: () => apiRequest<OverviewDashboardData>(`/admin/overview-dashboard?days=${days}&log_limit=50&log_offset=${logOffset}`),
+    queryKey: ["overview-dashboard", days, logOffset, effectiveGatewayKeyId],
+    queryFn: () => apiRequest<OverviewDashboardData>(dashboardQuery),
     placeholderData: keepPreviousData,
   })
+
+  const { data: overviewMetrics } = useQuery({
+    queryKey: ["overview-metrics"],
+    queryFn: () => apiRequest<OverviewMetrics>("/admin/overview"),
+    staleTime: 30_000,
+  })
+
+  const { data: gatewayApiKeys } = useQuery({
+    queryKey: ["gateway-api-keys", "overview-screen"],
+    queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
+    staleTime: 60_000,
+  })
+
   const summary = dashboardData?.summary
+  const performance = dashboardData?.performance
   const daily = dashboardData?.daily
   const models = dashboardData?.models
   const logs = dashboardData?.logs ?? []
+
+  const gatewayKeyOptions = useMemo(() => {
+    const items = (gatewayApiKeys ?? []).map((item) => ({
+      id: item.id,
+      label: formatGatewayKeyOptionLabel(item),
+    }))
+    if (effectiveGatewayKeyId && !items.some((item) => item.id === effectiveGatewayKeyId)) {
+      items.unshift({
+        id: effectiveGatewayKeyId,
+        label: shortenGatewayKeyId(effectiveGatewayKeyId),
+      })
+    }
+    return items
+  }, [effectiveGatewayKeyId, gatewayApiKeys])
 
   const periodMetrics = useMemo(() => {
     const source = daily ?? []
     const totalRequests = source.reduce((sum, item) => sum + item.request_count, 0)
     const successfulRequests = source.reduce((sum, item) => sum + item.successful_requests, 0)
-    const totalWaitTime = source.reduce((sum, item) => sum + item.wait_time_ms, 0)
 
     return {
       totalRequests,
       successfulRequests,
-      successRate: totalRequests > 0 ? Math.round((successfulRequests / totalRequests) * 100) : 0,
-      avgLatencyMs: totalRequests > 0 ? Math.round(totalWaitTime / totalRequests) : 0,
     }
   }, [daily])
 
@@ -190,25 +279,67 @@ export function OverviewScreen() {
 
   return (
     <section className="flex flex-col gap-3 md:gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-foreground">{zh ? "总览" : "Overview"}</h1>
-        <SegmentedControl
-          value={timeRange}
-          onValueChange={(v) => {
-            setTimeRange(v as TimeRange)
-            setLogOffset(0)
-          }}
-          options={[
-            { value: "-1", label: zh ? "今天" : "Today" },
-            { value: "7", label: zh ? "近7天" : "7 days" },
-            { value: "30", label: zh ? "近30天" : "30 days" },
-            { value: "0", label: zh ? "全部" : "All" },
-          ]}
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <NativeSelect
+            aria-label={zh ? "API Key 筛选" : "API key filter"}
+            className="w-full sm:w-56"
+            value={selectedGatewayKeyId}
+            onChange={(event) => {
+              setSelectedGatewayKeyId(event.target.value)
+              setLogOffset(0)
+            }}
+          >
+            <NativeSelectOption value="all">{zh ? "全部 API Key" : "All API keys"}</NativeSelectOption>
+            {gatewayKeyOptions.map((item) => (
+              <NativeSelectOption key={item.id} value={item.id}>{item.label}</NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <SegmentedControl
+            value={timeRange}
+            onValueChange={(value) => {
+              setTimeRange(value as TimeRange)
+              setLogOffset(0)
+            }}
+            options={[
+              { value: "-1", label: zh ? "今天" : "Today" },
+              { value: "7", label: zh ? "近7天" : "7 days" },
+              { value: "30", label: zh ? "近30天" : "30 days" },
+              { value: "0", label: zh ? "全部" : "All" },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {/* 请求统计 */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:col-span-3 lg:grid-cols-4">
+          <OverviewStatCard
+            icon={<Waypoints className="size-4" />}
+            label={zh ? "渠道" : "Channels"}
+            value={formatRatio(overviewMetrics?.enabled_channels ?? 0, overviewMetrics?.total_channels ?? 0)}
+            toneClassName="bg-amber-500/15 text-amber-600"
+          />
+          <OverviewStatCard
+            icon={<Boxes className="size-4" />}
+            label={zh ? "模型组" : "Model groups"}
+            value={formatRatio(overviewMetrics?.enabled_groups ?? 0, overviewMetrics?.total_groups ?? 0)}
+            toneClassName="bg-violet-500/15 text-violet-600"
+          />
+          <OverviewStatCard
+            icon={<KeyRound className="size-4" />}
+            label="API Key"
+            value={formatRatio(overviewMetrics?.enabled_gateway_keys ?? 0, overviewMetrics?.total_gateway_keys ?? 0)}
+            toneClassName="bg-emerald-500/15 text-emerald-600"
+          />
+          <OverviewStatCard
+            icon={<Clock3 className="size-4" />}
+            label={zh ? "AI 编码时长" : "AI coding time"}
+            value={formatDuration(summary?.wait_time_ms.value ?? 0)}
+            toneClassName="bg-sky-500/15 text-sky-600"
+          />
+        </div>
+
         <Card size="sm" className="py-0">
           <CardContent className="px-4 pt-3 pb-3">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -218,23 +349,25 @@ export function OverviewScreen() {
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2.5">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-600"><Activity className="size-4" /></span>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs text-muted-foreground">{zh ? "请求次数" : "Requests"}</div>
                   <div className="text-base font-semibold">{formatCompact(summary?.request_count.value ?? 0)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2.5">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600"><Activity className="size-4" /></span>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs text-muted-foreground">{zh ? "成功请求" : "Success"}</div>
-                  <div className="text-base font-semibold">{formatCompact(periodMetrics.successfulRequests)} <span className="text-xs font-normal text-muted-foreground">({successRate}%)</span></div>
+                  <div className="text-base font-semibold">
+                    {formatCompact(periodMetrics.successfulRequests)}
+                    <span className="text-xs font-normal text-muted-foreground"> ({successRate}%)</span>
+                  </div>
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Token 消耗 */}
         <Card size="sm" className="py-0">
           <CardContent className="px-4 pt-3 pb-3">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -244,23 +377,28 @@ export function OverviewScreen() {
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2.5">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-600"><Bot className="size-4" /></span>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs text-muted-foreground">{zh ? "输入 Token" : "Input Tokens"}</div>
-                  <div className="text-base font-semibold">{formatCompact(summary?.input_tokens.value ?? 0)} <span className="text-xs font-normal text-muted-foreground">/ {formatMoney(summary?.input_cost_usd.value ?? 0)}</span></div>
+                  <div className="text-base font-semibold">
+                    {formatCompact(summary?.input_tokens.value ?? 0)}
+                    <span className="text-xs font-normal text-muted-foreground"> / {formatMoney(summary?.input_cost_usd.value ?? 0)}</span>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2.5">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-rose-600"><DollarSign className="size-4" /></span>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs text-muted-foreground">{zh ? "输出 Token" : "Output Tokens"}</div>
-                  <div className="text-base font-semibold">{formatCompact(summary?.output_tokens.value ?? 0)} <span className="text-xs font-normal text-muted-foreground">/ {formatMoney(summary?.output_cost_usd.value ?? 0)}</span></div>
+                  <div className="text-base font-semibold">
+                    {formatCompact(summary?.output_tokens.value ?? 0)}
+                    <span className="text-xs font-normal text-muted-foreground"> / {formatMoney(summary?.output_cost_usd.value ?? 0)}</span>
+                  </div>
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* 性能指标 */}
         <Card size="sm" className="py-0">
           <CardContent className="px-4 pt-3 pb-3">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -269,17 +407,17 @@ export function OverviewScreen() {
             </div>
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-600"><Clock3 className="size-4" /></span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-muted-foreground">{zh ? "耗时总计" : "Total Wait"}</div>
-                  <div className="text-base font-semibold">{formatDuration(summary?.wait_time_ms.value ?? 0)}</div>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-600"><Activity className="size-4" /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-muted-foreground">{zh ? "平均 RPM" : "Avg RPM"}</div>
+                  <div className="text-base font-semibold">{formatPerMinute(performance?.avg_requests_per_minute ?? 0)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-600"><Clock3 className="size-4" /></span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-muted-foreground">{zh ? "平均延迟" : "Avg Latency"}</div>
-                  <div className="text-base font-semibold">{periodMetrics.avgLatencyMs} ms</div>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600"><Bot className="size-4" /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-muted-foreground">{zh ? "平均 TPM" : "Avg TPM"}</div>
+                  <div className="text-base font-semibold">{formatPerMinute(performance?.avg_tokens_per_minute ?? 0)}</div>
                 </div>
               </div>
             </div>
@@ -293,7 +431,7 @@ export function OverviewScreen() {
             <CardTitle className="flex-1 text-base">{zh ? "模型占比" : "Model share"}</CardTitle>
             <SegmentedControl
               value={pieMetric}
-              onValueChange={(v) => setPieMetric(v as PieMetric)}
+              onValueChange={(value) => setPieMetric(value as PieMetric)}
               options={[
                 { value: "cost", label: zh ? "费用" : "Cost" },
                 { value: "requests", label: zh ? "请求" : "Requests" },
@@ -325,8 +463,8 @@ export function OverviewScreen() {
                         )
                       }}
                     />
-                    {pieData.data.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    {pieData.data.map((_, index) => (
+                      <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
                   </Pie>
                   <ChartLegend content={<ChartLegendContent nameKey="model" className="flex-nowrap gap-3 text-[11px]" />} />
@@ -428,7 +566,7 @@ export function OverviewScreen() {
 
           {logs.length >= 50 ? (
             <div className="mt-3 flex justify-center">
-              <Button type="button" variant="outline" size="sm" onClick={() => setLogOffset((prev) => prev + 50)}>
+              <Button type="button" variant="outline" size="sm" onClick={() => setLogOffset((current) => current + 50)}>
                 {zh ? "加载更多" : "Load more"}
               </Button>
             </div>

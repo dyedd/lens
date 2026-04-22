@@ -693,6 +693,7 @@ class RequestLogItem(BaseModel):
     channel_id: str | None = None
     channel_name: str | None = None
     gateway_key_id: str | None = None
+    gateway_key_remark: str | None = None
     status_code: int
     success: bool
     is_stream: bool = False
@@ -738,10 +739,17 @@ class OverviewMetrics(BaseModel):
     total_requests: int = 0
     successful_requests: int = 0
     failed_requests: int = 0
-    avg_latency_ms: int = 0
-    active_gateway_keys: int = 0
+    enabled_gateway_keys: int = 0
+    total_gateway_keys: int = 0
     enabled_groups: int = 0
+    total_groups: int = 0
     enabled_channels: int = 0
+    total_channels: int = 0
+
+
+class OverviewPerformanceMetrics(BaseModel):
+    avg_requests_per_minute: float = 0.0
+    avg_tokens_per_minute: float = 0.0
 
 
 class OverviewSummaryMetric(BaseModel):
@@ -792,6 +800,7 @@ class OverviewModelAnalytics(BaseModel):
 
 class OverviewDashboardData(BaseModel):
     summary: OverviewSummary
+    performance: OverviewPerformanceMetrics
     daily: list[OverviewDailyPoint] = Field(default_factory=list)
     models: OverviewModelAnalytics
     logs: list[RequestLogItem] = Field(default_factory=list)

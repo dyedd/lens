@@ -1164,7 +1164,13 @@ class DomainStore:
         await self.persist_request_log_stats()
         return item
 
-    async def list_request_logs(self, limit: int = 100, days: int = 0, offset: int = 0) -> list[RequestLogItem]:
+    async def list_request_logs(
+        self,
+        limit: int = 100,
+        days: int = 0,
+        offset: int = 0,
+        gateway_key_id: str | None = None,
+    ) -> list[RequestLogItem]:
         async with self._session_factory() as session:
             stmt = (
                 select(RequestLogEntity)
@@ -1173,10 +1179,18 @@ class DomainStore:
                 .limit(limit)
             )
             stmt = self._apply_request_log_window(stmt, days=days)
+            stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
             result = await session.execute(stmt)
-            return [self._to_request_log(item) for item in result.scalars().all()]
+            entities = result.scalars().all()
+            return await self._hydrate_request_logs(session, entities)
 
-    async def list_request_log_page(self, limit: int = 100, days: int = 0, offset: int = 0) -> RequestLogPage:
+    async def list_request_log_page(
+        self,
+        limit: int = 100,
+        days: int = 0,
+        offset: int = 0,
+        gateway_key_id: str | None = None,
+    ) -> RequestLogPage:
         async with self._session_factory() as session:
             items_stmt = (
                 select(RequestLogEntity)
@@ -1185,15 +1199,22 @@ class DomainStore:
                 .limit(limit)
             )
             items_stmt = self._apply_request_log_window(items_stmt, days=days)
+            items_stmt = self._apply_gateway_key_filter(
+                items_stmt, gateway_key_id=gateway_key_id
+            )
 
             total_stmt = select(func.count()).select_from(RequestLogEntity)
             total_stmt = self._apply_request_log_window(total_stmt, days=days)
+            total_stmt = self._apply_gateway_key_filter(
+                total_stmt, gateway_key_id=gateway_key_id
+            )
 
             items_result = await session.execute(items_stmt)
             total = await session.scalar(total_stmt)
+            entities = items_result.scalars().all()
 
             return RequestLogPage(
-                items=[self._to_request_log(item) for item in items_result.scalars().all()],
+                items=await self._hydrate_request_logs(session, entities),
                 total=int(total or 0),
                 limit=limit,
                 offset=offset,
@@ -1313,7 +1334,13 @@ class DomainStore:
             entity = await session.get(RequestLogEntity, log_id)
             if entity is None:
                 raise KeyError(log_id)
-            return self._to_request_log_detail(entity)
+            remarks = await self._gateway_key_remarks_by_id(
+                session, [entity.gateway_key_id]
+            )
+            return self._to_request_log_detail(
+                entity,
+                gateway_key_remark=remarks.get(entity.gateway_key_id or ""),
+            )
 
     async def clear_request_logs(self) -> None:
         await self.persist_request_log_stats(force=True)
@@ -1339,33 +1366,62 @@ class DomainStore:
                 extra_totals = await self._request_log_totals_excluding_imported_days(session)
                 total_value = int(imported_total.request_success + imported_total.request_failed + extra_totals["request_count"])
                 success_value = int(imported_total.request_success + extra_totals["successful_requests"])
-                total_wait_time = int(imported_total.wait_time + extra_totals["wait_time_ms"])
-                avg_latency = int(total_wait_time / total_value) if total_value else 0
             else:
                 archived_totals = await self._archived_period_totals(session, days=0)
                 live_totals = await self._request_log_period_totals(session, days=0)
                 total_value = int(archived_totals["request_count"] + live_totals["request_count"])
                 success_value = int(archived_totals["successful_requests"] + live_totals["successful_requests"])
-                total_wait_time = int(archived_totals["wait_time_ms"] + live_totals["wait_time_ms"])
-                avg_latency = int(total_wait_time / total_value) if total_value else 0
 
-            enabled_groups = await session.scalar(select(func.count()).select_from(ModelGroupEntity))
+            total_groups = int(
+                await session.scalar(select(func.count()).select_from(ModelGroupEntity)) or 0
+            )
 
-        active_gateway_keys = await self.count_active_gateway_api_keys()
+        gateway_keys = await self.list_gateway_api_keys()
+        enabled_gateway_keys = sum(1 for key in gateway_keys if key.enabled)
+        total_gateway_keys = len(gateway_keys)
 
         return OverviewMetrics(
             total_requests=total_value,
             successful_requests=success_value,
             failed_requests=max(total_value - success_value, 0),
-            avg_latency_ms=avg_latency,
-            active_gateway_keys=active_gateway_keys,
-            enabled_groups=int(enabled_groups or 0),
+            enabled_gateway_keys=enabled_gateway_keys,
+            total_gateway_keys=total_gateway_keys,
+            enabled_groups=total_groups,
+            total_groups=total_groups,
             enabled_channels=0,
+            total_channels=0,
         )
 
-    async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
+    async def get_overview_summary(
+        self, days: int = 7, gateway_key_id: str | None = None
+    ) -> OverviewSummary:
+        normalized_gateway_key_id = self._normalize_gateway_key_id(gateway_key_id)
         async with self._session_factory() as session:
-            if days != 0:
+            if normalized_gateway_key_id is not None:
+                if days != 0:
+                    comparison_offset = 1 if days == -1 else days
+                    recent = await self._request_log_period_totals(
+                        session,
+                        days=days,
+                        gateway_key_id=normalized_gateway_key_id,
+                        include_archived=True,
+                    )
+                    previous = await self._request_log_period_totals(
+                        session,
+                        days=days,
+                        offset_days=comparison_offset,
+                        gateway_key_id=normalized_gateway_key_id,
+                        include_archived=True,
+                    )
+                else:
+                    recent = await self._request_log_period_totals(
+                        session,
+                        days=0,
+                        gateway_key_id=normalized_gateway_key_id,
+                        include_archived=True,
+                    )
+                    previous = self._zero_totals()
+            elif days != 0:
                 comparison_offset = 1 if days == -1 else days
                 recent = await self._merged_period_totals(session, days=days)
                 previous = await self._merged_period_totals(session, days=days, offset_days=comparison_offset)
@@ -1392,13 +1448,42 @@ class DomainStore:
             output_cost_usd=OverviewSummaryMetric(value=output_cost_usd, delta=self._delta_percent(output_cost_usd, previous["output_cost_usd"])),
         )
 
-    async def list_overview_daily(self, days: int = 0) -> list[OverviewDailyPoint]:
+    async def list_overview_daily(
+        self, days: int = 0, gateway_key_id: str | None = None
+    ) -> list[OverviewDailyPoint]:
+        normalized_gateway_key_id = self._normalize_gateway_key_id(gateway_key_id)
         async with self._session_factory() as session:
+            if normalized_gateway_key_id is not None:
+                return await self._request_log_daily_points(
+                    session,
+                    days=days,
+                    gateway_key_id=normalized_gateway_key_id,
+                    include_archived=True,
+                )
             return await self._merged_daily_points(session, days=days)
 
-    async def get_model_analytics(self, days: int = 7) -> OverviewModelAnalytics:
+    async def get_model_analytics(
+        self, days: int = 7, gateway_key_id: str | None = None
+    ) -> OverviewModelAnalytics:
+        normalized_gateway_key_id = self._normalize_gateway_key_id(gateway_key_id)
         async with self._session_factory() as session:
-            if days == -1:
+            if normalized_gateway_key_id is not None:
+                archived_model_rows = []
+                if days == -1:
+                    live_model_rows = await self._request_log_model_hourly_rows(
+                        session,
+                        days=days,
+                        gateway_key_id=normalized_gateway_key_id,
+                        include_archived=True,
+                    )
+                else:
+                    live_model_rows = await self._request_log_model_daily_rows(
+                        session,
+                        days=days,
+                        gateway_key_id=normalized_gateway_key_id,
+                        include_archived=True,
+                    )
+            elif days == -1:
                 archived_model_rows = []
                 live_model_rows = await self._request_log_model_hourly_rows(session, days=days)
             else:
@@ -1602,6 +1687,8 @@ class DomainStore:
         days: int,
         offset_days: int = 0,
         exclude_dates: set[str] | None = None,
+        gateway_key_id: str | None = None,
+        include_archived: bool = False,
     ) -> list[OverviewDailyPoint]:
         stmt = (
             select(
@@ -1616,8 +1703,10 @@ class DomainStore:
             .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
             .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
         )
-        stmt = stmt.where(RequestLogEntity.stats_archived == 0)
+        if not include_archived:
+            stmt = stmt.where(RequestLogEntity.stats_archived == 0)
         stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         if exclude_dates:
             stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
         rows = (await session.execute(stmt)).all()
@@ -1736,7 +1825,15 @@ class DomainStore:
             raise
         return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows]
 
-    async def _request_log_model_daily_rows(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[tuple[str, str, int, int, float]]:
+    async def _request_log_model_daily_rows(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        offset_days: int = 0,
+        gateway_key_id: str | None = None,
+        include_archived: bool = False,
+    ) -> list[tuple[str, str, int, int, float]]:
         model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
         stmt = (
             select(
@@ -1746,17 +1843,27 @@ class DomainStore:
                 func.sum(RequestLogEntity.total_tokens),
                 func.sum(RequestLogEntity.total_cost_usd),
             )
-            .where(RequestLogEntity.stats_archived == 0)
             .where(RequestLogEntity.success == 1)
             .where(model_expr.is_not(None))
             .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
             .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
         )
+        if not include_archived:
+            stmt = stmt.where(RequestLogEntity.stats_archived == 0)
         stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         rows = (await session.execute(stmt)).all()
         return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows if model]
 
-    async def _request_log_model_hourly_rows(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[tuple[str, str, int, int, float]]:
+    async def _request_log_model_hourly_rows(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        offset_days: int = 0,
+        gateway_key_id: str | None = None,
+        include_archived: bool = False,
+    ) -> list[tuple[str, str, int, int, float]]:
         model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
         hourly_bucket = func.strftime('%Y%m%d%H', RequestLogEntity.created_at)
         stmt = (
@@ -1767,13 +1874,15 @@ class DomainStore:
                 func.sum(RequestLogEntity.total_tokens),
                 func.sum(RequestLogEntity.total_cost_usd),
             )
-            .where(RequestLogEntity.stats_archived == 0)
             .where(RequestLogEntity.success == 1)
             .where(model_expr.is_not(None))
             .group_by(hourly_bucket, model_expr)
             .order_by(hourly_bucket.asc())
         )
+        if not include_archived:
+            stmt = stmt.where(RequestLogEntity.stats_archived == 0)
         stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         rows = (await session.execute(stmt)).all()
         return [
             (str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0))
@@ -1861,6 +1970,8 @@ class DomainStore:
         days: int,
         offset_days: int = 0,
         exclude_dates: set[str] | None = None,
+        gateway_key_id: str | None = None,
+        include_archived: bool = False,
     ) -> dict[str, float]:
         stmt = (
             select(
@@ -1875,8 +1986,10 @@ class DomainStore:
             )
             .select_from(RequestLogEntity)
         )
-        stmt = stmt.where(RequestLogEntity.stats_archived == 0)
+        if not include_archived:
+            stmt = stmt.where(RequestLogEntity.stats_archived == 0)
         stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         if exclude_dates:
             stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
         row = (await session.execute(stmt)).one()
@@ -1931,6 +2044,20 @@ class DomainStore:
         if end_at is not None:
             stmt = stmt.where(RequestLogEntity.created_at < end_at)
         return stmt
+
+    @staticmethod
+    def _normalize_gateway_key_id(gateway_key_id: str | None) -> str | None:
+        normalized = (gateway_key_id or "").strip()
+        return normalized or None
+
+    @classmethod
+    def _apply_gateway_key_filter(
+        cls, stmt: Any, *, gateway_key_id: str | None = None
+    ) -> Any:
+        normalized = cls._normalize_gateway_key_id(gateway_key_id)
+        if normalized is None:
+            return stmt
+        return stmt.where(RequestLogEntity.gateway_key_id == normalized)
 
     @staticmethod
     def _delta_percent(current: float, previous: float) -> float:
@@ -2130,7 +2257,46 @@ class DomainStore:
         )
 
     @staticmethod
-    def _to_request_log(entity: RequestLogEntity) -> RequestLogItem:
+    async def _gateway_key_remarks_by_id(
+        self, session: AsyncSession, key_ids: list[str | None]
+    ) -> dict[str, str]:
+        unique_ids = [
+            item for item in dict.fromkeys(str(key_id).strip() for key_id in key_ids if key_id)
+            if item
+        ]
+        if not unique_ids:
+            return {}
+        rows = (
+            await session.execute(
+                select(GatewayApiKeyEntity.id, GatewayApiKeyEntity.remark).where(
+                    GatewayApiKeyEntity.id.in_(unique_ids)
+                )
+            )
+        ).all()
+        return {
+            str(key_id): str(remark or "").strip()
+            for key_id, remark in rows
+            if key_id is not None
+        }
+
+    async def _hydrate_request_logs(
+        self, session: AsyncSession, entities: list[RequestLogEntity]
+    ) -> list[RequestLogItem]:
+        remarks = await self._gateway_key_remarks_by_id(
+            session, [entity.gateway_key_id for entity in entities]
+        )
+        return [
+            self._to_request_log(
+                entity,
+                gateway_key_remark=remarks.get(entity.gateway_key_id or ""),
+            )
+            for entity in entities
+        ]
+
+    @staticmethod
+    def _to_request_log(
+        entity: RequestLogEntity, *, gateway_key_remark: str | None = None
+    ) -> RequestLogItem:
         attempts = DomainStore._parse_attempts_json(entity.attempts_json)
         return RequestLogItem(
             id=entity.id,
@@ -2141,6 +2307,7 @@ class DomainStore:
             channel_id=entity.channel_id,
             channel_name=entity.channel_name,
             gateway_key_id=entity.gateway_key_id,
+            gateway_key_remark=gateway_key_remark or None,
             status_code=entity.status_code,
             success=bool(entity.success),
             is_stream=bool(entity.is_stream),
@@ -2160,9 +2327,13 @@ class DomainStore:
         )
 
     @staticmethod
-    def _to_request_log_detail(entity: RequestLogEntity) -> RequestLogDetail:
+    def _to_request_log_detail(
+        entity: RequestLogEntity, *, gateway_key_remark: str | None = None
+    ) -> RequestLogDetail:
         return RequestLogDetail(
-            **DomainStore._to_request_log(entity).model_dump(),
+            **DomainStore._to_request_log(
+                entity, gateway_key_remark=gateway_key_remark
+            ).model_dump(),
             request_content=entity.request_content,
             response_content=entity.response_content,
             attempts=[
