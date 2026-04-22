@@ -1392,36 +1392,9 @@ class DomainStore:
             total_channels=0,
         )
 
-    async def get_overview_summary(
-        self, days: int = 7, gateway_key_id: str | None = None
-    ) -> OverviewSummary:
-        normalized_gateway_key_id = self._normalize_gateway_key_id(gateway_key_id)
+    async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
         async with self._session_factory() as session:
-            if normalized_gateway_key_id is not None:
-                if days != 0:
-                    comparison_offset = 1 if days == -1 else days
-                    recent = await self._request_log_period_totals(
-                        session,
-                        days=days,
-                        gateway_key_id=normalized_gateway_key_id,
-                        include_archived=True,
-                    )
-                    previous = await self._request_log_period_totals(
-                        session,
-                        days=days,
-                        offset_days=comparison_offset,
-                        gateway_key_id=normalized_gateway_key_id,
-                        include_archived=True,
-                    )
-                else:
-                    recent = await self._request_log_period_totals(
-                        session,
-                        days=0,
-                        gateway_key_id=normalized_gateway_key_id,
-                        include_archived=True,
-                    )
-                    previous = self._zero_totals()
-            elif days != 0:
+            if days != 0:
                 comparison_offset = 1 if days == -1 else days
                 recent = await self._merged_period_totals(session, days=days)
                 previous = await self._merged_period_totals(session, days=days, offset_days=comparison_offset)
@@ -1449,17 +1422,9 @@ class DomainStore:
         )
 
     async def list_overview_daily(
-        self, days: int = 0, gateway_key_id: str | None = None
+        self, days: int = 0
     ) -> list[OverviewDailyPoint]:
-        normalized_gateway_key_id = self._normalize_gateway_key_id(gateway_key_id)
         async with self._session_factory() as session:
-            if normalized_gateway_key_id is not None:
-                return await self._request_log_daily_points(
-                    session,
-                    days=days,
-                    gateway_key_id=normalized_gateway_key_id,
-                    include_archived=True,
-                )
             return await self._merged_daily_points(session, days=days)
 
     async def get_model_analytics(
