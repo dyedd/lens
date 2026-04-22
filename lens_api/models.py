@@ -518,6 +518,45 @@ class SettingItem(BaseModel):
     value: str
 
 
+class GatewayApiKeyBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    remark: str = ""
+    enabled: bool = True
+    allowed_models: list[str] = Field(default_factory=list)
+    max_cost_usd: float = Field(default=0.0, ge=0.0)
+    expires_at: str | None = None
+
+    @field_validator("allowed_models")
+    @classmethod
+    def normalize_allowed_models(cls, models: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in models:
+            value = str(item).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        return normalized
+
+
+class GatewayApiKeyCreate(GatewayApiKeyBase):
+    pass
+
+
+class GatewayApiKeyUpdate(GatewayApiKeyBase):
+    pass
+
+
+class GatewayApiKey(GatewayApiKeyBase):
+    id: str
+    api_key: str
+    spent_cost_usd: float = 0.0
+    created_at: str
+    updated_at: str
+
+
 class SettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -584,6 +623,13 @@ class ConfigBackupStatsSnapshot(BaseModel):
     model_daily: list[ConfigBackupOverviewModelDailyStat] = Field(default_factory=list)
 
 
+class ConfigBackupGatewayApiKey(GatewayApiKeyBase):
+    id: str
+    api_key: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class ConfigBackupRequestLog(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -628,7 +674,7 @@ class ConfigBackupDump(BaseModel):
     groups: list[ModelGroup] = Field(default_factory=list)
     model_prices: list[ModelPriceItem] = Field(default_factory=list)
     stats: ConfigBackupStatsSnapshot = Field(default_factory=ConfigBackupStatsSnapshot)
-    gateway_api_keys: list[str] = Field(default_factory=list)
+    gateway_api_keys: list[ConfigBackupGatewayApiKey] = Field(default_factory=list)
     request_logs: list[ConfigBackupRequestLog] = Field(default_factory=list)
 
 

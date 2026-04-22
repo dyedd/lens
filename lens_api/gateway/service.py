@@ -35,6 +35,9 @@ from ..models import (
     ConfigBackupDump,
     ConfigImportResult,
     ErrorResponse,
+    GatewayApiKey,
+    GatewayApiKeyCreate,
+    GatewayApiKeyUpdate,
     ModelGroup,
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
@@ -69,8 +72,6 @@ from ..persistence.admin_store import AdminStore
 from ..persistence.backup_store import BackupStore
 from ..persistence.channel_store import ChannelStore
 from ..persistence.domain_store import (
-    SETTING_GATEWAY_API_KEY_HINT,
-    SETTING_GATEWAY_API_KEYS,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     DomainStore,
@@ -336,7 +337,7 @@ async def get_current_admin(
     return admin
 
 
-async def get_current_gateway_key(request: Request) -> str:
+async def get_current_gateway_key(request: Request) -> GatewayApiKey:
     authorization = request.headers.get("authorization", "")
     x_api_key = request.headers.get("x-api-key", "")
     x_goog_api_key = request.headers.get("x-goog-api-key", "")
@@ -349,24 +350,61 @@ async def get_current_gateway_key(request: Request) -> str:
     elif x_goog_api_key:
         secret = x_goog_api_key.strip()
 
-    try:
-        gateway_auth = await app_state.domain_store.get_gateway_auth_config()
-    except OperationalError as exc:
-        _raise_database_http_error(exc)
-    if not gateway_auth["require_api_key"]:
-        return secret or "anonymous"
-
     if not secret:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing gateway API key"
         )
 
-    if secret not in gateway_auth["keys"]:
+    try:
+        gateway_key = await app_state.domain_store.get_gateway_api_key_by_secret(secret)
+    except OperationalError as exc:
+        _raise_database_http_error(exc)
+
+    if gateway_key is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid gateway API key"
         )
 
-    return secret
+    if not gateway_key.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Gateway API key is disabled"
+        )
+
+    if _is_gateway_key_expired(gateway_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Gateway API key has expired"
+        )
+
+    if gateway_key.max_cost_usd > 0 and gateway_key.spent_cost_usd >= gateway_key.max_cost_usd:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Gateway API key has reached the max balance",
+        )
+
+    return gateway_key
+
+
+def _is_gateway_key_expired(gateway_key: GatewayApiKey) -> bool:
+    if not gateway_key.expires_at:
+        return False
+    try:
+        expires_at = datetime.fromisoformat(
+            gateway_key.expires_at.replace("Z", "+00:00")
+        )
+    except ValueError:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at <= datetime.now(UTC)
+
+
+def _gateway_key_allows_model(gateway_key: GatewayApiKey, model_name: str | None) -> bool:
+    if not gateway_key.allowed_models:
+        return True
+    if not model_name:
+        return True
+    normalized_allowed = {item.strip().lower() for item in gateway_key.allowed_models if item.strip()}
+    return model_name.strip().lower() in normalized_allowed
 
 
 async def healthz() -> dict[str, str]:
@@ -737,12 +775,6 @@ async def update_settings(
 ) -> list[SettingItem]:
     normalized_items = []
     for item in payload.items:
-        if item.key == SETTING_GATEWAY_API_KEYS:
-            normalized_items.append(SettingItem(key=item.key, value=item.value))
-            continue
-        if item.key == SETTING_GATEWAY_API_KEY_HINT:
-            normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
-            continue
         if item.key == SETTING_SITE_NAME:
             normalized_items.append(
                 SettingItem(key=item.key, value=item.value.strip() or "Lens")
@@ -753,6 +785,46 @@ async def update_settings(
             continue
         normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
     return await app_state.domain_store.upsert_settings(normalized_items)
+
+
+async def list_gateway_api_keys(
+    _: Any = Depends(get_current_admin),
+) -> list[GatewayApiKey]:
+    return await app_state.domain_store.list_gateway_api_keys()
+
+
+async def create_gateway_api_key(
+    payload: GatewayApiKeyCreate, _: Any = Depends(get_current_admin)
+) -> GatewayApiKey:
+    try:
+        return await app_state.domain_store.create_gateway_api_key(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+async def update_gateway_api_key(
+    key_id: str, payload: GatewayApiKeyUpdate, _: Any = Depends(get_current_admin)
+) -> GatewayApiKey:
+    try:
+        return await app_state.domain_store.update_gateway_api_key(key_id, payload)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Gateway API key not found: {key_id}"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+async def delete_gateway_api_key(
+    key_id: str, _: Any = Depends(get_current_admin)
+) -> Response:
+    try:
+        await app_state.domain_store.delete_gateway_api_key(key_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Gateway API key not found: {key_id}"
+        ) from exc
+    return Response(status_code=204)
 
 
 async def export_settings_bundle(
@@ -797,28 +869,28 @@ async def import_settings_bundle(
 
 
 async def proxy_openai_chat(
-    request: Request, gateway_key: str = Depends(get_current_gateway_key)
+    request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.OPENAI_CHAT, body, gateway_key)
 
 
 async def proxy_openai_responses(
-    request: Request, gateway_key: str = Depends(get_current_gateway_key)
+    request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.OPENAI_RESPONSES, body, gateway_key)
 
 
 async def proxy_anthropic_messages(
-    request: Request, gateway_key: str = Depends(get_current_gateway_key)
+    request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ):
     body = await request.json()
     return await _proxy_protocol(ProtocolKind.ANTHROPIC, body, gateway_key)
 
 
 async def list_gateway_models(
-    _: str = Depends(get_current_gateway_key),
+    gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
     groups = await app_state.domain_store.list_groups()
     openai_model_names = sorted(
@@ -828,6 +900,7 @@ async def list_gateway_models(
             if group.name.strip()
             and group.protocol
             in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}
+            and _gateway_key_allows_model(gateway_key, group.name)
         }
     )
     return {
@@ -847,7 +920,7 @@ async def list_gateway_models(
 async def proxy_gemini_generate_content(
     model_name: str,
     request: Request,
-    gateway_key: str = Depends(get_current_gateway_key),
+    gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ):
     body = await request.json()
     body = {**body, "model": model_name, "stream": False}
@@ -857,7 +930,7 @@ async def proxy_gemini_generate_content(
 async def proxy_gemini_stream_generate_content(
     model_name: str,
     request: Request,
-    gateway_key: str = Depends(get_current_gateway_key),
+    gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ):
     body = await request.json()
     body = {**body, "model": model_name, "stream": True}
@@ -865,13 +938,23 @@ async def proxy_gemini_stream_generate_content(
 
 
 async def _proxy_protocol(
-    protocol: ProtocolKind, body: dict[str, Any], gateway_key: str
+    protocol: ProtocolKind, body: dict[str, Any], gateway_key: GatewayApiKey
 ) -> Response:
     channels = await app_state.store.list()
     runtime = await app_state.domain_store.get_runtime_settings()
     _apply_router_runtime_settings(runtime)
     started_at = perf_counter()
     requested_model = _requested_model(protocol, body)
+    if not _gateway_key_allows_model(gateway_key, requested_model):
+        error_body = ErrorResponse(
+            error={
+                "type": "forbidden_model",
+                "message": "Gateway API key is not allowed to use this model",
+            }
+        )
+        return JSONResponse(
+            status_code=403, content=error_body.model_dump(mode="json")
+        )
     request_content = _dump_json(body)
     plan: RoutingPlan | None = None
     attempts: list[AttemptLog] = []
@@ -1529,7 +1612,7 @@ async def _record_stream_request_log(
     requested_group_name: str | None,
     resolved_group_name: str | None,
     channel: ChannelConfig,
-    gateway_key: str,
+    gateway_key: GatewayApiKey,
     started_at: float,
     upstream_body: dict[str, Any],
     result: UpstreamResult,
@@ -1596,7 +1679,7 @@ async def _record_request_log(
     upstream_model_name: str | None,
     channel_id: str | None,
     channel_name: str | None,
-    gateway_key: str,
+    gateway_key: GatewayApiKey,
     status_code: int,
     success: bool,
     is_stream: bool,
@@ -1622,7 +1705,7 @@ async def _record_request_log(
         upstream_model_name=upstream_model_name,
         channel_id=channel_id,
         channel_name=channel_name,
-        gateway_key_id=gateway_key,
+        gateway_key_id=gateway_key.id,
         status_code=status_code,
         success=success,
         is_stream=is_stream,

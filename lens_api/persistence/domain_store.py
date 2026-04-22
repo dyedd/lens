@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from time import monotonic
@@ -12,12 +13,10 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
-from ..models import ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem, SiteRuntimeSummary
-from .entities import ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
+from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem, SiteRuntimeSummary
+from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
-SETTING_GATEWAY_API_KEYS = "gateway_api_keys"
-SETTING_GATEWAY_API_KEY_HINT = "gateway_api_key_hint"
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
 SETTING_PROXY_URL = "proxy_url"
 SETTING_STATS_SAVE_INTERVAL = "stats_save_interval"
@@ -33,6 +32,7 @@ SETTING_HEALTH_PENALTY_WEIGHT = "health_penalty_weight"
 SETTING_HEALTH_MIN_SAMPLES = "health_min_samples"
 SETTING_SITE_NAME = "site_name"
 SETTING_SITE_LOGO_URL = "site_logo_url"
+GATEWAY_API_KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 class DomainStore:
@@ -822,16 +822,93 @@ class DomainStore:
             credential_names_by_channel.setdefault(protocol_config_id, {})[credential_id] = credential_name
         return credential_names_by_channel
 
-    async def get_gateway_auth_config(self) -> dict[str, Any]:
-        items = await self.list_settings()
-        mapping = {item.key: item.value for item in items}
-        keys = self._split_gateway_keys(mapping.get(SETTING_GATEWAY_API_KEYS, ""))
-        require_api_key = bool(keys)
-        return {
-            "keys": keys,
-            "require_api_key": require_api_key,
-            "hint": mapping.get(SETTING_GATEWAY_API_KEY_HINT, ""),
-        }
+    async def list_gateway_api_keys(self) -> list[GatewayApiKey]:
+        async with self._session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(GatewayApiKeyEntity).order_by(
+                        GatewayApiKeyEntity.created_at.asc(),
+                        GatewayApiKeyEntity.id.asc(),
+                    )
+                )
+            ).scalars().all()
+            spent_by_key = await self._gateway_key_spend_by_id(
+                session, [row.id for row in rows]
+            )
+            return [
+                self._to_gateway_api_key(row, spent_by_key.get(row.id, 0.0))
+                for row in rows
+            ]
+
+    async def get_gateway_api_key_by_secret(self, secret: str) -> GatewayApiKey | None:
+        normalized = secret.strip()
+        if not normalized:
+            return None
+        async with self._session_factory() as session:
+            entity = (
+                await session.execute(
+                    select(GatewayApiKeyEntity)
+                    .where(GatewayApiKeyEntity.api_key == normalized)
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if entity is None:
+                return None
+            spent = await self._gateway_key_spend(session, entity.id)
+            return self._to_gateway_api_key(entity, spent)
+
+    async def create_gateway_api_key(self, payload: GatewayApiKeyCreate) -> GatewayApiKey:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        async with self._session_factory() as session:
+            secret = await self._generate_unique_gateway_api_key(session)
+            entity = GatewayApiKeyEntity(
+                id=uuid.uuid4().hex,
+                remark=payload.remark.strip(),
+                api_key=secret,
+                enabled=1 if payload.enabled else 0,
+                allowed_models_json=self._dump_gateway_key_models(payload.allowed_models),
+                max_cost_usd=max(float(payload.max_cost_usd), 0.0),
+                expires_at=self._parse_gateway_key_expires_at(payload.expires_at),
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(entity)
+            await session.commit()
+            await session.refresh(entity)
+            return self._to_gateway_api_key(entity, 0.0)
+
+    async def update_gateway_api_key(
+        self, key_id: str, payload: GatewayApiKeyUpdate
+    ) -> GatewayApiKey:
+        async with self._session_factory() as session:
+            entity = await session.get(GatewayApiKeyEntity, key_id)
+            if entity is None:
+                raise KeyError(key_id)
+            entity.remark = payload.remark.strip()
+            entity.enabled = 1 if payload.enabled else 0
+            entity.allowed_models_json = self._dump_gateway_key_models(
+                payload.allowed_models
+            )
+            entity.max_cost_usd = max(float(payload.max_cost_usd), 0.0)
+            entity.expires_at = self._parse_gateway_key_expires_at(payload.expires_at)
+            entity.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            await session.commit()
+            await session.refresh(entity)
+            spent = await self._gateway_key_spend(session, entity.id)
+            return self._to_gateway_api_key(entity, spent)
+
+    async def delete_gateway_api_key(self, key_id: str) -> None:
+        async with self._session_factory() as session:
+            entity = await session.get(GatewayApiKeyEntity, key_id)
+            if entity is None:
+                raise KeyError(key_id)
+            await session.delete(entity)
+            await session.commit()
+
+    async def count_active_gateway_api_keys(self) -> int:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        keys = await self.list_gateway_api_keys()
+        return sum(1 for key in keys if self._is_gateway_api_key_usable(key, now=now))
 
     async def get_runtime_settings(self) -> dict[str, Any]:
         items = await self.list_settings()
@@ -1274,14 +1351,14 @@ class DomainStore:
 
             enabled_groups = await session.scalar(select(func.count()).select_from(ModelGroupEntity))
 
-        gateway_auth = await self.get_gateway_auth_config()
+        active_gateway_keys = await self.count_active_gateway_api_keys()
 
         return OverviewMetrics(
             total_requests=total_value,
             successful_requests=success_value,
             failed_requests=max(total_value - success_value, 0),
             avg_latency_ms=avg_latency,
-            active_gateway_keys=len(gateway_auth["keys"]),
+            active_gateway_keys=active_gateway_keys,
             enabled_groups=int(enabled_groups or 0),
             enabled_channels=0,
         )
@@ -1868,16 +1945,131 @@ class DomainStore:
         return total
 
     @staticmethod
-    def _split_gateway_keys(raw_value: str) -> list[str]:
-        keys: list[str] = []
+    def _load_gateway_key_models(raw_value: str | None) -> list[str]:
+        if not raw_value:
+            return []
+        try:
+            payload = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(payload, list):
+            return []
+        models: list[str] = []
         seen: set[str] = set()
-        for item in raw_value.replace("\r", "\n").split("\n"):
-            normalized = item.strip()
+        for item in payload:
+            normalized = str(item).strip()
             if not normalized or normalized in seen:
                 continue
             seen.add(normalized)
-            keys.append(normalized)
-        return keys
+            models.append(normalized)
+        return models
+
+    @staticmethod
+    def _dump_gateway_key_models(models: list[str]) -> str:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in models:
+            value = str(item).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        return json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))
+
+    @classmethod
+    async def _generate_unique_gateway_api_key(cls, session: AsyncSession) -> str:
+        for _ in range(10):
+            secret = cls._generate_gateway_api_key()
+            exists = (
+                await session.execute(
+                    select(GatewayApiKeyEntity.id)
+                    .where(GatewayApiKeyEntity.api_key == secret)
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                return secret
+        raise RuntimeError("Unable to generate unique gateway API key")
+
+    @staticmethod
+    def _generate_gateway_api_key() -> str:
+        return "sk-lens-" + "".join(
+            secrets.choice(GATEWAY_API_KEY_CHARS) for _ in range(48)
+        )
+
+    @staticmethod
+    def _parse_gateway_key_expires_at(value: str | None) -> datetime | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError("Invalid gateway API key expiration time") from exc
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+        return parsed
+
+    @staticmethod
+    def _format_datetime(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC).isoformat()
+
+    async def _gateway_key_spend_by_id(
+        self, session: AsyncSession, key_ids: list[str]
+    ) -> dict[str, float]:
+        unique_ids = [item for item in dict.fromkeys(key_ids) if item]
+        if not unique_ids:
+            return {}
+        rows = (
+            await session.execute(
+                select(
+                    RequestLogEntity.gateway_key_id,
+                    func.sum(RequestLogEntity.total_cost_usd),
+                )
+                .where(RequestLogEntity.gateway_key_id.in_(unique_ids))
+                .group_by(RequestLogEntity.gateway_key_id)
+            )
+        ).all()
+        return {str(key_id): float(total or 0.0) for key_id, total in rows}
+
+    async def _gateway_key_spend(self, session: AsyncSession, key_id: str) -> float:
+        return (await self._gateway_key_spend_by_id(session, [key_id])).get(key_id, 0.0)
+
+    @classmethod
+    def _to_gateway_api_key(
+        cls, entity: GatewayApiKeyEntity, spent_cost_usd: float
+    ) -> GatewayApiKey:
+        return GatewayApiKey(
+            id=entity.id,
+            remark=entity.remark,
+            api_key=entity.api_key,
+            enabled=bool(entity.enabled),
+            allowed_models=cls._load_gateway_key_models(entity.allowed_models_json),
+            max_cost_usd=max(float(entity.max_cost_usd or 0.0), 0.0),
+            spent_cost_usd=max(float(spent_cost_usd), 0.0),
+            expires_at=cls._format_datetime(entity.expires_at),
+            created_at=cls._format_datetime(entity.created_at) or "",
+            updated_at=cls._format_datetime(entity.updated_at) or "",
+        )
+
+    @staticmethod
+    def _is_gateway_api_key_usable(key: GatewayApiKey, *, now: datetime) -> bool:
+        if not key.enabled:
+            return False
+        if key.expires_at:
+            try:
+                expires_at = DomainStore._parse_gateway_key_expires_at(key.expires_at)
+            except ValueError:
+                return False
+            if expires_at is not None and expires_at <= now:
+                return False
+        return not (key.max_cost_usd > 0 and key.spent_cost_usd >= key.max_cost_usd)
 
     @staticmethod
     def _split_comma_lines(raw_value: str) -> list[str]:

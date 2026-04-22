@@ -112,6 +112,20 @@ class SettingEntity(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class GatewayApiKeyEntity(Base):
+    __tablename__ = "gateway_api_keys"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    remark: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    api_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    allowed_models_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    max_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class RequestLogEntity(Base):
     __tablename__ = "request_logs"
 
