@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   Dialog,
   DialogContent,
@@ -36,8 +37,10 @@ import { Input } from "@/components/ui/input"
 import {
   Item,
   ItemContent,
+  ItemDescription,
   ItemGroup,
   ItemHeader,
+  ItemMedia,
   ItemTitle,
 } from "@/components/ui/item"
 import { Switch } from "@/components/ui/switch"
@@ -50,7 +53,6 @@ import {
   importConfigBackup,
 } from "@/lib/api"
 import { type Locale } from "@/lib/i18n"
-import { cn } from "@/lib/utils"
 
 function titleForLocale(locale: Locale, zh: string, en: string) {
   return locale === "zh-CN" ? zh : en
@@ -154,12 +156,14 @@ function PreviewMeta({
   value: string
 }) {
   return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2.5">
-      <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-1 text-sm font-medium text-foreground">{value}</div>
-    </div>
+    <Item variant="muted" size="sm">
+      <ItemContent>
+        <ItemDescription className="text-[11px] uppercase tracking-[0.08em]">
+          {label}
+        </ItemDescription>
+        <ItemTitle>{value}</ItemTitle>
+      </ItemContent>
+    </Item>
   )
 }
 
@@ -396,26 +400,19 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
               </Field>
             </FieldGroup>
 
-            <div
-              className={cn(
-                "rounded-md border px-4 py-3 text-sm",
-                includeLogs || includeGatewayApiKeys
-                  ? "border-amber-200 bg-amber-50/70 text-amber-900"
-                  : "bg-muted/30 text-muted-foreground"
-              )}
-            >
-              <div className="flex items-center gap-2 font-medium">
-                <CircleAlert className="size-4" />
+            <Alert>
+              <CircleAlert />
+              <AlertTitle>
                 {titleForLocale(locale, "导出说明", "Export notes")}
-              </div>
-              <div className="mt-2 leading-6">
+              </AlertTitle>
+              <AlertDescription>
                 {titleForLocale(
                   locale,
                   "渠道配置始终包含上游凭据，统计数据会一并备份；导出文件可直接用于新实例覆盖导入恢复。",
                   "Channel configuration always includes upstream credentials, and stats are backed up together; the exported file can be imported directly into a fresh instance."
                 )}
-              </div>
-            </div>
+              </AlertDescription>
+            </Alert>
 
             <Button
               type="button"
@@ -447,80 +444,101 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
                   ref={fileInputRef}
                   type="file"
                   accept="application/json,.json"
+                  className="hidden"
                   onChange={(event) =>
                     void handleFileChange(event.target.files?.[0] ?? null)
                   }
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <FileJson data-icon="inline-start" />
+                  {titleForLocale(locale, "选择 JSON 文件", "Select JSON file")}
+                </Button>
               </Field>
             </FieldGroup>
 
             {previewError ? (
-              <div className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                {previewError}
-              </div>
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertDescription>{previewError}</AlertDescription>
+              </Alert>
             ) : null}
 
             {selectedFile ? (
-              <div className="rounded-md border bg-muted/20 px-4 py-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <FileJson className="size-4 text-muted-foreground" />
-                  <span className="truncate">{selectedFile.name}</span>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {Math.max(selectedFile.size / 1024, 0.1).toFixed(1)} KB
-                </div>
-              </div>
+              <Item variant="muted">
+                <ItemMedia variant="icon">
+                  <FileJson />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle className="truncate">{selectedFile.name}</ItemTitle>
+                  <ItemDescription>
+                    {Math.max(selectedFile.size / 1024, 0.1).toFixed(1)} KB
+                  </ItemDescription>
+                </ItemContent>
+              </Item>
             ) : null}
 
             {preview ? (
-              <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 px-4 py-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <PreviewMeta
-                    label={titleForLocale(locale, "版本", "Version")}
-                    value={"v" + String(preview.version || 1)}
-                  />
-                  <PreviewMeta
-                    label={titleForLocale(locale, "系统版本", "Lens version")}
-                    value={preview.lens_version || "n/a"}
-                  />
-                  <PreviewMeta
-                    label={titleForLocale(locale, "导出时间", "Exported at")}
-                    value={formatExportedAt(preview.exported_at, locale)}
-                  />
-                </div>
+              <Card className="py-0">
+                <CardContent className="flex flex-col gap-3 p-4">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <PreviewMeta
+                      label={titleForLocale(locale, "版本", "Version")}
+                      value={"v" + String(preview.version || 1)}
+                    />
+                    <PreviewMeta
+                      label={titleForLocale(locale, "系统版本", "Lens version")}
+                      value={preview.lens_version || "n/a"}
+                    />
+                    <PreviewMeta
+                      label={titleForLocale(locale, "导出时间", "Exported at")}
+                      value={formatExportedAt(preview.exported_at, locale)}
+                    />
+                  </div>
 
-                <ItemGroup className="gap-2">
-                  {previewSections.map((item) => (
-                    <Item key={item.key} variant="outline" size="sm">
-                      <ItemContent>
-                        <ItemHeader>
-                          <ItemTitle>{item.label}</ItemTitle>
-                          <Badge variant="secondary">{item.count}</Badge>
-                        </ItemHeader>
-                      </ItemContent>
-                    </Item>
-                  ))}
-                </ItemGroup>
-              </div>
+                  <ItemGroup className="gap-2">
+                    {previewSections.map((item) => (
+                      <Item key={item.key} variant="outline" size="sm">
+                        <ItemContent>
+                          <ItemHeader>
+                            <ItemTitle>{item.label}</ItemTitle>
+                            <Badge variant="secondary">{item.count}</Badge>
+                          </ItemHeader>
+                        </ItemContent>
+                      </Item>
+                    ))}
+                  </ItemGroup>
+                </CardContent>
+              </Card>
             ) : selectedFile && isPreviewPending ? (
-              <div className="rounded-md border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-                {titleForLocale(locale, "正在解析备份文件...", "Parsing backup file...")}
-              </div>
+              <Item variant="muted">
+                <ItemMedia variant="icon">
+                  <FileJson />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>
+                    {titleForLocale(locale, "正在解析备份文件...", "Parsing backup file...")}
+                  </ItemTitle>
+                </ItemContent>
+              </Item>
             ) : null}
 
-            <div className="rounded-md border border-destructive/15 bg-destructive/5 px-4 py-3 text-sm text-foreground">
-              <div className="flex items-center gap-2 font-medium text-destructive">
-                <CircleAlert className="size-4" />
+            <Alert variant="destructive">
+              <CircleAlert />
+              <AlertTitle>
                 {titleForLocale(locale, "覆盖导入", "Overwrite import")}
-              </div>
-              <div className="mt-2 leading-6 text-muted-foreground">
+              </AlertTitle>
+              <AlertDescription>
                 {titleForLocale(
                   locale,
                   "导入会替换现有渠道、模型组、设置、模型价格和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
                   "Import replaces existing channels, model groups, settings, model prices, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well."
                 )}
-              </div>
-            </div>
+              </AlertDescription>
+            </Alert>
 
             <Button
               type="button"
@@ -535,24 +553,32 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
             </Button>
 
             {rowsAffectedList.length ? (
-              <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 px-4 py-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Database className="size-4 text-muted-foreground" />
-                  {titleForLocale(locale, "导入结果", "Import result")}
-                </div>
-                <ItemGroup className="gap-2">
-                  {rowsAffectedList.map((item) => (
-                    <Item key={item.key} variant="outline" size="sm">
-                      <ItemContent>
-                        <ItemHeader>
-                          <ItemTitle className="font-medium">{item.label}</ItemTitle>
-                          <Badge variant="secondary">{item.value}</Badge>
-                        </ItemHeader>
-                      </ItemContent>
-                    </Item>
-                  ))}
-                </ItemGroup>
-              </div>
+              <Card className="py-0">
+                <CardContent className="flex flex-col gap-3 p-4">
+                  <Item variant="muted" size="sm">
+                    <ItemMedia variant="icon">
+                      <Database />
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle>
+                        {titleForLocale(locale, "导入结果", "Import result")}
+                      </ItemTitle>
+                    </ItemContent>
+                  </Item>
+                  <ItemGroup className="gap-2">
+                    {rowsAffectedList.map((item) => (
+                      <Item key={item.key} variant="outline" size="sm">
+                        <ItemContent>
+                          <ItemHeader>
+                            <ItemTitle className="font-medium">{item.label}</ItemTitle>
+                            <Badge variant="secondary">{item.value}</Badge>
+                          </ItemHeader>
+                        </ItemContent>
+                      </Item>
+                    ))}
+                  </ItemGroup>
+                </CardContent>
+              </Card>
             ) : null}
           </CardContent>
         </Card>
@@ -574,12 +600,13 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
           </DialogHeader>
 
           <div className="flex flex-col gap-3">
-            <div className="rounded-md border bg-muted/20 px-4 py-3">
-              <div className="text-sm font-medium text-foreground">
+            <Item variant="muted">
+              <ItemContent>
+                <ItemTitle>
                 {selectedFile?.name ??
                   titleForLocale(locale, "未选择文件", "No file selected")}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
+                </ItemTitle>
+                <ItemDescription>
                 {preview
                   ? titleForLocale(
                       locale,
@@ -591,8 +618,9 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
                       "将按备份内容执行覆盖导入",
                       "Will perform an overwrite import based on the backup contents"
                     )}
-              </div>
-            </div>
+                </ItemDescription>
+              </ItemContent>
+            </Item>
 
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">
