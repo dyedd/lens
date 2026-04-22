@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
@@ -186,6 +186,9 @@ class StreamCapture:
     saw_first_chunk: bool = False
     first_token_latency_ms: int = 0
     response_content: str | None = None
+    completed: bool = False
+    client_disconnected: bool = False
+    drain_task: asyncio.Task[None] | None = None
     input_tokens: int = 0
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0
@@ -1231,30 +1234,28 @@ async def _call_channel(
             do_convert = client_protocol is not None and needs_conversion(
                 client_protocol, channel.protocol
             )
-
-            async def iterator():
-                try:
-                    async for chunk in response.aiter_bytes():
-                        if not capture.saw_first_chunk and chunk:
-                            capture.saw_first_chunk = True
-                            capture.first_token_latency_ms = _elapsed_ms(
-                                stream_started_at
-                            )
-                        _capture_stream_chunk(channel.protocol, chunk, capture)
-                        yield chunk
-                finally:
-                    await response.aclose()
+            chunk_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+            capture.drain_task = asyncio.create_task(
+                _pump_stream_response(
+                    response=response,
+                    protocol=channel.protocol,
+                    capture=capture,
+                    chunk_queue=chunk_queue,
+                    stream_started_at=stream_started_at,
+                )
+            )
+            raw_iter = _consume_stream_queue(chunk_queue, capture)
 
             if do_convert:
                 converted_iter = convert_stream_iterator(
                     client_protocol,
                     channel.protocol,
-                    iterator(),
+                    raw_iter,
                     body.get("model", ""),
                 )
                 stream_media = "text/event-stream"
             else:
-                converted_iter = iterator()
+                converted_iter = raw_iter
                 stream_media = response.headers.get("content-type")
 
             upstream_model_name = body.get("model")
@@ -1619,11 +1620,14 @@ async def _record_stream_request_log(
     attempts: list[dict[str, Any]],
 ) -> None:
     capture = result.stream_capture
+    if capture is not None and capture.drain_task is not None:
+        await capture.drain_task
     raw_content = (
         capture.response_content if capture is not None else result.response_content
     )
     parsed = _extract_stream_usage(protocol, raw_content)
     distilled_content = _distill_stream_response_content(protocol, raw_content)
+    capture_issue = _describe_stream_capture_issue(protocol, capture, raw_content)
     upstream_model_name = parsed["resolved_model"] or result.upstream_model_name
     input_tokens = parsed["input_tokens"]
     cache_read_input_tokens = parsed["cache_read_input_tokens"]
@@ -1648,7 +1652,7 @@ async def _record_stream_request_log(
         channel_name=channel.name,
         gateway_key=gateway_key,
         status_code=result.status_code,
-        success=True,
+        success=capture_issue is None,
         is_stream=True,
         first_token_latency_ms=(
             capture.first_token_latency_ms
@@ -1667,7 +1671,7 @@ async def _record_stream_request_log(
         request_content=result.request_content or _dump_json(upstream_body),
         response_content=distilled_content,
         attempts=attempts,
-        error_message=None,
+        error_message=capture_issue,
     )
 
 
@@ -1756,6 +1760,51 @@ def _capture_stream_chunk(
     if not text:
         return
     capture.response_content = (capture.response_content or "") + text
+
+
+async def _pump_stream_response(
+    *,
+    response: httpx.Response,
+    protocol: ProtocolKind,
+    capture: StreamCapture,
+    chunk_queue: asyncio.Queue[bytes | None],
+    stream_started_at: float,
+) -> None:
+    try:
+        async for chunk in response.aiter_bytes():
+            if not chunk:
+                continue
+            if not capture.saw_first_chunk:
+                capture.saw_first_chunk = True
+                capture.first_token_latency_ms = _elapsed_ms(stream_started_at)
+            _capture_stream_chunk(protocol, chunk, capture)
+            if not capture.client_disconnected:
+                chunk_queue.put_nowait(chunk)
+        capture.completed = True
+    except asyncio.CancelledError:
+        capture.errors.append("stream pump cancelled")
+    except Exception as exc:
+        capture.errors.append(
+            f"stream pump failed: {type(exc).__name__}: {exc}"
+        )
+    finally:
+        if not capture.client_disconnected:
+            chunk_queue.put_nowait(None)
+        await response.aclose()
+
+
+async def _consume_stream_queue(
+    chunk_queue: asyncio.Queue[bytes | None], capture: StreamCapture
+) -> AsyncIterator[bytes]:
+    try:
+        while True:
+            chunk = await chunk_queue.get()
+            if chunk is None:
+                break
+            yield chunk
+    except asyncio.CancelledError:
+        capture.client_disconnected = True
+        raise
 
 
 def _distill_stream_response_content(
@@ -2205,6 +2254,34 @@ def _parse_ndjson_payloads(raw_content: str) -> list[dict[str, Any]]:
 
 def _normalize_event_stream_newlines(raw_content: str) -> str:
     return raw_content.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _describe_stream_capture_issue(
+    protocol: ProtocolKind,
+    capture: StreamCapture | None,
+    raw_content: str | None,
+) -> str | None:
+    issues: list[str] = []
+    if capture is not None:
+        issues.extend(error for error in capture.errors if error)
+
+    if not raw_content:
+        issues.append("no stream content captured")
+    elif protocol == ProtocolKind.OPENAI_RESPONSES:
+        payloads = _parse_sse_payloads(raw_content)
+        has_completed = any(
+            payload.get("type") == "response.completed" for payload in payloads
+        )
+        if not has_completed:
+            issues.append("stream ended before response.completed")
+
+    if capture is not None and not capture.completed:
+        issues.append("stream did not drain to completion")
+
+    if not issues:
+        return None
+
+    return "; ".join(dict.fromkeys(issues))
 
 
 def _extract_usage_from_payload(
