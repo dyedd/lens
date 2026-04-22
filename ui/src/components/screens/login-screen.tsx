@@ -69,7 +69,14 @@ export function LoginScreen() {
       <div className="flex w-full max-w-sm flex-col gap-6">
         <header className="flex flex-col items-center gap-3 text-center">
           <div className="relative size-20 overflow-hidden">
-            <Image src={logoUrl} alt={siteName} fill className="object-contain" unoptimized={logoUrl !== '/logo.svg'} />
+            <Image
+              src={logoUrl}
+              alt={siteName}
+              fill
+              loading="eager"
+              className="object-contain"
+              unoptimized={logoUrl !== '/logo.svg'}
+            />
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">{siteName}</h1>
         </header>
