@@ -13,7 +13,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
-from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem, SiteRuntimeSummary
+from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem, SiteChannelHealthBucket, SiteChannelRuntimeSummary, SiteRuntimeSummary
 from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
@@ -33,6 +33,8 @@ SETTING_HEALTH_MIN_SAMPLES = "health_min_samples"
 SETTING_SITE_NAME = "site_name"
 SETTING_SITE_LOGO_URL = "site_logo_url"
 GATEWAY_API_KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+CHANNEL_HEALTH_BUCKET_SECONDS = 300
+CHANNEL_HEALTH_BUCKET_COUNT = 12
 
 
 class DomainStore:
@@ -1228,6 +1230,23 @@ class DomainStore:
             if not site_rows:
                 return []
 
+            channel_rows = await session.execute(
+                select(
+                    SiteProtocolConfigEntity.site_id.label("site_id"),
+                    SiteProtocolConfigEntity.id.label("channel_id"),
+                ).order_by(
+                    SiteProtocolConfigEntity.site_id.asc(),
+                    SiteProtocolConfigEntity.protocol.asc(),
+                )
+            )
+            channel_ids_by_site: dict[str, list[str]] = {
+                site.id: [] for site in site_rows
+            }
+            for row in channel_rows.all():
+                site_id = str(row.site_id)
+                channel_id = str(row.channel_id)
+                channel_ids_by_site.setdefault(site_id, []).append(channel_id)
+
             recent_request_logs = (
                 select(RequestLogEntity.channel_id.label("channel_id"))
                 .where(RequestLogEntity.channel_id.is_not(None))
@@ -1289,9 +1308,89 @@ class DomainStore:
                 for row in latest_rows.all()
             }
 
+            bucket_anchor = datetime.now(UTC).replace(second=0, microsecond=0)
+            bucket_anchor -= timedelta(minutes=bucket_anchor.minute % 5)
+            bucket_start = bucket_anchor - timedelta(
+                seconds=CHANNEL_HEALTH_BUCKET_SECONDS * (CHANNEL_HEALTH_BUCKET_COUNT - 1)
+            )
+            bucket_end = bucket_anchor + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS)
+            bucket_ranges = [
+                (
+                    bucket_start + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS * index),
+                    bucket_start + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS * (index + 1)),
+                )
+                for index in range(CHANNEL_HEALTH_BUCKET_COUNT)
+            ]
+            bucket_counts_by_channel = {
+                channel_id: [
+                    {"success_count": 0, "total_count": 0}
+                    for _ in range(CHANNEL_HEALTH_BUCKET_COUNT)
+                ]
+                for channel_ids in channel_ids_by_site.values()
+                for channel_id in channel_ids
+            }
+            bucket_rows = await session.execute(
+                select(
+                    RequestLogEntity.channel_id.label("channel_id"),
+                    RequestLogEntity.success.label("success"),
+                    RequestLogEntity.created_at.label("created_at"),
+                )
+                .where(
+                    RequestLogEntity.channel_id.is_not(None),
+                    RequestLogEntity.created_at >= bucket_start.replace(tzinfo=None),
+                    RequestLogEntity.created_at < bucket_end.replace(tzinfo=None),
+                )
+                .order_by(RequestLogEntity.created_at.asc(), RequestLogEntity.id.asc())
+            )
+            for row in bucket_rows.all():
+                if row.channel_id is None or row.created_at is None:
+                    continue
+
+                channel_id = str(row.channel_id)
+                counts = bucket_counts_by_channel.get(channel_id)
+                if counts is None:
+                    continue
+
+                created_at = row.created_at
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=UTC)
+                else:
+                    created_at = created_at.astimezone(UTC)
+
+                bucket_index = int(
+                    (created_at - bucket_start).total_seconds()
+                    // CHANNEL_HEALTH_BUCKET_SECONDS
+                )
+                if bucket_index < 0 or bucket_index >= CHANNEL_HEALTH_BUCKET_COUNT:
+                    continue
+
+                counts[bucket_index]["total_count"] += 1
+                if row.success:
+                    counts[bucket_index]["success_count"] += 1
+
             items: list[SiteRuntimeSummary] = []
             for site in site_rows:
                 latest = latest_by_site.get(site.id)
+                channel_summaries: list[SiteChannelRuntimeSummary] = []
+                for channel_id in channel_ids_by_site.get(site.id, []):
+                    bucket_counts = bucket_counts_by_channel.get(channel_id) or [
+                        {"success_count": 0, "total_count": 0}
+                        for _ in range(CHANNEL_HEALTH_BUCKET_COUNT)
+                    ]
+                    channel_summaries.append(
+                        SiteChannelRuntimeSummary(
+                            channel_id=channel_id,
+                            health_buckets=[
+                                SiteChannelHealthBucket(
+                                    started_at=start.isoformat(),
+                                    ended_at=end.isoformat(),
+                                    success_count=bucket_counts[index]["success_count"],
+                                    total_count=bucket_counts[index]["total_count"],
+                                )
+                                for index, (start, end) in enumerate(bucket_ranges)
+                            ],
+                        )
+                    )
                 items.append(
                     SiteRuntimeSummary(
                         site_id=site.id,
@@ -1325,6 +1424,7 @@ class DomainStore:
                             if latest is not None and latest.channel_name is not None
                             else None
                         ),
+                        channel_summaries=channel_summaries,
                     )
                 )
             return items

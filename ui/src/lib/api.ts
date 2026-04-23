@@ -152,6 +152,19 @@ export type SiteRuntimeSummary = {
   latest_error_message?: string | null
   latest_channel_id?: string | null
   latest_channel_name?: string | null
+  channel_summaries: SiteChannelRuntimeSummary[]
+}
+
+export type SiteChannelRuntimeSummary = {
+  channel_id: string
+  health_buckets: SiteChannelHealthBucket[]
+}
+
+export type SiteChannelHealthBucket = {
+  started_at: string
+  ended_at: string
+  success_count: number
+  total_count: number
 }
 
 export type SitePayload = {

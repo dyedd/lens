@@ -1427,12 +1427,11 @@ def _is_event_stream_response(response: httpx.Response) -> bool:
     return "text/event-stream" in content_type
 
 
-def _format_channel_error(channel: ChannelConfig, detail: Any) -> str:
-    channel_label = channel.name.strip() or "Unnamed channel"
+def _format_channel_error(_: ChannelConfig, detail: Any) -> str:
     detail_text = str(detail).strip() if detail is not None else ""
     if not detail_text:
         detail_text = "Unknown error"
-    return f"{channel_label}: {detail_text}"
+    return detail_text
 
 
 def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:

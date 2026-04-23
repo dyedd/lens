@@ -215,6 +215,23 @@ class SiteRuntimeSummary(BaseModel):
     latest_error_message: str | None = None
     latest_channel_id: str | None = None
     latest_channel_name: str | None = None
+    channel_summaries: list["SiteChannelRuntimeSummary"] = Field(default_factory=list)
+
+
+class SiteChannelRuntimeSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    channel_id: str
+    health_buckets: list["SiteChannelHealthBucket"] = Field(default_factory=list)
+
+
+class SiteChannelHealthBucket(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    started_at: str
+    ended_at: str
+    success_count: int = 0
+    total_count: int = 0
 
 
 class SiteCreate(BaseModel):

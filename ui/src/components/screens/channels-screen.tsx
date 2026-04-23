@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock3, Ellipsis, Filter, Globe2, KeyRound, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
+import { Activity, ChevronDown, Ellipsis, Filter, Globe2, KeyRound, Plus, RefreshCcw, Server, Trash2, Waypoints, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -55,12 +55,14 @@ type HeaderItem = { key: string; value: string }
 type FormCredential = Omit<SiteCredentialInput, 'id'> & { id: string }
 type FormBaseUrl = Omit<SiteBaseUrlInput, 'id'> & { id: string }
 type ChannelHealthRow = RouteSnapshot['health'][number]
-type CooldownBadgeSpec = {
-  key: string
+type ChannelRuntimeSummary = SiteRuntimeSummary['channel_summaries'][number]
+type ChannelHealthBucket = ChannelRuntimeSummary['health_buckets'][number]
+type CoolingBadgeSpec = {
   label: string
   title: string
   className: string
 }
+const CHANNEL_HEALTH_BUCKET_COUNT = 12
 
 function createCredentialId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -254,105 +256,6 @@ function protocolBadgeClassName(protocol: ProtocolKind) {
   }
 }
 
-function buildSiteCooldownBadges(
-  site: SiteRow,
-  healthByChannelId: Map<string, ChannelHealthRow>,
-  locale: 'zh-CN' | 'en-US'
-): CooldownBadgeSpec[] {
-  const enabledProtocols = site.protocols.filter((item) => item.enabled)
-  if (!enabledProtocols.length) {
-    return []
-  }
-
-  const multiProtocol = enabledProtocols.length > 1
-  const credentialById = new Map(site.credentials.map((item) => [item.id, item] as const))
-  const credentialIndexById = new Map(site.credentials.map((item, index) => [item.id, index] as const))
-  const protocolHealthRows = enabledProtocols
-    .map((protocol) => ({ protocol, health: healthByChannelId.get(protocol.id) }))
-    .filter((item): item is { protocol: Site['protocols'][number]; health: ChannelHealthRow } => Boolean(item.health))
-
-  const channelCooldowns = protocolHealthRows
-    .filter(({ health }) => !health.available && health.cooldown_remaining_seconds > 0)
-    .sort((left, right) => right.health.cooldown_remaining_seconds - left.health.cooldown_remaining_seconds)
-
-  if (channelCooldowns.length) {
-    const badges = channelCooldowns.slice(0, 2).map(({ protocol, health }) => {
-      const duration = formatCooldownDuration(health.cooldown_remaining_seconds)
-      const coolingLabel = locale === 'zh-CN' ? '冷却' : 'Cooling'
-      const label = multiProtocol
-        ? `${compactProtocolLabel(protocol.protocol)} ${coolingLabel} ${duration}`
-        : `${locale === 'zh-CN' ? '冷却中' : 'Cooling'} ${duration}`
-
-      return {
-        key: `cooldown-${protocol.id}`,
-        label,
-        title: `${protocolLabel(protocol.protocol)} · ${locale === 'zh-CN' ? '冷却剩余' : 'Cooldown remaining'} ${duration}`,
-        className: 'max-w-full border-transparent bg-destructive/12 text-destructive',
-      }
-    })
-
-    if (channelCooldowns.length > 2) {
-      badges.push({
-        key: 'cooldown-more',
-        label: `+${channelCooldowns.length - 2}`,
-        title: channelCooldowns
-          .slice(2)
-          .map(({ protocol, health }) => `${protocolLabel(protocol.protocol)} ${formatCooldownDuration(health.cooldown_remaining_seconds)}`)
-          .join('\n'),
-        className: 'border-transparent bg-muted/60 text-muted-foreground',
-      })
-    }
-
-    return badges
-  }
-
-  const keyCooldowns = protocolHealthRows
-    .flatMap(({ protocol, health }) => (
-      health.key_health
-        .filter((item) => !item.available && item.cooldown_remaining_seconds > 0)
-        .map((item) => {
-          const credentialIndex = credentialIndexById.get(item.credential_id) ?? 0
-          const credentialName = credentialDisplayName(
-            credentialById.get(item.credential_id),
-            credentialIndex,
-            locale
-          )
-          const duration = formatCooldownDuration(item.cooldown_remaining_seconds)
-          const prefix = multiProtocol ? `${compactProtocolLabel(protocol.protocol)} · ` : ''
-          const coolingText = locale === 'zh-CN' ? '冷却' : 'Cooling'
-
-          return {
-            key: `${protocol.id}:${item.credential_id}`,
-            label: `${prefix}${credentialName} ${coolingText} ${duration}`,
-            title: `${protocolLabel(protocol.protocol)} · ${credentialName} · ${locale === 'zh-CN' ? '冷却剩余' : 'Cooldown remaining'} ${duration}`,
-            remainingSeconds: item.cooldown_remaining_seconds,
-          }
-        })
-    ))
-    .sort((left, right) => right.remainingSeconds - left.remainingSeconds || left.label.localeCompare(right.label))
-
-  const badges = keyCooldowns.slice(0, 2).map((item) => ({
-    key: item.key,
-    label: item.label,
-    title: item.title,
-    className: 'max-w-full border-transparent bg-destructive/10 text-destructive/90',
-  }))
-
-  if (keyCooldowns.length > 2) {
-    badges.push({
-      key: 'key-cooldown-more',
-      label: `+${keyCooldowns.length - 2}`,
-      title: keyCooldowns
-        .slice(2)
-        .map((item) => item.title)
-        .join('\n'),
-      className: 'border-transparent bg-muted/60 text-muted-foreground',
-    })
-  }
-
-  return badges
-}
-
 function ChannelMetric({
   icon,
   label,
@@ -417,84 +320,245 @@ function SiteFavicon({ url, name }: { url: string; name: string }) {
   )
 }
 
-function formatRuntimeTimestamp(value: string, locale: 'zh-CN' | 'en-US') {
-  return new Date(value).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
+function clampHealthScore(value: number | null | undefined) {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+  return Math.min(1, Math.max(0, Number(value)))
+}
+
+function formatHealthPercent(score: number | null | undefined) {
+  return `${Math.round(clampHealthScore(score) * 100)}%`
+}
+
+function maxKeyCooldownSeconds(health: ChannelHealthRow | undefined) {
+  if (!health?.key_health?.length) {
+    return 0
+  }
+  return Math.max(0, ...health.key_health.map((item) => item.cooldown_remaining_seconds))
+}
+
+function keyCooldownDetails(
+  site: SiteRow,
+  health: ChannelHealthRow,
+  locale: 'zh-CN' | 'en-US'
+) {
+  const credentialById = new Map(site.credentials.map((item) => [item.id, item] as const))
+  const credentialIndexById = new Map(site.credentials.map((item, index) => [item.id, index] as const))
+
+  return health.key_health
+    .filter((item) => !item.available && item.cooldown_remaining_seconds > 0)
+    .sort((left, right) => right.cooldown_remaining_seconds - left.cooldown_remaining_seconds)
+    .map((item) => {
+      const credentialIndex = credentialIndexById.get(item.credential_id) ?? 0
+      const credentialName = credentialDisplayName(
+        credentialById.get(item.credential_id),
+        credentialIndex,
+        locale
+      )
+      const duration = formatCooldownDuration(item.cooldown_remaining_seconds)
+      return `${credentialName} ${locale === 'zh-CN' ? '冷却剩余' : 'cooldown remaining'} ${duration}`
+    })
+}
+
+function resolveCoolingBadge(
+  site: SiteRow,
+  health: ChannelHealthRow | undefined,
+  locale: 'zh-CN' | 'en-US'
+): CoolingBadgeSpec | null {
+  if (!health) {
+    return null
+  }
+  if (health.cooldown_remaining_seconds > 0) {
+    const duration = formatCooldownDuration(health.cooldown_remaining_seconds)
+    return locale === 'zh-CN'
+      ? {
+          label: `冷却 ${duration}`,
+          title: `渠道冷却剩余 ${duration}`,
+          className: 'border-transparent bg-destructive/12 text-destructive',
+        }
+      : {
+          label: `Cooling ${duration}`,
+          title: `Channel cooldown remaining ${duration}`,
+          className: 'border-transparent bg-destructive/12 text-destructive',
+        }
+  }
+  const keyCooldownSeconds = maxKeyCooldownSeconds(health)
+  if (keyCooldownSeconds > 0) {
+    const duration = formatCooldownDuration(keyCooldownSeconds)
+    const details = keyCooldownDetails(site, health, locale).join('\n')
+    return locale === 'zh-CN'
+      ? {
+          label: `Key 冷却 ${duration}`,
+          title: details || `Key 冷却剩余 ${duration}`,
+          className: 'border-transparent bg-amber-500/12 text-amber-700',
+        }
+      : {
+          label: `Key cooling ${duration}`,
+          title: details || `Key cooldown remaining ${duration}`,
+          className: 'border-transparent bg-amber-500/12 text-amber-700',
+        }
+  }
+  return null
+}
+
+function normalizedBucketCounts(bucket: ChannelHealthBucket) {
+  const total = Math.max(0, bucket.total_count)
+  return {
+    total,
+    success: Math.min(Math.max(0, bucket.success_count), total),
+  }
+}
+
+function healthBucketTone(bucket: ChannelHealthBucket) {
+  const { success, total } = normalizedBucketCounts(bucket)
+  if (total <= 0) {
+    return 'bg-muted/70'
+  }
+  if (success >= total) {
+    return 'bg-emerald-500'
+  }
+  if (success > 0) {
+    return 'bg-amber-500'
+  }
+  return 'bg-destructive'
+}
+
+function createHealthBucketTimeFormatter(locale: 'zh-CN' | 'en-US') {
+  return new Intl.DateTimeFormat(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hour12: false,
   })
 }
 
-function summarizeErrorMessage(value: string, maxLength = 120) {
-  const singleLine = value.replace(/\s+/g, ' ').trim()
-  if (singleLine.length <= maxLength) return singleLine
-  return `${singleLine.slice(0, maxLength)}...`
+function formatHealthBucketRange(bucket: ChannelHealthBucket, formatDateTime: Intl.DateTimeFormat) {
+  return `${formatDateTime.format(new Date(bucket.started_at))} - ${formatDateTime.format(new Date(bucket.ended_at))}`
 }
 
-function RecentRequestPreview({
+function SiteHealthPreview({
+  site,
   summary,
+  healthByChannelId,
   locale,
 }: {
+  site: SiteRow
   summary?: SiteRuntimeSummary
+  healthByChannelId: Map<string, ChannelHealthRow>
   locale: 'zh-CN' | 'en-US'
 }) {
-  if (!summary?.latest_request_at || summary.latest_success === null || summary.latest_success === undefined) {
+  const enabledProtocols = site.protocols.filter((item) => item.enabled)
+  const summaryByChannelId = new Map(
+    (summary?.channel_summaries ?? []).map((item) => [item.channel_id, item] as const)
+  )
+  const multiProtocol = enabledProtocols.length > 1
+  const bucketTimeFormatter = useMemo(() => createHealthBucketTimeFormatter(locale), [locale])
+
+  if (!enabledProtocols.length) {
     return (
       <div className="mt-3 text-xs text-muted-foreground">
-        {locale === 'zh-CN' ? '最近暂无请求记录' : 'No recent requests'}
+        {locale === 'zh-CN' ? '暂无健康数据' : 'No health data'}
       </div>
     )
   }
 
-  const isFailed = !summary.latest_success
-  const errorMessage = summary.latest_error_message?.trim() || ''
-
   return (
-    <div className="mt-3 grid gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant="outline"
-          className={cn(
-            'rounded-full border-0 px-2.5 py-0.5 text-xs font-medium',
-            isFailed ? 'bg-destructive/12 text-destructive' : 'bg-primary/10 text-primary'
-          )}
-        >
-          {isFailed
-            ? (locale === 'zh-CN' ? '最近失败' : 'Latest failed')
-            : (locale === 'zh-CN' ? '最近成功' : 'Latest success')}
-        </Badge>
-        {summary.latest_status_code !== null && summary.latest_status_code !== undefined ? (
-          <Badge variant="secondary" className="px-2.5 py-0.5 text-xs font-medium">
-            {summary.latest_status_code}
-          </Badge>
-        ) : null}
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <Clock3 size={12} />
-          {formatRuntimeTimestamp(summary.latest_request_at, locale)}
-        </span>
-      </div>
+    <div className="mt-3 flex flex-col gap-2.5">
+      <div className="text-xs font-medium text-muted-foreground">{locale === 'zh-CN' ? '健康状态' : 'Health'}</div>
+      {enabledProtocols.map((protocol) => {
+        const health = healthByChannelId.get(protocol.id)
+        const channelSummary = summaryByChannelId.get(protocol.id)
+        const buckets = (channelSummary?.health_buckets ?? []).slice(-CHANNEL_HEALTH_BUCKET_COUNT)
+        const coolingBadge = resolveCoolingBadge(site, health, locale)
+        const healthScoreText = health ? formatHealthPercent(health.score) : '--'
+        const segments = [
+          ...Array.from({ length: Math.max(CHANNEL_HEALTH_BUCKET_COUNT - buckets.length, 0) }, (_, index) => ({
+            key: `${protocol.id}-placeholder-${index}`,
+            bucket: null,
+          })),
+          ...buckets.map((bucket, index) => ({
+            key: `${protocol.id}-bucket-${bucket.started_at}-${index}`,
+            bucket,
+          })),
+        ]
 
-      {isFailed && errorMessage ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex max-w-full items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <AlertCircle size={14} className="mt-0.5 shrink-0" />
-              <span className="truncate">{summarizeErrorMessage(errorMessage)}</span>
+        return (
+          <div key={protocol.id} className="flex flex-wrap items-center gap-3 py-0.5">
+            {multiProtocol ? (
+              <span className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground">
+                {compactProtocolLabel(protocol.protocol)}
+              </span>
+            ) : null}
+
+            <div
+              className="flex flex-1 items-end gap-1"
+              aria-label={`${protocolLabel(protocol.protocol)} ${locale === 'zh-CN' ? '健康状态' : 'health history'}`}
+            >
+              {segments.map((segment) => {
+                if (!segment.bucket) {
+                  return <span key={segment.key} className="block h-6 w-1.5 rounded-[3px] bg-muted/70" aria-hidden />
+                }
+
+                const { success, total } = normalizedBucketCounts(segment.bucket)
+                const bucketRange = formatHealthBucketRange(segment.bucket, bucketTimeFormatter)
+
+                const tooltipContent = (
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={8}
+                    collisionPadding={12}
+                    className="flex flex-col items-start gap-1 px-3 py-2 text-left text-xs"
+                  >
+                    <div className="font-medium">{bucketRange}</div>
+                    <div className="text-muted-foreground">
+                      {locale === 'zh-CN' ? '成功' : 'Success'}: {success}/{total}
+                    </div>
+                  </TooltipContent>
+                )
+
+                const segmentClassName = cn(
+                  'block h-6 w-1.5 appearance-none rounded-[3px] border-0 p-0',
+                  healthBucketTone(segment.bucket)
+                )
+
+                return (
+                  <Tooltip key={segment.key}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          segmentClassName,
+                          'outline-none transition-transform hover:scale-y-110 focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-1'
+                        )}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        aria-label={`${bucketRange} ${success}/${total}`}
+                      />
+                    </TooltipTrigger>
+                    {tooltipContent}
+                  </Tooltip>
+                )
+              })}
             </div>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-sm whitespace-pre-wrap break-words" side="bottom" align="start">
-            {errorMessage}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        <div className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-          <span>{locale === 'zh-CN' ? '最近一次请求正常' : 'The latest request completed normally'}</span>
-        </div>
-      )}
+
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <div className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/20 px-2.5 py-1 text-xs">
+                <span className="text-muted-foreground">{locale === 'zh-CN' ? '健康分' : 'Health'}</span>
+                <span className={cn('font-medium', healthScoreText === '--' ? 'text-muted-foreground' : 'text-foreground')}>
+                  {healthScoreText}
+                </span>
+              </div>
+              {coolingBadge ? (
+                <Badge variant="outline" title={coolingBadge.title} className={cn('px-2.5 py-1 text-xs', coolingBadge.className)}>
+                  {coolingBadge.label}
+                </Badge>
+              ) : null}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -628,7 +692,7 @@ export function ChannelsScreen() {
   })
   const { data: routerSnapshot } = useQuery({
     queryKey: ['router-snapshot'],
-    queryFn: () => apiRequest<RouteSnapshot>('/admin/router/snapshot'),
+    queryFn: () => apiRequest<RouteSnapshot>('/admin/routes'),
     staleTime: 5_000,
     refetchInterval: 5000,
   })
@@ -990,7 +1054,6 @@ export function ChannelsScreen() {
               <ItemGroup className="gap-3">
                 {visibleSites.map((site) => {
                   const runtimeSummary = siteRuntimeById.get(site.id)
-                  const cooldownBadges = buildSiteCooldownBadges(site, channelHealthById, locale)
                   return (
                     <Item
                       key={site.id}
@@ -1023,24 +1086,15 @@ export function ChannelsScreen() {
                               </Badge>
                             ))}
                           </div>
-                          {cooldownBadges.length ? (
-                            <div className="flex flex-wrap items-center gap-2">
-                              {cooldownBadges.map((badge) => (
-                                <Badge
-                                  key={badge.key}
-                                  variant="outline"
-                                  title={badge.title}
-                                  className={cn('max-w-[220px] truncate px-2.5 py-0.5 text-xs font-medium', badge.className)}
-                                >
-                                  {badge.label}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : null}
                           <ItemDescription className="truncate text-sm">
                             {site.endpoint_summary || (locale === 'zh-CN' ? '未配置请求地址' : 'No endpoint configured')}
                           </ItemDescription>
-                          <RecentRequestPreview summary={runtimeSummary} locale={locale} />
+                          <SiteHealthPreview
+                            site={site}
+                            summary={runtimeSummary}
+                            healthByChannelId={channelHealthById}
+                            locale={locale}
+                          />
                         </div>
                         <ItemFooter className="mt-4 flex flex-wrap items-center gap-2.5">
                           <ChannelMetric icon={<Activity size={14} />} label={locale === 'zh-CN' ? '请求数' : 'Requests'} value={String(runtimeSummary?.recent_request_count ?? 0)} />
