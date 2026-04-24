@@ -38,6 +38,10 @@ def upgrade() -> None:
             )
         )
 
+    with op.batch_alter_table("request_log_daily_stats") as batch_op:
+        batch_op.alter_column("cache_read_input_tokens", server_default=None)
+        batch_op.alter_column("cache_write_input_tokens", server_default=None)
+
     op.execute(
         """
         UPDATE request_log_daily_stats
