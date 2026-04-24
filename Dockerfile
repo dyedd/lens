@@ -33,13 +33,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     LENS_HOST=0.0.0.0 \
-    LENS_PORT=18080
+    LENS_PORT=18080 \
+    TZ=Asia/Shanghai
 
 WORKDIR /app
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
-       bash ca-certificates curl tini \
+       bash ca-certificates curl tini tzdata \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install --yes --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*

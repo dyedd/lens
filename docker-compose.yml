@@ -9,6 +9,7 @@ services:
       - .env
     environment:
       - LENS_DATABASE_URL=sqlite+aiosqlite:////app/data/data.db
+      - TZ=Asia/Shanghai
     ports:
       - "3000:3000"
       - "18080:18080"
