@@ -25,6 +25,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { GatewayApiKey, OverviewModelAnalytics, ProtocolKind, RequestLogDetail, RequestLogItem, RequestLogPage, apiRequest } from '@/lib/api'
+import { formatLogDateTime } from '@/lib/datetime'
 import { useI18n } from '@/lib/i18n'
 import { ModelAvatar } from '@/lib/model-icons'
 import { cn } from '@/lib/utils'
@@ -140,17 +141,6 @@ function formatMoney(value: number) {
 
 function formatCount(value: number) {
   return value.toLocaleString()
-}
-
-function formatDate(value: string, locale: 'zh-CN' | 'en-US') {
-  return new Date(value).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  })
 }
 
 function shortenGatewayKeyId(value?: string | null) {
@@ -776,7 +766,7 @@ function RequestCard({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <RequestMeta icon={<Clock3 size={13} />} value={formatDate(item.created_at, locale)} className="pl-0" />
+              <RequestMeta icon={<Clock3 size={13} />} value={formatLogDateTime(item.created_at, locale)} className="pl-0" />
               <RequestMeta icon={<Waypoints size={13} />} value={item.channel_name || item.channel_id || 'n/a'} />
               {item.gateway_key_id ? <RequestMeta icon={<KeyRound size={13} />} value={formatGatewayKeyLabel(item, locale)} /> : null}
               {secondaryModelName ? <RequestMeta icon={<ServerCog size={13} />} value={secondaryModelName} /> : null}

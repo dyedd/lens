@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Cell, Label, Pie, PieChart, XAxis, YAxis } from "recharts"
 import { OverviewDashboardData, OverviewMetrics, apiRequest } from "@/lib/api"
+import { formatLogDateTime } from "@/lib/datetime"
 import { useI18n } from "@/lib/i18n"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -556,7 +557,7 @@ export function OverviewScreen() {
                 <TableBody>
                   {logs.map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell className="px-3 py-2.5 whitespace-nowrap text-foreground">{log.created_at.slice(5, 16).replace("T", " ")}</TableCell>
+                      <TableCell className="px-3 py-2.5 whitespace-nowrap text-foreground">{formatLogDateTime(log.created_at, locale)}</TableCell>
                       <TableCell className="max-w-[180px] truncate px-3 py-2.5 text-foreground">{log.resolved_group_name || log.requested_group_name || "-"}</TableCell>
                       <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">
                         <div>
