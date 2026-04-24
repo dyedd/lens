@@ -27,8 +27,8 @@ export function LoginScreen() {
     queryFn: () => apiRequest<PublicBranding>('/public/branding'),
     staleTime: 5 * 60_000,
   })
-  const [username, setUsername] = useState('admin')
-  const [password, setPassword] = useState('admin')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const siteName = branding?.site_name?.trim() || 'Lens'
   const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
@@ -40,7 +40,7 @@ export function LoginScreen() {
     try {
       const data = await apiRequest<LoginResponse>('/admin/session', {
         method: 'POST',
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username: username.trim(), password })
       })
       setStoredToken(data.access_token)
       router.push('/')
@@ -94,21 +94,26 @@ export function LoginScreen() {
               <label className="grid gap-2">
                 <span className="text-sm font-medium text-foreground">{t.username}</span>
                 <Input
+                  name="username"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                   placeholder={t.username}
                   autoComplete="username"
+                  required
+                  autoFocus
                 />
               </label>
 
               <label className="grid gap-2">
                 <span className="text-sm font-medium text-foreground">{t.password}</span>
                 <Input
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder={t.password}
                   autoComplete="current-password"
+                  required
                 />
               </label>
               <Button className="h-10 w-full" type="submit" disabled={submitting}>
