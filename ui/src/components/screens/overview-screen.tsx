@@ -2,7 +2,21 @@
 
 import { useMemo, useState, type ReactNode } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { Activity, Bot, Boxes, Clock3, DollarSign, KeyRound, Waypoints } from "lucide-react"
+import {
+  Activity,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Bot,
+  Boxes,
+  CheckCircle2,
+  CircleX,
+  Clock3,
+  Database,
+  Gauge,
+  KeyRound,
+  Upload,
+  Waypoints,
+} from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Cell, Label, Pie, PieChart, XAxis, YAxis } from "recharts"
 import { OverviewDashboardData, OverviewMetrics, apiRequest } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
@@ -108,6 +122,30 @@ function OverviewStatCard({
   )
 }
 
+function OverviewMetricCell({
+  icon,
+  label,
+  value,
+  toneClassName,
+}: {
+  icon: ReactNode
+  label: string
+  value: string
+  toneClassName: string
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 rounded-xl bg-muted/20 px-3 py-2.5">
+      <span className={`flex size-8 shrink-0 items-center justify-center rounded-full ${toneClassName}`}>
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xs text-muted-foreground">{label}</div>
+        <div className="mt-1 truncate text-base font-semibold leading-5 text-foreground">{value}</div>
+      </div>
+    </div>
+  )
+}
+
 export function OverviewScreen() {
   const { locale } = useI18n()
   const zh = locale === "zh-CN"
@@ -160,15 +198,23 @@ export function OverviewScreen() {
     const source = daily ?? []
     const totalRequests = source.reduce((sum, item) => sum + item.request_count, 0)
     const successfulRequests = source.reduce((sum, item) => sum + item.successful_requests, 0)
+    const failedRequests = source.reduce((sum, item) => sum + item.failed_requests, 0)
 
     return {
       totalRequests,
       successfulRequests,
+      failedRequests,
     }
   }, [daily])
 
   const successRate = periodMetrics.totalRequests > 0
     ? Math.round((periodMetrics.successfulRequests / periodMetrics.totalRequests) * 100)
+    : 0
+  const avgLatencyMs = summary?.request_count.value
+    ? summary.wait_time_ms.value / summary.request_count.value
+    : 0
+  const avgTokensPerRequest = summary?.request_count.value
+    ? summary.total_tokens.value / summary.request_count.value
     : 0
 
   const pieData = useMemo(() => {
@@ -260,7 +306,7 @@ export function OverviewScreen() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:col-span-3 lg:grid-cols-4">
           <OverviewStatCard
             icon={<Waypoints className="size-4" />}
@@ -289,85 +335,106 @@ export function OverviewScreen() {
         </div>
 
         <Card size="sm" className="py-0">
-          <CardContent className="px-4 pt-3 pb-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+          <CardContent className="px-4 py-3">
+            <div className="mb-2 flex items-center gap-2 pl-3 text-sm font-medium">
               <Activity className="size-4 text-muted-foreground" />
               {zh ? "请求统计" : "Requests"}
             </div>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-600"><Activity className="size-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-muted-foreground">{zh ? "请求次数" : "Requests"}</div>
-                  <div className="text-base font-semibold">{formatCompact(summary?.request_count.value ?? 0)}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600"><Activity className="size-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-muted-foreground">{zh ? "成功请求" : "Success"}</div>
-                  <div className="text-base font-semibold">
-                    {formatCompact(periodMetrics.successfulRequests)}
-                    <span className="text-xs font-normal text-muted-foreground"> ({successRate}%)</span>
-                  </div>
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <OverviewMetricCell
+                icon={<Activity className="size-4" />}
+                label={zh ? "请求次数" : "Requests"}
+                value={formatCompact(summary?.request_count.value ?? 0)}
+                toneClassName="bg-blue-500/15 text-blue-600"
+              />
+              <OverviewMetricCell
+                icon={<CheckCircle2 className="size-4" />}
+                label={zh ? "成功请求" : "Success"}
+                value={formatCompact(periodMetrics.successfulRequests)}
+                toneClassName="bg-emerald-500/15 text-emerald-600"
+              />
+              <OverviewMetricCell
+                icon={<CircleX className="size-4" />}
+                label={zh ? "失败请求" : "Failed"}
+                value={formatCompact(periodMetrics.failedRequests)}
+                toneClassName="bg-rose-500/15 text-rose-600"
+              />
+              <OverviewMetricCell
+                icon={<Gauge className="size-4" />}
+                label={zh ? "成功率" : "Success Rate"}
+                value={`${successRate}%`}
+                toneClassName="bg-amber-500/15 text-amber-600"
+              />
             </div>
           </CardContent>
         </Card>
 
         <Card size="sm" className="py-0">
-          <CardContent className="px-4 pt-3 pb-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+          <CardContent className="px-4 py-3">
+            <div className="mb-2 flex items-center gap-2 pl-3 text-sm font-medium">
               <Bot className="size-4 text-muted-foreground" />
               {zh ? "Token 消耗" : "Token Usage"}
             </div>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-600"><Bot className="size-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-muted-foreground">{zh ? "输入 Token" : "Input Tokens"}</div>
-                  <div className="text-base font-semibold">
-                    {formatCompact(summary?.input_tokens.value ?? 0)}
-                    <span className="text-xs font-normal text-muted-foreground"> / {formatMoney(summary?.input_cost_usd.value ?? 0)}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-rose-600"><DollarSign className="size-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-muted-foreground">{zh ? "输出 Token" : "Output Tokens"}</div>
-                  <div className="text-base font-semibold">
-                    {formatCompact(summary?.output_tokens.value ?? 0)}
-                    <span className="text-xs font-normal text-muted-foreground"> / {formatMoney(summary?.output_cost_usd.value ?? 0)}</span>
-                  </div>
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <OverviewMetricCell
+                icon={<ArrowDownToLine className="size-4" />}
+                label={zh ? "输入 Token" : "Input Tokens"}
+                value={`${formatCompact(summary?.input_tokens.value ?? 0)} / ${formatMoney(summary?.input_cost_usd.value ?? 0)}`}
+                toneClassName="bg-blue-500/15 text-blue-600"
+              />
+              <OverviewMetricCell
+                icon={<ArrowUpFromLine className="size-4" />}
+                label={zh ? "输出 Token" : "Output Tokens"}
+                value={`${formatCompact(summary?.output_tokens.value ?? 0)} / ${formatMoney(summary?.output_cost_usd.value ?? 0)}`}
+                toneClassName="bg-rose-500/15 text-rose-600"
+              />
+              <OverviewMetricCell
+                icon={<Database className="size-4" />}
+                label={zh ? "缓存读取" : "Cache Read"}
+                value={formatCompact(summary?.cache_read_input_tokens.value ?? 0)}
+                toneClassName="bg-emerald-500/15 text-emerald-600"
+              />
+              <OverviewMetricCell
+                icon={<Upload className="size-4" />}
+                label={zh ? "缓存写入" : "Cache Write"}
+                value={formatCompact(summary?.cache_write_input_tokens.value ?? 0)}
+                toneClassName="bg-amber-500/15 text-amber-600"
+              />
             </div>
           </CardContent>
         </Card>
 
         <Card size="sm" className="py-0">
-          <CardContent className="px-4 pt-3 pb-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+          <CardContent className="px-4 py-3">
+            <div className="mb-2 flex items-center gap-2 pl-3 text-sm font-medium">
               <Clock3 className="size-4 text-muted-foreground" />
               {zh ? "性能指标" : "Performance"}
             </div>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-600"><Activity className="size-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-muted-foreground">{zh ? "平均 RPM" : "Avg RPM"}</div>
-                  <div className="text-base font-semibold">{formatPerMinute(performance?.avg_requests_per_minute ?? 0)}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600"><Bot className="size-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-muted-foreground">{zh ? "平均 TPM" : "Avg TPM"}</div>
-                  <div className="text-base font-semibold">{formatPerMinute(performance?.avg_tokens_per_minute ?? 0)}</div>
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <OverviewMetricCell
+                icon={<Activity className="size-4" />}
+                label={zh ? "平均 RPM" : "Avg RPM"}
+                value={formatPerMinute(performance?.avg_requests_per_minute ?? 0)}
+                toneClassName="bg-blue-500/15 text-blue-600"
+              />
+              <OverviewMetricCell
+                icon={<Bot className="size-4" />}
+                label={zh ? "平均 TPM" : "Avg TPM"}
+                value={formatPerMinute(performance?.avg_tokens_per_minute ?? 0)}
+                toneClassName="bg-emerald-500/15 text-emerald-600"
+              />
+              <OverviewMetricCell
+                icon={<Clock3 className="size-4" />}
+                label={zh ? "平均耗时" : "Avg Latency"}
+                value={formatDuration(avgLatencyMs)}
+                toneClassName="bg-sky-500/15 text-sky-600"
+              />
+              <OverviewMetricCell
+                icon={<Database className="size-4" />}
+                label={zh ? "Token / 次" : "Tokens / Request"}
+                value={formatCompact(avgTokensPerRequest)}
+                toneClassName="bg-violet-500/15 text-violet-600"
+              />
             </div>
           </CardContent>
         </Card>
@@ -492,9 +559,14 @@ export function OverviewScreen() {
                       <TableCell className="px-3 py-2.5 whitespace-nowrap text-foreground">{log.created_at.slice(5, 16).replace("T", " ")}</TableCell>
                       <TableCell className="max-w-[180px] truncate px-3 py-2.5 text-foreground">{log.resolved_group_name || log.requested_group_name || "-"}</TableCell>
                       <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">
-                        <span className="text-muted-foreground">{formatCompact(log.input_tokens)}</span>
-                        <span className="mx-0.5 text-border">/</span>
-                        <span>{formatCompact(log.output_tokens)}</span>
+                        <div>
+                          <span className="text-muted-foreground">{formatCompact(log.input_tokens)}</span>
+                          <span className="mx-0.5 text-border">/</span>
+                          <span>{formatCompact(log.output_tokens)}</span>
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">
+                          {zh ? "缓存" : "Cache"}: {zh ? "读" : "R"} {formatCompact(log.cache_read_input_tokens)} / {zh ? "写" : "W"} {formatCompact(log.cache_write_input_tokens)}
+                        </div>
                       </TableCell>
                       <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">{formatMoney(log.total_cost_usd)}</TableCell>
                       <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">{formatDuration(log.latency_ms)}</TableCell>

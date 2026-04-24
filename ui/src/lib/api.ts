@@ -277,6 +277,8 @@ export type ConfigBackupRequestLogDailyStat = {
   failed_requests: number
   wait_time_ms: number
   input_tokens: number
+  cache_read_input_tokens: number
+  cache_write_input_tokens: number
   output_tokens: number
   total_tokens: number
   input_cost_usd: number
@@ -472,6 +474,8 @@ export type OverviewSummary = {
   total_tokens: OverviewSummaryMetric
   total_cost_usd: OverviewSummaryMetric
   input_tokens: OverviewSummaryMetric
+  cache_read_input_tokens: OverviewSummaryMetric
+  cache_write_input_tokens: OverviewSummaryMetric
   input_cost_usd: OverviewSummaryMetric
   output_tokens: OverviewSummaryMetric
   output_cost_usd: OverviewSummaryMetric

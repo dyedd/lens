@@ -614,6 +614,8 @@ class ConfigBackupRequestLogDailyStat(BaseModel):
     failed_requests: int = 0
     wait_time_ms: int = 0
     input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
     input_cost_usd: float = 0.0
@@ -780,6 +782,8 @@ class OverviewSummary(BaseModel):
     total_tokens: OverviewSummaryMetric
     total_cost_usd: OverviewSummaryMetric
     input_tokens: OverviewSummaryMetric
+    cache_read_input_tokens: OverviewSummaryMetric
+    cache_write_input_tokens: OverviewSummaryMetric
     input_cost_usd: OverviewSummaryMetric
     output_tokens: OverviewSummaryMetric
     output_cost_usd: OverviewSummaryMetric
