@@ -204,6 +204,8 @@ class RequestLogDailyStatsEntity(Base):
     failed_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     wait_time_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_read_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_write_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

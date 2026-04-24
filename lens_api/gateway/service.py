@@ -5,11 +5,12 @@ import json
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
+from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
-from typing import Any, AsyncIterator
+from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
@@ -2214,6 +2215,27 @@ def _coerce_openai_output_index(value: Any, default: int | None = None) -> int |
         return default
 
 
+def _usage_mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _usage_int(mapping: Mapping[str, Any], key: str) -> int:
+    value = mapping.get(key)
+    if value is None:
+        return 0
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _openai_cached_tokens(usage: Mapping[str, Any], detail_key: str) -> int:
+    details = usage.get(detail_key)
+    if not isinstance(details, Mapping):
+        return 0
+    return _usage_int(details, "cached_tokens")
+
+
 def _extract_stream_usage(
     protocol: ProtocolKind, raw_content: str | None
 ) -> dict[str, int | str | None]:
@@ -2357,49 +2379,46 @@ def _extract_usage_from_payload(
     protocol: ProtocolKind, payload: dict[str, Any]
 ) -> dict[str, int | str | None]:
     if protocol == ProtocolKind.OPENAI_CHAT:
-        usage = payload.get("usage") or {}
-        details = usage.get("prompt_tokens_details") or {}
-        cache_read_input_tokens = int(details.get("cached_tokens") or 0)
-        input_tokens = int(usage.get("prompt_tokens") or 0)
+        usage = _usage_mapping(payload.get("usage"))
+        cache_read_input_tokens = _openai_cached_tokens(usage, "prompt_tokens_details")
+        input_tokens = _usage_int(usage, "prompt_tokens")
         return {
             "resolved_model": payload.get("model"),
             "input_tokens": input_tokens,
             "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
             "cache_write_input_tokens": 0,
-            "output_tokens": int(usage.get("completion_tokens") or 0),
-            "total_tokens": int(usage.get("total_tokens") or 0),
+            "output_tokens": _usage_int(usage, "completion_tokens"),
+            "total_tokens": _usage_int(usage, "total_tokens"),
         }
     if protocol == ProtocolKind.OPENAI_RESPONSES:
         if payload.get("type") == "response.completed":
-            response_payload = payload.get("response") or {}
-            usage = response_payload.get("usage") or {}
-            details = usage.get("input_tokens_details") or usage.get("input_token_details") or {}
-            cache_read_input_tokens = int(details.get("cached_tokens") or 0)
-            input_tokens = int(usage.get("input_tokens") or 0)
+            response_payload = _usage_mapping(payload.get("response"))
+            usage = _usage_mapping(response_payload.get("usage"))
+            cache_read_input_tokens = _openai_cached_tokens(usage, "input_tokens_details")
+            input_tokens = _usage_int(usage, "input_tokens")
             return {
                 "resolved_model": response_payload.get("model") or payload.get("model"),
                 "input_tokens": input_tokens,
                 "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
                 "cache_write_input_tokens": 0,
-                "output_tokens": int(usage.get("output_tokens") or 0),
-                "total_tokens": int(usage.get("total_tokens") or 0),
+                "output_tokens": _usage_int(usage, "output_tokens"),
+                "total_tokens": _usage_int(usage, "total_tokens"),
             }
-        usage = payload.get("usage") or {}
-        details = usage.get("input_tokens_details") or usage.get("input_token_details") or {}
-        cache_read_input_tokens = int(details.get("cached_tokens") or 0)
-        input_tokens = int(usage.get("input_tokens") or 0)
+        usage = _usage_mapping(payload.get("usage"))
+        cache_read_input_tokens = _openai_cached_tokens(usage, "input_tokens_details")
+        input_tokens = _usage_int(usage, "input_tokens")
         return {
             "resolved_model": payload.get("model"),
             "input_tokens": input_tokens,
             "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
             "cache_write_input_tokens": 0,
-            "output_tokens": int(usage.get("output_tokens") or 0),
-            "total_tokens": int(usage.get("total_tokens") or 0),
+            "output_tokens": _usage_int(usage, "output_tokens"),
+            "total_tokens": _usage_int(usage, "total_tokens"),
         }
     if protocol == ProtocolKind.ANTHROPIC:
         if payload.get("type") == "message_start":
-            message = payload.get("message") or {}
-            usage = message.get("usage") or {}
+            message = _usage_mapping(payload.get("message"))
+            usage = _usage_mapping(message.get("usage"))
             base_input_tokens = int(usage.get("input_tokens") or 0)
             cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
             cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
@@ -2414,7 +2433,7 @@ def _extract_usage_from_payload(
                 "total_tokens": input_tokens + output_tokens,
             }
         if payload.get("type") == "message_delta":
-            delta = payload.get("usage") or {}
+            delta = _usage_mapping(payload.get("usage"))
             base_input_tokens = int(delta.get("input_tokens") or 0)
             cache_read_input_tokens = int(delta.get("cache_read_input_tokens") or 0)
             cache_write_input_tokens = int(delta.get("cache_creation_input_tokens") or 0)
@@ -2428,7 +2447,7 @@ def _extract_usage_from_payload(
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
             }
-        usage = payload.get("usage") or {}
+        usage = _usage_mapping(payload.get("usage"))
         base_input_tokens = int(usage.get("input_tokens") or 0)
         cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
         cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
@@ -2442,16 +2461,12 @@ def _extract_usage_from_payload(
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
         }
-    usage = payload.get("usageMetadata") or {}
-    input_tokens = int(
-        usage.get("promptTokenCount") or usage.get("inputTokenCount") or 0
-    )
+    usage = _usage_mapping(payload.get("usageMetadata"))
+    input_tokens = int(usage.get("promptTokenCount") or 0)
     cache_read_input_tokens = int(
         usage.get("cachedContentTokenCount") or 0
     )
-    output_tokens = int(
-        usage.get("candidatesTokenCount") or usage.get("outputTokenCount") or 0
-    )
+    output_tokens = int(usage.get("candidatesTokenCount") or 0)
     total_tokens = int(usage.get("totalTokenCount") or (input_tokens + output_tokens))
     return {
         "resolved_model": payload.get("modelVersion") or payload.get("model"),
@@ -2469,35 +2484,33 @@ def _extract_response_usage(
     payload = response.json()
 
     if protocol == ProtocolKind.OPENAI_CHAT:
-        usage = payload.get("usage") or {}
-        details = usage.get("prompt_tokens_details") or {}
-        cache_read_input_tokens = int(details.get("cached_tokens") or 0)
-        input_tokens = int(usage.get("prompt_tokens") or 0)
+        usage = _usage_mapping(payload.get("usage"))
+        cache_read_input_tokens = _openai_cached_tokens(usage, "prompt_tokens_details")
+        input_tokens = _usage_int(usage, "prompt_tokens")
         return {
             "resolved_model": payload.get("model"),
             "input_tokens": input_tokens,
             "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
             "cache_write_input_tokens": 0,
-            "output_tokens": int(usage.get("completion_tokens") or 0),
-            "total_tokens": int(usage.get("total_tokens") or 0),
+            "output_tokens": _usage_int(usage, "completion_tokens"),
+            "total_tokens": _usage_int(usage, "total_tokens"),
         }
 
     if protocol == ProtocolKind.OPENAI_RESPONSES:
-        usage = payload.get("usage") or {}
-        details = usage.get("input_tokens_details") or usage.get("input_token_details") or {}
-        cache_read_input_tokens = int(details.get("cached_tokens") or 0)
-        input_tokens = int(usage.get("input_tokens") or 0)
+        usage = _usage_mapping(payload.get("usage"))
+        cache_read_input_tokens = _openai_cached_tokens(usage, "input_tokens_details")
+        input_tokens = _usage_int(usage, "input_tokens")
         return {
             "resolved_model": payload.get("model"),
             "input_tokens": input_tokens,
             "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
             "cache_write_input_tokens": 0,
-            "output_tokens": int(usage.get("output_tokens") or 0),
-            "total_tokens": int(usage.get("total_tokens") or 0),
+            "output_tokens": _usage_int(usage, "output_tokens"),
+            "total_tokens": _usage_int(usage, "total_tokens"),
         }
 
     if protocol == ProtocolKind.ANTHROPIC:
-        usage = payload.get("usage") or {}
+        usage = _usage_mapping(payload.get("usage"))
         base_input_tokens = int(usage.get("input_tokens") or 0)
         cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
         cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
@@ -2512,16 +2525,12 @@ def _extract_response_usage(
             "total_tokens": input_tokens + output_tokens,
         }
 
-    usage = payload.get("usageMetadata") or {}
-    input_tokens = int(
-        usage.get("promptTokenCount") or usage.get("inputTokenCount") or 0
-    )
+    usage = _usage_mapping(payload.get("usageMetadata"))
+    input_tokens = int(usage.get("promptTokenCount") or 0)
     cache_read_input_tokens = int(
         usage.get("cachedContentTokenCount") or 0
     )
-    output_tokens = int(
-        usage.get("candidatesTokenCount") or usage.get("outputTokenCount") or 0
-    )
+    output_tokens = int(usage.get("candidatesTokenCount") or 0)
     total_tokens = int(usage.get("totalTokenCount") or (input_tokens + output_tokens))
     return {
         "resolved_model": payload.get("modelVersion") or payload.get("model"),

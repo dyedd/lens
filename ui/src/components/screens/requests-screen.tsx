@@ -12,6 +12,7 @@ import {
   CheckCheck,
   Clock3,
   Copy,
+  Database,
   DollarSign,
   Filter,
   KeyRound,
@@ -19,6 +20,7 @@ import {
   RefreshCcw,
   RotateCcw,
   ServerCog,
+  Upload,
   Waypoints,
   Zap,
 } from 'lucide-react'
@@ -518,7 +520,7 @@ function JsonViewer({
 
   return (
     <section className={cn("flex min-h-[560px] min-w-0 flex-col bg-background", className)}>
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
         <div className="text-sm font-semibold text-foreground">{title}</div>
         <div className="flex items-center gap-2">
           {parsed?.isJson ? (
@@ -580,13 +582,13 @@ function RequestMetric({
   valueClassName?: string
 }) {
   return (
-    <div className="flex min-h-16 items-start gap-3 rounded-xl border bg-background px-3.5 py-3">
-      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-muted/35 text-muted-foreground">
+    <div className="flex min-h-[58px] min-w-0 items-start gap-2.5 rounded-xl border bg-background px-3 py-2.5">
+      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-muted/35 text-muted-foreground">
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] leading-none text-muted-foreground">{label}</div>
-        <div className={cn('mt-1.5 text-[15px] font-semibold leading-5 text-foreground', valueClassName)}>{value}</div>
+        <div className="truncate text-[11px] leading-4 text-muted-foreground">{label}</div>
+        <div className={cn('mt-1 whitespace-normal break-words text-[13px] font-semibold leading-4 text-foreground tabular-nums', valueClassName)}>{value}</div>
       </div>
     </div>
   )
@@ -756,7 +758,7 @@ function RequestCard({
             onOpenDetail()
           }
         }}
-        className="grid min-w-0 cursor-pointer grid-cols-[56px_minmax(0,1fr)_auto] items-start gap-x-3.5 gap-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="grid w-full min-w-0 cursor-pointer grid-cols-[56px_minmax(0,1fr)_auto] items-start gap-x-3.5 gap-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <ItemMedia variant="icon" className="flex size-12 self-start rounded-2xl border bg-muted/40">
           <ModelAvatar name={primaryModelName} size={28} />
@@ -799,16 +801,18 @@ function RequestCard({
           </div>
         ) : <div />}
 
-        <div className="col-span-3 grid gap-2.5 md:grid-cols-2 xl:grid-cols-5">
+        <div className="col-span-full grid w-full grid-cols-[repeat(auto-fit,minmax(126px,1fr))] gap-2">
           <RequestMetric icon={<Zap size={14} />} label={locale === 'zh-CN' ? '首字延迟' : 'First token'} value={formatMs(item.first_token_latency_ms)} />
           <RequestMetric icon={<ServerCog size={14} />} label={locale === 'zh-CN' ? '总耗时' : 'Total'} value={formatMs(item.latency_ms)} />
           <RequestMetric icon={<ArrowDownToLine size={14} />} label={locale === 'zh-CN' ? '输入' : 'Input'} value={formatCount(item.input_tokens)} />
           <RequestMetric icon={<ArrowUpFromLine size={14} />} label={locale === 'zh-CN' ? '输出' : 'Output'} value={formatCount(item.output_tokens)} />
+          <RequestMetric icon={<Database size={14} />} label={locale === 'zh-CN' ? '缓存读取' : 'Cache Read'} value={formatCount(item.cache_read_input_tokens)} />
+          <RequestMetric icon={<Upload size={14} />} label={locale === 'zh-CN' ? '缓存写入' : 'Cache Write'} value={formatCount(item.cache_write_input_tokens)} />
           <RequestMetric
             icon={<DollarSign size={14} />}
             label={locale === 'zh-CN' ? '费用' : 'Cost'}
             value={formatMoney(item.total_cost_usd)}
-            valueClassName="whitespace-nowrap text-[14px]"
+            valueClassName="whitespace-nowrap break-normal text-[12px]"
           />
         </div>
       </div>
@@ -1290,19 +1294,14 @@ export function RequestsScreen() {
       ) : null}
 
       <Dialog open={detailId !== null} onOpenChange={(open) => { if (!open) setDetailId(null) }}>
-        <AppDialogContent className="max-w-6xl" title={locale === 'zh-CN' ? '请求详情' : 'Request detail'}>
+        <AppDialogContent className="max-w-6xl" title={locale === 'zh-CN' ? '日志详情' : 'Log detail'}>
           {detailLoading || !detail ? (
             <div className="rounded-md border bg-background px-5 py-8 text-sm text-muted-foreground">
               {locale === 'zh-CN' ? '正在加载详情...' : 'Loading detail...'}
             </div>
           ) : (
             <div className="grid gap-3">
-              <div className="flex flex-wrap gap-2">
-                <RequestMeta icon={<Clock3 size={13} />} value={formatDate(detail.created_at, locale)} className="pl-0" />
-                <RequestMeta icon={<Waypoints size={13} />} value={detail.channel_name || detail.channel_id || 'n/a'} />
-                {detail.gateway_key_id ? <RequestMeta icon={<KeyRound size={13} />} value={formatGatewayKeyLabel(detail, locale)} /> : null}
-              </div>
-              <div className="grid overflow-hidden rounded-xl border bg-background xl:grid-cols-2">
+              <div className="grid min-h-[560px] overflow-hidden xl:grid-cols-2">
                 <JsonViewer
                   key={`request-${detail.id}`}
                   title={locale === 'zh-CN' ? '请求内容' : 'Request'}

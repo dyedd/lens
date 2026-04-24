@@ -1019,6 +1019,8 @@ class DomainStore:
                     (func.count() - func.sum(RequestLogEntity.success)).label('failed_requests'),
                     func.sum(RequestLogEntity.latency_ms).label('wait_time_ms'),
                     func.sum(RequestLogEntity.input_tokens).label('input_tokens'),
+                    func.sum(RequestLogEntity.cache_read_input_tokens).label('cache_read_input_tokens'),
+                    func.sum(RequestLogEntity.cache_write_input_tokens).label('cache_write_input_tokens'),
                     func.sum(RequestLogEntity.output_tokens).label('output_tokens'),
                     func.sum(RequestLogEntity.total_tokens).label('total_tokens'),
                     func.sum(RequestLogEntity.input_cost_usd).label('input_cost_usd'),
@@ -1060,6 +1062,8 @@ class DomainStore:
                         failed_requests=0,
                         wait_time_ms=0,
                         input_tokens=0,
+                        cache_read_input_tokens=0,
+                        cache_write_input_tokens=0,
                         output_tokens=0,
                         total_tokens=0,
                         input_cost_usd=0.0,
@@ -1072,6 +1076,8 @@ class DomainStore:
                 entity.failed_requests += int(row.failed_requests or 0)
                 entity.wait_time_ms += int(row.wait_time_ms or 0)
                 entity.input_tokens += int(row.input_tokens or 0)
+                entity.cache_read_input_tokens += int(row.cache_read_input_tokens or 0)
+                entity.cache_write_input_tokens += int(row.cache_write_input_tokens or 0)
                 entity.output_tokens += int(row.output_tokens or 0)
                 entity.total_tokens += int(row.total_tokens or 0)
                 entity.input_cost_usd += float(row.input_cost_usd or 0.0)
@@ -1505,6 +1511,8 @@ class DomainStore:
         request_count = int(recent["request_count"])
         wait_time_ms = int(recent["wait_time_ms"])
         input_tokens = int(recent["input_tokens"])
+        cache_read_input_tokens = int(recent["cache_read_input_tokens"])
+        cache_write_input_tokens = int(recent["cache_write_input_tokens"])
         output_tokens = int(recent["output_tokens"])
         total_cost_usd = float(recent["total_cost_usd"])
         input_cost_usd = float(recent["input_cost_usd"])
@@ -1516,6 +1524,8 @@ class DomainStore:
             total_tokens=OverviewSummaryMetric(value=input_tokens + output_tokens, delta=self._delta_percent(input_tokens + output_tokens, previous["input_tokens"] + previous["output_tokens"])),
             total_cost_usd=OverviewSummaryMetric(value=total_cost_usd, delta=self._delta_percent(total_cost_usd, previous["total_cost_usd"])),
             input_tokens=OverviewSummaryMetric(value=input_tokens, delta=self._delta_percent(input_tokens, previous["input_tokens"])),
+            cache_read_input_tokens=OverviewSummaryMetric(value=cache_read_input_tokens, delta=self._delta_percent(cache_read_input_tokens, previous["cache_read_input_tokens"])),
+            cache_write_input_tokens=OverviewSummaryMetric(value=cache_write_input_tokens, delta=self._delta_percent(cache_write_input_tokens, previous["cache_write_input_tokens"])),
             input_cost_usd=OverviewSummaryMetric(value=input_cost_usd, delta=self._delta_percent(input_cost_usd, previous["input_cost_usd"])),
             output_tokens=OverviewSummaryMetric(value=output_tokens, delta=self._delta_percent(output_tokens, previous["output_tokens"])),
             output_cost_usd=OverviewSummaryMetric(value=output_cost_usd, delta=self._delta_percent(output_cost_usd, previous["output_cost_usd"])),
@@ -1803,6 +1813,8 @@ class DomainStore:
             "request_count": archived_totals["request_count"] + live_totals["request_count"],
             "wait_time_ms": archived_totals["wait_time_ms"] + live_totals["wait_time_ms"],
             "input_tokens": archived_totals["input_tokens"] + live_totals["input_tokens"],
+            "cache_read_input_tokens": archived_totals["cache_read_input_tokens"] + live_totals["cache_read_input_tokens"],
+            "cache_write_input_tokens": archived_totals["cache_write_input_tokens"] + live_totals["cache_write_input_tokens"],
             "output_tokens": archived_totals["output_tokens"] + live_totals["output_tokens"],
             "input_cost_usd": archived_totals["input_cost_usd"] + live_totals["input_cost_usd"],
             "output_cost_usd": archived_totals["output_cost_usd"] + live_totals["output_cost_usd"],
@@ -1823,6 +1835,8 @@ class DomainStore:
                 func.sum(RequestLogDailyStatsEntity.request_count),
                 func.sum(RequestLogDailyStatsEntity.wait_time_ms),
                 func.sum(RequestLogDailyStatsEntity.input_tokens),
+                func.sum(RequestLogDailyStatsEntity.cache_read_input_tokens),
+                func.sum(RequestLogDailyStatsEntity.cache_write_input_tokens),
                 func.sum(RequestLogDailyStatsEntity.output_tokens),
                 func.sum(RequestLogDailyStatsEntity.input_cost_usd),
                 func.sum(RequestLogDailyStatsEntity.output_cost_usd),
@@ -1846,6 +1860,8 @@ class DomainStore:
                     "request_count": 0.0,
                     "wait_time_ms": 0.0,
                     "input_tokens": 0.0,
+                    "cache_read_input_tokens": 0.0,
+                    "cache_write_input_tokens": 0.0,
                     "output_tokens": 0.0,
                     "input_cost_usd": 0.0,
                     "output_cost_usd": 0.0,
@@ -1857,11 +1873,13 @@ class DomainStore:
             "request_count": float(row[0] or 0),
             "wait_time_ms": float(row[1] or 0),
             "input_tokens": float(row[2] or 0),
-            "output_tokens": float(row[3] or 0),
-            "input_cost_usd": float(row[4] or 0),
-            "output_cost_usd": float(row[5] or 0),
-            "total_cost_usd": float(row[6] or 0),
-            "successful_requests": float(row[7] or 0),
+            "cache_read_input_tokens": float(row[3] or 0),
+            "cache_write_input_tokens": float(row[4] or 0),
+            "output_tokens": float(row[5] or 0),
+            "input_cost_usd": float(row[6] or 0),
+            "output_cost_usd": float(row[7] or 0),
+            "total_cost_usd": float(row[8] or 0),
+            "successful_requests": float(row[9] or 0),
         }
 
     async def _overview_model_daily_rows(
@@ -1973,6 +1991,8 @@ class DomainStore:
             "request_count": imported_totals["request_count"] + archived_totals["request_count"] + request_log_totals["request_count"],
             "wait_time_ms": imported_totals["wait_time_ms"] + archived_totals["wait_time_ms"] + request_log_totals["wait_time_ms"],
             "input_tokens": imported_totals["input_tokens"] + archived_totals["input_tokens"] + request_log_totals["input_tokens"],
+            "cache_read_input_tokens": imported_totals["cache_read_input_tokens"] + archived_totals["cache_read_input_tokens"] + request_log_totals["cache_read_input_tokens"],
+            "cache_write_input_tokens": imported_totals["cache_write_input_tokens"] + archived_totals["cache_write_input_tokens"] + request_log_totals["cache_write_input_tokens"],
             "output_tokens": imported_totals["output_tokens"] + archived_totals["output_tokens"] + request_log_totals["output_tokens"],
             "input_cost_usd": imported_totals["input_cost_usd"] + archived_totals["input_cost_usd"] + request_log_totals["input_cost_usd"],
             "output_cost_usd": imported_totals["output_cost_usd"] + archived_totals["output_cost_usd"] + request_log_totals["output_cost_usd"],
@@ -1991,6 +2011,8 @@ class DomainStore:
                     "request_count": 0.0,
                     "wait_time_ms": 0.0,
                     "input_tokens": 0.0,
+                    "cache_read_input_tokens": 0.0,
+                    "cache_write_input_tokens": 0.0,
                     "output_tokens": 0.0,
                     "input_cost_usd": 0.0,
                     "output_cost_usd": 0.0,
@@ -2001,6 +2023,8 @@ class DomainStore:
                 "request_count": float(imported_total.request_success + imported_total.request_failed),
                 "wait_time_ms": float(imported_total.wait_time),
                 "input_tokens": float(imported_total.input_token),
+                "cache_read_input_tokens": 0.0,
+                "cache_write_input_tokens": 0.0,
                 "output_tokens": float(imported_total.output_token),
                 "input_cost_usd": float(imported_total.input_cost),
                 "output_cost_usd": float(imported_total.output_cost),
@@ -2021,6 +2045,8 @@ class DomainStore:
             "request_count": float(sum(item.request_success + item.request_failed for item in rows)),
             "wait_time_ms": float(sum(item.wait_time for item in rows)),
             "input_tokens": float(sum(item.input_token for item in rows)),
+            "cache_read_input_tokens": 0.0,
+            "cache_write_input_tokens": 0.0,
             "output_tokens": float(sum(item.output_token for item in rows)),
             "input_cost_usd": float(sum(item.input_cost for item in rows)),
             "output_cost_usd": float(sum(item.output_cost for item in rows)),
@@ -2043,6 +2069,8 @@ class DomainStore:
                 func.count(),
                 func.sum(RequestLogEntity.latency_ms),
                 func.sum(RequestLogEntity.input_tokens),
+                func.sum(RequestLogEntity.cache_read_input_tokens),
+                func.sum(RequestLogEntity.cache_write_input_tokens),
                 func.sum(RequestLogEntity.output_tokens),
                 func.sum(RequestLogEntity.input_cost_usd),
                 func.sum(RequestLogEntity.output_cost_usd),
@@ -2062,11 +2090,13 @@ class DomainStore:
             "request_count": float(row[0] or 0),
             "wait_time_ms": float(row[1] or 0),
             "input_tokens": float(row[2] or 0),
-            "output_tokens": float(row[3] or 0),
-            "input_cost_usd": float(row[4] or 0),
-            "output_cost_usd": float(row[5] or 0),
-            "total_cost_usd": float(row[6] or 0),
-            "successful_requests": float(row[7] or 0),
+            "cache_read_input_tokens": float(row[3] or 0),
+            "cache_write_input_tokens": float(row[4] or 0),
+            "output_tokens": float(row[5] or 0),
+            "input_cost_usd": float(row[6] or 0),
+            "output_cost_usd": float(row[7] or 0),
+            "total_cost_usd": float(row[8] or 0),
+            "successful_requests": float(row[9] or 0),
         }
 
     @staticmethod
@@ -2075,6 +2105,8 @@ class DomainStore:
             "request_count": 0.0,
             "wait_time_ms": 0.0,
             "input_tokens": 0.0,
+            "cache_read_input_tokens": 0.0,
+            "cache_write_input_tokens": 0.0,
             "output_tokens": 0.0,
             "input_cost_usd": 0.0,
             "output_cost_usd": 0.0,
