@@ -14,12 +14,25 @@ from alembic.config import Config
 
 from .core.config import settings
 
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-ALEMBIC_INI_PATH = PROJECT_DIR / "alembic.ini"
+SOURCE_PROJECT_DIR = Path(__file__).resolve().parent.parent
+
+
+def _project_dir() -> Path:
+    env_project_dir = os.environ.get("LENS_PROJECT_DIR", "").strip()
+    if env_project_dir:
+        return Path(env_project_dir)
+
+    cwd = Path.cwd()
+    if (cwd / "alembic.ini").is_file():
+        return cwd
+    return SOURCE_PROJECT_DIR
 
 
 def _alembic_cfg() -> Config:
-    return Config(str(ALEMBIC_INI_PATH))
+    project_dir = _project_dir()
+    config = Config(str(project_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(project_dir / "migrations"))
+    return config
 
 
 def db_upgrade(args: argparse.Namespace) -> None:
@@ -60,7 +73,8 @@ def serve(args: argparse.Namespace) -> None:
 
 
 def dev(_args: argparse.Namespace) -> None:
-    ui_dir = PROJECT_DIR / "ui"
+    project_dir = _project_dir()
+    ui_dir = project_dir / "ui"
     if not ui_dir.is_dir():
         raise RuntimeError(f"UI directory does not exist: {ui_dir}")
 
@@ -89,7 +103,7 @@ def dev(_args: argparse.Namespace) -> None:
             backend_port,
             "--reload",
         ],
-        cwd=PROJECT_DIR,
+        cwd=project_dir,
         env=backend_env,
     )
     frontend_command = "pnpm dev" if os.name == "nt" else ["pnpm", "dev"]
