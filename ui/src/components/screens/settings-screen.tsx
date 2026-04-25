@@ -12,6 +12,7 @@ import {
   Save,
   ServerCog,
   ShieldAlert,
+  TimerReset,
   Trash2,
   UserRound,
 } from "lucide-react"
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
@@ -50,6 +52,15 @@ const HEALTH_PENALTY_WEIGHT = "health_penalty_weight"
 const HEALTH_MIN_SAMPLES = "health_min_samples"
 const SITE_NAME = "site_name"
 const SITE_LOGO_URL = "site_logo_url"
+const TIME_ZONE = "time_zone"
+
+const TIME_ZONE_OPTIONS = [
+  { value: "Asia/Shanghai", label: "Asia/Shanghai" },
+  { value: "UTC", label: "UTC" },
+  { value: "Asia/Tokyo", label: "Asia/Tokyo" },
+  { value: "Europe/London", label: "Europe/London" },
+  { value: "America/New_York", label: "America/New_York" },
+] as const
 
 type DraftState = {
   proxyUrl: string
@@ -65,6 +76,7 @@ type DraftState = {
   healthMinSamples: string
   siteName: string
   siteLogoUrl: string
+  timeZone: string
 }
 
 const EMPTY_DRAFT: DraftState = {
@@ -81,6 +93,7 @@ const EMPTY_DRAFT: DraftState = {
   healthMinSamples: "10",
   siteName: "Lens",
   siteLogoUrl: "",
+  timeZone: "Asia/Shanghai",
 }
 
 function titleForLocale(locale: Locale, zh: string, en: string) {
@@ -105,6 +118,7 @@ function parseSettings(items: SettingItem[] | undefined) {
     healthMinSamples: mapping.get(HEALTH_MIN_SAMPLES) ?? "10",
     siteName: mapping.get(SITE_NAME) ?? "Lens",
     siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
+    timeZone: mapping.get(TIME_ZONE) ?? "Asia/Shanghai",
   } satisfies DraftState
 }
 
@@ -205,6 +219,10 @@ export function SettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["app-info"] }),
       queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] }),
       queryClient.invalidateQueries({ queryKey: ["model-groups"] }),
+      queryClient.invalidateQueries({ queryKey: ["overview-dashboard"] }),
+      queryClient.invalidateQueries({ queryKey: ["overview-metrics"] }),
+      queryClient.invalidateQueries({ queryKey: ["overview-models"] }),
+      queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
     ])
   }
 
@@ -225,6 +243,7 @@ export function SettingsScreen() {
         { key: HEALTH_MIN_SAMPLES, value: draft.healthMinSamples.trim() || "10" },
         { key: SITE_NAME, value: draft.siteName.trim() || "Lens" },
         { key: SITE_LOGO_URL, value: draft.siteLogoUrl.trim() },
+        { key: TIME_ZONE, value: draft.timeZone.trim() || "Asia/Shanghai" },
       ]
       await apiRequest<SettingItem[]>("/admin/settings", {
         method: "PUT",
@@ -386,6 +405,29 @@ export function SettingsScreen() {
             </div>
           </div>
         </div>
+      </SettingCard>
+    )
+  }
+
+  function renderTimeCard() {
+    return (
+      <SettingCard icon={TimerReset} title={titleForLocale(locale, "时间", "Time")}>
+        <FieldGroup>
+          <Field>
+            <FieldLabel>{titleForLocale(locale, "时区", "Time zone")}</FieldLabel>
+            <NativeSelect
+              className="w-full"
+              value={draft.timeZone || "Asia/Shanghai"}
+              onChange={(event) => setDraftValue("timeZone", event.target.value)}
+            >
+              {TIME_ZONE_OPTIONS.map((option) => (
+                <NativeSelectOption key={option.value} value={option.value}>
+                  {option.label}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+        </FieldGroup>
       </SettingCard>
     )
   }
@@ -572,6 +614,7 @@ export function SettingsScreen() {
             <div className="grid gap-4 xl:grid-cols-2">
               {renderAppearanceCard()}
               {renderAccountCard()}
+              {renderTimeCard()}
             </div>
           </TabsContent>
 

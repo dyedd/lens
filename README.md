@@ -388,9 +388,11 @@ lens db stamp head                            # 标记数据库为最新
 
 Docker 部署时，Lens 只读取 `LENS_HOST` 和 `LENS_PORT`；通用的 `HOSTNAME`、`PORT` 不会影响后端监听地址和端口。
 
-Docker 镜像和 `docker-compose.yml` 会把数据库连接显式设为 `sqlite+aiosqlite:////app/data/data.db`，本地开发默认使用 `sqlite+aiosqlite:///./data/data.db`。
+Docker 镜像和 `docker-compose.yml` 会把数据库连接显式设为 `sqlite+aiosqlite:////app/data/data.db`，本地开发默认使用 `sqlite+aiosqlite:///./data/data.db`；部署目录的 `.env` 不需要再写 `LENS_DATABASE_URL`，避免覆盖容器内路径。
 
-更多运行时设置，例如 CORS、代理、日志保留、断路器、健康评分、站点名称和 Logo，可在管理后台设置页调整。
+Lens 的业务时区不是环境变量；在管理后台设置页选择，默认 `Asia/Shanghai`。请求日志时间、今天窗口、趋势分桶、备份文件名等应用内时间显示都会使用这个设置。
+
+更多运行时设置，例如 CORS、代理、日志保留、断路器、健康评分、站点名称和 Logo，也可在管理后台设置页调整。
 
 ## 配置备份与迁移
 

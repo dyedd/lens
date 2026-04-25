@@ -21,6 +21,7 @@ import {
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
+import { useAppTimeZone } from '@/hooks/use-app-time-zone'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, AppDialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -424,13 +425,14 @@ function healthBucketTone(bucket: ChannelHealthBucket) {
   return 'bg-destructive'
 }
 
-function createHealthBucketTimeFormatter(locale: 'zh-CN' | 'en-US') {
+function createHealthBucketTimeFormatter(locale: 'zh-CN' | 'en-US', timeZone?: string) {
   return new Intl.DateTimeFormat(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    ...(timeZone ? { timeZone } : {}),
   })
 }
 
@@ -443,18 +445,20 @@ function SiteHealthPreview({
   summary,
   healthByChannelId,
   locale,
+  timeZone,
 }: {
   site: SiteRow
   summary?: SiteRuntimeSummary
   healthByChannelId: Map<string, ChannelHealthRow>
   locale: 'zh-CN' | 'en-US'
+  timeZone?: string
 }) {
   const enabledProtocols = site.protocols.filter((item) => item.enabled)
   const summaryByChannelId = new Map(
     (summary?.channel_summaries ?? []).map((item) => [item.channel_id, item] as const)
   )
   const multiProtocol = enabledProtocols.length > 1
-  const bucketTimeFormatter = useMemo(() => createHealthBucketTimeFormatter(locale), [locale])
+  const bucketTimeFormatter = useMemo(() => createHealthBucketTimeFormatter(locale, timeZone), [locale, timeZone])
 
   if (!enabledProtocols.length) {
     return (
@@ -663,6 +667,7 @@ function SwitchButton({ checked, onChange, disabled = false }: { checked: boolea
 export function ChannelsScreen() {
   const queryClient = useQueryClient()
   const { locale } = useI18n()
+  const timeZone = useAppTimeZone()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<ChannelStatusFilter>('all')
   const [protocolFilter, setProtocolFilter] = useState<'all' | ProtocolKind>('all')
@@ -1094,6 +1099,7 @@ export function ChannelsScreen() {
                             summary={runtimeSummary}
                             healthByChannelId={channelHealthById}
                             locale={locale}
+                            timeZone={timeZone}
                           />
                         </div>
                         <ItemFooter className="mt-4 flex flex-wrap items-center gap-2.5">

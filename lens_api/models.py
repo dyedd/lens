@@ -404,6 +404,7 @@ class AppInfo(BaseModel):
     system_version: str
     site_name: str
     logo_url: str = ""
+    time_zone: str
 
 
 class ModelGroup(BaseModel):

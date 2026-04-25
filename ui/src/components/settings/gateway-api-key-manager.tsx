@@ -57,6 +57,7 @@ import {
   type ProtocolKind,
   apiRequest,
 } from "@/lib/api"
+import { useAppTimeZone } from "@/hooks/use-app-time-zone"
 import { type Locale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -106,7 +107,51 @@ function maskGatewayKey(value: string) {
   return value.slice(0, 8) + "*".repeat(Math.max(value.length - 16, 8)) + value.slice(-8)
 }
 
-function parseGatewayExpiresAt(value?: string | null) {
+function getTimeZoneDateParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date)
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? ""
+  return {
+    year: Number(value("year")),
+    month: Number(value("month")),
+    day: Number(value("day")),
+  }
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date)
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "0"
+  const asUtc = Date.UTC(
+    Number(value("year")),
+    Number(value("month")) - 1,
+    Number(value("day")),
+    Number(value("hour")),
+    Number(value("minute")),
+    Number(value("second"))
+  )
+  return asUtc - date.getTime()
+}
+
+function getTimeInZone(year: number, month: number, day: number, hour: number, minute: number, second: number, millisecond: number, timeZone: string) {
+  const utcGuess = new Date(Date.UTC(year, month, day, hour, minute, second, millisecond))
+  const offset = getTimeZoneOffsetMs(utcGuess, timeZone)
+  return new Date(utcGuess.getTime() - offset)
+}
+
+function parseGatewayExpiresAt(value: string | null | undefined, timeZone: string) {
   if (!value) {
     return { expiresOn: undefined }
   }
@@ -114,23 +159,28 @@ function parseGatewayExpiresAt(value?: string | null) {
   if (Number.isNaN(date.getTime())) {
     return { expiresOn: undefined }
   }
+  const parts = getTimeZoneDateParts(date, timeZone)
+  if (!parts.year || !parts.month || !parts.day) {
+    return { expiresOn: undefined }
+  }
   return {
-    expiresOn: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
+    expiresOn: new Date(parts.year, parts.month - 1, parts.day),
   }
 }
 
-function formatExpiresAt(date?: Date) {
+function formatExpiresAt(date: Date | undefined, timeZone: string) {
   if (!date) {
     return null
   }
-  const nextDate = new Date(
+  const nextDate = getTimeInZone(
     date.getFullYear(),
     date.getMonth(),
     date.getDate(),
     23,
     59,
     59,
-    999
+    999,
+    timeZone
   )
   if (Number.isNaN(nextDate.getTime())) {
     return null
@@ -138,11 +188,11 @@ function formatExpiresAt(date?: Date) {
   return nextDate.toISOString()
 }
 
-function toGatewayApiKeyForm(item?: GatewayApiKey): GatewayApiKeyForm {
+function toGatewayApiKeyForm(item: GatewayApiKey | undefined, timeZone: string): GatewayApiKeyForm {
   if (!item) {
     return { ...EMPTY_FORM }
   }
-  const expires = parseGatewayExpiresAt(item.expires_at)
+  const expires = parseGatewayExpiresAt(item.expires_at, timeZone)
   return {
     remark: item.remark,
     enabled: item.enabled,
@@ -153,13 +203,13 @@ function toGatewayApiKeyForm(item?: GatewayApiKey): GatewayApiKeyForm {
   }
 }
 
-function toGatewayApiKeyPayload(form: GatewayApiKeyForm): GatewayApiKeyPayload {
+function toGatewayApiKeyPayload(form: GatewayApiKeyForm, timeZone: string): GatewayApiKeyPayload {
   return {
     remark: form.remark.trim(),
     enabled: form.enabled,
     allowed_models: form.restrictModels ? form.allowedModels : [],
     max_cost_usd: Math.max(Number(form.maxCostUsd || "0") || 0, 0),
-    expires_at: formatExpiresAt(form.expiresOn),
+    expires_at: formatExpiresAt(form.expiresOn, timeZone),
   }
 }
 
@@ -177,7 +227,7 @@ function formatGatewayLimit(locale: Locale, item: GatewayApiKey) {
   return titleForLocale(locale, "不限额", "Unlimited")
 }
 
-function formatDateTime(locale: Locale, value?: string | null) {
+function formatDateTime(locale: Locale, value?: string | null, timeZone?: string) {
   if (!value) {
     return titleForLocale(locale, "未设置", "Not set")
   }
@@ -191,10 +241,11 @@ function formatDateTime(locale: Locale, value?: string | null) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   })
 }
 
-function formatDateOnly(locale: Locale, value?: string | null) {
+function formatDateOnly(locale: Locale, value?: string | null, timeZone?: string) {
   if (!value) {
     return titleForLocale(locale, "未设置", "Not set")
   }
@@ -206,6 +257,7 @@ function formatDateOnly(locale: Locale, value?: string | null) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   })
 }
 
@@ -277,6 +329,7 @@ function protocolSummary(locale: Locale, protocols: ProtocolKind[]) {
 
 export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
   const queryClient = useQueryClient()
+  const timeZone = useAppTimeZone()
   const { data: gatewayKeys = [] } = useQuery({
     queryKey: ["gateway-api-keys"],
     queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
@@ -317,7 +370,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
   function openEditDialog(item: GatewayApiKey) {
     setEditingKeyId(item.id)
-    setForm(toGatewayApiKeyForm(item))
+    setForm(toGatewayApiKeyForm(item, timeZone))
     setPickerOpen(false)
     setDialogOpen(true)
   }
@@ -368,7 +421,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
     setSubmitting(true)
     try {
-      const payload = toGatewayApiKeyPayload(form)
+      const payload = toGatewayApiKeyPayload(form, timeZone)
       if (editingKeyId) {
         await apiRequest<GatewayApiKey>(`/admin/gateway-api-keys/${editingKeyId}`, {
           method: "PUT",
@@ -564,15 +617,15 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                               {item.expires_at
                                 ? titleForLocale(
                                     locale,
-                                    `到期 ${formatDateOnly(locale, item.expires_at)}`,
-                                    `Expires ${formatDateOnly(locale, item.expires_at)}`
+                                    `到期 ${formatDateOnly(locale, item.expires_at, timeZone)}`,
+                                    `Expires ${formatDateOnly(locale, item.expires_at, timeZone)}`
                                   )
                                 : titleForLocale(locale, "永不过期", "No expiry")}
                             </div>
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {formatDateTime(locale, item.created_at)}
+                          {formatDateTime(locale, item.created_at, timeZone)}
                         </TableCell>
                         <TableCell>
                           {item.allowed_models.length > 0 ? (
