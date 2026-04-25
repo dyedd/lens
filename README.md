@@ -108,16 +108,30 @@ x-goog-api-key: <gateway-key>
 
 ### Docker Compose
 
-复制环境变量示例：
+在部署目录中放置 `docker-compose.yml`，并新建 `.env`：
 
 ```bash
+mkdir lens
+cd lens
+curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/.env.example
 cp .env.example .env
 ```
 
-启动：
+启动前请编辑 `.env`，至少修改 `LENS_AUTH_SECRET_KEY`。
+
+如需修改数据目录，只改 `volumes` 左侧的宿主机路径，右侧 `/app/data` 保持不变：
+
+```yaml
+volumes:
+  - ./data:/app/data
+```
+
+拉取并启动线上镜像：
 
 ```bash
-docker compose up --build
+docker compose pull
+docker compose up -d
 ```
 
 访问：
@@ -140,6 +154,7 @@ Docker 说明：
 - 容器启动时自动执行 `lens db upgrade`
 - 容器启动时会尝试初始化默认管理员；如果已存在管理员则跳过
 - `./data` 挂载到容器内 `/app/data`，SQLite 数据会持久化
+- 容器内部固定监听 `0.0.0.0:3000`；不要用 `PORT` 或 `HOSTNAME` 配置 Lens
 - 如需跳过启动时迁移，可设置 `LENS_SKIP_DB_UPGRADE=1`
 
 ### Docker Run
@@ -147,19 +162,44 @@ Docker 说明：
 ```bash
 docker run -d --name lens \
   -p 3000:3000 \
-  --env-file .env \
   -v ./data:/app/data \
   ghcr.io/dyedd/lens:latest
 ```
 
+如需加载 `.env` 中的自定义配置，可在 `docker run` 中额外添加 `--env-file .env`；此时不要把 `LENS_PORT` 设成本地开发端口，容器内应保持 `LENS_HOST=0.0.0.0`、`LENS_PORT=3000`。
+
 如果使用本地构建镜像：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+`docker-compose.local.yml` 需要和 `docker-compose.yml` 放在同一目录；仓库中已提供该文件，会把镜像名改成 `lens:local`，并从当前源码构建。
+
+如果你是在独立部署目录中本地构建，手动新建 `docker-compose.local.yml`：
+
+```yaml
+services:
+  app:
+    image: lens:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+```
+
+然后把项目源码放在同一目录，执行：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+也可以手动构建后不用 Compose，直接运行：
 
 ```bash
 docker build -t lens:local .
 
 docker run -d --name lens \
   -p 3000:3000 \
-  --env-file .env \
   -v ./data:/app/data \
   lens:local
 ```
@@ -330,21 +370,25 @@ lens db stamp head                            # 标记数据库为最新
 
 后端配置项使用 `LENS_` 前缀，也支持 `.env` 文件；本地前端开发会额外读取 `LENS_UI_BACKEND_BASE_URL` 作为代理目标。
 
-| 变量                             | 默认值                             | 说明                                  |
-| -------------------------------- | ---------------------------------- | ------------------------------------- |
-| `LENS_HOST`                      | `127.0.0.1`                        | 后端监听地址；Docker 中设为 `0.0.0.0` |
-| `LENS_PORT`                      | `18080`                            | 后端监听端口；Docker 中设为 `3000`    |
-| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///data/data.db` | 数据库连接                            |
-| `LENS_AUTH_SECRET_KEY`           | 开发默认值                         | JWT 签名密钥，生产环境必须修改        |
-| `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720`                              | 管理后台登录有效期                    |
-| `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                              | 上游请求总超时                        |
-| `LENS_CONNECT_TIMEOUT_SECONDS`   | `10`                               | 上游连接超时                          |
-| `LENS_MAX_CONNECTIONS`           | `200`                              | HTTP 连接池最大连接数                 |
-| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                               | HTTP 连接池 keep-alive 数             |
-| `LENS_ANTHROPIC_VERSION`         | `2023-06-01`                       | 转发 Anthropic 请求时使用的版本头     |
-| `LENS_UI_STATIC_DIR`             | 空                                 | 静态前端目录；Docker 内部使用         |
-| `LENS_UI_BACKEND_BASE_URL`       | `http://127.0.0.1:18080`           | 仅用于本地 Next.js dev 代理           |
-| `LENS_SKIP_DB_UPGRADE`           | `0`                                | Docker 启动时设为 `1` 可跳过自动迁移  |
+| 变量                             | 默认值                                | 说明                                            |
+| -------------------------------- | ------------------------------------- | ----------------------------------------------- |
+| `LENS_HOST`                      | `127.0.0.1`                           | 后端监听地址；Docker 中设为 `0.0.0.0`           |
+| `LENS_PORT`                      | `18080`                               | 后端监听端口；Docker 中设为 `3000`              |
+| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | 数据库连接；默认写入当前工作目录下的 `data`     |
+| `LENS_AUTH_SECRET_KEY`           | 开发默认值                            | JWT 签名密钥，生产环境必须修改                  |
+| `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720`                                 | 管理后台登录有效期                              |
+| `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | 上游请求总超时                                  |
+| `LENS_CONNECT_TIMEOUT_SECONDS`   | `10`                                  | 上游连接超时                                    |
+| `LENS_MAX_CONNECTIONS`           | `200`                                 | HTTP 连接池最大连接数                           |
+| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                  | HTTP 连接池 keep-alive 数                       |
+| `LENS_ANTHROPIC_VERSION`         | `2023-06-01`                          | 转发 Anthropic 请求时使用的版本头               |
+| `LENS_UI_STATIC_DIR`             | 空                                    | 静态前端目录；Docker 内部设为 `/app/ui`         |
+| `LENS_SKIP_DB_UPGRADE`           | `0`                                   | Docker 启动时设为 `1` 可跳过自动迁移            |
+| `LENS_UI_BACKEND_BASE_URL`       | `http://127.0.0.1:18080`              | 仅用于本地 Next.js dev/standalone 代理          |
+
+Docker 部署时，Lens 只读取 `LENS_HOST` 和 `LENS_PORT`；通用的 `HOSTNAME`、`PORT` 不会影响后端监听地址和端口。
+
+Docker 镜像和 `docker-compose.yml` 会把数据库连接显式设为 `sqlite+aiosqlite:////app/data/data.db`，本地开发默认使用 `sqlite+aiosqlite:///./data/data.db`。
 
 更多运行时设置，例如 CORS、代理、日志保留、断路器、健康评分、站点名称和 Logo，可在管理后台设置页调整。
 

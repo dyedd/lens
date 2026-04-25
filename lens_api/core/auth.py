@@ -12,6 +12,7 @@ from .config import Settings
 
 
 PBKDF2_ITERATIONS = 600_000
+JWT_ALGORITHM = "HS256"
 
 
 def hash_password(password: str) -> str:
@@ -52,10 +53,10 @@ def create_access_token(subject: str, settings: Settings) -> tuple[str, int]:
             "exp": expires_at,
         },
         settings.auth_secret_key,
-        algorithm=settings.auth_algorithm,
+        algorithm=JWT_ALGORITHM,
     )
     return token, expires_in
 
 
 def decode_access_token(token: str, settings: Settings) -> dict[str, Any]:
-    return jwt.decode(token, settings.auth_secret_key, algorithms=[settings.auth_algorithm])
+    return jwt.decode(token, settings.auth_secret_key, algorithms=[JWT_ALGORITHM])

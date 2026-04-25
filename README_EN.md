@@ -108,16 +108,30 @@ Console pages:
 
 ### Docker Compose
 
-Copy the environment example:
+Place `docker-compose.yml` in a deployment directory and create `.env`:
 
 ```bash
+mkdir lens
+cd lens
+curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/.env.example
 cp .env.example .env
 ```
 
-Start Lens:
+Before starting Lens, edit `.env` and at least change `LENS_AUTH_SECRET_KEY`.
+
+To change the data directory, edit only the host path on the left side of `volumes`; keep `/app/data` unchanged:
+
+```yaml
+volumes:
+  - ./data:/app/data
+```
+
+Pull and start the published image:
 
 ```bash
-docker compose up --build
+docker compose pull
+docker compose up -d
 ```
 
 Open:
@@ -140,6 +154,7 @@ Docker notes:
 - Startup runs `lens db upgrade`
 - Startup attempts to seed the default administrator and skips it if an admin already exists
 - `./data` is mounted to `/app/data` for SQLite persistence
+- The container listens on `0.0.0.0:3000`; do not use `PORT` or `HOSTNAME` to configure Lens
 - Set `LENS_SKIP_DB_UPGRADE=1` to skip automatic migrations on startup
 
 ### Docker Run
@@ -147,19 +162,44 @@ Docker notes:
 ```bash
 docker run -d --name lens \
   -p 3000:3000 \
-  --env-file .env \
   -v ./data:/app/data \
   ghcr.io/dyedd/lens:latest
 ```
 
+Add `--env-file .env` to `docker run` if you need to load custom settings from `.env`; do not set `LENS_PORT` to the local development port in that file. Containers should keep `LENS_HOST=0.0.0.0` and `LENS_PORT=3000`.
+
 To build locally:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+`docker-compose.local.yml` must be in the same directory as `docker-compose.yml`. The repository already includes this file; it changes the image name to `lens:local` and builds from the current source tree.
+
+If you are building from a standalone deployment directory, create `docker-compose.local.yml` manually:
+
+```yaml
+services:
+  app:
+    image: lens:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+```
+
+Put the project source tree in the same directory, then run:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+You can also build manually and run without Compose:
 
 ```bash
 docker build -t lens:local .
 
 docker run -d --name lens \
   -p 3000:3000 \
-  --env-file .env \
   -v ./data:/app/data \
   lens:local
 ```
@@ -330,21 +370,25 @@ lens db stamp head                            # mark database as latest
 
 Backend configuration uses the `LENS_` prefix and also supports `.env` files. Local frontend development additionally reads `LENS_UI_BACKEND_BASE_URL` as the proxy target.
 
-| Variable                         | Default                            | Description                                      |
-| -------------------------------- | ---------------------------------- | ------------------------------------------------ |
-| `LENS_HOST`                      | `127.0.0.1`                        | Backend listen host; Docker sets it to `0.0.0.0` |
-| `LENS_PORT`                      | `18080`                            | Backend listen port; Docker sets it to `3000`    |
-| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///data/data.db` | Database URL                                     |
-| `LENS_AUTH_SECRET_KEY`           | development default                | JWT signing key; must be changed in production   |
-| `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720`                              | Console session lifetime                         |
-| `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                              | Upstream request timeout                         |
-| `LENS_CONNECT_TIMEOUT_SECONDS`   | `10`                               | Upstream connection timeout                      |
-| `LENS_MAX_CONNECTIONS`           | `200`                              | HTTP connection pool size                        |
-| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                               | HTTP keep-alive pool size                        |
-| `LENS_ANTHROPIC_VERSION`         | `2023-06-01`                       | Anthropic version header                         |
-| `LENS_UI_STATIC_DIR`             | empty                              | Static frontend directory; used inside Docker    |
-| `LENS_UI_BACKEND_BASE_URL`       | `http://127.0.0.1:18080`           | Local Next.js dev proxy target                   |
-| `LENS_SKIP_DB_UPGRADE`           | `0`                                | Set to `1` to skip Docker startup migration      |
+| Variable                         | Default                               | Description                                              |
+| -------------------------------- | ------------------------------------- | -------------------------------------------------------- |
+| `LENS_HOST`                      | `127.0.0.1`                           | Backend listen host; Docker sets it to `0.0.0.0`         |
+| `LENS_PORT`                      | `18080`                               | Backend listen port; Docker sets it to `3000`            |
+| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | Database URL; defaults to `data` under the working dir    |
+| `LENS_AUTH_SECRET_KEY`           | development default                   | JWT signing key; must be changed in production           |
+| `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720`                                 | Console session lifetime                                 |
+| `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | Upstream request timeout                                 |
+| `LENS_CONNECT_TIMEOUT_SECONDS`   | `10`                                  | Upstream connection timeout                              |
+| `LENS_MAX_CONNECTIONS`           | `200`                                 | HTTP connection pool size                                |
+| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                  | HTTP keep-alive pool size                                |
+| `LENS_ANTHROPIC_VERSION`         | `2023-06-01`                          | Anthropic version header                                 |
+| `LENS_UI_STATIC_DIR`             | empty                                 | Static frontend directory; Docker sets it to `/app/ui`   |
+| `LENS_SKIP_DB_UPGRADE`           | `0`                                   | Set to `1` to skip Docker startup migration              |
+| `LENS_UI_BACKEND_BASE_URL`       | `http://127.0.0.1:18080`              | Local Next.js dev/standalone proxy target                |
+
+In Docker deployments, Lens only reads `LENS_HOST` and `LENS_PORT`; generic `HOSTNAME` and `PORT` do not affect the backend listen address or port.
+
+The Docker image and `docker-compose.yml` explicitly set the database URL to `sqlite+aiosqlite:////app/data/data.db`; local development defaults to `sqlite+aiosqlite:///./data/data.db`.
 
 More runtime settings, including CORS, proxy, log retention, circuit breaker, health scoring, site name, and logo, can be changed in the management console.
 
