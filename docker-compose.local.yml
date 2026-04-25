@@ -1,0 +1,6 @@
+services:
+  app:
+    image: lens:local
+    build:
+      context: .
+      dockerfile: Dockerfile

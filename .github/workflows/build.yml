@@ -97,8 +97,6 @@ jobs:
           context: .
           file: ./Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          build-args: |
-            LENS_UI_BACKEND_BASE_URL=http://127.0.0.1:18080
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
