@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Multi-provider LLM gateway for OpenAI Chat, OpenAI Responses, Anthropic, and Gemini"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = [
     "aiosqlite>=0.20.0",
     "alembic>=1.18.0",
