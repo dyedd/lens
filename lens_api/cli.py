@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+import signal
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 from alembic import command
@@ -53,6 +57,85 @@ def serve(args: argparse.Namespace) -> None:
     else:
         from .gateway.service import app
         uvicorn.run(app, host=settings.host, port=settings.port)
+
+
+def dev(_args: argparse.Namespace) -> None:
+    ui_dir = PROJECT_DIR / "ui"
+    if not ui_dir.is_dir():
+        raise RuntimeError(f"UI directory does not exist: {ui_dir}")
+
+    backend_host = "127.0.0.1"
+    backend_port = "18080"
+    backend_url = f"http://{backend_host}:{backend_port}"
+
+    backend_env = os.environ.copy()
+    backend_env["LENS_HOST"] = backend_host
+    backend_env["LENS_PORT"] = backend_port
+    backend_env.pop("LENS_UI_STATIC_DIR", None)
+
+    frontend_env = os.environ.copy()
+    frontend_env["LENS_UI_BACKEND_BASE_URL"] = backend_url
+    frontend_env.pop("LENS_UI_STATIC_EXPORT", None)
+
+    backend = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "lens_api.gateway.service:app",
+            "--host",
+            backend_host,
+            "--port",
+            backend_port,
+            "--reload",
+        ],
+        cwd=PROJECT_DIR,
+        env=backend_env,
+    )
+    frontend_command = "pnpm dev" if os.name == "nt" else ["pnpm", "dev"]
+    frontend = subprocess.Popen(frontend_command, cwd=ui_dir, env=frontend_env, shell=os.name == "nt")
+
+    processes = (backend, frontend)
+
+    def stop_processes() -> None:
+        if os.name == "nt":
+            for process in processes:
+                if process.poll() is None:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+            return
+
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline and any(process.poll() is None for process in processes):
+            time.sleep(0.1)
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+
+    def handle_signal(signum, _frame) -> None:
+        stop_processes()
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    try:
+        while True:
+            for process in processes:
+                return_code = process.poll()
+                if return_code is not None:
+                    stop_processes()
+                    raise SystemExit(return_code)
+            time.sleep(0.25)
+    finally:
+        stop_processes()
 
 
 def seed_admin(args: argparse.Namespace) -> None:
@@ -107,6 +190,9 @@ def main(argv: list[str] | None = None) -> None:
     srv = sub.add_parser("serve", help="Start the API server")
     srv.add_argument("--reload", action="store_true", help="Enable auto-reload on code changes")
     srv.set_defaults(func=serve)
+
+    dev_parser = sub.add_parser("dev", help="Start API and UI development servers")
+    dev_parser.set_defaults(func=dev)
 
     seed = sub.add_parser("seed-admin", help="Create an initial admin user when none exists")
     seed.add_argument("--username", required=True, help="Admin username")

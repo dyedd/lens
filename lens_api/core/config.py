@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     max_keepalive_connections: int = 50
     database_url: str = "sqlite+aiosqlite:///data/data.db"
     anthropic_version: str = "2023-06-01"
+    ui_static_dir: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="LENS_",

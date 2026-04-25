@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from . import admin_auth, model_groups, model_prices, overview, proxy, public, request_logs, routing, settings, sites
+from . import admin_auth, model_groups, model_prices, overview, proxy, public, request_logs, routing, settings, sites, ui_static
 
 
 def include_routes(app: FastAPI, service_module) -> None:
@@ -16,3 +16,4 @@ def include_routes(app: FastAPI, service_module) -> None:
     model_prices.register(app, service_module)
     settings.register(app, service_module)
     proxy.register(app, service_module)
+    ui_static.register(app, service_module)

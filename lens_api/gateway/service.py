@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
-from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -95,13 +94,9 @@ from .upstreams import (
 
 @lru_cache(maxsize=1)
 def _read_system_version() -> str:
-    package_file = Path(__file__).resolve().parents[2] / "ui" / "package.json"
-    try:
-        payload = json.loads(package_file.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return "0.1.0"
-    version = str(payload.get("version") or "").strip()
-    return version or "0.1.0"
+    from lens_api import __version__
+
+    return __version__
 
 
 class AppState:

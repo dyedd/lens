@@ -10,6 +10,7 @@ __pycache__/
 node_modules
 ui/.next
 ui/node_modules
+ui/out
 ui/dist
 ui/build
 scripts/__pycache__/
