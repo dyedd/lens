@@ -109,7 +109,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider className="h-dvh">
+    <SidebarProvider className="h-dvh max-h-dvh overflow-hidden">
       <Sidebar collapsible="icon" className="z-20">
         <SidebarHeader className="min-h-[4.5rem] px-4 py-3">
           <div className="flex w-full items-center justify-between gap-2 group-data-[collapsible=icon]:justify-center">
@@ -206,7 +206,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="hide-scrollbar h-full overflow-y-auto overscroll-contain bg-muted p-6 pb-8">
+        <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted p-6 pb-8">
           <div key={pathname} className="min-h-[calc(100vh-10rem)] animate-[fadeIn_.16s_ease-out]">
             {children}
           </div>
