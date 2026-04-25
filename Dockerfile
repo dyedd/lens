@@ -32,6 +32,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     LENS_HOST=0.0.0.0 \
     LENS_PORT=3000 \
+    LENS_PROJECT_DIR=/app \
     LENS_UI_STATIC_DIR=/app/ui \
     TZ=Asia/Shanghai
 
