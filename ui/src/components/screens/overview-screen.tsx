@@ -19,7 +19,8 @@ import {
 } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Cell, Label, Pie, PieChart, XAxis, YAxis } from "recharts"
 import { OverviewDashboardData, OverviewMetrics, apiRequest } from "@/lib/api"
-import { formatLogDateTime } from "@/lib/datetime"
+import { formatLogDateTime, getDateBucketPrefix } from "@/lib/datetime"
+import { useAppTimeZone } from "@/hooks/use-app-time-zone"
 import { useI18n } from "@/lib/i18n"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -81,14 +82,6 @@ function formatTrendLabel(bucket: string) {
     return `${bucket.slice(8, 10)}:00`
   }
   return `${bucket.slice(4, 6)}/${bucket.slice(6, 8)}`
-}
-
-function getTodayBucketPrefix() {
-  const now = new Date()
-  const year = String(now.getFullYear())
-  const month = String(now.getMonth() + 1).padStart(2, "0")
-  const day = String(now.getDate()).padStart(2, "0")
-  return `${year}${month}${day}`
 }
 
 function formatRatio(current: number, total: number) {
@@ -188,6 +181,7 @@ export function OverviewScreen() {
     queryFn: () => apiRequest<OverviewMetrics>("/admin/overview"),
     staleTime: 30_000,
   })
+  const timeZone = useAppTimeZone()
 
   const summary = dashboardData?.summary
   const performance = dashboardData?.performance
@@ -267,7 +261,7 @@ export function OverviewScreen() {
 
     const sortedDates = [...dateMap.keys()].sort()
     const trendBuckets = isHourlyTrend
-      ? Array.from({ length: 24 }, (_, hour) => `${getTodayBucketPrefix()}${String(hour).padStart(2, "0")}`)
+      ? Array.from({ length: 24 }, (_, hour) => `${getDateBucketPrefix(timeZone)}${String(hour).padStart(2, "0")}`)
       : sortedDates
     const data = trendBuckets.map((bucket) => ({
       date: formatTrendLabel(bucket),
@@ -286,7 +280,7 @@ export function OverviewScreen() {
     })
 
     return { barData: data, barConfig: config, barModels: safeModels }
-  }, [days, models])
+  }, [days, models, timeZone])
 
   return (
     <section className="flex flex-col gap-3 md:gap-4">
@@ -557,7 +551,7 @@ export function OverviewScreen() {
                 <TableBody>
                   {logs.map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell className="px-3 py-2.5 whitespace-nowrap text-foreground">{formatLogDateTime(log.created_at, locale)}</TableCell>
+                      <TableCell className="px-3 py-2.5 whitespace-nowrap text-foreground">{formatLogDateTime(log.created_at, locale, timeZone)}</TableCell>
                       <TableCell className="max-w-[180px] truncate px-3 py-2.5 text-foreground">{log.resolved_group_name || log.requested_group_name || "-"}</TableCell>
                       <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">
                         <div>

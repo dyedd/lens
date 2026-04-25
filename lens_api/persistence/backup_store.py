@@ -7,6 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
+from ..core.time_zone import normalize_time_zone
 from ..models import (
     ConfigBackupDump,
     ConfigBackupGatewayApiKey,
@@ -36,6 +37,7 @@ from .domain_store import (
     SETTING_RELAY_LOG_KEEP_PERIOD,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
+    SETTING_TIME_ZONE,
     SETTING_MODEL_PRICE_LAST_SYNC_AT,
     SETTING_STATS_LAST_PERSIST_AT,
     SETTING_STATS_SAVE_INTERVAL,
@@ -75,6 +77,7 @@ EXPORTABLE_SETTING_KEYS = (
     SETTING_HEALTH_MIN_SAMPLES,
     SETTING_SITE_NAME,
     SETTING_SITE_LOGO_URL,
+    SETTING_TIME_ZONE,
 )
 
 
@@ -533,7 +536,8 @@ class BackupStore:
             if item.key in setting_keys:
                 raise ValueError(f"Duplicate setting key in backup: {item.key}")
             setting_keys.add(item.key)
-            session.add(SettingEntity(key=item.key, value=item.value))
+            value = normalize_time_zone(item.value) if item.key == SETTING_TIME_ZONE else item.value
+            session.add(SettingEntity(key=item.key, value=value))
 
     async def _replace_gateway_api_keys(
         self, session: AsyncSession, gateway_api_keys: list[ConfigBackupGatewayApiKey]

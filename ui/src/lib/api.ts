@@ -370,6 +370,7 @@ export type AppInfo = {
   system_version: string
   site_name: string
   logo_url: string
+  time_zone: string
 }
 
 
@@ -651,16 +652,10 @@ function parseDownloadFilename(contentDisposition: string | null) {
 }
 
 function fallbackBackupFilename() {
-  const date = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  const timestamp = [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-  ].join('')
+  const date = new Date().toISOString()
+  const timestamp = date
+    .replace(/\D/g, '')
+    .slice(0, 14)
   return 'lens-backup-' + timestamp + '.json'
 }
 

@@ -8,7 +8,6 @@ services:
       - LENS_PORT=3000
       - LENS_DATABASE_URL=sqlite+aiosqlite:////app/data/data.db
       - LENS_UI_STATIC_DIR=/app/ui
-      - TZ=Asia/Shanghai
     ports:
       - "3000:3000"
     volumes:

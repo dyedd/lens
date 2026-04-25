@@ -388,9 +388,11 @@ Backend configuration uses the `LENS_` prefix and also supports `.env` files. Lo
 
 In Docker deployments, Lens only reads `LENS_HOST` and `LENS_PORT`; generic `HOSTNAME` and `PORT` do not affect the backend listen address or port.
 
-The Docker image and `docker-compose.yml` explicitly set the database URL to `sqlite+aiosqlite:////app/data/data.db`; local development defaults to `sqlite+aiosqlite:///./data/data.db`.
+The Docker image and `docker-compose.yml` explicitly set the database URL to `sqlite+aiosqlite:////app/data/data.db`; local development defaults to `sqlite+aiosqlite:///./data/data.db`. A deployment `.env` does not need `LENS_DATABASE_URL`, which avoids overriding the container path.
 
-More runtime settings, including CORS, proxy, log retention, circuit breaker, health scoring, site name, and logo, can be changed in the management console.
+Lens application time zone is not an environment variable. Choose it in the management console settings page; the default is `Asia/Shanghai`. Request log timestamps, today windows, trend buckets, backup filenames, and other in-app time displays use this setting.
+
+More runtime settings, including CORS, proxy, log retention, circuit breaker, health scoring, site name, and logo, can also be changed in the management console.
 
 ## Configuration Backup and Migration
 

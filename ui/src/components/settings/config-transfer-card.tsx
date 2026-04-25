@@ -52,6 +52,7 @@ import {
   downloadConfigBackup,
   importConfigBackup,
 } from "@/lib/api"
+import { useAppTimeZone } from "@/hooks/use-app-time-zone"
 import { type Locale } from "@/lib/i18n"
 
 function titleForLocale(locale: Locale, zh: string, en: string) {
@@ -110,7 +111,7 @@ function parseBackupPreview(rawValue: string): ConfigBackupDump {
   }
 }
 
-function formatExportedAt(value: string, locale: Locale) {
+function formatExportedAt(value: string, locale: Locale, timeZone?: string) {
   if (!value) {
     return "n/a"
   }
@@ -118,7 +119,9 @@ function formatExportedAt(value: string, locale: Locale) {
   if (Number.isNaN(date.getTime())) {
     return value
   }
-  return date.toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US")
+  return date.toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US", {
+    ...(timeZone ? { timeZone } : {}),
+  })
 }
 
 function resultLabelForLocale(locale: Locale, key: string) {
@@ -169,6 +172,7 @@ function PreviewMeta({
 
 export function ConfigTransferCard({ locale }: { locale: Locale }) {
   const queryClient = useQueryClient()
+  const timeZone = useAppTimeZone()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [isPreviewPending, startPreviewTransition] = useTransition()
 
@@ -495,7 +499,7 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
                     />
                     <PreviewMeta
                       label={titleForLocale(locale, "导出时间", "Exported at")}
-                      value={formatExportedAt(preview.exported_at, locale)}
+                      value={formatExportedAt(preview.exported_at, locale, timeZone)}
                     />
                   </div>
 

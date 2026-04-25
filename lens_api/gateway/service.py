@@ -23,6 +23,7 @@ from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
 from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
+from ..core.time_zone import resolve_time_zone
 from ..models import (
     AdminLoginRequest,
     AdminProfileUpdateRequest,
@@ -75,6 +76,7 @@ from ..persistence.channel_store import ChannelStore
 from ..persistence.domain_store import (
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
+    SETTING_TIME_ZONE,
     DomainStore,
 )
 from .converters import (
@@ -196,6 +198,7 @@ class StreamCapture:
 
 
 async def _startup_app_state(state: AppState) -> None:
+    resolve_time_zone(None)
     if state.http.is_closed:
         state.http = state._create_http_client()
 
@@ -209,8 +212,9 @@ async def _close_app_state(state: AppState) -> None:
 app_state = AppState()
 
 
-def _overview_window_minutes(days: int, daily_points: list[OverviewDailyPoint]) -> int:
-    now = datetime.now(UTC).replace(tzinfo=None)
+def _overview_window_minutes(days: int, daily_points: list[OverviewDailyPoint], time_zone_name: str) -> int:
+    time_zone = resolve_time_zone(time_zone_name)
+    now = datetime.now(time_zone)
     if days == -1:
         start_at = now.replace(hour=0, minute=0, second=0, microsecond=0)
         return max(int((now - start_at).total_seconds() // 60), 1)
@@ -218,7 +222,7 @@ def _overview_window_minutes(days: int, daily_points: list[OverviewDailyPoint]) 
         return max(days * 24 * 60, 1)
     if daily_points:
         try:
-            start_at = datetime.strptime(daily_points[0].date, "%Y%m%d")
+            start_at = datetime.strptime(daily_points[0].date, "%Y%m%d").replace(tzinfo=time_zone)
         except ValueError:
             return max(len(daily_points) * 24 * 60, 1)
         return max(int((now - start_at).total_seconds() // 60), 1)
@@ -435,11 +439,12 @@ async def public_branding() -> PublicBranding:
 
 
 async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
-    branding = await app_state.domain_store.get_branding_settings()
+    runtime = await app_state.domain_store.get_runtime_settings()
     return AppInfo(
         system_version=_read_system_version(),
-        site_name=branding["site_name"],
-        logo_url=branding["site_logo_url"],
+        site_name=str(runtime["site_name"]),
+        logo_url=str(runtime["site_logo_url"]),
+        time_zone=str(runtime["time_zone"]),
     )
 
 
@@ -644,9 +649,10 @@ async def overview_dashboard(
             offset=log_offset,
         ),
     )
+    runtime = await app_state.domain_store.get_runtime_settings()
     total_requests = int(summary.request_count.value or 0)
     total_tokens = float(summary.total_tokens.value or 0.0)
-    window_minutes = _overview_window_minutes(days, daily)
+    window_minutes = _overview_window_minutes(days, daily, str(runtime["time_zone"]))
     performance = OverviewPerformanceMetrics(
         avg_requests_per_minute=round(total_requests / window_minutes, 2)
         if window_minutes > 0
@@ -843,6 +849,11 @@ async def update_settings(
     payload: SettingsUpdate, _: Any = Depends(get_current_admin)
 ) -> list[SettingItem]:
     normalized_items = []
+    current_time_zone = None
+    next_time_zone = None
+    if any(item.key == SETTING_TIME_ZONE for item in payload.items):
+        runtime = await app_state.domain_store.get_runtime_settings()
+        current_time_zone = str(runtime["time_zone"])
     for item in payload.items:
         if item.key == SETTING_SITE_NAME:
             normalized_items.append(
@@ -852,8 +863,19 @@ async def update_settings(
         if item.key == SETTING_SITE_LOGO_URL:
             normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
             continue
+        if item.key == SETTING_TIME_ZONE:
+            try:
+                time_zone = resolve_time_zone(item.value)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            next_time_zone = time_zone.key
+            normalized_items.append(SettingItem(key=item.key, value=time_zone.key))
+            continue
         normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
-    return await app_state.domain_store.upsert_settings(normalized_items)
+    stored_items = await app_state.domain_store.upsert_settings(normalized_items)
+    if next_time_zone is not None and next_time_zone != current_time_zone:
+        await app_state.domain_store.persist_request_log_stats(force=True)
+    return stored_items
 
 
 async def list_gateway_api_keys(
@@ -906,7 +928,8 @@ async def export_settings_bundle(
         include_request_logs=include_logs,
         include_gateway_api_keys=include_gateway_api_keys,
     )
-    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    runtime = await app_state.domain_store.get_runtime_settings()
+    timestamp = datetime.now(resolve_time_zone(str(runtime["time_zone"]))).strftime("%Y%m%d%H%M%S")
     return JSONResponse(
         content=dump.model_dump(mode="json"),
         headers={

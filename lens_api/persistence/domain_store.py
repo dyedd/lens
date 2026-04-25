@@ -7,12 +7,14 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
+from ..core.time_zone import normalize_time_zone, resolve_time_zone
 from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem, SiteChannelHealthBucket, SiteChannelRuntimeSummary, SiteRuntimeSummary
 from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
@@ -21,6 +23,8 @@ SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
 SETTING_PROXY_URL = "proxy_url"
 SETTING_STATS_SAVE_INTERVAL = "stats_save_interval"
 SETTING_STATS_LAST_PERSIST_AT = "stats_last_persist_at"
+SETTING_STATS_TIME_ZONE = "stats_time_zone"
+SETTING_TIME_ZONE = "time_zone"
 SETTING_CORS_ALLOW_ORIGINS = "cors_allow_origins"
 SETTING_RELAY_LOG_KEEP_ENABLED = "relay_log_keep_enabled"
 SETTING_RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
@@ -64,6 +68,10 @@ class DomainStore:
     def _is_missing_sqlite_table(exc: OperationalError, table_name: str) -> bool:
         message = str(getattr(exc, "orig", exc)).lower()
         return f"no such table: {table_name}" in message
+
+    @staticmethod
+    def _runtime_time_zone(runtime: dict[str, Any]) -> ZoneInfo:
+        return resolve_time_zone(str(runtime.get("time_zone") or ""))
 
     async def replace_imported_stats(
         self,
@@ -916,9 +924,11 @@ class DomainStore:
         items = await self.list_settings()
         mapping = {item.key: item.value for item in items}
         cors_allow_origins = self._split_comma_lines(mapping.get(SETTING_CORS_ALLOW_ORIGINS, ""))
+        time_zone = normalize_time_zone(mapping.get(SETTING_TIME_ZONE))
         return {
             "proxy_url": mapping.get(SETTING_PROXY_URL, "").strip(),
             "stats_save_interval": self._parse_int(mapping.get(SETTING_STATS_SAVE_INTERVAL), default=60),
+            "time_zone": time_zone,
             "cors_allow_origins": cors_allow_origins or ["*"],
             "relay_log_keep_enabled": self._parse_bool(mapping.get(SETTING_RELAY_LOG_KEEP_ENABLED), default=True),
             "relay_log_keep_period": self._parse_int(mapping.get(SETTING_RELAY_LOG_KEEP_PERIOD), default=7),
@@ -971,7 +981,14 @@ class DomainStore:
         runtime = await self.get_runtime_settings()
         interval_seconds = max(int(runtime["stats_save_interval"]), 1)
         now = datetime.now(UTC).replace(tzinfo=None)
-        today_key = now.strftime("%Y%m%d")
+        time_zone = self._runtime_time_zone(runtime)
+        local_now = now.replace(tzinfo=UTC).astimezone(time_zone)
+        today_key = local_now.strftime("%Y%m%d")
+        today_start_utc = (
+            local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            .astimezone(UTC)
+            .replace(tzinfo=None)
+        )
 
         async with self._session_factory() as session:
             try:
@@ -981,6 +998,16 @@ class DomainStore:
                 if self._is_missing_sqlite_table(exc, "request_log_daily_stats") or self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
                     return
                 raise
+
+            stored_time_zone = await session.get(SettingEntity, SETTING_STATS_TIME_ZONE)
+            if stored_time_zone is None:
+                session.add(SettingEntity(key=SETTING_STATS_TIME_ZONE, value=time_zone.key))
+            elif stored_time_zone.value != time_zone.key:
+                await session.execute(delete(RequestLogDailyStatsEntity))
+                await session.execute(delete(OverviewModelDailyStatsEntity))
+                await session.execute(update(RequestLogEntity).values(stats_archived=0))
+                stored_time_zone.value = time_zone.key
+                force = True
 
             if not force:
                 last_persist_setting = await session.get(SettingEntity, SETTING_STATS_LAST_PERSIST_AT)
@@ -997,6 +1024,8 @@ class DomainStore:
                 if last_persist_at is None or (now - last_persist_at).total_seconds() < interval_seconds:
                     return
 
+                # Keep today's archived rows live so the current-day bucket can move
+                # with the configured application time zone.
                 await session.execute(
                     delete(RequestLogDailyStatsEntity).where(RequestLogDailyStatsEntity.date == today_key)
                 )
@@ -1006,57 +1035,56 @@ class DomainStore:
                 await session.execute(
                     update(RequestLogEntity)
                     .where(RequestLogEntity.stats_archived == 1)
-                    .where(func.strftime('%Y%m%d', RequestLogEntity.created_at) == today_key)
+                    .where(RequestLogEntity.created_at >= today_start_utc)
                     .values(stats_archived=0)
                 )
 
-            date_expr = func.strftime('%Y%m%d', RequestLogEntity.created_at)
             unarchived_stmt = (
                 select(
-                    date_expr.label('date'),
-                    func.count().label('request_count'),
-                    func.sum(RequestLogEntity.success).label('successful_requests'),
-                    (func.count() - func.sum(RequestLogEntity.success)).label('failed_requests'),
-                    func.sum(RequestLogEntity.latency_ms).label('wait_time_ms'),
-                    func.sum(RequestLogEntity.input_tokens).label('input_tokens'),
-                    func.sum(RequestLogEntity.cache_read_input_tokens).label('cache_read_input_tokens'),
-                    func.sum(RequestLogEntity.cache_write_input_tokens).label('cache_write_input_tokens'),
-                    func.sum(RequestLogEntity.output_tokens).label('output_tokens'),
-                    func.sum(RequestLogEntity.total_tokens).label('total_tokens'),
-                    func.sum(RequestLogEntity.input_cost_usd).label('input_cost_usd'),
-                    func.sum(RequestLogEntity.output_cost_usd).label('output_cost_usd'),
-                    func.sum(RequestLogEntity.total_cost_usd).label('total_cost_usd'),
+                    RequestLogEntity.created_at,
+                    RequestLogEntity.success,
+                    RequestLogEntity.latency_ms,
+                    RequestLogEntity.input_tokens,
+                    RequestLogEntity.cache_read_input_tokens,
+                    RequestLogEntity.cache_write_input_tokens,
+                    RequestLogEntity.output_tokens,
+                    RequestLogEntity.total_tokens,
+                    RequestLogEntity.input_cost_usd,
+                    RequestLogEntity.output_cost_usd,
+                    RequestLogEntity.total_cost_usd,
                 )
                 .where(RequestLogEntity.stats_archived == 0)
-                .group_by(date_expr)
+                .order_by(RequestLogEntity.created_at.asc())
             )
             if not force:
-                unarchived_stmt = unarchived_stmt.where(date_expr < today_key)
+                unarchived_stmt = unarchived_stmt.where(RequestLogEntity.created_at < today_start_utc)
             daily_rows = (await session.execute(unarchived_stmt)).all()
 
             model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
             model_stmt = (
                 select(
-                    date_expr.label('date'),
-                    model_expr.label('model'),
-                    func.sum(RequestLogEntity.success).label('requests'),
-                    func.sum(RequestLogEntity.total_tokens).label('total_tokens'),
-                    func.sum(RequestLogEntity.total_cost_usd).label('total_cost_usd'),
+                    RequestLogEntity.created_at,
+                    model_expr,
+                    RequestLogEntity.total_tokens,
+                    RequestLogEntity.total_cost_usd,
                 )
                 .where(RequestLogEntity.stats_archived == 0)
                 .where(RequestLogEntity.success == 1)
                 .where(model_expr.is_not(None))
-                .group_by(date_expr, model_expr)
+                .order_by(RequestLogEntity.created_at.asc())
             )
             if not force:
-                model_stmt = model_stmt.where(date_expr < today_key)
+                model_stmt = model_stmt.where(RequestLogEntity.created_at < today_start_utc)
             model_rows = (await session.execute(model_stmt)).all()
 
-            for row in daily_rows:
-                entity = await session.get(RequestLogDailyStatsEntity, str(row.date))
+            daily_buckets = self._daily_stats_by_local_bucket(daily_rows, time_zone)
+            model_buckets = self._model_rows_by_local_bucket(model_rows, "%Y%m%d", time_zone)
+
+            for date_value, values in sorted(daily_buckets.items()):
+                entity = await session.get(RequestLogDailyStatsEntity, date_value)
                 if entity is None:
                     entity = RequestLogDailyStatsEntity(
-                        date=str(row.date),
+                        date=date_value,
                         request_count=0,
                         successful_requests=0,
                         failed_requests=0,
@@ -1071,33 +1099,33 @@ class DomainStore:
                         total_cost_usd=0.0,
                     )
                     session.add(entity)
-                entity.request_count += int(row.request_count or 0)
-                entity.successful_requests += int(row.successful_requests or 0)
-                entity.failed_requests += int(row.failed_requests or 0)
-                entity.wait_time_ms += int(row.wait_time_ms or 0)
-                entity.input_tokens += int(row.input_tokens or 0)
-                entity.cache_read_input_tokens += int(row.cache_read_input_tokens or 0)
-                entity.cache_write_input_tokens += int(row.cache_write_input_tokens or 0)
-                entity.output_tokens += int(row.output_tokens or 0)
-                entity.total_tokens += int(row.total_tokens or 0)
-                entity.input_cost_usd += float(row.input_cost_usd or 0.0)
-                entity.output_cost_usd += float(row.output_cost_usd or 0.0)
-                entity.total_cost_usd += float(row.total_cost_usd or 0.0)
+                entity.request_count += int(values["request_count"])
+                entity.successful_requests += int(values["successful_requests"])
+                entity.failed_requests += int(values["failed_requests"])
+                entity.wait_time_ms += int(values["wait_time_ms"])
+                entity.input_tokens += int(values["input_tokens"])
+                entity.cache_read_input_tokens += int(values["cache_read_input_tokens"])
+                entity.cache_write_input_tokens += int(values["cache_write_input_tokens"])
+                entity.output_tokens += int(values["output_tokens"])
+                entity.total_tokens += int(values["total_tokens"])
+                entity.input_cost_usd += float(values["input_cost_usd"])
+                entity.output_cost_usd += float(values["output_cost_usd"])
+                entity.total_cost_usd += float(values["total_cost_usd"])
 
-            for row in model_rows:
-                key = {"date": str(row.date), "model": str(row.model)}
+            for date_value, model, requests, total_tokens, total_cost in model_buckets:
+                key = {"date": date_value, "model": model}
                 entity = await session.get(OverviewModelDailyStatsEntity, key)
                 if entity is None:
                     entity = OverviewModelDailyStatsEntity(**key, requests=0, total_tokens=0, total_cost_usd=0.0)
                     session.add(entity)
-                entity.requests += int(row.requests or 0)
-                entity.total_tokens += int(row.total_tokens or 0)
-                entity.total_cost_usd += float(row.total_cost_usd or 0.0)
+                entity.requests += int(requests or 0)
+                entity.total_tokens += int(total_tokens or 0)
+                entity.total_cost_usd += float(total_cost or 0.0)
 
             if daily_rows or model_rows:
                 archive_stmt = update(RequestLogEntity).where(RequestLogEntity.stats_archived == 0)
                 if not force:
-                    archive_stmt = archive_stmt.where(date_expr < today_key)
+                    archive_stmt = archive_stmt.where(RequestLogEntity.created_at < today_start_utc)
                 await session.execute(archive_stmt.values(stats_archived=1))
 
             last_persist_setting = await session.get(SettingEntity, SETTING_STATS_LAST_PERSIST_AT)
@@ -1179,6 +1207,7 @@ class DomainStore:
         offset: int = 0,
         gateway_key_id: str | None = None,
     ) -> list[RequestLogItem]:
+        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
             stmt = (
                 select(RequestLogEntity)
@@ -1186,7 +1215,7 @@ class DomainStore:
                 .offset(offset)
                 .limit(limit)
             )
-            stmt = self._apply_request_log_window(stmt, days=days)
+            stmt = self._apply_request_log_window(stmt, days=days, time_zone=time_zone)
             stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
             result = await session.execute(stmt)
             entities = result.scalars().all()
@@ -1199,6 +1228,7 @@ class DomainStore:
         offset: int = 0,
         gateway_key_id: str | None = None,
     ) -> RequestLogPage:
+        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
             items_stmt = (
                 select(RequestLogEntity)
@@ -1206,13 +1236,13 @@ class DomainStore:
                 .offset(offset)
                 .limit(limit)
             )
-            items_stmt = self._apply_request_log_window(items_stmt, days=days)
+            items_stmt = self._apply_request_log_window(items_stmt, days=days, time_zone=time_zone)
             items_stmt = self._apply_gateway_key_filter(
                 items_stmt, gateway_key_id=gateway_key_id
             )
 
             total_stmt = select(func.count()).select_from(RequestLogEntity)
-            total_stmt = self._apply_request_log_window(total_stmt, days=days)
+            total_stmt = self._apply_request_log_window(total_stmt, days=days, time_zone=time_zone)
             total_stmt = self._apply_gateway_key_filter(
                 total_stmt, gateway_key_id=gateway_key_id
             )
@@ -1466,15 +1496,16 @@ class DomainStore:
             await session.commit()
 
     async def get_overview_metrics(self) -> OverviewMetrics:
+        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
             imported_total = await session.get(ImportedStatsTotalEntity, 1)
             if imported_total is not None:
-                extra_totals = await self._request_log_totals_excluding_imported_days(session)
+                extra_totals = await self._request_log_totals_excluding_imported_days(session, time_zone=time_zone)
                 total_value = int(imported_total.request_success + imported_total.request_failed + extra_totals["request_count"])
                 success_value = int(imported_total.request_success + extra_totals["successful_requests"])
             else:
-                archived_totals = await self._archived_period_totals(session, days=0)
-                live_totals = await self._request_log_period_totals(session, days=0)
+                archived_totals = await self._archived_period_totals(session, days=0, time_zone=time_zone)
+                live_totals = await self._request_log_period_totals(session, days=0, time_zone=time_zone)
                 total_value = int(archived_totals["request_count"] + live_totals["request_count"])
                 success_value = int(archived_totals["successful_requests"] + live_totals["successful_requests"])
 
@@ -1499,13 +1530,14 @@ class DomainStore:
         )
 
     async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
+        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
             if days != 0:
                 comparison_offset = 1 if days == -1 else days
-                recent = await self._merged_period_totals(session, days=days)
-                previous = await self._merged_period_totals(session, days=days, offset_days=comparison_offset)
+                recent = await self._merged_period_totals(session, days=days, time_zone=time_zone)
+                previous = await self._merged_period_totals(session, days=days, offset_days=comparison_offset, time_zone=time_zone)
             else:
-                recent = await self._merged_period_totals(session, days=0)
+                recent = await self._merged_period_totals(session, days=0, time_zone=time_zone)
                 previous = self._zero_totals()
 
         request_count = int(recent["request_count"])
@@ -1534,13 +1566,15 @@ class DomainStore:
     async def list_overview_daily(
         self, days: int = 0
     ) -> list[OverviewDailyPoint]:
+        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
-            return await self._merged_daily_points(session, days=days)
+            return await self._merged_daily_points(session, days=days, time_zone=time_zone)
 
     async def get_model_analytics(
         self, days: int = 7, gateway_key_id: str | None = None
     ) -> OverviewModelAnalytics:
         normalized_gateway_key_id = self._normalize_gateway_key_id(gateway_key_id)
+        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
             if normalized_gateway_key_id is not None:
                 archived_model_rows = []
@@ -1550,6 +1584,7 @@ class DomainStore:
                         days=days,
                         gateway_key_id=normalized_gateway_key_id,
                         include_archived=True,
+                        time_zone=time_zone,
                     )
                 else:
                     live_model_rows = await self._request_log_model_daily_rows(
@@ -1557,18 +1592,19 @@ class DomainStore:
                         days=days,
                         gateway_key_id=normalized_gateway_key_id,
                         include_archived=True,
+                        time_zone=time_zone,
                     )
             elif days == -1:
                 archived_model_rows = []
-                live_model_rows = await self._request_log_model_hourly_rows(session, days=days)
+                live_model_rows = await self._request_log_model_hourly_rows(session, days=days, time_zone=time_zone)
             else:
-                window_start, window_end = self._resolve_imported_date_window(days)
+                window_start, window_end = self._resolve_imported_date_window(days, time_zone=time_zone)
                 archived_model_rows = await self._overview_model_daily_rows(
                     session,
                     start_at=window_start,
                     end_at=window_end,
                 )
-                live_model_rows = await self._request_log_model_daily_rows(session, days=days)
+                live_model_rows = await self._request_log_model_daily_rows(session, days=days, time_zone=time_zone)
 
         merged_rows: dict[tuple[str, str], dict[str, float | str]] = {}
         for date_value, model, requests, total_tokens, total_cost in [*archived_model_rows, *live_model_rows]:
@@ -1674,15 +1710,16 @@ class DomainStore:
         total_cost = input_cost + output_cost
         return round(input_cost, 8), round(output_cost, 8), round(total_cost, 8)
 
-    async def _merged_daily_points(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[OverviewDailyPoint]:
-        imported_points = await self._imported_daily_points(session, days=days, offset_days=offset_days)
+    async def _merged_daily_points(self, session: AsyncSession, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> list[OverviewDailyPoint]:
+        imported_points = await self._imported_daily_points(session, days=days, offset_days=offset_days, time_zone=time_zone)
         imported_dates = {item.date for item in imported_points}
-        archived_points = await self._archived_daily_points(session, days=days, offset_days=offset_days, exclude_dates=imported_dates)
+        archived_points = await self._archived_daily_points(session, days=days, offset_days=offset_days, exclude_dates=imported_dates, time_zone=time_zone)
         request_log_points = await self._request_log_daily_points(
             session,
             days=days,
             offset_days=offset_days,
             exclude_dates=imported_dates,
+            time_zone=time_zone,
         )
         merged = {item.date: item.model_copy(deep=True) for item in imported_points}
         for item in archived_points:
@@ -1703,9 +1740,9 @@ class DomainStore:
             )
         return [merged[date] for date in sorted(merged)]
 
-    async def _imported_daily_points(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> list[OverviewDailyPoint]:
+    async def _imported_daily_points(self, session: AsyncSession, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> list[OverviewDailyPoint]:
         stmt = select(ImportedStatsDailyEntity).order_by(ImportedStatsDailyEntity.date.asc())
-        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days)
+        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days, time_zone=time_zone)
         if start_at is not None and end_at is not None:
             stmt = stmt.where(ImportedStatsDailyEntity.date >= start_at).where(ImportedStatsDailyEntity.date < end_at)
         rows = (await session.execute(stmt)).scalars().all()
@@ -1729,9 +1766,10 @@ class DomainStore:
         days: int,
         offset_days: int = 0,
         exclude_dates: set[str] | None = None,
+        time_zone: ZoneInfo,
     ) -> list[OverviewDailyPoint]:
         stmt = select(RequestLogDailyStatsEntity).order_by(RequestLogDailyStatsEntity.date.asc())
-        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days)
+        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days, time_zone=time_zone)
         if start_at is not None and end_at is not None:
             stmt = stmt.where(RequestLogDailyStatsEntity.date >= start_at).where(RequestLogDailyStatsEntity.date < end_at)
         if exclude_dates:
@@ -1764,51 +1802,57 @@ class DomainStore:
         exclude_dates: set[str] | None = None,
         gateway_key_id: str | None = None,
         include_archived: bool = False,
+        time_zone: ZoneInfo,
     ) -> list[OverviewDailyPoint]:
         stmt = (
             select(
-                func.strftime('%Y%m%d', RequestLogEntity.created_at),
-                func.count(),
-                func.sum(RequestLogEntity.total_tokens),
-                func.sum(RequestLogEntity.total_cost_usd),
-                func.sum(RequestLogEntity.latency_ms),
-                func.sum(RequestLogEntity.success),
+                RequestLogEntity.created_at,
+                RequestLogEntity.success,
+                RequestLogEntity.latency_ms,
+                RequestLogEntity.input_tokens,
+                RequestLogEntity.cache_read_input_tokens,
+                RequestLogEntity.cache_write_input_tokens,
+                RequestLogEntity.output_tokens,
+                RequestLogEntity.total_tokens,
+                RequestLogEntity.input_cost_usd,
+                RequestLogEntity.output_cost_usd,
+                RequestLogEntity.total_cost_usd,
             )
             .select_from(RequestLogEntity)
-            .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at))
-            .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
+            .order_by(RequestLogEntity.created_at.asc())
         )
         if not include_archived:
             stmt = stmt.where(RequestLogEntity.stats_archived == 0)
-        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days, time_zone=time_zone)
         stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
-        if exclude_dates:
-            stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
         rows = (await session.execute(stmt)).all()
         points: list[OverviewDailyPoint] = []
-        for date_value, request_count, total_tokens, total_cost_usd, wait_time_ms, successful_requests in rows:
-            total_value = int(request_count or 0)
-            success_value = int(successful_requests or 0)
+        daily_buckets = self._daily_stats_by_local_bucket(rows, time_zone)
+        for date_value, values in sorted(daily_buckets.items()):
+            if exclude_dates and date_value in exclude_dates:
+                continue
+            total_value = int(values["request_count"])
+            success_value = int(values["successful_requests"])
             points.append(
                 OverviewDailyPoint(
-                    date=str(date_value),
+                    date=date_value,
                     request_count=total_value,
-                    total_tokens=int(total_tokens or 0),
-                    total_cost_usd=float(total_cost_usd or 0.0),
-                    wait_time_ms=int(wait_time_ms or 0),
+                    total_tokens=int(values["total_tokens"]),
+                    total_cost_usd=float(values["total_cost_usd"]),
+                    wait_time_ms=int(values["wait_time_ms"]),
                     successful_requests=success_value,
                     failed_requests=max(total_value - success_value, 0),
                 )
             )
         return points
 
-    async def _request_log_totals_excluding_imported_days(self, session: AsyncSession) -> dict[str, float]:
+    async def _request_log_totals_excluding_imported_days(self, session: AsyncSession, *, time_zone: ZoneInfo) -> dict[str, float]:
         imported_dates = {
             row[0]
             for row in (await session.execute(select(ImportedStatsDailyEntity.date))).all()
         }
-        archived_totals = await self._archived_period_totals(session, days=0, exclude_dates=imported_dates)
-        live_totals = await self._request_log_period_totals(session, days=0, exclude_dates=imported_dates)
+        archived_totals = await self._archived_period_totals(session, days=0, exclude_dates=imported_dates, time_zone=time_zone)
+        live_totals = await self._request_log_period_totals(session, days=0, exclude_dates=imported_dates, time_zone=time_zone)
         return {
             "request_count": archived_totals["request_count"] + live_totals["request_count"],
             "wait_time_ms": archived_totals["wait_time_ms"] + live_totals["wait_time_ms"],
@@ -1827,6 +1871,7 @@ class DomainStore:
         session: AsyncSession,
         *,
         days: int,
+        time_zone: ZoneInfo,
         offset_days: int = 0,
         exclude_dates: set[str] | None = None,
     ) -> dict[str, float]:
@@ -1845,7 +1890,7 @@ class DomainStore:
             )
             .select_from(RequestLogDailyStatsEntity)
         )
-        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days)
+        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days, time_zone=time_zone)
         if start_at is not None:
             stmt = stmt.where(RequestLogDailyStatsEntity.date >= start_at)
         if end_at is not None:
@@ -1916,27 +1961,26 @@ class DomainStore:
         offset_days: int = 0,
         gateway_key_id: str | None = None,
         include_archived: bool = False,
+        time_zone: ZoneInfo,
     ) -> list[tuple[str, str, int, int, float]]:
         model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
         stmt = (
             select(
-                func.strftime('%Y%m%d', RequestLogEntity.created_at),
+                RequestLogEntity.created_at,
                 model_expr,
-                func.sum(RequestLogEntity.success),
-                func.sum(RequestLogEntity.total_tokens),
-                func.sum(RequestLogEntity.total_cost_usd),
+                RequestLogEntity.total_tokens,
+                RequestLogEntity.total_cost_usd,
             )
             .where(RequestLogEntity.success == 1)
             .where(model_expr.is_not(None))
-            .group_by(func.strftime('%Y%m%d', RequestLogEntity.created_at), model_expr)
-            .order_by(func.strftime('%Y%m%d', RequestLogEntity.created_at).asc())
+            .order_by(RequestLogEntity.created_at.asc())
         )
         if not include_archived:
             stmt = stmt.where(RequestLogEntity.stats_archived == 0)
-        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days, time_zone=time_zone)
         stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         rows = (await session.execute(stmt)).all()
-        return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows if model]
+        return self._model_rows_by_local_bucket(rows, "%Y%m%d", time_zone)
 
     async def _request_log_model_hourly_rows(
         self,
@@ -1946,46 +1990,42 @@ class DomainStore:
         offset_days: int = 0,
         gateway_key_id: str | None = None,
         include_archived: bool = False,
+        time_zone: ZoneInfo,
     ) -> list[tuple[str, str, int, int, float]]:
         model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
-        hourly_bucket = func.strftime('%Y%m%d%H', RequestLogEntity.created_at)
         stmt = (
             select(
-                hourly_bucket,
+                RequestLogEntity.created_at,
                 model_expr,
-                func.sum(RequestLogEntity.success),
-                func.sum(RequestLogEntity.total_tokens),
-                func.sum(RequestLogEntity.total_cost_usd),
+                RequestLogEntity.total_tokens,
+                RequestLogEntity.total_cost_usd,
             )
             .where(RequestLogEntity.success == 1)
             .where(model_expr.is_not(None))
-            .group_by(hourly_bucket, model_expr)
-            .order_by(hourly_bucket.asc())
+            .order_by(RequestLogEntity.created_at.asc())
         )
         if not include_archived:
             stmt = stmt.where(RequestLogEntity.stats_archived == 0)
-        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days, time_zone=time_zone)
         stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         rows = (await session.execute(stmt)).all()
-        return [
-            (str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0))
-            for date_value, model, requests, total_tokens, total_cost in rows
-            if model
-        ]
+        return self._model_rows_by_local_bucket(rows, "%Y%m%d%H", time_zone)
 
-    async def _merged_period_totals(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> dict[str, float]:
-        imported_totals = await self._imported_period_totals(session, days=days, offset_days=offset_days)
+    async def _merged_period_totals(self, session: AsyncSession, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> dict[str, float]:
+        imported_totals = await self._imported_period_totals(session, days=days, offset_days=offset_days, time_zone=time_zone)
         archived_totals = await self._archived_period_totals(
             session,
             days=days,
             offset_days=offset_days,
             exclude_dates=imported_totals["covered_dates"],
+            time_zone=time_zone,
         )
         request_log_totals = await self._request_log_period_totals(
             session,
             days=days,
             offset_days=offset_days,
             exclude_dates=imported_totals["covered_dates"],
+            time_zone=time_zone,
         )
         return {
             "request_count": imported_totals["request_count"] + archived_totals["request_count"] + request_log_totals["request_count"],
@@ -1999,7 +2039,7 @@ class DomainStore:
             "total_cost_usd": imported_totals["total_cost_usd"] + archived_totals["total_cost_usd"] + request_log_totals["total_cost_usd"],
         }
 
-    async def _imported_period_totals(self, session: AsyncSession, *, days: int, offset_days: int = 0) -> dict[str, float | set[str]]:
+    async def _imported_period_totals(self, session: AsyncSession, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> dict[str, float | set[str]]:
         if days == 0:
             imported_total = await session.get(ImportedStatsTotalEntity, 1)
             covered_dates = {
@@ -2032,7 +2072,7 @@ class DomainStore:
                 "covered_dates": covered_dates,
             }
 
-        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days)
+        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days, time_zone=time_zone)
         rows = (
             await session.execute(
                 select(ImportedStatsDailyEntity)
@@ -2063,41 +2103,46 @@ class DomainStore:
         exclude_dates: set[str] | None = None,
         gateway_key_id: str | None = None,
         include_archived: bool = False,
+        time_zone: ZoneInfo,
     ) -> dict[str, float]:
         stmt = (
             select(
-                func.count(),
-                func.sum(RequestLogEntity.latency_ms),
-                func.sum(RequestLogEntity.input_tokens),
-                func.sum(RequestLogEntity.cache_read_input_tokens),
-                func.sum(RequestLogEntity.cache_write_input_tokens),
-                func.sum(RequestLogEntity.output_tokens),
-                func.sum(RequestLogEntity.input_cost_usd),
-                func.sum(RequestLogEntity.output_cost_usd),
-                func.sum(RequestLogEntity.total_cost_usd),
-                func.sum(RequestLogEntity.success),
+                RequestLogEntity.created_at,
+                RequestLogEntity.success,
+                RequestLogEntity.latency_ms,
+                RequestLogEntity.input_tokens,
+                RequestLogEntity.cache_read_input_tokens,
+                RequestLogEntity.cache_write_input_tokens,
+                RequestLogEntity.output_tokens,
+                RequestLogEntity.total_tokens,
+                RequestLogEntity.input_cost_usd,
+                RequestLogEntity.output_cost_usd,
+                RequestLogEntity.total_cost_usd,
             )
             .select_from(RequestLogEntity)
         )
         if not include_archived:
             stmt = stmt.where(RequestLogEntity.stats_archived == 0)
-        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days)
+        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days, time_zone=time_zone)
         stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
-        if exclude_dates:
-            stmt = stmt.where(func.strftime('%Y%m%d', RequestLogEntity.created_at).not_in(sorted(exclude_dates)))
-        row = (await session.execute(stmt)).one()
-        return {
-            "request_count": float(row[0] or 0),
-            "wait_time_ms": float(row[1] or 0),
-            "input_tokens": float(row[2] or 0),
-            "cache_read_input_tokens": float(row[3] or 0),
-            "cache_write_input_tokens": float(row[4] or 0),
-            "output_tokens": float(row[5] or 0),
-            "input_cost_usd": float(row[6] or 0),
-            "output_cost_usd": float(row[7] or 0),
-            "total_cost_usd": float(row[8] or 0),
-            "successful_requests": float(row[9] or 0),
-        }
+        rows = (await session.execute(stmt)).all()
+        totals = self._zero_totals()
+        totals["successful_requests"] = 0.0
+        daily_buckets = self._daily_stats_by_local_bucket(rows, time_zone)
+        for date_value, values in daily_buckets.items():
+            if exclude_dates and date_value in exclude_dates:
+                continue
+            totals["request_count"] += float(values["request_count"])
+            totals["wait_time_ms"] += float(values["wait_time_ms"])
+            totals["input_tokens"] += float(values["input_tokens"])
+            totals["cache_read_input_tokens"] += float(values["cache_read_input_tokens"])
+            totals["cache_write_input_tokens"] += float(values["cache_write_input_tokens"])
+            totals["output_tokens"] += float(values["output_tokens"])
+            totals["input_cost_usd"] += float(values["input_cost_usd"])
+            totals["output_cost_usd"] += float(values["output_cost_usd"])
+            totals["total_cost_usd"] += float(values["total_cost_usd"])
+            totals["successful_requests"] += float(values["successful_requests"])
+        return totals
 
     @staticmethod
     def _zero_totals() -> dict[str, float]:
@@ -2114,28 +2159,120 @@ class DomainStore:
         }
 
     @staticmethod
-    def _resolve_request_log_window(days: int, *, offset_days: int = 0) -> tuple[datetime | None, datetime | None]:
+    def _to_utc_datetime(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    @staticmethod
+    def _daily_stats_by_local_bucket(rows: list[Any], time_zone: ZoneInfo) -> dict[str, dict[str, float]]:
+        buckets: dict[str, dict[str, float]] = {}
+        for row in rows:
+            (
+                created_at,
+                success,
+                latency_ms,
+                input_tokens,
+                cache_read_input_tokens,
+                cache_write_input_tokens,
+                output_tokens,
+                total_tokens,
+                input_cost_usd,
+                output_cost_usd,
+                total_cost_usd,
+            ) = row
+            utc_created_at = DomainStore._to_utc_datetime(created_at)
+            if utc_created_at is None:
+                continue
+            date_value = utc_created_at.astimezone(time_zone).strftime("%Y%m%d")
+            current = buckets.setdefault(
+                date_value,
+                {
+                    "request_count": 0.0,
+                    "successful_requests": 0.0,
+                    "failed_requests": 0.0,
+                    "wait_time_ms": 0.0,
+                    "input_tokens": 0.0,
+                    "cache_read_input_tokens": 0.0,
+                    "cache_write_input_tokens": 0.0,
+                    "output_tokens": 0.0,
+                    "total_tokens": 0.0,
+                    "input_cost_usd": 0.0,
+                    "output_cost_usd": 0.0,
+                    "total_cost_usd": 0.0,
+                },
+            )
+            success_value = 1.0 if int(success or 0) else 0.0
+            current["request_count"] += 1.0
+            current["successful_requests"] += success_value
+            current["failed_requests"] += 0.0 if success_value else 1.0
+            current["wait_time_ms"] += float(latency_ms or 0)
+            current["input_tokens"] += float(input_tokens or 0)
+            current["cache_read_input_tokens"] += float(cache_read_input_tokens or 0)
+            current["cache_write_input_tokens"] += float(cache_write_input_tokens or 0)
+            current["output_tokens"] += float(output_tokens or 0)
+            current["total_tokens"] += float(total_tokens or 0)
+            current["input_cost_usd"] += float(input_cost_usd or 0.0)
+            current["output_cost_usd"] += float(output_cost_usd or 0.0)
+            current["total_cost_usd"] += float(total_cost_usd or 0.0)
+        return buckets
+
+    @staticmethod
+    def _model_rows_by_local_bucket(rows: list[Any], format_text: str, time_zone: ZoneInfo) -> list[tuple[str, str, int, int, float]]:
+        buckets: dict[tuple[str, str], list[float]] = {}
+        for created_at, model, total_tokens, total_cost in rows:
+            if not model or created_at is None:
+                continue
+            utc_created_at = DomainStore._to_utc_datetime(created_at)
+            if utc_created_at is None:
+                continue
+            bucket = utc_created_at.astimezone(time_zone).strftime(format_text)
+            key = (bucket, str(model))
+            current = buckets.setdefault(key, [0.0, 0.0, 0.0])
+            current[0] += 1
+            current[1] += float(total_tokens or 0)
+            current[2] += float(total_cost or 0.0)
+        return [
+            (date_value, model, int(values[0]), int(values[1]), float(values[2]))
+            for (date_value, model), values in sorted(buckets.items())
+        ]
+
+    @staticmethod
+    def _resolve_request_log_window(days: int, *, time_zone: ZoneInfo, offset_days: int = 0) -> tuple[datetime | None, datetime | None]:
         if days == 0:
             return None, None
 
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(time_zone)
         if days == -1:
             start_at = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=offset_days)
-            return start_at, start_at + timedelta(days=1)
+            end_at = start_at + timedelta(days=1)
+            return (
+                start_at.astimezone(UTC).replace(tzinfo=None),
+                end_at.astimezone(UTC).replace(tzinfo=None),
+            )
 
         end_at = now - timedelta(days=offset_days)
-        return end_at - timedelta(days=days), end_at
+        start_at = end_at - timedelta(days=days)
+        return (
+            start_at.astimezone(UTC).replace(tzinfo=None),
+            end_at.astimezone(UTC).replace(tzinfo=None),
+        )
 
     @classmethod
-    def _resolve_imported_date_window(cls, days: int, *, offset_days: int = 0) -> tuple[str | None, str | None]:
-        start_at, end_at = cls._resolve_request_log_window(days, offset_days=offset_days)
+    def _resolve_imported_date_window(cls, days: int, *, time_zone: ZoneInfo, offset_days: int = 0) -> tuple[str | None, str | None]:
+        start_at, end_at = cls._resolve_request_log_window(days, offset_days=offset_days, time_zone=time_zone)
         if start_at is None or end_at is None:
             return None, None
-        return start_at.strftime("%Y%m%d"), end_at.strftime("%Y%m%d")
+        return (
+            start_at.replace(tzinfo=UTC).astimezone(time_zone).strftime("%Y%m%d"),
+            end_at.replace(tzinfo=UTC).astimezone(time_zone).strftime("%Y%m%d"),
+        )
 
     @classmethod
-    def _apply_request_log_window(cls, stmt: Any, *, days: int, offset_days: int = 0) -> Any:
-        start_at, end_at = cls._resolve_request_log_window(days, offset_days=offset_days)
+    def _apply_request_log_window(cls, stmt: Any, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> Any:
+        start_at, end_at = cls._resolve_request_log_window(days, offset_days=offset_days, time_zone=time_zone)
         if start_at is not None:
             stmt = stmt.where(RequestLogEntity.created_at >= start_at)
         if end_at is not None:

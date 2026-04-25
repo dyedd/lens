@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { GatewayApiKey, OverviewModelAnalytics, ProtocolKind, RequestLogDetail, RequestLogItem, RequestLogPage, apiRequest } from '@/lib/api'
 import { formatLogDateTime } from '@/lib/datetime'
+import { useAppTimeZone } from '@/hooks/use-app-time-zone'
 import { useI18n } from '@/lib/i18n'
 import { ModelAvatar } from '@/lib/model-icons'
 import { cn } from '@/lib/utils'
@@ -682,12 +683,14 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
 function RequestCard({
   item,
   locale,
+  timeZone,
   onPrefetchDetail,
   onOpenDetail,
   onOpenAttempts,
 }: {
   item: RequestLogItem
   locale: 'zh-CN' | 'en-US'
+  timeZone?: string
   onPrefetchDetail: () => void
   onOpenDetail: () => void
   onOpenAttempts: () => void
@@ -766,7 +769,7 @@ function RequestCard({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <RequestMeta icon={<Clock3 size={13} />} value={formatLogDateTime(item.created_at, locale)} className="pl-0" />
+              <RequestMeta icon={<Clock3 size={13} />} value={formatLogDateTime(item.created_at, locale, timeZone)} className="pl-0" />
               <RequestMeta icon={<Waypoints size={13} />} value={item.channel_name || item.channel_id || 'n/a'} />
               {item.gateway_key_id ? <RequestMeta icon={<KeyRound size={13} />} value={formatGatewayKeyLabel(item, locale)} /> : null}
               {secondaryModelName ? <RequestMeta icon={<ServerCog size={13} />} value={secondaryModelName} /> : null}
@@ -813,6 +816,7 @@ function RequestCard({
 export function RequestsScreen() {
   const queryClient = useQueryClient()
   const { locale } = useI18n()
+  const timeZone = useAppTimeZone()
   const [detailId, setDetailId] = useState<number | null>(null)
   const [attemptDetailId, setAttemptDetailId] = useState<number | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
@@ -1125,6 +1129,7 @@ export function RequestsScreen() {
                     key={item.id}
                     item={item}
                     locale={locale}
+                    timeZone={timeZone}
                     onPrefetchDetail={() => prefetchRequestDetail(item.id)}
                     onOpenDetail={() => setDetailId(item.id)}
                     onOpenAttempts={() => setAttemptDetailId(item.id)}

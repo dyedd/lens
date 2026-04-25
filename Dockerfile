@@ -33,13 +33,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LENS_HOST=0.0.0.0 \
     LENS_PORT=3000 \
     LENS_DATABASE_URL=sqlite+aiosqlite:////app/data/data.db \
-    LENS_UI_STATIC_DIR=/app/ui \
-    TZ=Asia/Shanghai
+    LENS_UI_STATIC_DIR=/app/ui
 
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates tzdata \
+    && apt-get install --yes --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md alembic.ini ./
