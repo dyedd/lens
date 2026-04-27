@@ -366,9 +366,14 @@ class DomainStore:
     async def list_group_candidates(self, payload: ModelGroupCandidatesRequest) -> ModelGroupCandidatesResponse:
         async with self._session_factory() as session:
             query = select(SiteProtocolConfigEntity).order_by(SiteProtocolConfigEntity.protocol.asc(), SiteProtocolConfigEntity.id.asc())
-            if payload.protocol is not None:
-                query = query.where(SiteProtocolConfigEntity.protocol == payload.protocol.value)
             channels = (await session.execute(query)).scalars().all()
+            if payload.protocol is not None:
+                from ..gateway.converters import can_reach_protocol
+
+                channels = [
+                    channel for channel in channels
+                    if can_reach_protocol(ProtocolKind(channel.protocol), payload.protocol)
+                ]
             channel_ids = [item.id for item in channels]
             discovered_models = []
             if channel_ids:
