@@ -103,6 +103,7 @@ from .upstreams import (
 
 TASK_REQUEST_LOG_PRUNE = "request_log_prune"
 TASK_MODEL_PRICE_SYNC = "model_price_sync"
+TASK_REQUEST_LOG_STATS_PERSIST = "request_log_stats_persist"
 
 CRONJOB_SPECS = (
     CronjobSpec(
@@ -116,6 +117,12 @@ CRONJOB_SPECS = (
         name="模型价格同步",
         description="从 models.dev 同步模型价格",
         default_interval_hours=24,
+    ),
+    CronjobSpec(
+        id=TASK_REQUEST_LOG_STATS_PERSIST,
+        name="请求日志统计落库",
+        description="归档请求日志统计数据",
+        default_interval_hours=1,
     ),
 )
 
@@ -146,6 +153,7 @@ class AppState:
             handlers={
                 TASK_REQUEST_LOG_PRUNE: self.domain_store.prune_request_logs,
                 TASK_MODEL_PRICE_SYNC: lambda: _sync_group_prices(self, overwrite_existing=True),
+                TASK_REQUEST_LOG_STATS_PERSIST: self.domain_store.persist_request_log_stats,
             },
             time_zone_provider=self._runtime_time_zone,
             logger=logger,
@@ -814,7 +822,6 @@ async def list_model_group_stats(
 async def list_model_prices(
     _: Any = Depends(get_current_admin),
 ) -> ModelPriceListResponse:
-    await app_state.domain_store.prune_model_prices_to_groups(include_routed=True)
     return await app_state.domain_store.list_model_prices()
 
 
@@ -890,9 +897,7 @@ async def create_model_group(
     payload: ModelGroupCreate, _: Any = Depends(get_current_admin)
 ) -> ModelGroup:
     try:
-        group = await app_state.domain_store.create_group(payload)
-        await _sync_group_prices_best_effort(app_state)
-        return group
+        return await app_state.domain_store.create_group(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -901,9 +906,7 @@ async def update_model_group(
     group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)
 ) -> ModelGroup:
     try:
-        group = await app_state.domain_store.update_group(group_id, payload)
-        await _sync_group_prices_best_effort(app_state)
-        return group
+        return await app_state.domain_store.update_group(group_id, payload)
     except KeyError as exc:
         raise HTTPException(
             status_code=404, detail=f"Model group not found: {group_id}"
@@ -917,7 +920,6 @@ async def delete_model_group(
 ) -> Response:
     try:
         await app_state.domain_store.delete_group(group_id)
-        await _sync_group_prices_best_effort(app_state)
     except KeyError as exc:
         raise HTTPException(
             status_code=404, detail=f"Model group not found: {group_id}"
@@ -2666,13 +2668,6 @@ async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) 
     await state.domain_store.set_model_price_sync_time(
         datetime.now(UTC).isoformat()
     )
-
-
-async def _sync_group_prices_best_effort(state: AppState) -> None:
-    try:
-        await _sync_group_prices(state)
-    except Exception:
-        logger.warning("Model price sync skipped after model group change", exc_info=True)
 
 
 app = create_app(service_module=__import__(__name__, fromlist=["*"]))
