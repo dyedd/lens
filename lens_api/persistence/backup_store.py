@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
-from ..core.time_zone import normalize_time_zone
+from ..core.time_zone import normalize_time_zone, resolve_time_zone
 from ..models import (
     ConfigBackupDump,
     ConfigBackupGatewayApiKey,
@@ -16,6 +17,7 @@ from ..models import (
     ConfigBackupOverviewModelDailyStat,
     ConfigBackupRequestLog,
     ConfigBackupRequestLogDailyStat,
+    ConfigBackupCronjob,
     ConfigBackupStatsSnapshot,
     ConfigImportResult,
     ModelGroup,
@@ -52,6 +54,7 @@ from .entities import (
     OverviewModelDailyStatsEntity,
     RequestLogDailyStatsEntity,
     RequestLogEntity,
+    CronjobEntity,
     SettingEntity,
     SiteBaseUrlEntity,
     SiteCredentialEntity,
@@ -59,6 +62,11 @@ from .entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
     SiteProtocolCredentialBindingEntity,
+)
+from .cronjob_store import (
+    encode_weekdays,
+    next_cronjob_run_at,
+    normalize_cronjob_schedule,
 )
 
 BACKUP_DUMP_VERSION = 2
@@ -103,6 +111,7 @@ class BackupStore:
             sites = await self._load_sites(session)
             groups = await self._load_groups(session)
             model_prices = await self._load_model_prices(session)
+            cronjobs = await self._load_cronjobs(session)
             stats = await self._load_stats(session)
             gateway_api_keys = (
                 await self._load_gateway_api_keys(session)
@@ -127,6 +136,7 @@ class BackupStore:
             sites=sites,
             groups=groups,
             model_prices=model_prices,
+            cronjobs=cronjobs,
             stats=stats,
             gateway_api_keys=gateway_api_keys,
             request_logs=request_logs,
@@ -177,6 +187,9 @@ class BackupStore:
 
             await self._replace_settings(session, dump.settings)
             rows_affected["settings"] = len(dump.settings)
+
+            await self._replace_cronjobs(session, dump.cronjobs)
+            rows_affected["cronjobs"] = len(dump.cronjobs)
 
             await self._replace_stats(session, dump.stats)
             rows_affected["imported_stats_total"] = (
@@ -538,6 +551,61 @@ class BackupStore:
             setting_keys.add(item.key)
             value = normalize_time_zone(item.value) if item.key == SETTING_TIME_ZONE else item.value
             session.add(SettingEntity(key=item.key, value=value))
+
+    async def _replace_cronjobs(
+        self, session: AsyncSession, cronjobs: list[ConfigBackupCronjob]
+    ) -> None:
+        task_ids: set[str] = set()
+        now = datetime.now(UTC).replace(tzinfo=None)
+        time_zone = await self._runtime_time_zone(session)
+        for item in cronjobs:
+            task_id = item.id.strip()
+            if not task_id:
+                continue
+            if task_id in task_ids:
+                raise ValueError(f"Duplicate cron job id in backup: {task_id}")
+            task_ids.add(task_id)
+            schedule = normalize_cronjob_schedule(
+                schedule_type=item.schedule_type.value,
+                interval_hours=item.interval_hours,
+                run_at_time=item.run_at_time,
+                weekdays=item.weekdays,
+            )
+            next_run_at = (
+                next_cronjob_run_at(schedule, now=now, time_zone=time_zone)
+                if item.enabled
+                else None
+            )
+
+            entity = await session.get(CronjobEntity, task_id)
+            if entity is None:
+                session.add(
+                    CronjobEntity(
+                        id=task_id,
+                        enabled=1 if item.enabled else 0,
+                        schedule_type=schedule.schedule_type,
+                        interval_hours=schedule.interval_hours,
+                        run_at_time=schedule.run_at_time,
+                        weekdays_json=encode_weekdays(schedule.weekdays),
+                        status="idle" if item.enabled else "disabled",
+                        last_error="",
+                        next_run_at=next_run_at,
+                        lease_owner="",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                continue
+
+            entity.enabled = 1 if item.enabled else 0
+            entity.schedule_type = schedule.schedule_type
+            entity.interval_hours = schedule.interval_hours
+            entity.run_at_time = schedule.run_at_time
+            entity.weekdays_json = encode_weekdays(schedule.weekdays)
+            entity.next_run_at = next_run_at
+            if not entity.lease_owner:
+                entity.status = "idle" if item.enabled else "disabled"
+            entity.updated_at = now
 
     async def _replace_gateway_api_keys(
         self, session: AsyncSession, gateway_api_keys: list[ConfigBackupGatewayApiKey]
@@ -1013,6 +1081,24 @@ class BackupStore:
             for row in rows
         ]
 
+    async def _load_cronjobs(
+        self, session: AsyncSession
+    ) -> list[ConfigBackupCronjob]:
+        rows = (
+            await session.execute(select(CronjobEntity).order_by(CronjobEntity.id.asc()))
+        ).scalars().all()
+        return [
+            ConfigBackupCronjob(
+                id=row.id,
+                enabled=bool(row.enabled),
+                schedule_type=row.schedule_type,
+                interval_hours=max(int(row.interval_hours), 1),
+                run_at_time=row.run_at_time,
+                weekdays=list(self._load_weekdays(row.weekdays_json)),
+            )
+            for row in rows
+        ]
+
     async def _load_request_logs(
         self, session: AsyncSession
     ) -> list[ConfigBackupRequestLog]:
@@ -1100,6 +1186,34 @@ class BackupStore:
             seen.add(normalized)
             models.append(normalized)
         return models
+
+    @staticmethod
+    def _load_weekdays(raw_value: str | None) -> list[int]:
+        if not raw_value:
+            return []
+        try:
+            payload = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(payload, list):
+            return []
+        weekdays: list[int] = []
+        seen: set[int] = set()
+        for item in payload:
+            try:
+                weekday = int(item)
+            except (TypeError, ValueError):
+                continue
+            if weekday < 1 or weekday > 7 or weekday in seen:
+                continue
+            seen.add(weekday)
+            weekdays.append(weekday)
+        return sorted(weekdays)
+
+    @staticmethod
+    async def _runtime_time_zone(session: AsyncSession) -> ZoneInfo:
+        setting = await session.get(SettingEntity, SETTING_TIME_ZONE)
+        return resolve_time_zone(setting.value if setting is not None else None)
 
     @staticmethod
     def _parse_attempts(raw_value: str | None) -> list[RequestLogAttempt]:

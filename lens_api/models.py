@@ -4,7 +4,7 @@ from enum import Enum
 import re
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 def normalize_base_url(value: Any) -> Any:
@@ -531,6 +531,82 @@ class ModelPriceListResponse(BaseModel):
     last_synced_at: str | None = None
 
 
+class CronjobStatus(str, Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    DISABLED = "disabled"
+
+
+class CronjobScheduleType(str, Enum):
+    INTERVAL = "interval"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+
+
+class CronjobItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    description: str = ""
+    enabled: bool
+    schedule_type: CronjobScheduleType = CronjobScheduleType.INTERVAL
+    interval_hours: int
+    run_at_time: str | None = None
+    weekdays: list[int] = Field(default_factory=list)
+    status: CronjobStatus
+    last_started_at: str | None = None
+    last_finished_at: str | None = None
+    last_error: str | None = None
+    next_run_at: str | None = None
+
+
+class CronjobUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    schedule_type: CronjobScheduleType | None = None
+    interval_hours: int | None = Field(default=None, ge=1)
+    run_at_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    weekdays: list[int] | None = None
+
+    @field_validator("weekdays")
+    @classmethod
+    def normalize_weekdays(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return None
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for item in value:
+            weekday = int(item)
+            if weekday < 1 or weekday > 7:
+                raise ValueError("Weekday must be between 1 and 7")
+            if weekday in seen:
+                continue
+            seen.add(weekday)
+            normalized.append(weekday)
+        return sorted(normalized)
+
+    @model_validator(mode="after")
+    def validate_schedule(self) -> "CronjobUpdate":
+        if self.schedule_type == CronjobScheduleType.DAILY and not self.run_at_time:
+            raise ValueError("Daily cron jobs require run_at_time")
+        if self.schedule_type == CronjobScheduleType.WEEKLY:
+            if not self.run_at_time:
+                raise ValueError("Weekly cron jobs require run_at_time")
+            if not self.weekdays:
+                raise ValueError("Weekly cron jobs require weekdays")
+        return self
+
+
+class CronjobRunResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cronjob: CronjobItem
+
+
 class SettingItem(BaseModel):
     key: str
     value: str
@@ -650,6 +726,43 @@ class ConfigBackupGatewayApiKey(GatewayApiKeyBase):
     updated_at: str | None = None
 
 
+class ConfigBackupCronjob(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    enabled: bool = True
+    schedule_type: CronjobScheduleType = CronjobScheduleType.INTERVAL
+    interval_hours: int = Field(default=1, ge=1)
+    run_at_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    weekdays: list[int] = Field(default_factory=list)
+
+    @field_validator("weekdays")
+    @classmethod
+    def normalize_weekdays(cls, value: list[int]) -> list[int]:
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for item in value:
+            weekday = int(item)
+            if weekday < 1 or weekday > 7:
+                raise ValueError("Weekday must be between 1 and 7")
+            if weekday in seen:
+                continue
+            seen.add(weekday)
+            normalized.append(weekday)
+        return sorted(normalized)
+
+    @model_validator(mode="after")
+    def validate_schedule(self) -> "ConfigBackupCronjob":
+        if self.schedule_type == CronjobScheduleType.DAILY and not self.run_at_time:
+            raise ValueError("Daily cron jobs require run_at_time")
+        if self.schedule_type == CronjobScheduleType.WEEKLY:
+            if not self.run_at_time:
+                raise ValueError("Weekly cron jobs require run_at_time")
+            if not self.weekdays:
+                raise ValueError("Weekly cron jobs require weekdays")
+        return self
+
+
 class ConfigBackupRequestLog(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -693,6 +806,7 @@ class ConfigBackupDump(BaseModel):
     sites: list[SiteConfig] = Field(default_factory=list)
     groups: list[ModelGroup] = Field(default_factory=list)
     model_prices: list[ModelPriceItem] = Field(default_factory=list)
+    cronjobs: list[ConfigBackupCronjob] = Field(default_factory=list)
     stats: ConfigBackupStatsSnapshot = Field(default_factory=ConfigBackupStatsSnapshot)
     gateway_api_keys: list[ConfigBackupGatewayApiKey] = Field(default_factory=list)
     request_logs: list[ConfigBackupRequestLog] = Field(default_factory=list)

@@ -8,6 +8,7 @@ import {
   Download,
   FileJson,
   KeyRound,
+  CalendarClock,
   ScrollText,
   Settings2,
   Upload,
@@ -103,6 +104,9 @@ function parseBackupPreview(rawValue: string): ConfigBackupDump {
     model_prices: Array.isArray(payload.model_prices)
       ? payload.model_prices
       : [],
+    cronjobs: Array.isArray(payload.cronjobs)
+      ? payload.cronjobs
+      : [],
     stats: parseStatsPreview(payload.stats),
     gateway_api_keys: Array.isArray(payload.gateway_api_keys)
       ? payload.gateway_api_keys
@@ -136,6 +140,7 @@ function resultLabelForLocale(locale: Locale, key: string) {
     overview_model_daily_stats: ["模型统计(日)", "Model stats (daily)"],
     request_log_daily_stats: ["请求统计(日)", "Request stats (daily)"],
     request_logs: ["请求日志", "Request logs"],
+    cronjobs: ["定时任务", "Cron jobs"],
     settings: ["系统设置", "Settings"],
     site_base_urls: ["渠道地址", "Channel base URLs"],
     site_credentials: ["上游凭据", "Upstream credentials"],
@@ -193,6 +198,7 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
       titleForLocale(locale, "渠道与上游凭据", "Channels & credentials"),
       titleForLocale(locale, "模型组配置", "Model groups"),
       titleForLocale(locale, "模型价格", "Model prices"),
+      titleForLocale(locale, "定时任务", "Cron jobs"),
       titleForLocale(locale, "统计数据", "Stats"),
     ],
     [locale]
@@ -227,6 +233,11 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
         key: "model_prices",
         label: titleForLocale(locale, "模型价格", "Model prices"),
         count: preview.model_prices.length,
+      },
+      {
+        key: "cronjobs",
+        label: titleForLocale(locale, "定时任务", "Cron jobs"),
+        count: preview.cronjobs.length,
       },
       {
         key: "stats",
@@ -538,8 +549,8 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
               <AlertDescription>
                 {titleForLocale(
                   locale,
-                  "导入会替换现有渠道、模型组、设置、模型价格和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
-                  "Import replaces existing channels, model groups, settings, model prices, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well."
+                  "导入会替换现有渠道、模型组、设置、模型价格、定时任务和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
+                  "Import replaces existing channels, model groups, settings, model prices, cron jobs, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well."
                 )}
               </AlertDescription>
             </Alert>
@@ -642,6 +653,10 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
               <Badge variant="outline">
                 <Database data-icon="inline-start" />
                 {titleForLocale(locale, "统计数据", "Stats")}
+              </Badge>
+              <Badge variant="outline">
+                <CalendarClock data-icon="inline-start" />
+                {titleForLocale(locale, "定时任务", "Cron jobs")}
               </Badge>
               {preview?.include_gateway_api_keys ? (
                 <Badge variant="outline">

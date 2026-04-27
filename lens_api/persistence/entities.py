@@ -169,6 +169,26 @@ class ModelPriceEntity(Base):
     cache_write_price_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
 
+class CronjobEntity(Base):
+    __tablename__ = "cronjobs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    schedule_type: Mapped[str] = mapped_column(String(16), nullable=False, default="interval")
+    interval_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+    run_at_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    weekdays_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="idle", index=True)
+    last_started_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    next_run_at: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
+    lease_owner: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
+    lease_until: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class ImportedStatsTotalEntity(Base):
     __tablename__ = "imported_stats_total"
 
