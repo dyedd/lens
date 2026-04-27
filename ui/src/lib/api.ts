@@ -352,6 +352,14 @@ export type ConfigBackupDump = {
   sites: Site[]
   groups: ModelGroup[]
   model_prices: ModelPriceItem[]
+  cronjobs: {
+    id: string
+    enabled: boolean
+    schedule_type: CronjobScheduleType
+    interval_hours: number
+    run_at_time?: string | null
+    weekdays: number[]
+  }[]
   stats: ConfigBackupStatsSnapshot
   gateway_api_keys: ConfigBackupGatewayApiKey[]
   request_logs: ConfigBackupRequestLog[]
@@ -569,6 +577,46 @@ export type RequestLogPage = {
   total: number
   limit: number
   offset: number
+}
+
+export type CronjobStatus =
+  | 'idle'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'disabled'
+
+export type CronjobScheduleType =
+  | 'interval'
+  | 'daily'
+  | 'weekly'
+
+export type CronjobItem = {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  schedule_type: CronjobScheduleType
+  interval_hours: number
+  run_at_time?: string | null
+  weekdays: number[]
+  status: CronjobStatus
+  last_started_at?: string | null
+  last_finished_at?: string | null
+  last_error?: string | null
+  next_run_at?: string | null
+}
+
+export type CronjobUpdate = {
+  enabled?: boolean | null
+  schedule_type?: CronjobScheduleType | null
+  interval_hours?: number | null
+  run_at_time?: string | null
+  weekdays?: number[] | null
+}
+
+export type CronjobRunResult = {
+  cronjob: CronjobItem
 }
 
 function getToken() {

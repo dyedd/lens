@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -10,6 +11,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from time import perf_counter
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
@@ -61,6 +63,9 @@ from ..models import (
     RequestLogPage,
     RoutePreviewRequest,
     RoutingStrategy,
+    CronjobItem,
+    CronjobRunResult,
+    CronjobUpdate,
     SettingItem,
     SettingsUpdate,
     SiteConfig,
@@ -79,6 +84,7 @@ from ..persistence.domain_store import (
     SETTING_TIME_ZONE,
     DomainStore,
 )
+from ..persistence.cronjob_store import CronjobSpec, CronjobStore
 from .converters import (
     convert_request,
     convert_response,
@@ -86,12 +92,34 @@ from .converters import (
     needs_conversion,
 )
 from .router import RoundRobinRouter, RouteTarget
+from .cronjob_runner import CronjobAlreadyRunningError, CronjobRunner
 from .upstreams import (
     build_upstream_request,
     resolve_channel_api_key,
     resolve_channel_base_url,
     resolve_upstream_proxy_url,
 )
+
+
+TASK_REQUEST_LOG_PRUNE = "request_log_prune"
+TASK_MODEL_PRICE_SYNC = "model_price_sync"
+
+CRONJOB_SPECS = (
+    CronjobSpec(
+        id=TASK_REQUEST_LOG_PRUNE,
+        name="请求日志清理",
+        description="按日志保留天数清理过期请求日志",
+        default_interval_hours=1,
+    ),
+    CronjobSpec(
+        id=TASK_MODEL_PRICE_SYNC,
+        name="模型价格同步",
+        description="从 models.dev 同步模型价格",
+        default_interval_hours=24,
+    ),
+)
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -108,9 +136,20 @@ class AppState:
         self.session_factory = create_session_factory(self.engine)
         self.admin_store = AdminStore(self.session_factory)
         self.domain_store = DomainStore(self.session_factory)
+        self.cronjob_store = CronjobStore(self.session_factory)
         self.store = ChannelStore(self.session_factory)
         self.backup_store = BackupStore(self.session_factory)
         self.router = RoundRobinRouter()
+        self.cronjob_runner = CronjobRunner(
+            store=self.cronjob_store,
+            specs=CRONJOB_SPECS,
+            handlers={
+                TASK_REQUEST_LOG_PRUNE: self.domain_store.prune_request_logs,
+                TASK_MODEL_PRICE_SYNC: lambda: _sync_group_prices(self, overwrite_existing=True),
+            },
+            time_zone_provider=self._runtime_time_zone,
+            logger=logger,
+        )
 
     @staticmethod
     def _create_http_client() -> httpx.AsyncClient:
@@ -123,6 +162,10 @@ class AppState:
             max_keepalive_connections=settings.max_keepalive_connections,
         )
         return httpx.AsyncClient(timeout=timeout, limits=limits)
+
+    async def _runtime_time_zone(self) -> ZoneInfo:
+        runtime = await self.domain_store.get_runtime_settings()
+        return resolve_time_zone(str(runtime["time_zone"]))
 
 
 @dataclass
@@ -232,6 +275,7 @@ def _overview_window_minutes(days: int, daily_points: list[OverviewDailyPoint], 
 @asynccontextmanager
 async def _managed_lifespan(state: AppState):
     await _startup_app_state(state)
+    await state.cronjob_runner.start()
     try:
         yield
     except asyncio.CancelledError:
@@ -239,6 +283,7 @@ async def _managed_lifespan(state: AppState):
         # Treat it as normal shutdown so the console does not dump an extra traceback.
         pass
     finally:
+        await state.cronjob_runner.stop()
         await _close_app_state(state)
 
 
@@ -791,6 +836,47 @@ async def sync_model_prices(
     return await app_state.domain_store.list_model_prices()
 
 
+async def list_cronjobs(
+    _: Any = Depends(get_current_admin),
+) -> list[CronjobItem]:
+    return await app_state.cronjob_runner.list_cronjobs()
+
+
+async def update_cronjob(
+    task_id: str,
+    payload: CronjobUpdate,
+    _: Any = Depends(get_current_admin),
+) -> CronjobItem:
+    try:
+        return await app_state.cronjob_runner.update_cronjob(
+            task_id,
+            enabled=payload.enabled,
+            schedule_type=payload.schedule_type.value if payload.schedule_type is not None else None,
+            interval_hours=payload.interval_hours,
+            run_at_time=payload.run_at_time,
+            weekdays=payload.weekdays,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Cron job not found: {task_id}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+async def run_cronjob(
+    task_id: str,
+    _: Any = Depends(get_current_admin),
+) -> CronjobRunResult:
+    try:
+        task = await app_state.cronjob_runner.run_cronjob_now(task_id)
+    except CronjobAlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail=f"Cron job is already running: {task_id}") from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Cron job not found: {task_id}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc) or "Cron job failed") from exc
+    return CronjobRunResult(cronjob=task)
+
+
 async def model_group_candidates(
     payload: ModelGroupCandidatesRequest, _: Any = Depends(get_current_admin)
 ) -> ModelGroupCandidatesResponse:
@@ -805,7 +891,7 @@ async def create_model_group(
 ) -> ModelGroup:
     try:
         group = await app_state.domain_store.create_group(payload)
-        await _sync_group_prices(app_state)
+        await _sync_group_prices_best_effort(app_state)
         return group
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -816,7 +902,7 @@ async def update_model_group(
 ) -> ModelGroup:
     try:
         group = await app_state.domain_store.update_group(group_id, payload)
-        await _sync_group_prices(app_state)
+        await _sync_group_prices_best_effort(app_state)
         return group
     except KeyError as exc:
         raise HTTPException(
@@ -831,7 +917,7 @@ async def delete_model_group(
 ) -> Response:
     try:
         await app_state.domain_store.delete_group(group_id)
-        await _sync_group_prices(app_state)
+        await _sync_group_prices_best_effort(app_state)
     except KeyError as exc:
         raise HTTPException(
             status_code=404, detail=f"Model group not found: {group_id}"
@@ -851,6 +937,7 @@ async def update_settings(
     normalized_items = []
     current_time_zone = None
     next_time_zone = None
+    next_time_zone_value = None
     if any(item.key == SETTING_TIME_ZONE for item in payload.items):
         runtime = await app_state.domain_store.get_runtime_settings()
         current_time_zone = str(runtime["time_zone"])
@@ -869,12 +956,15 @@ async def update_settings(
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             next_time_zone = time_zone.key
+            next_time_zone_value = time_zone
             normalized_items.append(SettingItem(key=item.key, value=time_zone.key))
             continue
         normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
     stored_items = await app_state.domain_store.upsert_settings(normalized_items)
     if next_time_zone is not None and next_time_zone != current_time_zone:
         await app_state.domain_store.persist_request_log_stats(force=True)
+        if next_time_zone_value is not None:
+            await app_state.cronjob_runner.reschedule_cronjobs(next_time_zone_value)
     return stored_items
 
 
@@ -2566,19 +2656,23 @@ async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) 
         await state.domain_store.replace_model_prices([])
         return
 
+    response = await state.http.get("https://models.dev/api.json")
+    response.raise_for_status()
+    price_index = build_models_dev_price_index(response.json())
+    payloads = build_group_price_payloads(group_names, price_index)
+    await state.domain_store.sync_model_prices(
+        payloads, overwrite_existing=overwrite_existing, allowed_keys=group_names
+    )
+    await state.domain_store.set_model_price_sync_time(
+        datetime.now(UTC).isoformat()
+    )
+
+
+async def _sync_group_prices_best_effort(state: AppState) -> None:
     try:
-        response = await state.http.get("https://models.dev/api.json")
-        response.raise_for_status()
-        price_index = build_models_dev_price_index(response.json())
-        payloads = build_group_price_payloads(group_names, price_index)
-        await state.domain_store.sync_model_prices(
-            payloads, overwrite_existing=overwrite_existing, allowed_keys=group_names
-        )
-        await state.domain_store.set_model_price_sync_time(
-            datetime.now(UTC).isoformat()
-        )
+        await _sync_group_prices(state)
     except Exception:
-        return
+        logger.warning("Model price sync skipped after model group change", exc_info=True)
 
 
 app = create_app(service_module=__import__(__name__, fromlist=["*"]))

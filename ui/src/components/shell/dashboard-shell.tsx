@@ -22,7 +22,7 @@ import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, Globe2, Layers3, LayoutDashboard, LogOut, PanelLeftClose, Settings2, Waypoints } from 'lucide-react'
+import { Activity, CalendarClock, Globe2, Layers3, LayoutDashboard, LogOut, PanelLeftClose, Settings2, Waypoints } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -88,6 +88,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       label: locale === 'zh-CN' ? '系统' : 'System',
       items: [
         { key: 'settings' as DashboardView, href: DASHBOARD_ROUTES.settings, label: t.settings, icon: Settings2 },
+        { key: 'cronjobs' as DashboardView, href: DASHBOARD_ROUTES.cronjobs, label: t.cronjobs, icon: CalendarClock },
       ],
     },
   ], [locale, t])

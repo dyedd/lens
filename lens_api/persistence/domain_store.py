@@ -1490,7 +1490,10 @@ class DomainStore:
             return
         await self.persist_request_log_stats(force=True)
         keep_days = max(int(runtime["relay_log_keep_period"]), 1)
-        cutoff = datetime.utcnow() - timedelta(days=keep_days)
+        cutoff = self._request_log_prune_cutoff(
+            keep_days=keep_days,
+            time_zone=self._runtime_time_zone(runtime),
+        )
         async with self._session_factory() as session:
             await session.execute(delete(RequestLogEntity).where(RequestLogEntity.created_at < cutoff))
             await session.commit()
@@ -2165,6 +2168,12 @@ class DomainStore:
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
+
+    @staticmethod
+    def _request_log_prune_cutoff(*, keep_days: int, time_zone: ZoneInfo) -> datetime:
+        local_now = datetime.now(time_zone)
+        local_cutoff = local_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=max(keep_days, 1) - 1)
+        return local_cutoff.astimezone(UTC).replace(tzinfo=None)
 
     @staticmethod
     def _daily_stats_by_local_bucket(rows: list[Any], time_zone: ZoneInfo) -> dict[str, dict[str, float]]:
