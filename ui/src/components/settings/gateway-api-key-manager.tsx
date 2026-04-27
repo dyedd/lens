@@ -8,7 +8,6 @@ import {
   Check,
   ChevronsUpDown,
   Copy,
-  KeyRound,
   Pencil,
   Plus,
   Trash2,
@@ -27,7 +26,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { AppDialogContent, Dialog, DialogFooter } from "@/components/ui/dialog"
 import {
   Field,
@@ -524,14 +523,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
   return (
     <>
-      <Card className="py-0">
-        <CardHeader className="px-5 pt-5 pb-0">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
-            <KeyRound className="size-4 text-muted-foreground" />
-            <span>{titleForLocale(locale, "API 密钥", "API keys")}</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 px-5 py-5">
+      <Card className="min-w-0 py-0">
+        <CardContent className="flex min-w-0 flex-col gap-4 px-5 py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-muted-foreground">
               {titleForLocale(locale, `共 ${gatewayKeys.length} 个密钥`, `${gatewayKeys.length} keys`)}
@@ -542,16 +535,16 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
             </Button>
           </div>
 
-          <div className="rounded-lg border">
-            <Table>
+          <div className="min-w-0 overflow-hidden rounded-lg border">
+            <Table className="min-w-[1120px] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>{titleForLocale(locale, "密钥名称", "Key name")}</TableHead>
-                  <TableHead>{titleForLocale(locale, "密钥", "Key")}</TableHead>
-                  <TableHead>{titleForLocale(locale, "限额", "Limit")}</TableHead>
-                  <TableHead>{titleForLocale(locale, "创建时间", "Created")}</TableHead>
-                  <TableHead>{titleForLocale(locale, "权限", "Permissions")}</TableHead>
-                  <TableHead className="text-right">
+                  <TableHead className="w-40">{titleForLocale(locale, "密钥名称", "Key name")}</TableHead>
+                  <TableHead className="w-[420px]">{titleForLocale(locale, "密钥", "Key")}</TableHead>
+                  <TableHead className="w-44">{titleForLocale(locale, "限额", "Limit")}</TableHead>
+                  <TableHead className="w-44">{titleForLocale(locale, "创建时间", "Created")}</TableHead>
+                  <TableHead className="w-56">{titleForLocale(locale, "权限", "Permissions")}</TableHead>
+                  <TableHead className="w-36 text-right">
                     {titleForLocale(locale, "操作", "Actions")}
                   </TableHead>
                 </TableRow>
@@ -564,7 +557,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                     const outOfBalance = isGatewayKeyOutOfBalance(item)
                     return (
                       <TableRow key={item.id}>
-                        <TableCell>
+                        <TableCell className="min-w-0">
                           <div className="flex min-w-36 flex-col gap-2">
                             <div className="truncate text-sm text-foreground">
                               {item.remark || titleForLocale(locale, "未命名", "Unnamed")}
@@ -585,8 +578,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                             ) : null}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex min-w-56 items-center gap-2">
+                        <TableCell className="min-w-0">
+                          <div className="flex min-w-0 items-center gap-2">
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-mono text-sm text-foreground">
                                 {maskGatewayKey(item.api_key)}
@@ -610,8 +603,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                             </Button>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex min-w-44 flex-col gap-1">
+                        <TableCell className="min-w-0">
+                          <div className="flex min-w-0 flex-col gap-1">
                             <div>{formatGatewayLimit(locale, item)}</div>
                             <div className="text-xs text-muted-foreground">
                               {item.expires_at
@@ -627,9 +620,9 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                         <TableCell className="text-muted-foreground">
                           {formatDateTime(locale, item.created_at, timeZone)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="min-w-0">
                           {item.allowed_models.length > 0 ? (
-                            <div className="flex max-w-72 flex-wrap gap-1">
+                            <div className="flex max-w-56 flex-wrap gap-1">
                               {item.allowed_models.slice(0, 2).map((modelName) => (
                                 <Badge key={modelName} variant="outline">
                                   {modelName}

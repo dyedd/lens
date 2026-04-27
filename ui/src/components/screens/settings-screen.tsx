@@ -5,7 +5,6 @@ import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
-  CircleAlert,
   ImageIcon,
   Palette,
   RotateCcw,
@@ -13,19 +12,15 @@ import {
   ServerCog,
   ShieldAlert,
   TimerReset,
-  Trash2,
   UserRound,
 } from "lucide-react"
 
-import { ConfigTransferCard } from "@/components/settings/config-transfer-card"
-import { GatewayApiKeyManager } from "@/components/settings/gateway-api-key-manager"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { SegmentedControl } from "@/components/ui/segmented-control"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   ApiError,
@@ -42,8 +37,6 @@ import { cn } from "@/lib/utils"
 const PROXY_URL = "proxy_url"
 const STATS_SAVE_INTERVAL = "stats_save_interval"
 const CORS_ALLOW_ORIGINS = "cors_allow_origins"
-const RELAY_LOG_KEEP_ENABLED = "relay_log_keep_enabled"
-const RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
 const CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"
 const CIRCUIT_BREAKER_COOLDOWN = "circuit_breaker_cooldown"
 const CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown"
@@ -66,8 +59,6 @@ type DraftState = {
   proxyUrl: string
   statsSaveInterval: string
   corsAllowOrigins: string
-  relayLogKeepEnabled: boolean
-  relayLogKeepPeriod: string
   circuitBreakerThreshold: string
   circuitBreakerCooldown: string
   circuitBreakerMaxCooldown: string
@@ -83,8 +74,6 @@ const EMPTY_DRAFT: DraftState = {
   proxyUrl: "",
   statsSaveInterval: "60",
   corsAllowOrigins: "*",
-  relayLogKeepEnabled: true,
-  relayLogKeepPeriod: "7",
   circuitBreakerThreshold: "3",
   circuitBreakerCooldown: "60",
   circuitBreakerMaxCooldown: "600",
@@ -106,10 +95,6 @@ function parseSettings(items: SettingItem[] | undefined) {
     proxyUrl: mapping.get(PROXY_URL) ?? "",
     statsSaveInterval: mapping.get(STATS_SAVE_INTERVAL) ?? "60",
     corsAllowOrigins: mapping.get(CORS_ALLOW_ORIGINS) ?? "*",
-    relayLogKeepEnabled: !["0", "false", "no", "off"].includes(
-      (mapping.get(RELAY_LOG_KEEP_ENABLED) ?? "true").toLowerCase()
-    ),
-    relayLogKeepPeriod: mapping.get(RELAY_LOG_KEEP_PERIOD) ?? "7",
     circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
     circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
     circuitBreakerMaxCooldown: mapping.get(CIRCUIT_BREAKER_MAX_COOLDOWN) ?? "600",
@@ -194,7 +179,6 @@ export function SettingsScreen() {
     confirmPassword: "",
   })
   const [saving, setSaving] = useState(false)
-  const [clearingLogs, setClearingLogs] = useState(false)
   const [updatingAccount, setUpdatingAccount] = useState(false)
 
   useEffect(() => {
@@ -217,12 +201,10 @@ export function SettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["settings"] }),
       queryClient.invalidateQueries({ queryKey: ["public-branding"] }),
       queryClient.invalidateQueries({ queryKey: ["app-info"] }),
-      queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] }),
       queryClient.invalidateQueries({ queryKey: ["model-groups"] }),
       queryClient.invalidateQueries({ queryKey: ["overview-dashboard"] }),
       queryClient.invalidateQueries({ queryKey: ["overview-metrics"] }),
       queryClient.invalidateQueries({ queryKey: ["overview-models"] }),
-      queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
     ])
   }
 
@@ -233,8 +215,6 @@ export function SettingsScreen() {
         { key: PROXY_URL, value: draft.proxyUrl.trim() },
         { key: STATS_SAVE_INTERVAL, value: draft.statsSaveInterval.trim() || "60" },
         { key: CORS_ALLOW_ORIGINS, value: normalizeOriginList(draft.corsAllowOrigins) || "*" },
-        { key: RELAY_LOG_KEEP_ENABLED, value: draft.relayLogKeepEnabled ? "true" : "false" },
-        { key: RELAY_LOG_KEEP_PERIOD, value: draft.relayLogKeepPeriod.trim() || "7" },
         { key: CIRCUIT_BREAKER_THRESHOLD, value: draft.circuitBreakerThreshold.trim() || "3" },
         { key: CIRCUIT_BREAKER_COOLDOWN, value: draft.circuitBreakerCooldown.trim() || "60" },
         { key: CIRCUIT_BREAKER_MAX_COOLDOWN, value: draft.circuitBreakerMaxCooldown.trim() || "600" },
@@ -259,36 +239,6 @@ export function SettingsScreen() {
       toast.error(message)
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function clearLogs() {
-    const confirmed = window.confirm(titleForLocale(locale, "确认删除全部请求日志？", "Delete all request logs?"))
-    if (!confirmed) {
-      return
-    }
-    setClearingLogs(true)
-    try {
-      await apiRequest<void>("/admin/request-logs", { method: "DELETE" })
-      toast.success(titleForLocale(locale, "请求日志已清空", "Request logs cleared"))
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview-dashboard"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview-summary"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview-daily"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview-models"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview-logs"] }),
-        queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] }),
-      ])
-    } catch (requestError) {
-      const message =
-        requestError instanceof ApiError
-          ? requestError.message
-          : titleForLocale(locale, "清空请求日志失败", "Failed to clear request logs")
-      toast.error(message)
-    } finally {
-      setClearingLogs(false)
     }
   }
 
@@ -507,47 +457,6 @@ export function SettingsScreen() {
     )
   }
 
-  function renderLogCard() {
-    return (
-      <SettingCard icon={CircleAlert} title={titleForLocale(locale, "日志", "Logs")}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "保留日志", "Keep logs")}</FieldLabel>
-            <SegmentedControl
-              className="!w-fit self-start"
-              value={draft.relayLogKeepEnabled ? "on" : "off"}
-              onValueChange={(value) => setDraftValue("relayLogKeepEnabled", value === "on")}
-              options={[
-                { value: "on", label: titleForLocale(locale, "开启", "On") },
-                { value: "off", label: titleForLocale(locale, "关闭", "Off") },
-              ]}
-            />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "保留天数", "Keep days")}</FieldLabel>
-            <Input
-              type="number"
-              min="1"
-              value={draft.relayLogKeepPeriod}
-              onChange={(event) => setDraftValue("relayLogKeepPeriod", event.target.value)}
-              disabled={!draft.relayLogKeepEnabled}
-            />
-          </Field>
-        </FieldGroup>
-        <Button
-          type="button"
-          variant="outline"
-          className="text-destructive hover:text-destructive"
-          onClick={() => void clearLogs()}
-          disabled={clearingLogs}
-        >
-          <Trash2 data-icon="inline-start" />
-          {clearingLogs ? titleForLocale(locale, "清空中...", "Clearing...") : titleForLocale(locale, "清空请求日志", "Clear request logs")}
-        </Button>
-      </SettingCard>
-    )
-  }
-
   function renderCircuitCard() {
     return (
       <SettingCard icon={ShieldAlert} title={titleForLocale(locale, "熔断器", "Circuit breaker")}>
@@ -581,13 +490,9 @@ export function SettingsScreen() {
     )
   }
 
-  function renderApiKeyCard() {
-    return <GatewayApiKeyManager locale={locale} />
-  }
-
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-6">
+    <section className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h1 className="text-xl font-semibold text-foreground">{titleForLocale(locale, "系统设置", "Settings")}</h1>
           <div className="flex items-center gap-2">
@@ -602,38 +507,13 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        <Tabs defaultValue="general" className="gap-4">
-          <TabsList className="grid h-auto w-full grid-cols-4">
-            <TabsTrigger value="general">{titleForLocale(locale, "站点", "General")}</TabsTrigger>
-            <TabsTrigger value="gateway">{titleForLocale(locale, "系统", "System")}</TabsTrigger>
-            <TabsTrigger value="access">{titleForLocale(locale, "密钥", "Keys")}</TabsTrigger>
-            <TabsTrigger value="transfer">{titleForLocale(locale, "导入导出", "Import/Export")}</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="general" className="mt-0">
-            <div className="grid gap-4 xl:grid-cols-2">
-              {renderAppearanceCard()}
-              {renderAccountCard()}
-              {renderTimeCard()}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="gateway" className="mt-0">
-            <div className="grid gap-4 xl:grid-cols-2">
-              {renderSystemCard()}
-              {renderLogCard()}
-              <div className="xl:col-span-2">{renderCircuitCard()}</div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="access" className="mt-0">
-            {renderApiKeyCard()}
-          </TabsContent>
-
-          <TabsContent value="transfer" className="mt-0">
-            <ConfigTransferCard locale={locale} />
-          </TabsContent>
-        </Tabs>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {renderAppearanceCard()}
+          {renderAccountCard()}
+          {renderTimeCard()}
+          {renderSystemCard()}
+          <div className="xl:col-span-2">{renderCircuitCard()}</div>
+        </div>
       </div>
     </section>
   )

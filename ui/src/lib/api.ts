@@ -732,7 +732,7 @@ export async function downloadConfigBackup(options?: {
     String(Boolean(options?.includeGatewayApiKeys))
   )
 
-  const response = await apiFetch('/admin/settings/export?' + params.toString(), {
+  const response = await apiFetch('/admin/backups/export?' + params.toString(), {
     method: 'GET',
   })
   const blob = await response.blob()
@@ -746,7 +746,7 @@ export async function downloadConfigBackup(options?: {
 export async function importConfigBackup(file: File) {
   const formData = new FormData()
   formData.append('file', file)
-  return apiRequest<ConfigImportResult>('/admin/settings/import', {
+  return apiRequest<ConfigImportResult>('/admin/backups/import', {
     method: 'POST',
     body: formData,
   })
