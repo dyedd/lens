@@ -22,7 +22,7 @@ import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, CalendarClock, Globe2, Layers3, LayoutDashboard, LogOut, PanelLeftClose, Settings2, Waypoints } from 'lucide-react'
+import { Activity, ArchiveRestore, CalendarClock, Globe2, KeyRound, Layers3, LayoutDashboard, LogOut, PanelLeftClose, Settings2, Waypoints } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -88,7 +88,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       label: locale === 'zh-CN' ? '系统' : 'System',
       items: [
         { key: 'settings' as DashboardView, href: DASHBOARD_ROUTES.settings, label: t.settings, icon: Settings2 },
+        { key: 'apiKeys' as DashboardView, href: DASHBOARD_ROUTES.apiKeys, label: t.apiKeys, icon: KeyRound },
         { key: 'cronjobs' as DashboardView, href: DASHBOARD_ROUTES.cronjobs, label: t.cronjobs, icon: CalendarClock },
+        { key: 'backups' as DashboardView, href: DASHBOARD_ROUTES.backups, label: t.backups, icon: ArchiveRestore },
       ],
     },
   ], [locale, t])
@@ -188,8 +190,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="min-h-0 flex-1">
-        <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b bg-card px-4">
+      <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        <header className="flex h-14 min-w-0 shrink-0 items-center justify-end gap-3 border-b bg-card px-4">
           <div className="flex shrink-0 items-center gap-2">
             <Button
               type="button"
@@ -207,8 +209,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted p-6 pb-8">
-          <div key={pathname} className="min-h-[calc(100vh-10rem)] animate-[fadeIn_.16s_ease-out]">
+        <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-muted p-6 pb-8">
+          <div key={pathname} className="min-h-[calc(100vh-10rem)] min-w-0 animate-[fadeIn_.16s_ease-out]">
             {children}
           </div>
         </div>

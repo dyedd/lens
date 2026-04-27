@@ -21,6 +21,7 @@ import {
   type CronjobItem,
   type CronjobRunResult,
   type CronjobScheduleType,
+  type SettingItem,
 } from "@/lib/api"
 import { formatLogDateTime } from "@/lib/datetime"
 import { useI18n, type Locale } from "@/lib/i18n"
@@ -33,6 +34,15 @@ type TaskDraft = {
   runAtMinute: string
   weekdays: string[]
 }
+
+type RetentionDraft = {
+  enabled: boolean
+  period: string
+}
+
+const REQUEST_LOG_PRUNE_TASK_ID = "request_log_prune"
+const RELAY_LOG_KEEP_ENABLED = "relay_log_keep_enabled"
+const RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
 
 const WEEKDAYS = [
   { value: "1", zh: "一", en: "Mon" },
@@ -72,7 +82,7 @@ function statusVariant(status: CronjobItem["status"]) {
 
 function taskTitle(locale: Locale, task: CronjobItem) {
   const labels: Record<string, [string, string]> = {
-    request_log_prune: ["请求日志清理", "Request log cleanup"],
+    [REQUEST_LOG_PRUNE_TASK_ID]: ["请求日志清理", "Request log cleanup"],
     model_price_sync: ["模型价格同步", "Model price sync"],
   }
   const label = labels[task.id]
@@ -84,7 +94,7 @@ function taskTitle(locale: Locale, task: CronjobItem) {
 
 function taskDescription(locale: Locale, task: CronjobItem) {
   const labels: Record<string, [string, string]> = {
-    request_log_prune: ["按日志保留天数清理过期请求日志", "Prune request logs by the retention window"],
+    [REQUEST_LOG_PRUNE_TASK_ID]: ["按日志保留天数清理过期请求日志", "Prune request logs by the retention window"],
     model_price_sync: ["从 models.dev 同步模型价格", "Sync model prices from models.dev"],
   }
   const label = labels[task.id]
@@ -131,6 +141,41 @@ function taskDraft(item: CronjobItem): TaskDraft {
     runAtMinute: runAt.runAtMinute,
     weekdays: sortedWeekdays((item.weekdays ?? []).map(String)),
   }
+}
+
+function parseRetentionSettings(items: SettingItem[] | undefined): RetentionDraft {
+  const mapping = new Map((items ?? []).map((item) => [item.key, item.value]))
+  return {
+    enabled: !["0", "false", "no", "off"].includes(
+      (mapping.get(RELAY_LOG_KEEP_ENABLED) ?? "true").toLowerCase()
+    ),
+    period: mapping.get(RELAY_LOG_KEEP_PERIOD) ?? "7",
+  }
+}
+
+function retentionDays(draft: RetentionDraft) {
+  return Number(draft.period)
+}
+
+function normalizeRetentionDraft(draft: RetentionDraft) {
+  return {
+    enabled: draft.enabled,
+    period: retentionDays(draft),
+  }
+}
+
+function isRetentionDraftChanged(settings: SettingItem[] | undefined, draft: RetentionDraft) {
+  const current = normalizeRetentionDraft(parseRetentionSettings(settings))
+  const next = normalizeRetentionDraft(draft)
+  return JSON.stringify(current) !== JSON.stringify(next)
+}
+
+function isRetentionDraftInvalid(draft: RetentionDraft) {
+  if (!draft.enabled) {
+    return false
+  }
+  const days = retentionDays(draft)
+  return !Number.isInteger(days) || days < 1
 }
 
 function normalizeDraftForCompare(draft: TaskDraft) {
@@ -254,6 +299,48 @@ function ScheduleEditor({
   )
 }
 
+function RetentionEditor({
+  draft,
+  locale,
+  invalid,
+  disabled,
+  onChange,
+}: {
+  draft: RetentionDraft
+  locale: Locale
+  invalid: boolean
+  disabled: boolean
+  onChange: (value: Partial<RetentionDraft>) => void
+}) {
+  return (
+    <div className="mx-auto flex min-w-52 max-w-52 flex-col items-center gap-2">
+      <div className="flex items-center justify-center gap-2">
+        <Switch
+          checked={draft.enabled}
+          disabled={disabled}
+          onCheckedChange={(checked) => onChange({ enabled: checked })}
+          aria-label={titleForLocale(locale, "保留日志", "Keep logs")}
+        />
+        <span className="text-sm text-muted-foreground">{titleForLocale(locale, "保留日志", "Keep logs")}</span>
+      </div>
+      <div className="flex items-center justify-center gap-2">
+        <span className="text-sm text-muted-foreground">{titleForLocale(locale, "保留", "Keep")}</span>
+        <Input
+          className="w-20"
+          type="number"
+          min="1"
+          step="1"
+          value={draft.period}
+          aria-invalid={invalid}
+          disabled={disabled || !draft.enabled}
+          onChange={(event) => onChange({ period: event.target.value })}
+        />
+        <span className="text-sm text-muted-foreground">{titleForLocale(locale, "天", "days")}</span>
+      </div>
+    </div>
+  )
+}
+
 function TimeSelector({
   locale,
   hour,
@@ -309,6 +396,7 @@ export function CronjobsScreen() {
   const { locale, t } = useI18n()
   const timeZone = useAppTimeZone()
   const [drafts, setDrafts] = useState<Record<string, TaskDraft>>({})
+  const [retentionDraftOverride, setRetentionDraftOverride] = useState<RetentionDraft | null>(null)
 
   const { data: tasks = [], isFetching } = useQuery({
     queryKey: ["cronjobs"],
@@ -316,10 +404,18 @@ export function CronjobsScreen() {
     staleTime: 10_000,
   })
 
+  const { data: settings, isFetching: isFetchingSettings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
+    staleTime: 5 * 60_000,
+  })
+
+  const retentionDraft = retentionDraftOverride ?? parseRetentionSettings(settings)
+
   const updateTask = useMutation({
-    mutationFn: (task: CronjobItem) => {
+    mutationFn: async (task: CronjobItem) => {
       const draft = drafts[task.id] ?? taskDraft(task)
-      return apiRequest<CronjobItem>("/admin/cronjobs/" + encodeURIComponent(task.id), {
+      const updatedTask = await apiRequest<CronjobItem>("/admin/cronjobs/" + encodeURIComponent(task.id), {
         method: "PUT",
         body: JSON.stringify({
           enabled: draft.enabled,
@@ -329,11 +425,28 @@ export function CronjobsScreen() {
           weekdays: draft.scheduleType === "weekly" ? draft.weekdays.map(Number) : [],
         }),
       })
+      if (task.id !== REQUEST_LOG_PRUNE_TASK_ID) {
+        return { task: updatedTask, settings: undefined }
+      }
+      const updatedSettings = await apiRequest<SettingItem[]>("/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          items: [
+            { key: RELAY_LOG_KEEP_ENABLED, value: retentionDraft.enabled ? "true" : "false" },
+            { key: RELAY_LOG_KEEP_PERIOD, value: retentionDraft.period.trim() || "7" },
+          ],
+        }),
+      })
+      return { task: updatedTask, settings: updatedSettings }
     },
-    onSuccess: (task) => {
+    onSuccess: (result, task) => {
       queryClient.setQueryData<CronjobItem[]>(["cronjobs"], (current) =>
-        (current ?? []).map((item) => (item.id === task.id ? task : item))
+        (current ?? []).map((item) => (item.id === result.task.id ? result.task : item))
       )
+      if (result.settings) {
+        queryClient.setQueryData(["settings"], result.settings)
+        setRetentionDraftOverride(null)
+      }
       setDrafts((current) => {
         const next = { ...current }
         delete next[task.id]
@@ -342,6 +455,8 @@ export function CronjobsScreen() {
       toast.success(titleForLocale(locale, "定时任务已保存", "Cron job saved"))
     },
     onError: (error) => {
+      void queryClient.invalidateQueries({ queryKey: ["cronjobs"] })
+      void queryClient.invalidateQueries({ queryKey: ["settings"] })
       toast.error(errorMessage(error, titleForLocale(locale, "保存定时任务失败", "Failed to save cron job")))
     },
   })
@@ -376,35 +491,46 @@ export function CronjobsScreen() {
     }))
   }
 
+  function setRetentionDraftValue(value: Partial<RetentionDraft>) {
+    setRetentionDraftOverride((current) => ({
+      ...(current ?? retentionDraft),
+      ...value,
+    }))
+  }
+
   async function refresh() {
-    await queryClient.invalidateQueries({ queryKey: ["cronjobs"] })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["cronjobs"] }),
+      queryClient.invalidateQueries({ queryKey: ["settings"] }),
+    ])
   }
 
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-6">
+    <section className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h1 className="text-xl font-semibold text-foreground">{t.cronjobs}</h1>
           <div className="flex items-center gap-2">
-            <Button variant="outline" type="button" onClick={() => void refresh()} disabled={isFetching}>
+            <Button variant="outline" type="button" onClick={() => void refresh()} disabled={isFetching || isFetchingSettings}>
               <RotateCcw data-icon="inline-start" />
               <span className="hidden sm:inline">{t.refresh}</span>
             </Button>
           </div>
         </div>
 
-        <Card className="py-0">
-          <CardContent className="p-5">
-            <Table>
+        <Card className="min-w-0 py-0">
+          <CardContent className="min-w-0 p-5">
+            <Table className="min-w-[1320px] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>{titleForLocale(locale, "任务", "Task")}</TableHead>
-                  <TableHead>{titleForLocale(locale, "启用", "Enabled")}</TableHead>
-                  <TableHead className="w-80 text-center">{titleForLocale(locale, "计划", "Schedule")}</TableHead>
-                  <TableHead>{titleForLocale(locale, "状态", "Status")}</TableHead>
-                  <TableHead>{titleForLocale(locale, "上次执行", "Last run")}</TableHead>
-                  <TableHead>{titleForLocale(locale, "下次执行", "Next run")}</TableHead>
-                  <TableHead className="text-right">{titleForLocale(locale, "操作", "Actions")}</TableHead>
+                  <TableHead className="w-64">{titleForLocale(locale, "任务", "Task")}</TableHead>
+                  <TableHead className="w-16">{titleForLocale(locale, "启用", "Enabled")}</TableHead>
+                  <TableHead className="w-72 text-center">{titleForLocale(locale, "计划", "Schedule")}</TableHead>
+                  <TableHead className="w-56 text-center">{titleForLocale(locale, "任务配置", "Task config")}</TableHead>
+                  <TableHead className="w-24">{titleForLocale(locale, "状态", "Status")}</TableHead>
+                  <TableHead className="w-36">{titleForLocale(locale, "上次执行", "Last run")}</TableHead>
+                  <TableHead className="w-36">{titleForLocale(locale, "下次执行", "Next run")}</TableHead>
+                  <TableHead className="w-40 text-right">{titleForLocale(locale, "操作", "Actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -412,7 +538,11 @@ export function CronjobsScreen() {
                   tasks.map((task) => {
                     const draft = drafts[task.id] ?? taskDraft(task)
                     const invalidDraft = isDraftInvalid(draft)
-                    const changed = isDraftChanged(task, draft)
+                    const retentionTask = task.id === REQUEST_LOG_PRUNE_TASK_ID
+                    const waitingForRetentionSettings = retentionTask && settings === undefined
+                    const invalidRetention = retentionTask && isRetentionDraftInvalid(retentionDraft)
+                    const retentionChanged = retentionTask && isRetentionDraftChanged(settings, retentionDraft)
+                    const changed = isDraftChanged(task, draft) || retentionChanged
                     const running = task.status === "running" || runningTaskId === task.id
                     return (
                       <TableRow key={task.id}>
@@ -437,6 +567,19 @@ export function CronjobsScreen() {
                             onChange={(value) => setDraftValue(task, value)}
                           />
                         </TableCell>
+                        <TableCell className="text-center align-middle">
+                          {retentionTask ? (
+                            <RetentionEditor
+                              draft={retentionDraft}
+                              locale={locale}
+                              invalid={invalidRetention}
+                              disabled={waitingForRetentionSettings}
+                              onChange={setRetentionDraftValue}
+                            />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             <Badge variant={statusVariant(task.status)}>{statusLabel(locale, task.status)}</Badge>
@@ -455,7 +598,7 @@ export function CronjobsScreen() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              disabled={!changed || invalidDraft || savingTaskId === task.id}
+                              disabled={!changed || waitingForRetentionSettings || invalidDraft || invalidRetention || savingTaskId === task.id}
                               onClick={() => updateTask.mutate(task)}
                             >
                               <Save data-icon="inline-start" />
@@ -480,7 +623,7 @@ export function CronjobsScreen() {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                       {isFetching
                         ? titleForLocale(locale, "加载中...", "Loading...")
                         : titleForLocale(locale, "暂无定时任务", "No cron jobs")}

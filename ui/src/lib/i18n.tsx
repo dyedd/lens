@@ -17,7 +17,9 @@ type Copy = {
   channels: string
   groups: string
   settings: string
+  apiKeys: string
   cronjobs: string
+  backups: string
   signOut: string
   overview: string
   language: string
@@ -38,7 +40,9 @@ const messages: Record<Locale, Copy> = {
     channels: '渠道管理',
     groups: '模型组管理',
     settings: '系统设置',
+    apiKeys: 'API 密钥',
     cronjobs: '定时任务',
+    backups: '备份恢复',
     signOut: '退出登录',
     overview: '总览',
     language: '语言',
@@ -57,7 +61,9 @@ const messages: Record<Locale, Copy> = {
     channels: 'Channels',
     groups: 'Group Management',
     settings: 'Settings',
+    apiKeys: 'API Keys',
     cronjobs: 'Cron jobs',
+    backups: 'Backup & Restore',
     signOut: 'Sign out',
     overview: 'Overview',
     language: 'Language',

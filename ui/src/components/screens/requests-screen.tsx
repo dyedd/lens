@@ -20,11 +20,12 @@ import {
   RefreshCcw,
   RotateCcw,
   ServerCog,
+  Trash2,
   Upload,
   Waypoints,
   Zap,
 } from 'lucide-react'
-import { GatewayApiKey, OverviewModelAnalytics, ProtocolKind, RequestLogDetail, RequestLogItem, RequestLogPage, apiRequest } from '@/lib/api'
+import { ApiError, GatewayApiKey, OverviewModelAnalytics, ProtocolKind, RequestLogDetail, RequestLogItem, RequestLogPage, apiRequest } from '@/lib/api'
 import { formatLogDateTime } from '@/lib/datetime'
 import { useAppTimeZone } from '@/hooks/use-app-time-zone'
 import { useI18n } from '@/lib/i18n'
@@ -828,6 +829,7 @@ export function RequestsScreen() {
   const [selectedGatewayKeyId, setSelectedGatewayKeyId] = useState('all')
   const [sortMode, setSortMode] = useState<SortMode>('latest')
   const [keyword, setKeyword] = useState('')
+  const [clearingLogs, setClearingLogs] = useState(false)
   const deferredKeyword = useDeferredValue(keyword.trim().toLowerCase())
   const effectiveGatewayKeyId = selectedGatewayKeyId === 'all' ? null : selectedGatewayKeyId
 
@@ -1069,6 +1071,39 @@ export function RequestsScreen() {
     ])
   }
 
+  async function clearRequestLogs() {
+    const confirmed = window.confirm(locale === 'zh-CN' ? '确认删除全部请求日志？' : 'Delete all request logs?')
+    if (!confirmed) {
+      return
+    }
+    setClearingLogs(true)
+    try {
+      await apiRequest<void>('/admin/request-logs', { method: 'DELETE' })
+      setPage(0)
+      setDetailId(null)
+      setAttemptDetailId(null)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['request-logs'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-daily'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-models'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-logs'] }),
+        queryClient.invalidateQueries({ queryKey: ['gateway-api-keys'] }),
+      ])
+      toast.success(locale === 'zh-CN' ? '请求日志已清空' : 'Request logs cleared')
+    } catch (requestError) {
+      toast.error(
+        requestError instanceof ApiError
+          ? requestError.message
+          : (locale === 'zh-CN' ? '清空请求日志失败' : 'Failed to clear request logs')
+      )
+    } finally {
+      setClearingLogs(false)
+    }
+  }
+
   return (
     <TooltipProvider>
       <section className="flex flex-col gap-4 md:gap-5">
@@ -1232,6 +1267,21 @@ export function RequestsScreen() {
                 </Field>
               </FieldGroup>
             </FieldSet>
+
+            <div className="mt-4 border-t pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full text-destructive hover:text-destructive"
+                onClick={() => void clearRequestLogs()}
+                disabled={clearingLogs}
+              >
+                <Trash2 data-icon="inline-start" />
+                {clearingLogs
+                  ? (locale === 'zh-CN' ? '清空中...' : 'Clearing...')
+                  : (locale === 'zh-CN' ? '清空请求日志' : 'Clear request logs')}
+              </Button>
+            </div>
           </div>
         </aside>
       </div>
