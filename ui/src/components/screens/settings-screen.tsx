@@ -11,8 +11,8 @@ import {
   Save,
   ServerCog,
   ShieldAlert,
-  TimerReset,
   UserRound,
+  TimerReset,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -35,7 +35,6 @@ import { useI18n, type Locale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 const PROXY_URL = "proxy_url"
-const STATS_SAVE_INTERVAL = "stats_save_interval"
 const CORS_ALLOW_ORIGINS = "cors_allow_origins"
 const CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"
 const CIRCUIT_BREAKER_COOLDOWN = "circuit_breaker_cooldown"
@@ -57,7 +56,6 @@ const TIME_ZONE_OPTIONS = [
 
 type DraftState = {
   proxyUrl: string
-  statsSaveInterval: string
   corsAllowOrigins: string
   circuitBreakerThreshold: string
   circuitBreakerCooldown: string
@@ -72,7 +70,6 @@ type DraftState = {
 
 const EMPTY_DRAFT: DraftState = {
   proxyUrl: "",
-  statsSaveInterval: "60",
   corsAllowOrigins: "*",
   circuitBreakerThreshold: "3",
   circuitBreakerCooldown: "60",
@@ -93,7 +90,6 @@ function parseSettings(items: SettingItem[] | undefined) {
   const mapping = new Map((items ?? []).map((item) => [item.key, item.value]))
   return {
     proxyUrl: mapping.get(PROXY_URL) ?? "",
-    statsSaveInterval: mapping.get(STATS_SAVE_INTERVAL) ?? "60",
     corsAllowOrigins: mapping.get(CORS_ALLOW_ORIGINS) ?? "*",
     circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
     circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
@@ -213,7 +209,6 @@ export function SettingsScreen() {
     try {
       const items: SettingItem[] = [
         { key: PROXY_URL, value: draft.proxyUrl.trim() },
-        { key: STATS_SAVE_INTERVAL, value: draft.statsSaveInterval.trim() || "60" },
         { key: CORS_ALLOW_ORIGINS, value: normalizeOriginList(draft.corsAllowOrigins) || "*" },
         { key: CIRCUIT_BREAKER_THRESHOLD, value: draft.circuitBreakerThreshold.trim() || "3" },
         { key: CIRCUIT_BREAKER_COOLDOWN, value: draft.circuitBreakerCooldown.trim() || "60" },
@@ -438,10 +433,6 @@ export function SettingsScreen() {
           <Field>
             <FieldLabel>{titleForLocale(locale, "全局代理地址", "Global proxy URL")}</FieldLabel>
             <Input value={draft.proxyUrl} onChange={(event) => setDraftValue("proxyUrl", event.target.value)} placeholder="http://127.0.0.1:7890" />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "统计保存周期(s)", "Stats save interval (s)")}</FieldLabel>
-            <Input type="number" min="1" value={draft.statsSaveInterval} onChange={(event) => setDraftValue("statsSaveInterval", event.target.value)} />
           </Field>
           <Field>
             <FieldLabel>{titleForLocale(locale, "CORS 跨域名单", "CORS allow origins")}</FieldLabel>

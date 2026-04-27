@@ -21,8 +21,6 @@ from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedSta
 
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
 SETTING_PROXY_URL = "proxy_url"
-SETTING_STATS_SAVE_INTERVAL = "stats_save_interval"
-SETTING_STATS_LAST_PERSIST_AT = "stats_last_persist_at"
 SETTING_STATS_TIME_ZONE = "stats_time_zone"
 SETTING_TIME_ZONE = "time_zone"
 SETTING_CORS_ALLOW_ORIGINS = "cors_allow_origins"
@@ -145,16 +143,6 @@ class DomainStore:
                 query = query.where(ModelGroupEntity.route_group_id == "")
             rows = await session.execute(query)
             return [str(item) for item in rows.scalars().all() if str(item).strip()]
-
-    async def prune_model_prices_to_groups(self, *, include_routed: bool = False) -> None:
-        group_names = await self.list_group_names(include_routed=include_routed)
-        normalized_keys = {normalize_model_key(item) for item in group_names if normalize_model_key(item)}
-        async with self._session_factory() as session:
-            if normalized_keys:
-                await session.execute(delete(ModelPriceEntity).where(ModelPriceEntity.model_key.not_in(normalized_keys)))
-            else:
-                await session.execute(delete(ModelPriceEntity))
-            await session.commit()
 
     async def replace_model_prices(self, model_prices: list[dict[str, int | float | str]]) -> None:
         async with self._session_factory() as session:
@@ -932,7 +920,6 @@ class DomainStore:
         time_zone = normalize_time_zone(mapping.get(SETTING_TIME_ZONE))
         return {
             "proxy_url": mapping.get(SETTING_PROXY_URL, "").strip(),
-            "stats_save_interval": self._parse_int(mapping.get(SETTING_STATS_SAVE_INTERVAL), default=60),
             "time_zone": time_zone,
             "cors_allow_origins": cors_allow_origins or ["*"],
             "relay_log_keep_enabled": self._parse_bool(mapping.get(SETTING_RELAY_LOG_KEEP_ENABLED), default=True),
@@ -984,7 +971,6 @@ class DomainStore:
 
     async def persist_request_log_stats(self, *, force: bool = False) -> None:
         runtime = await self.get_runtime_settings()
-        interval_seconds = max(int(runtime["stats_save_interval"]), 1)
         now = datetime.now(UTC).replace(tzinfo=None)
         time_zone = self._runtime_time_zone(runtime)
         local_now = now.replace(tzinfo=UTC).astimezone(time_zone)
@@ -1015,20 +1001,6 @@ class DomainStore:
                 force = True
 
             if not force:
-                last_persist_setting = await session.get(SettingEntity, SETTING_STATS_LAST_PERSIST_AT)
-                if last_persist_setting is None:
-                    session.add(SettingEntity(key=SETTING_STATS_LAST_PERSIST_AT, value=now.isoformat()))
-                    await session.commit()
-                    return
-                try:
-                    last_persist_at = datetime.fromisoformat(last_persist_setting.value.strip()) if last_persist_setting.value.strip() else None
-                except ValueError:
-                    last_persist_setting.value = now.isoformat()
-                    await session.commit()
-                    return
-                if last_persist_at is None or (now - last_persist_at).total_seconds() < interval_seconds:
-                    return
-
                 # Keep today's archived rows live so the current-day bucket can move
                 # with the configured application time zone.
                 await session.execute(
@@ -1133,12 +1105,6 @@ class DomainStore:
                     archive_stmt = archive_stmt.where(RequestLogEntity.created_at < today_start_utc)
                 await session.execute(archive_stmt.values(stats_archived=1))
 
-            last_persist_setting = await session.get(SettingEntity, SETTING_STATS_LAST_PERSIST_AT)
-            if last_persist_setting is None:
-                session.add(SettingEntity(key=SETTING_STATS_LAST_PERSIST_AT, value=now.isoformat()))
-            else:
-                last_persist_setting.value = now.isoformat()
-
             await session.commit()
 
     async def create_request_log(
@@ -1202,7 +1168,6 @@ class DomainStore:
             await session.commit()
             await session.refresh(entity)
             item = self._to_request_log(entity)
-        await self.persist_request_log_stats()
         return item
 
     async def list_request_logs(

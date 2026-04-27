@@ -41,6 +41,7 @@ type RetentionDraft = {
 }
 
 const REQUEST_LOG_PRUNE_TASK_ID = "request_log_prune"
+const REQUEST_LOG_STATS_PERSIST_TASK_ID = "request_log_stats_persist"
 const RELAY_LOG_KEEP_ENABLED = "relay_log_keep_enabled"
 const RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
 
@@ -83,6 +84,7 @@ function statusVariant(status: CronjobItem["status"]) {
 function taskTitle(locale: Locale, task: CronjobItem) {
   const labels: Record<string, [string, string]> = {
     [REQUEST_LOG_PRUNE_TASK_ID]: ["请求日志清理", "Request log cleanup"],
+    [REQUEST_LOG_STATS_PERSIST_TASK_ID]: ["请求日志统计落库", "Request log stats persist"],
     model_price_sync: ["模型价格同步", "Model price sync"],
   }
   const label = labels[task.id]
@@ -95,6 +97,7 @@ function taskTitle(locale: Locale, task: CronjobItem) {
 function taskDescription(locale: Locale, task: CronjobItem) {
   const labels: Record<string, [string, string]> = {
     [REQUEST_LOG_PRUNE_TASK_ID]: ["按日志保留天数清理过期请求日志", "Prune request logs by the retention window"],
+    [REQUEST_LOG_STATS_PERSIST_TASK_ID]: ["归档请求日志统计数据", "Persist request log statistics"],
     model_price_sync: ["从 models.dev 同步模型价格", "Sync model prices from models.dev"],
   }
   const label = labels[task.id]

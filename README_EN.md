@@ -83,7 +83,7 @@ Same-protocol requests are passed through directly. Current cross-protocol conve
 - Request logs include protocol, model, status, latency, token usage, errors, and attempt chains
 - Dashboard metrics include request volume, success rate, average latency, token trends, and model analytics
 - Model pricing can be synced from `models.dev` or maintained manually
-- Statistics are persisted on a configurable interval to avoid high-frequency writes
+- Statistics are persisted by scheduled tasks to avoid high-frequency aggregate writes
 
 ### Management Console
 
@@ -344,7 +344,7 @@ After clients start calling Lens:
 
 - Use `/requests` to inspect request status, protocol, model group, upstream model, latency, tokens, cost, and errors
 - Use `/` to inspect request volume, success rate, latency, and model trends
-- Use `/cronjobs` to configure log cleanup, model price sync, and other scheduled tasks
+- Use `/cronjobs` to configure log cleanup, stats persistence, model price sync, and other scheduled tasks
 - Use `/backups` to export configuration bundles; back up before migrations or upgrades
 
 ## Client Integration
