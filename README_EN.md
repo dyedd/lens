@@ -93,7 +93,10 @@ Console pages:
 - `/channels`: sites, channels, credentials, and models
 - `/groups`: model groups, routing, and pricing
 - `/requests`: request logs and details
-- `/settings`: gateway API keys, system settings, import/export, and account settings
+- `/api-keys`: gateway API key management
+- `/cronjobs`: scheduled tasks and log cleanup schedules
+- `/backups`: configuration export and import
+- `/settings`: system settings, site information, and account settings
 
 ## Tech Stack
 
@@ -160,13 +163,16 @@ Docker notes:
 ### Docker Run
 
 ```bash
+mkdir -p data
+
 docker run -d --name lens \
+  --env-file .env \
   -p 3000:3000 \
-  -v ./data:/app/data \
+  -v "$(pwd)/data:/app/data" \
   ghcr.io/dyedd/lens:latest
 ```
 
-Add `--env-file .env` to `docker run` if you need to load custom settings from `.env`; do not set `LENS_PORT` to the local development port in that file. Containers should keep `LENS_HOST=0.0.0.0` and `LENS_PORT=3000`.
+The `docker run` example assumes the current directory already contains a `.env` copied from `.env.example` and edited for deployment. Do not set `LENS_PORT` to the local development port in that file. Containers should keep `LENS_HOST=0.0.0.0` and `LENS_PORT=3000`.
 
 To build locally:
 
@@ -198,9 +204,12 @@ You can also build manually and run without Compose:
 ```bash
 docker build -t lens:local .
 
+mkdir -p data
+
 docker run -d --name lens \
+  --env-file .env \
   -p 3000:3000 \
-  -v ./data:/app/data \
+  -v "$(pwd)/data:/app/data" \
   lens:local
 ```
 
@@ -209,7 +218,7 @@ docker run -d --name lens \
 Install the backend:
 
 ```bash
-pip install -e .[dev]
+pip install -e ".[dev]"
 ```
 
 Install frontend dependencies:
@@ -233,9 +242,9 @@ Start both development servers:
 lens dev
 ```
 
-Local development ports:
+Default local development ports:
 
-- Next.js dev server: `http://127.0.0.1:3000`
+- Next.js dev server: `http://127.0.0.1:3000`; if the port is already in use, follow the URL printed by Next.js
 - FastAPI backend: `http://127.0.0.1:18080`
 - `lens dev` keeps frontend HMR, backend reload, and proxies frontend API calls to the backend
 
@@ -248,9 +257,99 @@ cd ui
 pnpm dev
 ```
 
+## First-Time Setup
+
+After deployment and login, configure Lens in this order. The core workflow is: add upstream channels, put upstream models into model groups, then issue gateway API keys to clients.
+
+### 1. Update the administrator account
+
+Open `/settings`:
+
+- Change the default administrator password
+- Configure the site name, logo, application time zone, CORS, and global proxy as needed
+- The default application time zone is `Asia/Shanghai`; it affects request log timestamps, statistics buckets, today windows, scheduled task run times, and backup filenames
+
+### 2. Add upstream sites and channels
+
+Open `/channels` and create a site:
+
+1. Enter a site name, for example `OpenAI`, `Anthropic`, `Gemini`, or the name of an internal compatible service
+2. Add a Base URL, for example `https://api.openai.com`
+3. Add an upstream API key
+4. Add a protocol config and choose the protocol the upstream actually supports, for example `OpenAI Chat`
+5. Discover models from the upstream, or enter model names manually
+6. Keep the models you want to use enabled
+
+Common Base URL examples:
+
+| Upstream type             | Base URL example                      | Protocol         |
+| ------------------------- | ------------------------------------- | ---------------- |
+| OpenAI                    | `https://api.openai.com`              | OpenAI Chat      |
+| OpenAI-compatible service | `https://example.com`                 | OpenAI Chat      |
+| Anthropic                 | `https://api.anthropic.com`           | Anthropic        |
+| Gemini                    | `https://generativelanguage.googleapis.com` | Gemini |
+
+For upstream Base URLs, the recommended value is the service root. Lens automatically appends `/v1` or `/v1beta` based on the selected protocol, and it also accepts addresses that already include `/v1` or `/v1beta`.
+
+### 3. Create model groups
+
+Open `/groups` and create a model group. The model group name is the `model` value clients will request.
+
+For example, to expose `gpt-4o-mini` to clients:
+
+1. Set the model group name to `gpt-4o-mini`
+2. Choose the client-facing protocol, for example `OpenAI Chat`
+3. Add one or more upstream models from the candidate list
+4. Choose a routing strategy:
+   - `round_robin`: distribute requests across enabled members with smooth weighted round robin
+   - `failover`: prefer earlier members and switch to later members after failures
+5. Save the group, then use route preview to confirm which upstreams can be selected
+
+The model group protocol means the client-facing protocol. Members do not always need to use the exact same upstream protocol. Lens can currently put OpenAI Chat upstream models into Anthropic or OpenAI Responses model groups and convert requests and responses at runtime.
+
+Examples:
+
+| Client-facing protocol | Model group name | Allowed upstream members                         |
+| ---------------------- | ---------------- | ------------------------------------------------ |
+| OpenAI Chat            | `gpt-4o-mini`    | OpenAI Chat upstream models                      |
+| Anthropic Messages     | `claude-alias`   | Anthropic upstream models, or OpenAI Chat upstream models |
+| OpenAI Responses       | `responses-main` | OpenAI Responses upstream models, or OpenAI Chat upstream models |
+| Gemini                 | `gemini-main`    | Gemini upstream models                           |
+
+### 4. Maintain model pricing
+
+Use the pricing area in `/groups`:
+
+- Sync prices from `models.dev`
+- Or maintain input, output, and cache prices manually
+- Request logs and dashboard cost estimates use these prices
+
+### 5. Create gateway API keys
+
+Open `/api-keys`:
+
+1. Create a gateway API key
+2. Optionally restrict allowed model groups, maximum spend, and expiration time
+3. Give the generated `sk-lens-...` key to downstream clients
+
+Clients only need:
+
+- Lens Base URL
+- Gateway API key
+- Model group name
+
+### 6. Call and troubleshoot
+
+After clients start calling Lens:
+
+- Use `/requests` to inspect request status, protocol, model group, upstream model, latency, tokens, cost, and errors
+- Use `/` to inspect request volume, success rate, latency, and model trends
+- Use `/cronjobs` to configure log cleanup, model price sync, and other scheduled tasks
+- Use `/backups` to export configuration bundles; back up before migrations or upgrades
+
 ## Client Integration
 
-Create a gateway API key in the settings page, then point downstream clients to Lens.
+Complete the first-time setup first so you have a model group and a gateway API key, then point downstream clients to Lens.
 
 ### OpenAI SDK
 
@@ -386,13 +485,13 @@ Backend configuration uses the `LENS_` prefix and also supports `.env` files. Lo
 | `LENS_SKIP_DB_UPGRADE`           | `0`                                   | Set to `1` to skip Docker startup migration              |
 | `LENS_UI_BACKEND_BASE_URL`       | `http://127.0.0.1:18080`              | Local Next.js dev/standalone proxy target                |
 
-In Docker deployments, Lens only reads `LENS_HOST` and `LENS_PORT`; generic `HOSTNAME` and `PORT` do not affect the backend listen address or port.
+The backend listen address and port are controlled by `LENS_HOST` and `LENS_PORT`; generic `HOSTNAME` and `PORT` do not affect them.
 
 The Docker image and `docker-compose.yml` explicitly set the database URL to `sqlite+aiosqlite:////app/data/data.db`; local development defaults to `sqlite+aiosqlite:///./data/data.db`. A deployment `.env` does not need `LENS_DATABASE_URL`, which avoids overriding the container path.
 
-Lens application time zone is not an environment variable. Choose it in the management console settings page; the default is `Asia/Shanghai`. Request log timestamps, today windows, trend buckets, backup filenames, and other in-app time displays use this setting.
+Lens application time zone is not an environment variable. Choose it in `/settings`; the default is `Asia/Shanghai`. Request log timestamps, today windows, trend buckets, backup filenames, and other in-app time displays use this setting.
 
-More runtime settings, including CORS, proxy, log retention, circuit breaker, health scoring, site name, and logo, can also be changed in the management console.
+More runtime settings, including CORS, proxy, circuit breaker, health scoring, site name, and logo, can be changed in `/settings`; log retention and cleanup schedules are changed in `/cronjobs`.
 
 ## Configuration Backup and Migration
 
@@ -403,6 +502,7 @@ The management console can export and import configuration bundles, including:
 - Gateway API keys
 - Model prices
 - System settings
+- Cron jobs
 - Optional statistics snapshots and request logs
 
 Back up the current data directory before importing a configuration bundle.

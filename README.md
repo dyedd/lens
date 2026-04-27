@@ -93,7 +93,10 @@ x-goog-api-key: <gateway-key>
 - `/channels`：站点、渠道、凭证、模型管理
 - `/groups`：模型组、路由策略、价格维护
 - `/requests`：请求日志和详情
-- `/settings`：网关 API Key、系统设置、配置导入导出、账号设置
+- `/api-keys`：网关 API Key 管理
+- `/cronjobs`：定时任务、日志清理计划
+- `/backups`：配置导出和导入恢复
+- `/settings`：系统设置、站点信息、账号设置
 
 ## 技术栈
 
@@ -160,13 +163,16 @@ Docker 说明：
 ### Docker Run
 
 ```bash
+mkdir -p data
+
 docker run -d --name lens \
+  --env-file .env \
   -p 3000:3000 \
-  -v ./data:/app/data \
+  -v "$(pwd)/data:/app/data" \
   ghcr.io/dyedd/lens:latest
 ```
 
-如需加载 `.env` 中的自定义配置，可在 `docker run` 中额外添加 `--env-file .env`；此时不要把 `LENS_PORT` 设成本地开发端口，容器内应保持 `LENS_HOST=0.0.0.0`、`LENS_PORT=3000`。
+`docker run` 示例假设当前目录已经有从 `.env.example` 复制并修改过的 `.env`。不要在这个 `.env` 里把 `LENS_PORT` 设成本地开发端口，容器内应保持 `LENS_HOST=0.0.0.0`、`LENS_PORT=3000`。
 
 如果使用本地构建镜像：
 
@@ -198,9 +204,12 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```bash
 docker build -t lens:local .
 
+mkdir -p data
+
 docker run -d --name lens \
+  --env-file .env \
   -p 3000:3000 \
-  -v ./data:/app/data \
+  -v "$(pwd)/data:/app/data" \
   lens:local
 ```
 
@@ -209,7 +218,7 @@ docker run -d --name lens \
 安装后端：
 
 ```bash
-pip install -e .[dev]
+pip install -e ".[dev]"
 ```
 
 安装前端依赖：
@@ -233,9 +242,9 @@ lens seed-admin --username admin --password admin
 lens dev
 ```
 
-本地开发端口：
+本地开发默认端口：
 
-- Next.js dev server：`http://127.0.0.1:3000`
+- Next.js dev server：`http://127.0.0.1:3000`，如果端口被占用，以 Next.js 输出为准
 - FastAPI 后端：`http://127.0.0.1:18080`
 - `lens dev` 会让前端自动代理 API 请求到后端，并保留前端 HMR 与后端 reload
 
@@ -248,9 +257,99 @@ cd ui
 pnpm dev
 ```
 
+## 首次使用流程
+
+完成部署并登录管理后台后，按下面顺序配置。Lens 的核心链路是：先配置上游渠道，再把上游模型加入模型组，最后给客户端发放网关 API Key。
+
+### 1. 修改管理员账号
+
+进入 `/settings`：
+
+- 修改默认管理员密码
+- 按需设置站点名称、Logo、业务时区、CORS 和全局代理
+- 业务时区默认是 `Asia/Shanghai`，会影响请求日志时间、统计分桶、今天窗口、定时任务执行时间和备份文件名
+
+### 2. 添加上游站点和渠道
+
+进入 `/channels`，新建一个站点：
+
+1. 填写站点名称，例如 `OpenAI`、`Anthropic`、`Gemini` 或内部兼容服务名称
+2. 添加 Base URL，例如 `https://api.openai.com`
+3. 添加上游 API Key
+4. 添加协议配置，选择上游真实支持的协议，例如 `OpenAI Chat`
+5. 点击发现模型，或手动录入模型名
+6. 保留需要使用的模型为启用状态
+
+常见 Base URL 示例：
+
+| 上游类型            | Base URL 示例                         | 协议选择         |
+| ------------------- | ------------------------------------- | ---------------- |
+| OpenAI              | `https://api.openai.com`              | OpenAI Chat      |
+| OpenAI 兼容服务     | `https://example.com`                 | OpenAI Chat      |
+| Anthropic           | `https://api.anthropic.com`           | Anthropic        |
+| Gemini              | `https://generativelanguage.googleapis.com` | Gemini |
+
+上游 Base URL 推荐填写服务根地址。Lens 会按协议自动补 `/v1` 或 `/v1beta`，也会兼容已经带 `/v1`、`/v1beta` 的地址。
+
+### 3. 创建模型组
+
+进入 `/groups`，新建模型组。模型组名称就是客户端请求时使用的 `model`。
+
+例如希望客户端使用 `gpt-4o-mini`：
+
+1. 模型组名称填 `gpt-4o-mini`
+2. 协议选择客户端要调用的协议，例如 `OpenAI Chat`
+3. 从候选列表加入一个或多个上游模型
+4. 选择路由策略：
+   - `round_robin`：多个成员按平滑轮询分发
+   - `failover`：优先使用前面的成员，失败后切到后面的成员
+5. 保存后可用路由预览确认请求会命中哪些上游
+
+模型组协议代表“客户端入口协议”，不要求所有成员都和它完全同协议。当前支持把 OpenAI Chat 上游加入 Anthropic 或 OpenAI Responses 模型组，运行时会自动转换请求和响应。
+
+示例：
+
+| 客户端入口协议     | 模型组名称       | 可加入的上游成员                         |
+| ------------------ | ---------------- | ---------------------------------------- |
+| OpenAI Chat        | `gpt-4o-mini`    | OpenAI Chat 上游模型                     |
+| Anthropic Messages | `claude-alias`   | Anthropic 上游模型，或 OpenAI Chat 上游模型 |
+| OpenAI Responses   | `responses-main` | OpenAI Responses 上游模型，或 OpenAI Chat 上游模型 |
+| Gemini             | `gemini-main`    | Gemini 上游模型                          |
+
+### 4. 维护模型价格
+
+进入 `/groups` 的价格区域：
+
+- 可以从 `models.dev` 同步价格
+- 也可以手动维护模型组的输入、输出、缓存价格
+- 请求日志和仪表盘的成本估算会使用这里的价格
+
+### 5. 创建网关 API Key
+
+进入 `/api-keys`：
+
+1. 新建一个网关 API Key
+2. 按需限制可用模型组、最大消费金额和过期时间
+3. 把生成的 `sk-lens-...` 发给下游客户端
+
+下游客户端只需要知道：
+
+- Lens Base URL
+- 网关 API Key
+- 模型组名称
+
+### 6. 调用并排查
+
+客户端调用后：
+
+- 在 `/requests` 查看请求状态、协议、模型组、上游模型、延迟、Token、成本和错误详情
+- 在 `/` 查看整体请求量、成功率、延迟和模型趋势
+- 在 `/cronjobs` 配置日志清理、模型价格同步等定时任务
+- 在 `/backups` 导出配置包，迁移或升级前建议先备份
+
 ## 客户端接入
 
-先在管理后台的设置页创建网关 API Key，然后将下游客户端的 Base URL 指向 Lens。
+先完成“首次使用流程”，确保已有模型组和网关 API Key，然后将下游客户端的 Base URL 指向 Lens。
 
 ### OpenAI SDK
 
@@ -386,13 +485,13 @@ lens db stamp head                            # 标记数据库为最新
 | `LENS_SKIP_DB_UPGRADE`           | `0`                                   | Docker 启动时设为 `1` 可跳过自动迁移            |
 | `LENS_UI_BACKEND_BASE_URL`       | `http://127.0.0.1:18080`              | 仅用于本地 Next.js dev/standalone 代理          |
 
-Docker 部署时，Lens 只读取 `LENS_HOST` 和 `LENS_PORT`；通用的 `HOSTNAME`、`PORT` 不会影响后端监听地址和端口。
+监听地址和端口由 `LENS_HOST` 和 `LENS_PORT` 控制；通用的 `HOSTNAME`、`PORT` 不会影响后端监听地址和端口。
 
 Docker 镜像和 `docker-compose.yml` 会把数据库连接显式设为 `sqlite+aiosqlite:////app/data/data.db`，本地开发默认使用 `sqlite+aiosqlite:///./data/data.db`；部署目录的 `.env` 不需要再写 `LENS_DATABASE_URL`，避免覆盖容器内路径。
 
-Lens 的业务时区不是环境变量；在管理后台设置页选择，默认 `Asia/Shanghai`。请求日志时间、今天窗口、趋势分桶、备份文件名等应用内时间显示都会使用这个设置。
+Lens 的业务时区不是环境变量；在 `/settings` 选择，默认 `Asia/Shanghai`。请求日志时间、今天窗口、趋势分桶、备份文件名等应用内时间显示都会使用这个设置。
 
-更多运行时设置，例如 CORS、代理、日志保留、断路器、健康评分、站点名称和 Logo，也可在管理后台设置页调整。
+更多运行时设置，例如 CORS、代理、断路器、健康评分、站点名称和 Logo，可在 `/settings` 调整；日志保留和清理计划在 `/cronjobs` 调整。
 
 ## 配置备份与迁移
 
@@ -403,6 +502,7 @@ Lens 的业务时区不是环境变量；在管理后台设置页选择，默认
 - 网关 API Key
 - 模型价格
 - 系统设置
+- 定时任务
 - 可选统计快照和请求日志
 
 导入前建议先备份当前数据目录。
