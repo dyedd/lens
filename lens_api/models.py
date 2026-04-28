@@ -407,6 +407,14 @@ class AppInfo(BaseModel):
     time_zone: str
 
 
+class VersionCheckResult(BaseModel):
+    current_version: str
+    latest_version: str
+    release_url: str
+    has_update: bool
+    checked_at: str
+
+
 class ModelGroup(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

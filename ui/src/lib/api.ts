@@ -381,6 +381,13 @@ export type AppInfo = {
   time_zone: string
 }
 
+export type VersionCheckResult = {
+  current_version: string
+  latest_version: string
+  release_url: string
+  has_update: boolean
+  checked_at: string
+}
 
 export type AdminProfile = {
   id: number

@@ -74,14 +74,18 @@ from ..models import (
     SiteModelFetchRequest,
     SiteRuntimeSummary,
     SiteUpdate,
+    VersionCheckResult,
 )
 from ..persistence.admin_store import AdminStore
 from ..persistence.backup_store import BackupStore
 from ..persistence.channel_store import ChannelStore
 from ..persistence.domain_store import (
+    SETTING_LATEST_VERSION,
+    SETTING_LATEST_VERSION_URL,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
+    SETTING_VERSION_CHECK_AT,
     DomainStore,
 )
 from ..persistence.cronjob_store import CronjobSpec, CronjobStore
@@ -104,6 +108,7 @@ from .upstreams import (
 TASK_REQUEST_LOG_PRUNE = "request_log_prune"
 TASK_MODEL_PRICE_SYNC = "model_price_sync"
 TASK_REQUEST_LOG_STATS_PERSIST = "request_log_stats_persist"
+TASK_VERSION_CHECK = "version_check"
 
 CRONJOB_SPECS = (
     CronjobSpec(
@@ -123,6 +128,12 @@ CRONJOB_SPECS = (
         name="请求日志统计落库",
         description="归档请求日志统计数据",
         default_interval_hours=1,
+    ),
+    CronjobSpec(
+        id=TASK_VERSION_CHECK,
+        name="版本检测",
+        description="检测 GitHub releases 是否有新版本",
+        default_interval_hours=24,
     ),
 )
 
@@ -154,6 +165,7 @@ class AppState:
                 TASK_REQUEST_LOG_PRUNE: self.domain_store.prune_request_logs,
                 TASK_MODEL_PRICE_SYNC: lambda: _sync_group_prices(self, overwrite_existing=True),
                 TASK_REQUEST_LOG_STATS_PERSIST: self.domain_store.persist_request_log_stats,
+                TASK_VERSION_CHECK: self._check_version_update,
             },
             time_zone_provider=self._runtime_time_zone,
             logger=logger,
@@ -174,6 +186,38 @@ class AppState:
     async def _runtime_time_zone(self) -> ZoneInfo:
         runtime = await self.domain_store.get_runtime_settings()
         return resolve_time_zone(str(runtime["time_zone"]))
+
+    async def _check_version_update(self) -> None:
+        from packaging import version
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.get(
+                    "https://api.github.com/repos/dyedd/lens/releases/latest",
+                    headers={"Accept": "application/vnd.github.v3+json"}
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                latest_version = data.get("tag_name", "").lstrip("v")
+                release_url = data.get("html_url", "")
+
+                current_version = _read_system_version()
+
+                if latest_version and version.parse(latest_version) > version.parse(current_version):
+                    await self.domain_store.upsert_settings([
+                        SettingItem(key=SETTING_LATEST_VERSION, value=latest_version),
+                        SettingItem(key=SETTING_LATEST_VERSION_URL, value=release_url),
+                        SettingItem(key=SETTING_VERSION_CHECK_AT, value=datetime.now(UTC).isoformat()),
+                    ])
+                else:
+                    await self.domain_store.upsert_settings([
+                        SettingItem(key=SETTING_VERSION_CHECK_AT, value=datetime.now(UTC).isoformat()),
+                        SettingItem(key=SETTING_LATEST_VERSION, value=""),
+                        SettingItem(key=SETTING_LATEST_VERSION_URL, value=""),
+                    ])
+        except Exception:
+            logger.exception("版本检查失败")
 
 
 @dataclass
@@ -498,6 +542,34 @@ async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
         site_name=str(runtime["site_name"]),
         logo_url=str(runtime["site_logo_url"]),
         time_zone=str(runtime["time_zone"]),
+    )
+
+
+async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResult:
+    from packaging import version
+
+    current_version = _read_system_version()
+
+    settings = await app_state.domain_store.list_settings()
+    settings_dict = {s.key: s.value for s in settings}
+
+    latest_version = settings_dict.get(SETTING_LATEST_VERSION, "")
+    latest_url = settings_dict.get(SETTING_LATEST_VERSION_URL, "")
+    checked_at = settings_dict.get(SETTING_VERSION_CHECK_AT, "")
+
+    has_update = False
+    if latest_version:
+        try:
+            has_update = version.parse(latest_version) > version.parse(current_version)
+        except Exception:
+            pass
+
+    return VersionCheckResult(
+        current_version=current_version,
+        latest_version=latest_version if has_update else "",
+        release_url=latest_url if has_update else "",
+        has_update=has_update,
+        checked_at=checked_at,
     )
 
 
