@@ -118,6 +118,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const versionLabel = currentVersion
     ? `${locale === 'zh-CN' ? '版本号' : 'Version'} ${currentVersion}`
     : (appInfo ? (locale === 'zh-CN' ? '版本未获取' : 'Unavailable') : (locale === 'zh-CN' ? '加载中...' : 'Loading...'))
+  const compactVersionLabel = currentVersion || (appInfo ? '-' : '...')
   const updateLabel = versionCheck?.latest_version
     ? `${locale === 'zh-CN' ? '有新版本' : 'Update'} ${versionCheck.latest_version}`
     : (locale === 'zh-CN' ? '有新版本' : 'Update available')
@@ -170,16 +171,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider className="h-dvh max-h-dvh overflow-hidden">
       <Sidebar collapsible="icon" className="z-20">
-        <SidebarHeader className="min-h-[4.5rem] px-4 py-3">
+        <SidebarHeader className="min-h-16 px-4 py-3">
           <div className="flex w-full items-center justify-between gap-2 group-data-[collapsible=icon]:justify-center">
-            <div className="flex min-w-0 items-center gap-2 group-data-[collapsible=icon]:hidden">
+            <div className="flex min-w-0 items-center gap-2.5 group-data-[collapsible=icon]:hidden">
               <Image
                 src={logoUrl}
                 alt={siteName}
-                width={36}
-                height={36}
+                width={32}
+                height={32}
                 loading="eager"
-                className="shrink-0 object-contain"
+                className="size-8 shrink-0 object-contain"
                 unoptimized={logoUrl !== '/logo.svg'}
               />
               <span className="truncate text-base font-semibold text-sidebar-foreground">
@@ -215,10 +216,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <SidebarSeparator />
           <div className="flex flex-col gap-2 px-2 pt-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
             <div
-              className="text-center text-sm font-medium text-sidebar-foreground/90 group-data-[collapsible=icon]:text-xs"
+              className="whitespace-nowrap text-center text-sm font-medium text-sidebar-foreground/90 group-data-[collapsible=icon]:text-xs"
               title={versionLabel}
             >
-              {versionLabel}
+              <span className="group-data-[collapsible=icon]:hidden">{versionLabel}</span>
+              <span className="hidden group-data-[collapsible=icon]:inline">{compactVersionLabel}</span>
             </div>
             {versionCheck?.has_update ? (
               versionCheck.release_url ? (
