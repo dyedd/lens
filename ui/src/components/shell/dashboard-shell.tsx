@@ -10,7 +10,6 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -18,6 +17,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar'
+import { Badge } from '@/components/ui/badge'
 import { DASHBOARD_ROUTES, getDashboardViewFromPathname, type DashboardView } from '@/components/shell/dashboard-routes'
 import { apiRequest, type AppInfo, type VersionCheckResult } from '@/lib/api'
 import { clearStoredToken } from '@/lib/auth'
@@ -57,8 +57,6 @@ function CollapseButton({ label, iconOnly = false }: { label: string; iconOnly?:
 function ShellNavItem({
   item,
   activeView,
-  hasVersionUpdate,
-  locale,
   onIntent,
 }: {
   item: {
@@ -68,16 +66,10 @@ function ShellNavItem({
     icon: React.ComponentType
   }
   activeView: DashboardView
-  hasVersionUpdate: boolean | undefined
-  locale: string
   onIntent: (href: string) => void
 }) {
   const { isMobile, setOpenMobile } = useSidebar()
   const Icon = item.icon
-  const hasUpdate = hasVersionUpdate && item.key === 'settings'
-  const tooltipLabel = hasUpdate
-    ? `${item.label} (${locale === 'zh-CN' ? '有新版本' : 'Update available'})`
-    : item.label
 
   function handleNavigate() {
     if (isMobile) {
@@ -90,7 +82,7 @@ function ShellNavItem({
       <SidebarMenuButton
         asChild
         isActive={activeView === item.key}
-        tooltip={tooltipLabel}
+        tooltip={item.label}
         onMouseEnter={() => onIntent(item.href)}
         onFocus={() => onIntent(item.href)}
         className={cn(activeView === item.key && 'font-medium')}
@@ -100,9 +92,6 @@ function ShellNavItem({
           <span>{item.label}</span>
         </Link>
       </SidebarMenuButton>
-      {hasUpdate && (
-        <SidebarMenuBadge className="bg-red-500 text-white">!</SidebarMenuBadge>
-      )}
     </SidebarMenuItem>
   )
 }
@@ -129,6 +118,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const versionLabel = currentVersion
     ? `${locale === 'zh-CN' ? '版本号' : 'Version'} ${currentVersion}`
     : (appInfo ? (locale === 'zh-CN' ? '版本未获取' : 'Unavailable') : (locale === 'zh-CN' ? '加载中...' : 'Loading...'))
+  const updateLabel = versionCheck?.latest_version
+    ? `${locale === 'zh-CN' ? '有新版本' : 'Update'} ${versionCheck.latest_version}`
+    : (locale === 'zh-CN' ? '有新版本' : 'Update available')
+  const updateTitle = versionCheck?.release_url
+    ? updateLabel
+    : `${updateLabel} (${locale === 'zh-CN' ? '暂无发布链接' : 'No release link'})`
 
   const navGroups = useMemo(() => [
     {
@@ -209,8 +204,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                     key={item.key}
                     item={item}
                     activeView={activeView}
-                    hasVersionUpdate={versionCheck?.has_update}
-                    locale={locale}
                     onIntent={handleViewIntent}
                   />
                 ))}
@@ -227,15 +220,39 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             >
               {versionLabel}
             </div>
+            {versionCheck?.has_update ? (
+              versionCheck.release_url ? (
+                <Badge
+                  asChild
+                  variant="destructive"
+                  className="mx-auto max-w-full group-data-[collapsible=icon]:size-5 group-data-[collapsible=icon]:px-0"
+                  title={updateTitle}
+                >
+                  <a href={versionCheck.release_url} target="_blank" rel="noreferrer">
+                    <span className="group-data-[collapsible=icon]:hidden">{updateLabel}</span>
+                    <span className="hidden group-data-[collapsible=icon]:inline">!</span>
+                  </a>
+                </Badge>
+              ) : (
+                <Badge
+                  variant="destructive"
+                  className="mx-auto max-w-full group-data-[collapsible=icon]:size-5 group-data-[collapsible=icon]:px-0"
+                  title={updateTitle}
+                >
+                  <span className="group-data-[collapsible=icon]:hidden">{updateLabel}</span>
+                  <span className="hidden group-data-[collapsible=icon]:inline">!</span>
+                </Badge>
+              )
+            ) : null}
             <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip="GitHub" className="justify-center group-data-[collapsible=icon]:justify-center">
-                <a href={GITHUB_REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">
-                  <GitHubMark />
-                  <span>GitHub</span>
-                </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="GitHub" className="justify-center group-data-[collapsible=icon]:justify-center">
+                  <a href={GITHUB_REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">
+                    <GitHubMark />
+                    <span>GitHub</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </div>
         </SidebarFooter>
