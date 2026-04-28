@@ -383,7 +383,7 @@ function CompactPriceSummary({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <span>{compactMetricLabel('input', locale)} ${formatMoney(inputPrice)}</span>
           <span>{compactMetricLabel('output', locale)} ${formatMoney(outputPrice)}</span>
           <span>{compactMetricLabel('cache_read', locale)} ${formatMoney(cacheReadPrice)}</span>
@@ -461,10 +461,10 @@ function StrategyToggle({
       variant="outline"
       size={size}
       spacing={1}
-      className={cn('flex-wrap', className)}
+      className={cn('max-w-full flex-wrap', className)}
     >
       {strategyOptions.map((option) => (
-        <ToggleGroupItem key={option.value} value={option.value} disabled={disabled}>
+        <ToggleGroupItem key={option.value} value={option.value} disabled={disabled} className="max-w-full">
           {locale === 'zh-CN' ? option.zh : option.en}
         </ToggleGroupItem>
       ))}
@@ -529,7 +529,7 @@ function SelectedMemberRow({
       onDragOver={(event) => event.preventDefault()}
       onDragEnd={onDragEnd}
       className={cn(
-        'flex items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0',
+        'flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0',
         dragging && 'opacity-60 shadow-sm',
         !item.enabled && 'opacity-55'
       )}
@@ -608,6 +608,7 @@ export function GroupsScreen() {
   const [cardDragging, setCardDragging] = useState<{ groupId: string; index: number } | null>(null)
   const [showEnabledOnly, setShowEnabledOnly] = useState(false)
   const [syncingPrices, setSyncingPrices] = useState(false)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
 
   const { data: groups, isLoading } = useQuery({
     queryKey: ['groups'],
@@ -1079,9 +1080,9 @@ export function GroupsScreen() {
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '模型组' : 'Groups'}</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => void syncPrices()} disabled={syncingPrices}>
             <RefreshCcw data-icon="inline-start" className={syncingPrices ? 'animate-spin' : ''} />
             {syncingPrices
@@ -1096,14 +1097,26 @@ export function GroupsScreen() {
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
         <div className="order-2 grid gap-4 xl:order-1">
-          <div className="rounded-2xl border bg-card px-4 py-4 sm:px-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="rounded-2xl border bg-card px-4 py-3 sm:px-5 sm:py-4">
+            <div className="flex items-center justify-between gap-3 sm:mb-3">
               <div>
                 <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '选择模型系列' : 'Choose model series'}</div>
               </div>
             </div>
 
-            <div className="flex snap-x gap-3 overflow-x-auto pb-1">
+            <NativeSelect
+              className="mt-3 w-full sm:hidden"
+              value={effectiveSelectedSeries}
+              onChange={(event) => setSelectedSeries(event.target.value as SelectedSeries)}
+            >
+              {seriesOptions.map((option) => (
+                <NativeSelectOption key={option.key} value={option.key}>
+                  {locale === 'zh-CN' ? option.zh : option.en}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+
+            <div className="hidden snap-x gap-3 overflow-x-auto pb-1 sm:flex">
               {seriesOptions.map((option) => (
                 <SeriesChip
                   key={option.key}
@@ -1117,8 +1130,8 @@ export function GroupsScreen() {
             </div>
           </div>
 
-          <Card className="min-h-[calc(100dvh-18rem)] overflow-hidden py-0">
-            <CardContent className="max-h-[calc(100dvh-18rem)] overflow-y-auto px-3 py-3">
+          <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-18rem)]">
+            <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
               {isLoading ? (
                 <div className="px-2 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</div>
               ) : visibleGroups.length ? (
@@ -1140,7 +1153,7 @@ export function GroupsScreen() {
                           }
                         }}
                       >
-                        <ItemMedia variant="icon" className="mt-0.5 flex size-11 self-start rounded-xl bg-muted/40">
+                        <ItemMedia variant="icon" className="mt-0.5 hidden size-11 self-start rounded-xl bg-muted/40 sm:flex">
                           <GroupAvatar size={30} />
                         </ItemMedia>
                         <ItemContent className="min-w-0">
@@ -1181,7 +1194,7 @@ export function GroupsScreen() {
                                 locale={locale}
                                 disabled={busyId === group.id}
                                 size="sm"
-                                className="w-fit"
+                                className="w-fit max-w-full"
                                 onChange={(value) => void changeStrategy(group, value)}
                               />
                             </ItemFooter>
@@ -1201,7 +1214,7 @@ export function GroupsScreen() {
                                 <div
                                   key={`${itemKey(item)}::${index}`}
                                   className={cn(
-                                    'flex max-w-full items-center rounded-full border bg-background',
+                                    'flex min-w-0 max-w-full items-center rounded-full border bg-background',
                                     !item.enabled && 'opacity-55',
                                     cardDragging?.groupId === group.id && cardDragging.index === index && 'opacity-60'
                                   )}
@@ -1212,7 +1225,7 @@ export function GroupsScreen() {
                                     variant="ghost"
                                     size="sm"
                                     draggable={busyId !== group.id}
-                                    className="h-auto max-w-full rounded-full rounded-r-none border-0 px-3 py-1.5 cursor-grab active:cursor-grabbing"
+                                    className="h-auto min-w-0 max-w-full rounded-full rounded-r-none border-0 px-3 py-1.5 cursor-grab active:cursor-grabbing"
                                     onDragStart={() => setCardDragging({ groupId: group.id, index })}
                                     onDragOver={(event) => event.preventDefault()}
                                     onDrop={() => {
@@ -1222,8 +1235,8 @@ export function GroupsScreen() {
                                     onDragEnd={() => setCardDragging(null)}
                                   >
                                     <GripVertical data-icon="inline-start" />
-                                    <span className="truncate">{item.model_name}</span>
-                                    <span className="truncate text-muted-foreground">· {channelName}</span>
+                                    <span className="min-w-0 truncate">{item.model_name}</span>
+                                    <span className="min-w-0 truncate text-muted-foreground">· {channelName}</span>
                                   </Button>
                                   <Button
                                     type="button"
@@ -1245,7 +1258,7 @@ export function GroupsScreen() {
                           </div>
                         </ItemContent>
                         <ItemActions
-                          className="ml-auto self-start"
+                          className="basis-full flex-wrap justify-end self-start sm:ml-auto sm:basis-auto sm:shrink-0"
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
@@ -1276,7 +1289,7 @@ export function GroupsScreen() {
 
         <aside className="order-1 xl:order-2">
           <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary/[0.08] text-primary">
                   <Filter size={16} />
@@ -1288,71 +1301,86 @@ export function GroupsScreen() {
                   </div>
                 </div>
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={resetFilters} disabled={!activeFilterCount && sortBy === 'members-desc'}>
-                {locale === 'zh-CN' ? '清空' : 'Clear'}
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button type="button" variant="ghost" size="sm" onClick={resetFilters} disabled={!activeFilterCount && sortBy === 'members-desc'}>
+                  {locale === 'zh-CN' ? '清空' : 'Clear'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="xl:hidden"
+                  onClick={() => setMobileFiltersOpen((current) => !current)}
+                  aria-expanded={mobileFiltersOpen}
+                  aria-label={locale === 'zh-CN' ? '展开筛选' : 'Toggle filters'}
+                >
+                  <ChevronDown className={cn('transition-transform', mobileFiltersOpen && 'rotate-180')} />
+                </Button>
+              </div>
             </div>
 
-            <FieldSet className="gap-4">
-              <FieldLegend>{locale === 'zh-CN' ? '筛选条件' : 'Refine results'}</FieldLegend>
-              <FieldGroup className="gap-4">
-                <Field>
-                  <FieldLabel>{locale === 'zh-CN' ? '关键词' : 'Keyword'}</FieldLabel>
-                  <ToolbarSearchInput
-                    value={search}
-                    onChange={setSearch}
-                    onClear={() => setSearch('')}
-                    placeholder={locale === 'zh-CN' ? '模型组 / 渠道 / 模型' : 'Group / channel / model'}
-                    className="max-w-none"
-                  />
-                </Field>
+            <div className={cn('mt-4', !mobileFiltersOpen && 'hidden xl:block')}>
+              <FieldSet className="gap-4">
+                <FieldLegend>{locale === 'zh-CN' ? '筛选条件' : 'Refine results'}</FieldLegend>
+                <FieldGroup className="gap-4">
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '关键词' : 'Keyword'}</FieldLabel>
+                    <ToolbarSearchInput
+                      value={search}
+                      onChange={setSearch}
+                      onClear={() => setSearch('')}
+                      placeholder={locale === 'zh-CN' ? '模型组 / 渠道 / 模型' : 'Group / channel / model'}
+                      className="max-w-none"
+                    />
+                  </Field>
 
-                <Field>
-                  <FieldLabel>{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
-                  <NativeSelect value={protocolFilter} className={selectClassName()} onChange={(event) => setProtocolFilter(event.target.value as 'all' | ProtocolKind)}>
-                    <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
-                    {protocolOptions(locale).map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
-                  </NativeSelect>
-                </Field>
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
+                    <NativeSelect value={protocolFilter} className={selectClassName()} onChange={(event) => setProtocolFilter(event.target.value as 'all' | ProtocolKind)}>
+                      <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
+                      {protocolOptions(locale).map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
+                    </NativeSelect>
+                  </Field>
 
-                <Field>
-                  <FieldLabel>{locale === 'zh-CN' ? '策略' : 'Strategy'}</FieldLabel>
-                  <ToggleGroup
-                    type="single"
-                    value={strategyFilter}
-                    onValueChange={(value) => {
-                      if (value) {
-                        setStrategyFilter(value as 'all' | RoutingStrategy)
-                      }
-                    }}
-                    variant="outline"
-                    size="default"
-                    spacing={1}
-                    className="grid w-full grid-cols-3"
-                  >
-                    <ToggleGroupItem value="all">{locale === 'zh-CN' ? '全部' : 'All'}</ToggleGroupItem>
-                    <ToggleGroupItem value="round_robin">{locale === 'zh-CN' ? '轮询' : 'Round Robin'}</ToggleGroupItem>
-                    <ToggleGroupItem value="failover">{locale === 'zh-CN' ? '故障转移' : 'Failover'}</ToggleGroupItem>
-                  </ToggleGroup>
-                </Field>
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '策略' : 'Strategy'}</FieldLabel>
+                    <ToggleGroup
+                      type="single"
+                      value={strategyFilter}
+                      onValueChange={(value) => {
+                        if (value) {
+                          setStrategyFilter(value as 'all' | RoutingStrategy)
+                        }
+                      }}
+                      variant="outline"
+                      size="default"
+                      spacing={1}
+                      className="grid w-full grid-cols-3"
+                    >
+                      <ToggleGroupItem value="all" className="w-full truncate px-1.5">{locale === 'zh-CN' ? '全部' : 'All'}</ToggleGroupItem>
+                      <ToggleGroupItem value="round_robin" className="w-full truncate px-1.5">{locale === 'zh-CN' ? '轮询' : 'Round Robin'}</ToggleGroupItem>
+                      <ToggleGroupItem value="failover" className="w-full truncate px-1.5">{locale === 'zh-CN' ? '故障转移' : 'Failover'}</ToggleGroupItem>
+                    </ToggleGroup>
+                  </Field>
 
-                <Field>
-                  <FieldLabel>{locale === 'zh-CN' ? '排序' : 'Sort'}</FieldLabel>
-                  <NativeSelect value={sortBy} className={selectClassName()} onChange={(event) => setSortBy(event.target.value as GroupSort)}>
-                    <NativeSelectOption value="members-desc">{locale === 'zh-CN' ? '成员优先' : 'Members first'}</NativeSelectOption>
-                    <NativeSelectOption value="enabled-desc">{locale === 'zh-CN' ? '启用优先' : 'Enabled first'}</NativeSelectOption>
-                    <NativeSelectOption value="name-asc">{locale === 'zh-CN' ? '名称 A-Z' : 'Name A-Z'}</NativeSelectOption>
-                    <NativeSelectOption value="name-desc">{locale === 'zh-CN' ? '名称 Z-A' : 'Name Z-A'}</NativeSelectOption>
-                  </NativeSelect>
-                </Field>
-              </FieldGroup>
-            </FieldSet>
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '排序' : 'Sort'}</FieldLabel>
+                    <NativeSelect value={sortBy} className={selectClassName()} onChange={(event) => setSortBy(event.target.value as GroupSort)}>
+                      <NativeSelectOption value="members-desc">{locale === 'zh-CN' ? '成员优先' : 'Members first'}</NativeSelectOption>
+                      <NativeSelectOption value="enabled-desc">{locale === 'zh-CN' ? '启用优先' : 'Enabled first'}</NativeSelectOption>
+                      <NativeSelectOption value="name-asc">{locale === 'zh-CN' ? '名称 A-Z' : 'Name A-Z'}</NativeSelectOption>
+                      <NativeSelectOption value="name-desc">{locale === 'zh-CN' ? '名称 Z-A' : 'Name Z-A'}</NativeSelectOption>
+                    </NativeSelect>
+                  </Field>
+                </FieldGroup>
+              </FieldSet>
+            </div>
           </div>
         </aside>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AppDialogContent className="max-w-6xl h-[88vh]" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
+        <AppDialogContent className="h-[92dvh] max-w-6xl sm:h-[88vh]" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
           <form className="flex flex-col gap-4 pr-1" onSubmit={submit}>
             <div className="flex flex-col gap-4">
               <section className="grid gap-4">
@@ -1412,14 +1440,14 @@ export function GroupsScreen() {
 
                   <Separator />
 
-                  <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+                  <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
                   <section className={panelClassName('flex flex-col')}>
                 <div className="grid gap-3 px-2 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
                     <Search size={14} className="text-muted-foreground" />
                     <Input className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0" value={candidateSearch} onChange={(e) => setCandidateSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型或 /正则/' : 'Search models or /regex/'} />
                   </div>
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button type="button" variant="outline" onClick={addMatchedItems} disabled={!filteredCandidates.length}>
                       <Sparkles size={13} />
                       {locale === 'zh-CN' ? `加入当前筛选 ${filteredCandidates.length}` : `Add filtered ${filteredCandidates.length}`}
@@ -1469,7 +1497,7 @@ export function GroupsScreen() {
               </section>
 
               <section className={panelClassName('flex flex-col')}>
-                <div className="flex items-center justify-between px-2 py-1">
+                <div className="flex flex-col items-start justify-between gap-3 px-2 py-1 sm:flex-row sm:items-center">
                   <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button type="button" variant="outline" className="text-muted-foreground" onClick={() => setAllMembersEnabled(true)}>{locale === 'zh-CN' ? '全开' : 'Enable all'}</Button>
@@ -1510,7 +1538,7 @@ export function GroupsScreen() {
             </div>
 
             <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
                 <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
                 <Button type="submit">{editingId ? (locale === 'zh-CN' ? '保存模型组' : 'Save group') : (locale === 'zh-CN' ? '创建模型组' : 'Create group')}</Button>
               </div>
@@ -1523,7 +1551,7 @@ export function GroupsScreen() {
         <AppDialogContent className="max-w-lg" title={locale === 'zh-CN' ? '确认删除模型组' : 'Delete group'} description={locale === 'zh-CN' ? '删除后，该模型组名称将不再参与路由匹配。' : 'This group will no longer participate in routing.'}>
           <div className="grid gap-5 overflow-y-auto pr-1">
             <div className="rounded-md border bg-muted/30 p-4"><strong>{deleteTarget?.name}</strong></div>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <Button variant="outline" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
               <Button variant="destructive" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</Button>
             </div>

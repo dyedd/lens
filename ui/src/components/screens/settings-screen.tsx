@@ -142,13 +142,13 @@ function SettingCard({
 }) {
   return (
     <Card className={cn("py-0", className)}>
-      <CardHeader className="px-5 pt-5 pb-0">
+      <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
         <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
           <Icon className="size-4 text-muted-foreground" />
           <span>{title}</span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-5 py-5">{children}</CardContent>
+      <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">{children}</CardContent>
     </Card>
   )
 }
@@ -486,7 +486,7 @@ export function SettingsScreen() {
       <div className="flex min-w-0 flex-col gap-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h1 className="text-xl font-semibold text-foreground">{titleForLocale(locale, "系统设置", "Settings")}</h1>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" type="button" onClick={() => void refresh()}>
               <RotateCcw data-icon="inline-start" />
               <span className="hidden sm:inline">{titleForLocale(locale, "刷新", "Refresh")}</span>

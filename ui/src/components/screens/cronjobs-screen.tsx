@@ -522,7 +522,7 @@ export function CronjobsScreen() {
         </div>
 
         <Card className="min-w-0 py-0">
-          <CardContent className="min-w-0 p-5">
+          <CardContent className="min-w-0 p-3 sm:p-5">
             <Table className="min-w-[1320px] table-fixed">
               <TableHeader>
                 <TableRow>

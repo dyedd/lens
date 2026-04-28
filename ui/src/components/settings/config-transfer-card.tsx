@@ -361,13 +361,13 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
     <>
       <div className="grid gap-4 xl:grid-cols-2">
         <Card className="py-0">
-          <CardHeader className="px-5 pt-5 pb-0">
+          <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
             <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Download className="size-4 text-muted-foreground" />
               <span>{titleForLocale(locale, "导出配置", "Export backup")}</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4 px-5 py-5">
+          <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
             <div className="flex flex-wrap gap-2">
               {alwaysIncludedItems.map((item) => (
                 <Badge key={item} variant="outline">
@@ -377,7 +377,7 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
             </div>
 
             <FieldGroup>
-              <Field orientation="horizontal" className="items-center justify-between">
+              <Field orientation="horizontal" className="flex-wrap items-center justify-between">
                 <div className="flex min-w-0 flex-col gap-1">
                   <FieldLabel className="w-auto">
                     {titleForLocale(locale, "包含请求日志", "Include request logs")}
@@ -395,7 +395,7 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
                   onCheckedChange={setIncludeLogs}
                 />
               </Field>
-              <Field orientation="horizontal" className="items-center justify-between">
+              <Field orientation="horizontal" className="flex-wrap items-center justify-between">
                 <div className="flex min-w-0 flex-col gap-1">
                   <FieldLabel className="w-auto">
                     {titleForLocale(locale, "包含网关 API Key", "Include gateway API keys")}
@@ -443,13 +443,13 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
         </Card>
 
         <Card className="py-0">
-          <CardHeader className="px-5 pt-5 pb-0">
+          <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
             <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Upload className="size-4 text-muted-foreground" />
               <span>{titleForLocale(locale, "导入配置", "Import backup")}</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4 px-5 py-5">
+          <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
             <FieldGroup>
               <Field>
                 <FieldLabel>

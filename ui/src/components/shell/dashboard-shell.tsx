@@ -15,6 +15,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarSeparator,
+  SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar'
 import { DASHBOARD_ROUTES, getDashboardViewFromPathname, type DashboardView } from '@/components/shell/dashboard-routes'
@@ -50,6 +51,59 @@ function CollapseButton({ label, iconOnly = false }: { label: string; iconOnly?:
       <PanelLeftClose className={cn("transition-transform", state === 'collapsed' && "rotate-180")} />
       <span className={cn(iconOnly && "sr-only")}>{label}</span>
     </SidebarMenuButton>
+  )
+}
+
+function ShellNavItem({
+  item,
+  activeView,
+  hasVersionUpdate,
+  locale,
+  onIntent,
+}: {
+  item: {
+    key: DashboardView
+    href: string
+    label: string
+    icon: React.ComponentType
+  }
+  activeView: DashboardView
+  hasVersionUpdate: boolean | undefined
+  locale: string
+  onIntent: (href: string) => void
+}) {
+  const { isMobile, setOpenMobile } = useSidebar()
+  const Icon = item.icon
+  const hasUpdate = hasVersionUpdate && item.key === 'settings'
+  const tooltipLabel = hasUpdate
+    ? `${item.label} (${locale === 'zh-CN' ? '有新版本' : 'Update available'})`
+    : item.label
+
+  function handleNavigate() {
+    if (isMobile) {
+      setOpenMobile(false)
+    }
+  }
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        isActive={activeView === item.key}
+        tooltip={tooltipLabel}
+        onMouseEnter={() => onIntent(item.href)}
+        onFocus={() => onIntent(item.href)}
+        className={cn(activeView === item.key && 'font-medium')}
+      >
+        <Link href={item.href} scroll={false} onClick={handleNavigate}>
+          <Icon />
+          <span>{item.label}</span>
+        </Link>
+      </SidebarMenuButton>
+      {hasUpdate && (
+        <SidebarMenuBadge className="bg-red-500 text-white">!</SidebarMenuBadge>
+      )}
+    </SidebarMenuItem>
   )
 }
 
@@ -150,33 +204,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             <SidebarGroup key={group.label}>
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarMenu>
-                {group.items.map((item) => {
-                  const Icon = item.icon
-                  const hasUpdate = versionCheck?.has_update && item.key === 'settings'
-                  const tooltipLabel = hasUpdate
-                    ? `${item.label} (${locale === 'zh-CN' ? '有新版本' : 'Update available'})`
-                    : item.label
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={activeView === item.key}
-                        tooltip={tooltipLabel}
-                        onMouseEnter={() => handleViewIntent(item.href)}
-                        onFocus={() => handleViewIntent(item.href)}
-                        className={cn(activeView === item.key && 'font-medium')}
-                      >
-                        <Link href={item.href} scroll={false}>
-                          <Icon />
-                          <span>{item.label}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                      {hasUpdate && (
-                        <SidebarMenuBadge className="bg-red-500 text-white">!</SidebarMenuBadge>
-                      )}
-                    </SidebarMenuItem>
-                  )
-                })}
+                {group.items.map((item) => (
+                  <ShellNavItem
+                    key={item.key}
+                    item={item}
+                    activeView={activeView}
+                    hasVersionUpdate={versionCheck?.has_update}
+                    locale={locale}
+                    onIntent={handleViewIntent}
+                  />
+                ))}
               </SidebarMenu>
             </SidebarGroup>
           ))}
@@ -205,8 +242,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </Sidebar>
 
       <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        <header className="flex h-14 min-w-0 shrink-0 items-center justify-end gap-3 border-b bg-card px-4">
-          <div className="flex shrink-0 items-center gap-2">
+        <header className="flex min-h-14 min-w-0 shrink-0 items-center justify-between gap-2 border-b bg-card px-3 py-2 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2 md:hidden">
+            <SidebarTrigger aria-label={locale === 'zh-CN' ? '打开导航' : 'Open navigation'} />
+            <span className="truncate text-sm font-medium text-foreground">{activeLabel}</span>
+          </div>
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
             <Button
               type="button"
               variant="ghost"
@@ -223,7 +264,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-muted p-6 pb-8">
+        <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-muted p-3 pb-6 sm:p-4 sm:pb-7 lg:p-6 lg:pb-8">
           <div key={pathname} className="min-h-[calc(100vh-10rem)] min-w-0 animate-[fadeIn_.16s_ease-out]">
             {children}
           </div>

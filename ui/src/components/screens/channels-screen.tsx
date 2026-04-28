@@ -271,14 +271,14 @@ function ChannelMetric({
   return (
     <div
       className={cn(
-        'inline-flex min-h-8 items-center gap-2 rounded-full border px-3 text-xs',
+        'inline-flex min-h-8 min-w-0 max-w-full items-center gap-2 rounded-full border px-3 text-xs',
         tone === 'accent'
           ? 'border-primary/20 bg-primary/[0.07] text-primary'
           : 'border-border/70 bg-muted/25 text-muted-foreground'
       )}
     >
-      <span className="inline-flex size-4.5 items-center justify-center">{icon}</span>
-      <span className="truncate font-medium">{label} {value}</span>
+      <span className="inline-flex size-4.5 shrink-0 items-center justify-center">{icon}</span>
+      <span className="min-w-0 truncate font-medium">{label} {value}</span>
     </div>
   )
 }
@@ -489,15 +489,15 @@ function SiteHealthPreview({
         ]
 
         return (
-          <div key={protocol.id} className="flex flex-wrap items-center gap-3 py-0.5">
+          <div key={protocol.id} className="flex min-w-0 flex-wrap items-center gap-3 py-0.5">
             {multiProtocol ? (
-              <span className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground">
+              <span className="w-20 min-w-0 shrink-0 truncate text-[11px] font-medium text-muted-foreground">
                 {compactProtocolLabel(protocol.protocol)}
               </span>
             ) : null}
 
             <div
-              className="flex flex-1 items-end gap-1"
+              className="flex min-w-0 flex-1 items-end gap-1"
               aria-label={`${protocolLabel(protocol.protocol)} ${locale === 'zh-CN' ? '健康状态' : 'health history'}`}
             >
               {segments.map((segment) => {
@@ -547,15 +547,15 @@ function SiteHealthPreview({
               })}
             </div>
 
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <div className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/20 px-2.5 py-1 text-xs">
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:shrink-0">
+              <div className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/60 bg-muted/20 px-2.5 py-1 text-xs">
                 <span className="text-muted-foreground">{locale === 'zh-CN' ? '健康分' : 'Health'}</span>
                 <span className={cn('font-medium', healthScoreText === '--' ? 'text-muted-foreground' : 'text-foreground')}>
                   {healthScoreText}
                 </span>
               </div>
               {coolingBadge ? (
-                <Badge variant="outline" title={coolingBadge.title} className={cn('px-2.5 py-1 text-xs', coolingBadge.className)}>
+                <Badge variant="outline" title={coolingBadge.title} className={cn('max-w-full truncate px-2.5 py-1 text-xs', coolingBadge.className)}>
                   {coolingBadge.label}
                 </Badge>
               ) : null}
@@ -1043,7 +1043,7 @@ export function ChannelsScreen() {
   return (
     <TooltipProvider>
       <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '渠道' : 'Channels'}</h1>
         <Button type="button" onClick={openCreate} className="rounded-full" size="icon-sm" title={locale === 'zh-CN' ? '新建渠道' : 'New channel'}>
           <Plus size={18} />
@@ -1051,8 +1051,8 @@ export function ChannelsScreen() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
-        <Card className="min-h-[calc(100dvh-12rem)] overflow-hidden py-0">
-          <CardContent className="max-h-[calc(100dvh-12rem)] overflow-y-auto px-3 py-3">
+        <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-12rem)]">
+          <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
             {isLoading ? (
               <div className="px-2 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载渠道...' : 'Loading channels...'}</div>
             ) : visibleSites.length ? (
@@ -1065,7 +1065,7 @@ export function ChannelsScreen() {
                       variant="outline"
                       role="button"
                       tabIndex={0}
-                      className="items-start gap-4 rounded-2xl border-border/80 bg-gradient-to-r from-background to-muted/[0.18] px-5 py-5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
+                      className="items-start gap-3 rounded-2xl border-border/80 bg-gradient-to-r from-background to-muted/[0.18] px-4 py-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer sm:gap-4 sm:px-5 sm:py-5"
                       onClick={() => openEdit(site)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -1074,7 +1074,7 @@ export function ChannelsScreen() {
                         }
                       }}
                     >
-                      <ItemMedia variant="icon" className="mt-0.5 self-start">
+                      <ItemMedia variant="icon" className="mt-0.5 hidden self-start sm:flex">
                         <SiteFavicon key={site.endpoint_summary} url={site.endpoint_summary} name={site.name} />
                       </ItemMedia>
                       <ItemContent className="min-w-0">
@@ -1110,7 +1110,7 @@ export function ChannelsScreen() {
                         </ItemFooter>
                       </ItemContent>
                       <ItemActions
-                        className="ml-auto self-start"
+                        className="basis-full flex-wrap justify-end self-start sm:ml-auto sm:basis-auto sm:shrink-0"
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => event.stopPropagation()}
                       >
@@ -1169,7 +1169,7 @@ export function ChannelsScreen() {
 
                 <Field>
                   <FieldLabel>{locale === 'zh-CN' ? '状态' : 'Status'}</FieldLabel>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     {[
                       { key: 'all' as const, label: locale === 'zh-CN' ? '全部' : 'All' },
                       { key: 'enabled' as const, label: locale === 'zh-CN' ? '启用' : 'Enabled' },
@@ -1434,7 +1434,7 @@ export function ChannelsScreen() {
                 </div>
               </section>
             </div>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <Button type="button" variant="outline" onClick={closeEditor}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
               <Button type="submit">{editingSiteId ? (locale === 'zh-CN' ? '保存渠道' : 'Save channel') : (locale === 'zh-CN' ? '创建渠道' : 'Create channel')}</Button>
             </div>
@@ -1491,7 +1491,7 @@ export function ChannelsScreen() {
               <strong className="text-foreground">{deleteTarget?.name}</strong>
               <p className="mt-2 text-xs text-muted-foreground">{deleteTarget ? siteSubtitle(deleteTarget) : ''}</p>
             </div>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
               <Button type="button" variant="destructive" onClick={() => deleteTarget && void removeSite(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</Button>
             </div>
@@ -1507,21 +1507,21 @@ export function ChannelsScreen() {
         {modelPickerProtocolIndex !== null ? (
           <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '选择模型' : 'Select models'}>
             <div className="grid gap-4">
-              <div className="max-h-[420px] overflow-y-auto p-1">
+              <div className="max-h-[58dvh] overflow-y-auto p-1 sm:max-h-[420px]">
                 <div className="flex flex-wrap gap-2.5">
                   {availableModels.length ? availableModels.map((model) => {
                     const key = `${model.credential_id}:${model.model_name}`
                     const checked = pickerSelectedModelKeys.includes(key)
                     return (
                       <Button key={key} type="button" variant="outline" size="sm" className={cn('max-w-full rounded-full', modelBadgeClassName(checked), checked ? 'border-primary text-primary' : '')} onClick={() => togglePickerModel(key)}>
-                        <span className="max-w-[220px] truncate">{model.model_name}</span>
+                        <span className="max-w-[180px] truncate sm:max-w-[220px]">{model.model_name}</span>
                         <span className="text-xs">{checked ? '✓' : '+'}</span>
                       </Button>
                     )
                   }) : <div className="px-3 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '未获取到可选模型' : 'No models fetched.'}</div>}
                 </div>
               </div>
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
                 <Button type="button" variant="outline" onClick={() => {
                   closeModelPicker()
                 }}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>

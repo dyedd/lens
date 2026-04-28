@@ -524,7 +524,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
   return (
     <>
       <Card className="min-w-0 py-0">
-        <CardContent className="flex min-w-0 flex-col gap-4 px-5 py-5">
+        <CardContent className="flex min-w-0 flex-col gap-4 px-3 py-3 sm:px-5 sm:py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-muted-foreground">
               {titleForLocale(locale, `共 ${gatewayKeys.length} 个密钥`, `${gatewayKeys.length} keys`)}
@@ -535,7 +535,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
             </Button>
           </div>
 
-          <div className="min-w-0 overflow-hidden rounded-lg border">
+          <div className="min-w-0 rounded-lg border">
             <Table className="min-w-[1120px] table-fixed">
               <TableHeader>
                 <TableRow>
@@ -816,7 +816,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                         <ChevronsUpDown className="text-muted-foreground" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent align="start" className="w-[360px] p-0">
+                    <PopoverContent align="start" className="w-[calc(100vw-2rem)] p-0 sm:w-[360px]">
                       <Command>
                         <CommandInput
                           placeholder={titleForLocale(
