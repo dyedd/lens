@@ -321,17 +321,6 @@ function SiteFavicon({ url, name }: { url: string; name: string }) {
   )
 }
 
-function clampHealthScore(value: number | null | undefined) {
-  if (!Number.isFinite(value)) {
-    return 0
-  }
-  return Math.min(1, Math.max(0, Number(value)))
-}
-
-function formatHealthPercent(score: number | null | undefined) {
-  return `${Math.round(clampHealthScore(score) * 100)}%`
-}
-
 function maxKeyCooldownSeconds(health: ChannelHealthRow | undefined) {
   if (!health?.key_health?.length) {
     return 0
@@ -476,7 +465,6 @@ function SiteHealthPreview({
         const channelSummary = summaryByChannelId.get(protocol.id)
         const buckets = (channelSummary?.health_buckets ?? []).slice(-CHANNEL_HEALTH_BUCKET_COUNT)
         const coolingBadge = resolveCoolingBadge(site, health, locale)
-        const healthScoreText = health ? formatHealthPercent(health.score) : '--'
         const segments = [
           ...Array.from({ length: Math.max(CHANNEL_HEALTH_BUCKET_COUNT - buckets.length, 0) }, (_, index) => ({
             key: `${protocol.id}-placeholder-${index}`,
@@ -548,12 +536,6 @@ function SiteHealthPreview({
             </div>
 
             <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:shrink-0">
-              <div className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/60 bg-muted/20 px-2.5 py-1 text-xs">
-                <span className="text-muted-foreground">{locale === 'zh-CN' ? '健康分' : 'Health'}</span>
-                <span className={cn('font-medium', healthScoreText === '--' ? 'text-muted-foreground' : 'text-foreground')}>
-                  {healthScoreText}
-                </span>
-              </div>
               {coolingBadge ? (
                 <Badge variant="outline" title={coolingBadge.title} className={cn('max-w-full truncate px-2.5 py-1 text-xs', coolingBadge.className)}>
                   {coolingBadge.label}
