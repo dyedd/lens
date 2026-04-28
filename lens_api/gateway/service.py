@@ -1262,13 +1262,17 @@ async def _proxy_protocol(
     for target in [selection.primary, *selection.fallbacks]:
         channel = target.channel
         attempt_started_at = perf_counter()
-        if needs_conversion(protocol, channel.protocol):
-            upstream_body = convert_request(
-                protocol, channel.protocol, body, target.model_name
-            )
-        else:
-            upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
+        upstream_body = deepcopy(body)
         try:
+            if needs_conversion(protocol, channel.protocol):
+                upstream_body = convert_request(
+                    protocol, channel.protocol, body, target.model_name
+                )
+            else:
+                upstream_body = _prepare_upstream_body(
+                    protocol, body, target.model_name
+                )
+            upstream_body = _apply_param_override(channel, upstream_body)
             result = await _call_channel(
                 channel,
                 upstream_body,
@@ -1816,6 +1820,60 @@ def _prepare_upstream_body(
         return payload
     payload["model"] = target_model_name
     return payload
+
+
+def _apply_param_override(
+    channel: ChannelConfig, body: dict[str, Any]
+) -> dict[str, Any]:
+    raw_override = channel.param_override.strip()
+    if not raw_override:
+        return body
+
+    try:
+        override = json.loads(raw_override)
+    except json.JSONDecodeError as exc:
+        raise UpstreamRequestError(
+            status_code=400,
+            detail=(
+                f"Invalid param override JSON for channel {channel.name}: "
+                f"{exc.msg} at line {exc.lineno} column {exc.colno}"
+            ),
+            router_status_code=None,
+        ) from exc
+
+    if not isinstance(override, dict):
+        raise UpstreamRequestError(
+            status_code=400,
+            detail=(
+                f"Invalid param override for channel {channel.name}: "
+                "expected a JSON object"
+            ),
+            router_status_code=None,
+        )
+    if "model" in override:
+        raise UpstreamRequestError(
+            status_code=400,
+            detail=(
+                f"Invalid param override for channel {channel.name}: "
+                "model cannot be overridden"
+            ),
+            router_status_code=None,
+        )
+
+    return _deep_merge_json_objects(body, override)
+
+
+def _deep_merge_json_objects(
+    base: dict[str, Any], override: dict[str, Any]
+) -> dict[str, Any]:
+    merged = deepcopy(base)
+    for key, override_value in override.items():
+        base_value = merged.get(key)
+        if isinstance(base_value, dict) and isinstance(override_value, dict):
+            merged[key] = _deep_merge_json_objects(base_value, override_value)
+        else:
+            merged[key] = deepcopy(override_value)
+    return merged
 
 
 def _normalize_openai_responses_input(value: Any) -> Any:
