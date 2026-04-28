@@ -10,6 +10,7 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -17,7 +18,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { DASHBOARD_ROUTES, getDashboardViewFromPathname, type DashboardView } from '@/components/shell/dashboard-routes'
-import { apiRequest, type AppInfo } from '@/lib/api'
+import { apiRequest, type AppInfo, type VersionCheckResult } from '@/lib/api'
 import { clearStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -60,6 +61,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     queryKey: ['app-info'],
     queryFn: () => apiRequest<AppInfo>('/admin/app-info'),
     staleTime: 5 * 60_000,
+  })
+  const { data: versionCheck } = useQuery({
+    queryKey: ['version-check'],
+    queryFn: () => apiRequest<VersionCheckResult>('/admin/version-check'),
+    staleTime: 5 * 60_000,
+    refetchInterval: 60 * 60_000,
   })
   const siteName = appInfo?.site_name?.trim() || 'Lens'
   const logoUrl = appInfo?.logo_url?.trim() || '/logo.svg'
@@ -145,12 +152,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <SidebarMenu>
                 {group.items.map((item) => {
                   const Icon = item.icon
+                  const hasUpdate = versionCheck?.has_update && item.key === 'settings'
+                  const tooltipLabel = hasUpdate
+                    ? `${item.label} (${locale === 'zh-CN' ? '有新版本' : 'Update available'})`
+                    : item.label
                   return (
                     <SidebarMenuItem key={item.key}>
                       <SidebarMenuButton
                         asChild
                         isActive={activeView === item.key}
-                        tooltip={item.label}
+                        tooltip={tooltipLabel}
                         onMouseEnter={() => handleViewIntent(item.href)}
                         onFocus={() => handleViewIntent(item.href)}
                         className={cn(activeView === item.key && 'font-medium')}
@@ -160,6 +171,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                           <span>{item.label}</span>
                         </Link>
                       </SidebarMenuButton>
+                      {hasUpdate && (
+                        <SidebarMenuBadge className="bg-red-500 text-white">!</SidebarMenuBadge>
+                      )}
                     </SidebarMenuItem>
                   )
                 })}

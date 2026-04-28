@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from . import admin_auth, backups, cronjobs, gateway_api_keys, model_groups, model_prices, overview, proxy, public, request_logs, routing, settings, sites, ui_static
+from . import admin_auth, backups, cronjobs, gateway_api_keys, model_groups, model_prices, overview, proxy, public, request_logs, routing, settings, sites, ui_static, version
 
 
 def include_routes(app: FastAPI, service_module) -> None:
     public.register(app, service_module)
     admin_auth.register(app, service_module)
     sites.register(app, service_module)
+    version.register(app, service_module)
     routing.register(app, service_module)
     overview.register(app, service_module)
     request_logs.register(app, service_module)
