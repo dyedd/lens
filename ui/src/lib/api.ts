@@ -584,6 +584,7 @@ export type RequestLogPage = {
   total: number
   limit: number
   offset: number
+  channels: string[]
 }
 
 export type CronjobStatus =

@@ -14,7 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import OperationalError
@@ -60,7 +60,10 @@ from ..models import (
     PublicBranding,
     RequestLogDetail,
     RequestLogItem,
+    RequestLogModelSeries,
     RequestLogPage,
+    RequestLogSortMode,
+    RequestLogStatusFilter,
     RoutePreviewRequest,
     RoutingStrategy,
     CronjobItem,
@@ -812,12 +815,24 @@ async def request_log_page(
     limit: int = 100,
     offset: int = 0,
     gateway_key_id: str | None = None,
+    model_series: RequestLogModelSeries = RequestLogModelSeries.ALL,
+    status_filter: RequestLogStatusFilter | None = Query(default=None, alias="status"),
+    protocol: ProtocolKind | None = None,
+    channel: str | None = None,
+    keyword: str | None = None,
+    sort: RequestLogSortMode = RequestLogSortMode.LATEST,
     _: Any = Depends(get_current_admin),
 ) -> RequestLogPage:
     return await app_state.domain_store.list_request_log_page(
         limit=limit,
         offset=offset,
         gateway_key_id=gateway_key_id,
+        model_series=model_series,
+        status_filter=status_filter,
+        protocol=protocol,
+        channel=channel,
+        keyword=keyword,
+        sort=sort,
     )
 
 
