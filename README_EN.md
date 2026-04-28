@@ -514,3 +514,12 @@ Back up the current data directory before importing a configuration bundle.
 - Create separate gateway API keys for different clients
 - Do not commit `.env`, `data/`, or database files
 - Put Lens behind an HTTPS reverse proxy when exposing it to the public internet
+
+## Acknowledgments
+
+Lens was inspired by the following projects and community discussions:
+
+- [bestruirui/octopus](https://github.com/bestruirui/octopus)
+- [cita-777/metapi](https://github.com/cita-777/metapi)
+- [caidaoli/ccLoad](https://github.com/caidaoli/ccLoad)
+- [Linux DO community](https://linux.do/)

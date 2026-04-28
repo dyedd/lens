@@ -514,3 +514,12 @@ Lens 的业务时区不是环境变量；在 `/settings` 选择，默认 `Asia/S
 - 为不同客户端创建独立网关 API Key，便于禁用和审计
 - 不要把 `.env`、`data/` 或数据库文件提交到仓库
 - 如暴露到公网，建议放在 HTTPS 反向代理之后
+
+## 致谢
+
+Lens 从以下项目获得灵感，并受益于社区交流：
+
+- [bestruirui/octopus](https://github.com/bestruirui/octopus)
+- [cita-777/metapi](https://github.com/cita-777/metapi)
+- [caidaoli/ccLoad](https://github.com/caidaoli/ccLoad)
+- [Linux DO 社区](https://linux.do/)
