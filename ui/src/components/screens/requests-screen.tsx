@@ -9,6 +9,7 @@ import {
   ArrowDownToLine,
   ArrowUp,
   ArrowUpFromLine,
+  ChevronDown,
   CheckCheck,
   Clock3,
   Copy,
@@ -406,7 +407,7 @@ function LineNumberedCode({ text }: { text: string }) {
   const lines = useMemo(() => normalizeLineBreaks(text).split('\n'), [text])
 
   return (
-    <div className="max-h-[560px] overflow-auto">
+    <div className="max-h-[60dvh] overflow-auto sm:max-h-[560px]">
       <div className="min-w-full py-3">
         {lines.map((line, index) => (
           <div key={index} className="grid grid-cols-[44px_minmax(0,1fr)] font-mono text-xs leading-6">
@@ -511,10 +512,10 @@ function JsonViewer({
   }, [parsed])
 
   return (
-    <section className={cn("flex min-h-[560px] min-w-0 flex-col bg-background", className)}>
-      <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
+    <section className={cn("flex min-h-[60dvh] min-w-0 flex-col bg-background sm:min-h-[560px]", className)}>
+      <header className="flex shrink-0 flex-col items-start justify-between gap-3 px-3 py-3 sm:flex-row sm:items-center sm:px-4">
         <div className="text-sm font-semibold text-foreground">{title}</div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {parsed?.isJson ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => setExpanded((current) => !current)}>
               {expanded ? (locale === 'zh-CN' ? '折叠' : 'Collapse') : (locale === 'zh-CN' ? '展开' : 'Expand')}
@@ -535,10 +536,10 @@ function JsonViewer({
             {locale === 'zh-CN' ? '正在准备内容...' : 'Preparing content...'}
           </div>
         ) : parsed?.isJson ? (
-          <div className="max-h-[560px] overflow-auto">
+          <div className="max-h-[60dvh] overflow-auto sm:max-h-[560px]">
             <div className="grid min-w-full grid-cols-[44px_minmax(0,1fr)]">
               <LineNumbersColumn lineHeights={lineHeights} />
-              <div className="min-w-0 px-4 py-3">
+              <div className="min-w-0 px-3 py-3 sm:px-4">
                 <div ref={jsonViewRef} className="json-view-shell">
                   <JsonView
                     value={parsed.data as object}
@@ -658,7 +659,7 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
       {attempts.map((attempt, index) => {
         const errorDisplay = formatErrorDisplay(attempt.error_message)
         return (
-          <Item key={`${attempt.channel_id}-${index}`} variant="outline" className="gap-3 px-4 py-3.5">
+          <Item key={`${attempt.channel_id}-${index}`} variant="outline" className="items-start gap-3 px-4 py-3.5">
             <ItemMedia variant="icon" className="flex size-7 rounded-full bg-muted text-xs font-semibold text-muted-foreground">
               {index + 1}
             </ItemMedia>
@@ -670,7 +671,7 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
               </div>
               {errorDisplay ? <div className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words">{errorDisplay}</div> : null}
             </ItemContent>
-            <ItemActions className="ml-auto text-xs text-muted-foreground">
+            <ItemActions className="ml-auto shrink-0 text-xs text-muted-foreground">
               <StatusCodeBadge statusCode={attempt.status_code} />
               <span>{formatMs(attempt.duration_ms)}</span>
             </ItemActions>
@@ -752,9 +753,9 @@ function RequestCard({
             onOpenDetail()
           }
         }}
-        className="grid w-full min-w-0 cursor-pointer grid-cols-[56px_minmax(0,1fr)_auto] items-start gap-x-3.5 gap-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="grid w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3.5 gap-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:grid-cols-[56px_minmax(0,1fr)_auto]"
       >
-        <ItemMedia variant="icon" className="flex size-12 self-start rounded-2xl border bg-muted/40">
+        <ItemMedia variant="icon" className="hidden size-12 self-start rounded-2xl border bg-muted/40 sm:flex">
           <ModelAvatar name={primaryModelName} size={28} />
         </ItemMedia>
 
@@ -821,6 +822,7 @@ export function RequestsScreen() {
   const [detailId, setDetailId] = useState<number | null>(null)
   const [attemptDetailId, setAttemptDetailId] = useState<number | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [page, setPage] = useState(0)
   const [selectedSeries, setSelectedSeries] = useState<SelectedSeries>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -1111,7 +1113,7 @@ export function RequestsScreen() {
         <div>
           <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '请求日志' : 'Requests'}</h1>
         </div>
-        <div className="flex items-center gap-2 self-start lg:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
           <Button type="button" variant="outline" onClick={() => void refreshLogs()} disabled={isFetching}>
             <RefreshCcw data-icon="inline-start" className={cn(isFetching && 'animate-spin')} />
             {locale === 'zh-CN' ? '刷新' : 'Refresh'}
@@ -1125,14 +1127,26 @@ export function RequestsScreen() {
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,4fr)_320px]">
         <div className="order-2 grid gap-4 xl:order-1">
-          <div className="rounded-2xl border bg-card px-4 py-4 sm:px-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="rounded-2xl border bg-card px-4 py-3 sm:px-5 sm:py-4">
+            <div className="flex items-center justify-between gap-3 sm:mb-3">
               <div>
                 <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '选择模型系列' : 'Choose model series'}</div>
               </div>
             </div>
 
-            <div className="flex snap-x gap-3 overflow-x-auto pb-1">
+            <NativeSelect
+              className="mt-3 w-full sm:hidden"
+              value={effectiveSelectedSeries}
+              onChange={(event) => handleSeriesChange(event.target.value as SelectedSeries)}
+            >
+              {seriesOptions.map((option) => (
+                <NativeSelectOption key={option.key} value={option.key}>
+                  {locale === 'zh-CN' ? option.zh : option.en}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+
+            <div className="hidden snap-x gap-3 overflow-x-auto pb-1 sm:flex">
               {seriesOptions.map((option) => (
                 <SeriesChip
                   key={option.key}
@@ -1177,7 +1191,7 @@ export function RequestsScreen() {
 
         <aside className="order-1 xl:order-2">
           <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary/[0.08] text-primary">
                   <Filter size={16} />
@@ -1189,98 +1203,114 @@ export function RequestsScreen() {
                   </div>
                 </div>
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={resetFilters} disabled={!activeFilterCount && sortMode === 'latest'}>
-                {locale === 'zh-CN' ? '清空' : 'Clear'}
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button type="button" variant="ghost" size="sm" onClick={resetFilters} disabled={!activeFilterCount && sortMode === 'latest'}>
+                  {locale === 'zh-CN' ? '清空' : 'Clear'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="xl:hidden"
+                  onClick={() => setMobileFiltersOpen((current) => !current)}
+                  aria-expanded={mobileFiltersOpen}
+                  aria-label={locale === 'zh-CN' ? '展开筛选' : 'Toggle filters'}
+                >
+                  <ChevronDown className={cn('transition-transform', mobileFiltersOpen && 'rotate-180')} />
+                </Button>
+              </div>
             </div>
 
-            <FieldSet className="gap-4">
-              <FieldLegend>{locale === 'zh-CN' ? '筛选条件' : 'Refine results'}</FieldLegend>
-              <FieldGroup className="gap-4">
-                <Field>
-                  <FieldLabel>{locale === 'zh-CN' ? '关键词' : 'Keyword'}</FieldLabel>
-                  <ToolbarSearchInput
-                    value={keyword}
-                    onChange={handleKeywordChange}
-                    onClear={() => handleKeywordChange('')}
-                    placeholder={locale === 'zh-CN' ? '模型 / 渠道 / API Key / 错误 / 状态码' : 'Model / channel / API key / error / status'}
-                    className="max-w-none"
-                  />
-                </Field>
+            <div className={cn('mt-4', !mobileFiltersOpen && 'hidden xl:block')}>
+              <FieldSet className="gap-4">
+                <FieldLegend>{locale === 'zh-CN' ? '筛选条件' : 'Refine results'}</FieldLegend>
+                <FieldGroup className="gap-4">
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '关键词' : 'Keyword'}</FieldLabel>
+                    <ToolbarSearchInput
+                      value={keyword}
+                      onChange={handleKeywordChange}
+                      onClear={() => handleKeywordChange('')}
+                      placeholder={locale === 'zh-CN' ? '模型 / 渠道 / API Key / 错误 / 状态码' : 'Model / channel / API key / error / status'}
+                      className="max-w-none"
+                    />
+                  </Field>
 
-                <Field>
-                  <FieldLabel>{locale === 'zh-CN' ? '状态' : 'Status'}</FieldLabel>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { key: 'all' as const, label: locale === 'zh-CN' ? '全部' : 'All' },
-                      { key: 'success' as const, label: locale === 'zh-CN' ? '成功' : 'Success' },
-                      { key: 'failed' as const, label: locale === 'zh-CN' ? '失败' : 'Failed' },
-                    ].map((option) => (
-                      <Button
-                        key={option.key}
-                        type="button"
-                        variant={statusFilter === option.key ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => handleStatusChange(option.key)}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </div>
-                </Field>
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '状态' : 'Status'}</FieldLabel>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { key: 'all' as const, label: locale === 'zh-CN' ? '全部' : 'All' },
+                        { key: 'success' as const, label: locale === 'zh-CN' ? '成功' : 'Success' },
+                        { key: 'failed' as const, label: locale === 'zh-CN' ? '失败' : 'Failed' },
+                      ].map((option) => (
+                        <Button
+                          key={option.key}
+                          type="button"
+                          variant={statusFilter === option.key ? 'default' : 'outline'}
+                          size="sm"
+                          className="min-w-0 truncate px-1.5"
+                          onClick={() => handleStatusChange(option.key)}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="request-log-protocol">{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
-                  <NativeSelect id="request-log-protocol" className="w-full" value={protocolFilter} onChange={(event) => handleProtocolChange(event.target.value as 'all' | ProtocolKind)}>
-                    <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
-                    <NativeSelectOption value="openai_chat">OpenAI Chat</NativeSelectOption>
-                    <NativeSelectOption value="openai_responses">OpenAI Responses</NativeSelectOption>
-                    <NativeSelectOption value="anthropic">Anthropic</NativeSelectOption>
-                    <NativeSelectOption value="gemini">Gemini</NativeSelectOption>
-                  </NativeSelect>
-                </Field>
+                  <Field>
+                    <FieldLabel htmlFor="request-log-protocol">{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
+                    <NativeSelect id="request-log-protocol" className="w-full" value={protocolFilter} onChange={(event) => handleProtocolChange(event.target.value as 'all' | ProtocolKind)}>
+                      <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
+                      <NativeSelectOption value="openai_chat">OpenAI Chat</NativeSelectOption>
+                      <NativeSelectOption value="openai_responses">OpenAI Responses</NativeSelectOption>
+                      <NativeSelectOption value="anthropic">Anthropic</NativeSelectOption>
+                      <NativeSelectOption value="gemini">Gemini</NativeSelectOption>
+                    </NativeSelect>
+                  </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="request-log-channel">{locale === 'zh-CN' ? '渠道' : 'Channel'}</FieldLabel>
-                  <NativeSelect id="request-log-channel" className="w-full" value={channelFilter} onChange={(event) => handleChannelChange(event.target.value)}>
-                    <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部渠道' : 'All channels'}</NativeSelectOption>
-                    {channelOptions.map((channel) => <NativeSelectOption key={channel} value={channel}>{channel}</NativeSelectOption>)}
-                  </NativeSelect>
-                </Field>
+                  <Field>
+                    <FieldLabel htmlFor="request-log-channel">{locale === 'zh-CN' ? '渠道' : 'Channel'}</FieldLabel>
+                    <NativeSelect id="request-log-channel" className="w-full" value={channelFilter} onChange={(event) => handleChannelChange(event.target.value)}>
+                      <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部渠道' : 'All channels'}</NativeSelectOption>
+                      {channelOptions.map((channel) => <NativeSelectOption key={channel} value={channel}>{channel}</NativeSelectOption>)}
+                    </NativeSelect>
+                  </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="request-log-gateway-key">API Key</FieldLabel>
-                  <NativeSelect id="request-log-gateway-key" className="w-full" value={selectedGatewayKeyId} onChange={(event) => handleGatewayKeyChange(event.target.value)}>
-                    <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部 API Key' : 'All API keys'}</NativeSelectOption>
-                    {gatewayKeyOptions.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.label}</NativeSelectOption>)}
-                  </NativeSelect>
-                </Field>
+                  <Field>
+                    <FieldLabel htmlFor="request-log-gateway-key">API Key</FieldLabel>
+                    <NativeSelect id="request-log-gateway-key" className="w-full" value={selectedGatewayKeyId} onChange={(event) => handleGatewayKeyChange(event.target.value)}>
+                      <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部 API Key' : 'All API keys'}</NativeSelectOption>
+                      {gatewayKeyOptions.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.label}</NativeSelectOption>)}
+                    </NativeSelect>
+                  </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="request-log-sort">{locale === 'zh-CN' ? '排序' : 'Sort by'}</FieldLabel>
-                  <NativeSelect id="request-log-sort" className="w-full" value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
-                    <NativeSelectOption value="latest">{locale === 'zh-CN' ? '最新优先' : 'Latest first'}</NativeSelectOption>
-                    <NativeSelectOption value="cost">{locale === 'zh-CN' ? '费用优先' : 'Highest cost'}</NativeSelectOption>
-                    <NativeSelectOption value="latency">{locale === 'zh-CN' ? '耗时优先' : 'Longest latency'}</NativeSelectOption>
-                    <NativeSelectOption value="tokens">{locale === 'zh-CN' ? 'Token 优先' : 'Most tokens'}</NativeSelectOption>
-                  </NativeSelect>
-                </Field>
-              </FieldGroup>
-            </FieldSet>
+                  <Field>
+                    <FieldLabel htmlFor="request-log-sort">{locale === 'zh-CN' ? '排序' : 'Sort by'}</FieldLabel>
+                    <NativeSelect id="request-log-sort" className="w-full" value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+                      <NativeSelectOption value="latest">{locale === 'zh-CN' ? '最新优先' : 'Latest first'}</NativeSelectOption>
+                      <NativeSelectOption value="cost">{locale === 'zh-CN' ? '费用优先' : 'Highest cost'}</NativeSelectOption>
+                      <NativeSelectOption value="latency">{locale === 'zh-CN' ? '耗时优先' : 'Longest latency'}</NativeSelectOption>
+                      <NativeSelectOption value="tokens">{locale === 'zh-CN' ? 'Token 优先' : 'Most tokens'}</NativeSelectOption>
+                    </NativeSelect>
+                  </Field>
+                </FieldGroup>
+              </FieldSet>
 
-            <div className="mt-4 border-t pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full text-destructive hover:text-destructive"
-                onClick={() => void clearRequestLogs()}
-                disabled={clearingLogs}
-              >
-                <Trash2 data-icon="inline-start" />
-                {clearingLogs
-                  ? (locale === 'zh-CN' ? '清空中...' : 'Clearing...')
-                  : (locale === 'zh-CN' ? '清空请求日志' : 'Clear request logs')}
-              </Button>
+              <div className="mt-4 border-t pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full text-destructive hover:text-destructive"
+                  onClick={() => void clearRequestLogs()}
+                  disabled={clearingLogs}
+                >
+                  <Trash2 data-icon="inline-start" />
+                  {clearingLogs
+                    ? (locale === 'zh-CN' ? '清空中...' : 'Clearing...')
+                    : (locale === 'zh-CN' ? '清空请求日志' : 'Clear request logs')}
+                </Button>
+              </div>
             </div>
           </div>
         </aside>
@@ -1346,7 +1376,7 @@ export function RequestsScreen() {
             </div>
           ) : (
             <div className="grid gap-3">
-              <div className="grid min-h-[560px] overflow-hidden xl:grid-cols-2">
+              <div className="grid min-h-[60dvh] overflow-hidden sm:min-h-[560px] xl:grid-cols-2">
                 <JsonViewer
                   key={`request-${detail.id}`}
                   title={locale === 'zh-CN' ? '请求内容' : 'Request'}
@@ -1398,7 +1428,7 @@ export function RequestsScreen() {
               type="button"
               variant="outline"
               size="icon-lg"
-              className="fixed right-6 bottom-6 z-40 rounded-full shadow-sm"
+              className="fixed right-4 bottom-4 z-40 rounded-full shadow-sm sm:right-6 sm:bottom-6"
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             >
               <ArrowUp />

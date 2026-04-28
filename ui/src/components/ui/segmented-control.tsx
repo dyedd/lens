@@ -14,7 +14,7 @@ export function SegmentedControl<T extends string>({
   className?: string
 }) {
   return (
-    <div className={cn("inline-flex w-fit max-w-full self-start items-center gap-1 rounded-xl border bg-muted p-0.5", className)}>
+    <div className={cn("inline-flex w-fit max-w-full self-start items-center gap-1 overflow-x-auto rounded-xl border bg-muted p-0.5", className)}>
       {options.map((option) => {
         const active = option.value === value
         return (

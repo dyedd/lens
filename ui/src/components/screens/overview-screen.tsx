@@ -437,7 +437,7 @@ export function OverviewScreen() {
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_260px]">
         <Card size="sm" className="py-0">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 border-b py-4">
+          <CardHeader className="flex flex-col items-start justify-between gap-2 border-b py-4 sm:flex-row sm:items-center">
             <CardTitle className="flex-1 text-base">{zh ? "模型占比" : "Model share"}</CardTitle>
             <SegmentedControl
               value={pieMetric}
@@ -451,7 +451,7 @@ export function OverviewScreen() {
           </CardHeader>
           <CardContent className="flex-1 pb-0 pt-4">
             {pieData.data.length ? (
-              <ChartContainer config={pieChartConfig} className="mx-auto aspect-square max-h-[300px]">
+              <ChartContainer config={pieChartConfig} className="mx-auto aspect-square max-h-[240px] sm:max-h-[300px]">
                 <PieChart>
                   <ChartTooltip content={<ChartTooltipContent nameKey="model" hideLabel />} />
                   <Pie data={pieData.data} dataKey="value" nameKey="model" innerRadius={60} outerRadius={100} paddingAngle={2}>
@@ -511,7 +511,7 @@ export function OverviewScreen() {
         </CardHeader>
         <CardContent className="px-2 pt-4 sm:px-4">
           {barData.length ? (
-            <ChartContainer config={barConfig} className="h-[300px] w-full">
+            <ChartContainer config={barConfig} className="h-[240px] w-full sm:h-[300px]">
               <BarChart accessibilityLayer data={barData} margin={{ left: 8, right: 8 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={11} />
@@ -534,10 +534,10 @@ export function OverviewScreen() {
         <CardHeader className="px-4 pt-4 pb-0">
           <CardTitle className="text-base">{zh ? "消费日志" : "Consume log"}</CardTitle>
         </CardHeader>
-        <CardContent className="px-4 py-4">
-          <div className="overflow-hidden rounded-lg border bg-background">
+        <CardContent className="px-3 py-3 sm:px-4 sm:py-4">
+          <div className="min-w-0 rounded-lg border bg-background">
             {logs.length > 0 ? (
-              <Table className="text-xs">
+              <Table className="min-w-[720px] text-xs">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="px-3 py-2.5 font-medium text-muted-foreground">{zh ? "时间" : "Time"}</TableHead>
