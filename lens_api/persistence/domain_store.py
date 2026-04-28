@@ -9,13 +9,13 @@ from time import monotonic
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import String, and_, cast, delete, func, literal, or_, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
-from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogPage, SettingItem, SiteChannelHealthBucket, SiteChannelRuntimeSummary, SiteRuntimeSummary
+from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogModelSeries, RequestLogPage, RequestLogSortMode, RequestLogStatusFilter, SettingItem, SiteChannelHealthBucket, SiteChannelRuntimeSummary, SiteRuntimeSummary
 from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
@@ -40,6 +40,16 @@ SETTING_VERSION_CHECK_AT = "version_check_at"
 GATEWAY_API_KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 CHANNEL_HEALTH_BUCKET_SECONDS = 300
 CHANNEL_HEALTH_BUCKET_COUNT = 12
+REQUEST_LOG_SERIES_PREFIXES: dict[RequestLogModelSeries, tuple[str, ...]] = {
+    RequestLogModelSeries.OPENAI: ("gpt-", "o1", "o3", "o4", "chatgpt", "openai"),
+    RequestLogModelSeries.CLAUDE: ("claude", "anthropic"),
+    RequestLogModelSeries.GEMINI: ("gemini", "gemma", "google"),
+    RequestLogModelSeries.DEEPSEEK: ("deepseek",),
+    RequestLogModelSeries.QWEN: ("qwen", "qwq", "alibaba"),
+    RequestLogModelSeries.KIMI: ("moonshot", "kimi"),
+    RequestLogModelSeries.GLM: ("glm", "chatglm", "zhipu", "z-ai"),
+    RequestLogModelSeries.MINIMAX: ("minimax", "abab", "minmax"),
+}
 
 
 class DomainStore:
@@ -1200,35 +1210,73 @@ class DomainStore:
         days: int = 0,
         offset: int = 0,
         gateway_key_id: str | None = None,
+        model_series: RequestLogModelSeries = RequestLogModelSeries.ALL,
+        status_filter: RequestLogStatusFilter | None = None,
+        protocol: ProtocolKind | None = None,
+        channel: str | None = None,
+        keyword: str | None = None,
+        sort: RequestLogSortMode = RequestLogSortMode.LATEST,
     ) -> RequestLogPage:
         time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
-            items_stmt = (
-                select(RequestLogEntity)
-                .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
-                .offset(offset)
-                .limit(limit)
+            items_stmt = select(RequestLogEntity)
+            items_stmt = self._apply_request_log_filters(
+                items_stmt,
+                days=days,
+                time_zone=time_zone,
+                gateway_key_id=gateway_key_id,
+                model_series=model_series,
+                status_filter=status_filter,
+                protocol=protocol,
+                channel=channel,
+                keyword=keyword,
             )
-            items_stmt = self._apply_request_log_window(items_stmt, days=days, time_zone=time_zone)
-            items_stmt = self._apply_gateway_key_filter(
-                items_stmt, gateway_key_id=gateway_key_id
-            )
+            items_stmt = self._apply_request_log_sort(items_stmt, sort=sort)
+            items_stmt = items_stmt.offset(max(offset, 0)).limit(max(limit, 0))
 
             total_stmt = select(func.count()).select_from(RequestLogEntity)
-            total_stmt = self._apply_request_log_window(total_stmt, days=days, time_zone=time_zone)
-            total_stmt = self._apply_gateway_key_filter(
-                total_stmt, gateway_key_id=gateway_key_id
+            total_stmt = self._apply_request_log_filters(
+                total_stmt,
+                days=days,
+                time_zone=time_zone,
+                gateway_key_id=gateway_key_id,
+                model_series=model_series,
+                status_filter=status_filter,
+                protocol=protocol,
+                channel=channel,
+                keyword=keyword,
+            )
+
+            channel_stmt = (
+                select(func.coalesce(RequestLogEntity.channel_name, RequestLogEntity.channel_id, literal("n/a")))
+                .select_from(RequestLogEntity)
+                .distinct()
+            )
+            channel_stmt = self._apply_request_log_filters(
+                channel_stmt,
+                days=days,
+                time_zone=time_zone,
+                gateway_key_id=gateway_key_id,
+                model_series=model_series,
+                status_filter=status_filter,
+                protocol=protocol,
+                keyword=keyword,
             )
 
             items_result = await session.execute(items_stmt)
             total = await session.scalar(total_stmt)
+            channel_result = await session.execute(channel_stmt)
             entities = items_result.scalars().all()
+            channels = sorted(
+                {str(value) for value in channel_result.scalars().all() if value is not None}
+            )
 
             return RequestLogPage(
                 items=await self._hydrate_request_logs(session, entities),
                 total=int(total or 0),
-                limit=limit,
-                offset=offset,
+                limit=max(limit, 0),
+                offset=max(offset, 0),
+                channels=channels,
             )
 
     async def list_site_runtime_summaries(self) -> list[SiteRuntimeSummary]:
@@ -2260,6 +2308,147 @@ class DomainStore:
         if end_at is not None:
             stmt = stmt.where(RequestLogEntity.created_at < end_at)
         return stmt
+
+    @staticmethod
+    def _request_log_model_expr() -> Any:
+        return func.coalesce(
+            RequestLogEntity.resolved_group_name,
+            RequestLogEntity.requested_group_name,
+            RequestLogEntity.upstream_model_name,
+            "",
+        )
+
+    @classmethod
+    def _request_log_model_series_condition(
+        cls, model_series: RequestLogModelSeries
+    ) -> Any | None:
+        if model_series == RequestLogModelSeries.ALL:
+            return None
+
+        model_expr = func.lower(cls._request_log_model_expr())
+        known_conditions = [
+            model_expr.like(f"{prefix}%")
+            for prefixes in REQUEST_LOG_SERIES_PREFIXES.values()
+            for prefix in prefixes
+        ]
+
+        if model_series == RequestLogModelSeries.OTHER:
+            return and_(*[~condition for condition in known_conditions])
+
+        prefixes = REQUEST_LOG_SERIES_PREFIXES.get(model_series, ())
+        if not prefixes:
+            return None
+        return or_(*[model_expr.like(f"{prefix}%") for prefix in prefixes])
+
+    @staticmethod
+    def _normalize_request_log_keyword(keyword: str | None) -> str | None:
+        normalized = (keyword or "").strip().lower()
+        return normalized or None
+
+    @staticmethod
+    def _escape_like_pattern(value: str) -> str:
+        return (
+            value
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+
+    @classmethod
+    def _apply_request_log_keyword_filter(
+        cls, stmt: Any, *, keyword: str | None
+    ) -> Any:
+        normalized = cls._normalize_request_log_keyword(keyword)
+        if normalized is None:
+            return stmt
+
+        pattern = f"%{cls._escape_like_pattern(normalized)}%"
+        status_code_text = cast(RequestLogEntity.status_code, String)
+        search_columns = [
+            RequestLogEntity.requested_group_name,
+            RequestLogEntity.resolved_group_name,
+            RequestLogEntity.upstream_model_name,
+            RequestLogEntity.channel_name,
+            RequestLogEntity.channel_id,
+            RequestLogEntity.gateway_key_id,
+            RequestLogEntity.error_message,
+            RequestLogEntity.protocol,
+            status_code_text,
+            GatewayApiKeyEntity.remark,
+        ]
+        conditions = [
+            func.lower(func.coalesce(column, "")).like(pattern, escape="\\")
+            for column in search_columns
+        ]
+
+        return stmt.outerjoin(
+            GatewayApiKeyEntity,
+            GatewayApiKeyEntity.id == RequestLogEntity.gateway_key_id,
+        ).where(or_(*conditions))
+
+    @classmethod
+    def _apply_request_log_filters(
+        cls,
+        stmt: Any,
+        *,
+        days: int,
+        time_zone: ZoneInfo,
+        gateway_key_id: str | None = None,
+        model_series: RequestLogModelSeries = RequestLogModelSeries.ALL,
+        status_filter: RequestLogStatusFilter | None = None,
+        protocol: ProtocolKind | None = None,
+        channel: str | None = None,
+        keyword: str | None = None,
+    ) -> Any:
+        stmt = cls._apply_request_log_window(stmt, days=days, time_zone=time_zone)
+        stmt = cls._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
+
+        series_condition = cls._request_log_model_series_condition(model_series)
+        if series_condition is not None:
+            stmt = stmt.where(series_condition)
+
+        if status_filter == RequestLogStatusFilter.SUCCESS:
+            stmt = stmt.where(RequestLogEntity.success == 1)
+        elif status_filter == RequestLogStatusFilter.FAILED:
+            stmt = stmt.where(RequestLogEntity.success == 0)
+
+        if protocol is not None:
+            stmt = stmt.where(RequestLogEntity.protocol == protocol.value)
+
+        normalized_channel = (channel or "").strip()
+        if normalized_channel:
+            channel_expr = func.coalesce(
+                RequestLogEntity.channel_name,
+                RequestLogEntity.channel_id,
+                literal("n/a"),
+            )
+            stmt = stmt.where(channel_expr == normalized_channel)
+
+        return cls._apply_request_log_keyword_filter(stmt, keyword=keyword)
+
+    @staticmethod
+    def _apply_request_log_sort(
+        stmt: Any, *, sort: RequestLogSortMode = RequestLogSortMode.LATEST
+    ) -> Any:
+        if sort == RequestLogSortMode.COST:
+            return stmt.order_by(
+                RequestLogEntity.total_cost_usd.desc(),
+                RequestLogEntity.created_at.desc(),
+                RequestLogEntity.id.desc(),
+            )
+        if sort == RequestLogSortMode.LATENCY:
+            return stmt.order_by(
+                RequestLogEntity.latency_ms.desc(),
+                RequestLogEntity.created_at.desc(),
+                RequestLogEntity.id.desc(),
+            )
+        if sort == RequestLogSortMode.TOKENS:
+            return stmt.order_by(
+                RequestLogEntity.total_tokens.desc(),
+                RequestLogEntity.created_at.desc(),
+                RequestLogEntity.id.desc(),
+            )
+        return stmt.order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
 
     @staticmethod
     def _normalize_gateway_key_id(gateway_key_id: str | None) -> str | None:

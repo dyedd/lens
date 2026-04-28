@@ -832,19 +832,51 @@ export function RequestsScreen() {
   const [sortMode, setSortMode] = useState<SortMode>('latest')
   const [keyword, setKeyword] = useState('')
   const [clearingLogs, setClearingLogs] = useState(false)
-  const deferredKeyword = useDeferredValue(keyword.trim().toLowerCase())
+  const deferredKeyword = useDeferredValue(keyword.trim())
   const effectiveGatewayKeyId = selectedGatewayKeyId === 'all' ? null : selectedGatewayKeyId
+
+  const statusQueryValue = statusFilter === 'all' ? null : statusFilter
+  const protocolQueryValue = protocolFilter === 'all' ? null : protocolFilter
+  const channelQueryValue = channelFilter === 'all' ? null : channelFilter
+  const keywordQueryValue = deferredKeyword || null
 
   const requestLogsQuery = useMemo(() => {
     const params = new URLSearchParams({
       limit: String(PAGE_SIZE),
       offset: String(page * PAGE_SIZE),
     })
+    if (selectedSeries !== 'all') {
+      params.set('model_series', selectedSeries)
+    }
+    if (statusQueryValue) {
+      params.set('status', statusQueryValue)
+    }
+    if (protocolQueryValue) {
+      params.set('protocol', protocolQueryValue)
+    }
+    if (channelQueryValue) {
+      params.set('channel', channelQueryValue)
+    }
     if (effectiveGatewayKeyId) {
       params.set('gateway_key_id', effectiveGatewayKeyId)
     }
+    if (keywordQueryValue) {
+      params.set('keyword', keywordQueryValue)
+    }
+    if (sortMode !== 'latest') {
+      params.set('sort', sortMode)
+    }
     return `/admin/request-logs/page?${params.toString()}`
-  }, [effectiveGatewayKeyId, page])
+  }, [
+    channelQueryValue,
+    effectiveGatewayKeyId,
+    keywordQueryValue,
+    page,
+    protocolQueryValue,
+    selectedSeries,
+    sortMode,
+    statusQueryValue,
+  ])
 
   const overviewModelsQuery = useMemo(() => {
     const params = new URLSearchParams({
@@ -862,7 +894,17 @@ export function RequestsScreen() {
     isFetching,
     refetch: refetchRequestLogs,
   } = useQuery({
-    queryKey: ['request-logs', page, effectiveGatewayKeyId],
+    queryKey: [
+      'request-logs',
+      page,
+      selectedSeries,
+      statusQueryValue,
+      protocolQueryValue,
+      channelQueryValue,
+      effectiveGatewayKeyId,
+      keywordQueryValue,
+      sortMode,
+    ],
     queryFn: () => apiRequest<RequestLogPage>(requestLogsQuery),
     placeholderData: keepPreviousData,
     refetchInterval: page === 0 ? 5000 : false,
@@ -894,44 +936,18 @@ export function RequestsScreen() {
     staleTime: 60_000,
   })
 
-  const filteredBaseData = useMemo(() => {
-    return (data?.items ?? []).filter((item) => {
-      if (statusFilter === 'success' && !item.success) return false
-      if (statusFilter === 'failed' && item.success) return false
-      if (protocolFilter !== 'all' && item.protocol !== protocolFilter) return false
-      if (channelFilter !== 'all' && (item.channel_name || item.channel_id || 'n/a') !== channelFilter) return false
-      if (deferredKeyword) {
-        const haystack = [
-          getModelChain(item),
-          item.requested_group_name,
-          item.resolved_group_name,
-          item.upstream_model_name,
-          item.channel_name,
-          item.channel_id,
-          item.gateway_key_id,
-          item.gateway_key_remark,
-          item.error_message,
-          item.protocol,
-          String(item.status_code),
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        if (!haystack.includes(deferredKeyword)) return false
-      }
-      return true
-    })
-  }, [channelFilter, data?.items, deferredKeyword, protocolFilter, statusFilter])
-
   const seriesOptions = useMemo(() => {
     const availableKeys = new Set<ModelSeriesKey>()
     for (const model of allModels?.available_models ?? []) {
       availableKeys.add(getSeriesPreset(model).key)
     }
     if (!availableKeys.size) {
-      for (const item of filteredBaseData) {
+      for (const item of data?.items ?? []) {
         availableKeys.add(getSeriesKey(item))
       }
+    }
+    if (selectedSeries !== 'all') {
+      availableKeys.add(selectedSeries)
     }
 
     const available = MODEL_SERIES_PRESETS.filter((preset) => availableKeys.has(preset.key))
@@ -942,30 +958,21 @@ export function RequestsScreen() {
       en: 'All',
       sampleModel: 'all',
     }, ...available]
-  }, [allModels?.available_models, filteredBaseData])
+  }, [allModels?.available_models, data?.items, selectedSeries])
 
   const effectiveSelectedSeries = seriesOptions.some((item) => item.key === selectedSeries)
     ? selectedSeries
     : 'all'
 
-  const visibleData = useMemo(() => {
-    const list = filteredBaseData
-      .filter((item) => effectiveSelectedSeries === 'all' || getSeriesKey(item) === effectiveSelectedSeries)
-      .slice()
-
-    list.sort((a, b) => {
-      if (sortMode === 'cost') return b.total_cost_usd - a.total_cost_usd
-      if (sortMode === 'latency') return b.latency_ms - a.latency_ms
-      if (sortMode === 'tokens') return b.total_tokens - a.total_tokens
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    })
-
-    return list
-  }, [effectiveSelectedSeries, filteredBaseData, sortMode])
+  const visibleData = data?.items ?? []
 
   const channelOptions = useMemo(() => {
-    return [...new Set((data?.items ?? []).map((item) => item.channel_name || item.channel_id || 'n/a'))].sort((a, b) => a.localeCompare(b))
-  }, [data?.items])
+    const items = data?.channels ?? []
+    if (channelQueryValue && !items.includes(channelQueryValue)) {
+      return [channelQueryValue, ...items]
+    }
+    return items
+  }, [channelQueryValue, data?.channels])
 
   const gatewayKeyOptions = useMemo(() => {
     const items = (gatewayApiKeys ?? []).map((item) => ({
@@ -1026,6 +1033,11 @@ export function RequestsScreen() {
 
   function handleGatewayKeyChange(value: string) {
     setSelectedGatewayKeyId(value)
+    setPage(0)
+  }
+
+  function handleSortChange(value: SortMode) {
+    setSortMode(value)
     setPage(0)
   }
 
@@ -1287,7 +1299,7 @@ export function RequestsScreen() {
 
                   <Field>
                     <FieldLabel htmlFor="request-log-sort">{locale === 'zh-CN' ? '排序' : 'Sort by'}</FieldLabel>
-                    <NativeSelect id="request-log-sort" className="w-full" value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+                    <NativeSelect id="request-log-sort" className="w-full" value={sortMode} onChange={(event) => handleSortChange(event.target.value as SortMode)}>
                       <NativeSelectOption value="latest">{locale === 'zh-CN' ? '最新优先' : 'Latest first'}</NativeSelectOption>
                       <NativeSelectOption value="cost">{locale === 'zh-CN' ? '费用优先' : 'Highest cost'}</NativeSelectOption>
                       <NativeSelectOption value="latency">{locale === 'zh-CN' ? '耗时优先' : 'Longest latency'}</NativeSelectOption>

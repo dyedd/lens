@@ -28,6 +28,31 @@ class ProtocolKind(str, Enum):
     GEMINI = "gemini"
 
 
+class RequestLogModelSeries(str, Enum):
+    ALL = "all"
+    OPENAI = "openai"
+    CLAUDE = "claude"
+    GEMINI = "gemini"
+    DEEPSEEK = "deepseek"
+    QWEN = "qwen"
+    KIMI = "kimi"
+    GLM = "glm"
+    MINIMAX = "minimax"
+    OTHER = "other"
+
+
+class RequestLogStatusFilter(str, Enum):
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class RequestLogSortMode(str, Enum):
+    LATEST = "latest"
+    COST = "cost"
+    LATENCY = "latency"
+    TOKENS = "tokens"
+
+
 class ChannelStatus(str, Enum):
     ENABLED = "enabled"
     DISABLED = "disabled"
@@ -875,6 +900,7 @@ class RequestLogPage(BaseModel):
     total: int = 0
     limit: int = 0
     offset: int = 0
+    channels: list[str] = Field(default_factory=list)
 
 
 class OverviewMetrics(BaseModel):
