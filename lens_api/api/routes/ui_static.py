@@ -40,8 +40,8 @@ def register(app: FastAPI, service_module) -> None:
             raise HTTPException(status_code=404, detail="Not Found")
         return FileResponse(html_file)
 
-    app.add_api_route("/", ui_entry, methods=["GET"], include_in_schema=False)
-    app.add_api_route("/{path:path}", ui_entry, methods=["GET"], include_in_schema=False)
+    app.add_api_route("/", ui_entry, methods=["GET", "HEAD"], include_in_schema=False)
+    app.add_api_route("/{path:path}", ui_entry, methods=["GET", "HEAD"], include_in_schema=False)
 
 
 def _add_file_route(app: FastAPI, path: str, file_path: Path) -> None:
@@ -51,7 +51,7 @@ def _add_file_route(app: FastAPI, path: str, file_path: Path) -> None:
     async def serve_file() -> FileResponse:
         return FileResponse(file_path)
 
-    app.add_api_route(path, serve_file, methods=["GET"], include_in_schema=False)
+    app.add_api_route(path, serve_file, methods=["GET", "HEAD"], include_in_schema=False)
 
 
 def _resolve_html_file(static_dir: Path, normalized_path: str) -> Path | None:
