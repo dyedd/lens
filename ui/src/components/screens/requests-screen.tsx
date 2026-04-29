@@ -271,14 +271,16 @@ function buildPaginationItems(currentPage: number, totalPages: number) {
   return [1, currentPage, currentPage + 1, currentPage + 2, 'ellipsis', totalPages] as const
 }
 
-function StatusBadge({
+function RequestOutcomeBadge({
   status,
   success,
+  statusCode,
   locale,
   errorMessage,
 }: {
   status: RequestLogItem['lifecycle_status']
   success: boolean
+  statusCode: number | null | undefined
   locale: 'zh-CN' | 'en-US'
   errorMessage?: string | null
 }) {
@@ -290,6 +292,8 @@ function StatusBadge({
     failed: ['失败', 'Failed'],
   }
   const [zhLabel, enLabel] = labelMap[status] ?? labelMap.failed
+  const statusLabel = locale === 'zh-CN' ? zhLabel : enLabel
+  const label = statusCode === null || statusCode === undefined ? statusLabel : `${statusCode} · ${statusLabel}`
   const content = (
     <Badge
       variant="outline"
@@ -302,7 +306,7 @@ function StatusBadge({
             : 'bg-destructive/12 text-destructive'
       )}
     >
-      {locale === 'zh-CN' ? zhLabel : enLabel}
+      {label}
     </Badge>
   )
 
@@ -319,18 +323,6 @@ function StatusBadge({
         {errorMessage}
       </TooltipContent>
     </Tooltip>
-  )
-}
-
-function StatusCodeBadge({
-  statusCode,
-}: {
-  statusCode: number | null | undefined
-}) {
-  return (
-    <Badge variant="secondary" className="px-2.5 py-0.5 text-xs font-medium">
-      {statusCode ?? '-'}
-    </Badge>
   )
 }
 
@@ -693,12 +685,17 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
               <div className="flex flex-wrap items-center gap-2">
                 <ItemTitle className="max-w-[220px] truncate font-medium">{attempt.channel_name}</ItemTitle>
                 {attempt.model_name ? <ItemDescription className="max-w-[220px] truncate">{attempt.model_name}</ItemDescription> : null}
-                <StatusBadge status={attempt.success ? 'succeeded' : 'failed'} success={attempt.success} locale={locale} errorMessage={errorDisplay} />
+                <RequestOutcomeBadge
+                  status={attempt.success ? 'succeeded' : 'failed'}
+                  success={attempt.success}
+                  statusCode={attempt.status_code}
+                  locale={locale}
+                  errorMessage={errorDisplay}
+                />
               </div>
               {errorDisplay ? <div className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words">{errorDisplay}</div> : null}
             </ItemContent>
             <ItemActions className="ml-auto shrink-0 text-xs text-muted-foreground">
-              <StatusCodeBadge statusCode={attempt.status_code} />
               <span>{formatMs(attempt.duration_ms)}</span>
             </ItemActions>
           </Item>
@@ -797,8 +794,13 @@ function RequestCard({
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <ItemTitle className="min-w-0 max-w-full truncate text-[15px] leading-6">{modelChain}</ItemTitle>
                 <ProtocolBadge protocol={item.protocol} />
-                <StatusCodeBadge statusCode={item.status_code} />
-                <StatusBadge status={item.lifecycle_status} success={item.success} locale={locale} errorMessage={errorDisplay} />
+                <RequestOutcomeBadge
+                  status={item.lifecycle_status}
+                  success={item.success}
+                  statusCode={item.status_code}
+                  locale={locale}
+                  errorMessage={errorDisplay}
+                />
               </div>
             </div>
 
