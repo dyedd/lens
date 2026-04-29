@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 
@@ -123,11 +124,25 @@ def _gemini_request_url(channel: ChannelConfig, model_name: str, path: str, api_
 
 def _protocol_base_url(channel: ChannelConfig) -> str:
     root = _resolve_base_url(channel)
+    if _is_bigmodel_openai_chat_prefix(root, channel.protocol):
+        return root
     if channel.protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES, ProtocolKind.ANTHROPIC}:
         return f"{root}/v1"
     if channel.protocol == ProtocolKind.GEMINI:
         return f"{root}/v1beta"
     return root
+
+
+def _is_bigmodel_openai_chat_prefix(root: str, protocol: ProtocolKind) -> bool:
+    if protocol != ProtocolKind.OPENAI_CHAT:
+        return False
+
+    parsed = urlsplit(root)
+    if parsed.hostname != "open.bigmodel.cn":
+        return False
+
+    normalized_path = parsed.path.rstrip("/")
+    return normalized_path in {"/api/paas/v4", "/api/coding/paas/v4"}
 
 
 def _normalize_base_url(value: str) -> str:
@@ -175,6 +190,10 @@ def resolve_upstream_proxy_url(channel: ChannelConfig, global_proxy_url: str | N
 
 def resolve_channel_base_url(channel: ChannelConfig) -> str:
     return _resolve_base_url(channel)
+
+
+def resolve_channel_model_list_url(channel: ChannelConfig) -> str:
+    return f"{_protocol_base_url(channel).rstrip('/')}/models"
 
 
 def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:

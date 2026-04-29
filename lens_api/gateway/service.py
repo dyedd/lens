@@ -104,6 +104,7 @@ from .upstreams import (
     build_upstream_request,
     resolve_channel_api_key,
     resolve_channel_base_url,
+    resolve_channel_model_list_url,
     resolve_upstream_proxy_url,
 )
 
@@ -1709,7 +1710,7 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
     if channel.protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}:
         return {
             "method": "GET",
-            "url": f"{base_url}/v1/models",
+            "url": resolve_channel_model_list_url(channel),
             "headers": {
                 "authorization": f"Bearer {api_key}",
                 **headers,
