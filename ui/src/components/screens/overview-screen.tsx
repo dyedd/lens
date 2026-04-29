@@ -566,8 +566,17 @@ export function OverviewScreen() {
                       <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">{formatMoney(log.total_cost_usd)}</TableCell>
                       <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">{formatDuration(log.latency_ms)}</TableCell>
                       <TableCell className="px-3 py-2.5 whitespace-nowrap">
-                        <Badge variant={log.success ? "secondary" : "destructive"} className="px-2 py-0.5">
-                          {log.success ? (zh ? "成功" : "OK") : log.status_code}
+                        <Badge
+                          variant={log.lifecycle_status === "failed" ? "destructive" : "secondary"}
+                          className="px-2 py-0.5"
+                        >
+                          {log.lifecycle_status === "connecting"
+                            ? (zh ? "连接中" : "Connecting")
+                            : log.lifecycle_status === "streaming"
+                              ? (zh ? "响应中" : "Streaming")
+                              : log.success
+                                ? (zh ? "成功" : "OK")
+                                : (log.status_code ?? "-")}
                         </Badge>
                       </TableCell>
                     </TableRow>

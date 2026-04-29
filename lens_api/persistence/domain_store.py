@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
-from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogModelSeries, RequestLogPage, RequestLogSortMode, RequestLogStatusFilter, SettingItem, SiteChannelHealthBucket, SiteChannelRuntimeSummary, SiteRuntimeSummary
+from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogLifecycleStatus, RequestLogModelSeries, RequestLogPage, RequestLogSortMode, RequestLogStatusFilter, SettingItem, SiteChannelHealthBucket, SiteChannelRuntimeSummary, SiteRuntimeSummary
 from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
@@ -50,6 +50,14 @@ REQUEST_LOG_SERIES_PREFIXES: dict[RequestLogModelSeries, tuple[str, ...]] = {
     RequestLogModelSeries.GLM: ("glm", "chatglm", "zhipu", "z-ai"),
     RequestLogModelSeries.MINIMAX: ("minimax", "abab", "minmax"),
 }
+REQUEST_LOG_RUNNING_STATUSES = (
+    RequestLogLifecycleStatus.CONNECTING.value,
+    RequestLogLifecycleStatus.STREAMING.value,
+)
+REQUEST_LOG_TERMINAL_STATUSES = (
+    RequestLogLifecycleStatus.SUCCEEDED.value,
+    RequestLogLifecycleStatus.FAILED.value,
+)
 
 
 class DomainStore:
@@ -74,6 +82,31 @@ class DomainStore:
 
     def invalidate_settings_cache(self) -> None:
         self._clear_settings_cache()
+
+    async def fail_running_request_logs(self) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        async with self._session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(RequestLogEntity)
+                    .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_RUNNING_STATUSES))
+                )
+            ).scalars().all()
+            for entity in rows:
+                created_at = entity.created_at
+                if created_at.tzinfo is not None:
+                    created_at = created_at.astimezone(UTC).replace(tzinfo=None)
+                entity.lifecycle_status = RequestLogLifecycleStatus.FAILED.value
+                entity.success = 0
+                entity.status_code = None
+                entity.latency_ms = max(
+                    int(entity.latency_ms or 0),
+                    max(int((now - created_at).total_seconds() * 1000), 0),
+                )
+                if not (entity.error_message or "").strip():
+                    entity.error_message = "Request interrupted while the service was not running"
+                entity.stats_archived = 0
+            await session.commit()
 
     @staticmethod
     def _is_missing_sqlite_table(exc: OperationalError, table_name: str) -> bool:
@@ -471,6 +504,7 @@ class DomainStore:
                         func.avg(RequestLogEntity.latency_ms),
                     )
                     .where(RequestLogEntity.resolved_group_name.is_not(None))
+                    .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
                     .group_by(RequestLogEntity.resolved_group_name)
                 )
             ).all()
@@ -483,6 +517,7 @@ class DomainStore:
                     )
                     .where(RequestLogEntity.resolved_group_name.is_not(None))
                     .where(RequestLogEntity.upstream_model_name.is_not(None))
+                    .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
                     .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
                 )
             ).all()
@@ -1044,6 +1079,7 @@ class DomainStore:
                     RequestLogEntity.total_cost_usd,
                 )
                 .where(RequestLogEntity.stats_archived == 0)
+                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
                 .order_by(RequestLogEntity.created_at.asc())
             )
             if not force:
@@ -1059,6 +1095,7 @@ class DomainStore:
                     RequestLogEntity.total_cost_usd,
                 )
                 .where(RequestLogEntity.stats_archived == 0)
+                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
                 .where(RequestLogEntity.success == 1)
                 .where(model_expr.is_not(None))
                 .order_by(RequestLogEntity.created_at.asc())
@@ -1113,12 +1150,57 @@ class DomainStore:
                 entity.total_cost_usd += float(total_cost or 0.0)
 
             if daily_rows or model_rows:
-                archive_stmt = update(RequestLogEntity).where(RequestLogEntity.stats_archived == 0)
+                archive_stmt = (
+                    update(RequestLogEntity)
+                    .where(RequestLogEntity.stats_archived == 0)
+                    .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
+                )
                 if not force:
                     archive_stmt = archive_stmt.where(RequestLogEntity.created_at < today_start_utc)
                 await session.execute(archive_stmt.values(stats_archived=1))
 
             await session.commit()
+
+    async def create_pending_request_log(
+        self,
+        *,
+        protocol: str,
+        requested_group_name: str | None,
+        resolved_group_name: str | None,
+        upstream_model_name: str | None,
+        channel_id: str | None,
+        channel_name: str | None,
+        gateway_key_id: str | None,
+        is_stream: bool,
+        request_content: str | None = None,
+    ) -> RequestLogItem:
+        return await self.create_request_log(
+            protocol=protocol,
+            requested_group_name=requested_group_name,
+            resolved_group_name=resolved_group_name,
+            upstream_model_name=upstream_model_name,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            gateway_key_id=gateway_key_id,
+            status_code=None,
+            success=False,
+            lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+            is_stream=is_stream,
+            first_token_latency_ms=0,
+            latency_ms=0,
+            input_tokens=0,
+            cache_read_input_tokens=0,
+            cache_write_input_tokens=0,
+            output_tokens=0,
+            total_tokens=0,
+            input_cost_usd=0.0,
+            output_cost_usd=0.0,
+            total_cost_usd=0.0,
+            request_content=request_content,
+            response_content=None,
+            attempts=[],
+            error_message=None,
+        )
 
     async def create_request_log(
         self,
@@ -1130,8 +1212,9 @@ class DomainStore:
         channel_id: str | None,
         channel_name: str | None,
         gateway_key_id: str | None,
-        status_code: int,
+        status_code: int | None,
         success: bool,
+        lifecycle_status: RequestLogLifecycleStatus,
         is_stream: bool,
         first_token_latency_ms: int,
         latency_ms: int,
@@ -1149,6 +1232,7 @@ class DomainStore:
         error_message: str | None = None,
     ) -> RequestLogItem:
         item: RequestLogItem
+        lifecycle_value = lifecycle_status.value
         async with self._session_factory() as session:
             entity = RequestLogEntity(
                 protocol=protocol,
@@ -1160,6 +1244,7 @@ class DomainStore:
                 gateway_key_id=gateway_key_id,
                 status_code=status_code,
                 success=1 if success else 0,
+                lifecycle_status=lifecycle_value,
                 is_stream=1 if is_stream else 0,
                 first_token_latency_ms=max(first_token_latency_ms, 0),
                 latency_ms=latency_ms,
@@ -1175,13 +1260,95 @@ class DomainStore:
                 response_content=response_content,
                 attempts_json=json.dumps(attempts or [], ensure_ascii=True),
                 error_message=error_message,
-                stats_archived=0,
+                stats_archived=0 if lifecycle_value in REQUEST_LOG_TERMINAL_STATUSES else 1,
             )
             session.add(entity)
             await session.commit()
             await session.refresh(entity)
             item = self._to_request_log(entity)
         return item
+
+    async def update_request_log(
+        self,
+        log_id: int,
+        *,
+        protocol: str,
+        requested_group_name: str | None,
+        resolved_group_name: str | None,
+        upstream_model_name: str | None,
+        channel_id: str | None,
+        channel_name: str | None,
+        gateway_key_id: str | None,
+        status_code: int | None,
+        success: bool,
+        lifecycle_status: RequestLogLifecycleStatus,
+        is_stream: bool,
+        first_token_latency_ms: int,
+        latency_ms: int,
+        input_tokens: int = 0,
+        cache_read_input_tokens: int = 0,
+        cache_write_input_tokens: int = 0,
+        output_tokens: int = 0,
+        total_tokens: int = 0,
+        input_cost_usd: float = 0.0,
+        output_cost_usd: float = 0.0,
+        total_cost_usd: float = 0.0,
+        request_content: str | None = None,
+        response_content: str | None = None,
+        attempts: list[dict[str, Any]] | None = None,
+        error_message: str | None = None,
+    ) -> RequestLogItem | None:
+        lifecycle_value = lifecycle_status.value
+        async with self._session_factory() as session:
+            entity = await session.get(RequestLogEntity, log_id)
+            if entity is None:
+                return None
+            entity.protocol = protocol
+            entity.requested_group_name = requested_group_name
+            entity.resolved_group_name = resolved_group_name
+            entity.upstream_model_name = upstream_model_name
+            entity.channel_id = channel_id
+            entity.channel_name = channel_name
+            entity.gateway_key_id = gateway_key_id
+            entity.status_code = status_code
+            entity.success = 1 if success else 0
+            entity.lifecycle_status = lifecycle_value
+            entity.is_stream = 1 if is_stream else 0
+            entity.first_token_latency_ms = max(first_token_latency_ms, 0)
+            entity.latency_ms = max(latency_ms, 0)
+            entity.input_tokens = max(input_tokens, 0)
+            entity.cache_read_input_tokens = max(cache_read_input_tokens, 0)
+            entity.cache_write_input_tokens = max(cache_write_input_tokens, 0)
+            entity.output_tokens = max(output_tokens, 0)
+            entity.total_tokens = max(total_tokens, 0)
+            entity.input_cost_usd = max(input_cost_usd, 0.0)
+            entity.output_cost_usd = max(output_cost_usd, 0.0)
+            entity.total_cost_usd = max(total_cost_usd, 0.0)
+            entity.request_content = request_content
+            entity.response_content = response_content
+            entity.attempts_json = json.dumps(attempts or [], ensure_ascii=True)
+            entity.error_message = error_message
+            entity.stats_archived = 0 if lifecycle_value in REQUEST_LOG_TERMINAL_STATUSES else 1
+            await session.commit()
+            await session.refresh(entity)
+            return self._to_request_log(entity)
+
+    async def update_request_log_runtime(
+        self,
+        log_id: int,
+        *,
+        first_token_latency_ms: int | None = None,
+        latency_ms: int | None = None,
+    ) -> None:
+        async with self._session_factory() as session:
+            entity = await session.get(RequestLogEntity, log_id)
+            if entity is None:
+                return
+            if first_token_latency_ms is not None:
+                entity.first_token_latency_ms = max(first_token_latency_ms, 0)
+            if latency_ms is not None:
+                entity.latency_ms = max(latency_ms, 0)
+            await session.commit()
 
     async def list_request_logs(
         self,
@@ -1307,6 +1474,7 @@ class DomainStore:
             recent_request_logs = (
                 select(RequestLogEntity.channel_id.label("channel_id"))
                 .where(RequestLogEntity.channel_id.is_not(None))
+                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
                 .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
                 .limit(100)
                 .subquery()
@@ -1346,6 +1514,7 @@ class DomainStore:
                     SiteProtocolConfigEntity,
                     SiteProtocolConfigEntity.id == RequestLogEntity.channel_id,
                 )
+                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
                 .subquery()
             )
 
@@ -1394,6 +1563,7 @@ class DomainStore:
                 )
                 .where(
                     RequestLogEntity.channel_id.is_not(None),
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES),
                     RequestLogEntity.created_at >= bucket_start.replace(tzinfo=None),
                     RequestLogEntity.created_at < bucket_end.replace(tzinfo=None),
                 )
@@ -1996,6 +2166,7 @@ class DomainStore:
                 RequestLogEntity.total_cost_usd,
             )
             .where(RequestLogEntity.success == 1)
+            .where(RequestLogEntity.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value)
             .where(model_expr.is_not(None))
             .order_by(RequestLogEntity.created_at.asc())
         )
@@ -2025,6 +2196,7 @@ class DomainStore:
                 RequestLogEntity.total_cost_usd,
             )
             .where(RequestLogEntity.success == 1)
+            .where(RequestLogEntity.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value)
             .where(model_expr.is_not(None))
             .order_by(RequestLogEntity.created_at.asc())
         )
@@ -2408,9 +2580,13 @@ class DomainStore:
             stmt = stmt.where(series_condition)
 
         if status_filter == RequestLogStatusFilter.SUCCESS:
+            stmt = stmt.where(RequestLogEntity.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value)
             stmt = stmt.where(RequestLogEntity.success == 1)
         elif status_filter == RequestLogStatusFilter.FAILED:
+            stmt = stmt.where(RequestLogEntity.lifecycle_status == RequestLogLifecycleStatus.FAILED.value)
             stmt = stmt.where(RequestLogEntity.success == 0)
+        elif status_filter == RequestLogStatusFilter.RUNNING:
+            stmt = stmt.where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_RUNNING_STATUSES))
 
         if protocol is not None:
             stmt = stmt.where(RequestLogEntity.protocol == protocol.value)
@@ -2565,6 +2741,7 @@ class DomainStore:
                     func.sum(RequestLogEntity.total_cost_usd),
                 )
                 .where(RequestLogEntity.gateway_key_id.in_(unique_ids))
+                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
                 .group_by(RequestLogEntity.gateway_key_id)
             )
         ).all()
@@ -2715,6 +2892,15 @@ class DomainStore:
             gateway_key_remark=gateway_key_remark or None,
             status_code=entity.status_code,
             success=bool(entity.success),
+            lifecycle_status=(
+                RequestLogLifecycleStatus(entity.lifecycle_status)
+                if entity.lifecycle_status in RequestLogLifecycleStatus._value2member_map_
+                else (
+                    RequestLogLifecycleStatus.SUCCEEDED
+                    if entity.success
+                    else RequestLogLifecycleStatus.FAILED
+                )
+            ),
             is_stream=bool(entity.is_stream),
             first_token_latency_ms=entity.first_token_latency_ms,
             latency_ms=entity.latency_ms,
