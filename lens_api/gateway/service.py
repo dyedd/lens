@@ -60,6 +60,7 @@ from ..models import (
     PublicBranding,
     RequestLogDetail,
     RequestLogItem,
+    RequestLogLifecycleStatus,
     RequestLogModelSeries,
     RequestLogPage,
     RequestLogSortMode,
@@ -294,12 +295,16 @@ class StreamCapture:
     total_tokens: int = 0
     resolved_model: str | None = None
     errors: list[str] = field(default_factory=list)
+    request_log_id: int | None = None
+    stream_started_at: float = 0.0
+    last_persisted_first_token_latency_ms: int = 0
 
 
 async def _startup_app_state(state: AppState) -> None:
     resolve_time_zone(None)
     if state.http.is_closed:
         state.http = state._create_http_client()
+    await state.domain_store.fail_running_request_logs()
 
 
 async def _close_app_state(state: AppState) -> None:
@@ -1230,19 +1235,261 @@ async def _proxy_protocol(
     request_content = _dump_json(body)
     plan: RoutingPlan | None = None
     attempts: list[AttemptLog] = []
+    request_log = await app_state.domain_store.create_pending_request_log(
+        protocol=protocol.value,
+        requested_group_name=requested_model,
+        resolved_group_name=None,
+        upstream_model_name=None,
+        channel_id=None,
+        channel_name=None,
+        gateway_key_id=gateway_key.id,
+        is_stream=bool(body.get("stream")),
+        request_content=request_content,
+    )
+    request_log_id = request_log.id
     try:
-        plan = await _resolve_routing_plan(protocol, requested_model)
-        selection = app_state.router.select(
-            channels,
-            protocol,
-            plan.resolved_group_name,
-            strategy=plan.strategy,
-            route_targets=plan.route_targets,
-            use_model_matching=plan.use_model_matching,
-            cursor_key=plan.cursor_key,
+        try:
+            plan = await _resolve_routing_plan(protocol, requested_model)
+            selection = app_state.router.select(
+                channels,
+                protocol,
+                plan.resolved_group_name,
+                strategy=plan.strategy,
+                route_targets=plan.route_targets,
+                use_model_matching=plan.use_model_matching,
+                cursor_key=plan.cursor_key,
+            )
+            await _update_request_log(
+                request_log_id,
+                protocol=protocol,
+                requested_group_name=plan.requested_group_name,
+                resolved_group_name=plan.resolved_group_name,
+                upstream_model_name=None,
+                channel_id=None,
+                channel_name=None,
+                gateway_key=gateway_key,
+                lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+                status_code=None,
+                success=False,
+                is_stream=bool(body.get("stream")),
+                first_token_latency_ms=0,
+                latency_ms=_elapsed_ms(started_at),
+                request_content=request_content,
+                response_content=None,
+                attempts=[item.__dict__ for item in attempts],
+                error_message=None,
+            )
+        except LookupError as exc:
+            await _update_request_log(
+                request_log_id,
+                protocol=protocol,
+                requested_group_name=(
+                    plan.requested_group_name if plan is not None else requested_model
+                ),
+                resolved_group_name=(
+                    plan.resolved_group_name if plan is not None else None
+                ),
+                upstream_model_name=None,
+                channel_id=None,
+                channel_name=None,
+                gateway_key=gateway_key,
+                lifecycle_status=RequestLogLifecycleStatus.FAILED,
+                status_code=503,
+                success=False,
+                is_stream=bool(body.get("stream")),
+                first_token_latency_ms=0,
+                latency_ms=_elapsed_ms(started_at),
+                request_content=request_content,
+                response_content=None,
+                attempts=[item.__dict__ for item in attempts],
+                error_message=str(exc),
+            )
+            error_body = ErrorResponse(
+                error={
+                    "type": "routing_error",
+                    "message": str(exc),
+                }
+            )
+            return JSONResponse(status_code=503, content=error_body.model_dump(mode="json"))
+
+        pricing_group_name = plan.resolved_group_name
+        errors: list[str] = []
+
+        for target in [selection.primary, *selection.fallbacks]:
+            channel = target.channel
+            attempt_started_at = perf_counter()
+            upstream_body = deepcopy(body)
+            try:
+                if needs_conversion(protocol, channel.protocol):
+                    upstream_body = convert_request(
+                        protocol, channel.protocol, body, target.model_name
+                    )
+                else:
+                    upstream_body = _prepare_upstream_body(
+                        protocol, body, target.model_name
+                    )
+                upstream_body = _apply_param_override(channel, upstream_body)
+                await _update_request_log(
+                    request_log_id,
+                    protocol=protocol,
+                    requested_group_name=plan.requested_group_name,
+                    resolved_group_name=plan.resolved_group_name,
+                    upstream_model_name=target.model_name,
+                    channel_id=channel.id,
+                    channel_name=channel.name,
+                    gateway_key=gateway_key,
+                    lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+                    status_code=None,
+                    success=False,
+                    is_stream=bool(upstream_body.get("stream")),
+                    first_token_latency_ms=0,
+                    latency_ms=_elapsed_ms(started_at),
+                    request_content=_dump_json(upstream_body),
+                    response_content=None,
+                    attempts=[item.__dict__ for item in attempts],
+                    error_message=None,
+                )
+                result = await _call_channel(
+                    channel,
+                    upstream_body,
+                    pricing_group_name=pricing_group_name,
+                    client_protocol=protocol,
+                    credential_id=target.credential_id,
+                )
+                attempts.append(
+                    AttemptLog(
+                        channel_id=channel.id,
+                        channel_name=channel.name,
+                        model_name=target.model_name,
+                        status_code=result.status_code,
+                        success=True,
+                        duration_ms=_elapsed_ms(attempt_started_at),
+                    )
+                )
+                if result.is_stream:
+                    if result.stream_capture is not None:
+                        result.stream_capture.request_log_id = request_log_id
+                        result.stream_capture.stream_started_at = started_at
+                    await _update_request_log(
+                        request_log_id,
+                        protocol=protocol,
+                        requested_group_name=plan.requested_group_name,
+                        resolved_group_name=plan.resolved_group_name,
+                        upstream_model_name=result.upstream_model_name,
+                        channel_id=channel.id,
+                        channel_name=channel.name,
+                        gateway_key=gateway_key,
+                        lifecycle_status=RequestLogLifecycleStatus.STREAMING,
+                        status_code=result.status_code,
+                        success=False,
+                        is_stream=True,
+                        first_token_latency_ms=0,
+                        latency_ms=_elapsed_ms(started_at),
+                        request_content=result.request_content or _dump_json(upstream_body),
+                        response_content=None,
+                        attempts=[item.__dict__ for item in attempts],
+                        error_message=None,
+                    )
+                    result.response.background = BackgroundTask(
+                        _record_stream_request_log,
+                        request_log_id=request_log_id,
+                        protocol=protocol,
+                        requested_group_name=plan.requested_group_name,
+                        resolved_group_name=plan.resolved_group_name,
+                        channel=channel,
+                        gateway_key=gateway_key,
+                        started_at=started_at,
+                        upstream_body=upstream_body,
+                        result=result,
+                        attempts=[item.__dict__ for item in attempts],
+                    )
+                    return result.response
+                await _update_request_log(
+                    request_log_id,
+                    protocol=protocol,
+                    requested_group_name=plan.requested_group_name,
+                    resolved_group_name=plan.resolved_group_name,
+                    upstream_model_name=result.upstream_model_name,
+                    channel_id=channel.id,
+                    channel_name=channel.name,
+                    gateway_key=gateway_key,
+                    lifecycle_status=RequestLogLifecycleStatus.SUCCEEDED,
+                    status_code=result.status_code,
+                    success=True,
+                    is_stream=result.is_stream,
+                    first_token_latency_ms=result.first_token_latency_ms,
+                    latency_ms=_elapsed_ms(started_at),
+                    input_tokens=result.input_tokens,
+                    cache_read_input_tokens=result.cache_read_input_tokens,
+                    cache_write_input_tokens=result.cache_write_input_tokens,
+                    output_tokens=result.output_tokens,
+                    total_tokens=result.total_tokens,
+                    input_cost_usd=result.input_cost_usd,
+                    output_cost_usd=result.output_cost_usd,
+                    total_cost_usd=result.total_cost_usd,
+                    request_content=result.request_content or _dump_json(upstream_body),
+                    response_content=result.response_content,
+                    attempts=[item.__dict__ for item in attempts],
+                    error_message=None,
+                )
+                return result.response
+            except HTTPException as exc:
+                message = _format_channel_error(channel, exc.detail)
+                app_state.router.record_failure(
+                    channel.id,
+                    message,
+                    status_code=getattr(exc, "router_status_code", exc.status_code),
+                    credential_id=target.credential_id,
+                    channel_keys=channel.keys,
+                    threshold=int(runtime["circuit_breaker_threshold"]),
+                    cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
+                    max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+                )
+                errors.append(message)
+                attempts.append(
+                    AttemptLog(
+                        channel_id=channel.id,
+                        channel_name=channel.name,
+                        model_name=target.model_name,
+                        status_code=exc.status_code,
+                        success=False,
+                        duration_ms=_elapsed_ms(attempt_started_at),
+                        error_message=message,
+                    )
+                )
+                await _update_request_log(
+                    request_log_id,
+                    protocol=protocol,
+                    requested_group_name=plan.requested_group_name,
+                    resolved_group_name=plan.resolved_group_name,
+                    upstream_model_name=None,
+                    channel_id=channel.id,
+                    channel_name=channel.name,
+                    gateway_key=gateway_key,
+                    lifecycle_status=RequestLogLifecycleStatus.FAILED,
+                    status_code=exc.status_code,
+                    success=False,
+                    is_stream=bool(upstream_body.get("stream")),
+                    first_token_latency_ms=0,
+                    latency_ms=_elapsed_ms(started_at),
+                    request_content=_dump_json(upstream_body),
+                    response_content=None,
+                    attempts=[item.__dict__ for item in attempts],
+                    error_message=message,
+                )
+
+        error_body = ErrorResponse(
+            error={
+                "type": "upstream_error",
+                "message": "All upstream channels failed",
+                "details": errors,
+            }
         )
-    except LookupError as exc:
-        await _record_request_log(
+        return JSONResponse(status_code=502, content=error_body.model_dump(mode="json"))
+    except Exception as exc:
+        logger.exception("Proxy request failed unexpectedly")
+        await _update_request_log(
+            request_log_id,
             protocol=protocol,
             requested_group_name=(
                 plan.requested_group_name if plan is not None else requested_model
@@ -1254,7 +1501,8 @@ async def _proxy_protocol(
             channel_id=None,
             channel_name=None,
             gateway_key=gateway_key,
-            status_code=503,
+            lifecycle_status=RequestLogLifecycleStatus.FAILED,
+            status_code=500,
             success=False,
             is_stream=bool(body.get("stream")),
             first_token_latency_ms=0,
@@ -1262,140 +1510,9 @@ async def _proxy_protocol(
             request_content=request_content,
             response_content=None,
             attempts=[item.__dict__ for item in attempts],
-            error_message=str(exc),
+            error_message=f"Unexpected proxy error: {type(exc).__name__}: {exc}",
         )
-        error_body = ErrorResponse(
-            error={
-                "type": "routing_error",
-                "message": str(exc),
-            }
-        )
-        return JSONResponse(status_code=503, content=error_body.model_dump(mode="json"))
-
-    pricing_group_name = plan.resolved_group_name
-    errors: list[str] = []
-
-    for target in [selection.primary, *selection.fallbacks]:
-        channel = target.channel
-        attempt_started_at = perf_counter()
-        upstream_body = deepcopy(body)
-        try:
-            if needs_conversion(protocol, channel.protocol):
-                upstream_body = convert_request(
-                    protocol, channel.protocol, body, target.model_name
-                )
-            else:
-                upstream_body = _prepare_upstream_body(
-                    protocol, body, target.model_name
-                )
-            upstream_body = _apply_param_override(channel, upstream_body)
-            result = await _call_channel(
-                channel,
-                upstream_body,
-                pricing_group_name=pricing_group_name,
-                client_protocol=protocol,
-                credential_id=target.credential_id,
-            )
-            attempts.append(
-                AttemptLog(
-                    channel_id=channel.id,
-                    channel_name=channel.name,
-                    model_name=target.model_name,
-                    status_code=result.status_code,
-                    success=True,
-                    duration_ms=_elapsed_ms(attempt_started_at),
-                )
-            )
-            if result.is_stream:
-                result.response.background = BackgroundTask(
-                    _record_stream_request_log,
-                    protocol=protocol,
-                    requested_group_name=plan.requested_group_name,
-                    resolved_group_name=plan.resolved_group_name,
-                    channel=channel,
-                    gateway_key=gateway_key,
-                    started_at=started_at,
-                    upstream_body=upstream_body,
-                    result=result,
-                    attempts=[item.__dict__ for item in attempts],
-                )
-                return result.response
-            await _record_request_log(
-                protocol=protocol,
-                requested_group_name=plan.requested_group_name,
-                resolved_group_name=plan.resolved_group_name,
-                upstream_model_name=result.upstream_model_name,
-                channel_id=channel.id,
-                channel_name=channel.name,
-                gateway_key=gateway_key,
-                status_code=result.status_code,
-                success=True,
-                is_stream=result.is_stream,
-                first_token_latency_ms=result.first_token_latency_ms,
-                latency_ms=_elapsed_ms(started_at),
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                total_tokens=result.total_tokens,
-                input_cost_usd=result.input_cost_usd,
-                output_cost_usd=result.output_cost_usd,
-                total_cost_usd=result.total_cost_usd,
-                request_content=result.request_content or _dump_json(upstream_body),
-                response_content=result.response_content,
-                attempts=[item.__dict__ for item in attempts],
-                error_message=None,
-            )
-            return result.response
-        except HTTPException as exc:
-            message = _format_channel_error(channel, exc.detail)
-            app_state.router.record_failure(
-                channel.id,
-                message,
-                status_code=getattr(exc, "router_status_code", exc.status_code),
-                credential_id=target.credential_id,
-                channel_keys=channel.keys,
-                threshold=int(runtime["circuit_breaker_threshold"]),
-                cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
-                max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
-            )
-            errors.append(message)
-            attempts.append(
-                AttemptLog(
-                    channel_id=channel.id,
-                    channel_name=channel.name,
-                    model_name=target.model_name,
-                    status_code=exc.status_code,
-                    success=False,
-                    duration_ms=_elapsed_ms(attempt_started_at),
-                    error_message=message,
-                )
-            )
-            await _record_request_log(
-                protocol=protocol,
-                requested_group_name=plan.requested_group_name,
-                resolved_group_name=plan.resolved_group_name,
-                upstream_model_name=None,
-                channel_id=channel.id,
-                channel_name=channel.name,
-                gateway_key=gateway_key,
-                status_code=exc.status_code,
-                success=False,
-                is_stream=bool(upstream_body.get("stream")),
-                first_token_latency_ms=0,
-                latency_ms=_elapsed_ms(started_at),
-                request_content=_dump_json(upstream_body),
-                response_content=None,
-                attempts=[item.__dict__ for item in attempts],
-                error_message=message,
-            )
-
-    error_body = ErrorResponse(
-        error={
-            "type": "upstream_error",
-            "message": "All upstream channels failed",
-            "details": errors,
-        }
-    )
-    return JSONResponse(status_code=502, content=error_body.model_dump(mode="json"))
+        raise
 
 
 async def _call_channel(
@@ -1935,6 +2052,7 @@ def _elapsed_ms(started_at: float) -> int:
 
 async def _record_stream_request_log(
     *,
+    request_log_id: int,
     protocol: ProtocolKind,
     requested_group_name: str | None,
     resolved_group_name: str | None,
@@ -1969,7 +2087,8 @@ async def _record_stream_request_log(
             cache_write_input_tokens,
         )
     )
-    await _record_request_log(
+    await _update_request_log(
+        request_log_id,
         protocol=protocol,
         requested_group_name=requested_group_name,
         resolved_group_name=resolved_group_name,
@@ -1977,6 +2096,11 @@ async def _record_stream_request_log(
         channel_id=channel.id,
         channel_name=channel.name,
         gateway_key=gateway_key,
+        lifecycle_status=(
+            RequestLogLifecycleStatus.FAILED
+            if capture_issue is not None
+            else RequestLogLifecycleStatus.SUCCEEDED
+        ),
         status_code=result.status_code,
         success=capture_issue is None,
         is_stream=True,
@@ -2001,7 +2125,8 @@ async def _record_stream_request_log(
     )
 
 
-async def _record_request_log(
+async def _update_request_log(
+    request_log_id: int,
     *,
     protocol: ProtocolKind,
     requested_group_name: str | None,
@@ -2010,7 +2135,8 @@ async def _record_request_log(
     channel_id: str | None,
     channel_name: str | None,
     gateway_key: GatewayApiKey,
-    status_code: int,
+    lifecycle_status: RequestLogLifecycleStatus,
+    status_code: int | None,
     success: bool,
     is_stream: bool,
     first_token_latency_ms: int,
@@ -2028,7 +2154,8 @@ async def _record_request_log(
     attempts: list[dict[str, Any]] | None = None,
     error_message: str | None,
 ) -> None:
-    await app_state.domain_store.create_request_log(
+    await app_state.domain_store.update_request_log(
+        request_log_id,
         protocol=protocol.value,
         requested_group_name=requested_group_name,
         resolved_group_name=resolved_group_name,
@@ -2038,6 +2165,7 @@ async def _record_request_log(
         gateway_key_id=gateway_key.id,
         status_code=status_code,
         success=success,
+        lifecycle_status=lifecycle_status,
         is_stream=is_stream,
         first_token_latency_ms=first_token_latency_ms,
         latency_ms=latency_ms,
@@ -2103,6 +2231,13 @@ async def _pump_stream_response(
             if not capture.saw_first_chunk:
                 capture.saw_first_chunk = True
                 capture.first_token_latency_ms = _elapsed_ms(stream_started_at)
+                if capture.request_log_id is not None:
+                    capture.last_persisted_first_token_latency_ms = capture.first_token_latency_ms
+                    await app_state.domain_store.update_request_log_runtime(
+                        capture.request_log_id,
+                        first_token_latency_ms=capture.first_token_latency_ms,
+                        latency_ms=_elapsed_ms(capture.stream_started_at or stream_started_at),
+                    )
             _capture_stream_chunk(protocol, chunk, capture)
             if not capture.client_disconnected:
                 chunk_queue.put_nowait(chunk)

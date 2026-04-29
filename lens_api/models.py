@@ -42,7 +42,15 @@ class RequestLogModelSeries(str, Enum):
 
 
 class RequestLogStatusFilter(str, Enum):
+    RUNNING = "running"
     SUCCESS = "success"
+    FAILED = "failed"
+
+
+class RequestLogLifecycleStatus(str, Enum):
+    CONNECTING = "connecting"
+    STREAMING = "streaming"
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
 
 
@@ -806,8 +814,9 @@ class ConfigBackupRequestLog(BaseModel):
     channel_id: str | None = None
     channel_name: str | None = None
     gateway_key_id: str | None = None
-    status_code: int
+    status_code: int | None = None
     success: bool
+    lifecycle_status: RequestLogLifecycleStatus | None = None
     is_stream: bool = False
     first_token_latency_ms: int = 0
     latency_ms: int = 0
@@ -825,6 +834,16 @@ class ConfigBackupRequestLog(BaseModel):
     request_content: str | None = None
     response_content: str | None = None
     attempts: list["RequestLogAttempt"] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def infer_lifecycle_status(self) -> "ConfigBackupRequestLog":
+        if self.lifecycle_status is None:
+            self.lifecycle_status = (
+                RequestLogLifecycleStatus.SUCCEEDED
+                if self.success
+                else RequestLogLifecycleStatus.FAILED
+            )
+        return self
 
 
 class ConfigBackupDump(BaseModel):
@@ -861,8 +880,9 @@ class RequestLogItem(BaseModel):
     channel_name: str | None = None
     gateway_key_id: str | None = None
     gateway_key_remark: str | None = None
-    status_code: int
+    status_code: int | None = None
     success: bool
+    lifecycle_status: RequestLogLifecycleStatus
     is_stream: bool = False
     first_token_latency_ms: int = 0
     latency_ms: int

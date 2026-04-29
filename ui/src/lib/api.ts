@@ -321,8 +321,9 @@ export type ConfigBackupRequestLog = {
   channel_id?: string | null
   channel_name?: string | null
   gateway_key_id?: string | null
-  status_code: number
+  status_code?: number | null
   success: boolean
+  lifecycle_status: RequestLogLifecycleStatus
   is_stream: boolean
   first_token_latency_ms: number
   latency_ms: number
@@ -545,8 +546,9 @@ export type RequestLogItem = {
   channel_name?: string | null
   gateway_key_id?: string | null
   gateway_key_remark?: string | null
-  status_code: number
+  status_code?: number | null
   success: boolean
+  lifecycle_status: RequestLogLifecycleStatus
   is_stream: boolean
   first_token_latency_ms: number
   latency_ms: number
@@ -562,6 +564,12 @@ export type RequestLogItem = {
   error_message?: string | null
   created_at: string
 }
+
+export type RequestLogLifecycleStatus =
+  | 'connecting'
+  | 'streaming'
+  | 'succeeded'
+  | 'failed'
 
 export type RequestLogAttempt = {
   channel_id: string

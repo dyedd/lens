@@ -23,6 +23,7 @@ from ..models import (
     ModelGroup,
     ModelPriceItem,
     RequestLogAttempt,
+    RequestLogLifecycleStatus,
     SettingItem,
     SiteConfig,
 )
@@ -662,6 +663,9 @@ class BackupStore:
                     gateway_key_id=item.gateway_key_id,
                     status_code=item.status_code,
                     success=1 if item.success else 0,
+                    lifecycle_status=(
+                        item.lifecycle_status or RequestLogLifecycleStatus.FAILED
+                    ).value,
                     is_stream=1 if item.is_stream else 0,
                     first_token_latency_ms=max(item.first_token_latency_ms, 0),
                     latency_ms=max(item.latency_ms, 0),
@@ -1122,6 +1126,15 @@ class BackupStore:
                     gateway_key_id=row.gateway_key_id,
                     status_code=row.status_code,
                     success=bool(row.success),
+                    lifecycle_status=(
+                        row.lifecycle_status
+                        if row.lifecycle_status in RequestLogLifecycleStatus._value2member_map_
+                        else (
+                            RequestLogLifecycleStatus.SUCCEEDED.value
+                            if row.success
+                            else RequestLogLifecycleStatus.FAILED.value
+                        )
+                    ),
                     is_stream=bool(row.is_stream),
                     first_token_latency_ms=row.first_token_latency_ms,
                     latency_ms=row.latency_ms,

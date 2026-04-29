@@ -129,21 +129,33 @@ const MODEL_SERIES_PRESETS = [
 
 type ModelSeriesKey = typeof MODEL_SERIES_PRESETS[number]['key']
 type SelectedSeries = 'all' | ModelSeriesKey
-type StatusFilter = 'all' | 'success' | 'failed'
+type StatusFilter = 'all' | 'running' | 'success' | 'failed'
 type SortMode = 'latest' | 'cost' | 'latency' | 'tokens'
 type JsonLike = null | boolean | number | string | JsonLike[] | { [key: string]: JsonLike }
 
-function formatMs(value: number) {
+function formatMs(value: number | null | undefined) {
+  if (!value) return '-'
   if (value < 1000) return `${value} ms`
   return `${(value / 1000).toFixed(2)} s`
 }
 
-function formatMoney(value: number) {
+function formatMoney(value: number | null | undefined) {
+  if (!value) return '$0.000000'
   return `$${value.toFixed(6)}`
+}
+
+function formatMaybeMoney(value: number | null | undefined, pending: boolean) {
+  if (pending && !value) return '-'
+  return formatMoney(value)
 }
 
 function formatCount(value: number) {
   return value.toLocaleString()
+}
+
+function formatMaybeCount(value: number, pending: boolean) {
+  if (pending && !value) return '-'
+  return formatCount(value)
 }
 
 function shortenGatewayKeyId(value?: string | null) {
@@ -260,27 +272,41 @@ function buildPaginationItems(currentPage: number, totalPages: number) {
 }
 
 function StatusBadge({
+  status,
   success,
   locale,
   errorMessage,
 }: {
+  status: RequestLogItem['lifecycle_status']
   success: boolean
   locale: 'zh-CN' | 'en-US'
   errorMessage?: string | null
 }) {
+  const running = status === 'connecting' || status === 'streaming'
+  const labelMap: Record<RequestLogItem['lifecycle_status'], [string, string]> = {
+    connecting: ['连接中', 'Connecting'],
+    streaming: ['响应中', 'Streaming'],
+    succeeded: ['成功', 'Success'],
+    failed: ['失败', 'Failed'],
+  }
+  const [zhLabel, enLabel] = labelMap[status] ?? labelMap.failed
   const content = (
     <Badge
       variant="outline"
       className={cn(
         'rounded-full border-0 px-3 py-1 text-xs font-medium',
-        success ? 'bg-primary/10 text-primary' : 'bg-destructive/12 text-destructive'
+        running
+          ? 'bg-muted text-muted-foreground'
+          : success
+            ? 'bg-primary/10 text-primary'
+            : 'bg-destructive/12 text-destructive'
       )}
     >
-      {success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
+      {locale === 'zh-CN' ? zhLabel : enLabel}
     </Badge>
   )
 
-  if (success || !errorMessage?.trim()) {
+  if (success || running || !errorMessage?.trim()) {
     return content
   }
 
@@ -667,7 +693,7 @@ function AttemptChain({ detail, locale }: { detail: RequestLogDetail; locale: 'z
               <div className="flex flex-wrap items-center gap-2">
                 <ItemTitle className="max-w-[220px] truncate font-medium">{attempt.channel_name}</ItemTitle>
                 {attempt.model_name ? <ItemDescription className="max-w-[220px] truncate">{attempt.model_name}</ItemDescription> : null}
-                <StatusBadge success={attempt.success} locale={locale} errorMessage={errorDisplay} />
+                <StatusBadge status={attempt.success ? 'succeeded' : 'failed'} success={attempt.success} locale={locale} errorMessage={errorDisplay} />
               </div>
               {errorDisplay ? <div className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words">{errorDisplay}</div> : null}
             </ItemContent>
@@ -686,6 +712,7 @@ function RequestCard({
   item,
   locale,
   timeZone,
+  now,
   onPrefetchDetail,
   onOpenDetail,
   onOpenAttempts,
@@ -693,6 +720,7 @@ function RequestCard({
   item: RequestLogItem
   locale: 'zh-CN' | 'en-US'
   timeZone?: string
+  now: number
   onPrefetchDetail: () => void
   onOpenDetail: () => void
   onOpenAttempts: () => void
@@ -704,6 +732,10 @@ function RequestCard({
   const attemptCount = Number.isFinite(item.attempt_count) ? item.attempt_count : 0
   const showAttemptButton = attemptCount > 1
   const errorDisplay = formatErrorDisplay(item.error_message)
+  const running = item.lifecycle_status === 'connecting' || item.lifecycle_status === 'streaming'
+  const elapsedMs = running
+    ? Math.max(now - new Date(item.created_at).getTime(), item.latency_ms || 0, 0)
+    : item.latency_ms
 
   useEffect(() => {
     return () => {
@@ -733,7 +765,7 @@ function RequestCard({
       variant="outline"
       className={cn(
         'rounded-2xl px-4 py-4 transition-colors hover:bg-muted/20',
-        item.success ? '' : 'border-destructive/25 bg-destructive/[0.015]'
+        item.lifecycle_status === 'failed' ? 'border-destructive/25 bg-destructive/[0.015]' : ''
       )}
     >
       <div
@@ -766,7 +798,7 @@ function RequestCard({
                 <ItemTitle className="min-w-0 max-w-full truncate text-[15px] leading-6">{modelChain}</ItemTitle>
                 <ProtocolBadge protocol={item.protocol} />
                 <StatusCodeBadge statusCode={item.status_code} />
-                <StatusBadge success={item.success} locale={locale} errorMessage={errorDisplay} />
+                <StatusBadge status={item.lifecycle_status} success={item.success} locale={locale} errorMessage={errorDisplay} />
               </div>
             </div>
 
@@ -798,15 +830,15 @@ function RequestCard({
 
         <div className="col-span-full grid w-full grid-cols-[repeat(auto-fit,minmax(126px,1fr))] gap-2">
           <RequestMetric icon={<Zap size={14} />} label={locale === 'zh-CN' ? '首字延迟' : 'First token'} value={formatMs(item.first_token_latency_ms)} />
-          <RequestMetric icon={<ServerCog size={14} />} label={locale === 'zh-CN' ? '总耗时' : 'Total'} value={formatMs(item.latency_ms)} />
-          <RequestMetric icon={<ArrowDownToLine size={14} />} label={locale === 'zh-CN' ? '输入' : 'Input'} value={formatCount(item.input_tokens)} />
-          <RequestMetric icon={<ArrowUpFromLine size={14} />} label={locale === 'zh-CN' ? '输出' : 'Output'} value={formatCount(item.output_tokens)} />
-          <RequestMetric icon={<Database size={14} />} label={locale === 'zh-CN' ? '缓存读取' : 'Cache Read'} value={formatCount(item.cache_read_input_tokens)} />
-          <RequestMetric icon={<Upload size={14} />} label={locale === 'zh-CN' ? '缓存写入' : 'Cache Write'} value={formatCount(item.cache_write_input_tokens)} />
+          <RequestMetric icon={<ServerCog size={14} />} label={locale === 'zh-CN' ? '总耗时' : 'Total'} value={formatMs(elapsedMs)} />
+          <RequestMetric icon={<ArrowDownToLine size={14} />} label={locale === 'zh-CN' ? '输入' : 'Input'} value={formatMaybeCount(item.input_tokens, running)} />
+          <RequestMetric icon={<ArrowUpFromLine size={14} />} label={locale === 'zh-CN' ? '输出' : 'Output'} value={formatMaybeCount(item.output_tokens, running)} />
+          <RequestMetric icon={<Database size={14} />} label={locale === 'zh-CN' ? '缓存读取' : 'Cache Read'} value={formatMaybeCount(item.cache_read_input_tokens, running)} />
+          <RequestMetric icon={<Upload size={14} />} label={locale === 'zh-CN' ? '缓存写入' : 'Cache Write'} value={formatMaybeCount(item.cache_write_input_tokens, running)} />
           <RequestMetric
             icon={<DollarSign size={14} />}
             label={locale === 'zh-CN' ? '费用' : 'Cost'}
-            value={formatMoney(item.total_cost_usd)}
+            value={formatMaybeMoney(item.total_cost_usd, running)}
             valueClassName="whitespace-nowrap break-normal text-[12px]"
           />
         </div>
@@ -832,6 +864,7 @@ export function RequestsScreen() {
   const [sortMode, setSortMode] = useState<SortMode>('latest')
   const [keyword, setKeyword] = useState('')
   const [clearingLogs, setClearingLogs] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
   const deferredKeyword = useDeferredValue(keyword.trim())
   const effectiveGatewayKeyId = selectedGatewayKeyId === 'all' ? null : selectedGatewayKeyId
 
@@ -907,7 +940,7 @@ export function RequestsScreen() {
     ],
     queryFn: () => apiRequest<RequestLogPage>(requestLogsQuery),
     placeholderData: keepPreviousData,
-    refetchInterval: page === 0 ? 5000 : false,
+    refetchInterval: page === 0 ? 2000 : false,
   })
 
   const { data: allModels, refetch: refetchAllModels } = useQuery({
@@ -1000,6 +1033,11 @@ export function RequestsScreen() {
     effectiveGatewayKeyId !== null,
     !!keyword.trim(),
   ].filter(Boolean).length
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     function handleScroll() {
@@ -1191,6 +1229,7 @@ export function RequestsScreen() {
                     item={item}
                     locale={locale}
                     timeZone={timeZone}
+                    now={now}
                     onPrefetchDetail={() => prefetchRequestDetail(item.id)}
                     onOpenDetail={() => setDetailId(item.id)}
                     onOpenAttempts={() => setAttemptDetailId(item.id)}
@@ -1253,6 +1292,7 @@ export function RequestsScreen() {
                     <div className="grid grid-cols-3 gap-2">
                       {[
                         { key: 'all' as const, label: locale === 'zh-CN' ? '全部' : 'All' },
+                        { key: 'running' as const, label: locale === 'zh-CN' ? '进行中' : 'Running' },
                         { key: 'success' as const, label: locale === 'zh-CN' ? '成功' : 'Success' },
                         { key: 'failed' as const, label: locale === 'zh-CN' ? '失败' : 'Failed' },
                       ].map((option) => (
@@ -1261,7 +1301,7 @@ export function RequestsScreen() {
                           type="button"
                           variant={statusFilter === option.key ? 'default' : 'outline'}
                           size="sm"
-                          className="min-w-0 truncate px-1.5"
+                          className="min-w-0 truncate px-1.5 text-xs"
                           onClick={() => handleStatusChange(option.key)}
                         >
                           {option.label}
