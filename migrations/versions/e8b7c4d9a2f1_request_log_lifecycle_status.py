@@ -39,6 +39,11 @@ def upgrade() -> None:
             ["lifecycle_status"],
             unique=False,
         )
+        batch_op.alter_column(
+            "lifecycle_status",
+            existing_type=sa.String(length=32),
+            server_default=None,
+        )
 
     op.execute(
         """
