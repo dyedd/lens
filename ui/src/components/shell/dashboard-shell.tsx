@@ -1,6 +1,7 @@
 "use client"
 
 import { Button } from '@/components/ui/button'
+import { ThemeToggle } from '@/components/theme-toggle'
 import {
   Sidebar,
   SidebarContent,
@@ -267,6 +268,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             <span className="truncate text-sm font-medium text-foreground">{activeLabel}</span>
           </div>
           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <ThemeToggle />
             <Button
               type="button"
               variant="ghost"

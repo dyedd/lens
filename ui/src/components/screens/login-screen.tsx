@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { ApiError, apiRequest, type PublicBranding } from '@/lib/api'
 import { setStoredToken } from '@/lib/auth'
 import { useI18n } from '@/lib/i18n'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -53,7 +54,8 @@ export function LoginScreen() {
 
   return (
     <div className="relative flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="absolute right-6 top-6">
+      <div className="absolute right-6 top-6 flex items-center gap-2">
+        <ThemeToggle />
         <Button
           type="button"
           variant="outline"

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Noto_Serif } from 'next/font/google'
 import './globals.css'
 import { AppProviders } from '@/components/app-providers'
 import { cn } from '@/lib/utils'
+import { getThemeBootstrapScript } from '@/lib/theme'
 
 const notoSerif = Noto_Serif({subsets:['latin'],variable:'--font-serif'});
 
@@ -23,7 +24,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN" className={cn(sans.variable, geistMono.variable, notoSerifHeading.variable, notoSerif.variable)}>
+    <html
+      lang="zh-CN"
+      suppressHydrationWarning
+      className={cn(sans.variable, geistMono.variable, notoSerifHeading.variable, notoSerif.variable)}
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: getThemeBootstrapScript() }} />
+      </head>
       <body>
         <AppProviders>{children}</AppProviders>
       </body>
