@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { I18nProvider } from '@/lib/i18n'
+import { ThemeProvider } from '@/lib/theme-context'
 import { Toaster as SonnerToaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
@@ -22,10 +23,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <I18nProvider>
-        <TooltipProvider>
-          {children}
-          <SonnerToaster />
-        </TooltipProvider>
+        <ThemeProvider>
+          <TooltipProvider>
+            {children}
+            <SonnerToaster />
+          </TooltipProvider>
+        </ThemeProvider>
       </I18nProvider>
     </QueryClientProvider>
   )
