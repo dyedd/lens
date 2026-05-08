@@ -46,8 +46,10 @@ import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
 type FormItem = {
   channel_id: string
   channel_name: string
+  protocol?: ProtocolKind | null
   credential_id: string
   credential_name: string
+  credential_number: number
   model_name: string
   enabled: boolean
 }
@@ -67,11 +69,13 @@ type FormState = {
 }
 
 type CandidateChannel = {
+  site_id: string
   channel_id: string
   channel_name: string
-  credentials: Array<{
-    credential_id: string
-    credential_name: string
+  protocols: Array<{
+    channel_id: string
+    protocol: ProtocolKind
+    base_url: string
     items: ModelGroupCandidateItem[]
   }>
 }
@@ -173,11 +177,12 @@ const emptyForm: FormState = {
 function buildCandidateHaystack(
   item: ModelGroupCandidateItem,
   channelMap: Map<string, ProtocolMeta>,
+  locale: 'zh-CN' | 'en-US',
 ) {
   const channel = channelMap.get(item.channel_id)
   const channelName = channel?.name || item.channel_name
-  const endpoint = channelEndpoint(channel)
-  return `${item.model_name} ${channelName} ${item.credential_name} ${endpoint}`
+  const endpoint = item.base_url || channelEndpoint(channel)
+  return `${item.model_name} ${channelName} ${protocolLabel(item.protocol, locale)} ${credentialDisplayLabel(item, locale)} ${item.credential_name} ${endpoint}`
 }
 
 function compileCandidateRegex(value: string) {
@@ -207,8 +212,10 @@ function candidateToFormItem(item: ModelGroupCandidateItem): FormItem {
   return {
     channel_id: item.channel_id,
     channel_name: item.channel_name,
+    protocol: item.protocol,
     credential_id: item.credential_id,
     credential_name: item.credential_name,
+    credential_number: item.credential_number,
     model_name: item.model_name,
     enabled: true,
   }
@@ -241,6 +248,23 @@ const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> = {
 
 function protocolLabel(protocol: ProtocolKind, locale: 'zh-CN' | 'en-US') {
   return protocolLabels[protocol][locale === 'zh-CN' ? 'zh' : 'en']
+}
+
+function isGeneratedCredentialName(value: string) {
+  const normalized = value.trim().toLowerCase()
+  return normalized === '默认密钥' || /^key\s*\d+$/.test(normalized) || /^密钥\s*\d+$/.test(value.trim())
+}
+
+function credentialDisplayLabel(
+  item: Pick<FormItem | ModelGroupCandidateItem, 'credential_name' | 'credential_number'>,
+  locale: 'zh-CN' | 'en-US',
+) {
+  const name = item.credential_name.trim()
+  if (name && !isGeneratedCredentialName(name)) {
+    return name
+  }
+  const number = item.credential_number > 0 ? item.credential_number : 1
+  return locale === 'zh-CN' ? `密钥 ${number}` : `Key ${number}`
 }
 
 function protocolBadgeClassName(protocol: ProtocolKind) {
@@ -357,8 +381,10 @@ function toForm(group: ModelGroup): FormState {
       .map((item) => ({
         channel_id: item.channel_id,
         channel_name: item.channel_name,
+        protocol: item.protocol,
         credential_id: item.credential_id,
         credential_name: item.credential_name,
+        credential_number: item.credential_number,
         model_name: item.model_name,
         enabled: item.enabled,
       })),
@@ -489,12 +515,15 @@ function StrategyToggle({
 function CandidateRow({
   item,
   active,
+  locale,
   onClick,
 }: {
   item: ModelGroupCandidateItem
   active: boolean
+  locale: 'zh-CN' | 'en-US'
   onClick: () => void
 }) {
+  const credentialLabel = credentialDisplayLabel(item, locale)
   return (
     <Button
       type="button"
@@ -509,7 +538,10 @@ function CandidateRow({
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">{item.model_name}</div>
       </div>
-      <span className="shrink-0 text-muted-foreground">{active ? <Check size={15} className="text-primary" /> : <Plus size={15} />}</span>
+      <div className="flex min-w-0 shrink-0 items-center gap-2">
+        <span className="max-w-28 truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{credentialLabel}</span>
+        <span className="text-muted-foreground">{active ? <Check size={15} className="text-primary" /> : <Plus size={15} />}</span>
+      </div>
     </Button>
   )
 }
@@ -524,6 +556,7 @@ function SelectedMemberRow({
   onDragStart,
   onDragEnter,
   onDragEnd,
+  locale,
 }: {
   item: FormItem
   index: number
@@ -534,7 +567,13 @@ function SelectedMemberRow({
   onDragStart: () => void
   onDragEnter: () => void
   onDragEnd: () => void
+  locale: 'zh-CN' | 'en-US'
 }) {
+  const sourceParts = [
+    item.channel_name,
+    item.protocol ? protocolLabel(item.protocol, locale) : '',
+    credentialDisplayLabel(item, locale),
+  ].filter(Boolean)
   return (
     <div
       draggable
@@ -554,7 +593,7 @@ function SelectedMemberRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">{item.model_name}</div>
-        <div className="truncate text-xs text-muted-foreground">{item.channel_name}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="truncate text-xs text-muted-foreground">{sourceParts.join(' · ')}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
       <div className="flex h-8 w-8 items-center justify-center">
         <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
@@ -750,12 +789,12 @@ export function GroupsScreen() {
   const filteredCandidates = useMemo(() => {
     return (candidateResponse?.candidates ?? []).filter((item) => {
       return matchesCandidateSearch(
-        buildCandidateHaystack(item, channelMap),
+        buildCandidateHaystack(item, channelMap, locale),
         candidateSearchMode,
         candidateSearch,
       )
     })
-  }, [candidateResponse, candidateSearch, candidateSearchMode, channelMap])
+  }, [candidateResponse, candidateSearch, candidateSearchMode, channelMap, locale])
 
   const groupedCandidates = useMemo(() => {
     const groupsByChannel = new Map<string, CandidateChannel>()
@@ -763,29 +802,32 @@ export function GroupsScreen() {
     for (const item of filteredCandidates) {
       const channel = channelMap.get(item.channel_id)
       const channelName = channel?.name || item.channel_name
-      const existing = groupsByChannel.get(item.channel_id)
-      if (existing) {
-        const existingCredential = existing.credentials.find((credential) => credential.credential_id === item.credential_id)
-        if (existingCredential) {
-          existingCredential.items.push(item)
-        } else {
-          existing.credentials.push({
-            credential_id: item.credential_id,
-            credential_name: item.credential_name,
-            items: [item],
-          })
-        }
-      } else {
-        groupsByChannel.set(item.channel_id, {
+      const channelKey = item.site_id || item.channel_id
+      let existing = groupsByChannel.get(channelKey)
+      if (!existing) {
+        existing = {
+          site_id: item.site_id,
           channel_id: item.channel_id,
           channel_name: channelName,
-          credentials: [{ credential_id: item.credential_id, credential_name: item.credential_name, items: [item] }],
+          protocols: [],
+        }
+        groupsByChannel.set(channelKey, existing)
+      }
+      const protocolGroup = existing.protocols.find((protocol) => protocol.channel_id === item.channel_id)
+      if (protocolGroup) {
+        protocolGroup.items.push(item)
+      } else {
+        existing.protocols.push({
+          channel_id: item.channel_id,
+          protocol: item.protocol,
+          base_url: item.base_url || channelEndpoint(channel),
+          items: [item],
         })
       }
     }
 
-    return Array.from(groupsByChannel.values()).sort((a, b) => a.channel_name.localeCompare(b.channel_name))
-  }, [channelMap, filteredCandidates])
+    return Array.from(groupsByChannel.values()).sort((a, b) => a.channel_name.localeCompare(b.channel_name, locale))
+  }, [channelMap, filteredCandidates, locale])
 
   const visibleSelectedMembers = useMemo(() => {
     if (!showEnabledOnly) {
@@ -817,12 +859,12 @@ export function GroupsScreen() {
       return
     }
     setExpandedChannels((current) => {
-      const available = new Set(groupedCandidates.map((item) => item.channel_id))
+      const available = new Set(groupedCandidates.map((item) => item.site_id || item.channel_id))
       const filtered = current.filter((item) => available.has(item))
       if (filtered.length) {
         return filtered
       }
-      return [groupedCandidates[0].channel_id]
+      return [groupedCandidates[0].site_id || groupedCandidates[0].channel_id]
     })
   }, [groupedCandidates])
 
@@ -1088,7 +1130,7 @@ export function GroupsScreen() {
       const matchedKeys: string[] = []
       for (const item of response.candidates) {
         if (!matchesCandidateSearch(
-          buildCandidateHaystack(item, channelMap),
+          buildCandidateHaystack(item, channelMap, locale),
           form.sync_filter_mode as CandidateSearchMode,
           form.sync_filter_query,
         )) {
@@ -1611,29 +1653,35 @@ export function GroupsScreen() {
                 ) : null}
 
                 <div className="px-2 pb-2">
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col">
                     {groupedCandidates.map((channel) => {
-                      const currentChannel = channelMap.get(channel.channel_id)
-                      const isOpen = expandedChannels.includes(channel.channel_id)
-                      const endpoint = channelEndpoint(currentChannel)
+                      const channelKey = channel.site_id || channel.channel_id
+                      const isOpen = expandedChannels.includes(channelKey)
+                      const protocolSummary = channel.protocols.length > 1
+                        ? channel.protocols.map((protocol) => protocolLabel(protocol.protocol, locale)).join(' / ')
+                        : ''
+                      const modelCount = channel.protocols.reduce((total, protocol) => total + protocol.items.length, 0)
                       return (
-                        <div key={channel.channel_id} className="border-b pb-2 last:border-b-0 last:pb-0">
-                          <Button type="button" variant="ghost" className="h-auto w-full justify-start gap-3 rounded-none px-3 py-3 text-left hover:bg-muted" onClick={() => toggleChannel(channel.channel_id)}>
+                        <div key={channelKey} className="border-b last:border-b-0">
+                          <Button type="button" variant="ghost" className="h-auto min-h-11 w-full justify-start gap-3 rounded-none px-3 py-2 text-left hover:bg-muted" onClick={() => toggleChannel(channelKey)}>
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-sm font-medium text-foreground">{channel.channel_name}</div>
-                              <div className="mt-1 truncate text-xs text-muted-foreground">{endpoint}</div>
+                              {protocolSummary ? <div className="mt-1 truncate text-xs text-muted-foreground">{protocolSummary}</div> : null}
                             </div>
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{channel.credentials.reduce((total, credential) => total + credential.items.length, 0)}</span>
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{modelCount}</span>
                             <ChevronDown size={15} className={cn('text-muted-foreground transition-transform', isOpen && 'rotate-180')} />
                           </Button>
                           {isOpen ? (
-                            <div className="flex flex-col gap-2 px-3 py-2.5">
+                            <div className="flex flex-col gap-1.5 px-3 pb-2 pt-1">
                               <Separator />
-                              {channel.credentials.map((credential) => (
-                                <div key={`${channel.channel_id}-${credential.credential_id}`} className="flex flex-col gap-1.5 py-1.5">
-                                  <div className="px-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{credential.credential_name || (locale === 'zh-CN' ? '未命名 Key' : 'Unnamed key')}</div>
-                                  {credential.items.map((item) => (
-                                    <CandidateRow key={`${item.channel_id}-${item.credential_id}-${item.model_name}`} item={item} active={form.items.some((member) => itemKey(member) === itemKey(item))} onClick={() => addItem(item)} />
+                              {channel.protocols.map((protocol) => (
+                                <div key={`${channelKey}-${protocol.channel_id}`} className="flex flex-col gap-1 py-1">
+                                  <div className="flex min-w-0 items-center justify-between gap-3 px-1 text-xs text-muted-foreground">
+                                    <span className="shrink-0 font-medium text-foreground">{protocolLabel(protocol.protocol, locale)}</span>
+                                    {protocol.base_url ? <span className="min-w-0 truncate text-right">{protocol.base_url}</span> : null}
+                                  </div>
+                                  {protocol.items.map((item) => (
+                                    <CandidateRow key={`${item.channel_id}-${item.credential_id}-${item.model_name}`} item={item} active={form.items.some((member) => itemKey(member) === itemKey(item))} locale={locale} onClick={() => addItem(item)} />
                                   ))}
                                 </div>
                               ))}
@@ -1678,6 +1726,7 @@ export function GroupsScreen() {
                           setDraggingIndex(index)
                         }}
                         onDragEnd={() => setDraggingIndex(null)}
+                        locale={locale}
                       />
                     )) : <p className="px-1 py-6 text-center text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前筛选下没有成员' : 'No members under current filter'}</p>}
                   </div>

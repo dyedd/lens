@@ -424,7 +424,13 @@ class DomainStore:
                 from .entities import SiteBaseUrlEntity
                 channel_rows = (
                     await session.execute(
-                        select(SiteProtocolConfigEntity.id, SiteEntity.name, SiteEntity.id.label("site_id"))
+                        select(
+                            SiteProtocolConfigEntity.id,
+                            SiteProtocolConfigEntity.protocol,
+                            SiteProtocolConfigEntity.base_url_id,
+                            SiteEntity.name,
+                            SiteEntity.id.label("site_id"),
+                        )
                         .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
                         .where(SiteProtocolConfigEntity.id.in_(channel_ids))
                     )
@@ -433,11 +439,16 @@ class DomainStore:
                 base_url_rows = (
                     await session.execute(
                         select(SiteBaseUrlEntity)
-                        .where(SiteBaseUrlEntity.site_id.in_(site_ids_for_urls), SiteBaseUrlEntity.enabled == 1)
+                        .where(SiteBaseUrlEntity.site_id.in_(site_ids_for_urls))
                         .order_by(SiteBaseUrlEntity.site_id.asc(), SiteBaseUrlEntity.sort_order.asc())
                     )
                 ).scalars().all() if site_ids_for_urls else []
                 first_url_by_site: dict[str, str] = {}
+                url_by_id: dict[str, str] = {}
+                for row in base_url_rows:
+                    url_by_id[row.id] = row.url
+                    if row.enabled == 1 and row.site_id not in first_url_by_site:
+                        first_url_by_site[row.site_id] = row.url
                 for row in base_url_rows:
                     if row.site_id not in first_url_by_site:
                         first_url_by_site[row.site_id] = row.url
@@ -446,13 +457,22 @@ class DomainStore:
         seen: set[tuple[str, str, str]] = set()
         excluded = {(item.channel_id, item.credential_id, item.model_name) for item in payload.exclude_items}
         credential_rows = []
-        credential_ids = sorted({item.credential_id for item in discovered_models if item.credential_id})
-        if credential_ids:
+        site_ids = sorted({row.site_id for row in channel_rows})
+        if site_ids:
             async with self._session_factory() as session:
                 credential_rows = (
-                    await session.execute(select(SiteCredentialEntity).where(SiteCredentialEntity.id.in_(credential_ids)))
+                    await session.execute(
+                        select(SiteCredentialEntity)
+                        .where(SiteCredentialEntity.site_id.in_(site_ids))
+                        .order_by(SiteCredentialEntity.site_id.asc(), SiteCredentialEntity.sort_order.asc(), SiteCredentialEntity.id.asc())
+                    )
                 ).scalars().all()
         credential_names = {item.id: item.name for item in credential_rows}
+        credential_numbers: dict[str, int] = {}
+        credential_counts_by_site: dict[str, int] = {}
+        for item in credential_rows:
+            credential_counts_by_site[item.site_id] = credential_counts_by_site.get(item.site_id, 0) + 1
+            credential_numbers[item.id] = credential_counts_by_site[item.site_id]
 
         models_by_channel: dict[str, list[tuple[str, str]]] = {}
         for item in discovered_models:
@@ -460,10 +480,12 @@ class DomainStore:
 
         channel_meta_by_id = {
             channel_id: {
+                "site_id": site_id,
                 "name": site_name,
-                "base_url": first_url_by_site.get(site_id, ""),
+                "protocol": protocol,
+                "base_url": url_by_id.get(base_url_id) or first_url_by_site.get(site_id, ""),
             }
-            for channel_id, site_name, site_id in channel_rows
+            for channel_id, protocol, base_url_id, site_name, site_id in channel_rows
         }
 
         for channel in channels:
@@ -477,10 +499,13 @@ class DomainStore:
                 meta = channel_meta_by_id.get(channel.id, {})
                 candidates.append(
                     ModelGroupCandidateItem(
+                        site_id=str(meta.get("site_id") or ""),
                         channel_id=channel.id,
                         channel_name=str(meta.get("name") or channel.protocol),
+                        protocol=ProtocolKind(str(meta.get("protocol") or channel.protocol)),
                         credential_id=credential_id,
                         credential_name=credential_names.get(credential_id, ""),
+                        credential_number=credential_numbers.get(credential_id, 0),
                         base_url=str(meta.get("base_url") or ""),
                         model_name=model_name,
                     )
@@ -819,13 +844,17 @@ class DomainStore:
         channel_ids = list({row.channel_id for row in rows})
         channel_site_names = await self._load_channel_site_names(session, channel_ids)
         credential_names_by_channel = await self._load_credential_names_by_channel(session, channel_ids)
+        channel_protocols = await self._load_channel_protocols(session, channel_ids)
+        credential_numbers = await self._load_credential_numbers_by_channel(session, channel_ids)
         for row in rows:
             items_by_group.setdefault(row.group_id, []).append(
                 ModelGroupItem(
                     channel_id=row.channel_id,
                     channel_name=channel_site_names.get(row.channel_id, ''),
+                    protocol=channel_protocols.get(row.channel_id),
                     credential_id=row.credential_id,
                     credential_name=credential_names_by_channel.get(row.channel_id, {}).get(row.credential_id, ''),
+                    credential_number=credential_numbers.get(row.channel_id, {}).get(row.credential_id, 0),
                     model_name=row.model_name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
@@ -865,6 +894,20 @@ class DomainStore:
         ).all()
         return {channel_id: site_name for channel_id, site_name in rows}
 
+    async def _load_channel_protocols(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, ProtocolKind]:
+        if not channel_ids:
+            return {}
+        rows = (
+            await session.execute(
+                select(SiteProtocolConfigEntity.id, SiteProtocolConfigEntity.protocol)
+                .where(SiteProtocolConfigEntity.id.in_(channel_ids))
+            )
+        ).all()
+        return {
+            channel_id: ProtocolKind(str(protocol))
+            for channel_id, protocol in rows
+        }
+
     async def _load_credential_names_by_channel(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, dict[str, str]]:
         if not channel_ids:
             return {}
@@ -884,6 +927,28 @@ class DomainStore:
         for protocol_config_id, credential_id, credential_name in rows.all():
             credential_names_by_channel.setdefault(protocol_config_id, {})[credential_id] = credential_name
         return credential_names_by_channel
+
+    async def _load_credential_numbers_by_channel(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, dict[str, int]]:
+        if not channel_ids:
+            return {}
+        rows = await session.execute(
+            select(
+                SiteProtocolConfigEntity.id,
+                SiteCredentialEntity.id,
+                SiteCredentialEntity.site_id,
+                SiteCredentialEntity.sort_order,
+            )
+            .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
+            .join(SiteCredentialEntity, SiteCredentialEntity.site_id == SiteEntity.id)
+            .where(SiteProtocolConfigEntity.id.in_(channel_ids))
+            .order_by(SiteProtocolConfigEntity.id.asc(), SiteCredentialEntity.sort_order.asc(), SiteCredentialEntity.id.asc())
+        )
+        numbers_by_channel: dict[str, dict[str, int]] = {}
+        counts_by_channel: dict[str, int] = {}
+        for channel_id, credential_id, _site_id, _sort_order in rows.all():
+            counts_by_channel[channel_id] = counts_by_channel.get(channel_id, 0) + 1
+            numbers_by_channel.setdefault(channel_id, {})[credential_id] = counts_by_channel[channel_id]
+        return numbers_by_channel
 
     async def list_gateway_api_keys(self) -> list[GatewayApiKey]:
         async with self._session_factory() as session:
