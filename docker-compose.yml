@@ -1,6 +1,7 @@
 services:
   app:
     image: ghcr.io/dyedd/lens:latest
+    container_name: lens
     env_file:
       - .env
     environment:
