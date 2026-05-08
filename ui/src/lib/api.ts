@@ -6,8 +6,10 @@ export type ModelGroupSyncFilterMode = '' | 'contains' | 'regex'
 export type ModelGroupItem = {
   channel_id: string
   channel_name: string
+  protocol?: ProtocolKind | null
   credential_id: string
   credential_name: string
+  credential_number: number
   model_name: string
   enabled: boolean
   sort_order: number
@@ -47,10 +49,13 @@ export type ModelGroupPayload = {
 }
 
 export type ModelGroupCandidateItem = {
+  site_id: string
   channel_id: string
   channel_name: string
+  protocol: ProtocolKind
   credential_id: string
   credential_name: string
+  credential_number: number
   base_url: string
   model_name: string
 }

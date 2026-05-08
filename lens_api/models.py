@@ -486,8 +486,10 @@ class ModelGroupItem(BaseModel):
 
     channel_id: str
     channel_name: str = ""
+    protocol: ProtocolKind | None = None
     credential_id: str = ""
     credential_name: str = ""
+    credential_number: int = Field(default=0, ge=0)
     model_name: str
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
@@ -583,10 +585,13 @@ class ModelGroupStats(BaseModel):
 class ModelGroupCandidateItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    site_id: str = ""
     channel_id: str
     channel_name: str
+    protocol: ProtocolKind
     credential_id: str = ""
     credential_name: str = ""
+    credential_number: int = Field(default=0, ge=0)
     base_url: str
     model_name: str
 
