@@ -1,19 +1,27 @@
-ARG NODE_IMAGE=node:24-bookworm-slim
+# syntax=docker/dockerfile:1
+ARG NODE_IMAGE=node:22-bookworm-slim
+ARG PNPM_VERSION=10.17.1
 
-FROM ${NODE_IMAGE} AS ui-deps
-
-WORKDIR /app/ui
-
-RUN corepack enable
-
-COPY ui/package.json ui/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-
-FROM ${NODE_IMAGE} AS ui-builder
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS ui-base
 
 WORKDIR /app/ui
 
-RUN corepack enable
+ARG PNPM_VERSION
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+
+RUN corepack enable pnpm \
+    && corepack prepare pnpm@${PNPM_VERSION} --activate
+
+FROM ui-base AS ui-deps
+
+COPY ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
+RUN pnpm fetch
+
+COPY ui/package.json ./
+RUN pnpm install --frozen-lockfile --offline
+
+FROM ui-base AS ui-builder
 
 COPY --from=ui-deps /app/ui/node_modules ./node_modules
 COPY ui ./
