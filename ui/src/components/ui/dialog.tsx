@@ -189,7 +189,7 @@ export function AppDialogContent({
         <DialogTitle>{title}</DialogTitle>
         {description && <DialogDescription>{description}</DialogDescription>}
       </DialogHeader>
-      <div className="hide-scrollbar mt-2 min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
+      <div className="hide-scrollbar -mx-1 mt-2 min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-1">
         {children}
       </div>
     </DialogContent>
