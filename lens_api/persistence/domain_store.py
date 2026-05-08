@@ -576,6 +576,8 @@ class DomainStore:
                 protocol=payload.protocol.value,
                 strategy=payload.strategy.value,
                 route_group_id=route_group.id if route_group is not None else "",
+                sync_filter_mode=payload.sync_filter_mode.value,
+                sync_filter_query=payload.sync_filter_query,
             )
             session.add(entity)
             await session.flush()
@@ -629,12 +631,22 @@ class DomainStore:
                     entity.protocol = value.value
                 elif key == "strategy" and value is not None:
                     entity.strategy = value.value
+                elif key == "sync_filter_mode" and value is not None:
+                    entity.sync_filter_mode = value.value
                 elif key == "items" and value is not None:
                     continue
                 elif key == "route_group_id":
                     entity.route_group_id = route_group.id if route_group is not None else ""
+                    if not entity.route_group_id:
+                        continue
+                    entity.sync_filter_mode = ""
+                    entity.sync_filter_query = ""
                 else:
                     setattr(entity, key, value)
+
+            if entity.route_group_id:
+                entity.sync_filter_mode = ""
+                entity.sync_filter_query = ""
 
             if payload.items is not None or payload.protocol is not None:
                 await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
@@ -2831,6 +2843,8 @@ class DomainStore:
             strategy=entity.strategy,
             route_group_id=entity.route_group_id,
             route_group_name=route_group_name,
+            sync_filter_mode=entity.sync_filter_mode,
+            sync_filter_query=entity.sync_filter_query,
             input_price_per_million=float(price.input_price_per_million) if price is not None else 0.0,
             output_price_per_million=float(price.output_price_per_million) if price is not None else 0.0,
             cache_read_price_per_million=float(price.cache_read_price_per_million) if price is not None else 0.0,

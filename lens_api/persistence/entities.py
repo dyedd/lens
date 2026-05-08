@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Float, Integer, String, Text
+from sqlalchemy import CheckConstraint, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
@@ -85,12 +85,20 @@ class SiteDiscoveredModelEntity(Base):
 
 class ModelGroupEntity(Base):
     __tablename__ = "model_groups"
+    __table_args__ = (
+        CheckConstraint(
+            "sync_filter_mode IN ('', 'contains', 'regex')",
+            name="ck_model_groups_sync_filter_mode",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     strategy: Mapped[str] = mapped_column(String(32), nullable=False, default="round_robin")
     route_group_id: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
+    sync_filter_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    sync_filter_query: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class ModelGroupItemEntity(Base):

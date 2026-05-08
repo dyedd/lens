@@ -1,6 +1,7 @@
 export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini'
 
 export type RoutingStrategy = 'round_robin' | 'failover'
+export type ModelGroupSyncFilterMode = '' | 'contains' | 'regex'
 
 export type ModelGroupItem = {
   channel_id: string
@@ -19,6 +20,8 @@ export type ModelGroup = {
   strategy: RoutingStrategy
   route_group_id?: string
   route_group_name?: string
+  sync_filter_mode: ModelGroupSyncFilterMode
+  sync_filter_query: string
   input_price_per_million: number
   output_price_per_million: number
   cache_read_price_per_million: number
@@ -38,6 +41,8 @@ export type ModelGroupPayload = {
   protocol: ProtocolKind
   strategy: RoutingStrategy
   route_group_id?: string
+  sync_filter_mode: ModelGroupSyncFilterMode
+  sync_filter_query: string
   items: ModelGroupItemPayload[]
 }
 

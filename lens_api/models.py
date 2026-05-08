@@ -87,6 +87,12 @@ class RoutingStrategy(str, Enum):
     FAILOVER = "failover"
 
 
+class ModelGroupSyncFilterMode(str, Enum):
+    NONE = ""
+    CONTAINS = "contains"
+    REGEX = "regex"
+
+
 class ChannelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -457,11 +463,22 @@ class ModelGroup(BaseModel):
     strategy: RoutingStrategy
     route_group_id: str = ""
     route_group_name: str = ""
+    sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
+    sync_filter_query: str = ""
     input_price_per_million: float = 0.0
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
     cache_write_price_per_million: float = 0.0
     items: list["ModelGroupItem"] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_sync_filter(self) -> "ModelGroup":
+        self.sync_filter_mode, self.sync_filter_query = normalize_model_group_sync_filter(
+            self.sync_filter_mode,
+            self.sync_filter_query,
+            route_group_id=self.route_group_id,
+        )
+        return self
 
 
 class ModelGroupItem(BaseModel):
@@ -492,7 +509,18 @@ class ModelGroupCreate(BaseModel):
     protocol: ProtocolKind
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
     route_group_id: str = ""
+    sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
+    sync_filter_query: str = ""
     items: list[ModelGroupItemInput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_sync_filter(self) -> "ModelGroupCreate":
+        self.sync_filter_mode, self.sync_filter_query = normalize_model_group_sync_filter(
+            self.sync_filter_mode,
+            self.sync_filter_query,
+            route_group_id=self.route_group_id,
+        )
+        return self
 
 
 class ModelGroupUpdate(BaseModel):
@@ -502,7 +530,41 @@ class ModelGroupUpdate(BaseModel):
     protocol: ProtocolKind | None = None
     strategy: RoutingStrategy | None = None
     route_group_id: str | None = None
+    sync_filter_mode: ModelGroupSyncFilterMode | None = None
+    sync_filter_query: str | None = None
     items: list[ModelGroupItemInput] | None = None
+
+    @model_validator(mode="after")
+    def validate_sync_filter(self) -> "ModelGroupUpdate":
+        if self.sync_filter_mode is None and self.sync_filter_query is None:
+            return self
+        mode = self.sync_filter_mode if self.sync_filter_mode is not None else ModelGroupSyncFilterMode.NONE
+        query = self.sync_filter_query if self.sync_filter_query is not None else ""
+        self.sync_filter_mode, self.sync_filter_query = normalize_model_group_sync_filter(
+            mode,
+            query,
+            route_group_id=self.route_group_id or "",
+        )
+        return self
+
+
+def normalize_model_group_sync_filter(
+    mode: ModelGroupSyncFilterMode,
+    query: str,
+    *,
+    route_group_id: str = "",
+) -> tuple[ModelGroupSyncFilterMode, str]:
+    normalized_query = query.strip()
+    if route_group_id.strip() or not normalized_query:
+        return ModelGroupSyncFilterMode.NONE, ""
+    if mode == ModelGroupSyncFilterMode.NONE:
+        return ModelGroupSyncFilterMode.NONE, ""
+    if mode == ModelGroupSyncFilterMode.REGEX:
+        try:
+            re.compile(normalized_query)
+        except re.error as exc:
+            raise ValueError(f"Invalid model group sync regex: {normalized_query}. {exc}") from exc
+    return mode, normalized_query
 
 
 class ModelGroupStats(BaseModel):
