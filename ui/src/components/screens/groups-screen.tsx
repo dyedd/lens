@@ -1554,7 +1554,7 @@ export function GroupsScreen() {
 
                   <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
                   <section className={panelClassName('flex flex-col')}>
-                <div className="grid gap-3 px-2 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                <div className="grid gap-3 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <div className="grid min-w-0 gap-2 sm:grid-cols-[128px_minmax(0,1fr)]">
                     <NativeSelect size="sm" className="w-full" value={candidateSearchMode} onChange={(event) => changeCandidateSearchMode(event.target.value as CandidateSearchMode)}>
                       <NativeSelectOption value="contains">{locale === 'zh-CN' ? '包含' : 'Contains'}</NativeSelectOption>
