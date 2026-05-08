@@ -11,6 +11,7 @@ import {
   ModelGroupCandidatesPayload,
   ModelGroupCandidatesResponse,
   ModelGroupPayload,
+  ModelGroupSyncFilterMode,
   ProtocolKind,
   RoutingStrategy,
   Site,
@@ -56,6 +57,8 @@ type FormState = {
   protocol: ProtocolKind
   strategy: RoutingStrategy
   route_group_id: string
+  sync_filter_mode: ModelGroupSyncFilterMode
+  sync_filter_query: string
   input_price_per_million: string
   output_price_per_million: string
   cache_read_price_per_million: string
@@ -74,6 +77,7 @@ type CandidateChannel = {
 }
 
 type GroupSort = 'members-desc' | 'enabled-desc' | 'name-asc' | 'name-desc'
+type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, ''>
 
 type GroupRow = ModelGroup & {
   member_count: number
@@ -157,6 +161,8 @@ const emptyForm: FormState = {
   protocol: 'openai_chat',
   strategy: 'round_robin',
   route_group_id: '',
+  sync_filter_mode: '',
+  sync_filter_query: '',
   input_price_per_million: '0',
   output_price_per_million: '0',
   cache_read_price_per_million: '0',
@@ -164,44 +170,48 @@ const emptyForm: FormState = {
   items: [],
 }
 
-function compileCandidateSearchRegex(value: string) {
-  const normalized = value.trim()
-  if (!normalized) {
-    return null
-  }
-  if (normalized.startsWith('re:')) {
-    try {
-      return new RegExp(normalized.slice(3).trim(), 'i')
-    } catch {
-      return null
-    }
-  }
-  if (!normalized.startsWith('/')) {
-    return null
-  }
-  const lastSlashIndex = normalized.lastIndexOf('/')
-  if (lastSlashIndex <= 0) {
-    return null
-  }
-  const pattern = normalized.slice(1, lastSlashIndex)
-  const flags = normalized.slice(lastSlashIndex + 1) || 'i'
+function buildCandidateHaystack(
+  item: ModelGroupCandidateItem,
+  channelMap: Map<string, ProtocolMeta>,
+) {
+  const channel = channelMap.get(item.channel_id)
+  const channelName = channel?.name || item.channel_name
+  const endpoint = channelEndpoint(channel)
+  return `${item.model_name} ${channelName} ${item.credential_name} ${endpoint}`
+}
+
+function compileCandidateRegex(value: string) {
   try {
-    return new RegExp(pattern, flags)
+    return new RegExp(value.trim(), 'i')
   } catch {
     return null
   }
 }
 
-function matchesCandidateSearch(haystack: string, keyword: string) {
-  const normalizedKeyword = keyword.trim()
-  if (!normalizedKeyword) {
+function matchesCandidateSearch(haystack: string, mode: CandidateSearchMode, query: string) {
+  const normalizedQuery = query.trim()
+  if (!normalizedQuery) {
     return true
   }
-  const regex = compileCandidateSearchRegex(normalizedKeyword)
-  if (regex) {
+  if (mode === 'regex') {
+    const regex = compileCandidateRegex(normalizedQuery)
+    if (!regex) {
+      return false
+    }
     return regex.test(haystack)
   }
-  return haystack.toLowerCase().includes(normalizedKeyword.toLowerCase())
+  return haystack.toLowerCase().includes(normalizedQuery.toLowerCase())
+}
+
+function candidateToFormItem(item: ModelGroupCandidateItem): FormItem {
+  return {
+    channel_id: item.channel_id,
+    channel_name: item.channel_name,
+    credential_id: item.credential_id,
+    credential_name: item.credential_name,
+    model_name: item.model_name,
+    enabled: true,
+  }
 }
 
 function normalizeModelName(value: string | null | undefined) {
@@ -286,10 +296,10 @@ function compactMetricLabel(
   locale: 'zh-CN' | 'en-US'
 ) {
   const labels: Record<'input' | 'output' | 'cache_read' | 'cache_write', { zh: string; en: string }> = {
-    input: { zh: '输入', en: 'IN' },
-    output: { zh: '输出', en: 'OUT' },
-    cache_read: { zh: '读', en: 'CR' },
-    cache_write: { zh: '写', en: 'CW' },
+    input: { zh: '输入', en: 'Input' },
+    output: { zh: '输出', en: 'Output' },
+    cache_read: { zh: '缓存读取', en: 'Cache Read' },
+    cache_write: { zh: '缓存写入', en: 'Cache Write' },
   }
 
   return labels[key][locale === 'zh-CN' ? 'zh' : 'en']
@@ -335,6 +345,8 @@ function toForm(group: ModelGroup): FormState {
     protocol: group.protocol,
     strategy: group.strategy,
     route_group_id: group.route_group_id ?? '',
+    sync_filter_mode: group.sync_filter_mode,
+    sync_filter_query: group.sync_filter_query,
     input_price_per_million: String(group.input_price_per_million),
     output_price_per_million: String(group.output_price_per_million),
     cache_read_price_per_million: String(group.cache_read_price_per_million),
@@ -359,6 +371,8 @@ function toPayload(form: FormState): ModelGroupPayload {
     protocol: form.protocol,
     strategy: form.strategy,
     route_group_id: form.route_group_id.trim(),
+    sync_filter_mode: form.route_group_id.trim() || !form.sync_filter_query.trim() ? '' : form.sync_filter_mode,
+    sync_filter_query: form.route_group_id.trim() ? '' : form.sync_filter_query.trim(),
     items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
   }
 }
@@ -597,7 +611,9 @@ export function GroupsScreen() {
   const [protocolFilter, setProtocolFilter] = useState<'all' | ProtocolKind>('all')
   const [strategyFilter, setStrategyFilter] = useState<'all' | RoutingStrategy>('all')
   const [sortBy, setSortBy] = useState<GroupSort>('members-desc')
+  const [candidateSearchMode, setCandidateSearchMode] = useState<CandidateSearchMode>('contains')
   const [candidateSearch, setCandidateSearch] = useState('')
+  const [candidateSearchUsesGroupName, setCandidateSearchUsesGroupName] = useState(true)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -729,18 +745,17 @@ export function GroupsScreen() {
     protocolFilter !== 'all',
     strategyFilter !== 'all',
   ].filter(Boolean).length
+  const candidateRegexInvalid = candidateSearchMode === 'regex' && Boolean(candidateSearch.trim()) && !compileCandidateRegex(candidateSearch)
 
   const filteredCandidates = useMemo(() => {
     return (candidateResponse?.candidates ?? []).filter((item) => {
-      const channel = channelMap.get(item.channel_id)
-      const channelName = channel?.name || item.channel_name
-      const endpoint = channelEndpoint(channel)
       return matchesCandidateSearch(
-        `${item.model_name} ${channelName} ${item.credential_name} ${endpoint}`,
+        buildCandidateHaystack(item, channelMap),
+        candidateSearchMode,
         candidateSearch,
       )
     })
-  }, [candidateResponse, candidateSearch, channelMap])
+  }, [candidateResponse, candidateSearch, candidateSearchMode, channelMap])
 
   const groupedCandidates = useMemo(() => {
     const groupsByChannel = new Map<string, CandidateChannel>()
@@ -782,10 +797,19 @@ export function GroupsScreen() {
   useEffect(() => {
     if (!dialogOpen) {
       setCandidateSearch('')
+      setCandidateSearchMode('contains')
+      setCandidateSearchUsesGroupName(true)
       setExpandedChannels([])
       setDraggingIndex(null)
     }
   }, [dialogOpen])
+
+  useEffect(() => {
+    if (!dialogOpen || candidateSearchMode !== 'contains' || !candidateSearchUsesGroupName) {
+      return
+    }
+    setCandidateSearch(form.name)
+  }, [candidateSearchMode, candidateSearchUsesGroupName, dialogOpen, form.name])
 
   useEffect(() => {
     if (!groupedCandidates.length) {
@@ -813,12 +837,19 @@ export function GroupsScreen() {
   function openCreate() {
     setEditingId(null)
     setForm(emptyForm)
+    setCandidateSearch('')
+    setCandidateSearchMode('contains')
+    setCandidateSearchUsesGroupName(true)
     setDialogOpen(true)
   }
 
   function openEdit(item: ModelGroup) {
+    const hasSavedFilter = Boolean(item.sync_filter_mode && item.sync_filter_query.trim())
     setEditingId(item.id)
     setForm(toForm(item))
+    setCandidateSearch(hasSavedFilter ? item.sync_filter_query : item.name)
+    setCandidateSearchMode(item.sync_filter_mode === 'regex' ? 'regex' : 'contains')
+    setCandidateSearchUsesGroupName(!hasSavedFilter && item.sync_filter_mode !== 'regex')
     setDialogOpen(true)
   }
 
@@ -932,7 +963,7 @@ export function GroupsScreen() {
       }
       return {
         ...current,
-        items: [...current.items, { channel_id: item.channel_id, channel_name: item.channel_name, credential_id: item.credential_id, credential_name: item.credential_name, model_name: item.model_name, enabled: true }],
+        items: [...current.items, candidateToFormItem(item)],
       }
     })
   }
@@ -1018,26 +1049,100 @@ export function GroupsScreen() {
   }
 
   function addMatchedItems() {
-    if (!filteredCandidates.length) {
+    if (!filteredCandidates.length && !candidateSearch.trim()) {
       return
     }
     setForm((current) => {
       const existing = new Set(current.items.map((item) => itemKey(item)))
       const additions = filteredCandidates
         .filter((item) => !existing.has(itemKey(item)))
-        .map((item) => ({
-          channel_id: item.channel_id,
-          channel_name: item.channel_name,
-          credential_id: item.credential_id,
-          credential_name: item.credential_name,
-          model_name: item.model_name,
-          enabled: true,
-        }))
-      if (!additions.length) {
-        return current
+        .map(candidateToFormItem)
+      return {
+        ...current,
+        sync_filter_mode: candidateSearch.trim() ? candidateSearchMode : '',
+        sync_filter_query: candidateSearch.trim(),
+        items: additions.length ? [...current.items, ...additions] : current.items,
       }
-      return { ...current, items: [...current.items, ...additions] }
     })
+  }
+
+  async function applySavedFilter() {
+    if (!form.sync_filter_mode || !form.sync_filter_query.trim()) {
+      return
+    }
+    const regex = form.sync_filter_mode === 'regex' ? compileCandidateRegex(form.sync_filter_query) : null
+    if (form.sync_filter_mode === 'regex' && !regex) {
+      toast.error(locale === 'zh-CN' ? '保存的正则表达式无效' : 'Saved regex is invalid')
+      return
+    }
+    try {
+      const response = await apiRequest<ModelGroupCandidatesResponse>('/admin/model-group-candidates', {
+        method: 'POST',
+        body: JSON.stringify({
+          protocol: form.protocol,
+          exclude_items: [],
+        } satisfies ModelGroupCandidatesPayload),
+      })
+      const previous = new Map(form.items.map((item) => [itemKey(item), item]))
+      const matchedByKey = new Map<string, FormItem>()
+      const matchedKeys: string[] = []
+      for (const item of response.candidates) {
+        if (!matchesCandidateSearch(
+          buildCandidateHaystack(item, channelMap),
+          form.sync_filter_mode as CandidateSearchMode,
+          form.sync_filter_query,
+        )) {
+          continue
+        }
+        const key = itemKey(item)
+        if (matchedByKey.has(key)) {
+          continue
+        }
+        matchedKeys.push(key)
+        matchedByKey.set(key, (() => {
+          const nextItem = candidateToFormItem(item)
+          const oldItem = previous.get(itemKey(nextItem))
+          return oldItem ? { ...nextItem, enabled: oldItem.enabled } : nextItem
+        })())
+      }
+      const existingItems = form.items.flatMap((item) => {
+        const matched = matchedByKey.get(itemKey(item))
+        return matched ? [matched] : []
+      })
+      const existingKeys = new Set(existingItems.map((item) => itemKey(item)))
+      const newItems = matchedKeys.flatMap((key) => {
+        if (existingKeys.has(key)) {
+          return []
+        }
+        const matched = matchedByKey.get(key)
+        return matched ? [matched] : []
+      })
+      const nextItems = [...existingItems, ...newItems]
+      setForm((current) => ({ ...current, items: nextItems }))
+      toast.success(locale === 'zh-CN' ? `已按规则更新 ${nextItems.length} 个模型，保存后生效` : `Updated ${nextItems.length} models by rule. Save to apply`)
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '按规则更新失败' : 'Failed to update by rule')
+      toast.error(message)
+    }
+  }
+
+  function clearSavedFilter() {
+    setForm((current) => ({ ...current, sync_filter_mode: '', sync_filter_query: '' }))
+  }
+
+  function changeCandidateSearchMode(mode: CandidateSearchMode) {
+    setCandidateSearchMode(mode)
+    if (mode === 'contains') {
+      setCandidateSearch(form.name)
+      setCandidateSearchUsesGroupName(true)
+      return
+    }
+    setCandidateSearchUsesGroupName(false)
+  }
+
+  function changeCandidateSearch(value: string) {
+    setCandidateSearch(value)
+    setCandidateSearchUsesGroupName(false)
   }
 
   function changeProtocol(protocol: ProtocolKind) {
@@ -1049,9 +1154,14 @@ export function GroupsScreen() {
         ...current,
         protocol,
         route_group_id: '',
+        sync_filter_mode: '',
+        sync_filter_query: '',
         items: [],
       }
     })
+    setCandidateSearch('')
+    setCandidateSearchMode('contains')
+    setCandidateSearchUsesGroupName(true)
     setExpandedChannels([])
   }
 
@@ -1059,6 +1169,8 @@ export function GroupsScreen() {
     setForm((current) => ({
       ...current,
       route_group_id: routeGroupId,
+      sync_filter_mode: routeGroupId ? '' : current.sync_filter_mode,
+      sync_filter_query: routeGroupId ? '' : current.sync_filter_query,
     }))
     setExpandedChannels([])
   }
@@ -1394,7 +1506,7 @@ export function GroupsScreen() {
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="group-name">{locale === 'zh-CN' ? '模型组名称' : 'Group name'}</FieldLabel>
-                    <Input id="group-name" placeholder={locale === 'zh-CN' ? '例如 claude-sonnet-4-6' : 'For example claude-sonnet-4-6'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                    <Input id="group-name" placeholder={locale === 'zh-CN' ? '输入模型组名称' : 'Enter group name'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="group-route-target">{locale === 'zh-CN' ? '路由目标模型组' : 'Route target group'}</FieldLabel>
@@ -1443,14 +1555,29 @@ export function GroupsScreen() {
                   <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
                   <section className={panelClassName('flex flex-col')}>
                 <div className="grid gap-3 px-2 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
-                    <Search size={14} className="text-muted-foreground" />
-                    <Input className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0" value={candidateSearch} onChange={(e) => setCandidateSearch(e.target.value)} placeholder={locale === 'zh-CN' ? '搜索模型或 /正则/' : 'Search models or /regex/'} />
+                  <div className="grid min-w-0 gap-2 sm:grid-cols-[128px_minmax(0,1fr)]">
+                    <NativeSelect size="sm" className="w-full" value={candidateSearchMode} onChange={(event) => changeCandidateSearchMode(event.target.value as CandidateSearchMode)}>
+                      <NativeSelectOption value="contains">{locale === 'zh-CN' ? '包含' : 'Contains'}</NativeSelectOption>
+                      <NativeSelectOption value="regex">{locale === 'zh-CN' ? '正则' : 'Regex'}</NativeSelectOption>
+                    </NativeSelect>
+                    <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
+                      <Search size={14} className="text-muted-foreground" />
+                      <Input
+                        className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+                        value={candidateSearch}
+                        onChange={(e) => changeCandidateSearch(e.target.value)}
+                        placeholder={candidateSearchMode === 'regex'
+                          ? (locale === 'zh-CN' ? '输入正则表达式' : 'Enter regular expression')
+                          : (locale === 'zh-CN' ? '输入包含条件' : 'Enter contains filter')}
+                      />
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button type="button" variant="outline" onClick={addMatchedItems} disabled={!filteredCandidates.length}>
+                    <Button type="button" variant="outline" onClick={addMatchedItems} disabled={candidateRegexInvalid || (!filteredCandidates.length && !candidateSearch.trim())}>
                       <Sparkles size={13} />
-                      {locale === 'zh-CN' ? `加入当前筛选 ${filteredCandidates.length}` : `Add filtered ${filteredCandidates.length}`}
+                      {candidateSearch.trim()
+                        ? (locale === 'zh-CN' ? `加入并保存筛选 ${filteredCandidates.length}` : `Add and save filter ${filteredCandidates.length}`)
+                        : (locale === 'zh-CN' ? `加入全部 ${filteredCandidates.length}` : `Add all ${filteredCandidates.length}`)}
                     </Button>
                     <Button type="button" variant="outline" onClick={() => void refetchCandidates()} disabled={isFetchingCandidates}>
                       <RefreshCcw size={13} />
@@ -1458,6 +1585,30 @@ export function GroupsScreen() {
                     </Button>
                   </div>
                 </div>
+                {candidateRegexInvalid ? (
+                  <div className="px-2 text-sm text-destructive">{locale === 'zh-CN' ? '正则表达式无效' : 'Invalid regex'}</div>
+                ) : null}
+                {form.sync_filter_mode && form.sync_filter_query ? (
+                  <div className="mx-2 mb-2 flex flex-col gap-2 rounded-md border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 text-sm text-muted-foreground">
+                      <span className="text-foreground">{locale === 'zh-CN' ? '已保存筛选' : 'Saved filter'}</span>
+                      <span className="mx-2">·</span>
+                      <span>{form.sync_filter_mode === 'regex' ? (locale === 'zh-CN' ? '正则' : 'Regex') : (locale === 'zh-CN' ? '包含' : 'Contains')}</span>
+                      <span className="mx-2">·</span>
+                      <span className="break-all">{form.sync_filter_query}</span>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => void applySavedFilter()}>
+                        <RefreshCcw data-icon="inline-start" />
+                        {locale === 'zh-CN' ? '按规则更新' : 'Update by rule'}
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" className="text-muted-foreground" onClick={clearSavedFilter}>
+                        <X data-icon="inline-start" />
+                        {locale === 'zh-CN' ? '清除规则' : 'Clear rule'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="px-2 pb-2">
                   <div className="flex flex-col gap-2">

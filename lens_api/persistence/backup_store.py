@@ -390,6 +390,8 @@ class BackupStore:
                     protocol=group.protocol.value,
                     strategy=group.strategy.value,
                     route_group_id=group.route_group_id,
+                    sync_filter_mode=group.sync_filter_mode.value,
+                    sync_filter_query=group.sync_filter_query,
                 )
             )
 
@@ -939,6 +941,8 @@ class BackupStore:
                         "strategy": row.strategy,
                         "route_group_id": row.route_group_id,
                         "route_group_name": route_group_names.get(row.route_group_id, ""),
+                        "sync_filter_mode": row.sync_filter_mode,
+                        "sync_filter_query": row.sync_filter_query,
                         "input_price_per_million": float(price.input_price_per_million) if price is not None else 0.0,
                         "output_price_per_million": float(price.output_price_per_million) if price is not None else 0.0,
                         "cache_read_price_per_million": float(price.cache_read_price_per_million) if price is not None else 0.0,
