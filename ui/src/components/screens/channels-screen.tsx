@@ -119,7 +119,7 @@ type ChannelStatusFilter = 'all' | 'enabled' | 'disabled'
 type ChannelSort = 'requests-desc' | 'name-asc' | 'name-desc' | 'models-desc' | 'protocols-desc'
 type SiteProtocolLike = Site['protocols'][number]
 
-const emptyProtocol = (): FormProtocol => ({
+const emptyProtocol = (baseUrlId = ''): FormProtocol => ({
   id: null,
   protocol: 'openai_chat',
   enabled: true,
@@ -128,19 +128,22 @@ const emptyProtocol = (): FormProtocol => ({
   param_override: '',
   match_regex: '',
   manual_model_name: '',
-  base_url_id: '',
+  base_url_id: baseUrlId,
   bindings: [],
   models: [],
   expanded: true,
   model_filter_credential_id: null,
 })
 
-const emptyForm = (): FormState => ({
-  name: '',
-  base_urls: [{ id: createBaseUrlId(), url: '', name: '', enabled: true }],
-  credentials: [{ id: createCredentialId(), name: '', api_key: '', enabled: true }],
-  protocols: [emptyProtocol()],
-})
+const emptyForm = (): FormState => {
+  const baseUrlId = createBaseUrlId()
+  return {
+    name: '',
+    base_urls: [{ id: baseUrlId, url: '', name: '', enabled: true }],
+    credentials: [{ id: createCredentialId(), name: '', api_key: '', enabled: true }],
+    protocols: [emptyProtocol(baseUrlId)],
+  }
+}
 
 function protocolLabel(protocol: ProtocolKind) {
   return protocolOptions.find((item) => item.value === protocol)?.label ?? protocol
@@ -174,6 +177,22 @@ function credentialLabel(item: { name: string }, index: number, locale: string) 
   const name = item.name.trim()
   if (name) return name
   return locale === 'zh-CN' ? `密钥 ${index + 1}` : `Key ${index + 1}`
+}
+
+function baseUrlLabel(item: { name: string; url: string }, index: number, locale: string) {
+  const name = item.name.trim()
+  if (name) return name
+  const url = item.url.trim()
+  if (url) return url
+  return locale === 'zh-CN' ? `地址 ${index + 1}` : `URL ${index + 1}`
+}
+
+function defaultBaseUrlId(items: Array<{ id: string; enabled: boolean }>) {
+  return items.find((item) => item.enabled)?.id ?? items[0]?.id ?? ''
+}
+
+function resolveBaseUrlId(items: Array<{ id: string; enabled: boolean }>, baseUrlId: string) {
+  return items.some((item) => item.id === baseUrlId) ? baseUrlId : defaultBaseUrlId(items)
 }
 
 function credentialDisplayName(
@@ -586,11 +605,12 @@ function inferProtocolFilterCredential(siteId: string, protocol: SiteProtocolLik
 }
 
 function toForm(site: Site): FormState {
+  const baseUrls = site.base_urls.length
+    ? site.base_urls.map((item) => ({ id: item.id, url: item.url, name: item.name, enabled: item.enabled }))
+    : [{ id: createBaseUrlId(), url: '', name: '', enabled: true }]
   return {
     name: site.name,
-    base_urls: site.base_urls.length
-      ? site.base_urls.map((item) => ({ id: item.id, url: item.url, name: item.name, enabled: item.enabled }))
-      : [{ id: createBaseUrlId(), url: '', name: '', enabled: true }],
+    base_urls: baseUrls,
     credentials: site.credentials.map((item) => ({ id: item.id, name: isGeneratedCredentialName(item.name) ? '' : item.name, api_key: item.api_key, enabled: item.enabled })),
     protocols: site.protocols.map((item) => ({
       id: item.id,
@@ -601,7 +621,7 @@ function toForm(site: Site): FormState {
       param_override: item.param_override,
       match_regex: safeText(item.match_regex),
       manual_model_name: '',
-      base_url_id: item.base_url_id,
+      base_url_id: resolveBaseUrlId(baseUrls, item.base_url_id),
       bindings: item.bindings.map((binding) => ({ credential_id: binding.credential_id, enabled: binding.enabled })),
       models: item.models.map((model) => ({ id: model.id, credential_id: model.credential_id, model_name: model.model_name, enabled: model.enabled })),
       expanded: true,
@@ -627,7 +647,7 @@ function toPayload(form: FormState): SitePayload {
       channel_proxy: item.channel_proxy.trim(),
       param_override: item.param_override.trim(),
       match_regex: safeText(item.match_regex).trim(),
-      base_url_id: item.base_url_id,
+      base_url_id: resolveBaseUrlId(form.base_urls, item.base_url_id),
       bindings: item.bindings.filter((binding) => binding.credential_id),
       models: item.models.map((model) => ({ id: model.id, credential_id: model.credential_id, model_name: model.model_name.trim(), enabled: model.enabled })).filter((model) => model.credential_id && model.model_name),
     })),
@@ -911,6 +931,39 @@ export function ChannelsScreen() {
 
   function updateProtocol(index: number, patch: Partial<FormProtocol>) {
     setForm((current) => ({ ...current, protocols: current.protocols.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }))
+  }
+
+  function addBaseUrl() {
+    const baseUrl = { id: createBaseUrlId(), url: '', name: '', enabled: true }
+    setForm((current) => ({ ...current, base_urls: [...current.base_urls, baseUrl] }))
+  }
+
+  function updateBaseUrl(index: number, patch: Partial<FormBaseUrl>) {
+    setForm((current) => ({
+      ...current,
+      base_urls: current.base_urls.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
+    }))
+  }
+
+  function removeBaseUrl(index: number) {
+    setForm((current) => {
+      if (current.base_urls.length <= 1) {
+        return current
+      }
+      const target = current.base_urls[index]
+      if (!target) {
+        return current
+      }
+      const baseUrls = current.base_urls.filter((_, itemIndex) => itemIndex !== index)
+      return {
+        ...current,
+        base_urls: baseUrls,
+        protocols: current.protocols.map((protocol) => ({
+          ...protocol,
+          base_url_id: resolveBaseUrlId(baseUrls, protocol.base_url_id),
+        })),
+      }
+    })
   }
 
   function updateProtocolHeader(protocolIndex: number, headerIndex: number, patch: Partial<HeaderItem>) {
@@ -1231,7 +1284,7 @@ export function ChannelsScreen() {
                     <section className="grid gap-3">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '请求地址' : 'Base URLs'}</div>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setForm((current) => ({ ...current, base_urls: [...current.base_urls, { id: createBaseUrlId(), url: '', name: '', enabled: true }] }))}>
+                        <Button type="button" variant="outline" size="sm" onClick={addBaseUrl}>
                           <Plus data-icon="inline-start" />
                           {locale === 'zh-CN' ? '添加' : 'Add'}
                         </Button>
@@ -1242,16 +1295,16 @@ export function ChannelsScreen() {
                             <FieldGroup className="gap-3 contents">
                               <Field>
                                 <FieldLabel>{locale === 'zh-CN' ? '地址' : 'URL'}</FieldLabel>
-                                <Input value={baseUrl.url} onChange={(event) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, url: event.target.value } : item) }))} placeholder="https://api.example.com" />
+                                <Input value={baseUrl.url} onChange={(event) => updateBaseUrl(index, { url: event.target.value })} placeholder="https://api.example.com" />
                               </Field>
                               <Field>
                                 <FieldLabel>{locale === 'zh-CN' ? '备注' : 'Remark'}</FieldLabel>
-                                <Input value={baseUrl.name} onChange={(event) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, name: event.target.value } : item) }))} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
+                                <Input value={baseUrl.name} onChange={(event) => updateBaseUrl(index, { name: event.target.value })} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
                               </Field>
                               <div className="flex h-8 w-8 items-center justify-center">
-                                <SwitchButton checked={baseUrl.enabled} onChange={(checked) => setForm((current) => ({ ...current, base_urls: current.base_urls.map((item, i) => i === index ? { ...item, enabled: checked } : item) }))} />
+                                <SwitchButton checked={baseUrl.enabled} onChange={(checked) => updateBaseUrl(index, { enabled: checked })} />
                               </div>
-                              <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => setForm((current) => ({ ...current, base_urls: current.base_urls.length > 1 ? current.base_urls.filter((_, i) => i !== index) : current.base_urls }))} disabled={form.base_urls.length <= 1}><X size={16} /></Button>
+                              <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => removeBaseUrl(index)} disabled={form.base_urls.length <= 1}><X size={16} /></Button>
                             </FieldGroup>
                           </div>
                         ))}
@@ -1296,7 +1349,7 @@ export function ChannelsScreen() {
               <section className="grid gap-4">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '协议列表' : 'Protocol configs'}</div>
-                  <Button type="button" variant="outline" className="justify-start border-dashed" onClick={() => setForm((current) => ({ ...current, protocols: [...current.protocols, emptyProtocol()] }))}>
+                  <Button type="button" variant="outline" className="justify-start border-dashed" onClick={() => setForm((current) => ({ ...current, protocols: [...current.protocols, emptyProtocol(defaultBaseUrlId(current.base_urls))] }))}>
                     <Plus data-icon="inline-start" />
                     {locale === 'zh-CN' ? '增加一个协议' : 'Add protocol config'}
                   </Button>
@@ -1330,9 +1383,8 @@ export function ChannelsScreen() {
                             </Field>
                             <Field>
                               <FieldLabel>{locale === 'zh-CN' ? '地址来源' : 'Base URL'}</FieldLabel>
-                              <NativeSelect className={selectClassName()} value={protocol.base_url_id} onChange={(event) => updateProtocol(protocolIndex, { base_url_id: event.target.value })}>
-                                <NativeSelectOption value="">{locale === 'zh-CN' ? '默认地址' : 'Default'}</NativeSelectOption>
-                                {form.base_urls.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.name || item.url}</NativeSelectOption>)}
+                              <NativeSelect className={selectClassName()} value={resolveBaseUrlId(form.base_urls, protocol.base_url_id)} onChange={(event) => updateProtocol(protocolIndex, { base_url_id: event.target.value })}>
+                                {form.base_urls.map((item, baseUrlIndex) => <NativeSelectOption key={item.id} value={item.id}>{baseUrlLabel(item, baseUrlIndex, locale)}</NativeSelectOption>)}
                               </NativeSelect>
                             </Field>
                             <Field>
