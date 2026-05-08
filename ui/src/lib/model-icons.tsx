@@ -10,6 +10,7 @@ type BrandIconDefinition = {
   prefixes: string[]
   src: string
   imageClassName?: string
+  invertInDark?: boolean
 }
 
 function joinClassNames(...values: Array<string | undefined>) {
@@ -17,13 +18,13 @@ function joinClassNames(...values: Array<string | undefined>) {
 }
 
 const BRAND_ICONS: BrandIconDefinition[] = [
-  { prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai'], src: '/brand-icons/gpt.svg', imageClassName: 'scale-[0.94]' },
-  { prefixes: ['claude', 'anthropic'], src: '/brand-icons/claude.svg', imageClassName: 'scale-[0.96]' },
+  { prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai'], src: '/brand-icons/gpt.svg', imageClassName: 'scale-[0.94]', invertInDark: true },
+  { prefixes: ['claude', 'anthropic'], src: '/brand-icons/claude.svg', imageClassName: 'scale-[0.96]', invertInDark: true },
   { prefixes: ['gemini', 'gemma', 'google'], src: '/brand-icons/gemini.svg', imageClassName: 'scale-[0.94]' },
   { prefixes: ['deepseek'], src: '/brand-icons/deepseek.svg', imageClassName: 'scale-[0.94]' },
   { prefixes: ['qwen', 'qwq', 'alibaba'], src: '/brand-icons/qwen.svg', imageClassName: 'scale-[0.94]' },
-  { prefixes: ['moonshot', 'kimi'], src: '/brand-icons/kimi.svg', imageClassName: 'scale-[0.94]' },
-  { prefixes: ['glm', 'chatglm', 'zhipu', 'z-ai'], src: '/brand-icons/glm.svg', imageClassName: 'scale-[0.94]' },
+  { prefixes: ['moonshot', 'kimi'], src: '/brand-icons/kimi.svg', imageClassName: 'scale-[0.94]', invertInDark: true },
+  { prefixes: ['glm', 'chatglm', 'zhipu', 'z-ai'], src: '/brand-icons/glm.svg', imageClassName: 'scale-[0.94]', invertInDark: true },
   { prefixes: ['minimax', 'abab', 'minmax'], src: '/brand-icons/minmax.svg', imageClassName: 'scale-[0.92]' },
 ]
 
@@ -42,7 +43,11 @@ function createAvatar(definition: BrandIconDefinition): AvatarComponent {
           alt=""
           width={size}
           height={size}
-          className={joinClassNames('h-full w-full object-contain', definition.imageClassName)}
+          className={joinClassNames(
+            'h-full w-full object-contain',
+            definition.imageClassName,
+            definition.invertInDark ? 'dark:invert' : undefined
+          )}
         />
       </span>
     )

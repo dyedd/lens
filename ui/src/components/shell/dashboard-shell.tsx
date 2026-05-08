@@ -3,6 +3,11 @@
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -126,6 +131,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const updateTitle = versionCheck?.release_url
     ? updateLabel
     : `${updateLabel} (${locale === 'zh-CN' ? '暂无发布链接' : 'No release link'})`
+  const nextLocale = locale === 'zh-CN' ? 'en-US' : 'zh-CN'
+  const languageActionLabel = locale === 'zh-CN' ? '切换到 English' : 'Switch to 中文'
 
   const navGroups = useMemo(() => [
     {
@@ -269,19 +276,32 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
             <ThemeToggle />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
-            >
-              <Globe2 data-icon="inline-start" />
-              {locale === 'zh-CN' ? 'English' : '中文'}
-            </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut data-icon="inline-start" />
-              {t.signOut}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={languageActionLabel}
+                  onClick={() => setLocale(nextLocale)}
+                >
+                  <Globe2 />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end">
+                {languageActionLabel}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label={t.signOut} onClick={handleSignOut}>
+                  <LogOut />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end">
+                {t.signOut}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </header>
 

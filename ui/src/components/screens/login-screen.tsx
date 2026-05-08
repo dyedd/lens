@@ -13,6 +13,7 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 type LoginResponse = {
   access_token: string
@@ -33,6 +34,8 @@ export function LoginScreen() {
   const [submitting, setSubmitting] = useState(false)
   const siteName = branding?.site_name?.trim() || 'Lens'
   const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
+  const nextLocale = locale === 'zh-CN' ? 'en-US' : 'zh-CN'
+  const languageActionLabel = locale === 'zh-CN' ? '切换到 English' : 'Switch to 中文'
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -56,16 +59,22 @@ export function LoginScreen() {
     <div className="relative flex min-h-svh w-full items-center justify-center p-6 md:p-10">
       <div className="absolute right-6 top-6 flex items-center gap-2">
         <ThemeToggle />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
-        >
-          <Globe2 data-icon="inline-start" />
-          <span>{locale === 'zh-CN' ? 'English' : '中文'}</span>
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={languageActionLabel}
+              onClick={() => setLocale(nextLocale)}
+            >
+              <Globe2 />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            {languageActionLabel}
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="flex w-full max-w-sm flex-col gap-6">
