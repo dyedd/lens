@@ -173,18 +173,24 @@ function fallbackCredentialName(index: number) {
   return `Key ${index + 1}`
 }
 
-function credentialLabel(item: { name: string }, index: number, locale: string) {
-  const name = item.name.trim()
-  if (name) return name
+function credentialIndexLabel(index: number, locale: string) {
   return locale === 'zh-CN' ? `密钥 ${index + 1}` : `Key ${index + 1}`
 }
 
-function baseUrlLabel(item: { name: string; url: string }, index: number, locale: string) {
+function credentialLabel(item: { name: string }, index: number, locale: string) {
   const name = item.name.trim()
   if (name) return name
-  const url = item.url.trim()
-  if (url) return url
+  return credentialIndexLabel(index, locale)
+}
+
+function baseUrlIndexLabel(index: number, locale: string) {
   return locale === 'zh-CN' ? `地址 ${index + 1}` : `URL ${index + 1}`
+}
+
+function baseUrlLabel(item: { name: string }, index: number, locale: string) {
+  const name = item.name.trim()
+  if (name) return name
+  return baseUrlIndexLabel(index, locale)
 }
 
 function defaultBaseUrlId(items: Array<{ id: string; enabled: boolean }>) {
@@ -974,16 +980,17 @@ export function ChannelsScreen() {
   }
 
   function addManualProtocolModel(protocolIndex: number, credentialId: string) {
+    const protocol = form.protocols[protocolIndex]
+    const modelName = protocol?.manual_model_name.trim() ?? ''
+    if (!protocol || !credentialId || !modelName) return
+    if (protocol.models.some((model) => model.credential_id === credentialId && model.model_name === modelName)) {
+      toast.info(locale === 'zh-CN' ? '模型已存在' : 'Model already exists')
+      return
+    }
     setForm((current) => ({
       ...current,
       protocols: current.protocols.map((item, itemIndex) => {
         if (itemIndex !== protocolIndex) return item
-        const modelName = item.manual_model_name.trim()
-        if (!credentialId || !modelName) return item
-        const exists = item.models.some((model) => model.credential_id === credentialId && model.model_name === modelName)
-        if (exists) {
-          return { ...item, manual_model_name: '', expanded: true }
-        }
         return {
           ...item,
           manual_model_name: '',
@@ -1058,9 +1065,9 @@ export function ChannelsScreen() {
       setAvailableModels(nextAvailableModels)
       setPickerSelectedModelKeys([])
       setModelPickerProtocolIndex(protocolIndex)
-      toast.success(locale === 'zh-CN' ? `已获取 ${models.length} 个模型` : `Fetched ${models.length} models`)
+      toast.success(locale === 'zh-CN' ? `已获取 ${models.length} 个可选模型` : `Fetched ${models.length} available models`)
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '刷新模型失败' : 'Failed to refresh models')
+      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '获取模型失败' : 'Failed to fetch models')
       toast.error(message)
     } finally {
       setFetchingProtocolIndex(null)
@@ -1291,15 +1298,15 @@ export function ChannelsScreen() {
                       </div>
                       <FieldGroup className="gap-3">
                         {form.base_urls.map((baseUrl, index) => (
-                          <div key={baseUrl.id} className="grid gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
-                            <FieldGroup className="gap-3 contents">
+                          <div key={baseUrl.id} className="grid min-w-0 gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
+                            <FieldGroup className="min-w-0 gap-3 md:contents">
                               <Field>
-                                <FieldLabel>{locale === 'zh-CN' ? '地址' : 'URL'}</FieldLabel>
-                                <Input value={baseUrl.url} onChange={(event) => updateBaseUrl(index, { url: event.target.value })} placeholder="https://api.example.com" />
+                                <FieldLabel>{baseUrlIndexLabel(index, locale)}</FieldLabel>
+                                <Input className="w-full min-w-0" value={baseUrl.url} onChange={(event) => updateBaseUrl(index, { url: event.target.value })} placeholder="https://api.example.com" />
                               </Field>
                               <Field>
                                 <FieldLabel>{locale === 'zh-CN' ? '备注' : 'Remark'}</FieldLabel>
-                                <Input value={baseUrl.name} onChange={(event) => updateBaseUrl(index, { name: event.target.value })} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
+                                <Input className="w-full min-w-0" value={baseUrl.name} onChange={(event) => updateBaseUrl(index, { name: event.target.value })} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
                               </Field>
                               <div className="flex h-8 w-8 items-center justify-center">
                                 <SwitchButton checked={baseUrl.enabled} onChange={(checked) => updateBaseUrl(index, { enabled: checked })} />
@@ -1321,15 +1328,15 @@ export function ChannelsScreen() {
                       </div>
                       <FieldGroup className="gap-3">
                         {form.credentials.map((credential, index) => (
-                          <div key={credential.id} className="grid gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
-                            <FieldGroup className="gap-3 contents">
+                          <div key={credential.id} className="grid min-w-0 gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
+                            <FieldGroup className="min-w-0 gap-3 md:contents">
                               <Field>
-                                <FieldLabel>{locale === 'zh-CN' ? '密钥' : 'API key'}</FieldLabel>
-                                <Input value={credential.api_key} onChange={(event) => updateCredential(index, { api_key: event.target.value })} placeholder="sk-..." />
+                                <FieldLabel>{credentialIndexLabel(index, locale)}</FieldLabel>
+                                <Input className="w-full min-w-0" value={credential.api_key} onChange={(event) => updateCredential(index, { api_key: event.target.value })} placeholder="sk-..." />
                               </Field>
                               <Field>
                                 <FieldLabel>{locale === 'zh-CN' ? '备注' : 'Remark'}</FieldLabel>
-                                <Input value={credential.name} onChange={(event) => updateCredential(index, { name: event.target.value })} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
+                                <Input className="w-full min-w-0" value={credential.name} onChange={(event) => updateCredential(index, { name: event.target.value })} placeholder={locale === 'zh-CN' ? '备注' : 'Remark'} />
                               </Field>
                               <div className="flex h-8 w-8 items-center justify-center">
                                 <SwitchButton checked={credential.enabled} onChange={(checked) => updateCredential(index, { enabled: checked })} />
@@ -1411,37 +1418,55 @@ export function ChannelsScreen() {
                           {protocol.expanded ? (
                             <div className="grid gap-3 pt-1">
                               <Separator />
-                              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] xl:items-end">
-                                <Field>
-                                  <FieldLabel>{locale === 'zh-CN' ? '模型名称' : 'Model name'}</FieldLabel>
-                                  <Input
-                                    className="min-w-[180px]"
-                                    value={protocol.manual_model_name}
-                                    onChange={(event) => updateProtocol(protocolIndex, { manual_model_name: event.target.value })}
-                                    onKeyDown={(event) => {
-                                      if (event.key !== 'Enter') return
-                                      event.preventDefault()
-                                      addManualProtocolModel(protocolIndex, selectedCredentialId)
-                                    }}
-                                    placeholder={locale === 'zh-CN' ? '模型名称' : 'Model name'}
-                                  />
-                                </Field>
-                                <Field>
-                                  <FieldLabel>{locale === 'zh-CN' ? '匹配规则' : 'Match regex'}</FieldLabel>
-                                  <Input
-                                    className="min-w-[180px]"
-                                    value={protocol.match_regex}
-                                    onChange={(event) => updateProtocol(protocolIndex, { match_regex: event.target.value })}
-                                    placeholder={locale === 'zh-CN' ? '匹配规则' : 'Match regex'}
-                                  />
-                                </Field>
-                                <Button type="button" variant="outline" onClick={() => addManualProtocolModel(protocolIndex, selectedCredentialId)} disabled={!selectedCredentialId || !protocol.manual_model_name.trim()}>
-                                  {locale === 'zh-CN' ? '加入' : 'Add'}
-                                </Button>
-                                <Button type="button" variant="destructive" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length}>{locale === 'zh-CN' ? '删除所有模型' : 'Remove all'}</Button>
-                                <Button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size}>
-                                  <RefreshCcw size={14} className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
-                                  {locale === 'zh-CN' ? '刷新模型' : 'Refresh models'}
+                              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                                <FieldGroup className="gap-2">
+                                  <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '手动添加模型' : 'Add model manually'}</div>
+                                  <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                                    <Field>
+                                      <FieldLabel>{locale === 'zh-CN' ? '模型名称' : 'Model name'}</FieldLabel>
+                                      <Input
+                                        className="w-full min-w-0"
+                                        value={protocol.manual_model_name}
+                                        onChange={(event) => updateProtocol(protocolIndex, { manual_model_name: event.target.value })}
+                                        onKeyDown={(event) => {
+                                          if (event.key !== 'Enter') return
+                                          event.preventDefault()
+                                          addManualProtocolModel(protocolIndex, selectedCredentialId)
+                                        }}
+                                        placeholder={locale === 'zh-CN' ? '完整模型名' : 'Exact model name'}
+                                      />
+                                    </Field>
+                                    <Button type="button" variant="outline" onClick={() => addManualProtocolModel(protocolIndex, selectedCredentialId)} disabled={!selectedCredentialId || !protocol.manual_model_name.trim()}>
+                                      <Plus data-icon="inline-start" />
+                                      {locale === 'zh-CN' ? '添加模型' : 'Add model'}
+                                    </Button>
+                                  </div>
+                                </FieldGroup>
+                                <FieldGroup className="gap-2">
+                                  <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '从上游获取模型' : 'Fetch upstream models'}</div>
+                                  <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                                    <Field>
+                                      <FieldLabel>{locale === 'zh-CN' ? '模型过滤' : 'Model filter'}</FieldLabel>
+                                      <Input
+                                        className="w-full min-w-0"
+                                        value={protocol.match_regex}
+                                        onChange={(event) => updateProtocol(protocolIndex, { match_regex: event.target.value })}
+                                        placeholder={locale === 'zh-CN' ? '正则表达式，留空获取全部' : 'Regex, empty fetches all'}
+                                      />
+                                    </Field>
+                                    <Button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size}>
+                                      <RefreshCcw data-icon="inline-start" className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
+                                      {locale === 'zh-CN' ? '获取模型' : 'Fetch models'}
+                                    </Button>
+                                  </div>
+                                </FieldGroup>
+                              </div>
+
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
+                                <Button type="button" variant="destructive" size="sm" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length}>
+                                  <Trash2 data-icon="inline-start" />
+                                  {locale === 'zh-CN' ? '清空全部' : 'Clear all'}
                                 </Button>
                               </div>
 
