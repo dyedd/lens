@@ -20,3 +20,9 @@ def register(app: FastAPI, service_module) -> None:
         methods=["POST"],
         response_model=list[service_module.SiteModelFetchItem],
     )
+    app.add_api_route(
+        "/api/admin/site-model-tests",
+        service_module.test_site_model,
+        methods=["POST"],
+        response_model=service_module.SiteModelTestResult,
+    )

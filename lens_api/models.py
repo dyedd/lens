@@ -324,6 +324,49 @@ class SiteModelFetchItem(BaseModel):
     model_name: str
 
 
+class SiteModelTestCredential(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    name: str = ""
+    api_key: str = Field(min_length=1)
+
+
+class SiteModelTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: ProtocolKind
+    base_url: HttpUrl
+    headers: dict[str, str] = Field(default_factory=dict)
+    channel_proxy: str = ""
+    param_override: str = ""
+    credential: SiteModelTestCredential
+    model_name: str = Field(min_length=1)
+    prompt: str = Field(min_length=1, max_length=2000)
+
+    _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
+
+    @field_validator("model_name", "prompt")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Value cannot be empty")
+        return normalized
+
+
+class SiteModelTestResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool
+    status_code: int | None = None
+    latency_ms: int = Field(default=0, ge=0)
+    model_name: str
+    credential_id: str
+    output_text: str = ""
+    error_message: str = ""
+
+
 class ChannelKeyHealth(BaseModel):
     credential_id: str
     consecutive_failures: int = 0

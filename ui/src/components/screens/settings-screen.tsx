@@ -11,6 +11,7 @@ import {
   Save,
   ServerCog,
   ShieldAlert,
+  TestTubeDiagonal,
   UserRound,
   TimerReset,
 } from "lucide-react"
@@ -32,6 +33,7 @@ import {
 } from "@/lib/api"
 import { setStoredToken } from "@/lib/auth"
 import { useI18n, type Locale } from "@/lib/i18n"
+import { DEFAULT_MODEL_TEST_PROMPTS, MODEL_TEST_PROMPTS_SETTING_KEY, parseModelTestPrompts, serializeModelTestPrompts } from "@/lib/model-test-prompts"
 import { cn } from "@/lib/utils"
 
 const PROXY_URL = "proxy_url"
@@ -66,6 +68,7 @@ type DraftState = {
   siteName: string
   siteLogoUrl: string
   timeZone: string
+  modelTestPrompts: string
 }
 
 const EMPTY_DRAFT: DraftState = {
@@ -80,6 +83,7 @@ const EMPTY_DRAFT: DraftState = {
   siteName: "Lens",
   siteLogoUrl: "",
   timeZone: "Asia/Shanghai",
+  modelTestPrompts: DEFAULT_MODEL_TEST_PROMPTS.join("\n"),
 }
 
 function titleForLocale(locale: Locale, zh: string, en: string) {
@@ -100,6 +104,7 @@ function parseSettings(items: SettingItem[] | undefined) {
     siteName: mapping.get(SITE_NAME) ?? "Lens",
     siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
     timeZone: mapping.get(TIME_ZONE) ?? "Asia/Shanghai",
+    modelTestPrompts: parseModelTestPrompts(mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY)).join("\n"),
   } satisfies DraftState
 }
 
@@ -219,6 +224,7 @@ export function SettingsScreen() {
         { key: SITE_NAME, value: draft.siteName.trim() || "Lens" },
         { key: SITE_LOGO_URL, value: draft.siteLogoUrl.trim() },
         { key: TIME_ZONE, value: draft.timeZone.trim() || "Asia/Shanghai" },
+        { key: MODEL_TEST_PROMPTS_SETTING_KEY, value: serializeModelTestPrompts(draft.modelTestPrompts) },
       ]
       await apiRequest<SettingItem[]>("/admin/settings", {
         method: "PUT",
@@ -448,6 +454,24 @@ export function SettingsScreen() {
     )
   }
 
+  function renderModelTestCard() {
+    return (
+      <SettingCard icon={TestTubeDiagonal} title={titleForLocale(locale, "模型测试", "Model test")}>
+        <FieldGroup>
+          <Field>
+            <FieldLabel>{titleForLocale(locale, "预设问题", "Preset prompts")}</FieldLabel>
+            <Textarea
+              className="min-h-[132px]"
+              value={draft.modelTestPrompts}
+              onChange={(event) => setDraftValue("modelTestPrompts", event.target.value)}
+              placeholder={DEFAULT_MODEL_TEST_PROMPTS.join("\n")}
+            />
+          </Field>
+        </FieldGroup>
+      </SettingCard>
+    )
+  }
+
   function renderCircuitCard() {
     return (
       <SettingCard icon={ShieldAlert} title={titleForLocale(locale, "熔断器", "Circuit breaker")}>
@@ -503,6 +527,7 @@ export function SettingsScreen() {
           {renderAccountCard()}
           {renderTimeCard()}
           {renderSystemCard()}
+          {renderModelTestCard()}
           <div className="xl:col-span-2">{renderCircuitCard()}</div>
         </div>
       </div>

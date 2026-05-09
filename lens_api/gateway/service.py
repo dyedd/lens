@@ -76,6 +76,8 @@ from ..models import (
     SiteCreate,
     SiteModelFetchItem,
     SiteModelFetchRequest,
+    SiteModelTestRequest,
+    SiteModelTestResult,
     SiteRuntimeSummary,
     SiteUpdate,
     VersionCheckResult,
@@ -712,6 +714,31 @@ async def fetch_site_models(
                 )
             )
     return items
+
+
+async def test_site_model(
+    payload: SiteModelTestRequest, _: Any = Depends(get_current_admin)
+) -> SiteModelTestResult:
+    channel = _model_test_channel(payload)
+    body = _model_test_body(payload.protocol, payload.model_name, payload.prompt)
+    try:
+        body = _apply_param_override(channel, body)
+        body["stream"] = False
+    except UpstreamRequestError as exc:
+        return SiteModelTestResult(
+            success=False,
+            status_code=exc.status_code,
+            latency_ms=0,
+            model_name=payload.model_name,
+            credential_id=payload.credential.id,
+            error_message=_format_channel_error(channel, exc.detail),
+        )
+    return await _call_model_test_channel(
+        channel=channel,
+        body=body,
+        model_name=payload.model_name,
+        credential_id=payload.credential.id,
+    )
 
 
 async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]:
@@ -1726,6 +1753,225 @@ async def _call_channel(
     finally:
         if close_client:
             await client.aclose()
+
+
+def _model_test_channel(payload: SiteModelTestRequest) -> ChannelConfig:
+    return ChannelConfig(
+        id="model-test",
+        name=payload.credential.name or "model-test",
+        protocol=payload.protocol,
+        base_url=payload.base_url,
+        api_key=payload.credential.api_key,
+        headers=payload.headers,
+        model_patterns=[],
+        keys=[
+            {
+                "id": payload.credential.id,
+                "key": payload.credential.api_key,
+                "remark": payload.credential.name,
+                "enabled": True,
+            }
+        ],
+        models=[],
+        channel_proxy=payload.channel_proxy,
+        param_override=payload.param_override,
+        match_regex="",
+    )
+
+
+def _model_test_body(protocol: ProtocolKind, model_name: str, prompt: str) -> dict[str, Any]:
+    text = prompt.strip()
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        return {
+            "model": model_name,
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": 64,
+            "stream": False,
+        }
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        return {
+            "model": model_name,
+            "input": text,
+            "max_output_tokens": 64,
+            "stream": False,
+        }
+    if protocol == ProtocolKind.ANTHROPIC:
+        return {
+            "model": model_name,
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": 64,
+            "stream": False,
+        }
+    if protocol == ProtocolKind.GEMINI:
+        return {
+            "model": model_name,
+            "contents": [{"role": "user", "parts": [{"text": text}]}],
+            "generationConfig": {"maxOutputTokens": 64},
+            "stream": False,
+        }
+    raise HTTPException(status_code=500, detail=f"Unsupported protocol={protocol.value}")
+
+
+async def _call_model_test_channel(
+    *,
+    channel: ChannelConfig,
+    body: dict[str, Any],
+    model_name: str,
+    credential_id: str,
+) -> SiteModelTestResult:
+    upstream = build_upstream_request(channel, body, settings, credential_id=credential_id)
+    client = app_state.http
+    close_client = False
+    runtime = await app_state.domain_store.get_runtime_settings()
+    proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
+
+    if proxy_url:
+        client = httpx.AsyncClient(
+            proxy=proxy_url,
+            timeout=app_state.http.timeout,
+            limits=httpx.Limits(
+                max_connections=settings.max_connections,
+                max_keepalive_connections=settings.max_keepalive_connections,
+            ),
+            trust_env=False,
+        )
+        close_client = True
+
+    started_at = perf_counter()
+    try:
+        response = await client.request(
+            upstream.method,
+            upstream.url,
+            headers=upstream.headers,
+            json=upstream.json_body,
+        )
+        latency_ms = _elapsed_ms(started_at)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            await exc.response.aread()
+            detail = exc.response.text or f"HTTP {exc.response.status_code}"
+            return SiteModelTestResult(
+                success=False,
+                status_code=exc.response.status_code,
+                latency_ms=latency_ms,
+                model_name=model_name,
+                credential_id=credential_id,
+                error_message=detail,
+            )
+        raw_payload = response.json()
+        return SiteModelTestResult(
+            success=True,
+            status_code=response.status_code,
+            latency_ms=latency_ms,
+            model_name=model_name,
+            credential_id=credential_id,
+            output_text=_extract_model_test_text(channel.protocol, raw_payload),
+        )
+    except httpx.HTTPError as exc:
+        return SiteModelTestResult(
+            success=False,
+            status_code=502,
+            latency_ms=_elapsed_ms(started_at),
+            model_name=model_name,
+            credential_id=credential_id,
+            error_message=_format_transport_error(exc, upstream.url),
+        )
+    except ValueError as exc:
+        return SiteModelTestResult(
+            success=False,
+            status_code=502,
+            latency_ms=_elapsed_ms(started_at),
+            model_name=model_name,
+            credential_id=credential_id,
+            error_message=f"Invalid upstream response: {exc}",
+        )
+    finally:
+        if close_client:
+            await client.aclose()
+
+
+def _extract_model_test_text(protocol: ProtocolKind, payload: dict[str, Any]) -> str:
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        choices = payload.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                message = choice.get("message")
+                if not isinstance(message, dict):
+                    continue
+                text = _stringify_text_content(message.get("content")).strip()
+                if text:
+                    return text
+        return ""
+
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        output_text = payload.get("output_text")
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text.strip()
+        output = payload.get("output")
+        if isinstance(output, list):
+            parts: list[str] = []
+            for item in output:
+                if not isinstance(item, dict):
+                    continue
+                content = item.get("content")
+                if not isinstance(content, list):
+                    continue
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "output_text":
+                        text = part.get("text")
+                        if isinstance(text, str) and text.strip():
+                            parts.append(text.strip())
+            return "\n".join(parts)
+        return ""
+
+    if protocol == ProtocolKind.ANTHROPIC:
+        content = payload.get("content")
+        if not isinstance(content, list):
+            return ""
+        parts = [
+            str(item.get("text")).strip()
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+        ]
+        return "\n".join(part for part in parts if part)
+
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return ""
+    parts: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content")
+        if not isinstance(content, dict):
+            continue
+        candidate_parts = content.get("parts")
+        if not isinstance(candidate_parts, list):
+            continue
+        for part in candidate_parts:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                text = part["text"].strip()
+                if text:
+                    parts.append(text)
+    return "\n".join(parts)
+
+
+def _stringify_text_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "\n".join(parts)
+    return ""
 
 
 def _passthrough_headers(headers: httpx.Headers) -> dict[str, str]:
