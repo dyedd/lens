@@ -200,6 +200,31 @@ export type SiteModelFetchItem = {
   model_name: string
 }
 
+export type SiteModelTestPayload = {
+  protocol: ProtocolKind
+  base_url: string
+  headers: Record<string, string>
+  channel_proxy: string
+  param_override: string
+  credential: {
+    id: string
+    name: string
+    api_key: string
+  }
+  model_name: string
+  prompt: string
+}
+
+export type SiteModelTestResult = {
+  success: boolean
+  status_code?: number | null
+  latency_ms: number
+  model_name: string
+  credential_id: string
+  output_text: string
+  error_message: string
+}
+
 export type ModelGroupCandidatesPayload = {
   protocol?: ProtocolKind
   exclude_items: ModelGroupItemPayload[]

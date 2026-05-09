@@ -13,13 +13,17 @@ import {
   SiteCredentialInput,
   SiteModelFetchItem,
   SiteModelFetchPayload,
+  SiteModelTestPayload,
+  SiteModelTestResult,
   SitePayload,
   SiteProtocolCredentialBindingInput,
   SiteModelInput,
   SiteRuntimeSummary,
+  SettingItem,
   apiRequest,
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { MODEL_TEST_PROMPTS_SETTING_KEY, parseModelTestPrompts } from '@/lib/model-test-prompts'
 import { cn } from '@/lib/utils'
 import { useAppTimeZone } from '@/hooks/use-app-time-zone'
 import { Badge } from '@/components/ui/badge'
@@ -105,6 +109,11 @@ type FormState = {
 type PickerModelItem = {
   credential_id: string
   model_name: string
+}
+
+type ModelTestTarget = {
+  protocolIndex: number
+  modelIndex: number
 }
 
 type SiteRow = Site & {
@@ -199,6 +208,15 @@ function defaultBaseUrlId(items: Array<{ id: string; enabled: boolean }>) {
 
 function resolveBaseUrlId(items: Array<{ id: string; enabled: boolean }>, baseUrlId: string) {
   return items.some((item) => item.id === baseUrlId) ? baseUrlId : defaultBaseUrlId(items)
+}
+
+function activeBaseUrlValue(form: FormState, protocol: Pick<FormProtocol, 'base_url_id'>) {
+  const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
+  return boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
+}
+
+function formHeaders(protocol: Pick<FormProtocol, 'headers'>) {
+  return Object.fromEntries(protocol.headers.map((entry) => [entry.key.trim(), entry.value] as const).filter(([key]) => key))
 }
 
 function credentialDisplayName(
@@ -690,6 +708,11 @@ export function ChannelsScreen() {
   const [modelPickerProtocolIndex, setModelPickerProtocolIndex] = useState<number | null>(null)
   const [availableModels, setAvailableModels] = useState<PickerModelItem[]>([])
   const [pickerSelectedModelKeys, setPickerSelectedModelKeys] = useState<string[]>([])
+  const [modelTestTarget, setModelTestTarget] = useState<ModelTestTarget | null>(null)
+  const [modelTestPromptMode, setModelTestPromptMode] = useState('0')
+  const [modelTestPrompt, setModelTestPrompt] = useState('')
+  const [modelTestResult, setModelTestResult] = useState<SiteModelTestResult | null>(null)
+  const [testingModel, setTestingModel] = useState(false)
   const [formSnapshot, setFormSnapshot] = useState('')
 
   const { data: sites, isLoading } = useQuery({
@@ -709,6 +732,11 @@ export function ChannelsScreen() {
     staleTime: 5_000,
     refetchInterval: 5000,
   })
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => apiRequest<SettingItem[]>('/admin/settings'),
+    staleTime: 5 * 60_000,
+  })
 
   const siteRuntimeById = useMemo(
     () => new Map((siteRuntimeSummaries ?? []).map((item) => [item.site_id, item] as const)),
@@ -718,6 +746,10 @@ export function ChannelsScreen() {
     () => new Map((routerSnapshot?.health ?? []).map((item) => [item.channel_id, item] as const)),
     [routerSnapshot]
   )
+  const modelTestPrompts = useMemo(() => {
+    const mapping = new Map((settings ?? []).map((item) => [item.key, item.value]))
+    return parseModelTestPrompts(mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY))
+  }, [settings])
   const siteRows = useMemo<SiteRow[]>(() => (
     (sites ?? []).map((site) => ({
       ...site,
@@ -1011,6 +1043,30 @@ export function ChannelsScreen() {
     setPickerSelectedModelKeys([])
   }
 
+  function openModelTest(protocolIndex: number, modelIndex: number) {
+    setModelTestTarget({ protocolIndex, modelIndex })
+    setModelTestPromptMode('0')
+    setModelTestPrompt(modelTestPrompts[0] || '')
+    setModelTestResult(null)
+  }
+
+  function closeModelTest() {
+    if (testingModel) return
+    setModelTestTarget(null)
+    setModelTestResult(null)
+  }
+
+  function changeModelTestPromptMode(value: string) {
+    setModelTestPromptMode(value)
+    if (value === 'custom') {
+      return
+    }
+    const prompt = modelTestPrompts[Number(value)]
+    if (prompt) {
+      setModelTestPrompt(prompt)
+    }
+  }
+
   function applyModelSelection(selectedKeys: string[]) {
     if (modelPickerProtocolIndex === null) return
     const selectedModels = availableModels.filter((item) => selectedKeys.includes(`${item.credential_id}:${item.model_name}`))
@@ -1044,12 +1100,11 @@ export function ChannelsScreen() {
       : activeCredentials[0]?.id || ''
     setFetchingProtocolIndex(protocolIndex)
     try {
-      const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
-      const activeBaseUrl = boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
+      const activeBaseUrl = activeBaseUrlValue(form, protocol)
       const payload: SiteModelFetchPayload = {
         protocol: protocol.protocol,
         base_url: safeText(activeBaseUrl).trim(),
-        headers: Object.fromEntries(protocol.headers.map((entry) => [entry.key.trim(), entry.value] as const).filter(([key]) => key)),
+        headers: formHeaders(protocol),
         channel_proxy: protocol.channel_proxy.trim(),
         match_regex: safeText(protocol.match_regex).trim(),
         credentials: form.credentials.map((item, index) => ({ id: item.id, name: item.name.trim() || fallbackCredentialName(index), api_key: item.api_key.trim(), enabled: item.enabled })).filter((item) => item.api_key),
@@ -1071,6 +1126,62 @@ export function ChannelsScreen() {
       toast.error(message)
     } finally {
       setFetchingProtocolIndex(null)
+    }
+  }
+
+  async function runModelTest() {
+    if (!modelTestTarget) return
+    const protocol = form.protocols[modelTestTarget.protocolIndex]
+    const model = protocol?.models[modelTestTarget.modelIndex]
+    const credentialIndex = model ? form.credentials.findIndex((item) => item.id === model.credential_id) : -1
+    const credential = credentialIndex >= 0 ? form.credentials[credentialIndex] : undefined
+    const prompt = modelTestPrompt.trim()
+    const activeBaseUrl = protocol ? activeBaseUrlValue(form, protocol).trim() : ''
+    if (!protocol || !model || !credential || !credential.api_key.trim() || !activeBaseUrl || !prompt) {
+      toast.error(locale === 'zh-CN' ? '测试参数不完整' : 'Test parameters are incomplete')
+      return
+    }
+    const payload: SiteModelTestPayload = {
+      protocol: protocol.protocol,
+      base_url: activeBaseUrl,
+      headers: formHeaders(protocol),
+      channel_proxy: protocol.channel_proxy.trim(),
+      param_override: protocol.param_override.trim(),
+      credential: {
+        id: credential.id,
+        name: credential.name.trim() || fallbackCredentialName(credentialIndex),
+        api_key: credential.api_key.trim(),
+      },
+      model_name: model.model_name.trim(),
+      prompt,
+    }
+    setTestingModel(true)
+    setModelTestResult(null)
+    try {
+      const result = await apiRequest<SiteModelTestResult>('/admin/site-model-tests', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      setModelTestResult(result)
+      if (result.success) {
+        toast.success(locale === 'zh-CN' ? '模型测试成功' : 'Model test succeeded')
+      } else {
+        toast.error(locale === 'zh-CN' ? '模型测试失败' : 'Model test failed')
+      }
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '模型测试失败' : 'Model test failed')
+      setModelTestResult({
+        success: false,
+        status_code: null,
+        latency_ms: 0,
+        model_name: payload.model_name,
+        credential_id: payload.credential.id,
+        output_text: '',
+        error_message: message,
+      })
+      toast.error(message)
+    } finally {
+      setTestingModel(false)
     }
   }
 
@@ -1472,14 +1583,19 @@ export function ChannelsScreen() {
 
                               <div className="flex flex-wrap items-center gap-2.5">
                                 {visibleModels.length ? (
-                                  <>
+                                  <div className="flex w-full flex-col gap-1.5">
                                   {visibleModels.map(({ model, modelIndex }) => (
-                                    <Button key={model.id || `${model.credential_id}-${model.model_name}-${modelIndex}`} type="button" variant="outline" size="sm" className={cn('rounded-full', modelBadgeClassName(model.enabled))} onClick={() => updateProtocol(protocolIndex, { models: protocol.models.filter((_, currentIndex) => currentIndex !== modelIndex) })}>
-                                      <span>{model.model_name}</span>
-                                      <X size={14} />
-                                    </Button>
+                                    <div key={model.id || `${model.credential_id}-${model.model_name}-${modelIndex}`} className={cn('flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-1.5', model.enabled ? 'border-border bg-background' : 'border-muted bg-muted/30 opacity-65')}>
+                                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">{model.model_name}</span>
+                                      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground hover:text-foreground" onClick={() => openModelTest(protocolIndex, modelIndex)} disabled={!model.model_name.trim() || !activeBaseUrlValue(form, protocol).trim() || !form.credentials.some((item) => item.id === model.credential_id && item.api_key.trim())}>
+                                        {locale === 'zh-CN' ? '测试' : 'Test'}
+                                      </Button>
+                                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateProtocol(protocolIndex, { models: protocol.models.filter((_, currentIndex) => currentIndex !== modelIndex) })}>
+                                        <X size={14} />
+                                      </Button>
+                                    </div>
                                   ))}
-                                  </>
+                                  </div>
                                 ) : (
                                   <div className="text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前没有模型' : 'No models selected'}</div>
                                 )}
@@ -1556,6 +1672,77 @@ export function ChannelsScreen() {
             </div>
           </div>
         </AppDialogContent>
+      </Dialog>
+
+      <Dialog open={modelTestTarget !== null} onOpenChange={(open) => { if (!open) closeModelTest() }}>
+        {modelTestTarget !== null ? (() => {
+          const protocol = form.protocols[modelTestTarget.protocolIndex]
+          const model = protocol?.models[modelTestTarget.modelIndex]
+          const credentialIndex = model ? form.credentials.findIndex((item) => item.id === model.credential_id) : -1
+          const credential = credentialIndex >= 0 ? form.credentials[credentialIndex] : undefined
+          const activeBaseUrl = protocol ? activeBaseUrlValue(form, protocol).trim() : ''
+          const canTest = Boolean(protocol && model?.model_name.trim() && credential?.api_key.trim() && activeBaseUrl && modelTestPrompt.trim())
+          const sourceText = [
+            protocol ? protocolLabel(protocol.protocol) : '',
+            model?.model_name || '',
+            credential ? credentialLabel(credential, credentialIndex, locale) : '',
+            activeBaseUrl,
+          ].filter(Boolean).join(' · ')
+          return (
+            <AppDialogContent className="max-w-2xl" title={locale === 'zh-CN' ? '测试模型' : 'Test model'}>
+              <div className="grid gap-4">
+                <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                  <div className="truncate text-foreground">{model?.model_name || '-'}</div>
+                  <div className="mt-1 break-all text-xs">{sourceText}</div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '问题' : 'Prompt'}</FieldLabel>
+                    <NativeSelect className={selectClassName()} value={modelTestPromptMode} onChange={(event) => changeModelTestPromptMode(event.target.value)}>
+                      {modelTestPrompts.map((_, index) => <NativeSelectOption key={index} value={String(index)}>{locale === 'zh-CN' ? `预设 ${index + 1}` : `Preset ${index + 1}`}</NativeSelectOption>)}
+                      <NativeSelectOption value="custom">{locale === 'zh-CN' ? '自定义' : 'Custom'}</NativeSelectOption>
+                    </NativeSelect>
+                  </Field>
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '内容' : 'Content'}</FieldLabel>
+                    <Textarea className="min-h-24" value={modelTestPrompt} onChange={(event) => {
+                      setModelTestPrompt(event.target.value)
+                      if (modelTestPromptMode !== 'custom') {
+                        setModelTestPromptMode('custom')
+                      }
+                    }} />
+                  </Field>
+                </div>
+
+                {modelTestResult ? (
+                  <div className={cn('grid gap-2 rounded-md border px-3 py-2 text-sm', modelTestResult.success ? 'bg-muted/20' : 'border-destructive/40 bg-destructive/5')}>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline" className={modelTestResult.success ? 'border-primary/30 text-primary' : 'border-destructive/40 text-destructive'}>
+                        {modelTestResult.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
+                      </Badge>
+                      <span>HTTP {modelTestResult.status_code ?? '-'}</span>
+                      <span>{modelTestResult.latency_ms}ms</span>
+                    </div>
+                    <div className={cn('max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm', modelTestResult.success ? 'text-foreground' : 'text-destructive')}>
+                      {modelTestResult.success
+                        ? (modelTestResult.output_text || (locale === 'zh-CN' ? '上游返回成功，但没有可展示文本' : 'Upstream succeeded but returned no displayable text'))
+                        : (modelTestResult.error_message || (locale === 'zh-CN' ? '测试失败' : 'Test failed'))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                  <Button type="button" variant="outline" onClick={closeModelTest} disabled={testingModel}>{locale === 'zh-CN' ? '关闭' : 'Close'}</Button>
+                  <Button type="button" onClick={() => void runModelTest()} disabled={!canTest || testingModel}>
+                    <RefreshCcw data-icon="inline-start" className={testingModel ? 'animate-spin' : ''} />
+                    {locale === 'zh-CN' ? '发送测试' : 'Send test'}
+                  </Button>
+                </div>
+              </div>
+            </AppDialogContent>
+          )
+        })() : null}
       </Dialog>
 
       <Dialog open={modelPickerProtocolIndex !== null} onOpenChange={(open) => {
