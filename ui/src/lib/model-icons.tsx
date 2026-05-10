@@ -18,7 +18,7 @@ function joinClassNames(...values: Array<string | undefined>) {
 }
 
 const BRAND_ICONS: BrandIconDefinition[] = [
-  { prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai'], src: '/brand-icons/gpt.svg', imageClassName: 'scale-[0.94]', invertInDark: true },
+  { prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai', 'text-embedding'], src: '/brand-icons/gpt.svg', imageClassName: 'scale-[0.94]', invertInDark: true },
   { prefixes: ['claude', 'anthropic'], src: '/brand-icons/claude.svg', imageClassName: 'scale-[0.96]', invertInDark: true },
   { prefixes: ['gemini', 'gemma', 'google'], src: '/brand-icons/gemini.svg', imageClassName: 'scale-[0.94]' },
   { prefixes: ['deepseek'], src: '/brand-icons/deepseek.svg', imageClassName: 'scale-[0.94]' },

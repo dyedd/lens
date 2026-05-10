@@ -67,7 +67,7 @@ const MODEL_SERIES_PRESETS = [
     zh: 'OpenAI',
     en: 'OpenAI',
     sampleModel: 'gpt-5.4',
-    prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai'],
+    prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai', 'text-embedding'],
   },
   {
     key: 'claude',
@@ -330,6 +330,7 @@ function ProtocolBadge({ protocol }: { protocol: RequestLogItem['protocol'] }) {
   const labelMap = {
     openai_chat: 'chat',
     openai_responses: 'responses',
+    openai_embedding: 'embeddings',
     anthropic: 'anthropic',
     gemini: 'gemini',
   } as const
@@ -1318,6 +1319,7 @@ export function RequestsScreen() {
                       <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
                       <NativeSelectOption value="openai_chat">OpenAI Chat</NativeSelectOption>
                       <NativeSelectOption value="openai_responses">OpenAI Responses</NativeSelectOption>
+                      <NativeSelectOption value="openai_embedding">OpenAI Embedding</NativeSelectOption>
                       <NativeSelectOption value="anthropic">Anthropic</NativeSelectOption>
                       <NativeSelectOption value="gemini">Gemini</NativeSelectOption>
                     </NativeSelect>

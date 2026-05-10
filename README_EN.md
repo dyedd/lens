@@ -40,6 +40,7 @@ Lens exposes common LLM API routes:
 | ---------------------------- | ---------------------------------------------- |
 | OpenAI Chat Completions      | `/v1/chat/completions`                         |
 | OpenAI Responses             | `/v1/responses`                                |
+| OpenAI Embeddings            | `/v1/embeddings`                               |
 | Anthropic Messages           | `/v1/messages`                                 |
 | OpenAI Models                | `/v1/models`                                   |
 | Gemini generateContent       | `/v1beta/models/{model}:generateContent`       |

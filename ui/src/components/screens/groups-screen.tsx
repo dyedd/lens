@@ -97,7 +97,7 @@ const MODEL_SERIES_PRESETS = [
     zh: 'OpenAI',
     en: 'OpenAI',
     sampleModel: 'gpt-5.4',
-    prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai'],
+    prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai', 'text-embedding'],
   },
   {
     key: 'claude',
@@ -242,6 +242,7 @@ const strategyOptions: Array<{ value: RoutingStrategy; zh: string; en: string }>
 const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> = {
   openai_chat: { zh: 'OpenAI Chat', en: 'OpenAI Chat' },
   openai_responses: { zh: 'OpenAI Responses', en: 'OpenAI Responses' },
+  openai_embedding: { zh: 'OpenAI Embedding', en: 'OpenAI Embedding' },
   anthropic: { zh: 'Anthropic', en: 'Anthropic' },
   gemini: { zh: 'Gemini', en: 'Gemini' },
 }
@@ -273,6 +274,8 @@ function protocolBadgeClassName(protocol: ProtocolKind) {
       return 'border-transparent bg-sky-500/10 text-sky-700'
     case 'openai_responses':
       return 'border-transparent bg-indigo-500/10 text-indigo-700'
+    case 'openai_embedding':
+      return 'border-transparent bg-cyan-500/10 text-cyan-700'
     case 'anthropic':
       return 'border-transparent bg-amber-500/10 text-amber-700'
     case 'gemini':
