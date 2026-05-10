@@ -52,6 +52,7 @@ import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
 const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
   { value: 'openai_chat', label: 'OpenAI Chat' },
   { value: 'openai_responses', label: 'OpenAI Responses' },
+  { value: 'openai_embedding', label: 'OpenAI Embedding' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'gemini', label: 'Gemini' },
 ]
@@ -164,6 +165,8 @@ function compactProtocolLabel(protocol: ProtocolKind) {
       return 'chat'
     case 'openai_responses':
       return 'responses'
+    case 'openai_embedding':
+      return 'embeddings'
     case 'anthropic':
       return 'anthropic'
     case 'gemini':
@@ -291,6 +294,8 @@ function protocolBadgeClassName(protocol: ProtocolKind) {
       return 'border-transparent bg-sky-500/10 text-sky-700'
     case 'openai_responses':
       return 'border-transparent bg-indigo-500/10 text-indigo-700'
+    case 'openai_embedding':
+      return 'border-transparent bg-cyan-500/10 text-cyan-700'
     case 'anthropic':
       return 'border-transparent bg-amber-500/10 text-amber-700'
     case 'gemini':

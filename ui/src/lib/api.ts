@@ -1,4 +1,4 @@
-export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini'
+export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'openai_embedding' | 'anthropic' | 'gemini'
 
 export type RoutingStrategy = 'round_robin' | 'failover'
 export type ModelGroupSyncFilterMode = '' | 'contains' | 'regex'
