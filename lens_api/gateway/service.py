@@ -1193,6 +1193,19 @@ async def proxy_anthropic_messages(
     return await _proxy_protocol(ProtocolKind.ANTHROPIC, body, gateway_key)
 
 
+async def proxy_openai_embeddings(
+    request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
+):
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Embeddings request body must be a JSON object",
+        )
+    body.pop("stream", None)
+    return await _proxy_protocol(ProtocolKind.OPENAI_EMBEDDING, body, gateway_key)
+
+
 async def list_gateway_models(
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
@@ -1203,7 +1216,11 @@ async def list_gateway_models(
             for group in groups
             if group.name.strip()
             and group.protocol
-            in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}
+            in {
+                ProtocolKind.OPENAI_CHAT,
+                ProtocolKind.OPENAI_RESPONSES,
+                ProtocolKind.OPENAI_EMBEDDING,
+            }
             and _gateway_key_allows_model(gateway_key, group.name)
         }
     )
@@ -1356,6 +1373,8 @@ async def _proxy_protocol(
                         protocol, body, target.model_name
                     )
                 upstream_body = _apply_param_override(channel, upstream_body)
+                if protocol == ProtocolKind.OPENAI_EMBEDDING:
+                    upstream_body.pop("stream", None)
                 await _update_request_log(
                     request_log_id,
                     protocol=protocol,
@@ -1795,6 +1814,11 @@ def _model_test_body(protocol: ProtocolKind, model_name: str, prompt: str) -> di
             "max_output_tokens": 64,
             "stream": False,
         }
+    if protocol == ProtocolKind.OPENAI_EMBEDDING:
+        return {
+            "model": model_name,
+            "input": text,
+        }
     if protocol == ProtocolKind.ANTHROPIC:
         return {
             "model": model_name,
@@ -1925,6 +1949,20 @@ def _extract_model_test_text(protocol: ProtocolKind, payload: dict[str, Any]) ->
                         if isinstance(text, str) and text.strip():
                             parts.append(text.strip())
             return "\n".join(parts)
+        return ""
+
+    if protocol == ProtocolKind.OPENAI_EMBEDDING:
+        data = payload.get("data")
+        if not isinstance(data, list):
+            return ""
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            vector = item.get("embedding")
+            if isinstance(vector, list):
+                return f"<vector dim={len(vector)}>"
+            if isinstance(vector, str) and vector:
+                return f"<vector base64 len={len(vector)}>"
         return ""
 
     if protocol == ProtocolKind.ANTHROPIC:
@@ -2070,7 +2108,11 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
     api_key = resolve_channel_api_key(channel)
     headers = dict(channel.headers)
 
-    if channel.protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}:
+    if channel.protocol in {
+        ProtocolKind.OPENAI_CHAT,
+        ProtocolKind.OPENAI_RESPONSES,
+        ProtocolKind.OPENAI_EMBEDDING,
+    }:
         return {
             "method": "GET",
             "url": resolve_channel_model_list_url(channel),
@@ -2876,6 +2918,16 @@ def _openai_cached_tokens(usage: Mapping[str, Any], detail_key: str) -> int:
 def _extract_stream_usage(
     protocol: ProtocolKind, raw_content: str | None
 ) -> dict[str, int | str | None]:
+    if protocol == ProtocolKind.OPENAI_EMBEDDING:
+        return {
+            "resolved_model": None,
+            "input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
+
     if not raw_content:
         return {
             "resolved_model": None,
@@ -3052,6 +3104,17 @@ def _extract_usage_from_payload(
             "output_tokens": _usage_int(usage, "output_tokens"),
             "total_tokens": _usage_int(usage, "total_tokens"),
         }
+    if protocol == ProtocolKind.OPENAI_EMBEDDING:
+        usage = _usage_mapping(payload.get("usage"))
+        input_tokens = _usage_int(usage, "prompt_tokens")
+        return {
+            "resolved_model": payload.get("model"),
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": _usage_int(usage, "total_tokens"),
+        }
     if protocol == ProtocolKind.ANTHROPIC:
         if payload.get("type") == "message_start":
             message = _usage_mapping(payload.get("message"))
@@ -3143,6 +3206,18 @@ def _extract_response_usage(
             "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
             "cache_write_input_tokens": 0,
             "output_tokens": _usage_int(usage, "output_tokens"),
+            "total_tokens": _usage_int(usage, "total_tokens"),
+        }
+
+    if protocol == ProtocolKind.OPENAI_EMBEDDING:
+        usage = _usage_mapping(payload.get("usage"))
+        input_tokens = _usage_int(usage, "prompt_tokens")
+        return {
+            "resolved_model": payload.get("model"),
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0,
             "total_tokens": _usage_int(usage, "total_tokens"),
         }
 

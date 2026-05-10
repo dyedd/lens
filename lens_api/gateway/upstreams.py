@@ -55,6 +55,19 @@ def build_upstream_request(
             proxy_url=proxy_url,
         )
 
+    if channel.protocol == ProtocolKind.OPENAI_EMBEDDING:
+        return UpstreamRequest(
+            method="POST",
+            url=target_url,
+            headers={
+                "authorization": f"Bearer {api_key}",
+                "content-type": "application/json",
+                **channel.headers,
+            },
+            json_body=dict(body),
+            proxy_url=proxy_url,
+        )
+
     if channel.protocol == ProtocolKind.ANTHROPIC:
         return UpstreamRequest(
             method="POST",
@@ -94,6 +107,7 @@ def protocol_for_path(path: str) -> ProtocolKind:
     mapping = {
         "/v1/chat/completions": ProtocolKind.OPENAI_CHAT,
         "/v1/responses": ProtocolKind.OPENAI_RESPONSES,
+        "/v1/embeddings": ProtocolKind.OPENAI_EMBEDDING,
         "/v1/messages": ProtocolKind.ANTHROPIC,
         "/v1beta/models": ProtocolKind.GEMINI,
     }
@@ -113,6 +127,8 @@ def _protocol_request_url(channel: ChannelConfig, body: dict[str, Any]) -> str:
         return f"{protocol_base}/chat/completions"
     if channel.protocol == ProtocolKind.OPENAI_RESPONSES:
         return f"{protocol_base}/responses"
+    if channel.protocol == ProtocolKind.OPENAI_EMBEDDING:
+        return f"{protocol_base}/embeddings"
     if channel.protocol == ProtocolKind.ANTHROPIC:
         return f"{protocol_base}/messages"
     raise HTTPException(status_code=500, detail=f"Unsupported protocol={channel.protocol.value}")
@@ -126,7 +142,12 @@ def _protocol_base_url(channel: ChannelConfig) -> str:
     root = _resolve_base_url(channel)
     if _is_bigmodel_openai_chat_prefix(root, channel.protocol):
         return root
-    if channel.protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES, ProtocolKind.ANTHROPIC}:
+    if channel.protocol in {
+        ProtocolKind.OPENAI_CHAT,
+        ProtocolKind.OPENAI_RESPONSES,
+        ProtocolKind.OPENAI_EMBEDDING,
+        ProtocolKind.ANTHROPIC,
+    }:
         return f"{root}/v1"
     if channel.protocol == ProtocolKind.GEMINI:
         return f"{root}/v1beta"
