@@ -24,6 +24,7 @@ def normalize_base_url(value: Any) -> Any:
 class ProtocolKind(str, Enum):
     OPENAI_CHAT = "openai_chat"
     OPENAI_RESPONSES = "openai_responses"
+    OPENAI_EMBEDDING = "openai_embedding"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
 
