@@ -262,6 +262,11 @@ class ChannelStore:
         normalized_base_urls = self._normalize_base_urls(base_urls)
         normalized_credentials = self._normalize_credentials(credentials)
         credential_ids = {item.id for item in normalized_credentials}
+        base_url_ids = {item.id for item in normalized_base_urls}
+        default_base_url_id = next(
+            (item.id for item in normalized_base_urls if item.enabled),
+            normalized_base_urls[0].id,
+        )
 
         site = await self._get_site_entity(session, site_id)
         if site is None:
@@ -300,13 +305,16 @@ class ChannelStore:
                 )
             )
 
-        protocol_keys: set[str] = set()
+        protocol_keys: set[tuple[str, str]] = set()
         for protocol in protocols:
             protocol_id = protocol.id or str(uuid.uuid4())
             next_protocol_ids.add(protocol_id)
-            protocol_key = protocol.protocol.value
+            resolved_base_url_id = protocol.base_url_id or default_base_url_id
+            if resolved_base_url_id not in base_url_ids:
+                raise ValueError(f'Base URL not found for protocol config {protocol.protocol.value}: {resolved_base_url_id}')
+            protocol_key = (protocol.protocol.value, resolved_base_url_id)
             if protocol_key in protocol_keys:
-                raise ValueError(f'Duplicate protocol config for protocol={protocol.protocol.value}')
+                raise ValueError(f'Duplicate protocol config for protocol={protocol.protocol.value} base_url_id={resolved_base_url_id}')
             protocol_keys.add(protocol_key)
 
             existing_protocol = await session.get(SiteProtocolConfigEntity, protocol_id)
@@ -320,7 +328,7 @@ class ChannelStore:
                     channel_proxy=protocol.channel_proxy,
                     param_override=protocol.param_override,
                     match_regex=protocol.match_regex,
-                    base_url_id=protocol.base_url_id,
+                    base_url_id=resolved_base_url_id,
                 )
                 session.add(existing_protocol)
             else:
@@ -331,7 +339,7 @@ class ChannelStore:
                 existing_protocol.channel_proxy = protocol.channel_proxy
                 existing_protocol.param_override = protocol.param_override
                 existing_protocol.match_regex = protocol.match_regex
-                existing_protocol.base_url_id = protocol.base_url_id
+                existing_protocol.base_url_id = resolved_base_url_id
 
             await session.execute(delete(SiteProtocolCredentialBindingEntity).where(SiteProtocolCredentialBindingEntity.protocol_config_id == protocol_id))
             bindings = protocol.bindings or [

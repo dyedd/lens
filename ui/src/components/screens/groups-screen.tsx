@@ -366,6 +366,13 @@ function channelEndpoint(channel?: ProtocolMeta) {
   return channel.base_url || ''
 }
 
+function protocolBaseUrl(site: Site, baseUrlId: string) {
+  return site.base_urls.find((item) => item.id === baseUrlId)?.url
+    || site.base_urls.find((item) => item.enabled)?.url
+    || site.base_urls[0]?.url
+    || ''
+}
+
 function toForm(group: ModelGroup): FormState {
   return {
     name: group.name,
@@ -694,12 +701,11 @@ export function GroupsScreen() {
   const channelMap = useMemo(() => {
     const map = new Map<string, ProtocolMeta>()
     for (const site of sites ?? []) {
-      const activeBaseUrl = site.base_urls.find((item) => item.enabled)?.url || site.base_urls[0]?.url || ''
       for (const protocol of site.protocols) {
         map.set(protocol.id, {
           id: protocol.id,
           name: site.name,
-          base_url: activeBaseUrl,
+          base_url: protocolBaseUrl(site, protocol.base_url_id),
           protocol: protocol.protocol,
         })
       }
