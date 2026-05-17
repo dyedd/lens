@@ -659,12 +659,17 @@ function toForm(site: Site): FormState {
   }
 }
 
+function formBaseUrlsForPayload(form: FormState) {
+  return form.base_urls
+    .map((item) => ({ id: item.id, url: item.url.trim(), name: item.name.trim(), enabled: item.enabled }))
+    .filter((item) => item.url)
+}
+
 function toPayload(form: FormState): SitePayload {
+  const baseUrls = formBaseUrlsForPayload(form)
   return {
     name: form.name.trim(),
-    base_urls: form.base_urls
-      .map((item) => ({ id: item.id, url: item.url.trim(), name: item.name.trim(), enabled: item.enabled }))
-      .filter((item) => item.url),
+    base_urls: baseUrls,
     credentials: form.credentials
       .map((item, index) => ({ id: item.id, name: item.name.trim() || fallbackCredentialName(index), api_key: item.api_key.trim(), enabled: item.enabled }))
       .filter((item) => item.api_key),
@@ -676,19 +681,24 @@ function toPayload(form: FormState): SitePayload {
       channel_proxy: item.channel_proxy.trim(),
       param_override: item.param_override.trim(),
       match_regex: safeText(item.match_regex).trim(),
-      base_url_id: resolveBaseUrlId(form.base_urls, item.base_url_id),
+      base_url_id: resolveBaseUrlId(baseUrls, item.base_url_id),
       bindings: item.bindings.filter((binding) => binding.credential_id),
       models: item.models.map((model) => ({ id: model.id, credential_id: model.credential_id, model_name: model.model_name.trim(), enabled: model.enabled })).filter((model) => model.credential_id && model.model_name),
     })),
   }
 }
 
-function duplicateProtocolKinds(protocols: FormProtocol[]) {
-  const counts = new Map<ProtocolKind, number>()
+function protocolBaseUrlKey(protocol: FormProtocol, baseUrls: Array<{ id: string; enabled: boolean }>) {
+  return `${protocol.protocol}:${resolveBaseUrlId(baseUrls, protocol.base_url_id)}`
+}
+
+function duplicateProtocolBaseUrlKeys(protocols: FormProtocol[], baseUrls: Array<{ id: string; enabled: boolean }>) {
+  const counts = new Map<string, number>()
   for (const item of protocols) {
-    counts.set(item.protocol, (counts.get(item.protocol) ?? 0) + 1)
+    const key = protocolBaseUrlKey(item, baseUrls)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
   }
-  return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([protocol]) => protocol))
+  return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key))
 }
 
 function SwitchButton({ checked, onChange, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
@@ -861,9 +871,9 @@ export function ChannelsScreen() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const duplicatedProtocols = duplicateProtocolKinds(form.protocols)
-    if (duplicatedProtocols.size) {
-      const message = locale === 'zh-CN' ? '同一个渠道内不允许重复协议' : 'Duplicate protocols are not allowed in one channel'
+    const duplicatedProtocolBaseUrls = duplicateProtocolBaseUrlKeys(form.protocols, formBaseUrlsForPayload(form))
+    if (duplicatedProtocolBaseUrls.size) {
+      const message = locale === 'zh-CN' ? '同一个渠道内不允许重复协议和地址来源' : 'Duplicate protocol and Base URL pairs are not allowed in one channel'
       toast.error(message)
       return
     }
@@ -1479,7 +1489,9 @@ export function ChannelsScreen() {
                 </div>
                 <div className="flex flex-col gap-3">
                   {form.protocols.map((protocol, protocolIndex) => {
-                    const duplicatedProtocols = duplicateProtocolKinds(form.protocols)
+                    const submittedBaseUrls = formBaseUrlsForPayload(form)
+                    const duplicatedProtocolBaseUrls = duplicateProtocolBaseUrlKeys(form.protocols, submittedBaseUrls)
+                    const protocolBaseUrlDuplicated = duplicatedProtocolBaseUrls.has(protocolBaseUrlKey(protocol, submittedBaseUrls))
                     const activeCredentialIds = new Set(form.credentials.filter((item) => item.enabled && item.api_key.trim()).map((item) => item.id))
                     const credentialOptions = form.credentials
                       .map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
@@ -1498,10 +1510,7 @@ export function ChannelsScreen() {
                             <Field>
                               <FieldLabel>{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
                               <NativeSelect className={selectClassName()} value={protocol.protocol} onChange={(event) => updateProtocol(protocolIndex, { protocol: event.target.value as ProtocolKind })}>
-                                {protocolOptions.map((option) => {
-                                  const takenByOtherRow = form.protocols.some((item, itemIndex) => itemIndex !== protocolIndex && item.protocol === option.value)
-                                  return <NativeSelectOption key={option.value} value={option.value} disabled={takenByOtherRow}>{option.label}</NativeSelectOption>
-                                })}
+                                {protocolOptions.map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
                               </NativeSelect>
                             </Field>
                             <Field>
@@ -1529,7 +1538,7 @@ export function ChannelsScreen() {
                             </div>
                           </div>
 
-                          {duplicatedProtocols.has(protocol.protocol) ? <div className="text-sm text-destructive">{locale === 'zh-CN' ? '协议类型重复' : 'Duplicate protocol'}</div> : null}
+                          {protocolBaseUrlDuplicated ? <div className="text-sm text-destructive">{locale === 'zh-CN' ? '协议和地址来源重复' : 'Duplicate protocol and Base URL'}</div> : null}
 
                           {protocol.expanded ? (
                             <div className="grid gap-3 pt-1">
