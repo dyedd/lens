@@ -9,6 +9,7 @@ def register(app: FastAPI, service_module) -> None:
     app.add_api_route("/v1/embeddings", service_module.proxy_openai_embeddings, methods=["POST"])
     app.add_api_route("/v1/messages", service_module.proxy_anthropic_messages, methods=["POST"])
     app.add_api_route("/v1/models", service_module.list_gateway_models, methods=["GET"])
+    app.add_api_route("/v1beta/models", service_module.list_gemini_models, methods=["GET"])
     app.add_api_route(
         "/v1beta/models/{model_name}:generateContent",
         service_module.proxy_gemini_generate_content,
