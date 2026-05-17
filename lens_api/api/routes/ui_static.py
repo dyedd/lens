@@ -35,6 +35,10 @@ def register(app: FastAPI, service_module) -> None:
         if first_segment in RESERVED_PREFIXES:
             raise HTTPException(status_code=404, detail="Not Found")
 
+        static_file = _resolve_static_file(static_dir, normalized)
+        if static_file is not None:
+            return FileResponse(static_file)
+
         html_file = _resolve_html_file(static_dir, normalized)
         if html_file is None:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -66,6 +70,39 @@ def _resolve_html_file(static_dir: Path, normalized_path: str) -> Path | None:
         if candidate.is_file() and _is_relative_to(candidate, static_dir):
             return candidate
     return None
+
+
+def _resolve_static_file(static_dir: Path, normalized_path: str) -> Path | None:
+    if not normalized_path:
+        return None
+
+    candidates = _next_rsc_candidates(static_dir, normalized_path)
+    for candidate in candidates:
+        if candidate.is_file() and _is_relative_to(candidate, static_dir):
+            return candidate
+    return None
+
+
+def _next_rsc_candidates(static_dir: Path, normalized_path: str) -> list[Path]:
+    parts = Path(normalized_path).parts
+    candidates: list[Path] = []
+    for index, part in enumerate(parts):
+        for prefix in ("__next", "_next"):
+            marker = f"{prefix}."
+            if not part.startswith(marker):
+                continue
+            rest = part.removeprefix(marker)
+            rest_parts = rest.split(".")
+            if len(rest_parts) < 2 or rest_parts[-1] != "txt":
+                continue
+            candidates.append(static_dir / normalized_path)
+            leaf = f"{rest_parts[-2]}.txt"
+            mapped_parts = (*parts[:index], prefix, *rest_parts[:-2], leaf, *parts[index + 1 :])
+            candidates.append(static_dir.joinpath(*mapped_parts))
+            alternate_prefix = "__next" if prefix == "_next" else "_next"
+            alternate_parts = (*parts[:index], alternate_prefix, *rest_parts[:-2], leaf, *parts[index + 1 :])
+            candidates.append(static_dir.joinpath(*alternate_parts))
+    return candidates
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
