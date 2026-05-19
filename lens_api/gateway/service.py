@@ -104,9 +104,9 @@ from .converters import (
 from .router import RoundRobinRouter, RouteTarget
 from .cronjob_runner import CronjobAlreadyRunningError, CronjobRunner
 from .upstreams import (
+    append_channel_url_path,
     build_upstream_request,
     resolve_channel_api_key,
-    resolve_channel_base_url,
     resolve_channel_model_list_url,
     resolve_upstream_proxy_url,
 )
@@ -2173,7 +2173,6 @@ async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
 
 
 def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
-    base_url = resolve_channel_base_url(channel).rstrip("/")
     api_key = resolve_channel_api_key(channel)
     headers = dict(channel.headers)
 
@@ -2194,7 +2193,7 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
     if channel.protocol == ProtocolKind.ANTHROPIC:
         return {
             "method": "GET",
-            "url": f"{base_url}/v1/models",
+            "url": append_channel_url_path(channel, "v1", "models"),
             "headers": {
                 "x-api-key": api_key,
                 "anthropic-version": settings.anthropic_version,
@@ -2205,7 +2204,12 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
     if channel.protocol == ProtocolKind.GEMINI:
         return {
             "method": "GET",
-            "url": f"{base_url}/v1beta/models?key={api_key}",
+            "url": append_channel_url_path(
+                channel,
+                "v1beta",
+                "models",
+                query_params={"key": api_key},
+            ),
             "headers": headers,
         }
 

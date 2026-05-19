@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from fastapi import HTTPException
 
@@ -122,20 +122,24 @@ def _resolve_base_url(channel: ChannelConfig) -> str:
 
 
 def _protocol_request_url(channel: ChannelConfig, body: dict[str, Any]) -> str:
-    protocol_base = _protocol_base_url(channel).rstrip("/")
     if channel.protocol == ProtocolKind.OPENAI_CHAT:
-        return f"{protocol_base}/chat/completions"
+        return _append_url_path(_protocol_base_url(channel), "chat/completions")
     if channel.protocol == ProtocolKind.OPENAI_RESPONSES:
-        return f"{protocol_base}/responses"
+        return _append_url_path(_protocol_base_url(channel), "responses")
     if channel.protocol == ProtocolKind.OPENAI_EMBEDDING:
-        return f"{protocol_base}/embeddings"
+        return _append_url_path(_protocol_base_url(channel), "embeddings")
     if channel.protocol == ProtocolKind.ANTHROPIC:
-        return f"{protocol_base}/messages"
+        return _append_url_path(_protocol_base_url(channel), "messages")
     raise HTTPException(status_code=500, detail=f"Unsupported protocol={channel.protocol.value}")
 
 
 def _gemini_request_url(channel: ChannelConfig, model_name: str, path: str, api_key: str) -> str:
-    return f"{_protocol_base_url(channel).rstrip('/')}/models/{model_name}:{path}?key={api_key}"
+    return _append_url_path(
+        _protocol_base_url(channel),
+        "models",
+        f"{model_name}:{path}",
+        query_params={"key": api_key},
+    )
 
 
 def _protocol_base_url(channel: ChannelConfig) -> str:
@@ -148,9 +152,9 @@ def _protocol_base_url(channel: ChannelConfig) -> str:
         ProtocolKind.OPENAI_EMBEDDING,
         ProtocolKind.ANTHROPIC,
     }:
-        return f"{root}/v1"
+        return _append_url_path(root, "v1")
     if channel.protocol == ProtocolKind.GEMINI:
-        return f"{root}/v1beta"
+        return _append_url_path(root, "v1beta")
     return root
 
 
@@ -168,14 +172,20 @@ def _is_bigmodel_openai_chat_prefix(root: str, protocol: ProtocolKind) -> bool:
 
 def _normalize_base_url(value: str) -> str:
     normalized = value.strip()
-    if normalized.endswith("#"):
-        normalized = normalized[:-1].rstrip()
-    normalized = normalized.rstrip("/")
-    if normalized.endswith("/v1beta"):
-        return normalized[:-7]
-    if normalized.endswith("/v1"):
-        return normalized[:-3]
-    return normalized
+    parsed = urlsplit(normalized)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/v1beta"):
+        path = path[:-7]
+    elif path.endswith("/v1"):
+        path = path[:-3]
+    return _urlunsplit_preserving_empty_components(
+        normalized,
+        parsed.scheme,
+        parsed.netloc,
+        path,
+        parsed.query,
+        parsed.fragment,
+    )
 
 
 def _resolve_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:
@@ -214,7 +224,7 @@ def resolve_channel_base_url(channel: ChannelConfig) -> str:
 
 
 def resolve_channel_model_list_url(channel: ChannelConfig) -> str:
-    return f"{_protocol_base_url(channel).rstrip('/')}/models"
+    return _append_url_path(_protocol_base_url(channel), "models")
 
 
 def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:
@@ -223,3 +233,67 @@ def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = 
 
 def resolve_channel_proxy_url(channel: ChannelConfig) -> str | None:
     return _resolve_proxy_url(channel)
+
+
+def append_channel_url_path(
+    channel: ChannelConfig,
+    *segments: str,
+    query_params: dict[str, str] | None = None,
+) -> str:
+    return _append_url_path(
+        resolve_channel_base_url(channel),
+        *segments,
+        query_params=query_params,
+    )
+
+
+def _append_url_path(
+    base_url: str,
+    *segments: str,
+    query_params: dict[str, str] | None = None,
+) -> str:
+    parsed = urlsplit(base_url)
+    path_parts = [parsed.path.rstrip("/")]
+    path_parts.extend(segment.strip("/") for segment in segments if segment.strip("/"))
+    path = "/".join(part for part in path_parts if part)
+    if parsed.path.startswith("/") and not path.startswith("/"):
+        path = f"/{path}"
+    if not path:
+        path = parsed.path
+
+    query = parsed.query
+    if query_params:
+        encoded_params = urlencode(query_params)
+        query = f"{query}&{encoded_params}" if query else encoded_params
+
+    return _urlunsplit_preserving_empty_components(
+        base_url,
+        parsed.scheme,
+        parsed.netloc,
+        path,
+        query,
+        parsed.fragment,
+    )
+
+
+def _urlunsplit_preserving_empty_components(
+    source: str,
+    scheme: str,
+    netloc: str,
+    path: str,
+    query: str,
+    fragment: str,
+) -> str:
+    rebuilt = urlunsplit((scheme, netloc, path, query, fragment))
+    before_fragment, fragment_separator, _ = source.partition("#")
+    has_empty_query = "?" in before_fragment and query == ""
+    has_empty_fragment = bool(fragment_separator) and fragment == ""
+
+    if has_empty_query:
+        if "#" in rebuilt:
+            rebuilt = rebuilt.replace("#", "?#", 1)
+        else:
+            rebuilt += "?"
+    if has_empty_fragment and "#" not in rebuilt:
+        rebuilt += "#"
+    return rebuilt
