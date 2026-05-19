@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import Enum
 import re
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
@@ -11,14 +12,43 @@ def normalize_base_url(value: Any) -> Any:
     if value is None:
         return value
     text = str(value).strip()
-    if text.endswith("#"):
-        text = text[:-1].rstrip()
-    text = text.rstrip("/")
-    if text.endswith("/v1beta"):
-        text = text[:-7]
-    elif text.endswith("/v1"):
-        text = text[:-3]
-    return text
+    parsed = urlsplit(text)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/v1beta"):
+        path = path[:-7]
+    elif path.endswith("/v1"):
+        path = path[:-3]
+    return _urlunsplit_preserving_empty_components(
+        text,
+        parsed.scheme,
+        parsed.netloc,
+        path,
+        parsed.query,
+        parsed.fragment,
+    )
+
+
+def _urlunsplit_preserving_empty_components(
+    source: str,
+    scheme: str,
+    netloc: str,
+    path: str,
+    query: str,
+    fragment: str,
+) -> str:
+    rebuilt = urlunsplit((scheme, netloc, path, query, fragment))
+    before_fragment, fragment_separator, _ = source.partition("#")
+    has_empty_query = "?" in before_fragment and query == ""
+    has_empty_fragment = bool(fragment_separator) and fragment == ""
+
+    if has_empty_query:
+        if "#" in rebuilt:
+            rebuilt = rebuilt.replace("#", "?#", 1)
+        else:
+            rebuilt += "?"
+    if has_empty_fragment and "#" not in rebuilt:
+        rebuilt += "#"
+    return rebuilt
 
 
 class ProtocolKind(str, Enum):
