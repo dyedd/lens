@@ -994,7 +994,6 @@ class DomainStore:
                 remark=payload.remark.strip(),
                 api_key=secret,
                 enabled=1 if payload.enabled else 0,
-                client_user_agent=payload.client_user_agent.strip(),
                 allowed_models_json=self._dump_gateway_key_models(payload.allowed_models),
                 max_cost_usd=max(float(payload.max_cost_usd), 0.0),
                 expires_at=self._parse_gateway_key_expires_at(payload.expires_at),
@@ -1015,7 +1014,6 @@ class DomainStore:
                 raise KeyError(key_id)
             entity.remark = payload.remark.strip()
             entity.enabled = 1 if payload.enabled else 0
-            entity.client_user_agent = payload.client_user_agent.strip()
             entity.allowed_models_json = self._dump_gateway_key_models(
                 payload.allowed_models
             )
@@ -1244,6 +1242,7 @@ class DomainStore:
         self,
         *,
         protocol: str,
+        user_agent: str,
         requested_group_name: str | None,
         resolved_group_name: str | None,
         upstream_model_name: str | None,
@@ -1255,6 +1254,7 @@ class DomainStore:
     ) -> RequestLogItem:
         return await self.create_request_log(
             protocol=protocol,
+            user_agent=user_agent,
             requested_group_name=requested_group_name,
             resolved_group_name=resolved_group_name,
             upstream_model_name=upstream_model_name,
@@ -1285,6 +1285,7 @@ class DomainStore:
         self,
         *,
         protocol: str,
+        user_agent: str,
         requested_group_name: str | None,
         resolved_group_name: str | None,
         upstream_model_name: str | None,
@@ -1315,6 +1316,7 @@ class DomainStore:
         async with self._session_factory() as session:
             entity = RequestLogEntity(
                 protocol=protocol,
+                user_agent=user_agent.strip()[:300],
                 requested_group_name=requested_group_name,
                 resolved_group_name=resolved_group_name,
                 upstream_model_name=upstream_model_name,
@@ -1352,6 +1354,7 @@ class DomainStore:
         log_id: int,
         *,
         protocol: str,
+        user_agent: str,
         requested_group_name: str | None,
         resolved_group_name: str | None,
         upstream_model_name: str | None,
@@ -1383,6 +1386,7 @@ class DomainStore:
             if entity is None:
                 return None
             entity.protocol = protocol
+            entity.user_agent = user_agent.strip()[:300]
             entity.requested_group_name = requested_group_name
             entity.resolved_group_name = resolved_group_name
             entity.upstream_model_name = upstream_model_name
@@ -2624,6 +2628,7 @@ class DomainStore:
             RequestLogEntity.gateway_key_id,
             RequestLogEntity.error_message,
             RequestLogEntity.protocol,
+            RequestLogEntity.user_agent,
             status_code_text,
             GatewayApiKeyEntity.remark,
         ]
@@ -2838,7 +2843,6 @@ class DomainStore:
             remark=entity.remark,
             api_key=entity.api_key,
             enabled=bool(entity.enabled),
-            client_user_agent=entity.client_user_agent,
             allowed_models=cls._load_gateway_key_models(entity.allowed_models_json),
             max_cost_usd=max(float(entity.max_cost_usd or 0.0), 0.0),
             spent_cost_usd=max(float(spent_cost_usd), 0.0),
@@ -2965,6 +2969,7 @@ class DomainStore:
         return RequestLogItem(
             id=entity.id,
             protocol=entity.protocol,
+            user_agent=entity.user_agent,
             requested_group_name=entity.requested_group_name,
             resolved_group_name=entity.resolved_group_name,
             upstream_model_name=entity.upstream_model_name,

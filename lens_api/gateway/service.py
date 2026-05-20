@@ -120,7 +120,10 @@ TASK_VERSION_CHECK = "version_check"
 
 GENERIC_USER_AGENT_TOKENS = (
     "python-httpx",
+    "python/httpx",
     "python-requests",
+    "python/requests",
+    "python/http",
     "aiohttp",
     "httpcore",
     "urllib",
@@ -1388,10 +1391,12 @@ async def _proxy_protocol(
             status_code=403, content=error_body.model_dump(mode="json")
         )
     request_content = _dump_json(body)
+    upstream_user_agent = _resolve_upstream_user_agent(inbound_user_agent)
     plan: RoutingPlan | None = None
     attempts: list[AttemptLog] = []
     request_log = await app_state.domain_store.create_pending_request_log(
         protocol=protocol.value,
+        user_agent=upstream_user_agent,
         requested_group_name=requested_model,
         resolved_group_name=None,
         upstream_model_name=None,
@@ -1423,6 +1428,7 @@ async def _proxy_protocol(
                 channel_id=None,
                 channel_name=None,
                 gateway_key=gateway_key,
+                user_agent=upstream_user_agent,
                 lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
                 status_code=None,
                 success=False,
@@ -1448,6 +1454,7 @@ async def _proxy_protocol(
                 channel_id=None,
                 channel_name=None,
                 gateway_key=gateway_key,
+                user_agent=upstream_user_agent,
                 lifecycle_status=RequestLogLifecycleStatus.FAILED,
                 status_code=503,
                 success=False,
@@ -1475,6 +1482,9 @@ async def _proxy_protocol(
             attempt_started_at = perf_counter()
             upstream_body = deepcopy(body)
             try:
+                effective_user_agent = _resolve_effective_upstream_user_agent(
+                    channel, upstream_user_agent
+                )
                 if needs_conversion(protocol, channel.protocol):
                     upstream_body = convert_request(
                         protocol, channel.protocol, body, target.model_name
@@ -1495,6 +1505,7 @@ async def _proxy_protocol(
                     channel_id=channel.id,
                     channel_name=channel.name,
                     gateway_key=gateway_key,
+                    user_agent=effective_user_agent,
                     lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
                     status_code=None,
                     success=False,
@@ -1512,9 +1523,7 @@ async def _proxy_protocol(
                     pricing_group_name=pricing_group_name,
                     client_protocol=protocol,
                     credential_id=target.credential_id,
-                    user_agent=_resolve_upstream_user_agent(
-                        gateway_key, inbound_user_agent
-                    ),
+                    user_agent=upstream_user_agent,
                 )
                 attempts.append(
                     AttemptLog(
@@ -1539,6 +1548,7 @@ async def _proxy_protocol(
                         channel_id=channel.id,
                         channel_name=channel.name,
                         gateway_key=gateway_key,
+                        user_agent=effective_user_agent,
                         lifecycle_status=RequestLogLifecycleStatus.STREAMING,
                         status_code=result.status_code,
                         success=False,
@@ -1558,6 +1568,7 @@ async def _proxy_protocol(
                         resolved_group_name=plan.resolved_group_name,
                         channel=channel,
                         gateway_key=gateway_key,
+                        user_agent=effective_user_agent,
                         started_at=started_at,
                         upstream_body=upstream_body,
                         result=result,
@@ -1573,6 +1584,7 @@ async def _proxy_protocol(
                     channel_id=channel.id,
                     channel_name=channel.name,
                     gateway_key=gateway_key,
+                    user_agent=effective_user_agent,
                     lifecycle_status=RequestLogLifecycleStatus.SUCCEEDED,
                     status_code=result.status_code,
                     success=True,
@@ -1626,6 +1638,9 @@ async def _proxy_protocol(
                     channel_id=channel.id,
                     channel_name=channel.name,
                     gateway_key=gateway_key,
+                    user_agent=_resolve_effective_upstream_user_agent(
+                        channel, upstream_user_agent
+                    ),
                     lifecycle_status=RequestLogLifecycleStatus.FAILED,
                     status_code=exc.status_code,
                     success=False,
@@ -1661,6 +1676,7 @@ async def _proxy_protocol(
             channel_id=None,
             channel_name=None,
             gateway_key=gateway_key,
+            user_agent=upstream_user_agent,
             lifecycle_status=RequestLogLifecycleStatus.FAILED,
             status_code=500,
             success=False,
@@ -2193,16 +2209,22 @@ def _requested_model(protocol: ProtocolKind, body: dict[str, Any]) -> str | None
 
 
 def _resolve_upstream_user_agent(
-    gateway_key: GatewayApiKey, inbound_user_agent: str | None
+    inbound_user_agent: str | None,
 ) -> str:
     inbound = _normalize_user_agent(inbound_user_agent)
     if inbound and not _is_generic_user_agent(inbound):
         return inbound
 
-    configured = gateway_key.client_user_agent.strip()
-    if configured:
-        return configured
     return _default_lens_user_agent()
+
+
+def _resolve_effective_upstream_user_agent(
+    channel: ChannelConfig, upstream_user_agent: str
+) -> str:
+    for name, value in channel.headers.items():
+        if name.lower() == "user-agent":
+            return _normalize_user_agent(value)
+    return upstream_user_agent
 
 
 def _default_lens_user_agent() -> str:
@@ -2516,6 +2538,7 @@ async def _record_stream_request_log(
     resolved_group_name: str | None,
     channel: ChannelConfig,
     gateway_key: GatewayApiKey,
+    user_agent: str,
     started_at: float,
     upstream_body: dict[str, Any],
     result: UpstreamResult,
@@ -2554,6 +2577,7 @@ async def _record_stream_request_log(
         channel_id=channel.id,
         channel_name=channel.name,
         gateway_key=gateway_key,
+        user_agent=user_agent,
         lifecycle_status=(
             RequestLogLifecycleStatus.FAILED
             if capture_issue is not None
@@ -2593,6 +2617,7 @@ async def _update_request_log(
     channel_id: str | None,
     channel_name: str | None,
     gateway_key: GatewayApiKey,
+    user_agent: str,
     lifecycle_status: RequestLogLifecycleStatus,
     status_code: int | None,
     success: bool,
@@ -2621,6 +2646,7 @@ async def _update_request_log(
         channel_id=channel_id,
         channel_name=channel_name,
         gateway_key_id=gateway_key.id,
+        user_agent=user_agent,
         status_code=status_code,
         success=success,
         lifecycle_status=lifecycle_status,

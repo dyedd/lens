@@ -39,7 +39,6 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import {
   Table,
@@ -64,15 +63,11 @@ import { cn } from "@/lib/utils"
 type GatewayApiKeyForm = {
   remark: string
   enabled: boolean
-  userAgentPreset: GatewayUserAgentPreset
-  customUserAgent: string
   restrictModels: boolean
   allowedModels: string[]
   maxCostUsd: string
   expiresOn?: Date
 }
-
-type GatewayUserAgentPreset = "auto" | "custom"
 
 type GatewayModelGroupOption = {
   name: string
@@ -84,8 +79,6 @@ type GatewayModelGroupOption = {
 const EMPTY_FORM: GatewayApiKeyForm = {
   remark: "",
   enabled: true,
-  userAgentPreset: "auto",
-  customUserAgent: "",
   restrictModels: false,
   allowedModels: [],
   maxCostUsd: "0",
@@ -200,13 +193,9 @@ function toGatewayApiKeyForm(item: GatewayApiKey | undefined, timeZone: string):
     return { ...EMPTY_FORM }
   }
   const expires = parseGatewayExpiresAt(item.expires_at, timeZone)
-  const userAgent = item.client_user_agent.trim()
-  const userAgentPreset = gatewayUserAgentPresetFromValue(userAgent)
   return {
     remark: item.remark,
     enabled: item.enabled,
-    userAgentPreset,
-    customUserAgent: userAgentPreset === "custom" ? userAgent : "",
     restrictModels: item.allowed_models.length > 0,
     allowedModels: [...item.allowed_models],
     maxCostUsd: String(item.max_cost_usd),
@@ -218,35 +207,10 @@ function toGatewayApiKeyPayload(form: GatewayApiKeyForm, timeZone: string): Gate
   return {
     remark: form.remark.trim(),
     enabled: form.enabled,
-    client_user_agent: gatewayUserAgentValue(form),
     allowed_models: form.restrictModels ? form.allowedModels : [],
     max_cost_usd: Math.max(Number(form.maxCostUsd || "0") || 0, 0),
     expires_at: formatExpiresAt(form.expiresOn, timeZone),
   }
-}
-
-function gatewayUserAgentPresetFromValue(value: string): GatewayUserAgentPreset {
-  if (!value) {
-    return "auto"
-  }
-  return "custom"
-}
-
-function gatewayUserAgentValue(form: GatewayApiKeyForm) {
-  if (form.userAgentPreset === "custom") {
-    return form.customUserAgent.trim()
-  }
-  return ""
-}
-
-function gatewayUserAgentLabel(locale: Locale, item: GatewayApiKey) {
-  const preset = gatewayUserAgentPresetFromValue(item.client_user_agent.trim())
-  const labels: Record<GatewayUserAgentPreset, [string, string]> = {
-    auto: ["自动透传", "Auto pass-through"],
-    custom: ["自定义", "Custom"],
-  }
-  const [zh, en] = labels[preset]
-  return titleForLocale(locale, zh, en)
 }
 
 function formatGatewayAmount(locale: Locale, value: number) {
@@ -454,13 +418,6 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
       )
       return
     }
-    if (form.userAgentPreset === "custom" && !form.customUserAgent.trim()) {
-      toast.error(
-        titleForLocale(locale, "请输入自定义 User-Agent", "Enter a custom User-Agent")
-      )
-      return
-    }
-
     setSubmitting(true)
     try {
       const payload = toGatewayApiKeyPayload(form, timeZone)
@@ -538,7 +495,6 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         body: JSON.stringify({
           remark: item.remark,
           enabled,
-          client_user_agent: item.client_user_agent,
           allowed_models: item.allowed_models,
           max_cost_usd: item.max_cost_usd,
           expires_at: item.expires_at ?? null,
@@ -667,9 +623,6 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                         <TableCell className="min-w-0">
                           {item.allowed_models.length > 0 ? (
                             <div className="flex max-w-56 flex-wrap gap-1">
-                              <Badge variant="secondary">
-                                {gatewayUserAgentLabel(locale, item)}
-                              </Badge>
                               {item.allowed_models.slice(0, 2).map((modelName) => (
                                 <Badge key={modelName} variant="outline">
                                   {modelName}
@@ -683,9 +636,6 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                             </div>
                           ) : (
                             <div className="flex max-w-56 flex-wrap gap-1">
-                              <Badge variant="secondary">
-                                {gatewayUserAgentLabel(locale, item)}
-                              </Badge>
                               <Badge variant="outline">
                                 {titleForLocale(locale, "全部模型组", "All model groups")}
                               </Badge>
@@ -800,53 +750,6 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                   onCheckedChange={(checked) => updateForm("enabled", Boolean(checked))}
                 />
               </Field>
-
-              <Field>
-                <FieldLabel htmlFor="gateway-key-user-agent">
-                  {titleForLocale(locale, "客户端标识", "Client identity")}
-                </FieldLabel>
-                <Select
-                  value={form.userAgentPreset}
-                  onValueChange={(value) =>
-                    updateForm("userAgentPreset", value as GatewayUserAgentPreset)
-                  }
-                >
-                  <SelectTrigger id="gateway-key-user-agent">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="auto">
-                        {titleForLocale(locale, "自动透传", "Auto pass-through")}
-                      </SelectItem>
-                      <SelectItem value="custom">
-                        {titleForLocale(locale, "自定义兜底", "Custom fallback")}
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  {titleForLocale(
-                    locale,
-                    "优先透传下游真实 User-Agent；泛化库标识才使用兜底",
-                    "Pass through the real inbound User-Agent first; use fallback only for generic library agents"
-                  )}
-                </FieldDescription>
-              </Field>
-
-              {form.userAgentPreset === "custom" ? (
-                <Field>
-                  <FieldLabel htmlFor="gateway-key-custom-user-agent">
-                    {titleForLocale(locale, "自定义 User-Agent", "Custom User-Agent")}
-                  </FieldLabel>
-                  <Input
-                    id="gateway-key-custom-user-agent"
-                    value={form.customUserAgent}
-                    onChange={(event) => updateForm("customUserAgent", event.target.value)}
-                    placeholder="YourApp/1.0.0"
-                  />
-                </Field>
-              ) : null}
 
               <Field>
                 <FieldLabel htmlFor="gateway-key-limit">

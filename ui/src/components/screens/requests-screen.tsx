@@ -16,6 +16,7 @@ import {
   Database,
   DollarSign,
   Filter,
+  Fingerprint,
   KeyRound,
   LayoutGrid,
   RefreshCcw,
@@ -616,7 +617,7 @@ function RequestMeta({
   className?: string
 }) {
   return (
-    <div className={cn('flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full bg-muted/[0.22] px-3 text-xs font-medium text-muted-foreground', className)}>
+    <div className={cn('flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full bg-muted/[0.22] px-3 text-xs font-medium text-muted-foreground', className)} title={value}>
       <span className="shrink-0 text-muted-foreground/90">{icon}</span>
       <span className="truncate leading-none">{value}</span>
     </div>
@@ -809,6 +810,7 @@ function RequestCard({
               <RequestMeta icon={<Clock3 size={13} />} value={formatLogDateTime(item.created_at, locale, timeZone)} className="pl-0" />
               <RequestMeta icon={<Waypoints size={13} />} value={item.channel_name || item.channel_id || 'n/a'} />
               {item.gateway_key_id ? <RequestMeta icon={<KeyRound size={13} />} value={formatGatewayKeyLabel(item, locale)} /> : null}
+              {item.user_agent ? <RequestMeta icon={<Fingerprint size={13} />} value={item.user_agent} className="sm:max-w-[360px]" /> : null}
               {secondaryModelName ? <RequestMeta icon={<ServerCog size={13} />} value={secondaryModelName} /> : null}
             </div>
           </div>
