@@ -72,7 +72,7 @@ type GatewayApiKeyForm = {
   expiresOn?: Date
 }
 
-type GatewayUserAgentPreset = "lens" | "codex" | "claude_code" | "custom"
+type GatewayUserAgentPreset = "auto" | "custom"
 
 type GatewayModelGroupOption = {
   name: string
@@ -84,19 +84,13 @@ type GatewayModelGroupOption = {
 const EMPTY_FORM: GatewayApiKeyForm = {
   remark: "",
   enabled: true,
-  userAgentPreset: "lens",
+  userAgentPreset: "auto",
   customUserAgent: "",
   restrictModels: false,
   allowedModels: [],
   maxCostUsd: "0",
   expiresOn: undefined,
 }
-
-const GATEWAY_USER_AGENT_VALUES = {
-  lens: "",
-  codex: "codex-mcp-client/0.1.0",
-  claude_code: "Claude-User (claude-code; +https://support.anthropic.com/)",
-} as const
 
 const PROTOCOL_LABELS: Record<ProtocolKind, [string, string]> = {
   openai_chat: ["OpenAI Chat", "OpenAI Chat"],
@@ -233,13 +227,7 @@ function toGatewayApiKeyPayload(form: GatewayApiKeyForm, timeZone: string): Gate
 
 function gatewayUserAgentPresetFromValue(value: string): GatewayUserAgentPreset {
   if (!value) {
-    return "lens"
-  }
-  if (value === GATEWAY_USER_AGENT_VALUES.codex) {
-    return "codex"
-  }
-  if (value === GATEWAY_USER_AGENT_VALUES.claude_code) {
-    return "claude_code"
+    return "auto"
   }
   return "custom"
 }
@@ -248,15 +236,13 @@ function gatewayUserAgentValue(form: GatewayApiKeyForm) {
   if (form.userAgentPreset === "custom") {
     return form.customUserAgent.trim()
   }
-  return GATEWAY_USER_AGENT_VALUES[form.userAgentPreset]
+  return ""
 }
 
 function gatewayUserAgentLabel(locale: Locale, item: GatewayApiKey) {
   const preset = gatewayUserAgentPresetFromValue(item.client_user_agent.trim())
   const labels: Record<GatewayUserAgentPreset, [string, string]> = {
-    lens: ["Lens 默认", "Lens default"],
-    codex: ["Codex", "Codex"],
-    claude_code: ["Claude Code", "Claude Code"],
+    auto: ["自动透传", "Auto pass-through"],
     custom: ["自定义", "Custom"],
   }
   const [zh, en] = labels[preset]
@@ -830,13 +816,11 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="lens">
-                        {titleForLocale(locale, "Lens 默认", "Lens default")}
+                      <SelectItem value="auto">
+                        {titleForLocale(locale, "自动透传", "Auto pass-through")}
                       </SelectItem>
-                      <SelectItem value="codex">Codex</SelectItem>
-                      <SelectItem value="claude_code">Claude Code</SelectItem>
                       <SelectItem value="custom">
-                        {titleForLocale(locale, "自定义", "Custom")}
+                        {titleForLocale(locale, "自定义兜底", "Custom fallback")}
                       </SelectItem>
                     </SelectGroup>
                   </SelectContent>
@@ -844,8 +828,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                 <FieldDescription>
                   {titleForLocale(
                     locale,
-                    "用于上游请求的 User-Agent；通道高级请求头可覆盖此项",
-                    "User-Agent for upstream requests; channel headers can override this"
+                    "优先透传下游真实 User-Agent；泛化库标识才使用兜底",
+                    "Pass through the real inbound User-Agent first; use fallback only for generic library agents"
                   )}
                 </FieldDescription>
               </Field>
