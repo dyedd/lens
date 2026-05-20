@@ -464,12 +464,9 @@ lens db revision -m "describe your change"    # 生成新迁移
 lens db current                               # 查看当前版本
 lens db history                               # 查看迁移历史
 lens db stamp head                            # 标记数据库为最新
-lens db migrate-sqlite-to-postgres \
-  --sqlite-url sqlite+aiosqlite:///./data/data.db \
-  --postgres-url postgresql+psycopg://lens:lens@127.0.0.1:5432/lens
 ```
 
-`migrate-sqlite-to-postgres` 会先把源 SQLite 和目标 PostgreSQL 升级到最新结构，再完整复制 SQLite 数据，包括管理员账号、站点、模型组、价格、设置、定时任务、统计、网关 API Key 和请求日志。目标库已有业务数据时默认失败；确认覆盖时增加 `--replace`。如果只迁移配置和统计，不迁移请求日志，可增加 `--skip-request-logs`。
+Lens 不提供自动数据库转换命令。需要从 SQLite 切换到 PostgreSQL 时，建议先在管理后台导出配置备份，再切换 `LENS_DATABASE_URL` 到 PostgreSQL，启动后通过 `/backups` 导入配置。请求日志和统计是否迁移由备份导出选项决定。
 
 ## 环境变量
 
@@ -495,6 +492,8 @@ lens db migrate-sqlite-to-postgres \
 
 `docker-compose.yml` 不会启动数据库服务，数据库类型完全由 `LENS_DATABASE_URL` 决定。默认值是 `sqlite+aiosqlite:////app/data/data.db`；如果要使用已部署好的 PostgreSQL，在 `.env` 中设置类似 `LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgres.example.com:5432/lens` 的连接串。
 
+PostgreSQL 连接串格式是 `postgresql+psycopg://用户名:密码@主机:端口/数据库名`。在 1Panel 这类容器化环境里，如果 Lens 和 PostgreSQL 部署在同一台服务器，推荐把 Lens 容器和 PostgreSQL 容器放到同一个 Docker 网络，例如 1Panel 的 `1panel-network`，然后用 PostgreSQL 容器名作为主机名：`LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgresql:5432/lens`。这里第一个 `lens` 是数据库用户名，最后一个 `lens` 是数据库名；`postgresql` 是 PostgreSQL 容器名，需要按实际容器名调整。
+
 SQLite 仍适合本地测试和轻量部署；Lens 会关闭 SQLite WAL，默认只保留主数据库文件，不再主动生成 `data.db-wal` / `data.db-shm`。高并发或多用户部署建议使用 PostgreSQL。
 
 Lens 的业务时区不是环境变量；在 `/settings` 选择，默认 `Asia/Shanghai`。请求日志时间、今天窗口、趋势分桶、备份文件名等应用内时间显示都会使用这个设置。
@@ -514,6 +513,8 @@ Lens 的业务时区不是环境变量；在 `/settings` 选择，默认 `Asia/S
 - 可选统计快照和请求日志
 
 导入前建议先备份当前数据目录。
+
+从 SQLite 切换到 PostgreSQL 时，推荐使用备份导出/导入完成业务数据迁移；Lens 不会在启动时自动转换数据库。
 
 ## 安全建议
 
