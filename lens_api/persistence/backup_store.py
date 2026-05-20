@@ -636,7 +636,6 @@ class BackupStore:
                     remark=item.remark.strip(),
                     api_key=api_key,
                     enabled=1 if item.enabled else 0,
-                    client_user_agent=item.client_user_agent.strip(),
                     allowed_models_json=json.dumps(
                         item.allowed_models,
                         ensure_ascii=True,
@@ -658,6 +657,7 @@ class BackupStore:
             session.add(
                 RequestLogEntity(
                     protocol=item.protocol.value,
+                    user_agent=item.user_agent.strip()[:300],
                     requested_group_name=item.requested_group_name,
                     resolved_group_name=item.resolved_group_name,
                     upstream_model_name=item.upstream_model_name,
@@ -1079,7 +1079,6 @@ class BackupStore:
                 remark=row.remark,
                 api_key=row.api_key,
                 enabled=bool(row.enabled),
-                client_user_agent=row.client_user_agent,
                 allowed_models=self._load_allowed_models(row.allowed_models_json),
                 max_cost_usd=max(float(row.max_cost_usd or 0.0), 0.0),
                 expires_at=self._format_optional_datetime(row.expires_at),
@@ -1124,6 +1123,7 @@ class BackupStore:
             logs.append(
                 ConfigBackupRequestLog(
                     protocol=row.protocol,
+                    user_agent=row.user_agent,
                     requested_group_name=row.requested_group_name,
                     resolved_group_name=row.resolved_group_name,
                     upstream_model_name=row.upstream_model_name,

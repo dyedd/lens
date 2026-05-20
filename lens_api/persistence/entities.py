@@ -127,7 +127,6 @@ class GatewayApiKeyEntity(Base):
     remark: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     api_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    client_user_agent: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     allowed_models_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     max_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
@@ -140,6 +139,7 @@ class RequestLogEntity(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    user_agent: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     requested_group_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     resolved_group_name: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     upstream_model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
