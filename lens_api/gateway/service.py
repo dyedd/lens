@@ -122,7 +122,6 @@ GENERIC_USER_AGENT_TOKENS = (
     "python-httpx",
     "python-requests",
     "aiohttp",
-    "axios",
     "httpcore",
     "urllib",
 )
