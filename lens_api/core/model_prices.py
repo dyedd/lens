@@ -3,8 +3,26 @@ from __future__ import annotations
 from typing import Any
 
 
+PRICE_PAYLOAD_FIELDS = (
+    'input_price_per_million',
+    'output_price_per_million',
+    'cache_read_price_per_million',
+    'cache_write_price_per_million',
+)
+
+
 def normalize_model_key(value: str | None) -> str:
     return (value or '').strip().lower()
+
+
+def _has_price_value(price_payload: dict[str, float]) -> bool:
+    return any(price_payload[field] > 0 for field in PRICE_PAYLOAD_FIELDS)
+
+
+def _should_replace_price_payload(existing: dict[str, float] | None, candidate: dict[str, float]) -> bool:
+    if existing is None:
+        return True
+    return not _has_price_value(existing) and _has_price_value(candidate)
 
 
 def build_models_dev_price_index(payload: dict[str, Any]) -> dict[str, dict[str, float]]:
@@ -39,7 +57,7 @@ def build_models_dev_price_index(payload: dict[str, Any]) -> dict[str, dict[str,
                 'cache_write_price_per_million': cache_write_price,
             }
             for alias in aliases:
-                if alias:
+                if alias and _should_replace_price_payload(index.get(alias), price_payload):
                     index[alias] = price_payload
     return index
 
