@@ -105,6 +105,7 @@ from .router import RoundRobinRouter, RouteTarget
 from .cronjob_runner import CronjobAlreadyRunningError, CronjobRunner
 from .upstreams import (
     append_channel_url_path,
+    build_upstream_headers,
     build_upstream_request,
     resolve_channel_api_key,
     resolve_channel_model_list_url,
@@ -116,6 +117,15 @@ TASK_REQUEST_LOG_PRUNE = "request_log_prune"
 TASK_MODEL_PRICE_SYNC = "model_price_sync"
 TASK_REQUEST_LOG_STATS_PERSIST = "request_log_stats_persist"
 TASK_VERSION_CHECK = "version_check"
+
+GENERIC_USER_AGENT_TOKENS = (
+    "python-httpx",
+    "python-requests",
+    "aiohttp",
+    "axios",
+    "httpcore",
+    "urllib",
+)
 
 CRONJOB_SPECS = (
     CronjobSpec(
@@ -1176,21 +1186,36 @@ async def proxy_openai_chat(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ):
     body = await request.json()
-    return await _proxy_protocol(ProtocolKind.OPENAI_CHAT, body, gateway_key)
+    return await _proxy_protocol(
+        ProtocolKind.OPENAI_CHAT,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+    )
 
 
 async def proxy_openai_responses(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ):
     body = await request.json()
-    return await _proxy_protocol(ProtocolKind.OPENAI_RESPONSES, body, gateway_key)
+    return await _proxy_protocol(
+        ProtocolKind.OPENAI_RESPONSES,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+    )
 
 
 async def proxy_anthropic_messages(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ):
     body = await request.json()
-    return await _proxy_protocol(ProtocolKind.ANTHROPIC, body, gateway_key)
+    return await _proxy_protocol(
+        ProtocolKind.ANTHROPIC,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+    )
 
 
 async def proxy_openai_embeddings(
@@ -1203,7 +1228,12 @@ async def proxy_openai_embeddings(
             detail="Embeddings request body must be a JSON object",
         )
     body.pop("stream", None)
-    return await _proxy_protocol(ProtocolKind.OPENAI_EMBEDDING, body, gateway_key)
+    return await _proxy_protocol(
+        ProtocolKind.OPENAI_EMBEDDING,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+    )
 
 
 _OPENAI_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
@@ -1314,7 +1344,12 @@ async def proxy_gemini_generate_content(
 ):
     body = await request.json()
     body = {**body, "model": model_name, "stream": False}
-    return await _proxy_protocol(ProtocolKind.GEMINI, body, gateway_key)
+    return await _proxy_protocol(
+        ProtocolKind.GEMINI,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+    )
 
 
 async def proxy_gemini_stream_generate_content(
@@ -1324,11 +1359,19 @@ async def proxy_gemini_stream_generate_content(
 ):
     body = await request.json()
     body = {**body, "model": model_name, "stream": True}
-    return await _proxy_protocol(ProtocolKind.GEMINI, body, gateway_key)
+    return await _proxy_protocol(
+        ProtocolKind.GEMINI,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+    )
 
 
 async def _proxy_protocol(
-    protocol: ProtocolKind, body: dict[str, Any], gateway_key: GatewayApiKey
+    protocol: ProtocolKind,
+    body: dict[str, Any],
+    gateway_key: GatewayApiKey,
+    inbound_user_agent: str | None = None,
 ) -> Response:
     channels = await app_state.store.list()
     runtime = await app_state.domain_store.get_runtime_settings()
@@ -1470,6 +1513,9 @@ async def _proxy_protocol(
                     pricing_group_name=pricing_group_name,
                     client_protocol=protocol,
                     credential_id=target.credential_id,
+                    user_agent=_resolve_upstream_user_agent(
+                        gateway_key, inbound_user_agent
+                    ),
                 )
                 attempts.append(
                     AttemptLog(
@@ -1636,9 +1682,14 @@ async def _call_channel(
     pricing_group_name: str | None = None,
     client_protocol: ProtocolKind | None = None,
     credential_id: str | None = None,
+    user_agent: str | None = None,
 ) -> UpstreamResult:
     upstream = build_upstream_request(
-        channel, body, settings, credential_id=credential_id
+        channel,
+        body,
+        settings,
+        credential_id=credential_id,
+        user_agent=user_agent,
     )
     request_content = _dump_json(upstream.json_body)
     client = app_state.http
@@ -1912,7 +1963,13 @@ async def _call_model_test_channel(
     model_name: str,
     credential_id: str,
 ) -> SiteModelTestResult:
-    upstream = build_upstream_request(channel, body, settings, credential_id=credential_id)
+    upstream = build_upstream_request(
+        channel,
+        body,
+        settings,
+        credential_id=credential_id,
+        user_agent=_default_lens_user_agent(),
+    )
     client = app_state.http
     close_client = False
     runtime = await app_state.domain_store.get_runtime_settings()
@@ -2136,6 +2193,39 @@ def _requested_model(protocol: ProtocolKind, body: dict[str, Any]) -> str | None
     return body.get("model")
 
 
+def _resolve_upstream_user_agent(
+    gateway_key: GatewayApiKey, inbound_user_agent: str | None
+) -> str:
+    inbound = _normalize_user_agent(inbound_user_agent)
+    if inbound and not _is_generic_user_agent(inbound):
+        return inbound
+
+    configured = gateway_key.client_user_agent.strip()
+    if configured:
+        return configured
+    return _default_lens_user_agent()
+
+
+def _default_lens_user_agent() -> str:
+    return f"Lens/{_read_system_version()}"
+
+
+def _normalize_user_agent(value: str | None) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        return ""
+    return "".join(
+        char for char in normalized if ord(char) >= 32 and ord(char) != 127
+    )[:300].strip()
+
+
+def _is_generic_user_agent(value: str) -> bool:
+    normalized = value.strip().lower()
+    if not normalized:
+        return True
+    return any(token in normalized for token in GENERIC_USER_AGENT_TOKENS)
+
+
 async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
     client = app_state.http
     close_client = False
@@ -2184,21 +2274,25 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
         return {
             "method": "GET",
             "url": resolve_channel_model_list_url(channel),
-            "headers": {
-                "authorization": f"Bearer {api_key}",
-                **headers,
-            },
+            "headers": build_upstream_headers(
+                {"authorization": f"Bearer {api_key}"},
+                headers,
+                user_agent=_default_lens_user_agent(),
+            ),
         }
 
     if channel.protocol == ProtocolKind.ANTHROPIC:
         return {
             "method": "GET",
             "url": append_channel_url_path(channel, "v1", "models"),
-            "headers": {
-                "x-api-key": api_key,
-                "anthropic-version": settings.anthropic_version,
-                **headers,
-            },
+            "headers": build_upstream_headers(
+                {
+                    "x-api-key": api_key,
+                    "anthropic-version": settings.anthropic_version,
+                },
+                headers,
+                user_agent=_default_lens_user_agent(),
+            ),
         }
 
     if channel.protocol == ProtocolKind.GEMINI:
@@ -2210,7 +2304,11 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
                 "models",
                 query_params={"key": api_key},
             ),
-            "headers": headers,
+            "headers": build_upstream_headers(
+                {},
+                headers,
+                user_agent=_default_lens_user_agent(),
+            ),
         }
 
     raise ValueError(f"Unsupported protocol={channel.protocol.value}")

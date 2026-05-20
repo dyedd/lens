@@ -24,6 +24,7 @@ def build_upstream_request(
     body: dict[str, Any],
     settings: Settings,
     credential_id: str | None = None,
+    user_agent: str | None = None,
 ) -> UpstreamRequest:
     api_key = _resolve_api_key(channel, credential_id=credential_id)
     proxy_url = _resolve_proxy_url(channel)
@@ -33,11 +34,14 @@ def build_upstream_request(
         return UpstreamRequest(
             method="POST",
             url=target_url,
-            headers={
-                "authorization": f"Bearer {api_key}",
-                "content-type": "application/json",
-                **channel.headers,
-            },
+            headers=build_upstream_headers(
+                {
+                    "authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                },
+                channel.headers,
+                user_agent=user_agent,
+            ),
             json_body=dict(body),
             proxy_url=proxy_url,
         )
@@ -46,11 +50,14 @@ def build_upstream_request(
         return UpstreamRequest(
             method="POST",
             url=target_url,
-            headers={
-                "authorization": f"Bearer {api_key}",
-                "content-type": "application/json",
-                **channel.headers,
-            },
+            headers=build_upstream_headers(
+                {
+                    "authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                },
+                channel.headers,
+                user_agent=user_agent,
+            ),
             json_body=dict(body),
             proxy_url=proxy_url,
         )
@@ -59,11 +66,14 @@ def build_upstream_request(
         return UpstreamRequest(
             method="POST",
             url=target_url,
-            headers={
-                "authorization": f"Bearer {api_key}",
-                "content-type": "application/json",
-                **channel.headers,
-            },
+            headers=build_upstream_headers(
+                {
+                    "authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                },
+                channel.headers,
+                user_agent=user_agent,
+            ),
             json_body=dict(body),
             proxy_url=proxy_url,
         )
@@ -72,12 +82,15 @@ def build_upstream_request(
         return UpstreamRequest(
             method="POST",
             url=target_url,
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": settings.anthropic_version,
-                "content-type": "application/json",
-                **channel.headers,
-            },
+            headers=build_upstream_headers(
+                {
+                    "x-api-key": api_key,
+                    "anthropic-version": settings.anthropic_version,
+                    "content-type": "application/json",
+                },
+                channel.headers,
+                user_agent=user_agent,
+            ),
             json_body=dict(body),
             proxy_url=proxy_url,
         )
@@ -92,10 +105,11 @@ def build_upstream_request(
         return UpstreamRequest(
             method="POST",
             url=_gemini_request_url(channel, model_name, path, api_key),
-            headers={
-                "content-type": "application/json",
-                **channel.headers,
-            },
+            headers=build_upstream_headers(
+                {"content-type": "application/json"},
+                channel.headers,
+                user_agent=user_agent,
+            ),
             json_body=payload,
             proxy_url=proxy_url,
         )
@@ -131,6 +145,23 @@ def _protocol_request_url(channel: ChannelConfig, body: dict[str, Any]) -> str:
     if channel.protocol == ProtocolKind.ANTHROPIC:
         return _append_url_path(_protocol_base_url(channel), "messages")
     raise HTTPException(status_code=500, detail=f"Unsupported protocol={channel.protocol.value}")
+
+
+def build_upstream_headers(
+    default_headers: dict[str, str],
+    channel_headers: dict[str, str],
+    user_agent: str | None = None,
+) -> dict[str, str]:
+    headers = dict(default_headers)
+    if user_agent and not _has_header(channel_headers, "user-agent"):
+        headers["user-agent"] = user_agent
+    headers.update(channel_headers)
+    return headers
+
+
+def _has_header(headers: dict[str, str], name: str) -> bool:
+    normalized = name.lower()
+    return any(key.lower() == normalized for key in headers)
 
 
 def _gemini_request_url(channel: ChannelConfig, model_name: str, path: str, api_key: str) -> str:

@@ -994,6 +994,7 @@ class DomainStore:
                 remark=payload.remark.strip(),
                 api_key=secret,
                 enabled=1 if payload.enabled else 0,
+                client_user_agent=payload.client_user_agent.strip(),
                 allowed_models_json=self._dump_gateway_key_models(payload.allowed_models),
                 max_cost_usd=max(float(payload.max_cost_usd), 0.0),
                 expires_at=self._parse_gateway_key_expires_at(payload.expires_at),
@@ -1014,6 +1015,7 @@ class DomainStore:
                 raise KeyError(key_id)
             entity.remark = payload.remark.strip()
             entity.enabled = 1 if payload.enabled else 0
+            entity.client_user_agent = payload.client_user_agent.strip()
             entity.allowed_models_json = self._dump_gateway_key_models(
                 payload.allowed_models
             )
@@ -2836,6 +2838,7 @@ class DomainStore:
             remark=entity.remark,
             api_key=entity.api_key,
             enabled=bool(entity.enabled),
+            client_user_agent=entity.client_user_agent,
             allowed_models=cls._load_gateway_key_models(entity.allowed_models_json),
             max_cost_usd=max(float(entity.max_cost_usd or 0.0), 0.0),
             spent_cost_usd=max(float(spent_cost_usd), 0.0),
