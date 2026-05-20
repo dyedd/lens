@@ -13,9 +13,10 @@ from alembic import command
 from alembic.config import Config
 
 from .core.config import settings
-from .core.db import create_engine, create_session_factory
+from .core.db import create_engine, create_session_factory, is_sqlite_url
 
 SOURCE_PROJECT_DIR = Path(__file__).resolve().parent.parent
+APP_IMPORT_PATH = "lens_api.gateway.service:app"
 
 
 def _project_dir() -> Path:
@@ -64,13 +65,45 @@ def db_stamp(args: argparse.Namespace) -> None:
     command.stamp(_alembic_cfg(), args.revision)
 
 
+def _configured_workers() -> int:
+    return max(int(settings.workers or 1), 1)
+
+
+def _serve_worker_plan(reload: bool) -> tuple[int, int, str | None]:
+    requested = _configured_workers()
+    if requested == 1:
+        return requested, 1, None
+    if reload:
+        return requested, 1, "--reload does not support multiple Uvicorn workers"
+    if is_sqlite_url(settings.database_url):
+        return requested, 1, "SQLite uses a single-writer lock, so Lens runs one worker to avoid write contention"
+    return requested, requested, None
+
+
+def _print_worker_plan(requested: int, effective: int, reason: str | None) -> None:
+    if reason is None:
+        print(f"Starting Lens with workers: requested={requested}, effective={effective}", flush=True)
+        return
+    print(
+        f"Starting Lens with workers: requested={requested}, effective={effective}. "
+        f"Reason: {reason}.",
+        flush=True,
+    )
+
+
 def serve(args: argparse.Namespace) -> None:
     import uvicorn
+    requested_workers, effective_workers, worker_reason = _serve_worker_plan(args.reload)
+    _print_worker_plan(requested_workers, effective_workers, worker_reason)
     if args.reload:
-        uvicorn.run("lens_api.gateway.service:app", host=settings.host, port=settings.port, reload=True)
+        uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port, reload=True)
     else:
-        from .gateway.service import app
-        uvicorn.run(app, host=settings.host, port=settings.port)
+        uvicorn.run(
+            APP_IMPORT_PATH,
+            host=settings.host,
+            port=settings.port,
+            workers=effective_workers,
+        )
 
 
 def dev(_args: argparse.Namespace) -> None:
@@ -97,7 +130,7 @@ def dev(_args: argparse.Namespace) -> None:
             sys.executable,
             "-m",
             "uvicorn",
-            "lens_api.gateway.service:app",
+            APP_IMPORT_PATH,
             "--host",
             backend_host,
             "--port",

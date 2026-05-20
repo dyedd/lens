@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     auth_access_token_minutes: int = 60 * 12
     request_timeout_seconds: float = 180.0
     connect_timeout_seconds: float = 10.0
+    workers: int = 4
     max_connections: int = 200
     max_keepalive_connections: int = 50
     database_url: str = "sqlite+aiosqlite:///./data/data.db"
