@@ -103,7 +103,7 @@ x-goog-api-key: <gateway-key>
 
 | 层     | 技术                                                           |
 | ------ | -------------------------------------------------------------- |
-| 后端   | Python 3.11+、FastAPI、SQLAlchemy 2.x、Alembic、SQLite         |
+| 后端   | Python 3.11+、FastAPI、SQLAlchemy 2.x、Alembic、SQLite / PostgreSQL |
 | 前端   | Next.js 16、React 19、TypeScript、TanStack Query、shadcn/ui    |
 | 容器   | 多阶段构建，Node 仅用于前端构建，最终镜像为 `python:3.14-slim` |
 | 包管理 | pip、pnpm                                                      |
@@ -157,7 +157,7 @@ Docker 说明：
 - 单容器同时提供静态前端和 FastAPI 网关
 - 容器启动时自动执行 `lens db upgrade`
 - 容器启动时会尝试初始化默认管理员；如果已存在管理员则跳过
-- `./data` 挂载到容器内 `/app/data`，SQLite 数据会持久化
+- `docker-compose.yml` 不内置数据库服务；默认使用容器内 `/app/data/data.db` SQLite，外部 PostgreSQL 通过 `LENS_DATABASE_URL` 接入
 - 容器内部固定监听 `0.0.0.0:3000`；不要用 `PORT` 或 `HOSTNAME` 配置 Lens
 - 如需跳过启动时迁移，可设置 `LENS_SKIP_DB_UPGRADE=1`
 
@@ -464,7 +464,12 @@ lens db revision -m "describe your change"    # 生成新迁移
 lens db current                               # 查看当前版本
 lens db history                               # 查看迁移历史
 lens db stamp head                            # 标记数据库为最新
+lens db migrate-sqlite-to-postgres \
+  --sqlite-url sqlite+aiosqlite:///./data/data.db \
+  --postgres-url postgresql+psycopg://lens:lens@127.0.0.1:5432/lens
 ```
+
+`migrate-sqlite-to-postgres` 会先把源 SQLite 和目标 PostgreSQL 升级到最新结构，再完整复制 SQLite 数据，包括管理员账号、站点、模型组、价格、设置、定时任务、统计、网关 API Key 和请求日志。目标库已有业务数据时默认失败；确认覆盖时增加 `--replace`。如果只迁移配置和统计，不迁移请求日志，可增加 `--skip-request-logs`。
 
 ## 环境变量
 
@@ -474,7 +479,7 @@ lens db stamp head                            # 标记数据库为最新
 | -------------------------------- | ------------------------------------- | ----------------------------------------------- |
 | `LENS_HOST`                      | `127.0.0.1`                           | 后端监听地址；Docker 中设为 `0.0.0.0`           |
 | `LENS_PORT`                      | `18080`                               | 后端监听端口；Docker 中设为 `3000`              |
-| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | 数据库连接；默认写入当前工作目录下的 `data`     |
+| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | 数据库连接；默认 SQLite，也可指向外部 PostgreSQL |
 | `LENS_AUTH_SECRET_KEY`           | 开发默认值                            | JWT 签名密钥，生产环境必须修改                  |
 | `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720`                                 | 管理后台登录有效期                              |
 | `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | 上游请求总超时                                  |
@@ -488,7 +493,9 @@ lens db stamp head                            # 标记数据库为最新
 
 监听地址和端口由 `LENS_HOST` 和 `LENS_PORT` 控制；通用的 `HOSTNAME`、`PORT` 不会影响后端监听地址和端口。
 
-Docker 镜像和 `docker-compose.yml` 会把数据库连接显式设为 `sqlite+aiosqlite:////app/data/data.db`，本地开发默认使用 `sqlite+aiosqlite:///./data/data.db`；部署目录的 `.env` 不需要再写 `LENS_DATABASE_URL`，避免覆盖容器内路径。
+`docker-compose.yml` 不会启动数据库服务，数据库类型完全由 `LENS_DATABASE_URL` 决定。默认值是 `sqlite+aiosqlite:////app/data/data.db`；如果要使用已部署好的 PostgreSQL，在 `.env` 中设置类似 `LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgres.example.com:5432/lens` 的连接串。
+
+SQLite 仍适合本地测试和轻量部署；Lens 会关闭 SQLite WAL，默认只保留主数据库文件，不再主动生成 `data.db-wal` / `data.db-shm`。高并发或多用户部署建议使用 PostgreSQL。
 
 Lens 的业务时区不是环境变量；在 `/settings` 选择，默认 `Asia/Shanghai`。请求日志时间、今天窗口、趋势分桶、备份文件名等应用内时间显示都会使用这个设置。
 
