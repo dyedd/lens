@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "httpx>=0.28.0",
     "packaging>=24.0",
+    "psycopg[binary]>=3.2.0",
     "PyJWT>=2.10.1",
     "pydantic>=2.8.0",
     "pydantic-settings>=2.5.0",

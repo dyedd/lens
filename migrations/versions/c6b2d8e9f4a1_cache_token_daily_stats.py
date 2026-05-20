@@ -42,21 +42,27 @@ def upgrade() -> None:
         batch_op.alter_column("cache_read_input_tokens", server_default=None)
         batch_op.alter_column("cache_write_input_tokens", server_default=None)
 
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        date_expr = "to_char(request_logs.created_at, 'YYYYMMDD')"
+    else:
+        date_expr = "strftime('%Y%m%d', request_logs.created_at)"
+
     op.execute(
-        """
+        f"""
         UPDATE request_log_daily_stats
         SET
             cache_read_input_tokens = COALESCE((
                 SELECT SUM(request_logs.cache_read_input_tokens)
                 FROM request_logs
                 WHERE request_logs.stats_archived = 1
-                  AND strftime('%Y%m%d', request_logs.created_at) = request_log_daily_stats.date
+                  AND {date_expr} = request_log_daily_stats.date
             ), 0),
             cache_write_input_tokens = COALESCE((
                 SELECT SUM(request_logs.cache_write_input_tokens)
                 FROM request_logs
                 WHERE request_logs.stats_archived = 1
-                  AND strftime('%Y%m%d', request_logs.created_at) = request_log_daily_stats.date
+                  AND {date_expr} = request_log_daily_stats.date
             ), 0)
         """
     )
