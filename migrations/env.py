@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from lens_api.core.config import settings
-from lens_api.core.db import Base
+from lens_api.core.db import Base, normalize_sync_database_url
 from lens_api.persistence import entities as _entities  # noqa: F401
 
 config = context.config
@@ -18,7 +18,10 @@ target_metadata = Base.metadata
 
 
 def get_database_url() -> str:
-    return settings.database_url.replace("+aiosqlite", "", 1)
+    override_url = config.get_main_option("lens_database_url", "").strip()
+    if override_url:
+        return normalize_sync_database_url(override_url)
+    return normalize_sync_database_url(settings.database_url)
 
 
 def run_migrations_offline() -> None:
@@ -31,7 +34,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         compare_server_default=True,
-        render_as_batch=True,
+        render_as_batch=url.startswith("sqlite"),
     )
 
     with context.begin_transaction():

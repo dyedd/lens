@@ -103,7 +103,7 @@ Console pages:
 
 | Layer            | Technologies                                                                               |
 | ---------------- | ------------------------------------------------------------------------------------------ |
-| Backend          | Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, SQLite                                     |
+| Backend          | Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, SQLite / PostgreSQL                       |
 | Frontend         | Next.js 16, React 19, TypeScript, TanStack Query, shadcn/ui                                |
 | Container        | Multi-stage build; Node is used only for frontend build; final image is `python:3.14-slim` |
 | Package managers | pip, pnpm                                                                                  |
@@ -157,7 +157,7 @@ Docker notes:
 - A single container serves the static frontend and the FastAPI gateway
 - Startup runs `lens db upgrade`
 - Startup attempts to seed the default administrator and skips it if an admin already exists
-- `./data` is mounted to `/app/data` for SQLite persistence
+- `docker-compose.yml` does not include a database service; it defaults to SQLite at `/app/data/data.db`, and external PostgreSQL is configured through `LENS_DATABASE_URL`
 - The container listens on `0.0.0.0:3000`; do not use `PORT` or `HOSTNAME` to configure Lens
 - Set `LENS_SKIP_DB_UPGRADE=1` to skip automatic migrations on startup
 
@@ -464,7 +464,12 @@ lens db revision -m "describe your change"    # create a migration
 lens db current                               # show current revision
 lens db history                               # show migration history
 lens db stamp head                            # mark database as latest
+lens db migrate-sqlite-to-postgres \
+  --sqlite-url sqlite+aiosqlite:///./data/data.db \
+  --postgres-url postgresql+psycopg://lens:lens@127.0.0.1:5432/lens
 ```
+
+`migrate-sqlite-to-postgres` upgrades both the source SQLite schema and the target PostgreSQL schema first, then copies the full SQLite dataset, including admin users, sites, model groups, prices, settings, cron jobs, stats, gateway API keys, and request logs. It fails by default when the target already contains Lens business data; pass `--replace` to overwrite. Pass `--skip-request-logs` to migrate configuration and stats without request logs.
 
 ## Environment Variables
 
@@ -474,7 +479,7 @@ Backend configuration uses the `LENS_` prefix and also supports `.env` files. Lo
 | -------------------------------- | ------------------------------------- | -------------------------------------------------------- |
 | `LENS_HOST`                      | `127.0.0.1`                           | Backend listen host; Docker sets it to `0.0.0.0`         |
 | `LENS_PORT`                      | `18080`                               | Backend listen port; Docker sets it to `3000`            |
-| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | Database URL; defaults to `data` under the working dir    |
+| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | Database URL; defaults to SQLite and can point to external PostgreSQL |
 | `LENS_AUTH_SECRET_KEY`           | development default                   | JWT signing key; must be changed in production           |
 | `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720`                                 | Console session lifetime                                 |
 | `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | Upstream request timeout                                 |
@@ -488,7 +493,9 @@ Backend configuration uses the `LENS_` prefix and also supports `.env` files. Lo
 
 The backend listen address and port are controlled by `LENS_HOST` and `LENS_PORT`; generic `HOSTNAME` and `PORT` do not affect them.
 
-The Docker image and `docker-compose.yml` explicitly set the database URL to `sqlite+aiosqlite:////app/data/data.db`; local development defaults to `sqlite+aiosqlite:///./data/data.db`. A deployment `.env` does not need `LENS_DATABASE_URL`, which avoids overriding the container path.
+`docker-compose.yml` does not start a database service. The database type is entirely selected by `LENS_DATABASE_URL`. The default value is `sqlite+aiosqlite:////app/data/data.db`; to use an externally managed PostgreSQL database, set a URL such as `LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgres.example.com:5432/lens` in `.env`.
+
+SQLite remains supported for local testing and lightweight deployments. Lens disables SQLite WAL, so it keeps the main database file without intentionally creating `data.db-wal` / `data.db-shm`. Use PostgreSQL for high-concurrency or multi-user deployments.
 
 Lens application time zone is not an environment variable. Choose it in `/settings`; the default is `Asia/Shanghai`. Request log timestamps, today windows, trend buckets, backup filenames, and other in-app time displays use this setting.
 
