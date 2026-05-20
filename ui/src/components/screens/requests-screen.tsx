@@ -134,6 +134,8 @@ type StatusFilter = 'all' | 'running' | 'success' | 'failed'
 type SortMode = 'latest' | 'cost' | 'latency' | 'tokens'
 type JsonLike = null | boolean | number | string | JsonLike[] | { [key: string]: JsonLike }
 
+const HIDDEN_USER_AGENT_PRODUCTS = new Set(['vscode'])
+
 function formatMs(value: number | null | undefined) {
   if (!value) return '-'
   if (value < 1000) return `${value} ms`
@@ -162,10 +164,11 @@ function formatMaybeCount(value: number, pending: boolean) {
 function formatUserAgentDisplay(value: string, locale: 'zh-CN' | 'en-US') {
   const raw = value.trim()
   const parts: string[] = []
-  const codexTuiMatch = raw.match(/\bcodex-tui\/([^\s;)]+)/i)
+  const products = raw.matchAll(/\b([A-Za-z][A-Za-z0-9._-]*)\/([^\s;)]+)/g)
+  const client = Array.from(products).find((match) => !HIDDEN_USER_AGENT_PRODUCTS.has(match[1].toLowerCase()))
 
-  if (codexTuiMatch) {
-    parts.push(`Codex TUI ${codexTuiMatch[1]}`)
+  if (client) {
+    parts.push(`${client[1]}/${client[2]}`)
   } else {
     parts.push(locale === 'zh-CN' ? '未知客户端' : 'Unknown client')
   }
