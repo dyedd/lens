@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import {
   Table,
@@ -63,11 +64,15 @@ import { cn } from "@/lib/utils"
 type GatewayApiKeyForm = {
   remark: string
   enabled: boolean
+  userAgentPreset: GatewayUserAgentPreset
+  customUserAgent: string
   restrictModels: boolean
   allowedModels: string[]
   maxCostUsd: string
   expiresOn?: Date
 }
+
+type GatewayUserAgentPreset = "lens" | "codex" | "claude_code" | "custom"
 
 type GatewayModelGroupOption = {
   name: string
@@ -79,11 +84,19 @@ type GatewayModelGroupOption = {
 const EMPTY_FORM: GatewayApiKeyForm = {
   remark: "",
   enabled: true,
+  userAgentPreset: "lens",
+  customUserAgent: "",
   restrictModels: false,
   allowedModels: [],
   maxCostUsd: "0",
   expiresOn: undefined,
 }
+
+const GATEWAY_USER_AGENT_VALUES = {
+  lens: "",
+  codex: "codex-mcp-client/0.1.0",
+  claude_code: "Claude-User (claude-code; +https://support.anthropic.com/)",
+} as const
 
 const PROTOCOL_LABELS: Record<ProtocolKind, [string, string]> = {
   openai_chat: ["OpenAI Chat", "OpenAI Chat"],
@@ -193,9 +206,13 @@ function toGatewayApiKeyForm(item: GatewayApiKey | undefined, timeZone: string):
     return { ...EMPTY_FORM }
   }
   const expires = parseGatewayExpiresAt(item.expires_at, timeZone)
+  const userAgent = item.client_user_agent.trim()
+  const userAgentPreset = gatewayUserAgentPresetFromValue(userAgent)
   return {
     remark: item.remark,
     enabled: item.enabled,
+    userAgentPreset,
+    customUserAgent: userAgentPreset === "custom" ? userAgent : "",
     restrictModels: item.allowed_models.length > 0,
     allowedModels: [...item.allowed_models],
     maxCostUsd: String(item.max_cost_usd),
@@ -207,10 +224,43 @@ function toGatewayApiKeyPayload(form: GatewayApiKeyForm, timeZone: string): Gate
   return {
     remark: form.remark.trim(),
     enabled: form.enabled,
+    client_user_agent: gatewayUserAgentValue(form),
     allowed_models: form.restrictModels ? form.allowedModels : [],
     max_cost_usd: Math.max(Number(form.maxCostUsd || "0") || 0, 0),
     expires_at: formatExpiresAt(form.expiresOn, timeZone),
   }
+}
+
+function gatewayUserAgentPresetFromValue(value: string): GatewayUserAgentPreset {
+  if (!value) {
+    return "lens"
+  }
+  if (value === GATEWAY_USER_AGENT_VALUES.codex) {
+    return "codex"
+  }
+  if (value === GATEWAY_USER_AGENT_VALUES.claude_code) {
+    return "claude_code"
+  }
+  return "custom"
+}
+
+function gatewayUserAgentValue(form: GatewayApiKeyForm) {
+  if (form.userAgentPreset === "custom") {
+    return form.customUserAgent.trim()
+  }
+  return GATEWAY_USER_AGENT_VALUES[form.userAgentPreset]
+}
+
+function gatewayUserAgentLabel(locale: Locale, item: GatewayApiKey) {
+  const preset = gatewayUserAgentPresetFromValue(item.client_user_agent.trim())
+  const labels: Record<GatewayUserAgentPreset, [string, string]> = {
+    lens: ["Lens 默认", "Lens default"],
+    codex: ["Codex", "Codex"],
+    claude_code: ["Claude Code", "Claude Code"],
+    custom: ["自定义", "Custom"],
+  }
+  const [zh, en] = labels[preset]
+  return titleForLocale(locale, zh, en)
 }
 
 function formatGatewayAmount(locale: Locale, value: number) {
@@ -418,6 +468,12 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
       )
       return
     }
+    if (form.userAgentPreset === "custom" && !form.customUserAgent.trim()) {
+      toast.error(
+        titleForLocale(locale, "请输入自定义 User-Agent", "Enter a custom User-Agent")
+      )
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -496,6 +552,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         body: JSON.stringify({
           remark: item.remark,
           enabled,
+          client_user_agent: item.client_user_agent,
           allowed_models: item.allowed_models,
           max_cost_usd: item.max_cost_usd,
           expires_at: item.expires_at ?? null,
@@ -624,6 +681,9 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                         <TableCell className="min-w-0">
                           {item.allowed_models.length > 0 ? (
                             <div className="flex max-w-56 flex-wrap gap-1">
+                              <Badge variant="secondary">
+                                {gatewayUserAgentLabel(locale, item)}
+                              </Badge>
                               {item.allowed_models.slice(0, 2).map((modelName) => (
                                 <Badge key={modelName} variant="outline">
                                   {modelName}
@@ -636,9 +696,14 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                               ) : null}
                             </div>
                           ) : (
-                            <Badge variant="secondary">
-                              {titleForLocale(locale, "全部模型组", "All model groups")}
-                            </Badge>
+                            <div className="flex max-w-56 flex-wrap gap-1">
+                              <Badge variant="secondary">
+                                {gatewayUserAgentLabel(locale, item)}
+                              </Badge>
+                              <Badge variant="outline">
+                                {titleForLocale(locale, "全部模型组", "All model groups")}
+                              </Badge>
+                            </div>
                           )}
                         </TableCell>
                         <TableCell>
@@ -749,6 +814,55 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                   onCheckedChange={(checked) => updateForm("enabled", Boolean(checked))}
                 />
               </Field>
+
+              <Field>
+                <FieldLabel htmlFor="gateway-key-user-agent">
+                  {titleForLocale(locale, "客户端标识", "Client identity")}
+                </FieldLabel>
+                <Select
+                  value={form.userAgentPreset}
+                  onValueChange={(value) =>
+                    updateForm("userAgentPreset", value as GatewayUserAgentPreset)
+                  }
+                >
+                  <SelectTrigger id="gateway-key-user-agent">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="lens">
+                        {titleForLocale(locale, "Lens 默认", "Lens default")}
+                      </SelectItem>
+                      <SelectItem value="codex">Codex</SelectItem>
+                      <SelectItem value="claude_code">Claude Code</SelectItem>
+                      <SelectItem value="custom">
+                        {titleForLocale(locale, "自定义", "Custom")}
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  {titleForLocale(
+                    locale,
+                    "用于上游请求的 User-Agent；通道高级请求头可覆盖此项",
+                    "User-Agent for upstream requests; channel headers can override this"
+                  )}
+                </FieldDescription>
+              </Field>
+
+              {form.userAgentPreset === "custom" ? (
+                <Field>
+                  <FieldLabel htmlFor="gateway-key-custom-user-agent">
+                    {titleForLocale(locale, "自定义 User-Agent", "Custom User-Agent")}
+                  </FieldLabel>
+                  <Input
+                    id="gateway-key-custom-user-agent"
+                    value={form.customUserAgent}
+                    onChange={(event) => updateForm("customUserAgent", event.target.value)}
+                    placeholder="YourApp/1.0.0"
+                  />
+                </Field>
+              ) : null}
 
               <Field>
                 <FieldLabel htmlFor="gateway-key-limit">

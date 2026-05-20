@@ -799,9 +799,18 @@ class GatewayApiKeyBase(BaseModel):
 
     remark: str = ""
     enabled: bool = True
+    client_user_agent: str = Field(default="", max_length=300)
     allowed_models: list[str] = Field(default_factory=list)
     max_cost_usd: float = Field(default=0.0, ge=0.0)
     expires_at: str | None = None
+
+    @field_validator("client_user_agent")
+    @classmethod
+    def normalize_client_user_agent(cls, value: str) -> str:
+        normalized = value.strip()
+        if any(ord(char) < 32 or ord(char) == 127 for char in normalized):
+            raise ValueError("Invalid client_user_agent: control characters are not allowed")
+        return normalized
 
     @field_validator("allowed_models")
     @classmethod

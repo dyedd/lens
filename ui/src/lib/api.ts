@@ -268,6 +268,7 @@ export type GatewayApiKey = {
   remark: string
   api_key: string
   enabled: boolean
+  client_user_agent: string
   allowed_models: string[]
   max_cost_usd: number
   spent_cost_usd: number
@@ -279,6 +280,7 @@ export type GatewayApiKey = {
 export type GatewayApiKeyPayload = {
   remark: string
   enabled: boolean
+  client_user_agent: string
   allowed_models: string[]
   max_cost_usd: number
   expires_at?: string | null
@@ -341,6 +343,7 @@ export type ConfigBackupGatewayApiKey = {
   remark: string
   api_key: string
   enabled: boolean
+  client_user_agent: string
   allowed_models: string[]
   max_cost_usd: number
   expires_at?: string | null
