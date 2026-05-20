@@ -481,6 +481,7 @@ Lens 不提供自动数据库转换命令。需要从 SQLite 切换到 PostgreSQ
 | `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720`                                 | 管理后台登录有效期                              |
 | `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | 上游请求总超时                                  |
 | `LENS_CONNECT_TIMEOUT_SECONDS`   | `10`                                  | 上游连接超时                                    |
+| `LENS_WORKERS`                   | `4`                                   | Uvicorn worker 数；SQLite 和 `--reload` 会强制降为 `1` |
 | `LENS_MAX_CONNECTIONS`           | `200`                                 | HTTP 连接池最大连接数                           |
 | `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                  | HTTP 连接池 keep-alive 数                       |
 | `LENS_ANTHROPIC_VERSION`         | `2023-06-01`                          | 转发 Anthropic 请求时使用的版本头               |
@@ -494,7 +495,9 @@ Lens 不提供自动数据库转换命令。需要从 SQLite 切换到 PostgreSQ
 
 PostgreSQL 连接串格式是 `postgresql+psycopg://用户名:密码@主机:端口/数据库名`。在 1Panel 这类容器化环境里，如果 Lens 和 PostgreSQL 部署在同一台服务器，推荐把 Lens 容器和 PostgreSQL 容器放到同一个 Docker 网络，例如 1Panel 的 `1panel-network`，然后用 PostgreSQL 容器名作为主机名：`LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgresql:5432/lens`。这里第一个 `lens` 是数据库用户名，最后一个 `lens` 是数据库名；`postgresql` 是 PostgreSQL 容器名，需要按实际容器名调整。
 
-SQLite 仍适合本地测试和轻量部署；Lens 会关闭 SQLite WAL，默认只保留主数据库文件，不再主动生成 `data.db-wal` / `data.db-shm`。高并发或多用户部署建议使用 PostgreSQL。
+`LENS_WORKERS` 默认是 `4`，方便 PostgreSQL 部署直接获得多进程并发；如果使用 SQLite，或以 `lens serve --reload` 开发启动，Lens 会在启动时说明原因并强制实际 worker 数为 `1`。worker 数可以继续调大，但会按 worker 数放大每进程内的 HTTP 连接池，默认总潜在上游连接数约为 `LENS_WORKERS * LENS_MAX_CONNECTIONS`，请结合 CPU、内存、PostgreSQL 连接上限、上游限速和压测结果调整。
+
+SQLite 仍适合本地测试和轻量部署；Lens 会关闭 SQLite WAL，默认只保留主数据库文件，不再主动生成 `data.db-wal` / `data.db-shm`。SQLite 同一时间只有一个写入者，高并发或多用户部署建议使用 PostgreSQL。
 
 Lens 的业务时区不是环境变量；在 `/settings` 选择，默认 `Asia/Shanghai`。请求日志时间、今天窗口、趋势分桶、备份文件名等应用内时间显示都会使用这个设置。
 
