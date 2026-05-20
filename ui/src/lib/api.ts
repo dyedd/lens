@@ -268,7 +268,6 @@ export type GatewayApiKey = {
   remark: string
   api_key: string
   enabled: boolean
-  client_user_agent: string
   allowed_models: string[]
   max_cost_usd: number
   spent_cost_usd: number
@@ -280,7 +279,6 @@ export type GatewayApiKey = {
 export type GatewayApiKeyPayload = {
   remark: string
   enabled: boolean
-  client_user_agent: string
   allowed_models: string[]
   max_cost_usd: number
   expires_at?: string | null
@@ -343,7 +341,6 @@ export type ConfigBackupGatewayApiKey = {
   remark: string
   api_key: string
   enabled: boolean
-  client_user_agent: string
   allowed_models: string[]
   max_cost_usd: number
   expires_at?: string | null
@@ -353,6 +350,7 @@ export type ConfigBackupGatewayApiKey = {
 
 export type ConfigBackupRequestLog = {
   protocol: ProtocolKind
+  user_agent: string
   requested_group_name?: string | null
   resolved_group_name?: string | null
   upstream_model_name?: string | null
@@ -577,6 +575,7 @@ export type OverviewDashboardData = {
 export type RequestLogItem = {
   id: number
   protocol: ProtocolKind
+  user_agent: string
   requested_group_name?: string | null
   resolved_group_name?: string | null
   upstream_model_name?: string | null
