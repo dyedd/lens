@@ -33,10 +33,6 @@ def is_sqlite_url(database_url: str) -> bool:
     return normalize_async_database_url(database_url).startswith("sqlite")
 
 
-def is_postgresql_url(database_url: str) -> bool:
-    return normalize_async_database_url(database_url).startswith("postgresql")
-
-
 def create_engine(database_url: str) -> AsyncEngine:
     database_url = normalize_async_database_url(database_url)
     connect_args: dict[str, object] = {}

@@ -464,12 +464,9 @@ lens db revision -m "describe your change"    # create a migration
 lens db current                               # show current revision
 lens db history                               # show migration history
 lens db stamp head                            # mark database as latest
-lens db migrate-sqlite-to-postgres \
-  --sqlite-url sqlite+aiosqlite:///./data/data.db \
-  --postgres-url postgresql+psycopg://lens:lens@127.0.0.1:5432/lens
 ```
 
-`migrate-sqlite-to-postgres` upgrades both the source SQLite schema and the target PostgreSQL schema first, then copies the full SQLite dataset, including admin users, sites, model groups, prices, settings, cron jobs, stats, gateway API keys, and request logs. It fails by default when the target already contains Lens business data; pass `--replace` to overwrite. Pass `--skip-request-logs` to migrate configuration and stats without request logs.
+Lens does not provide an automatic database conversion command. To move from SQLite to PostgreSQL, export a configuration backup from the console first, switch `LENS_DATABASE_URL` to PostgreSQL, start Lens, then import the backup from `/backups`. Request logs and statistics are migrated only when included in the backup export.
 
 ## Environment Variables
 
@@ -495,6 +492,8 @@ The backend listen address and port are controlled by `LENS_HOST` and `LENS_PORT
 
 `docker-compose.yml` does not start a database service. The database type is entirely selected by `LENS_DATABASE_URL`. The default value is `sqlite+aiosqlite:////app/data/data.db`; to use an externally managed PostgreSQL database, set a URL such as `LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgres.example.com:5432/lens` in `.env`.
 
+The PostgreSQL URL format is `postgresql+psycopg://username:password@host:port/database`. In containerized environments such as 1Panel, if Lens and PostgreSQL run on the same server, put both containers in the same Docker network, such as 1Panel's `1panel-network`, and use the PostgreSQL container name as the host: `LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgresql:5432/lens`. The first `lens` is the database username, the last `lens` is the database name, and `postgresql` is the PostgreSQL container name; adjust it to your actual container name.
+
 SQLite remains supported for local testing and lightweight deployments. Lens disables SQLite WAL, so it keeps the main database file without intentionally creating `data.db-wal` / `data.db-shm`. Use PostgreSQL for high-concurrency or multi-user deployments.
 
 Lens application time zone is not an environment variable. Choose it in `/settings`; the default is `Asia/Shanghai`. Request log timestamps, today windows, trend buckets, backup filenames, and other in-app time displays use this setting.
@@ -514,6 +513,8 @@ The management console can export and import configuration bundles, including:
 - Optional statistics snapshots and request logs
 
 Back up the current data directory before importing a configuration bundle.
+
+When moving from SQLite to PostgreSQL, use backup export/import for business data migration. Lens does not automatically convert databases on startup.
 
 ## Security Notes
 
