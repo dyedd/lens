@@ -159,6 +159,28 @@ function formatMaybeCount(value: number, pending: boolean) {
   return formatCount(value)
 }
 
+function formatUserAgentDisplay(value: string, locale: 'zh-CN' | 'en-US') {
+  const raw = value.trim()
+  const parts: string[] = []
+  const codexTuiMatch = raw.match(/\bcodex-tui\/([^\s;)]+)/i)
+
+  if (codexTuiMatch) {
+    parts.push(`Codex TUI ${codexTuiMatch[1]}`)
+  } else {
+    parts.push(locale === 'zh-CN' ? '未知客户端' : 'Unknown client')
+  }
+
+  if (/\bWindows\b/i.test(raw)) {
+    parts.push('Windows')
+  } else if (/\bMac OS X\b|\bmacOS\b|\bMacintosh\b/i.test(raw)) {
+    parts.push('macOS')
+  } else if (/\bLinux\b/i.test(raw)) {
+    parts.push('Linux')
+  }
+
+  return parts.join(' · ')
+}
+
 function shortenGatewayKeyId(value?: string | null) {
   if (!value) return ''
   if (value.length <= 10) return value
@@ -611,16 +633,29 @@ function RequestMeta({
   icon,
   value,
   className,
+  tooltip,
 }: {
   icon: React.ReactNode
   value: string
   className?: string
+  tooltip?: string
 }) {
-  return (
-    <div className={cn('flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full bg-muted/[0.22] px-3 text-xs font-medium text-muted-foreground', className)} title={value}>
+  const meta = (
+    <div className={cn('flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full bg-muted/[0.22] px-3 text-xs font-medium text-muted-foreground', className)}>
       <span className="shrink-0 text-muted-foreground/90">{icon}</span>
       <span className="truncate leading-none">{value}</span>
     </div>
+  )
+
+  if (!tooltip) return meta
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{meta}</TooltipTrigger>
+      <TooltipContent className="max-w-sm whitespace-pre-wrap break-words" side="bottom" align="start">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -810,7 +845,14 @@ function RequestCard({
               <RequestMeta icon={<Clock3 size={13} />} value={formatLogDateTime(item.created_at, locale, timeZone)} className="pl-0" />
               <RequestMeta icon={<Waypoints size={13} />} value={item.channel_name || item.channel_id || 'n/a'} />
               {item.gateway_key_id ? <RequestMeta icon={<KeyRound size={13} />} value={formatGatewayKeyLabel(item, locale)} /> : null}
-              {item.user_agent ? <RequestMeta icon={<Fingerprint size={13} />} value={item.user_agent} className="sm:max-w-[360px]" /> : null}
+              {item.user_agent ? (
+                <RequestMeta
+                  icon={<Fingerprint size={13} />}
+                  value={formatUserAgentDisplay(item.user_agent, locale)}
+                  tooltip={item.user_agent}
+                  className="sm:max-w-[360px]"
+                />
+              ) : null}
               {secondaryModelName ? <RequestMeta icon={<ServerCog size={13} />} value={secondaryModelName} /> : null}
             </div>
           </div>
