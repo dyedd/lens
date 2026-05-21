@@ -115,74 +115,12 @@ type GroupRow = ModelGroup & {
   is_route_group: boolean;
 };
 
-const MODEL_SERIES_PRESETS = [
-  {
-    key: "openai",
-    zh: "OpenAI",
-    en: "OpenAI",
-    sampleModel: "gpt-5.4",
-    prefixes: ["gpt-", "o1", "o3", "o4", "chatgpt", "openai", "text-embedding"],
-  },
-  {
-    key: "claude",
-    zh: "Claude",
-    en: "Claude",
-    sampleModel: "claude-opus-4-6",
-    prefixes: ["claude", "anthropic"],
-  },
-  {
-    key: "gemini",
-    zh: "Gemini",
-    en: "Gemini",
-    sampleModel: "gemini-2.5-pro",
-    prefixes: ["gemini", "gemma", "google"],
-  },
-  {
-    key: "deepseek",
-    zh: "DeepSeek",
-    en: "DeepSeek",
-    sampleModel: "deepseek-v3",
-    prefixes: ["deepseek"],
-  },
-  {
-    key: "qwen",
-    zh: "Qwen",
-    en: "Qwen",
-    sampleModel: "qwen-max",
-    prefixes: ["qwen", "qwq", "alibaba"],
-  },
-  {
-    key: "kimi",
-    zh: "Kimi",
-    en: "Kimi",
-    sampleModel: "kimi-k2",
-    prefixes: ["moonshot", "kimi"],
-  },
-  {
-    key: "glm",
-    zh: "GLM",
-    en: "GLM",
-    sampleModel: "glm-4.5",
-    prefixes: ["glm", "chatglm", "zhipu", "z-ai"],
-  },
-  {
-    key: "minimax",
-    zh: "MiniMax",
-    en: "MiniMax",
-    sampleModel: "minimax-text-01",
-    prefixes: ["minimax", "abab", "minmax"],
-  },
-  {
-    key: "other",
-    zh: "其他",
-    en: "Other",
-    sampleModel: "other",
-    prefixes: [],
-  },
-] as const;
-
-type ModelSeriesKey = (typeof MODEL_SERIES_PRESETS)[number]["key"];
-type SelectedSeries = "all" | ModelSeriesKey;
+type ModelPrefixOption = {
+  key: string;
+  label: string;
+  sampleModel: string;
+};
+type SelectedModelPrefix = "all" | string;
 
 const emptyForm: FormState = {
   name: "",
@@ -236,6 +174,16 @@ function matchesCandidateSearch(
   return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
 }
 
+function getModelPrefix(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const match = /^[a-z0-9]+/.exec(normalized);
+  return match?.[0] || normalized;
+}
+
+function formatModelPrefixLabel(value: string) {
+  return value ? value[0].toUpperCase() + value.slice(1) : value;
+}
+
 function candidateToFormItem(item: ModelGroupCandidateItem): FormItem {
   return {
     channel_id: item.channel_id,
@@ -247,25 +195,6 @@ function candidateToFormItem(item: ModelGroupCandidateItem): FormItem {
     model_name: item.model_name,
     enabled: true,
   };
-}
-
-function normalizeModelName(value: string | null | undefined) {
-  return (value || "").trim().toLowerCase();
-}
-
-function getSeriesPreset(name: string) {
-  const normalized = normalizeModelName(name);
-  return (
-    MODEL_SERIES_PRESETS.find(
-      (item) =>
-        item.key !== "other" &&
-        item.prefixes.some((prefix) => normalized.startsWith(prefix)),
-    ) ?? MODEL_SERIES_PRESETS.find((item) => item.key === "other")!
-  );
-}
-
-function getSeriesKey(group: Pick<ModelGroup, "name">): ModelSeriesKey {
-  return getSeriesPreset(group.name).key;
 }
 
 const strategyOptions: Array<{
@@ -741,9 +670,11 @@ function SeriesChip({
   return (
     <button
       type="button"
+      aria-label={label}
+      title={label}
       onClick={onClick}
       className={cn(
-        "group flex min-w-[108px] snap-start flex-col items-center justify-center gap-2 rounded-[22px] border bg-card px-4 py-4 text-center transition-all",
+        "group flex min-w-[76px] snap-start items-center justify-center rounded-[22px] border bg-card px-4 py-4 text-center transition-all",
         selected
           ? "border-primary bg-primary/[0.05] shadow-[0_0_0_1px_rgba(37,99,235,0.08)]"
           : "border-border/70 hover:border-primary/25 hover:bg-muted/20",
@@ -764,7 +695,6 @@ function SeriesChip({
           <ModelAvatar name={sampleModel} size={28} />
         )}
       </span>
-      <div className="text-sm font-medium text-foreground">{label}</div>
     </button>
   );
 }
@@ -772,7 +702,8 @@ function SeriesChip({
 export function GroupsScreen() {
   const queryClient = useQueryClient();
   const { locale } = useI18n();
-  const [selectedSeries, setSelectedSeries] = useState<SelectedSeries>("all");
+  const [selectedModelPrefix, setSelectedModelPrefix] =
+    useState<SelectedModelPrefix>("all");
   const [search, setSearch] = useState("");
   const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
     "all",
@@ -799,8 +730,6 @@ export function GroupsScreen() {
   } | null>(null);
   const [showEnabledOnly, setShowEnabledOnly] = useState(false);
   const [syncingPrices, setSyncingPrices] = useState(false);
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-
   const { data: groups, isLoading } = useQuery({
     queryKey: ["groups"],
     queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
@@ -904,45 +833,49 @@ export function GroupsScreen() {
     [editingId, form.protocol, groups, locale],
   );
 
-  const seriesOptions = useMemo(() => {
-    const availableKeys = new Set<ModelSeriesKey>();
+  const modelPrefixOptions = useMemo(() => {
+    const optionsByPrefix = new Map<string, ModelPrefixOption>();
     for (const group of groupRows) {
-      availableKeys.add(getSeriesKey(group));
+      const prefix = getModelPrefix(group.name);
+      if (prefix && !optionsByPrefix.has(prefix)) {
+        optionsByPrefix.set(prefix, {
+          key: prefix,
+          label: formatModelPrefixLabel(prefix),
+          sampleModel: group.name,
+        });
+      }
     }
 
-    const available = MODEL_SERIES_PRESETS.filter(
-      (item) => item.key !== "other" && availableKeys.has(item.key),
+    const options = Array.from(optionsByPrefix.values()).sort((left, right) =>
+      left.label.localeCompare(right.label, locale),
     );
-    if (availableKeys.has("other")) {
-      const other = MODEL_SERIES_PRESETS.find((item) => item.key === "other");
-      if (other) {
-        available.push(other);
-      }
+    if (!options.length) {
+      return [];
     }
 
     return [
       {
         key: "all" as const,
-        zh: "全部",
-        en: "All",
+        label: locale === "zh-CN" ? "全部" : "All",
         sampleModel: "all",
       },
-      ...available,
+      ...options,
     ];
-  }, [groupRows]);
+  }, [groupRows, locale]);
+  const hasModelPrefixOptions = modelPrefixOptions.length > 0;
 
-  const effectiveSelectedSeries = seriesOptions.some(
-    (item) => item.key === selectedSeries,
+  const effectiveSelectedModelPrefix = modelPrefixOptions.some(
+    (item) => item.key === selectedModelPrefix,
   )
-    ? selectedSeries
+    ? selectedModelPrefix
     : "all";
 
   const visibleGroups = useMemo<GroupRow[]>(() => {
     const keyword = search.trim().toLowerCase();
     const filtered = groupRows.filter((group) => {
       if (
-        effectiveSelectedSeries !== "all" &&
-        getSeriesKey(group) !== effectiveSelectedSeries
+        effectiveSelectedModelPrefix !== "all" &&
+        getModelPrefix(group.name) !== effectiveSelectedModelPrefix
       )
         return false;
       if (protocolFilter !== "all" && group.protocol !== protocolFilter)
@@ -977,7 +910,7 @@ export function GroupsScreen() {
       );
     });
   }, [
-    effectiveSelectedSeries,
+    effectiveSelectedModelPrefix,
     groupRows,
     locale,
     protocolFilter,
@@ -986,7 +919,7 @@ export function GroupsScreen() {
     strategyFilter,
   ]);
   const activeFilterCount = [
-    effectiveSelectedSeries !== "all",
+    effectiveSelectedModelPrefix !== "all",
     Boolean(search.trim()),
     protocolFilter !== "all",
     strategyFilter !== "all",
@@ -1559,7 +1492,7 @@ export function GroupsScreen() {
   }
 
   function resetFilters() {
-    setSelectedSeries("all");
+    setSelectedModelPrefix("all");
     setSearch("");
     setProtocolFilter("all");
     setStrategyFilter("all");
@@ -1602,44 +1535,46 @@ export function GroupsScreen() {
         </div>
       </div>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
         <div className="order-2 grid gap-4 xl:order-1">
-          <div className="rounded-2xl border bg-card px-4 py-3 sm:px-5 sm:py-4">
-            <div className="flex items-center justify-between gap-3 sm:mb-3">
-              <div>
-                <div className="text-base font-semibold text-foreground">
-                  {locale === "zh-CN" ? "选择模型系列" : "Choose model series"}
+          {hasModelPrefixOptions ? (
+            <div className="rounded-2xl border bg-card px-4 py-3 sm:px-5 sm:py-4">
+              <div className="flex items-center justify-between gap-3 sm:mb-3">
+                <div>
+                  <div className="text-base font-semibold text-foreground">
+                    {locale === "zh-CN"
+                      ? "选择模型系列"
+                      : "Choose model series"}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <NativeSelect
-              className="mt-3 w-full sm:hidden"
-              value={effectiveSelectedSeries}
-              onChange={(event) =>
-                setSelectedSeries(event.target.value as SelectedSeries)
-              }
-            >
-              {seriesOptions.map((option) => (
-                <NativeSelectOption key={option.key} value={option.key}>
-                  {locale === "zh-CN" ? option.zh : option.en}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              <NativeSelect
+                className="mt-3 w-full sm:hidden"
+                value={effectiveSelectedModelPrefix}
+                onChange={(event) => setSelectedModelPrefix(event.target.value)}
+              >
+                {modelPrefixOptions.map((option) => (
+                  <NativeSelectOption key={option.key} value={option.key}>
+                    {option.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
 
-            <div className="hidden snap-x gap-3 overflow-x-auto pb-1 sm:flex">
-              {seriesOptions.map((option) => (
-                <SeriesChip
-                  key={option.key}
-                  selected={effectiveSelectedSeries === option.key}
-                  label={locale === "zh-CN" ? option.zh : option.en}
-                  sampleModel={option.sampleModel}
-                  isAll={option.key === "all"}
-                  onClick={() => setSelectedSeries(option.key)}
-                />
-              ))}
+              <div className="hidden snap-x gap-3 overflow-x-auto pb-1 sm:flex">
+                {modelPrefixOptions.map((option) => (
+                  <SeriesChip
+                    key={option.key}
+                    selected={effectiveSelectedModelPrefix === option.key}
+                    label={option.label}
+                    sampleModel={option.sampleModel}
+                    isAll={option.key === "all"}
+                    onClick={() => setSelectedModelPrefix(option.key)}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-18rem)]">
             <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
@@ -1857,7 +1792,7 @@ export function GroupsScreen() {
                 </ItemGroup>
               ) : (
                 <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-                  {effectiveSelectedSeries !== "all" ||
+                  {effectiveSelectedModelPrefix !== "all" ||
                   search.trim() ||
                   protocolFilter !== "all" ||
                   strategyFilter !== "all"
@@ -1875,7 +1810,7 @@ export function GroupsScreen() {
 
         <aside className="order-1 xl:order-2">
           <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary/[0.08] text-primary">
                   <Filter size={16} />
@@ -1891,155 +1826,125 @@ export function GroupsScreen() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetFilters}
-                  disabled={!activeFilterCount && sortBy === "members-desc"}
-                >
-                  {locale === "zh-CN" ? "清空" : "Clear"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="xl:hidden"
-                  onClick={() => setMobileFiltersOpen((current) => !current)}
-                  aria-expanded={mobileFiltersOpen}
-                  aria-label={
-                    locale === "zh-CN" ? "展开筛选" : "Toggle filters"
-                  }
-                >
-                  <ChevronDown
-                    className={cn(
-                      "transition-transform",
-                      mobileFiltersOpen && "rotate-180",
-                    )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+                disabled={!activeFilterCount && sortBy === "members-desc"}
+              >
+                {locale === "zh-CN" ? "清空" : "Clear"}
+              </Button>
+            </div>
+
+            <FieldSet className="gap-4">
+              <FieldLegend>
+                {locale === "zh-CN" ? "筛选条件" : "Refine results"}
+              </FieldLegend>
+              <FieldGroup className="gap-4">
+                <Field>
+                  <FieldLabel>
+                    {locale === "zh-CN" ? "关键词" : "Keyword"}
+                  </FieldLabel>
+                  <ToolbarSearchInput
+                    value={search}
+                    onChange={setSearch}
+                    onClear={() => setSearch("")}
+                    placeholder={
+                      locale === "zh-CN"
+                        ? "模型组 / 渠道 / 模型"
+                        : "Group / channel / model"
+                    }
+                    className="max-w-none"
                   />
-                </Button>
-              </div>
-            </div>
+                </Field>
 
-            <div
-              className={cn("mt-4", !mobileFiltersOpen && "hidden xl:block")}
-            >
-              <FieldSet className="gap-4">
-                <FieldLegend>
-                  {locale === "zh-CN" ? "筛选条件" : "Refine results"}
-                </FieldLegend>
-                <FieldGroup className="gap-4">
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "关键词" : "Keyword"}
-                    </FieldLabel>
-                    <ToolbarSearchInput
-                      value={search}
-                      onChange={setSearch}
-                      onClear={() => setSearch("")}
-                      placeholder={
-                        locale === "zh-CN"
-                          ? "模型组 / 渠道 / 模型"
-                          : "Group / channel / model"
-                      }
-                      className="max-w-none"
-                    />
-                  </Field>
-
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "协议" : "Protocol"}
-                    </FieldLabel>
-                    <NativeSelect
-                      value={protocolFilter}
-                      className={selectClassName}
-                      onChange={(event) =>
-                        setProtocolFilter(
-                          event.target.value as "all" | ProtocolKind,
-                        )
-                      }
-                    >
-                      <NativeSelectOption value="all">
-                        {locale === "zh-CN" ? "全部协议" : "All protocols"}
+                <Field>
+                  <FieldLabel>
+                    {locale === "zh-CN" ? "协议" : "Protocol"}
+                  </FieldLabel>
+                  <NativeSelect
+                    value={protocolFilter}
+                    className="w-full"
+                    onChange={(event) =>
+                      setProtocolFilter(
+                        event.target.value as "all" | ProtocolKind,
+                      )
+                    }
+                  >
+                    <NativeSelectOption value="all">
+                      {locale === "zh-CN" ? "全部协议" : "All protocols"}
+                    </NativeSelectOption>
+                    {protocolOptions(locale).map((option) => (
+                      <NativeSelectOption
+                        key={option.value}
+                        value={option.value}
+                      >
+                        {option.label}
                       </NativeSelectOption>
-                      {protocolOptions(locale).map((option) => (
-                        <NativeSelectOption
-                          key={option.value}
-                          value={option.value}
-                        >
-                          {option.label}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
-                  </Field>
+                    ))}
+                  </NativeSelect>
+                </Field>
 
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "策略" : "Strategy"}
-                    </FieldLabel>
-                    <ToggleGroup
-                      type="single"
-                      value={strategyFilter}
-                      onValueChange={(value) => {
-                        if (value) {
-                          setStrategyFilter(value as "all" | RoutingStrategy);
+                <Field>
+                  <FieldLabel>
+                    {locale === "zh-CN" ? "策略" : "Strategy"}
+                  </FieldLabel>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {[
+                      {
+                        key: "all" as const,
+                        label: locale === "zh-CN" ? "全部" : "All",
+                      },
+                      {
+                        key: "round_robin" as const,
+                        label: locale === "zh-CN" ? "轮询" : "Round Robin",
+                      },
+                      {
+                        key: "failover" as const,
+                        label: locale === "zh-CN" ? "故障转移" : "Failover",
+                      },
+                    ].map((option) => (
+                      <Button
+                        key={option.key}
+                        type="button"
+                        variant={
+                          strategyFilter === option.key ? "default" : "outline"
                         }
-                      }}
-                      variant="outline"
-                      size="default"
-                      spacing={1}
-                      className="grid w-full grid-cols-3"
-                    >
-                      <ToggleGroupItem
-                        value="all"
-                        className="w-full truncate px-1.5"
+                        size="sm"
+                        onClick={() => setStrategyFilter(option.key)}
                       >
-                        {locale === "zh-CN" ? "全部" : "All"}
-                      </ToggleGroupItem>
-                      <ToggleGroupItem
-                        value="round_robin"
-                        className="w-full truncate px-1.5"
-                      >
-                        {locale === "zh-CN" ? "轮询" : "Round Robin"}
-                      </ToggleGroupItem>
-                      <ToggleGroupItem
-                        value="failover"
-                        className="w-full truncate px-1.5"
-                      >
-                        {locale === "zh-CN" ? "故障转移" : "Failover"}
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  </Field>
+                        {option.label}
+                      </Button>
+                    ))}
+                  </div>
+                </Field>
 
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "排序" : "Sort"}
-                    </FieldLabel>
-                    <NativeSelect
-                      value={sortBy}
-                      className={selectClassName}
-                      onChange={(event) =>
-                        setSortBy(event.target.value as GroupSort)
-                      }
-                    >
-                      <NativeSelectOption value="members-desc">
-                        {locale === "zh-CN" ? "成员优先" : "Members first"}
-                      </NativeSelectOption>
-                      <NativeSelectOption value="enabled-desc">
-                        {locale === "zh-CN" ? "启用优先" : "Enabled first"}
-                      </NativeSelectOption>
-                      <NativeSelectOption value="name-asc">
-                        {locale === "zh-CN" ? "名称 A-Z" : "Name A-Z"}
-                      </NativeSelectOption>
-                      <NativeSelectOption value="name-desc">
-                        {locale === "zh-CN" ? "名称 Z-A" : "Name Z-A"}
-                      </NativeSelectOption>
-                    </NativeSelect>
-                  </Field>
-                </FieldGroup>
-              </FieldSet>
-            </div>
+                <Field>
+                  <FieldLabel>{locale === "zh-CN" ? "排序" : "Sort"}</FieldLabel>
+                  <NativeSelect
+                    value={sortBy}
+                    className="w-full"
+                    onChange={(event) =>
+                      setSortBy(event.target.value as GroupSort)
+                    }
+                  >
+                    <NativeSelectOption value="members-desc">
+                      {locale === "zh-CN" ? "成员优先" : "Members first"}
+                    </NativeSelectOption>
+                    <NativeSelectOption value="enabled-desc">
+                      {locale === "zh-CN" ? "启用优先" : "Enabled first"}
+                    </NativeSelectOption>
+                    <NativeSelectOption value="name-asc">
+                      {locale === "zh-CN" ? "名称 A-Z" : "Name A-Z"}
+                    </NativeSelectOption>
+                    <NativeSelectOption value="name-desc">
+                      {locale === "zh-CN" ? "名称 Z-A" : "Name Z-A"}
+                    </NativeSelectOption>
+                  </NativeSelect>
+                </Field>
+              </FieldGroup>
+            </FieldSet>
           </div>
         </aside>
       </div>

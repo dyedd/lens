@@ -157,7 +157,7 @@ lens dev
 也可以分开启动：
 
 ```bash
-lens serve --reload
+lens serve
 
 cd ui
 pnpm dev
