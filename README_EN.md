@@ -222,7 +222,7 @@ Install the backend:
 pip install -e ".[dev]"
 ```
 
-Install frontend dependencies:
+Install frontend dependencies (requires Node.js; if pnpm is not active, run `corepack enable` first to activate the version pinned in `ui/package.json` via the `packageManager` field):
 
 ```bash
 cd ui

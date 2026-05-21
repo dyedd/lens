@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import asyncio
 import logging
@@ -135,7 +134,7 @@ class CronjobRunner:
         acquired = await self._store.acquire_cronjob(
             task_id,
             owner=self._owner,
-            lease_seconds=max(record.interval_hours * 60 * 60, 600),
+            lease_seconds=record.interval_hours * 60 * 60,
             require_enabled=not manual,
             require_due=not manual,
         )

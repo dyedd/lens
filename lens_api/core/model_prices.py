@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from typing import Any
 
@@ -19,12 +18,6 @@ def _has_price_value(price_payload: dict[str, float]) -> bool:
     return any(price_payload[field] > 0 for field in PRICE_PAYLOAD_FIELDS)
 
 
-def _should_replace_price_payload(existing: dict[str, float] | None, candidate: dict[str, float]) -> bool:
-    if existing is None:
-        return True
-    return not _has_price_value(existing) and _has_price_value(candidate)
-
-
 def build_models_dev_price_index(payload: dict[str, Any]) -> dict[str, dict[str, float]]:
     index: dict[str, dict[str, float]] = {}
     for provider_id, provider_payload in payload.items():
@@ -34,7 +27,7 @@ def build_models_dev_price_index(payload: dict[str, Any]) -> dict[str, dict[str,
         if not isinstance(models, dict):
             continue
 
-        normalized_provider_id = normalize_model_key(str(provider_id))
+        normalized_provider_id = normalize_model_key(provider_id)
         for model_id, model_payload in models.items():
             if not isinstance(model_payload, dict):
                 continue
@@ -42,22 +35,21 @@ def build_models_dev_price_index(payload: dict[str, Any]) -> dict[str, dict[str,
             if not isinstance(cost_payload, dict):
                 continue
 
-            input_price = float(cost_payload.get('input') or 0.0)
-            output_price = float(cost_payload.get('output') or 0.0)
-            cache_read_price = float(cost_payload.get('cache_read') or 0.0)
-            cache_write_price = float(cost_payload.get('cache_write') or 0.0)
             aliases = {
                 normalize_model_key(str(model_id)),
                 normalize_model_key(f'{normalized_provider_id}/{model_id}'),
             }
             price_payload = {
-                'input_price_per_million': input_price,
-                'output_price_per_million': output_price,
-                'cache_read_price_per_million': cache_read_price,
-                'cache_write_price_per_million': cache_write_price,
+                'input_price_per_million': float(cost_payload.get('input') or 0.0),
+                'output_price_per_million': float(cost_payload.get('output') or 0.0),
+                'cache_read_price_per_million': float(cost_payload.get('cache_read') or 0.0),
+                'cache_write_price_per_million': float(cost_payload.get('cache_write') or 0.0),
             }
             for alias in aliases:
-                if alias and _should_replace_price_payload(index.get(alias), price_payload):
+                if not alias:
+                    continue
+                existing = index.get(alias)
+                if existing is None or (not _has_price_value(existing) and _has_price_value(price_payload)):
                     index[alias] = price_payload
     return index
 

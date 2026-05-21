@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import json
 import time
@@ -7,7 +6,6 @@ from typing import Any, AsyncIterator
 
 from ._shared import (
     FINISH_REASON_CHAT_TO_RESPONSES,
-    chat_tool_calls_to_anthropic_content,
     format_sse_event,
     responses_input_to_chat_messages,
     responses_tools_to_chat_tools,
@@ -113,11 +111,10 @@ async def chat_stream_to_responses_stream(
     input_tokens = 0
     output_tokens = 0
     text_started = False
-    tool_calls_by_idx: dict[int, dict[str, Any]] = {}
+    tool_calls_by_idx: dict[int, int] = {}
     next_output_index = 0
     finish_reason: str | None = None
 
-    # response.created
     yield format_sse_event(
         "response.created",
         {
@@ -214,12 +211,7 @@ async def chat_stream_to_responses_stream(
                             call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:24]}"
                             oi = next_output_index
                             next_output_index += 1
-                            tool_calls_by_idx[tc_idx] = {
-                                "output_index": oi,
-                                "call_id": call_id,
-                                "name": func.get("name", ""),
-                                "arguments": "",
-                            }
+                            tool_calls_by_idx[tc_idx] = oi
                             yield format_sse_event(
                                 "response.output_item.added",
                                 {
@@ -237,18 +229,15 @@ async def chat_stream_to_responses_stream(
                             )
                         args_delta = (tc.get("function") or {}).get("arguments", "")
                         if args_delta:
-                            info = tool_calls_by_idx[tc_idx]
-                            info["arguments"] += args_delta
                             yield format_sse_event(
                                 "response.function_call_arguments.delta",
                                 {
                                     "type": "response.function_call_arguments.delta",
-                                    "output_index": info["output_index"],
+                                    "output_index": tool_calls_by_idx[tc_idx],
                                     "delta": args_delta,
                                 },
                             )
 
-    # finalize
     status = FINISH_REASON_CHAT_TO_RESPONSES.get(finish_reason, "completed")
     total = input_tokens + output_tokens
     yield format_sse_event(

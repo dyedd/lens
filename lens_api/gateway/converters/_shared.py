@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import json
 from typing import Any
@@ -26,9 +25,6 @@ def anthropic_content_to_chat_messages(
         role = msg.get("role", "user")
         content = msg.get("content")
 
-        if isinstance(content, str):
-            result.append({"role": role, "content": content})
-            continue
         if not isinstance(content, list):
             result.append({"role": role, "content": content})
             continue

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from enum import Enum
 import re
@@ -8,9 +7,11 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
+class StrictBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 def normalize_base_url(value: Any) -> Any:
-    if value is None:
-        return value
     text = str(value).strip()
     parsed = urlsplit(text)
     path = parsed.path.rstrip("/")
@@ -18,29 +19,10 @@ def normalize_base_url(value: Any) -> Any:
         path = path[:-7]
     elif path.endswith("/v1"):
         path = path[:-3]
-    return _urlunsplit_preserving_empty_components(
-        text,
-        parsed.scheme,
-        parsed.netloc,
-        path,
-        parsed.query,
-        parsed.fragment,
-    )
-
-
-def _urlunsplit_preserving_empty_components(
-    source: str,
-    scheme: str,
-    netloc: str,
-    path: str,
-    query: str,
-    fragment: str,
-) -> str:
-    rebuilt = urlunsplit((scheme, netloc, path, query, fragment))
-    before_fragment, fragment_separator, _ = source.partition("#")
-    has_empty_query = "?" in before_fragment and query == ""
-    has_empty_fragment = bool(fragment_separator) and fragment == ""
-
+    rebuilt = urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment))
+    before_fragment, fragment_separator, _ = text.partition("#")
+    has_empty_query = "?" in before_fragment and parsed.query == ""
+    has_empty_fragment = bool(fragment_separator) and parsed.fragment == ""
     if has_empty_query:
         if "#" in rebuilt:
             rebuilt = rebuilt.replace("#", "?#", 1)
@@ -124,9 +106,7 @@ class ModelGroupSyncFilterMode(str, Enum):
     REGEX = "regex"
 
 
-class ChannelConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ChannelConfig(StrictBaseModel):
     id: str
     name: str
     protocol: ProtocolKind
@@ -144,9 +124,7 @@ class ChannelConfig(BaseModel):
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
 
-class SiteBaseUrl(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteBaseUrl(StrictBaseModel):
     id: str
     url: HttpUrl
     name: str = ""
@@ -156,9 +134,7 @@ class SiteBaseUrl(BaseModel):
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
 
-class SiteBaseUrlInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteBaseUrlInput(StrictBaseModel):
     id: str | None = None
     url: HttpUrl
     name: str = ""
@@ -167,9 +143,7 @@ class SiteBaseUrlInput(BaseModel):
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
 
-class SiteCredential(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteCredential(StrictBaseModel):
     id: str
     name: str
     api_key: str = Field(min_length=1)
@@ -177,34 +151,26 @@ class SiteCredential(BaseModel):
     sort_order: int = Field(default=0, ge=0)
 
 
-class SiteCredentialInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteCredentialInput(StrictBaseModel):
     id: str | None = None
     name: str
     api_key: str = Field(min_length=1)
     enabled: bool = True
 
 
-class SiteProtocolCredentialBinding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteProtocolCredentialBinding(StrictBaseModel):
     credential_id: str
     credential_name: str = ""
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
 
 
-class SiteProtocolCredentialBindingInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteProtocolCredentialBindingInput(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     enabled: bool = True
 
 
-class SiteModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteModel(StrictBaseModel):
     id: str
     credential_id: str
     credential_name: str = ""
@@ -213,18 +179,14 @@ class SiteModel(BaseModel):
     sort_order: int = Field(default=0, ge=0)
 
 
-class SiteModelInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteModelInput(StrictBaseModel):
     id: str | None = None
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     enabled: bool = True
 
 
-class SiteProtocolConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteProtocolConfig(StrictBaseModel):
     id: str
     protocol: ProtocolKind
     enabled: bool = True
@@ -237,9 +199,7 @@ class SiteProtocolConfig(BaseModel):
     models: list[SiteModel] = Field(default_factory=list)
 
 
-class SiteProtocolConfigInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteProtocolConfigInput(StrictBaseModel):
     id: str | None = None
     protocol: ProtocolKind
     enabled: bool = True
@@ -263,9 +223,7 @@ class SiteProtocolConfigInput(BaseModel):
         return pattern
 
 
-class SiteConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteConfig(StrictBaseModel):
     id: str
     name: str
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
@@ -273,9 +231,7 @@ class SiteConfig(BaseModel):
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
 
 
-class SiteRuntimeSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteRuntimeSummary(StrictBaseModel):
     site_id: str
     site_name: str
     recent_request_count: int = 0
@@ -288,43 +244,33 @@ class SiteRuntimeSummary(BaseModel):
     channel_summaries: list["SiteChannelRuntimeSummary"] = Field(default_factory=list)
 
 
-class SiteChannelRuntimeSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteChannelRuntimeSummary(StrictBaseModel):
     channel_id: str
     health_buckets: list["SiteChannelHealthBucket"] = Field(default_factory=list)
 
 
-class SiteChannelHealthBucket(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteChannelHealthBucket(StrictBaseModel):
     started_at: str
     ended_at: str
     success_count: int = 0
     total_count: int = 0
 
 
-class SiteCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteCreate(StrictBaseModel):
     name: str
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
 
 
-class SiteUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteUpdate(StrictBaseModel):
     name: str
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
 
 
-class SiteModelFetchRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteModelFetchRequest(StrictBaseModel):
     protocol: ProtocolKind
     base_url: HttpUrl
     headers: dict[str, str] = Field(default_factory=dict)
@@ -347,25 +293,19 @@ class SiteModelFetchRequest(BaseModel):
         return pattern
 
 
-class SiteModelFetchItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteModelFetchItem(StrictBaseModel):
     credential_id: str
     credential_name: str = ""
     model_name: str
 
 
-class SiteModelTestCredential(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteModelTestCredential(StrictBaseModel):
     id: str = Field(min_length=1)
     name: str = ""
     api_key: str = Field(min_length=1)
 
 
-class SiteModelTestRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteModelTestRequest(StrictBaseModel):
     protocol: ProtocolKind
     base_url: HttpUrl
     headers: dict[str, str] = Field(default_factory=dict)
@@ -386,9 +326,7 @@ class SiteModelTestRequest(BaseModel):
         return normalized
 
 
-class SiteModelTestResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SiteModelTestResult(StrictBaseModel):
     success: bool
     status_code: int | None = None
     latency_ms: int = Field(default=0, ge=0)
@@ -452,9 +390,7 @@ class RoutePreviewItem(BaseModel):
     score: float = 1.0
 
 
-class RoutePreviewRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class RoutePreviewRequest(StrictBaseModel):
     protocol: ProtocolKind
     model: str | None = None
 
@@ -468,9 +404,7 @@ class ErrorResponse(BaseModel):
     error: dict[str, Any]
 
 
-class AdminLoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AdminLoginRequest(StrictBaseModel):
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
 
@@ -486,16 +420,12 @@ class AdminProfile(BaseModel):
     username: str
 
 
-class AdminPasswordChangeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AdminPasswordChangeRequest(StrictBaseModel):
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=1)
 
 
-class AdminProfileUpdateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AdminProfileUpdateRequest(StrictBaseModel):
     username: str = Field(min_length=1)
     current_password: str = ""
     new_password: str = ""
@@ -528,9 +458,7 @@ class VersionCheckResult(BaseModel):
     checked_at: str
 
 
-class ModelGroup(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroup(StrictBaseModel):
     id: str
     name: str
     protocol: ProtocolKind
@@ -555,9 +483,7 @@ class ModelGroup(BaseModel):
         return self
 
 
-class ModelGroupItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroupItem(StrictBaseModel):
     channel_id: str
     channel_name: str = ""
     protocol: ProtocolKind | None = None
@@ -569,18 +495,14 @@ class ModelGroupItem(BaseModel):
     sort_order: int = Field(default=0, ge=0)
 
 
-class ModelGroupItemInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroupItemInput(StrictBaseModel):
     channel_id: str = Field(min_length=1)
     credential_id: str = ""
     model_name: str = Field(min_length=1)
     enabled: bool = True
 
 
-class ModelGroupCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroupCreate(StrictBaseModel):
     name: str
     protocol: ProtocolKind
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
@@ -599,9 +521,7 @@ class ModelGroupCreate(BaseModel):
         return self
 
 
-class ModelGroupUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
     protocol: ProtocolKind | None = None
     strategy: RoutingStrategy | None = None
@@ -643,9 +563,7 @@ def normalize_model_group_sync_filter(
     return mode, normalized_query
 
 
-class ModelGroupStats(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroupStats(StrictBaseModel):
     name: str
     request_count: int = 0
     success_count: int = 0
@@ -656,9 +574,7 @@ class ModelGroupStats(BaseModel):
     last_resolved_model: str | None = None
 
 
-class ModelGroupCandidateItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroupCandidateItem(StrictBaseModel):
     site_id: str = ""
     channel_id: str
     channel_name: str
@@ -670,22 +586,16 @@ class ModelGroupCandidateItem(BaseModel):
     model_name: str
 
 
-class ModelGroupCandidatesRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroupCandidatesRequest(StrictBaseModel):
     protocol: ProtocolKind | None = None
     exclude_items: list[ModelGroupItemInput] = Field(default_factory=list)
 
 
-class ModelGroupCandidatesResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelGroupCandidatesResponse(StrictBaseModel):
     candidates: list[ModelGroupCandidateItem] = Field(default_factory=list)
 
 
-class ModelPriceItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelPriceItem(StrictBaseModel):
     model_key: str
     display_name: str
     protocols: list[ProtocolKind] = Field(default_factory=list)
@@ -695,9 +605,7 @@ class ModelPriceItem(BaseModel):
     cache_write_price_per_million: float = 0.0
 
 
-class ModelPriceUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelPriceUpdate(StrictBaseModel):
     model_key: str = Field(min_length=1)
     display_name: str = ""
     input_price_per_million: float = Field(default=0.0, ge=0.0)
@@ -706,9 +614,7 @@ class ModelPriceUpdate(BaseModel):
     cache_write_price_per_million: float = Field(default=0.0, ge=0.0)
 
 
-class ModelPriceListResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ModelPriceListResponse(StrictBaseModel):
     items: list[ModelPriceItem] = Field(default_factory=list)
     last_synced_at: str | None = None
 
@@ -727,9 +633,7 @@ class CronjobScheduleType(str, Enum):
     WEEKLY = "weekly"
 
 
-class CronjobItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CronjobItem(StrictBaseModel):
     id: str
     name: str
     description: str = ""
@@ -745,9 +649,7 @@ class CronjobItem(BaseModel):
     next_run_at: str | None = None
 
 
-class CronjobUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CronjobUpdate(StrictBaseModel):
     enabled: bool | None = None
     schedule_type: CronjobScheduleType | None = None
     interval_hours: int | None = Field(default=None, ge=1)
@@ -783,9 +685,7 @@ class CronjobUpdate(BaseModel):
         return self
 
 
-class CronjobRunResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CronjobRunResult(StrictBaseModel):
     cronjob: CronjobItem
 
 
@@ -794,9 +694,7 @@ class SettingItem(BaseModel):
     value: str
 
 
-class GatewayApiKeyBase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class GatewayApiKeyBase(StrictBaseModel):
     remark: str = ""
     enabled: bool = True
     allowed_models: list[str] = Field(default_factory=list)
@@ -833,15 +731,11 @@ class GatewayApiKey(GatewayApiKeyBase):
     updated_at: str
 
 
-class SettingsUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SettingsUpdate(StrictBaseModel):
     items: list[SettingItem]
 
 
-class ConfigBackupImportedStatsTotal(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigBackupImportedStatsTotal(StrictBaseModel):
     input_token: int = 0
     output_token: int = 0
     input_cost: float = 0.0
@@ -851,9 +745,7 @@ class ConfigBackupImportedStatsTotal(BaseModel):
     request_failed: int = 0
 
 
-class ConfigBackupImportedStatsDaily(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigBackupImportedStatsDaily(StrictBaseModel):
     date: str
     input_token: int = 0
     output_token: int = 0
@@ -864,9 +756,7 @@ class ConfigBackupImportedStatsDaily(BaseModel):
     request_failed: int = 0
 
 
-class ConfigBackupRequestLogDailyStat(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigBackupRequestLogDailyStat(StrictBaseModel):
     date: str
     request_count: int = 0
     successful_requests: int = 0
@@ -882,9 +772,7 @@ class ConfigBackupRequestLogDailyStat(BaseModel):
     total_cost_usd: float = 0.0
 
 
-class ConfigBackupOverviewModelDailyStat(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigBackupOverviewModelDailyStat(StrictBaseModel):
     date: str
     model: str
     requests: int = 0
@@ -892,9 +780,7 @@ class ConfigBackupOverviewModelDailyStat(BaseModel):
     total_cost_usd: float = 0.0
 
 
-class ConfigBackupStatsSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigBackupStatsSnapshot(StrictBaseModel):
     imported_total: ConfigBackupImportedStatsTotal | None = None
     imported_daily: list[ConfigBackupImportedStatsDaily] = Field(default_factory=list)
     request_daily: list[ConfigBackupRequestLogDailyStat] = Field(default_factory=list)
@@ -908,9 +794,7 @@ class ConfigBackupGatewayApiKey(GatewayApiKeyBase):
     updated_at: str | None = None
 
 
-class ConfigBackupCronjob(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigBackupCronjob(StrictBaseModel):
     id: str
     enabled: bool = True
     schedule_type: CronjobScheduleType = CronjobScheduleType.INTERVAL
@@ -945,9 +829,7 @@ class ConfigBackupCronjob(BaseModel):
         return self
 
 
-class ConfigBackupRequestLog(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigBackupRequestLog(StrictBaseModel):
     protocol: ProtocolKind
     user_agent: str = ""
     requested_group_name: str | None = None
@@ -988,9 +870,7 @@ class ConfigBackupRequestLog(BaseModel):
         return self
 
 
-class ConfigBackupDump(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigBackupDump(StrictBaseModel):
     version: int = 1
     exported_at: str
     lens_version: str
@@ -1006,9 +886,7 @@ class ConfigBackupDump(BaseModel):
     request_logs: list[ConfigBackupRequestLog] = Field(default_factory=list)
 
 
-class ConfigImportResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ConfigImportResult(StrictBaseModel):
     rows_affected: dict[str, int] = Field(default_factory=dict)
 
 
