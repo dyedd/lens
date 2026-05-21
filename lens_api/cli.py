@@ -12,7 +12,7 @@ from alembic import command
 from alembic.config import Config
 
 from .core.config import settings
-from .core.db import create_engine, create_session_factory, is_sqlite_url
+from .core.db import create_engine, create_session_factory
 
 SOURCE_PROJECT_DIR = Path(__file__).resolve().parent.parent
 APP_IMPORT_PATH = "lens_api.gateway.service:app"
@@ -67,26 +67,10 @@ def db_stamp(args: argparse.Namespace) -> None:
 def serve(args: argparse.Namespace) -> None:
     import uvicorn
 
-    requested = max(settings.workers, 1)
-    if args.reload:
-        reason = "--reload does not support multiple Uvicorn workers" if requested > 1 else None
-        effective = 1
-    elif requested > 1 and is_sqlite_url(settings.database_url):
-        reason = "SQLite uses a single-writer lock, so Lens runs one worker to avoid write contention"
-        effective = 1
-    else:
-        reason = None
-        effective = requested
-
-    message = f"Starting Lens with workers: requested={requested}, effective={effective}"
-    if reason is not None:
-        message += f". Reason: {reason}."
-    print(message, flush=True)
-
     if args.reload:
         uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port, reload=True)
     else:
-        uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port, workers=effective)
+        uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port)
 
 
 def dev(_args: argparse.Namespace) -> None:

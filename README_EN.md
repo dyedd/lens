@@ -481,7 +481,6 @@ Backend configuration uses the `LENS_` prefix and also supports `.env` files. Lo
 | `LENS_AUTH_ACCESS_TOKEN_MINUTES` | `720`                                 | Console session lifetime                                 |
 | `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | Upstream request timeout                                 |
 | `LENS_CONNECT_TIMEOUT_SECONDS`   | `10`                                  | Upstream connection timeout                              |
-| `LENS_WORKERS`                   | `4`                                   | Uvicorn worker count; SQLite and `--reload` force it to `1` |
 | `LENS_MAX_CONNECTIONS`           | `200`                                 | HTTP connection pool size                                |
 | `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                  | HTTP keep-alive pool size                                |
 | `LENS_ANTHROPIC_VERSION`         | `2023-06-01`                          | Anthropic version header                                 |
@@ -495,9 +494,7 @@ The backend listen address and port are controlled by `LENS_HOST` and `LENS_PORT
 
 The PostgreSQL URL format is `postgresql+psycopg://username:password@host:port/database`. In containerized environments such as 1Panel, if Lens and PostgreSQL run on the same server, put both containers in the same Docker network, such as 1Panel's `1panel-network`, and use the PostgreSQL container name as the host: `LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgresql:5432/lens`. The first `lens` is the database username, the last `lens` is the database name, and `postgresql` is the PostgreSQL container name; adjust it to your actual container name.
 
-`LENS_WORKERS` defaults to `4`, so PostgreSQL deployments get multi-process concurrency without extra configuration. When Lens uses SQLite, or when it starts with `lens serve --reload`, it prints the reason and forces the effective worker count to `1`. You can set a higher worker count, but every worker owns its own HTTP pool, so the default potential upstream connection count is about `LENS_WORKERS * LENS_MAX_CONNECTIONS`; tune it with CPU, memory, PostgreSQL connection limits, upstream rate limits, and load-test results in mind.
-
-SQLite remains supported for local testing and lightweight deployments. Lens disables SQLite WAL, so it keeps the main database file without intentionally creating `data.db-wal` / `data.db-shm`. SQLite has one writer at a time; use PostgreSQL for high-concurrency or multi-user deployments.
+SQLite remains supported for local testing and lightweight deployments. Lens disables SQLite WAL, so it keeps the main database file without intentionally creating `data.db-wal` / `data.db-shm`. Use PostgreSQL for high-concurrency or multi-user deployments.
 
 Lens application time zone is not an environment variable. Choose it in `/settings`; the default is `Asia/Shanghai`. Request log timestamps, today windows, trend buckets, backup filenames, and other in-app time displays use this setting.
 
