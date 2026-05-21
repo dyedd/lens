@@ -68,20 +68,14 @@ type CoolingBadgeSpec = {
   title: string
   className: string
 }
+type Locale = 'zh-CN' | 'en-US'
 const CHANNEL_HEALTH_BUCKET_COUNT = 12
 
-function createCredentialId() {
+function createLocalId(prefix: string) {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
-  return `credential-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function createBaseUrlId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `baseurl-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 type FormProtocol = {
@@ -146,11 +140,11 @@ const emptyProtocol = (baseUrlId = ''): FormProtocol => ({
 })
 
 const emptyForm = (): FormState => {
-  const baseUrlId = createBaseUrlId()
+  const baseUrlId = createLocalId('baseurl')
   return {
     name: '',
     base_urls: [{ id: baseUrlId, url: '', name: '', enabled: true }],
-    credentials: [{ id: createCredentialId(), name: '', api_key: '', enabled: true }],
+    credentials: [{ id: createLocalId('credential'), name: '', api_key: '', enabled: true }],
     protocols: [emptyProtocol(baseUrlId)],
   }
 }
@@ -225,7 +219,7 @@ function formHeaders(protocol: Pick<FormProtocol, 'headers'>) {
 function credentialDisplayName(
   credential: Site['credentials'][number] | undefined,
   index: number,
-  locale: 'zh-CN' | 'en-US'
+  locale: Locale
 ) {
   if (!credential) {
     return locale === 'zh-CN' ? `密钥 ${index + 1}` : `Key ${index + 1}`
@@ -379,7 +373,7 @@ function maxKeyCooldownSeconds(health: ChannelHealthRow | undefined) {
 function keyCooldownDetails(
   site: SiteRow,
   health: ChannelHealthRow,
-  locale: 'zh-CN' | 'en-US'
+  locale: Locale
 ) {
   const credentialById = new Map(site.credentials.map((item) => [item.id, item] as const))
   const credentialIndexById = new Map(site.credentials.map((item, index) => [item.id, index] as const))
@@ -402,7 +396,7 @@ function keyCooldownDetails(
 function resolveCoolingBadge(
   site: SiteRow,
   health: ChannelHealthRow | undefined,
-  locale: 'zh-CN' | 'en-US'
+  locale: Locale
 ): CoolingBadgeSpec | null {
   if (!health) {
     return null
@@ -462,7 +456,7 @@ function healthBucketTone(bucket: ChannelHealthBucket) {
   return 'bg-destructive'
 }
 
-function createHealthBucketTimeFormatter(locale: 'zh-CN' | 'en-US', timeZone?: string) {
+function createHealthBucketTimeFormatter(locale: Locale, timeZone?: string) {
   return new Intl.DateTimeFormat(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
     month: '2-digit',
     day: '2-digit',
@@ -487,7 +481,7 @@ function SiteHealthPreview({
   site: SiteRow
   summary?: SiteRuntimeSummary
   healthByChannelId: Map<string, ChannelHealthRow>
-  locale: 'zh-CN' | 'en-US'
+  locale: Locale
   timeZone?: string
 }) {
   const enabledProtocols = site.protocols.filter((item) => item.enabled)
@@ -636,7 +630,7 @@ function inferProtocolFilterCredential(siteId: string, protocol: SiteProtocolLik
 function toForm(site: Site): FormState {
   const baseUrls = site.base_urls.length
     ? site.base_urls.map((item) => ({ id: item.id, url: item.url, name: item.name, enabled: item.enabled }))
-    : [{ id: createBaseUrlId(), url: '', name: '', enabled: true }]
+    : [{ id: createLocalId('baseurl'), url: '', name: '', enabled: true }]
   return {
     name: site.name,
     base_urls: baseUrls,
@@ -704,6 +698,492 @@ function duplicateProtocolBaseUrlKeys(protocols: FormProtocol[], baseUrls: Array
 function SwitchButton({ checked, onChange, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
   return <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
 }
+
+function ChannelFiltersPanel({
+  locale,
+  search,
+  statusFilter,
+  protocolFilter,
+  sortBy,
+  activeFilterCount,
+  onSearchChange,
+  onStatusChange,
+  onProtocolChange,
+  onSortChange,
+  onReset,
+}: {
+  locale: Locale
+  search: string
+  statusFilter: ChannelStatusFilter
+  protocolFilter: 'all' | ProtocolKind
+  sortBy: ChannelSort
+  activeFilterCount: number
+  onSearchChange: (value: string) => void
+  onStatusChange: (value: ChannelStatusFilter) => void
+  onProtocolChange: (value: 'all' | ProtocolKind) => void
+  onSortChange: (value: ChannelSort) => void
+  onReset: () => void
+}) {
+  return (
+    <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary/[0.08] text-primary">
+            <Filter size={16} />
+          </span>
+          <div>
+            <div className="text-sm font-semibold text-foreground">{locale === 'zh-CN' ? '筛选' : 'Filters'}</div>
+            <div className="text-xs text-muted-foreground">
+              {locale === 'zh-CN' ? `已启用 ${activeFilterCount} 项` : `${activeFilterCount} active`}
+            </div>
+          </div>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onReset} disabled={!activeFilterCount && sortBy === 'requests-desc'}>
+          {locale === 'zh-CN' ? '清空' : 'Clear'}
+        </Button>
+      </div>
+
+      <FieldSet className="gap-4">
+        <FieldLegend>{locale === 'zh-CN' ? '筛选条件' : 'Refine results'}</FieldLegend>
+        <FieldGroup className="gap-4">
+          <Field>
+            <FieldLabel>{locale === 'zh-CN' ? '关键词' : 'Keyword'}</FieldLabel>
+            <ToolbarSearchInput
+              value={search}
+              onChange={onSearchChange}
+              onClear={() => onSearchChange('')}
+              placeholder={locale === 'zh-CN' ? '渠道 / 协议 / 模型' : 'Channel / protocol / model'}
+              className="max-w-none"
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel>{locale === 'zh-CN' ? '状态' : 'Status'}</FieldLabel>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {[
+                { key: 'all' as const, label: locale === 'zh-CN' ? '全部' : 'All' },
+                { key: 'enabled' as const, label: locale === 'zh-CN' ? '启用' : 'Enabled' },
+                { key: 'disabled' as const, label: locale === 'zh-CN' ? '停用' : 'Disabled' },
+              ].map((option) => (
+                <Button
+                  key={option.key}
+                  type="button"
+                  variant={statusFilter === option.key ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => onStatusChange(option.key)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="channels-protocol-filter">{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
+            <NativeSelect
+              id="channels-protocol-filter"
+              className="w-full"
+              value={protocolFilter}
+              onChange={(event) => onProtocolChange(event.target.value as 'all' | ProtocolKind)}
+            >
+              <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
+              {protocolOptions.map((option) => (
+                <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="channels-sort">{locale === 'zh-CN' ? '排序' : 'Sort by'}</FieldLabel>
+            <NativeSelect
+              id="channels-sort"
+              className="w-full"
+              value={sortBy}
+              onChange={(event) => onSortChange(event.target.value as ChannelSort)}
+            >
+              <NativeSelectOption value="requests-desc">{locale === 'zh-CN' ? '请求优先' : 'Requests first'}</NativeSelectOption>
+              <NativeSelectOption value="models-desc">{locale === 'zh-CN' ? '模型优先' : 'Models first'}</NativeSelectOption>
+              <NativeSelectOption value="protocols-desc">{locale === 'zh-CN' ? '协议优先' : 'Protocols first'}</NativeSelectOption>
+              <NativeSelectOption value="name-asc">{locale === 'zh-CN' ? '名称升序' : 'Name asc'}</NativeSelectOption>
+              <NativeSelectOption value="name-desc">{locale === 'zh-CN' ? '名称降序' : 'Name desc'}</NativeSelectOption>
+            </NativeSelect>
+          </Field>
+        </FieldGroup>
+      </FieldSet>
+    </div>
+  )
+}
+
+function ProtocolConfigItem({
+  form,
+  protocol,
+  protocolIndex,
+  locale,
+  fetchingProtocolIndex,
+  onUpdateProtocol,
+  onUpdateProtocolFilter,
+  onRemoveProtocol,
+  onAddManualModel,
+  onFetchModels,
+  onOpenAdvanced,
+  onOpenModelTest,
+}: {
+  form: FormState
+  protocol: FormProtocol
+  protocolIndex: number
+  locale: Locale
+  fetchingProtocolIndex: number | null
+  onUpdateProtocol: (index: number, patch: Partial<FormProtocol>) => void
+  onUpdateProtocolFilter: (index: number, credentialId: string | null) => void
+  onRemoveProtocol: (index: number) => void
+  onAddManualModel: (index: number, credentialId: string) => void
+  onFetchModels: (index: number) => void
+  onOpenAdvanced: (index: number) => void
+  onOpenModelTest: (protocolIndex: number, modelIndex: number) => void
+}) {
+  const submittedBaseUrls = formBaseUrlsForPayload(form)
+  const duplicatedProtocolBaseUrls = duplicateProtocolBaseUrlKeys(form.protocols, submittedBaseUrls)
+  const protocolBaseUrlDuplicated = duplicatedProtocolBaseUrls.has(protocolBaseUrlKey(protocol, submittedBaseUrls))
+  const activeCredentialIds = new Set(form.credentials.filter((item) => item.enabled && item.api_key.trim()).map((item) => item.id))
+  const credentialOptions = form.credentials
+    .map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
+    .filter((item) => activeCredentialIds.has(item.id))
+  const selectedCredentialId = credentialOptions.some((item) => item.id === protocol.model_filter_credential_id)
+    ? protocol.model_filter_credential_id || ''
+    : credentialOptions[0]?.id || ''
+  const visibleModels = protocol.models
+    .map((model, modelIndex) => ({ model, modelIndex }))
+    .filter(({ model }) => !selectedCredentialId || model.credential_id === selectedCredentialId)
+
+  return (
+    <div className="grid gap-3 border-b pb-4 last:border-b-0 last:pb-0">
+      <div className="flex flex-col gap-3">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px_auto] xl:items-end">
+          <Field>
+            <FieldLabel>{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
+            <NativeSelect className={selectClassName()} value={protocol.protocol} onChange={(event) => onUpdateProtocol(protocolIndex, { protocol: event.target.value as ProtocolKind })}>
+              {protocolOptions.map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
+            </NativeSelect>
+          </Field>
+          <Field>
+            <FieldLabel>{locale === 'zh-CN' ? '地址来源' : 'Base URL'}</FieldLabel>
+            <NativeSelect className={selectClassName()} value={resolveBaseUrlId(form.base_urls, protocol.base_url_id)} onChange={(event) => onUpdateProtocol(protocolIndex, { base_url_id: event.target.value })}>
+              {form.base_urls.map((item, baseUrlIndex) => <NativeSelectOption key={item.id} value={item.id}>{baseUrlLabel(item, baseUrlIndex, locale)}</NativeSelectOption>)}
+            </NativeSelect>
+          </Field>
+          <Field>
+            <FieldLabel>{locale === 'zh-CN' ? '模型筛选密钥' : 'Model key'}</FieldLabel>
+            <NativeSelect className={selectClassName()} value={selectedCredentialId} onChange={(event) => onUpdateProtocolFilter(protocolIndex, event.target.value || null)}>
+              {credentialOptions.length ? credentialOptions.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.display_name}</NativeSelectOption>) : <NativeSelectOption value="">{locale === 'zh-CN' ? '无可用密钥' : 'No key'}</NativeSelectOption>}
+            </NativeSelect>
+          </Field>
+          <div className="flex h-8 w-8 items-center justify-center xl:self-end">
+            <SwitchButton checked={protocol.enabled} onChange={(checked) => onUpdateProtocol(protocolIndex, { enabled: checked })} />
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2 xl:col-start-5 xl:row-start-1 xl:self-end">
+            <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => onOpenAdvanced(protocolIndex)}><Ellipsis size={16} /></Button>
+            <Button type="button" variant="outline" size="icon" className="text-destructive hover:text-destructive" onClick={() => onRemoveProtocol(protocolIndex)}><X size={16} /></Button>
+            <Button type="button" variant="ghost" size="default" className="text-muted-foreground hover:text-foreground" onClick={() => onUpdateProtocol(protocolIndex, { expanded: !protocol.expanded })}>
+              <span>{locale === 'zh-CN' ? '模型列表' : 'Models'}</span>
+              <ChevronDown size={16} className={cn('transition-transform', protocol.expanded ? 'rotate-180' : '')} />
+            </Button>
+          </div>
+        </div>
+
+        {protocolBaseUrlDuplicated ? <div className="text-sm text-destructive">{locale === 'zh-CN' ? '协议和地址来源重复' : 'Duplicate protocol and Base URL'}</div> : null}
+
+        {protocol.expanded ? (
+          <div className="grid gap-3 pt-1">
+            <Separator />
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <FieldGroup className="gap-2">
+                <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '手动添加模型' : 'Add model manually'}</div>
+                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '模型名称' : 'Model name'}</FieldLabel>
+                    <Input
+                      className="w-full min-w-0"
+                      value={protocol.manual_model_name}
+                      onChange={(event) => onUpdateProtocol(protocolIndex, { manual_model_name: event.target.value })}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return
+                        event.preventDefault()
+                        onAddManualModel(protocolIndex, selectedCredentialId)
+                      }}
+                      placeholder={locale === 'zh-CN' ? '完整模型名' : 'Exact model name'}
+                    />
+                  </Field>
+                  <Button type="button" variant="outline" onClick={() => onAddManualModel(protocolIndex, selectedCredentialId)} disabled={!selectedCredentialId || !protocol.manual_model_name.trim()}>
+                    <Plus data-icon="inline-start" />
+                    {locale === 'zh-CN' ? '添加模型' : 'Add model'}
+                  </Button>
+                </div>
+              </FieldGroup>
+              <FieldGroup className="gap-2">
+                <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '从上游获取模型' : 'Fetch upstream models'}</div>
+                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '模型过滤' : 'Model filter'}</FieldLabel>
+                    <Input
+                      className="w-full min-w-0"
+                      value={protocol.match_regex}
+                      onChange={(event) => onUpdateProtocol(protocolIndex, { match_regex: event.target.value })}
+                      placeholder={locale === 'zh-CN' ? '正则表达式，留空获取全部' : 'Regex, empty fetches all'}
+                    />
+                  </Field>
+                  <Button type="button" onClick={() => onFetchModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size}>
+                    <RefreshCcw data-icon="inline-start" className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
+                    {locale === 'zh-CN' ? '获取模型' : 'Fetch models'}
+                  </Button>
+                </div>
+              </FieldGroup>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
+              <Button type="button" variant="destructive" size="sm" onClick={() => onUpdateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length}>
+                <Trash2 data-icon="inline-start" />
+                {locale === 'zh-CN' ? '清空全部' : 'Clear all'}
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              {visibleModels.length ? (
+                <div className="flex w-full flex-col gap-1.5">
+                {visibleModels.map(({ model, modelIndex }) => (
+                  <div key={model.id || `${model.credential_id}-${model.model_name}-${modelIndex}`} className={cn('flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-1.5', model.enabled ? 'border-border bg-background' : 'border-muted bg-muted/30 opacity-65')}>
+                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">{model.model_name}</span>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground hover:text-foreground" onClick={() => onOpenModelTest(protocolIndex, modelIndex)} disabled={!model.model_name.trim() || !activeBaseUrlValue(form, protocol).trim() || !form.credentials.some((item) => item.id === model.credential_id && item.api_key.trim())}>
+                      {locale === 'zh-CN' ? '测试' : 'Test'}
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => onUpdateProtocol(protocolIndex, { models: protocol.models.filter((_, currentIndex) => currentIndex !== modelIndex) })}>
+                      <X size={14} />
+                    </Button>
+                  </div>
+                ))}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前没有模型' : 'No models selected'}</div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function AdvancedProtocolDialog({
+  open,
+  protocol,
+  protocolIndex,
+  locale,
+  onOpenChange,
+  onUpdateProtocol,
+  onUpdateProtocolHeader,
+}: {
+  open: boolean
+  protocol: FormProtocol | undefined
+  protocolIndex: number | null
+  locale: Locale
+  onOpenChange: (open: boolean) => void
+  onUpdateProtocol: (index: number, patch: Partial<FormProtocol>) => void
+  onUpdateProtocolHeader: (protocolIndex: number, headerIndex: number, patch: Partial<HeaderItem>) => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {protocolIndex !== null && protocol ? (
+        <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '更多设置' : 'More settings'}>
+          <div className="grid gap-4">
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="protocol-proxy">{locale === 'zh-CN' ? '代理地址' : 'Proxy'}</FieldLabel>
+                <Input id="protocol-proxy" value={protocol.channel_proxy} onChange={(event) => onUpdateProtocol(protocolIndex, { channel_proxy: event.target.value })} placeholder="http://127.0.0.1:7890" />
+              </Field>
+            </FieldGroup>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '请求头' : 'Headers'}</div>
+                <Button type="button" variant="outline" size="sm" onClick={() => onUpdateProtocol(protocolIndex, { headers: [...protocol.headers, { key: '', value: '' }] })}>
+                  <Plus data-icon="inline-start" />
+                  {locale === 'zh-CN' ? '添加' : 'Add'}
+                </Button>
+              </div>
+              {protocol.headers.map((header, headerIndex) => (
+                <div key={headerIndex} className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '请求头名称' : 'Header key'}</FieldLabel>
+                    <Input value={header.key} onChange={(event) => onUpdateProtocolHeader(protocolIndex, headerIndex, { key: event.target.value })} placeholder={locale === 'zh-CN' ? '请求头名称' : 'Header-Key'} />
+                  </Field>
+                  <Field>
+                    <FieldLabel>{locale === 'zh-CN' ? '请求头值' : 'Header value'}</FieldLabel>
+                    <Input value={header.value} onChange={(event) => onUpdateProtocolHeader(protocolIndex, headerIndex, { value: event.target.value })} placeholder={locale === 'zh-CN' ? '请求头值' : 'Header-Value'} />
+                  </Field>
+                  <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => onUpdateProtocol(protocolIndex, { headers: protocol.headers.length > 1 ? protocol.headers.filter((_, currentIndex) => currentIndex !== headerIndex) : protocol.headers })}><X size={16} /></Button>
+                </div>
+              ))}
+            </div>
+            <Field>
+              <FieldLabel htmlFor="protocol-param-override">{locale === 'zh-CN' ? '参数覆盖' : 'Param Override'}</FieldLabel>
+              <Textarea id="protocol-param-override" className="min-h-24" value={protocol.param_override} onChange={(event) => onUpdateProtocol(protocolIndex, { param_override: event.target.value })} />
+              <FieldDescription>{locale === 'zh-CN' ? '填写 JSON 片段用于覆盖请求参数。' : 'Use a JSON snippet to override request params.'}</FieldDescription>
+            </Field>
+          </div>
+        </AppDialogContent>
+      ) : null}
+    </Dialog>
+  )
+}
+
+function ModelTestDialog({
+  target,
+  form,
+  locale,
+  modelTestPrompts,
+  modelTestPromptMode,
+  modelTestPrompt,
+  modelTestResult,
+  testingModel,
+  onClose,
+  onPromptModeChange,
+  onPromptChange,
+  onRun,
+}: {
+  target: ModelTestTarget | null
+  form: FormState
+  locale: Locale
+  modelTestPrompts: string[]
+  modelTestPromptMode: string
+  modelTestPrompt: string
+  modelTestResult: SiteModelTestResult | null
+  testingModel: boolean
+  onClose: () => void
+  onPromptModeChange: (value: string) => void
+  onPromptChange: (value: string) => void
+  onRun: () => void
+}) {
+  return (
+    <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose() }}>
+      {target !== null ? (() => {
+        const protocol = form.protocols[target.protocolIndex]
+        const model = protocol?.models[target.modelIndex]
+        const credentialIndex = model ? form.credentials.findIndex((item) => item.id === model.credential_id) : -1
+        const credential = credentialIndex >= 0 ? form.credentials[credentialIndex] : undefined
+        const activeBaseUrl = protocol ? activeBaseUrlValue(form, protocol).trim() : ''
+        const canTest = Boolean(protocol && model?.model_name.trim() && credential?.api_key.trim() && activeBaseUrl && modelTestPrompt.trim())
+        const sourceText = [
+          protocol ? protocolLabel(protocol.protocol) : '',
+          model?.model_name || '',
+          credential ? credentialLabel(credential, credentialIndex, locale) : '',
+          activeBaseUrl,
+        ].filter(Boolean).join(' · ')
+        return (
+          <AppDialogContent className="max-w-2xl" title={locale === 'zh-CN' ? '测试模型' : 'Test model'}>
+            <div className="grid gap-4">
+              <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                <div className="truncate text-foreground">{model?.model_name || '-'}</div>
+                <div className="mt-1 break-all text-xs">{sourceText}</div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                <Field>
+                  <FieldLabel>{locale === 'zh-CN' ? '问题' : 'Prompt'}</FieldLabel>
+                  <NativeSelect className={selectClassName()} value={modelTestPromptMode} onChange={(event) => onPromptModeChange(event.target.value)}>
+                    {modelTestPrompts.map((_, index) => <NativeSelectOption key={index} value={String(index)}>{locale === 'zh-CN' ? `预设 ${index + 1}` : `Preset ${index + 1}`}</NativeSelectOption>)}
+                    <NativeSelectOption value="custom">{locale === 'zh-CN' ? '自定义' : 'Custom'}</NativeSelectOption>
+                  </NativeSelect>
+                </Field>
+                <Field>
+                  <FieldLabel>{locale === 'zh-CN' ? '内容' : 'Content'}</FieldLabel>
+                  <Textarea className="min-h-24" value={modelTestPrompt} onChange={(event) => onPromptChange(event.target.value)} />
+                </Field>
+              </div>
+
+              {modelTestResult ? (
+                <div className={cn('grid gap-2 rounded-md border px-3 py-2 text-sm', modelTestResult.success ? 'bg-muted/20' : 'border-destructive/40 bg-destructive/5')}>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline" className={modelTestResult.success ? 'border-primary/30 text-primary' : 'border-destructive/40 text-destructive'}>
+                      {modelTestResult.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
+                    </Badge>
+                    <span>HTTP {modelTestResult.status_code ?? '-'}</span>
+                    <span>{modelTestResult.latency_ms}ms</span>
+                  </div>
+                  <div className={cn('max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm', modelTestResult.success ? 'text-foreground' : 'text-destructive')}>
+                    {modelTestResult.success
+                      ? (modelTestResult.output_text || (locale === 'zh-CN' ? '上游返回成功，但没有可展示文本' : 'Upstream succeeded but returned no displayable text'))
+                      : (modelTestResult.error_message || (locale === 'zh-CN' ? '测试失败' : 'Test failed'))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                <Button type="button" variant="outline" onClick={onClose} disabled={testingModel}>{locale === 'zh-CN' ? '关闭' : 'Close'}</Button>
+                <Button type="button" onClick={onRun} disabled={!canTest || testingModel}>
+                  <RefreshCcw data-icon="inline-start" className={testingModel ? 'animate-spin' : ''} />
+                  {locale === 'zh-CN' ? '发送测试' : 'Send test'}
+                </Button>
+              </div>
+            </div>
+          </AppDialogContent>
+        )
+      })() : null}
+    </Dialog>
+  )
+}
+
+function ModelPickerDialog({
+  open,
+  availableModels,
+  pickerSelectedModelKeys,
+  locale,
+  onOpenChange,
+  onToggleModel,
+  onConfirm,
+  onConfirmAll,
+  onCancel,
+}: {
+  open: boolean
+  availableModels: PickerModelItem[]
+  pickerSelectedModelKeys: string[]
+  locale: Locale
+  onOpenChange: (open: boolean) => void
+  onToggleModel: (key: string) => void
+  onConfirm: () => void
+  onConfirmAll: () => void
+  onCancel: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '选择模型' : 'Select models'}>
+          <div className="grid gap-4">
+            <div className="max-h-[58dvh] overflow-y-auto p-1 sm:max-h-[420px]">
+              <div className="flex flex-wrap gap-2.5">
+                {availableModels.length ? availableModels.map((model) => {
+                  const key = `${model.credential_id}:${model.model_name}`
+                  const checked = pickerSelectedModelKeys.includes(key)
+                  return (
+                    <Button key={key} type="button" variant="outline" size="sm" className={cn('max-w-full rounded-full', modelBadgeClassName(checked), checked ? 'border-primary text-primary' : '')} onClick={() => onToggleModel(key)}>
+                      <span className="max-w-[180px] truncate sm:max-w-[220px]">{model.model_name}</span>
+                      <span className="text-xs">{checked ? '✓' : '+'}</span>
+                    </Button>
+                  )
+                }) : <div className="px-3 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '未获取到可选模型' : 'No models fetched.'}</div>}
+              </div>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <Button type="button" variant="outline" onClick={onCancel}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
+              <Button type="button" variant="outline" onClick={onConfirmAll} disabled={!availableModels.length}>{locale === 'zh-CN' ? '加入全部模型' : 'Add all models'}</Button>
+              <Button type="button" onClick={onConfirm} disabled={!pickerSelectedModelKeys.length}>{locale === 'zh-CN' ? '加入模型' : 'Add models'}</Button>
+            </div>
+          </div>
+        </AppDialogContent>
+      ) : null}
+    </Dialog>
+  )
+}
+
+
 
 export function ChannelsScreen() {
   const queryClient = useQueryClient()
@@ -786,15 +1266,15 @@ export function ChannelsScreen() {
       return stack.includes(keyword)
     })
 
-      return [...filtered].sort((left, right) => {
-        const leftRequestCount = siteRuntimeById.get(left.id)?.recent_request_count ?? 0
-        const rightRequestCount = siteRuntimeById.get(right.id)?.recent_request_count ?? 0
-        if (sortBy === 'name-asc') return left.name.localeCompare(right.name, locale)
-        if (sortBy === 'name-desc') return right.name.localeCompare(left.name, locale)
-        if (sortBy === 'models-desc') return right.model_count - left.model_count || left.name.localeCompare(right.name, locale)
-        if (sortBy === 'protocols-desc') return right.protocol_count - left.protocol_count || left.name.localeCompare(right.name, locale)
-        return rightRequestCount - leftRequestCount || left.name.localeCompare(right.name, locale)
-      })
+    return [...filtered].sort((left, right) => {
+      const leftRequestCount = siteRuntimeById.get(left.id)?.recent_request_count ?? 0
+      const rightRequestCount = siteRuntimeById.get(right.id)?.recent_request_count ?? 0
+      if (sortBy === 'name-asc') return left.name.localeCompare(right.name, locale)
+      if (sortBy === 'name-desc') return right.name.localeCompare(left.name, locale)
+      if (sortBy === 'models-desc') return right.model_count - left.model_count || left.name.localeCompare(right.name, locale)
+      if (sortBy === 'protocols-desc') return right.protocol_count - left.protocol_count || left.name.localeCompare(right.name, locale)
+      return rightRequestCount - leftRequestCount || left.name.localeCompare(right.name, locale)
+    })
   }, [locale, protocolFilter, search, siteRows, siteRuntimeById, sortBy, statusFilter])
   const activeFilterCount = [
     Boolean(search.trim()),
@@ -987,7 +1467,7 @@ export function ChannelsScreen() {
   }
 
   function addBaseUrl() {
-    const baseUrl = { id: createBaseUrlId(), url: '', name: '', enabled: true }
+    const baseUrl = { id: createLocalId('baseurl'), url: '', name: '', enabled: true }
     setForm((current) => ({ ...current, base_urls: [...current.base_urls, baseUrl] }))
   }
 
@@ -1200,14 +1680,6 @@ export function ChannelsScreen() {
     }
   }
 
-  function confirmModelSelection() {
-    applyModelSelection(pickerSelectedModelKeys)
-  }
-
-  function confirmAllModelSelection() {
-    applyModelSelection(availableModels.map((item) => `${item.credential_id}:${item.model_name}`))
-  }
-
   return (
     <TooltipProvider>
       <section className="flex flex-col gap-4">
@@ -1303,95 +1775,21 @@ export function ChannelsScreen() {
         </Card>
 
         <aside className="order-1 xl:order-2">
-          <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary/[0.08] text-primary">
-                  <Filter size={16} />
-                </span>
-                <div>
-                  <div className="text-sm font-semibold text-foreground">{locale === 'zh-CN' ? '筛选' : 'Filters'}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {locale === 'zh-CN' ? `已启用 ${activeFilterCount} 项` : `${activeFilterCount} active`}
-                  </div>
-                </div>
-              </div>
-              <Button type="button" variant="ghost" size="sm" onClick={resetFilters} disabled={!activeFilterCount && sortBy === 'requests-desc'}>
-                {locale === 'zh-CN' ? '清空' : 'Clear'}
-              </Button>
-            </div>
-
-            <FieldSet className="gap-4">
-              <FieldLegend>{locale === 'zh-CN' ? '筛选条件' : 'Refine results'}</FieldLegend>
-              <FieldGroup className="gap-4">
-                <Field>
-                  <FieldLabel>{locale === 'zh-CN' ? '关键词' : 'Keyword'}</FieldLabel>
-                  <ToolbarSearchInput
-                    value={search}
-                    onChange={setSearch}
-                    onClear={() => setSearch('')}
-                    placeholder={locale === 'zh-CN' ? '渠道 / 协议 / 模型' : 'Channel / protocol / model'}
-                    className="max-w-none"
-                  />
-                </Field>
-
-                <Field>
-                  <FieldLabel>{locale === 'zh-CN' ? '状态' : 'Status'}</FieldLabel>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {[
-                      { key: 'all' as const, label: locale === 'zh-CN' ? '全部' : 'All' },
-                      { key: 'enabled' as const, label: locale === 'zh-CN' ? '启用' : 'Enabled' },
-                      { key: 'disabled' as const, label: locale === 'zh-CN' ? '停用' : 'Disabled' },
-                    ].map((option) => (
-                      <Button
-                        key={option.key}
-                        type="button"
-                        variant={statusFilter === option.key ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setStatusFilter(option.key)}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </div>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="channels-protocol-filter">{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
-                  <NativeSelect
-                    id="channels-protocol-filter"
-                    className="w-full"
-                    value={protocolFilter}
-                    onChange={(event) => setProtocolFilter(event.target.value as 'all' | ProtocolKind)}
-                  >
-                    <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
-                    {protocolOptions.map((option) => (
-                      <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="channels-sort">{locale === 'zh-CN' ? '排序' : 'Sort by'}</FieldLabel>
-                  <NativeSelect
-                    id="channels-sort"
-                    className="w-full"
-                    value={sortBy}
-                    onChange={(event) => setSortBy(event.target.value as ChannelSort)}
-                  >
-                    <NativeSelectOption value="requests-desc">{locale === 'zh-CN' ? '请求优先' : 'Requests first'}</NativeSelectOption>
-                    <NativeSelectOption value="models-desc">{locale === 'zh-CN' ? '模型优先' : 'Models first'}</NativeSelectOption>
-                    <NativeSelectOption value="protocols-desc">{locale === 'zh-CN' ? '协议优先' : 'Protocols first'}</NativeSelectOption>
-                    <NativeSelectOption value="name-asc">{locale === 'zh-CN' ? '名称升序' : 'Name asc'}</NativeSelectOption>
-                    <NativeSelectOption value="name-desc">{locale === 'zh-CN' ? '名称降序' : 'Name desc'}</NativeSelectOption>
-                  </NativeSelect>
-                </Field>
-              </FieldGroup>
-            </FieldSet>
-          </div>
+          <ChannelFiltersPanel
+            locale={locale}
+            search={search}
+            statusFilter={statusFilter}
+            protocolFilter={protocolFilter}
+            sortBy={sortBy}
+            activeFilterCount={activeFilterCount}
+            onSearchChange={setSearch}
+            onStatusChange={setStatusFilter}
+            onProtocolChange={setProtocolFilter}
+            onSortChange={setSortBy}
+            onReset={resetFilters}
+          />
         </aside>
       </div>
-
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         if (!open && hasUnsavedChanges) {
           const confirmed = window.confirm(locale === 'zh-CN' ? '当前有未保存修改，确定关闭吗？' : 'You have unsaved changes. Close anyway?')
@@ -1447,7 +1845,7 @@ export function ChannelsScreen() {
                     <section className="grid gap-3">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '密钥' : 'API Keys'}</div>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setForm((current) => ({ ...current, credentials: [...current.credentials, { id: createCredentialId(), name: '', api_key: '', enabled: true }] }))}>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setForm((current) => ({ ...current, credentials: [...current.credentials, { id: createLocalId('credential'), name: '', api_key: '', enabled: true }] }))}>
                           <Plus data-icon="inline-start" />
                           {locale === 'zh-CN' ? '添加' : 'Add'}
                         </Button>
@@ -1488,138 +1886,23 @@ export function ChannelsScreen() {
                   </Button>
                 </div>
                 <div className="flex flex-col gap-3">
-                  {form.protocols.map((protocol, protocolIndex) => {
-                    const submittedBaseUrls = formBaseUrlsForPayload(form)
-                    const duplicatedProtocolBaseUrls = duplicateProtocolBaseUrlKeys(form.protocols, submittedBaseUrls)
-                    const protocolBaseUrlDuplicated = duplicatedProtocolBaseUrls.has(protocolBaseUrlKey(protocol, submittedBaseUrls))
-                    const activeCredentialIds = new Set(form.credentials.filter((item) => item.enabled && item.api_key.trim()).map((item) => item.id))
-                    const credentialOptions = form.credentials
-                      .map((item, index) => ({ ...item, display_name: credentialLabel(item, index, locale) }))
-                      .filter((item) => activeCredentialIds.has(item.id))
-                    const selectedCredentialId = credentialOptions.some((item) => item.id === protocol.model_filter_credential_id)
-                      ? protocol.model_filter_credential_id || ''
-                      : credentialOptions[0]?.id || ''
-                    const visibleModels = protocol.models
-                      .map((model, modelIndex) => ({ model, modelIndex }))
-                      .filter(({ model }) => !selectedCredentialId || model.credential_id === selectedCredentialId)
-
-                    return (
-                      <div key={protocol.id || protocolIndex} className="grid gap-3 border-b pb-4 last:border-b-0 last:pb-0">
-                        <div className="flex flex-col gap-3">
-                          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px_auto] xl:items-end">
-                            <Field>
-                              <FieldLabel>{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
-                              <NativeSelect className={selectClassName()} value={protocol.protocol} onChange={(event) => updateProtocol(protocolIndex, { protocol: event.target.value as ProtocolKind })}>
-                                {protocolOptions.map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
-                              </NativeSelect>
-                            </Field>
-                            <Field>
-                              <FieldLabel>{locale === 'zh-CN' ? '地址来源' : 'Base URL'}</FieldLabel>
-                              <NativeSelect className={selectClassName()} value={resolveBaseUrlId(form.base_urls, protocol.base_url_id)} onChange={(event) => updateProtocol(protocolIndex, { base_url_id: event.target.value })}>
-                                {form.base_urls.map((item, baseUrlIndex) => <NativeSelectOption key={item.id} value={item.id}>{baseUrlLabel(item, baseUrlIndex, locale)}</NativeSelectOption>)}
-                              </NativeSelect>
-                            </Field>
-                            <Field>
-                              <FieldLabel>{locale === 'zh-CN' ? '模型筛选密钥' : 'Model key'}</FieldLabel>
-                              <NativeSelect className={selectClassName()} value={selectedCredentialId} onChange={(event) => updateProtocolFilter(protocolIndex, event.target.value || null)}>
-                                {credentialOptions.length ? credentialOptions.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.display_name}</NativeSelectOption>) : <NativeSelectOption value="">{locale === 'zh-CN' ? '无可用密钥' : 'No key'}</NativeSelectOption>}
-                              </NativeSelect>
-                            </Field>
-                            <div className="flex h-8 w-8 items-center justify-center xl:self-end">
-                              <SwitchButton checked={protocol.enabled} onChange={(checked) => updateProtocol(protocolIndex, { enabled: checked })} />
-                            </div>
-                            <div className="flex flex-wrap items-center justify-end gap-2 xl:col-start-5 xl:row-start-1 xl:self-end">
-                              <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => setAdvancedProtocolIndex(protocolIndex)}><Ellipsis size={16} /></Button>
-                              <Button type="button" variant="outline" size="icon" className="text-destructive hover:text-destructive" onClick={() => setForm((current) => ({ ...current, protocols: current.protocols.length > 1 ? current.protocols.filter((_, currentIndex) => currentIndex !== protocolIndex) : current.protocols }))}><X size={16} /></Button>
-                              <Button type="button" variant="ghost" size="default" className="text-muted-foreground hover:text-foreground" onClick={() => updateProtocol(protocolIndex, { expanded: !protocol.expanded })}>
-                                <span>{locale === 'zh-CN' ? '模型列表' : 'Models'}</span>
-                                <ChevronDown size={16} className={cn('transition-transform', protocol.expanded ? 'rotate-180' : '')} />
-                              </Button>
-                            </div>
-                          </div>
-
-                          {protocolBaseUrlDuplicated ? <div className="text-sm text-destructive">{locale === 'zh-CN' ? '协议和地址来源重复' : 'Duplicate protocol and Base URL'}</div> : null}
-
-                          {protocol.expanded ? (
-                            <div className="grid gap-3 pt-1">
-                              <Separator />
-                              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                                <FieldGroup className="gap-2">
-                                  <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '手动添加模型' : 'Add model manually'}</div>
-                                  <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                                    <Field>
-                                      <FieldLabel>{locale === 'zh-CN' ? '模型名称' : 'Model name'}</FieldLabel>
-                                      <Input
-                                        className="w-full min-w-0"
-                                        value={protocol.manual_model_name}
-                                        onChange={(event) => updateProtocol(protocolIndex, { manual_model_name: event.target.value })}
-                                        onKeyDown={(event) => {
-                                          if (event.key !== 'Enter') return
-                                          event.preventDefault()
-                                          addManualProtocolModel(protocolIndex, selectedCredentialId)
-                                        }}
-                                        placeholder={locale === 'zh-CN' ? '完整模型名' : 'Exact model name'}
-                                      />
-                                    </Field>
-                                    <Button type="button" variant="outline" onClick={() => addManualProtocolModel(protocolIndex, selectedCredentialId)} disabled={!selectedCredentialId || !protocol.manual_model_name.trim()}>
-                                      <Plus data-icon="inline-start" />
-                                      {locale === 'zh-CN' ? '添加模型' : 'Add model'}
-                                    </Button>
-                                  </div>
-                                </FieldGroup>
-                                <FieldGroup className="gap-2">
-                                  <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '从上游获取模型' : 'Fetch upstream models'}</div>
-                                  <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                                    <Field>
-                                      <FieldLabel>{locale === 'zh-CN' ? '模型过滤' : 'Model filter'}</FieldLabel>
-                                      <Input
-                                        className="w-full min-w-0"
-                                        value={protocol.match_regex}
-                                        onChange={(event) => updateProtocol(protocolIndex, { match_regex: event.target.value })}
-                                        placeholder={locale === 'zh-CN' ? '正则表达式，留空获取全部' : 'Regex, empty fetches all'}
-                                      />
-                                    </Field>
-                                    <Button type="button" onClick={() => void fetchProtocolModels(protocolIndex)} disabled={fetchingProtocolIndex === protocolIndex || !form.base_urls.some((item) => item.enabled && item.url.trim()) || !activeCredentialIds.size}>
-                                      <RefreshCcw data-icon="inline-start" className={fetchingProtocolIndex === protocolIndex ? 'animate-spin' : ''} />
-                                      {locale === 'zh-CN' ? '获取模型' : 'Fetch models'}
-                                    </Button>
-                                  </div>
-                                </FieldGroup>
-                              </div>
-
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
-                                <Button type="button" variant="destructive" size="sm" onClick={() => updateProtocol(protocolIndex, { models: [] })} disabled={!visibleModels.length}>
-                                  <Trash2 data-icon="inline-start" />
-                                  {locale === 'zh-CN' ? '清空全部' : 'Clear all'}
-                                </Button>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-2.5">
-                                {visibleModels.length ? (
-                                  <div className="flex w-full flex-col gap-1.5">
-                                  {visibleModels.map(({ model, modelIndex }) => (
-                                    <div key={model.id || `${model.credential_id}-${model.model_name}-${modelIndex}`} className={cn('flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-1.5', model.enabled ? 'border-border bg-background' : 'border-muted bg-muted/30 opacity-65')}>
-                                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">{model.model_name}</span>
-                                      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground hover:text-foreground" onClick={() => openModelTest(protocolIndex, modelIndex)} disabled={!model.model_name.trim() || !activeBaseUrlValue(form, protocol).trim() || !form.credentials.some((item) => item.id === model.credential_id && item.api_key.trim())}>
-                                        {locale === 'zh-CN' ? '测试' : 'Test'}
-                                      </Button>
-                                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateProtocol(protocolIndex, { models: protocol.models.filter((_, currentIndex) => currentIndex !== modelIndex) })}>
-                                        <X size={14} />
-                                      </Button>
-                                    </div>
-                                  ))}
-                                  </div>
-                                ) : (
-                                  <div className="text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前没有模型' : 'No models selected'}</div>
-                                )}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    )
-                  })}
+                  {form.protocols.map((protocol, protocolIndex) => (
+                    <ProtocolConfigItem
+                      key={protocol.id || protocolIndex}
+                      form={form}
+                      protocol={protocol}
+                      protocolIndex={protocolIndex}
+                      locale={locale}
+                      fetchingProtocolIndex={fetchingProtocolIndex}
+                      onUpdateProtocol={updateProtocol}
+                      onUpdateProtocolFilter={updateProtocolFilter}
+                      onRemoveProtocol={(index) => setForm((current) => ({ ...current, protocols: current.protocols.length > 1 ? current.protocols.filter((_, currentIndex) => currentIndex !== index) : current.protocols }))}
+                      onAddManualModel={addManualProtocolModel}
+                      onFetchModels={fetchProtocolModels}
+                      onOpenAdvanced={setAdvancedProtocolIndex}
+                      onOpenModelTest={openModelTest}
+                    />
+                  ))}
                 </div>
               </section>
             </div>
@@ -1631,47 +1914,15 @@ export function ChannelsScreen() {
         </AppDialogContent>
       </Dialog>
 
-      <Dialog open={advancedProtocolIndex !== null} onOpenChange={(open) => { if (!open) setAdvancedProtocolIndex(null) }}>
-        {advancedProtocolIndex !== null && form.protocols[advancedProtocolIndex] ? (
-          <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '更多设置' : 'More settings'}>
-            <div className="grid gap-4">
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="protocol-proxy">{locale === 'zh-CN' ? '代理地址' : 'Proxy'}</FieldLabel>
-                  <Input id="protocol-proxy" value={form.protocols[advancedProtocolIndex].channel_proxy} onChange={(event) => updateProtocol(advancedProtocolIndex, { channel_proxy: event.target.value })} placeholder="http://127.0.0.1:7890" />
-                </Field>
-              </FieldGroup>
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '请求头' : 'Headers'}</div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => updateProtocol(advancedProtocolIndex, { headers: [...form.protocols[advancedProtocolIndex].headers, { key: '', value: '' }] })}>
-                    <Plus data-icon="inline-start" />
-                    {locale === 'zh-CN' ? '添加' : 'Add'}
-                  </Button>
-                </div>
-                {form.protocols[advancedProtocolIndex].headers.map((header, headerIndex) => (
-                  <div key={headerIndex} className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                    <Field>
-                      <FieldLabel>{locale === 'zh-CN' ? '请求头名称' : 'Header key'}</FieldLabel>
-                      <Input value={header.key} onChange={(event) => updateProtocolHeader(advancedProtocolIndex, headerIndex, { key: event.target.value })} placeholder={locale === 'zh-CN' ? '请求头名称' : 'Header-Key'} />
-                    </Field>
-                    <Field>
-                      <FieldLabel>{locale === 'zh-CN' ? '请求头值' : 'Header value'}</FieldLabel>
-                      <Input value={header.value} onChange={(event) => updateProtocolHeader(advancedProtocolIndex, headerIndex, { value: event.target.value })} placeholder={locale === 'zh-CN' ? '请求头值' : 'Header-Value'} />
-                    </Field>
-                    <Button type="button" variant="outline" size="icon" className="text-muted-foreground" onClick={() => updateProtocol(advancedProtocolIndex, { headers: form.protocols[advancedProtocolIndex].headers.length > 1 ? form.protocols[advancedProtocolIndex].headers.filter((_, currentIndex) => currentIndex !== headerIndex) : form.protocols[advancedProtocolIndex].headers })}><X size={16} /></Button>
-                  </div>
-                ))}
-              </div>
-              <Field>
-                <FieldLabel htmlFor="protocol-param-override">{locale === 'zh-CN' ? '参数覆盖' : 'Param Override'}</FieldLabel>
-                <Textarea id="protocol-param-override" className="min-h-24" value={form.protocols[advancedProtocolIndex].param_override} onChange={(event) => updateProtocol(advancedProtocolIndex, { param_override: event.target.value })} />
-                <FieldDescription>{locale === 'zh-CN' ? '填写 JSON 片段用于覆盖请求参数。' : 'Use a JSON snippet to override request params.'}</FieldDescription>
-              </Field>
-            </div>
-          </AppDialogContent>
-        ) : null}
-      </Dialog>
+      <AdvancedProtocolDialog
+        open={advancedProtocolIndex !== null}
+        protocol={advancedProtocolIndex !== null ? form.protocols[advancedProtocolIndex] : undefined}
+        protocolIndex={advancedProtocolIndex}
+        locale={locale}
+        onOpenChange={(open) => { if (!open) setAdvancedProtocolIndex(null) }}
+        onUpdateProtocol={updateProtocol}
+        onUpdateProtocolHeader={updateProtocolHeader}
+      />
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
         <AppDialogContent className="max-w-lg" title={locale === 'zh-CN' ? '确认删除渠道' : 'Delete channel'} description={locale === 'zh-CN' ? '删除后该渠道下的协议、模型和模型组成员会一起移除。' : 'Protocol configs, models, and group members under this channel will be removed together.'}>
@@ -1688,110 +1939,37 @@ export function ChannelsScreen() {
         </AppDialogContent>
       </Dialog>
 
-      <Dialog open={modelTestTarget !== null} onOpenChange={(open) => { if (!open) closeModelTest() }}>
-        {modelTestTarget !== null ? (() => {
-          const protocol = form.protocols[modelTestTarget.protocolIndex]
-          const model = protocol?.models[modelTestTarget.modelIndex]
-          const credentialIndex = model ? form.credentials.findIndex((item) => item.id === model.credential_id) : -1
-          const credential = credentialIndex >= 0 ? form.credentials[credentialIndex] : undefined
-          const activeBaseUrl = protocol ? activeBaseUrlValue(form, protocol).trim() : ''
-          const canTest = Boolean(protocol && model?.model_name.trim() && credential?.api_key.trim() && activeBaseUrl && modelTestPrompt.trim())
-          const sourceText = [
-            protocol ? protocolLabel(protocol.protocol) : '',
-            model?.model_name || '',
-            credential ? credentialLabel(credential, credentialIndex, locale) : '',
-            activeBaseUrl,
-          ].filter(Boolean).join(' · ')
-          return (
-            <AppDialogContent className="max-w-2xl" title={locale === 'zh-CN' ? '测试模型' : 'Test model'}>
-              <div className="grid gap-4">
-                <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                  <div className="truncate text-foreground">{model?.model_name || '-'}</div>
-                  <div className="mt-1 break-all text-xs">{sourceText}</div>
-                </div>
+      <ModelTestDialog
+        target={modelTestTarget}
+        form={form}
+        locale={locale}
+        modelTestPrompts={modelTestPrompts}
+        modelTestPromptMode={modelTestPromptMode}
+        modelTestPrompt={modelTestPrompt}
+        modelTestResult={modelTestResult}
+        testingModel={testingModel}
+        onClose={closeModelTest}
+        onPromptModeChange={changeModelTestPromptMode}
+        onPromptChange={(value) => {
+          setModelTestPrompt(value)
+          if (modelTestPromptMode !== 'custom') {
+            setModelTestPromptMode('custom')
+          }
+        }}
+        onRun={() => void runModelTest()}
+      />
 
-                <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
-                  <Field>
-                    <FieldLabel>{locale === 'zh-CN' ? '问题' : 'Prompt'}</FieldLabel>
-                    <NativeSelect className={selectClassName()} value={modelTestPromptMode} onChange={(event) => changeModelTestPromptMode(event.target.value)}>
-                      {modelTestPrompts.map((_, index) => <NativeSelectOption key={index} value={String(index)}>{locale === 'zh-CN' ? `预设 ${index + 1}` : `Preset ${index + 1}`}</NativeSelectOption>)}
-                      <NativeSelectOption value="custom">{locale === 'zh-CN' ? '自定义' : 'Custom'}</NativeSelectOption>
-                    </NativeSelect>
-                  </Field>
-                  <Field>
-                    <FieldLabel>{locale === 'zh-CN' ? '内容' : 'Content'}</FieldLabel>
-                    <Textarea className="min-h-24" value={modelTestPrompt} onChange={(event) => {
-                      setModelTestPrompt(event.target.value)
-                      if (modelTestPromptMode !== 'custom') {
-                        setModelTestPromptMode('custom')
-                      }
-                    }} />
-                  </Field>
-                </div>
-
-                {modelTestResult ? (
-                  <div className={cn('grid gap-2 rounded-md border px-3 py-2 text-sm', modelTestResult.success ? 'bg-muted/20' : 'border-destructive/40 bg-destructive/5')}>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline" className={modelTestResult.success ? 'border-primary/30 text-primary' : 'border-destructive/40 text-destructive'}>
-                        {modelTestResult.success ? (locale === 'zh-CN' ? '成功' : 'Success') : (locale === 'zh-CN' ? '失败' : 'Failed')}
-                      </Badge>
-                      <span>HTTP {modelTestResult.status_code ?? '-'}</span>
-                      <span>{modelTestResult.latency_ms}ms</span>
-                    </div>
-                    <div className={cn('max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm', modelTestResult.success ? 'text-foreground' : 'text-destructive')}>
-                      {modelTestResult.success
-                        ? (modelTestResult.output_text || (locale === 'zh-CN' ? '上游返回成功，但没有可展示文本' : 'Upstream succeeded but returned no displayable text'))
-                        : (modelTestResult.error_message || (locale === 'zh-CN' ? '测试失败' : 'Test failed'))}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                  <Button type="button" variant="outline" onClick={closeModelTest} disabled={testingModel}>{locale === 'zh-CN' ? '关闭' : 'Close'}</Button>
-                  <Button type="button" onClick={() => void runModelTest()} disabled={!canTest || testingModel}>
-                    <RefreshCcw data-icon="inline-start" className={testingModel ? 'animate-spin' : ''} />
-                    {locale === 'zh-CN' ? '发送测试' : 'Send test'}
-                  </Button>
-                </div>
-              </div>
-            </AppDialogContent>
-          )
-        })() : null}
-      </Dialog>
-
-      <Dialog open={modelPickerProtocolIndex !== null} onOpenChange={(open) => {
-        if (!open) {
-          closeModelPicker()
-        }
-      }}>
-        {modelPickerProtocolIndex !== null ? (
-          <AppDialogContent className="max-w-3xl" title={locale === 'zh-CN' ? '选择模型' : 'Select models'}>
-            <div className="grid gap-4">
-              <div className="max-h-[58dvh] overflow-y-auto p-1 sm:max-h-[420px]">
-                <div className="flex flex-wrap gap-2.5">
-                  {availableModels.length ? availableModels.map((model) => {
-                    const key = `${model.credential_id}:${model.model_name}`
-                    const checked = pickerSelectedModelKeys.includes(key)
-                    return (
-                      <Button key={key} type="button" variant="outline" size="sm" className={cn('max-w-full rounded-full', modelBadgeClassName(checked), checked ? 'border-primary text-primary' : '')} onClick={() => togglePickerModel(key)}>
-                        <span className="max-w-[180px] truncate sm:max-w-[220px]">{model.model_name}</span>
-                        <span className="text-xs">{checked ? '✓' : '+'}</span>
-                      </Button>
-                    )
-                  }) : <div className="px-3 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '未获取到可选模型' : 'No models fetched.'}</div>}
-                </div>
-              </div>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                <Button type="button" variant="outline" onClick={() => {
-                  closeModelPicker()
-                }}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
-                <Button type="button" variant="outline" onClick={confirmAllModelSelection} disabled={!availableModels.length}>{locale === 'zh-CN' ? '加入全部模型' : 'Add all models'}</Button>
-                <Button type="button" onClick={confirmModelSelection} disabled={!pickerSelectedModelKeys.length}>{locale === 'zh-CN' ? '加入模型' : 'Add models'}</Button>
-              </div>
-            </div>
-          </AppDialogContent>
-        ) : null}
-      </Dialog>
+      <ModelPickerDialog
+        open={modelPickerProtocolIndex !== null}
+        availableModels={availableModels}
+        pickerSelectedModelKeys={pickerSelectedModelKeys}
+        locale={locale}
+        onOpenChange={(open) => { if (!open) closeModelPicker() }}
+        onToggleModel={togglePickerModel}
+        onConfirm={() => applyModelSelection(pickerSelectedModelKeys)}
+        onConfirmAll={() => applyModelSelection(availableModels.map((item) => `${item.credential_id}:${item.model_name}`))}
+        onCancel={closeModelPicker}
+      />
       </section>
     </TooltipProvider>
   )

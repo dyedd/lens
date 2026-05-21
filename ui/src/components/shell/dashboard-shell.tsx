@@ -117,10 +117,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     staleTime: 5 * 60_000,
     refetchInterval: 60 * 60_000,
   })
-  const siteName = appInfo?.site_name?.trim() || 'Lens'
-  const logoUrl = appInfo?.logo_url?.trim() || '/logo.svg'
+  const siteName = appInfo?.site_name.trim() || 'Lens'
+  const logoUrl = appInfo?.logo_url.trim() || '/logo.svg'
   const activeView = useMemo(() => getDashboardViewFromPathname(pathname), [pathname])
-  const currentVersion = appInfo?.system_version?.trim()
+  const currentVersion = appInfo?.system_version.trim()
   const versionLabel = currentVersion
     ? `${locale === 'zh-CN' ? '版本号' : 'Version'} ${currentVersion}`
     : (appInfo ? (locale === 'zh-CN' ? '版本未获取' : 'Unavailable') : (locale === 'zh-CN' ? '加载中...' : 'Loading...'))

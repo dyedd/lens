@@ -17,16 +17,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     let cancelled = false
 
     function readCachedProfile() {
+      const raw = window.sessionStorage.getItem(SESSION_CACHE_KEY)
+      if (!raw) return null
       try {
-        const raw = window.sessionStorage.getItem(SESSION_CACHE_KEY)
-        if (!raw) return null
-        const parsed = JSON.parse(raw) as { version?: number; profile: AdminProfile; expiresAt: number }
-        if (parsed.version !== SESSION_CACHE_VERSION || !parsed?.profile || typeof parsed.expiresAt !== 'number' || parsed.expiresAt < Date.now()) {
+        const parsed = JSON.parse(raw) as { version: number; profile: AdminProfile; expiresAt: number }
+        if (parsed.version !== SESSION_CACHE_VERSION || parsed.expiresAt < Date.now()) {
           window.sessionStorage.removeItem(SESSION_CACHE_KEY)
           return null
         }
         return parsed.profile
-      } catch {
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error
         window.sessionStorage.removeItem(SESSION_CACHE_KEY)
         return null
       }

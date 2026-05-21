@@ -127,13 +127,6 @@ function normalizeOriginList(rawValue: string) {
   return items.join(",")
 }
 
-function saveButtonLabel(locale: Locale, saving: boolean) {
-  if (saving) {
-    return titleForLocale(locale, "保存中...", "Saving...")
-  }
-  return titleForLocale(locale, "保存设置", "Save settings")
-}
-
 function SettingCard({
   icon: Icon,
   title,
@@ -305,206 +298,6 @@ export function SettingsScreen() {
     }
   }
 
-  function renderAppearanceCard() {
-    return (
-      <SettingCard icon={Palette} title={titleForLocale(locale, "站点外观", "Appearance")}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "语言", "Language")}</FieldLabel>
-            <SegmentedControl
-              className="!w-fit self-start"
-              value={locale}
-              onValueChange={(value) => setLocale(value)}
-              options={[
-                { value: "zh-CN", label: "简体中文" },
-                { value: "en-US", label: "English" },
-              ]}
-            />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "站点名称", "Site name")}</FieldLabel>
-            <Input value={draft.siteName} onChange={(event) => setDraftValue("siteName", event.target.value)} placeholder="Lens" />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "Logo 地址", "Logo URL")}</FieldLabel>
-            <Input
-              value={draft.siteLogoUrl}
-              onChange={(event) => setDraftValue("siteLogoUrl", event.target.value)}
-              placeholder="https://example.com/logo.svg"
-            />
-          </Field>
-        </FieldGroup>
-        <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-4 py-3">
-          <span className="flex size-12 items-center justify-center overflow-hidden rounded-md border bg-background">
-            {draft.siteLogoUrl.trim() ? (
-              <Image
-                src={draft.siteLogoUrl.trim()}
-                alt={draft.siteName || "logo"}
-                width={48}
-                height={48}
-                className="size-12 object-cover"
-                unoptimized
-              />
-            ) : (
-              <ImageIcon className="text-muted-foreground" />
-            )}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground">{draft.siteName.trim() || "Lens"}</div>
-            <div className="truncate text-xs text-muted-foreground">
-              {draft.siteLogoUrl.trim() || titleForLocale(locale, "未设置 Logo", "No logo configured")}
-            </div>
-          </div>
-        </div>
-      </SettingCard>
-    )
-  }
-
-  function renderTimeCard() {
-    return (
-      <SettingCard icon={TimerReset} title={titleForLocale(locale, "时间", "Time")}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "时区", "Time zone")}</FieldLabel>
-            <NativeSelect
-              className="w-full"
-              value={draft.timeZone || "Asia/Shanghai"}
-              onChange={(event) => setDraftValue("timeZone", event.target.value)}
-            >
-              {TIME_ZONE_OPTIONS.map((option) => (
-                <NativeSelectOption key={option.value} value={option.value}>
-                  {option.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Field>
-        </FieldGroup>
-      </SettingCard>
-    )
-  }
-
-  function renderAccountCard() {
-    return (
-      <SettingCard icon={UserRound} title={titleForLocale(locale, "账号", "Account")}>
-        <form className="flex flex-col gap-4" onSubmit={submitAccount}>
-          <FieldGroup>
-            <Field>
-              <FieldLabel>{titleForLocale(locale, "用户名", "Username")}</FieldLabel>
-              <Input
-                value={accountForm.username}
-                onChange={(event) => setAccountForm((current) => ({ ...current, username: event.target.value }))}
-                autoComplete="username"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{titleForLocale(locale, "当前密码", "Current password")}</FieldLabel>
-              <Input
-                type="password"
-                value={accountForm.currentPassword}
-                onChange={(event) => setAccountForm((current) => ({ ...current, currentPassword: event.target.value }))}
-                autoComplete="current-password"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{titleForLocale(locale, "新密码", "New password")}</FieldLabel>
-              <Input
-                type="password"
-                value={accountForm.newPassword}
-                onChange={(event) => setAccountForm((current) => ({ ...current, newPassword: event.target.value }))}
-                autoComplete="new-password"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{titleForLocale(locale, "确认新密码", "Confirm new password")}</FieldLabel>
-              <Input
-                type="password"
-                value={accountForm.confirmPassword}
-                onChange={(event) => setAccountForm((current) => ({ ...current, confirmPassword: event.target.value }))}
-                autoComplete="new-password"
-              />
-            </Field>
-          </FieldGroup>
-          <Button type="submit" variant="outline" disabled={updatingAccount}>
-            {updatingAccount ? titleForLocale(locale, "提交中...", "Updating...") : titleForLocale(locale, "保存账号", "Save account")}
-          </Button>
-        </form>
-      </SettingCard>
-    )
-  }
-
-  function renderSystemCard() {
-    return (
-      <SettingCard icon={ServerCog} title={titleForLocale(locale, "网关", "Gateway")}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "全局代理地址", "Global proxy URL")}</FieldLabel>
-            <Input value={draft.proxyUrl} onChange={(event) => setDraftValue("proxyUrl", event.target.value)} placeholder="http://127.0.0.1:7890" />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "CORS 跨域名单", "CORS allow origins")}</FieldLabel>
-            <Textarea
-              className="min-h-[92px]"
-              value={draft.corsAllowOrigins}
-              onChange={(event) => setDraftValue("corsAllowOrigins", event.target.value)}
-              placeholder={"*\nhttp://localhost:3000"}
-            />
-          </Field>
-        </FieldGroup>
-      </SettingCard>
-    )
-  }
-
-  function renderModelTestCard() {
-    return (
-      <SettingCard icon={TestTubeDiagonal} title={titleForLocale(locale, "模型测试", "Model test")}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "预设问题", "Preset prompts")}</FieldLabel>
-            <Textarea
-              className="min-h-[132px]"
-              value={draft.modelTestPrompts}
-              onChange={(event) => setDraftValue("modelTestPrompts", event.target.value)}
-              placeholder={DEFAULT_MODEL_TEST_PROMPTS.join("\n")}
-            />
-          </Field>
-        </FieldGroup>
-      </SettingCard>
-    )
-  }
-
-  function renderCircuitCard() {
-    return (
-      <SettingCard icon={ShieldAlert} title={titleForLocale(locale, "熔断器", "Circuit breaker")}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "失败阈值", "Failure threshold")}</FieldLabel>
-            <Input type="number" min="0" value={draft.circuitBreakerThreshold} onChange={(event) => setDraftValue("circuitBreakerThreshold", event.target.value)} />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "基础冷却秒数", "Cooldown seconds")}</FieldLabel>
-            <Input type="number" min="0" value={draft.circuitBreakerCooldown} onChange={(event) => setDraftValue("circuitBreakerCooldown", event.target.value)} />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "最大冷却秒数", "Max cooldown seconds")}</FieldLabel>
-            <Input type="number" min="0" value={draft.circuitBreakerMaxCooldown} onChange={(event) => setDraftValue("circuitBreakerMaxCooldown", event.target.value)} />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "健康窗口秒数", "Health window seconds")}</FieldLabel>
-            <Input type="number" min="1" value={draft.healthWindowSeconds} onChange={(event) => setDraftValue("healthWindowSeconds", event.target.value)} />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "健康惩罚权重", "Health penalty weight")}</FieldLabel>
-            <Input type="number" min="0" step="0.1" value={draft.healthPenaltyWeight} onChange={(event) => setDraftValue("healthPenaltyWeight", event.target.value)} />
-          </Field>
-          <Field>
-            <FieldLabel>{titleForLocale(locale, "健康最小样本数", "Health min samples")}</FieldLabel>
-            <Input type="number" min="1" value={draft.healthMinSamples} onChange={(event) => setDraftValue("healthMinSamples", event.target.value)} />
-          </Field>
-        </FieldGroup>
-      </SettingCard>
-    )
-  }
-
   return (
     <section className="flex min-w-0 flex-col gap-4">
       <div className="flex min-w-0 flex-col gap-6">
@@ -517,18 +310,189 @@ export function SettingsScreen() {
             </Button>
             <Button type="button" disabled={saving} onClick={() => void submitSettings()}>
               <Save data-icon="inline-start" />
-              {saveButtonLabel(locale, saving)}
+              {saving ? titleForLocale(locale, "保存中...", "Saving...") : titleForLocale(locale, "保存设置", "Save settings")}
             </Button>
           </div>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
-          {renderAppearanceCard()}
-          {renderAccountCard()}
-          {renderTimeCard()}
-          {renderSystemCard()}
-          {renderModelTestCard()}
-          <div className="xl:col-span-2">{renderCircuitCard()}</div>
+          <SettingCard icon={Palette} title={titleForLocale(locale, "站点外观", "Appearance")}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel>{titleForLocale(locale, "语言", "Language")}</FieldLabel>
+                <SegmentedControl
+                  className="!w-fit self-start"
+                  value={locale}
+                  onValueChange={(value) => setLocale(value)}
+                  options={[
+                    { value: "zh-CN", label: "简体中文" },
+                    { value: "en-US", label: "English" },
+                  ]}
+                />
+              </Field>
+              <Field>
+                <FieldLabel>{titleForLocale(locale, "站点名称", "Site name")}</FieldLabel>
+                <Input value={draft.siteName} onChange={(event) => setDraftValue("siteName", event.target.value)} placeholder="Lens" />
+              </Field>
+              <Field>
+                <FieldLabel>{titleForLocale(locale, "Logo 地址", "Logo URL")}</FieldLabel>
+                <Input
+                  value={draft.siteLogoUrl}
+                  onChange={(event) => setDraftValue("siteLogoUrl", event.target.value)}
+                  placeholder="https://example.com/logo.svg"
+                />
+              </Field>
+            </FieldGroup>
+            <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-4 py-3">
+              <span className="flex size-12 items-center justify-center overflow-hidden rounded-md border bg-background">
+                {draft.siteLogoUrl.trim() ? (
+                  <Image
+                    src={draft.siteLogoUrl.trim()}
+                    alt={draft.siteName || "logo"}
+                    width={48}
+                    height={48}
+                    className="size-12 object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <ImageIcon className="text-muted-foreground" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-foreground">{draft.siteName.trim() || "Lens"}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {draft.siteLogoUrl.trim() || titleForLocale(locale, "未设置 Logo", "No logo configured")}
+                </div>
+              </div>
+            </div>
+          </SettingCard>
+
+          <SettingCard icon={UserRound} title={titleForLocale(locale, "账号", "Account")}>
+            <form className="flex flex-col gap-4" onSubmit={submitAccount}>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "用户名", "Username")}</FieldLabel>
+                  <Input
+                    value={accountForm.username}
+                    onChange={(event) => setAccountForm((current) => ({ ...current, username: event.target.value }))}
+                    autoComplete="username"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "当前密码", "Current password")}</FieldLabel>
+                  <Input
+                    type="password"
+                    value={accountForm.currentPassword}
+                    onChange={(event) => setAccountForm((current) => ({ ...current, currentPassword: event.target.value }))}
+                    autoComplete="current-password"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "新密码", "New password")}</FieldLabel>
+                  <Input
+                    type="password"
+                    value={accountForm.newPassword}
+                    onChange={(event) => setAccountForm((current) => ({ ...current, newPassword: event.target.value }))}
+                    autoComplete="new-password"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "确认新密码", "Confirm new password")}</FieldLabel>
+                  <Input
+                    type="password"
+                    value={accountForm.confirmPassword}
+                    onChange={(event) => setAccountForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                    autoComplete="new-password"
+                  />
+                </Field>
+              </FieldGroup>
+              <Button type="submit" variant="outline" disabled={updatingAccount}>
+                {updatingAccount ? titleForLocale(locale, "提交中...", "Updating...") : titleForLocale(locale, "保存账号", "Save account")}
+              </Button>
+            </form>
+          </SettingCard>
+
+          <SettingCard icon={TimerReset} title={titleForLocale(locale, "时间", "Time")}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel>{titleForLocale(locale, "时区", "Time zone")}</FieldLabel>
+                <NativeSelect
+                  className="w-full"
+                  value={draft.timeZone || "Asia/Shanghai"}
+                  onChange={(event) => setDraftValue("timeZone", event.target.value)}
+                >
+                  {TIME_ZONE_OPTIONS.map((option) => (
+                    <NativeSelectOption key={option.value} value={option.value}>
+                      {option.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </FieldGroup>
+          </SettingCard>
+
+          <SettingCard icon={ServerCog} title={titleForLocale(locale, "网关", "Gateway")}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel>{titleForLocale(locale, "全局代理地址", "Global proxy URL")}</FieldLabel>
+                <Input value={draft.proxyUrl} onChange={(event) => setDraftValue("proxyUrl", event.target.value)} placeholder="http://127.0.0.1:7890" />
+              </Field>
+              <Field>
+                <FieldLabel>{titleForLocale(locale, "CORS 跨域名单", "CORS allow origins")}</FieldLabel>
+                <Textarea
+                  className="min-h-[92px]"
+                  value={draft.corsAllowOrigins}
+                  onChange={(event) => setDraftValue("corsAllowOrigins", event.target.value)}
+                  placeholder={"*\nhttp://localhost:3000"}
+                />
+              </Field>
+            </FieldGroup>
+          </SettingCard>
+
+          <SettingCard icon={TestTubeDiagonal} title={titleForLocale(locale, "模型测试", "Model test")}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel>{titleForLocale(locale, "预设问题", "Preset prompts")}</FieldLabel>
+                <Textarea
+                  className="min-h-[132px]"
+                  value={draft.modelTestPrompts}
+                  onChange={(event) => setDraftValue("modelTestPrompts", event.target.value)}
+                  placeholder={DEFAULT_MODEL_TEST_PROMPTS.join("\n")}
+                />
+              </Field>
+            </FieldGroup>
+          </SettingCard>
+
+          <div className="xl:col-span-2">
+            <SettingCard icon={ShieldAlert} title={titleForLocale(locale, "熔断器", "Circuit breaker")}>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "失败阈值", "Failure threshold")}</FieldLabel>
+                  <Input type="number" min="0" value={draft.circuitBreakerThreshold} onChange={(event) => setDraftValue("circuitBreakerThreshold", event.target.value)} />
+                </Field>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "基础冷却秒数", "Cooldown seconds")}</FieldLabel>
+                  <Input type="number" min="0" value={draft.circuitBreakerCooldown} onChange={(event) => setDraftValue("circuitBreakerCooldown", event.target.value)} />
+                </Field>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "最大冷却秒数", "Max cooldown seconds")}</FieldLabel>
+                  <Input type="number" min="0" value={draft.circuitBreakerMaxCooldown} onChange={(event) => setDraftValue("circuitBreakerMaxCooldown", event.target.value)} />
+                </Field>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "健康窗口秒数", "Health window seconds")}</FieldLabel>
+                  <Input type="number" min="1" value={draft.healthWindowSeconds} onChange={(event) => setDraftValue("healthWindowSeconds", event.target.value)} />
+                </Field>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "健康惩罚权重", "Health penalty weight")}</FieldLabel>
+                  <Input type="number" min="0" step="0.1" value={draft.healthPenaltyWeight} onChange={(event) => setDraftValue("healthPenaltyWeight", event.target.value)} />
+                </Field>
+                <Field>
+                  <FieldLabel>{titleForLocale(locale, "健康最小样本数", "Health min samples")}</FieldLabel>
+                  <Input type="number" min="1" value={draft.healthMinSamples} onChange={(event) => setDraftValue("healthMinSamples", event.target.value)} />
+                </Field>
+              </FieldGroup>
+            </SettingCard>
+          </div>
         </div>
       </div>
     </section>
