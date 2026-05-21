@@ -7,7 +7,7 @@ from time import monotonic
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import String, and_, cast, delete, func, literal, or_, select, update
+from sqlalchemy import String, cast, delete, func, literal, or_, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -41,7 +41,6 @@ from ..models import (
     RequestLogDetail,
     RequestLogItem,
     RequestLogLifecycleStatus,
-    RequestLogModelSeries,
     RequestLogPage,
     RequestLogSortMode,
     RequestLogStatusFilter,
@@ -91,16 +90,6 @@ SETTING_VERSION_CHECK_AT = "version_check_at"
 GATEWAY_API_KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 CHANNEL_HEALTH_BUCKET_SECONDS = 300
 CHANNEL_HEALTH_BUCKET_COUNT = 12
-REQUEST_LOG_SERIES_PREFIXES: dict[RequestLogModelSeries, tuple[str, ...]] = {
-    RequestLogModelSeries.OPENAI: ("gpt-", "o1", "o3", "o4", "chatgpt", "openai"),
-    RequestLogModelSeries.CLAUDE: ("claude", "anthropic"),
-    RequestLogModelSeries.GEMINI: ("gemini", "gemma", "google"),
-    RequestLogModelSeries.DEEPSEEK: ("deepseek",),
-    RequestLogModelSeries.QWEN: ("qwen", "qwq", "alibaba"),
-    RequestLogModelSeries.KIMI: ("moonshot", "kimi"),
-    RequestLogModelSeries.GLM: ("glm", "chatglm", "zhipu", "z-ai"),
-    RequestLogModelSeries.MINIMAX: ("minimax", "abab", "minmax"),
-}
 REQUEST_LOG_RUNNING_STATUSES = (
     RequestLogLifecycleStatus.CONNECTING.value,
     RequestLogLifecycleStatus.STREAMING.value,
@@ -1898,7 +1887,7 @@ class DomainStore:
         days: int = 0,
         offset: int = 0,
         gateway_key_id: str | None = None,
-        model_series: RequestLogModelSeries = RequestLogModelSeries.ALL,
+        model_prefix: str | None = None,
         status_filter: RequestLogStatusFilter | None = None,
         protocol: ProtocolKind | None = None,
         channel: str | None = None,
@@ -1913,7 +1902,7 @@ class DomainStore:
                 days=days,
                 time_zone=time_zone,
                 gateway_key_id=gateway_key_id,
-                model_series=model_series,
+                model_prefix=model_prefix,
                 status_filter=status_filter,
                 protocol=protocol,
                 channel=channel,
@@ -1928,7 +1917,7 @@ class DomainStore:
                 days=days,
                 time_zone=time_zone,
                 gateway_key_id=gateway_key_id,
-                model_series=model_series,
+                model_prefix=model_prefix,
                 status_filter=status_filter,
                 protocol=protocol,
                 channel=channel,
@@ -1951,15 +1940,36 @@ class DomainStore:
                 days=days,
                 time_zone=time_zone,
                 gateway_key_id=gateway_key_id,
-                model_series=model_series,
+                model_prefix=model_prefix,
                 status_filter=status_filter,
                 protocol=protocol,
+                keyword=keyword,
+            )
+
+            model_name_stmt = (
+                select(
+                    RequestLogEntity.resolved_group_name,
+                    RequestLogEntity.requested_group_name,
+                    RequestLogEntity.upstream_model_name,
+                )
+                .select_from(RequestLogEntity)
+                .distinct()
+            )
+            model_name_stmt = self._apply_request_log_filters(
+                model_name_stmt,
+                days=days,
+                time_zone=time_zone,
+                gateway_key_id=gateway_key_id,
+                status_filter=status_filter,
+                protocol=protocol,
+                channel=channel,
                 keyword=keyword,
             )
 
             items_result = await session.execute(items_stmt)
             total = await session.scalar(total_stmt)
             channel_result = await session.execute(channel_stmt)
+            model_name_result = await session.execute(model_name_stmt)
             entities = items_result.scalars().all()
             channels = sorted(
                 {
@@ -1968,6 +1978,15 @@ class DomainStore:
                     if value is not None
                 }
             )
+            model_name_values = set()
+            for row in model_name_result.all():
+                for value in row:
+                    if value is None:
+                        continue
+                    normalized_value = str(value).strip()
+                    if normalized_value:
+                        model_name_values.add(normalized_value)
+            model_names = sorted(model_name_values)
 
             return RequestLogPage(
                 items=await self._hydrate_request_logs(session, entities),
@@ -1975,6 +1994,7 @@ class DomainStore:
                 limit=max(limit, 0),
                 offset=max(offset, 0),
                 channels=channels,
+                model_names=model_names,
             )
 
     async def list_site_runtime_summaries(self) -> list[SiteRuntimeSummary]:
@@ -3303,37 +3323,6 @@ class DomainStore:
         return stmt
 
     @staticmethod
-    def _request_log_model_expr() -> Any:
-        return func.coalesce(
-            RequestLogEntity.resolved_group_name,
-            RequestLogEntity.requested_group_name,
-            RequestLogEntity.upstream_model_name,
-            "",
-        )
-
-    @classmethod
-    def _request_log_model_series_condition(
-        cls, model_series: RequestLogModelSeries
-    ) -> Any | None:
-        if model_series == RequestLogModelSeries.ALL:
-            return None
-
-        model_expr = func.lower(cls._request_log_model_expr())
-        known_conditions = [
-            model_expr.like(f"{prefix}%")
-            for prefixes in REQUEST_LOG_SERIES_PREFIXES.values()
-            for prefix in prefixes
-        ]
-
-        if model_series == RequestLogModelSeries.OTHER:
-            return and_(*[~condition for condition in known_conditions])
-
-        prefixes = REQUEST_LOG_SERIES_PREFIXES.get(model_series, ())
-        if not prefixes:
-            return None
-        return or_(*[model_expr.like(f"{prefix}%") for prefix in prefixes])
-
-    @staticmethod
     def _normalize_request_log_keyword(keyword: str | None) -> str | None:
         normalized = (keyword or "").strip().lower()
         return normalized or None
@@ -3341,6 +3330,24 @@ class DomainStore:
     @staticmethod
     def _escape_like_pattern(value: str) -> str:
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    @classmethod
+    def _apply_request_log_model_prefix_filter(
+        cls, stmt: Any, *, model_prefix: str | None
+    ) -> Any:
+        normalized = cls._normalize_request_log_keyword(model_prefix)
+        if normalized is None:
+            return stmt
+        pattern = f"{cls._escape_like_pattern(normalized)}%"
+        conditions = [
+            func.lower(func.coalesce(column, "")).like(pattern, escape="\\")
+            for column in (
+                RequestLogEntity.resolved_group_name,
+                RequestLogEntity.requested_group_name,
+                RequestLogEntity.upstream_model_name,
+            )
+        ]
+        return stmt.where(or_(*conditions))
 
     @classmethod
     def _apply_request_log_keyword_filter(
@@ -3383,7 +3390,7 @@ class DomainStore:
         days: int,
         time_zone: ZoneInfo,
         gateway_key_id: str | None = None,
-        model_series: RequestLogModelSeries = RequestLogModelSeries.ALL,
+        model_prefix: str | None = None,
         status_filter: RequestLogStatusFilter | None = None,
         protocol: ProtocolKind | None = None,
         channel: str | None = None,
@@ -3391,10 +3398,9 @@ class DomainStore:
     ) -> Any:
         stmt = cls._apply_request_log_window(stmt, days=days, time_zone=time_zone)
         stmt = cls._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
-
-        series_condition = cls._request_log_model_series_condition(model_series)
-        if series_condition is not None:
-            stmt = stmt.where(series_condition)
+        stmt = cls._apply_request_log_model_prefix_filter(
+            stmt, model_prefix=model_prefix
+        )
 
         if status_filter == RequestLogStatusFilter.SUCCESS:
             stmt = stmt.where(

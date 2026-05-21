@@ -157,7 +157,7 @@ Default local development ports:
 You can also run them separately:
 
 ```bash
-lens serve --reload
+lens serve
 
 cd ui
 pnpm dev
