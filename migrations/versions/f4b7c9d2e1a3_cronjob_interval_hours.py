@@ -5,13 +5,13 @@ Revises: e3f6a8b2c9d1
 Create Date: 2026-04-27 00:00:00.000000
 
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "f4b7c9d2e1a3"
 down_revision: Union[str, Sequence[str], None] = "e3f6a8b2c9d1"
@@ -25,7 +25,9 @@ def _table_name() -> str:
 
 
 def _columns(table_name: str) -> set[str]:
-    return {column["name"] for column in sa.inspect(op.get_bind()).get_columns(table_name)}
+    return {
+        column["name"] for column in sa.inspect(op.get_bind()).get_columns(table_name)
+    }
 
 
 def upgrade() -> None:
@@ -37,18 +39,18 @@ def upgrade() -> None:
     if "interval_hours" not in columns:
         with op.batch_alter_table(table_name) as batch_op:
             batch_op.add_column(
-                sa.Column("interval_hours", sa.Integer(), nullable=False, server_default="1")
+                sa.Column(
+                    "interval_hours", sa.Integer(), nullable=False, server_default="1"
+                )
             )
 
-    op.execute(
-        f"""
+    op.execute(f"""
         UPDATE {table_name}
         SET interval_hours = CASE
             WHEN interval_seconds IS NULL OR interval_seconds < 3600 THEN 1
             ELSE (interval_seconds + 3599) / 3600
         END
-        """
-    )
+        """)
 
     with op.batch_alter_table(table_name) as batch_op:
         batch_op.drop_column("interval_seconds")
@@ -64,15 +66,18 @@ def downgrade() -> None:
     if "interval_seconds" not in columns:
         with op.batch_alter_table(table_name) as batch_op:
             batch_op.add_column(
-                sa.Column("interval_seconds", sa.Integer(), nullable=False, server_default="3600")
+                sa.Column(
+                    "interval_seconds",
+                    sa.Integer(),
+                    nullable=False,
+                    server_default="3600",
+                )
             )
 
-    op.execute(
-        f"""
+    op.execute(f"""
         UPDATE {table_name}
         SET interval_seconds = interval_hours * 3600
-        """
-    )
+        """)
 
     with op.batch_alter_table(table_name) as batch_op:
         batch_op.drop_column("interval_hours")

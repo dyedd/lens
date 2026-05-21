@@ -1,4 +1,3 @@
-
 import asyncio
 import json
 import secrets
@@ -14,10 +13,62 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
-from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogLifecycleStatus, RequestLogModelSeries, RequestLogPage, RequestLogSortMode, RequestLogStatusFilter, SettingItem, SiteChannelHealthBucket, SiteChannelRuntimeSummary, SiteRuntimeSummary
+from ..models import (
+    GatewayApiKey,
+    GatewayApiKeyCreate,
+    GatewayApiKeyUpdate,
+    ModelGroup,
+    ModelGroupCandidateItem,
+    ModelGroupCandidatesRequest,
+    ModelGroupCandidatesResponse,
+    ModelGroupCreate,
+    ModelGroupItem,
+    ModelGroupItemInput,
+    ModelGroupStats,
+    ModelGroupUpdate,
+    ModelPriceItem,
+    ModelPriceListResponse,
+    ModelPriceUpdate,
+    OverviewDailyPoint,
+    OverviewMetrics,
+    OverviewModelAnalytics,
+    OverviewModelMetricPoint,
+    OverviewModelTrendPoint,
+    OverviewSummary,
+    OverviewSummaryMetric,
+    ProtocolKind,
+    RequestLogAttempt,
+    RequestLogDetail,
+    RequestLogItem,
+    RequestLogLifecycleStatus,
+    RequestLogModelSeries,
+    RequestLogPage,
+    RequestLogSortMode,
+    RequestLogStatusFilter,
+    SettingItem,
+    SiteChannelHealthBucket,
+    SiteChannelRuntimeSummary,
+    SiteRuntimeSummary,
+)
 from ..gateway.converters import can_reach_protocol
-from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteBaseUrlEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
-
+from .entities import (
+    GatewayApiKeyEntity,
+    ImportedStatsDailyEntity,
+    ImportedStatsTotalEntity,
+    ModelGroupEntity,
+    ModelGroupItemEntity,
+    ModelPriceEntity,
+    OverviewModelDailyStatsEntity,
+    RequestLogDailyStatsEntity,
+    RequestLogEntity,
+    SettingEntity,
+    SiteBaseUrlEntity,
+    SiteCredentialEntity,
+    SiteDiscoveredModelEntity,
+    SiteEntity,
+    SiteProtocolConfigEntity,
+    SiteProtocolCredentialBindingEntity,
+)
 
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
 SETTING_PROXY_URL = "proxy_url"
@@ -84,11 +135,18 @@ class DomainStore:
         now = datetime.now(UTC).replace(tzinfo=None)
         async with self._session_factory() as session:
             rows = (
-                await session.execute(
-                    select(RequestLogEntity)
-                    .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_RUNNING_STATUSES))
+                (
+                    await session.execute(
+                        select(RequestLogEntity).where(
+                            RequestLogEntity.lifecycle_status.in_(
+                                REQUEST_LOG_RUNNING_STATUSES
+                            )
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for entity in rows:
                 created_at = entity.created_at
                 if created_at.tzinfo is not None:
@@ -101,7 +159,9 @@ class DomainStore:
                     max(int((now - created_at).total_seconds() * 1000), 0),
                 )
                 if not (entity.error_message or "").strip():
-                    entity.error_message = "Request interrupted while the service was not running"
+                    entity.error_message = (
+                        "Request interrupted while the service was not running"
+                    )
                 entity.stats_archived = 0
             await session.commit()
 
@@ -173,10 +233,18 @@ class DomainStore:
                     ModelPriceEntity(
                         model_key=key,
                         display_name=str(item.get("display_name") or key),
-                        input_price_per_million=float(item.get("input_price_per_million") or 0.0),
-                        output_price_per_million=float(item.get("output_price_per_million") or 0.0),
-                        cache_read_price_per_million=float(item.get("cache_read_price_per_million") or 0.0),
-                        cache_write_price_per_million=float(item.get("cache_write_price_per_million") or 0.0),
+                        input_price_per_million=float(
+                            item.get("input_price_per_million") or 0.0
+                        ),
+                        output_price_per_million=float(
+                            item.get("output_price_per_million") or 0.0
+                        ),
+                        cache_read_price_per_million=float(
+                            item.get("cache_read_price_per_million") or 0.0
+                        ),
+                        cache_write_price_per_million=float(
+                            item.get("cache_write_price_per_million") or 0.0
+                        ),
                     )
                 )
 
@@ -190,7 +258,9 @@ class DomainStore:
             rows = await session.execute(query)
             return [str(item) for item in rows.scalars().all() if str(item).strip()]
 
-    async def replace_model_prices(self, model_prices: list[dict[str, int | float | str]]) -> None:
+    async def replace_model_prices(
+        self, model_prices: list[dict[str, int | float | str]]
+    ) -> None:
         async with self._session_factory() as session:
             await session.execute(delete(ModelPriceEntity))
             for item in model_prices:
@@ -201,10 +271,18 @@ class DomainStore:
                     ModelPriceEntity(
                         model_key=key,
                         display_name=str(item.get("display_name") or key),
-                        input_price_per_million=float(item.get("input_price_per_million") or 0.0),
-                        output_price_per_million=float(item.get("output_price_per_million") or 0.0),
-                        cache_read_price_per_million=float(item.get("cache_read_price_per_million") or 0.0),
-                        cache_write_price_per_million=float(item.get("cache_write_price_per_million") or 0.0),
+                        input_price_per_million=float(
+                            item.get("input_price_per_million") or 0.0
+                        ),
+                        output_price_per_million=float(
+                            item.get("output_price_per_million") or 0.0
+                        ),
+                        cache_read_price_per_million=float(
+                            item.get("cache_read_price_per_million") or 0.0
+                        ),
+                        cache_write_price_per_million=float(
+                            item.get("cache_write_price_per_million") or 0.0
+                        ),
                     )
                 )
             await session.commit()
@@ -218,8 +296,8 @@ class DomainStore:
     ) -> None:
         async with self._session_factory() as session:
             existing_rows = (
-                await session.execute(select(ModelPriceEntity))
-            ).scalars().all()
+                (await session.execute(select(ModelPriceEntity))).scalars().all()
+            )
             entities_by_key = {item.model_key: item for item in existing_rows}
 
             for item in model_prices:
@@ -232,24 +310,50 @@ class DomainStore:
                         ModelPriceEntity(
                             model_key=key,
                             display_name=str(item.get("display_name") or key),
-                            input_price_per_million=float(item.get("input_price_per_million") or 0.0),
-                            output_price_per_million=float(item.get("output_price_per_million") or 0.0),
-                            cache_read_price_per_million=float(item.get("cache_read_price_per_million") or 0.0),
-                            cache_write_price_per_million=float(item.get("cache_write_price_per_million") or 0.0),
+                            input_price_per_million=float(
+                                item.get("input_price_per_million") or 0.0
+                            ),
+                            output_price_per_million=float(
+                                item.get("output_price_per_million") or 0.0
+                            ),
+                            cache_read_price_per_million=float(
+                                item.get("cache_read_price_per_million") or 0.0
+                            ),
+                            cache_write_price_per_million=float(
+                                item.get("cache_write_price_per_million") or 0.0
+                            ),
                         )
                     )
                     continue
                 if overwrite_existing:
-                    entity.display_name = str(item.get("display_name") or entity.display_name or key)
-                    entity.input_price_per_million = float(item.get("input_price_per_million") or 0.0)
-                    entity.output_price_per_million = float(item.get("output_price_per_million") or 0.0)
-                    entity.cache_read_price_per_million = float(item.get("cache_read_price_per_million") or 0.0)
-                    entity.cache_write_price_per_million = float(item.get("cache_write_price_per_million") or 0.0)
+                    entity.display_name = str(
+                        item.get("display_name") or entity.display_name or key
+                    )
+                    entity.input_price_per_million = float(
+                        item.get("input_price_per_million") or 0.0
+                    )
+                    entity.output_price_per_million = float(
+                        item.get("output_price_per_million") or 0.0
+                    )
+                    entity.cache_read_price_per_million = float(
+                        item.get("cache_read_price_per_million") or 0.0
+                    )
+                    entity.cache_write_price_per_million = float(
+                        item.get("cache_write_price_per_million") or 0.0
+                    )
 
             if allowed_keys is not None:
-                normalized_allowed_keys = {normalize_model_key(item) for item in allowed_keys if normalize_model_key(item)}
+                normalized_allowed_keys = {
+                    normalize_model_key(item)
+                    for item in allowed_keys
+                    if normalize_model_key(item)
+                }
                 if normalized_allowed_keys:
-                    await session.execute(delete(ModelPriceEntity).where(ModelPriceEntity.model_key.not_in(normalized_allowed_keys)))
+                    await session.execute(
+                        delete(ModelPriceEntity).where(
+                            ModelPriceEntity.model_key.not_in(normalized_allowed_keys)
+                        )
+                    )
                 else:
                     await session.execute(delete(ModelPriceEntity))
 
@@ -258,8 +362,17 @@ class DomainStore:
     async def list_model_prices(self) -> ModelPriceListResponse:
         async with self._session_factory() as session:
             price_rows = (
-                await session.execute(select(ModelPriceEntity).order_by(ModelPriceEntity.display_name.asc(), ModelPriceEntity.model_key.asc()))
-            ).scalars().all()
+                (
+                    await session.execute(
+                        select(ModelPriceEntity).order_by(
+                            ModelPriceEntity.display_name.asc(),
+                            ModelPriceEntity.model_key.asc(),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
             group_rows = (
                 await session.execute(
                     select(ModelGroupEntity.name, ModelGroupEntity.protocol)
@@ -267,7 +380,9 @@ class DomainStore:
                     .order_by(ModelGroupEntity.name.asc())
                 )
             ).all()
-            last_synced_at = await session.get(SettingEntity, SETTING_MODEL_PRICE_LAST_SYNC_AT)
+            last_synced_at = await session.get(
+                SettingEntity, SETTING_MODEL_PRICE_LAST_SYNC_AT
+            )
 
         prices_by_key = {item.model_key: item for item in price_rows}
         protocols_by_key: dict[str, set[ProtocolKind]] = {}
@@ -284,35 +399,60 @@ class DomainStore:
                 display_names_by_key[key] = str(price_entity.display_name or key)
 
         items: list[ModelPriceItem] = []
-        for key in sorted(display_names_by_key, key=lambda item: display_names_by_key[item].lower()):
+        for key in sorted(
+            display_names_by_key, key=lambda item: display_names_by_key[item].lower()
+        ):
             price_entity = prices_by_key.get(key)
             items.append(
                 ModelPriceItem(
                     model_key=key,
                     display_name=display_names_by_key[key],
-                    protocols=sorted(protocols_by_key.get(key, set()), key=lambda value: value.value),
-                    input_price_per_million=float(price_entity.input_price_per_million) if price_entity is not None else 0.0,
-                    output_price_per_million=float(price_entity.output_price_per_million) if price_entity is not None else 0.0,
-                    cache_read_price_per_million=float(price_entity.cache_read_price_per_million) if price_entity is not None else 0.0,
-                    cache_write_price_per_million=float(price_entity.cache_write_price_per_million) if price_entity is not None else 0.0,
+                    protocols=sorted(
+                        protocols_by_key.get(key, set()), key=lambda value: value.value
+                    ),
+                    input_price_per_million=(
+                        float(price_entity.input_price_per_million)
+                        if price_entity is not None
+                        else 0.0
+                    ),
+                    output_price_per_million=(
+                        float(price_entity.output_price_per_million)
+                        if price_entity is not None
+                        else 0.0
+                    ),
+                    cache_read_price_per_million=(
+                        float(price_entity.cache_read_price_per_million)
+                        if price_entity is not None
+                        else 0.0
+                    ),
+                    cache_write_price_per_million=(
+                        float(price_entity.cache_write_price_per_million)
+                        if price_entity is not None
+                        else 0.0
+                    ),
                 )
             )
 
         return ModelPriceListResponse(
             items=items,
-            last_synced_at=last_synced_at.value if last_synced_at is not None and last_synced_at.value.strip() else None,
+            last_synced_at=(
+                last_synced_at.value
+                if last_synced_at is not None and last_synced_at.value.strip()
+                else None
+            ),
         )
 
     async def upsert_model_price(self, payload: ModelPriceUpdate) -> ModelPriceItem:
         model_key = normalize_model_key(payload.model_key)
         if not model_key:
-            raise ValueError('Model key is required')
+            raise ValueError("Model key is required")
 
         async with self._session_factory() as session:
             group_rows = (
                 await session.execute(
-                    select(ModelGroupEntity.name, ModelGroupEntity.protocol)
-                    .where(ModelGroupEntity.route_group_id == "")
+                    select(ModelGroupEntity.name, ModelGroupEntity.protocol).where(
+                        ModelGroupEntity.route_group_id == ""
+                    )
                 )
             ).all()
             matched_groups = [
@@ -321,7 +461,9 @@ class DomainStore:
                 if normalize_model_key(str(name)) == model_key
             ]
             if not matched_groups:
-                raise ValueError('Model price can only be maintained for existing model groups')
+                raise ValueError(
+                    "Model price can only be maintained for existing model groups"
+                )
 
             entity = await session.get(ModelPriceEntity, model_key)
             display_name = payload.display_name.strip() or matched_groups[0][0]
@@ -331,20 +473,32 @@ class DomainStore:
                     display_name=display_name,
                     input_price_per_million=float(payload.input_price_per_million),
                     output_price_per_million=float(payload.output_price_per_million),
-                    cache_read_price_per_million=float(payload.cache_read_price_per_million),
-                    cache_write_price_per_million=float(payload.cache_write_price_per_million),
+                    cache_read_price_per_million=float(
+                        payload.cache_read_price_per_million
+                    ),
+                    cache_write_price_per_million=float(
+                        payload.cache_write_price_per_million
+                    ),
                 )
                 session.add(entity)
             else:
                 entity.display_name = display_name
                 entity.input_price_per_million = float(payload.input_price_per_million)
-                entity.output_price_per_million = float(payload.output_price_per_million)
-                entity.cache_read_price_per_million = float(payload.cache_read_price_per_million)
-                entity.cache_write_price_per_million = float(payload.cache_write_price_per_million)
+                entity.output_price_per_million = float(
+                    payload.output_price_per_million
+                )
+                entity.cache_read_price_per_million = float(
+                    payload.cache_read_price_per_million
+                )
+                entity.cache_write_price_per_million = float(
+                    payload.cache_write_price_per_million
+                )
 
             await session.commit()
 
-        protocols = sorted({protocol for _, protocol in matched_groups}, key=lambda value: value.value)
+        protocols = sorted(
+            {protocol for _, protocol in matched_groups}, key=lambda value: value.value
+        )
 
         return ModelPriceItem(
             model_key=model_key,
@@ -360,7 +514,9 @@ class DomainStore:
         async with self._session_factory() as session:
             entity = await session.get(SettingEntity, SETTING_MODEL_PRICE_LAST_SYNC_AT)
             if entity is None:
-                session.add(SettingEntity(key=SETTING_MODEL_PRICE_LAST_SYNC_AT, value=value))
+                session.add(
+                    SettingEntity(key=SETTING_MODEL_PRICE_LAST_SYNC_AT, value=value)
+                )
             else:
                 entity.value = value
             await session.commit()
@@ -368,8 +524,14 @@ class DomainStore:
     async def list_groups(self) -> list[ModelGroup]:
         async with self._session_factory() as session:
             entities = (
-                await session.execute(select(ModelGroupEntity).order_by(ModelGroupEntity.name))
-            ).scalars().all()
+                (
+                    await session.execute(
+                        select(ModelGroupEntity).order_by(ModelGroupEntity.name)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             return await self._hydrate_groups(session, entities)
 
     async def get_group(self, group_id: str) -> ModelGroup:
@@ -380,7 +542,9 @@ class DomainStore:
             hydrated = await self._hydrate_groups(session, [entity])
             return hydrated[0]
 
-    async def find_group_by_name(self, protocol: str, name: str | None) -> ModelGroup | None:
+    async def find_group_by_name(
+        self, protocol: str, name: str | None
+    ) -> ModelGroup | None:
         if not name:
             return None
 
@@ -397,26 +561,46 @@ class DomainStore:
             hydrated = await self._hydrate_groups(session, [entity])
             return hydrated[0]
 
-    async def list_group_candidates(self, payload: ModelGroupCandidatesRequest) -> ModelGroupCandidatesResponse:
+    async def list_group_candidates(
+        self, payload: ModelGroupCandidatesRequest
+    ) -> ModelGroupCandidatesResponse:
         async with self._session_factory() as session:
-            query = select(SiteProtocolConfigEntity).order_by(SiteProtocolConfigEntity.protocol.asc(), SiteProtocolConfigEntity.id.asc())
+            query = select(SiteProtocolConfigEntity).order_by(
+                SiteProtocolConfigEntity.protocol.asc(),
+                SiteProtocolConfigEntity.id.asc(),
+            )
             channels = (await session.execute(query)).scalars().all()
             if payload.protocol is not None:
                 channels = [
-                    channel for channel in channels
-                    if can_reach_protocol(ProtocolKind(channel.protocol), payload.protocol)
+                    channel
+                    for channel in channels
+                    if can_reach_protocol(
+                        ProtocolKind(channel.protocol), payload.protocol
+                    )
                 ]
             channel_ids = [item.id for item in channels]
             discovered_models = []
             if channel_ids:
                 discovered_models = (
-                    await session.execute(
-                        select(SiteDiscoveredModelEntity)
-                        .where(SiteDiscoveredModelEntity.protocol_config_id.in_(channel_ids))
-                        .where(SiteDiscoveredModelEntity.enabled == 1)
-                        .order_by(SiteDiscoveredModelEntity.protocol_config_id.asc(), SiteDiscoveredModelEntity.sort_order.asc(), SiteDiscoveredModelEntity.id.asc())
+                    (
+                        await session.execute(
+                            select(SiteDiscoveredModelEntity)
+                            .where(
+                                SiteDiscoveredModelEntity.protocol_config_id.in_(
+                                    channel_ids
+                                )
+                            )
+                            .where(SiteDiscoveredModelEntity.enabled == 1)
+                            .order_by(
+                                SiteDiscoveredModelEntity.protocol_config_id.asc(),
+                                SiteDiscoveredModelEntity.sort_order.asc(),
+                                SiteDiscoveredModelEntity.id.asc(),
+                            )
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
             channel_rows = []
             if channel_ids:
                 channel_rows = (
@@ -428,18 +612,30 @@ class DomainStore:
                             SiteEntity.name,
                             SiteEntity.id.label("site_id"),
                         )
-                        .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
+                        .join(
+                            SiteEntity,
+                            SiteEntity.id == SiteProtocolConfigEntity.site_id,
+                        )
                         .where(SiteProtocolConfigEntity.id.in_(channel_ids))
                     )
                 ).all()
                 site_ids_for_urls = sorted({row.site_id for row in channel_rows})
                 base_url_rows = (
-                    await session.execute(
-                        select(SiteBaseUrlEntity)
-                        .where(SiteBaseUrlEntity.site_id.in_(site_ids_for_urls))
-                        .order_by(SiteBaseUrlEntity.site_id.asc(), SiteBaseUrlEntity.sort_order.asc())
+                    (
+                        await session.execute(
+                            select(SiteBaseUrlEntity)
+                            .where(SiteBaseUrlEntity.site_id.in_(site_ids_for_urls))
+                            .order_by(
+                                SiteBaseUrlEntity.site_id.asc(),
+                                SiteBaseUrlEntity.sort_order.asc(),
+                            )
+                        )
                     )
-                ).scalars().all() if site_ids_for_urls else []
+                    .scalars()
+                    .all()
+                    if site_ids_for_urls
+                    else []
+                )
                 first_url_by_site: dict[str, str] = {}
                 url_by_id: dict[str, str] = {}
                 for row in base_url_rows:
@@ -452,35 +648,51 @@ class DomainStore:
 
         candidates: list[ModelGroupCandidateItem] = []
         seen: set[tuple[str, str, str]] = set()
-        excluded = {(item.channel_id, item.credential_id, item.model_name) for item in payload.exclude_items}
+        excluded = {
+            (item.channel_id, item.credential_id, item.model_name)
+            for item in payload.exclude_items
+        }
         credential_rows = []
         site_ids = sorted({row.site_id for row in channel_rows})
         if site_ids:
             async with self._session_factory() as session:
                 credential_rows = (
-                    await session.execute(
-                        select(SiteCredentialEntity)
-                        .where(SiteCredentialEntity.site_id.in_(site_ids))
-                        .order_by(SiteCredentialEntity.site_id.asc(), SiteCredentialEntity.sort_order.asc(), SiteCredentialEntity.id.asc())
+                    (
+                        await session.execute(
+                            select(SiteCredentialEntity)
+                            .where(SiteCredentialEntity.site_id.in_(site_ids))
+                            .order_by(
+                                SiteCredentialEntity.site_id.asc(),
+                                SiteCredentialEntity.sort_order.asc(),
+                                SiteCredentialEntity.id.asc(),
+                            )
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
         credential_names = {item.id: item.name for item in credential_rows}
         credential_numbers: dict[str, int] = {}
         credential_counts_by_site: dict[str, int] = {}
         for item in credential_rows:
-            credential_counts_by_site[item.site_id] = credential_counts_by_site.get(item.site_id, 0) + 1
+            credential_counts_by_site[item.site_id] = (
+                credential_counts_by_site.get(item.site_id, 0) + 1
+            )
             credential_numbers[item.id] = credential_counts_by_site[item.site_id]
 
         models_by_channel: dict[str, list[tuple[str, str]]] = {}
         for item in discovered_models:
-            models_by_channel.setdefault(item.protocol_config_id, []).append((item.credential_id, item.model_name))
+            models_by_channel.setdefault(item.protocol_config_id, []).append(
+                (item.credential_id, item.model_name)
+            )
 
         channel_meta_by_id = {
             channel_id: {
                 "site_id": site_id,
                 "name": site_name,
                 "protocol": protocol,
-                "base_url": url_by_id.get(base_url_id) or first_url_by_site.get(site_id, ""),
+                "base_url": url_by_id.get(base_url_id)
+                or first_url_by_site.get(site_id, ""),
             }
             for channel_id, protocol, base_url_id, site_name, site_id in channel_rows
         }
@@ -490,7 +702,11 @@ class DomainStore:
             for credential_id, model_name in channel_items:
                 candidate_key = (channel.id, credential_id, model_name)
                 wildcard_key = (channel.id, "", model_name)
-                if candidate_key in seen or candidate_key in excluded or wildcard_key in excluded:
+                if (
+                    candidate_key in seen
+                    or candidate_key in excluded
+                    or wildcard_key in excluded
+                ):
                     continue
                 seen.add(candidate_key)
                 meta = channel_meta_by_id.get(channel.id, {})
@@ -499,7 +715,9 @@ class DomainStore:
                         site_id=str(meta.get("site_id") or ""),
                         channel_id=channel.id,
                         channel_name=str(meta.get("name") or channel.protocol),
-                        protocol=ProtocolKind(str(meta.get("protocol") or channel.protocol)),
+                        protocol=ProtocolKind(
+                            str(meta.get("protocol") or channel.protocol)
+                        ),
                         credential_id=credential_id,
                         credential_name=credential_names.get(credential_id, ""),
                         credential_number=credential_numbers.get(credential_id, 0),
@@ -513,8 +731,14 @@ class DomainStore:
     async def list_group_stats(self) -> list[ModelGroupStats]:
         async with self._session_factory() as session:
             groups = (
-                await session.execute(select(ModelGroupEntity).order_by(ModelGroupEntity.name))
-            ).scalars().all()
+                (
+                    await session.execute(
+                        select(ModelGroupEntity).order_by(ModelGroupEntity.name)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             grouped_rows = (
                 await session.execute(
                     select(
@@ -526,7 +750,11 @@ class DomainStore:
                         func.avg(RequestLogEntity.latency_ms),
                     )
                     .where(RequestLogEntity.resolved_group_name.is_not(None))
-                    .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
+                    .where(
+                        RequestLogEntity.lifecycle_status.in_(
+                            REQUEST_LOG_TERMINAL_STATUSES
+                        )
+                    )
                     .group_by(RequestLogEntity.resolved_group_name)
                 )
             ).all()
@@ -539,8 +767,14 @@ class DomainStore:
                     )
                     .where(RequestLogEntity.resolved_group_name.is_not(None))
                     .where(RequestLogEntity.upstream_model_name.is_not(None))
-                    .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
-                    .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+                    .where(
+                        RequestLogEntity.lifecycle_status.in_(
+                            REQUEST_LOG_TERMINAL_STATUSES
+                        )
+                    )
+                    .order_by(
+                        RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()
+                    )
                 )
             ).all()
 
@@ -576,7 +810,9 @@ class DomainStore:
                     success_count=success_count,
                     failed_count=max(request_count - success_count, 0),
                     total_tokens=int(aggregate.get("total_tokens", 0)),
-                    total_cost_usd=round(float(aggregate.get("total_cost_usd", 0.0)), 6),
+                    total_cost_usd=round(
+                        float(aggregate.get("total_cost_usd", 0.0)), 6
+                    ),
                     avg_latency_ms=int(aggregate.get("avg_latency_ms", 0)),
                     last_resolved_model=last_models.get(group.name),
                 )
@@ -609,15 +845,25 @@ class DomainStore:
             hydrated = await self._hydrate_groups(session, [entity])
             return hydrated[0]
 
-    async def update_group(self, group_id: str, payload: ModelGroupUpdate) -> ModelGroup:
+    async def update_group(
+        self, group_id: str, payload: ModelGroupUpdate
+    ) -> ModelGroup:
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
                 raise KeyError(group_id)
 
-            next_protocol = payload.protocol.value if payload.protocol is not None else entity.protocol
+            next_protocol = (
+                payload.protocol.value
+                if payload.protocol is not None
+                else entity.protocol
+            )
             next_name = payload.name if payload.name is not None else entity.name
-            next_route_group_id = payload.route_group_id if payload.route_group_id is not None else entity.route_group_id
+            next_route_group_id = (
+                payload.route_group_id
+                if payload.route_group_id is not None
+                else entity.route_group_id
+            )
             inbound_route_group_result = await session.execute(
                 select(ModelGroupEntity.id)
                 .where(ModelGroupEntity.route_group_id == group_id)
@@ -628,13 +874,24 @@ class DomainStore:
                 inbound_route_group_result.scalar_one_or_none() is not None
             )
             if next_protocol != entity.protocol and has_inbound_route_group:
-                raise ValueError('Execution groups referenced by route groups cannot change protocol')
+                raise ValueError(
+                    "Execution groups referenced by route groups cannot change protocol"
+                )
             if next_route_group_id and has_inbound_route_group:
-                raise ValueError('Execution groups referenced by route groups cannot become route groups')
+                raise ValueError(
+                    "Execution groups referenced by route groups cannot become route groups"
+                )
             current_items = await self._load_group_items(session, [group_id])
             next_items = (
-                payload.items if payload.items is not None else [
-                    ModelGroupItemInput(channel_id=item.channel_id, credential_id=item.credential_id, model_name=item.model_name, enabled=item.enabled)
+                payload.items
+                if payload.items is not None
+                else [
+                    ModelGroupItemInput(
+                        channel_id=item.channel_id,
+                        credential_id=item.credential_id,
+                        model_name=item.model_name,
+                        enabled=item.enabled,
+                    )
                     for item in current_items.get(group_id, [])
                 ]
             )
@@ -658,7 +915,9 @@ class DomainStore:
                 elif key == "items" and value is not None:
                     continue
                 elif key == "route_group_id":
-                    entity.route_group_id = route_group.id if route_group is not None else ""
+                    entity.route_group_id = (
+                        route_group.id if route_group is not None else ""
+                    )
                     if not entity.route_group_id:
                         continue
                     entity.sync_filter_mode = ""
@@ -671,7 +930,11 @@ class DomainStore:
                 entity.sync_filter_query = ""
 
             if payload.items is not None or payload.protocol is not None:
-                await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
+                await session.execute(
+                    delete(ModelGroupItemEntity).where(
+                        ModelGroupItemEntity.group_id == group_id
+                    )
+                )
                 await self._replace_group_items(session, group_id, next_items)
 
             await session.commit()
@@ -691,8 +954,12 @@ class DomainStore:
                 .limit(1)
             )
             if inbound_route_group.scalar_one_or_none() is not None:
-                raise ValueError('Model group is still referenced by route groups')
-            await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
+                raise ValueError("Model group is still referenced by route groups")
+            await session.execute(
+                delete(ModelGroupItemEntity).where(
+                    ModelGroupItemEntity.group_id == group_id
+                )
+            )
             await session.delete(entity)
             await session.commit()
 
@@ -707,7 +974,7 @@ class DomainStore:
     ) -> ModelGroupEntity | None:
         normalized_name = name.strip()
         if not normalized_name:
-            raise ValueError('Model group name is required')
+            raise ValueError("Model group name is required")
 
         result = await session.execute(
             select(ModelGroupEntity.id)
@@ -717,75 +984,122 @@ class DomainStore:
         )
         existing_id = result.scalar_one_or_none()
         if existing_id is not None and existing_id != exclude_group_id:
-            raise ValueError(f'Model group already exists for protocol={protocol}: {normalized_name}')
+            raise ValueError(
+                f"Model group already exists for protocol={protocol}: {normalized_name}"
+            )
 
         normalized_route_group_id = route_group_id.strip()
         route_group: ModelGroupEntity | None = None
         if normalized_route_group_id:
-            if exclude_group_id is not None and normalized_route_group_id == exclude_group_id:
-                raise ValueError('Model group cannot route to itself')
+            if (
+                exclude_group_id is not None
+                and normalized_route_group_id == exclude_group_id
+            ):
+                raise ValueError("Model group cannot route to itself")
             route_group = await session.get(ModelGroupEntity, normalized_route_group_id)
             if route_group is None:
-                raise ValueError(f'Route target model group not found: {normalized_route_group_id}')
+                raise ValueError(
+                    f"Route target model group not found: {normalized_route_group_id}"
+                )
             if route_group.protocol != protocol:
-                raise ValueError(f'Route target protocol mismatch: {route_group.name}')
+                raise ValueError(f"Route target protocol mismatch: {route_group.name}")
             if route_group.route_group_id.strip():
-                raise ValueError(f'Route target must be an execution group: {route_group.name}')
+                raise ValueError(
+                    f"Route target must be an execution group: {route_group.name}"
+                )
 
         if not items:
             return route_group
 
         channel_ids = list(dict.fromkeys(item.channel_id for item in items))
-        channel_result = await session.execute(select(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(channel_ids)))
+        channel_result = await session.execute(
+            select(SiteProtocolConfigEntity).where(
+                SiteProtocolConfigEntity.id.in_(channel_ids)
+            )
+        )
         channel_rows = channel_result.scalars().all()
         existing_channel_ids = {row.id for row in channel_rows}
-        missing_channel_ids = [channel_id for channel_id in channel_ids if channel_id not in existing_channel_ids]
+        missing_channel_ids = [
+            channel_id
+            for channel_id in channel_ids
+            if channel_id not in existing_channel_ids
+        ]
         if missing_channel_ids:
             raise ValueError(f'Channels not found: {", ".join(missing_channel_ids)}')
 
         invalid_channel_ids = [
-            channel.id for channel in channel_rows
-            if not can_reach_protocol(ProtocolKind(channel.protocol), ProtocolKind(protocol))
+            channel.id
+            for channel in channel_rows
+            if not can_reach_protocol(
+                ProtocolKind(channel.protocol), ProtocolKind(protocol)
+            )
         ]
         if invalid_channel_ids:
-            raise ValueError(f'Channels cannot reach protocol={protocol}: {", ".join(invalid_channel_ids)}')
+            raise ValueError(
+                f'Channels cannot reach protocol={protocol}: {", ".join(invalid_channel_ids)}'
+            )
 
         model_rows = (
-            await session.execute(
-                select(SiteDiscoveredModelEntity)
-                .where(SiteDiscoveredModelEntity.protocol_config_id.in_(channel_ids))
-                .where(SiteDiscoveredModelEntity.enabled == 1)
+            (
+                await session.execute(
+                    select(SiteDiscoveredModelEntity)
+                    .where(
+                        SiteDiscoveredModelEntity.protocol_config_id.in_(channel_ids)
+                    )
+                    .where(SiteDiscoveredModelEntity.enabled == 1)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         model_names_by_channel: dict[str, set[tuple[str, str]]] = {}
         for row in model_rows:
-            model_names_by_channel.setdefault(row.protocol_config_id, set()).add((row.credential_id, row.model_name))
+            model_names_by_channel.setdefault(row.protocol_config_id, set()).add(
+                (row.credential_id, row.model_name)
+            )
 
         for item in items:
             channel_models = model_names_by_channel.get(item.channel_id, set())
-            target = (item.credential_id, item.model_name) if item.credential_id else None
+            target = (
+                (item.credential_id, item.model_name) if item.credential_id else None
+            )
             if target is not None:
                 if target not in channel_models:
-                    raise ValueError(f'Model not found in channel {item.channel_id} credential={item.credential_id}: {item.model_name}')
-            elif not any(model_name == item.model_name for _, model_name in channel_models):
-                raise ValueError(f'Model not found in channel {item.channel_id}: {item.model_name}')
+                    raise ValueError(
+                        f"Model not found in channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
+                    )
+            elif not any(
+                model_name == item.model_name for _, model_name in channel_models
+            ):
+                raise ValueError(
+                    f"Model not found in channel {item.channel_id}: {item.model_name}"
+                )
 
         return route_group
 
-    async def _hydrate_groups(self, session: AsyncSession, entities: list[ModelGroupEntity]) -> list[ModelGroup]:
+    async def _hydrate_groups(
+        self, session: AsyncSession, entities: list[ModelGroupEntity]
+    ) -> list[ModelGroup]:
         if not entities:
             return []
-        items_by_group = await self._load_group_items(session, [item.id for item in entities])
-        route_group_ids = [item.route_group_id for item in entities if item.route_group_id.strip()]
+        items_by_group = await self._load_group_items(
+            session, [item.id for item in entities]
+        )
+        route_group_ids = [
+            item.route_group_id for item in entities if item.route_group_id.strip()
+        ]
         route_name_by_id: dict[str, str] = {}
         if route_group_ids:
             route_rows = (
                 await session.execute(
-                    select(ModelGroupEntity.id, ModelGroupEntity.name)
-                    .where(ModelGroupEntity.id.in_(sorted(set(route_group_ids))))
+                    select(ModelGroupEntity.id, ModelGroupEntity.name).where(
+                        ModelGroupEntity.id.in_(sorted(set(route_group_ids)))
+                    )
                 )
             ).all()
-            route_name_by_id = {str(group_id): str(group_name) for group_id, group_name in route_rows}
+            route_name_by_id = {
+                str(group_id): str(group_name) for group_id, group_name in route_rows
+            }
         prices_by_key = await self._load_model_prices_by_keys(
             session, [normalize_model_key(item.name) for item in entities]
         )
@@ -807,39 +1121,65 @@ class DomainStore:
             return {}
 
         rows = (
-            await session.execute(
-                select(ModelPriceEntity).where(ModelPriceEntity.model_key.in_(normalized_keys))
+            (
+                await session.execute(
+                    select(ModelPriceEntity).where(
+                        ModelPriceEntity.model_key.in_(normalized_keys)
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return {row.model_key: row for row in rows}
 
-    async def _load_group_items(self, session: AsyncSession, group_ids: list[str]) -> dict[str, list[ModelGroupItem]]:
+    async def _load_group_items(
+        self, session: AsyncSession, group_ids: list[str]
+    ) -> dict[str, list[ModelGroupItem]]:
         if not group_ids:
             return {}
 
         rows = (
-            await session.execute(
-                select(ModelGroupItemEntity)
-                .where(ModelGroupItemEntity.group_id.in_(group_ids))
-                .order_by(ModelGroupItemEntity.group_id.asc(), ModelGroupItemEntity.sort_order.asc(), ModelGroupItemEntity.id.asc())
+            (
+                await session.execute(
+                    select(ModelGroupItemEntity)
+                    .where(ModelGroupItemEntity.group_id.in_(group_ids))
+                    .order_by(
+                        ModelGroupItemEntity.group_id.asc(),
+                        ModelGroupItemEntity.sort_order.asc(),
+                        ModelGroupItemEntity.id.asc(),
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
-        items_by_group: dict[str, list[ModelGroupItem]] = {group_id: [] for group_id in group_ids}
+        items_by_group: dict[str, list[ModelGroupItem]] = {
+            group_id: [] for group_id in group_ids
+        }
         channel_ids = list({row.channel_id for row in rows})
         channel_site_names = await self._load_channel_site_names(session, channel_ids)
-        credential_names_by_channel = await self._load_credential_names_by_channel(session, channel_ids)
+        credential_names_by_channel = await self._load_credential_names_by_channel(
+            session, channel_ids
+        )
         channel_protocols = await self._load_channel_protocols(session, channel_ids)
-        credential_numbers = await self._load_credential_numbers_by_channel(session, channel_ids)
+        credential_numbers = await self._load_credential_numbers_by_channel(
+            session, channel_ids
+        )
         for row in rows:
             items_by_group.setdefault(row.group_id, []).append(
                 ModelGroupItem(
                     channel_id=row.channel_id,
-                    channel_name=channel_site_names.get(row.channel_id, ''),
+                    channel_name=channel_site_names.get(row.channel_id, ""),
                     protocol=channel_protocols.get(row.channel_id),
                     credential_id=row.credential_id,
-                    credential_name=credential_names_by_channel.get(row.channel_id, {}).get(row.credential_id, ''),
-                    credential_number=credential_numbers.get(row.channel_id, {}).get(row.credential_id, 0),
+                    credential_name=credential_names_by_channel.get(
+                        row.channel_id, {}
+                    ).get(row.credential_id, ""),
+                    credential_number=credential_numbers.get(row.channel_id, {}).get(
+                        row.credential_id, 0
+                    ),
                     model_name=row.model_name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
@@ -865,7 +1205,9 @@ class DomainStore:
                 )
             )
 
-    async def _load_channel_site_names(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, str]:
+    async def _load_channel_site_names(
+        self, session: AsyncSession, channel_ids: list[str]
+    ) -> dict[str, str]:
         if not channel_ids:
             return {}
         rows = (
@@ -877,21 +1219,25 @@ class DomainStore:
         ).all()
         return {channel_id: site_name for channel_id, site_name in rows}
 
-    async def _load_channel_protocols(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, ProtocolKind]:
+    async def _load_channel_protocols(
+        self, session: AsyncSession, channel_ids: list[str]
+    ) -> dict[str, ProtocolKind]:
         if not channel_ids:
             return {}
         rows = (
             await session.execute(
-                select(SiteProtocolConfigEntity.id, SiteProtocolConfigEntity.protocol)
-                .where(SiteProtocolConfigEntity.id.in_(channel_ids))
+                select(
+                    SiteProtocolConfigEntity.id, SiteProtocolConfigEntity.protocol
+                ).where(SiteProtocolConfigEntity.id.in_(channel_ids))
             )
         ).all()
         return {
-            channel_id: ProtocolKind(str(protocol))
-            for channel_id, protocol in rows
+            channel_id: ProtocolKind(str(protocol)) for channel_id, protocol in rows
         }
 
-    async def _load_credential_names_by_channel(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, dict[str, str]]:
+    async def _load_credential_names_by_channel(
+        self, session: AsyncSession, channel_ids: list[str]
+    ) -> dict[str, dict[str, str]]:
         if not channel_ids:
             return {}
         rows = await session.execute(
@@ -902,16 +1248,23 @@ class DomainStore:
             )
             .join(
                 SiteCredentialEntity,
-                SiteCredentialEntity.id == SiteProtocolCredentialBindingEntity.credential_id,
+                SiteCredentialEntity.id
+                == SiteProtocolCredentialBindingEntity.credential_id,
             )
-            .where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(channel_ids))
+            .where(
+                SiteProtocolCredentialBindingEntity.protocol_config_id.in_(channel_ids)
+            )
         )
         credential_names_by_channel: dict[str, dict[str, str]] = {}
         for protocol_config_id, credential_id, credential_name in rows.all():
-            credential_names_by_channel.setdefault(protocol_config_id, {})[credential_id] = credential_name
+            credential_names_by_channel.setdefault(protocol_config_id, {})[
+                credential_id
+            ] = credential_name
         return credential_names_by_channel
 
-    async def _load_credential_numbers_by_channel(self, session: AsyncSession, channel_ids: list[str]) -> dict[str, dict[str, int]]:
+    async def _load_credential_numbers_by_channel(
+        self, session: AsyncSession, channel_ids: list[str]
+    ) -> dict[str, dict[str, int]]:
         if not channel_ids:
             return {}
         rows = await session.execute(
@@ -924,25 +1277,35 @@ class DomainStore:
             .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
             .join(SiteCredentialEntity, SiteCredentialEntity.site_id == SiteEntity.id)
             .where(SiteProtocolConfigEntity.id.in_(channel_ids))
-            .order_by(SiteProtocolConfigEntity.id.asc(), SiteCredentialEntity.sort_order.asc(), SiteCredentialEntity.id.asc())
+            .order_by(
+                SiteProtocolConfigEntity.id.asc(),
+                SiteCredentialEntity.sort_order.asc(),
+                SiteCredentialEntity.id.asc(),
+            )
         )
         numbers_by_channel: dict[str, dict[str, int]] = {}
         counts_by_channel: dict[str, int] = {}
         for channel_id, credential_id, _site_id, _sort_order in rows.all():
             counts_by_channel[channel_id] = counts_by_channel.get(channel_id, 0) + 1
-            numbers_by_channel.setdefault(channel_id, {})[credential_id] = counts_by_channel[channel_id]
+            numbers_by_channel.setdefault(channel_id, {})[credential_id] = (
+                counts_by_channel[channel_id]
+            )
         return numbers_by_channel
 
     async def list_gateway_api_keys(self) -> list[GatewayApiKey]:
         async with self._session_factory() as session:
             rows = (
-                await session.execute(
-                    select(GatewayApiKeyEntity).order_by(
-                        GatewayApiKeyEntity.created_at.asc(),
-                        GatewayApiKeyEntity.id.asc(),
+                (
+                    await session.execute(
+                        select(GatewayApiKeyEntity).order_by(
+                            GatewayApiKeyEntity.created_at.asc(),
+                            GatewayApiKeyEntity.id.asc(),
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             spent_by_key = await self._gateway_key_spend_by_id(
                 session, [row.id for row in rows]
             )
@@ -965,10 +1328,14 @@ class DomainStore:
             ).scalar_one_or_none()
             if entity is None:
                 return None
-            spent = (await self._gateway_key_spend_by_id(session, [entity.id])).get(entity.id, 0.0)
+            spent = (await self._gateway_key_spend_by_id(session, [entity.id])).get(
+                entity.id, 0.0
+            )
             return self._to_gateway_api_key(entity, spent)
 
-    async def create_gateway_api_key(self, payload: GatewayApiKeyCreate) -> GatewayApiKey:
+    async def create_gateway_api_key(
+        self, payload: GatewayApiKeyCreate
+    ) -> GatewayApiKey:
         now = datetime.now(UTC).replace(tzinfo=None)
         async with self._session_factory() as session:
             secret = await self._generate_unique_gateway_api_key(session)
@@ -977,7 +1344,9 @@ class DomainStore:
                 remark=payload.remark.strip(),
                 api_key=secret,
                 enabled=1 if payload.enabled else 0,
-                allowed_models_json=self._dump_gateway_key_models(payload.allowed_models),
+                allowed_models_json=self._dump_gateway_key_models(
+                    payload.allowed_models
+                ),
                 max_cost_usd=max(float(payload.max_cost_usd), 0.0),
                 expires_at=self._parse_gateway_key_expires_at(payload.expires_at),
                 created_at=now,
@@ -1005,7 +1374,9 @@ class DomainStore:
             entity.updated_at = datetime.now(UTC).replace(tzinfo=None)
             await session.commit()
             await session.refresh(entity)
-            spent = (await self._gateway_key_spend_by_id(session, [entity.id])).get(entity.id, 0.0)
+            spent = (await self._gateway_key_spend_by_id(session, [entity.id])).get(
+                entity.id, 0.0
+            )
             return self._to_gateway_api_key(entity, spent)
 
     async def delete_gateway_api_key(self, key_id: str) -> None:
@@ -1024,20 +1395,38 @@ class DomainStore:
     async def get_runtime_settings(self) -> dict[str, Any]:
         items = await self.list_settings()
         mapping = {item.key: item.value for item in items}
-        cors_allow_origins = self._split_comma_lines(mapping.get(SETTING_CORS_ALLOW_ORIGINS, ""))
+        cors_allow_origins = self._split_comma_lines(
+            mapping.get(SETTING_CORS_ALLOW_ORIGINS, "")
+        )
         time_zone = normalize_time_zone(mapping.get(SETTING_TIME_ZONE))
         return {
             "proxy_url": mapping.get(SETTING_PROXY_URL, "").strip(),
             "time_zone": time_zone,
             "cors_allow_origins": cors_allow_origins or ["*"],
-            "relay_log_keep_enabled": self._parse_bool(mapping.get(SETTING_RELAY_LOG_KEEP_ENABLED), default=True),
-            "relay_log_keep_period": self._parse_int(mapping.get(SETTING_RELAY_LOG_KEEP_PERIOD), default=7),
-            "circuit_breaker_threshold": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_THRESHOLD), default=3),
-            "circuit_breaker_cooldown": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_COOLDOWN), default=60),
-            "circuit_breaker_max_cooldown": self._parse_int(mapping.get(SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN), default=600),
-            "health_window_seconds": self._parse_int(mapping.get(SETTING_HEALTH_WINDOW_SECONDS), default=300),
-            "health_penalty_weight": self._parse_float(mapping.get(SETTING_HEALTH_PENALTY_WEIGHT), default=0.5),
-            "health_min_samples": self._parse_int(mapping.get(SETTING_HEALTH_MIN_SAMPLES), default=10),
+            "relay_log_keep_enabled": self._parse_bool(
+                mapping.get(SETTING_RELAY_LOG_KEEP_ENABLED), default=True
+            ),
+            "relay_log_keep_period": self._parse_int(
+                mapping.get(SETTING_RELAY_LOG_KEEP_PERIOD), default=7
+            ),
+            "circuit_breaker_threshold": self._parse_int(
+                mapping.get(SETTING_CIRCUIT_BREAKER_THRESHOLD), default=3
+            ),
+            "circuit_breaker_cooldown": self._parse_int(
+                mapping.get(SETTING_CIRCUIT_BREAKER_COOLDOWN), default=60
+            ),
+            "circuit_breaker_max_cooldown": self._parse_int(
+                mapping.get(SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN), default=600
+            ),
+            "health_window_seconds": self._parse_int(
+                mapping.get(SETTING_HEALTH_WINDOW_SECONDS), default=300
+            ),
+            "health_penalty_weight": self._parse_float(
+                mapping.get(SETTING_HEALTH_PENALTY_WEIGHT), default=0.5
+            ),
+            "health_min_samples": self._parse_int(
+                mapping.get(SETTING_HEALTH_MIN_SAMPLES), default=10
+            ),
             "site_name": mapping.get(SETTING_SITE_NAME, "Lens").strip() or "Lens",
             "site_logo_url": mapping.get(SETTING_SITE_LOGO_URL, "").strip(),
         }
@@ -1051,17 +1440,30 @@ class DomainStore:
 
     async def list_settings(self) -> list[SettingItem]:
         cached = self._settings_cache
-        if cached is not None and (monotonic() - self._settings_cache_at) < self._settings_cache_ttl_seconds:
+        if (
+            cached is not None
+            and (monotonic() - self._settings_cache_at)
+            < self._settings_cache_ttl_seconds
+        ):
             return self._clone_settings_items(cached)
 
         async with self._settings_cache_lock:
             cached = self._settings_cache
-            if cached is not None and (monotonic() - self._settings_cache_at) < self._settings_cache_ttl_seconds:
+            if (
+                cached is not None
+                and (monotonic() - self._settings_cache_at)
+                < self._settings_cache_ttl_seconds
+            ):
                 return self._clone_settings_items(cached)
 
             async with self._session_factory() as session:
-                result = await session.execute(select(SettingEntity).order_by(SettingEntity.key))
-                items = [SettingItem(key=item.key, value=item.value) for item in result.scalars().all()]
+                result = await session.execute(
+                    select(SettingEntity).order_by(SettingEntity.key)
+                )
+                items = [
+                    SettingItem(key=item.key, value=item.value)
+                    for item in result.scalars().all()
+                ]
             return self._store_settings_cache(items)
 
     async def upsert_settings(self, items: list[SettingItem]) -> list[SettingItem]:
@@ -1072,7 +1474,9 @@ class DomainStore:
             existing = await session.execute(
                 select(SettingEntity).where(SettingEntity.key.in_(keys))
             )
-            existing_by_key = {entity.key: entity for entity in existing.scalars().all()}
+            existing_by_key = {
+                entity.key: entity for entity in existing.scalars().all()
+            }
             for item in items:
                 entity = existing_by_key.get(item.key)
                 if entity is None:
@@ -1080,8 +1484,13 @@ class DomainStore:
                 else:
                     entity.value = item.value
             await session.commit()
-            result = await session.execute(select(SettingEntity).order_by(SettingEntity.key))
-            stored_items = [SettingItem(key=item.key, value=item.value) for item in result.scalars().all()]
+            result = await session.execute(
+                select(SettingEntity).order_by(SettingEntity.key)
+            )
+            stored_items = [
+                SettingItem(key=item.key, value=item.value)
+                for item in result.scalars().all()
+            ]
         return self._store_settings_cache(stored_items)
 
     async def persist_request_log_stats(self, *, force: bool = False) -> None:
@@ -1099,15 +1508,21 @@ class DomainStore:
         async with self._session_factory() as session:
             try:
                 await session.execute(select(RequestLogDailyStatsEntity.date).limit(1))
-                await session.execute(select(OverviewModelDailyStatsEntity.date).limit(1))
+                await session.execute(
+                    select(OverviewModelDailyStatsEntity.date).limit(1)
+                )
             except OperationalError as exc:
-                if self._is_missing_sqlite_table(exc, "request_log_daily_stats") or self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
+                if self._is_missing_sqlite_table(
+                    exc, "request_log_daily_stats"
+                ) or self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
                     return
                 raise
 
             stored_time_zone = await session.get(SettingEntity, SETTING_STATS_TIME_ZONE)
             if stored_time_zone is None:
-                session.add(SettingEntity(key=SETTING_STATS_TIME_ZONE, value=time_zone.key))
+                session.add(
+                    SettingEntity(key=SETTING_STATS_TIME_ZONE, value=time_zone.key)
+                )
             elif stored_time_zone.value != time_zone.key:
                 await session.execute(delete(RequestLogDailyStatsEntity))
                 await session.execute(delete(OverviewModelDailyStatsEntity))
@@ -1119,10 +1534,14 @@ class DomainStore:
                 # Keep today's archived rows live so the current-day bucket can move
                 # with the configured application time zone.
                 await session.execute(
-                    delete(RequestLogDailyStatsEntity).where(RequestLogDailyStatsEntity.date == today_key)
+                    delete(RequestLogDailyStatsEntity).where(
+                        RequestLogDailyStatsEntity.date == today_key
+                    )
                 )
                 await session.execute(
-                    delete(OverviewModelDailyStatsEntity).where(OverviewModelDailyStatsEntity.date == today_key)
+                    delete(OverviewModelDailyStatsEntity).where(
+                        OverviewModelDailyStatsEntity.date == today_key
+                    )
                 )
                 await session.execute(
                     update(RequestLogEntity)
@@ -1146,14 +1565,21 @@ class DomainStore:
                     RequestLogEntity.total_cost_usd,
                 )
                 .where(RequestLogEntity.stats_archived == 0)
-                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
+                .where(
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
+                )
                 .order_by(RequestLogEntity.created_at.asc())
             )
             if not force:
-                unarchived_stmt = unarchived_stmt.where(RequestLogEntity.created_at < today_start_utc)
+                unarchived_stmt = unarchived_stmt.where(
+                    RequestLogEntity.created_at < today_start_utc
+                )
             daily_rows = (await session.execute(unarchived_stmt)).all()
 
-            model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
+            model_expr = func.coalesce(
+                RequestLogEntity.resolved_group_name,
+                RequestLogEntity.requested_group_name,
+            )
             model_stmt = (
                 select(
                     RequestLogEntity.created_at,
@@ -1162,17 +1588,23 @@ class DomainStore:
                     RequestLogEntity.total_cost_usd,
                 )
                 .where(RequestLogEntity.stats_archived == 0)
-                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
+                .where(
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
+                )
                 .where(RequestLogEntity.success == 1)
                 .where(model_expr.is_not(None))
                 .order_by(RequestLogEntity.created_at.asc())
             )
             if not force:
-                model_stmt = model_stmt.where(RequestLogEntity.created_at < today_start_utc)
+                model_stmt = model_stmt.where(
+                    RequestLogEntity.created_at < today_start_utc
+                )
             model_rows = (await session.execute(model_stmt)).all()
 
             daily_buckets = self._daily_stats_by_local_bucket(daily_rows, time_zone)
-            model_buckets = self._model_rows_by_local_bucket(model_rows, "%Y%m%d", time_zone)
+            model_buckets = self._model_rows_by_local_bucket(
+                model_rows, "%Y%m%d", time_zone
+            )
 
             for date_value, values in sorted(daily_buckets.items()):
                 entity = await session.get(RequestLogDailyStatsEntity, date_value)
@@ -1199,7 +1631,9 @@ class DomainStore:
                 entity.wait_time_ms += int(values["wait_time_ms"])
                 entity.input_tokens += int(values["input_tokens"])
                 entity.cache_read_input_tokens += int(values["cache_read_input_tokens"])
-                entity.cache_write_input_tokens += int(values["cache_write_input_tokens"])
+                entity.cache_write_input_tokens += int(
+                    values["cache_write_input_tokens"]
+                )
                 entity.output_tokens += int(values["output_tokens"])
                 entity.total_tokens += int(values["total_tokens"])
                 entity.input_cost_usd += float(values["input_cost_usd"])
@@ -1210,7 +1644,9 @@ class DomainStore:
                 key = {"date": date_value, "model": model}
                 entity = await session.get(OverviewModelDailyStatsEntity, key)
                 if entity is None:
-                    entity = OverviewModelDailyStatsEntity(**key, requests=0, total_tokens=0, total_cost_usd=0.0)
+                    entity = OverviewModelDailyStatsEntity(
+                        **key, requests=0, total_tokens=0, total_cost_usd=0.0
+                    )
                     session.add(entity)
                 entity.requests += int(requests)
                 entity.total_tokens += int(total_tokens)
@@ -1220,10 +1656,16 @@ class DomainStore:
                 archive_stmt = (
                     update(RequestLogEntity)
                     .where(RequestLogEntity.stats_archived == 0)
-                    .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
+                    .where(
+                        RequestLogEntity.lifecycle_status.in_(
+                            REQUEST_LOG_TERMINAL_STATUSES
+                        )
+                    )
                 )
                 if not force:
-                    archive_stmt = archive_stmt.where(RequestLogEntity.created_at < today_start_utc)
+                    archive_stmt = archive_stmt.where(
+                        RequestLogEntity.created_at < today_start_utc
+                    )
                 await session.execute(archive_stmt.values(stats_archived=1))
 
             await session.commit()
@@ -1331,7 +1773,9 @@ class DomainStore:
                 response_content=response_content,
                 attempts_json=json.dumps(attempts or [], ensure_ascii=True),
                 error_message=error_message,
-                stats_archived=0 if lifecycle_value in REQUEST_LOG_TERMINAL_STATUSES else 1,
+                stats_archived=(
+                    0 if lifecycle_value in REQUEST_LOG_TERMINAL_STATUSES else 1
+                ),
             )
             session.add(entity)
             await session.commit()
@@ -1401,7 +1845,9 @@ class DomainStore:
             entity.response_content = response_content
             entity.attempts_json = json.dumps(attempts or [], ensure_ascii=True)
             entity.error_message = error_message
-            entity.stats_archived = 0 if lifecycle_value in REQUEST_LOG_TERMINAL_STATUSES else 1
+            entity.stats_archived = (
+                0 if lifecycle_value in REQUEST_LOG_TERMINAL_STATUSES else 1
+            )
             await session.commit()
             await session.refresh(entity)
             return self._to_request_log(entity)
@@ -1434,7 +1880,9 @@ class DomainStore:
         async with self._session_factory() as session:
             stmt = (
                 select(RequestLogEntity)
-                .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+                .order_by(
+                    RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()
+                )
                 .offset(offset)
                 .limit(limit)
             )
@@ -1488,7 +1936,13 @@ class DomainStore:
             )
 
             channel_stmt = (
-                select(func.coalesce(RequestLogEntity.channel_name, RequestLogEntity.channel_id, literal("n/a")))
+                select(
+                    func.coalesce(
+                        RequestLogEntity.channel_name,
+                        RequestLogEntity.channel_id,
+                        literal("n/a"),
+                    )
+                )
                 .select_from(RequestLogEntity)
                 .distinct()
             )
@@ -1508,7 +1962,11 @@ class DomainStore:
             channel_result = await session.execute(channel_stmt)
             entities = items_result.scalars().all()
             channels = sorted(
-                {str(value) for value in channel_result.scalars().all() if value is not None}
+                {
+                    str(value)
+                    for value in channel_result.scalars().all()
+                    if value is not None
+                }
             )
 
             return RequestLogPage(
@@ -1522,8 +1980,14 @@ class DomainStore:
     async def list_site_runtime_summaries(self) -> list[SiteRuntimeSummary]:
         async with self._session_factory() as session:
             site_rows = (
-                await session.execute(select(SiteEntity).order_by(SiteEntity.name.asc()))
-            ).scalars().all()
+                (
+                    await session.execute(
+                        select(SiteEntity).order_by(SiteEntity.name.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
             if not site_rows:
                 return []
 
@@ -1547,8 +2011,12 @@ class DomainStore:
             recent_request_logs = (
                 select(RequestLogEntity.channel_id.label("channel_id"))
                 .where(RequestLogEntity.channel_id.is_not(None))
-                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
-                .order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+                .where(
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
+                )
+                .order_by(
+                    RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()
+                )
                 .limit(100)
                 .subquery()
             )
@@ -1578,16 +2046,23 @@ class DomainStore:
                     RequestLogEntity.success.label("success"),
                     RequestLogEntity.error_message.label("error_message"),
                     RequestLogEntity.created_at.label("created_at"),
-                    func.row_number().over(
+                    func.row_number()
+                    .over(
                         partition_by=SiteProtocolConfigEntity.site_id,
-                        order_by=(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()),
-                    ).label("row_number"),
+                        order_by=(
+                            RequestLogEntity.created_at.desc(),
+                            RequestLogEntity.id.desc(),
+                        ),
+                    )
+                    .label("row_number"),
                 )
                 .join(
                     SiteProtocolConfigEntity,
                     SiteProtocolConfigEntity.id == RequestLogEntity.channel_id,
                 )
-                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
+                .where(
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
+                )
                 .subquery()
             )
 
@@ -1602,21 +2077,23 @@ class DomainStore:
                     ranked_logs.c.created_at,
                 ).where(ranked_logs.c.row_number == 1)
             )
-            latest_by_site = {
-                str(row.site_id): row
-                for row in latest_rows.all()
-            }
+            latest_by_site = {str(row.site_id): row for row in latest_rows.all()}
 
             bucket_anchor = datetime.now(UTC).replace(second=0, microsecond=0)
             bucket_anchor -= timedelta(minutes=bucket_anchor.minute % 5)
             bucket_start = bucket_anchor - timedelta(
-                seconds=CHANNEL_HEALTH_BUCKET_SECONDS * (CHANNEL_HEALTH_BUCKET_COUNT - 1)
+                seconds=CHANNEL_HEALTH_BUCKET_SECONDS
+                * (CHANNEL_HEALTH_BUCKET_COUNT - 1)
             )
-            bucket_end = bucket_anchor + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS)
+            bucket_end = bucket_anchor + timedelta(
+                seconds=CHANNEL_HEALTH_BUCKET_SECONDS
+            )
             bucket_ranges = [
                 (
-                    bucket_start + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS * index),
-                    bucket_start + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS * (index + 1)),
+                    bucket_start
+                    + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS * index),
+                    bucket_start
+                    + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS * (index + 1)),
                 )
                 for index in range(CHANNEL_HEALTH_BUCKET_COUNT)
             ]
@@ -1636,7 +2113,9 @@ class DomainStore:
                 )
                 .where(
                     RequestLogEntity.channel_id.is_not(None),
-                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES),
+                    RequestLogEntity.lifecycle_status.in_(
+                        REQUEST_LOG_TERMINAL_STATUSES
+                    ),
                     RequestLogEntity.created_at >= bucket_start.replace(tzinfo=None),
                     RequestLogEntity.created_at < bucket_end.replace(tzinfo=None),
                 )
@@ -1695,14 +2174,18 @@ class DomainStore:
                     SiteRuntimeSummary(
                         site_id=site.id,
                         site_name=site.name,
-                        recent_request_count=recent_request_count_by_site.get(site.id, 0),
+                        recent_request_count=recent_request_count_by_site.get(
+                            site.id, 0
+                        ),
                         latest_request_at=(
                             latest.created_at.replace(tzinfo=UTC).isoformat()
                             if latest is not None and latest.created_at is not None
                             else None
                         ),
                         latest_success=(
-                            bool(latest.success) if latest is not None and latest.success is not None else None
+                            bool(latest.success)
+                            if latest is not None and latest.success is not None
+                            else None
                         ),
                         latest_status_code=(
                             int(latest.status_code)
@@ -1759,7 +2242,9 @@ class DomainStore:
             time_zone=self._runtime_time_zone(runtime),
         )
         async with self._session_factory() as session:
-            await session.execute(delete(RequestLogEntity).where(RequestLogEntity.created_at < cutoff))
+            await session.execute(
+                delete(RequestLogEntity).where(RequestLogEntity.created_at < cutoff)
+            )
             await session.commit()
 
     async def get_overview_metrics(self) -> OverviewMetrics:
@@ -1767,14 +2252,31 @@ class DomainStore:
         async with self._session_factory() as session:
             imported_total = await session.get(ImportedStatsTotalEntity, 1)
             if imported_total is not None:
-                extra_totals = await self._request_log_totals_excluding_imported_days(session, time_zone=time_zone)
-                total_value = int(imported_total.request_success + imported_total.request_failed + extra_totals["request_count"])
-                success_value = int(imported_total.request_success + extra_totals["successful_requests"])
+                extra_totals = await self._request_log_totals_excluding_imported_days(
+                    session, time_zone=time_zone
+                )
+                total_value = int(
+                    imported_total.request_success
+                    + imported_total.request_failed
+                    + extra_totals["request_count"]
+                )
+                success_value = int(
+                    imported_total.request_success + extra_totals["successful_requests"]
+                )
             else:
-                archived_totals = await self._archived_period_totals(session, days=0, time_zone=time_zone)
-                live_totals = await self._request_log_period_totals(session, days=0, time_zone=time_zone)
-                total_value = int(archived_totals["request_count"] + live_totals["request_count"])
-                success_value = int(archived_totals["successful_requests"] + live_totals["successful_requests"])
+                archived_totals = await self._archived_period_totals(
+                    session, days=0, time_zone=time_zone
+                )
+                live_totals = await self._request_log_period_totals(
+                    session, days=0, time_zone=time_zone
+                )
+                total_value = int(
+                    archived_totals["request_count"] + live_totals["request_count"]
+                )
+                success_value = int(
+                    archived_totals["successful_requests"]
+                    + live_totals["successful_requests"]
+                )
 
             total_groups = int(
                 await session.scalar(select(func.count()).select_from(ModelGroupEntity))
@@ -1801,10 +2303,19 @@ class DomainStore:
         async with self._session_factory() as session:
             if days != 0:
                 comparison_offset = 1 if days == -1 else days
-                recent = await self._merged_period_totals(session, days=days, time_zone=time_zone)
-                previous = await self._merged_period_totals(session, days=days, offset_days=comparison_offset, time_zone=time_zone)
+                recent = await self._merged_period_totals(
+                    session, days=days, time_zone=time_zone
+                )
+                previous = await self._merged_period_totals(
+                    session,
+                    days=days,
+                    offset_days=comparison_offset,
+                    time_zone=time_zone,
+                )
             else:
-                recent = await self._merged_period_totals(session, days=0, time_zone=time_zone)
+                recent = await self._merged_period_totals(
+                    session, days=0, time_zone=time_zone
+                )
                 previous = self._zero_totals()
 
         request_count = int(recent["request_count"])
@@ -1818,24 +2329,61 @@ class DomainStore:
         output_cost_usd = float(recent["output_cost_usd"])
 
         return OverviewSummary(
-            request_count=OverviewSummaryMetric(value=request_count, delta=self._delta_percent(request_count, previous["request_count"])),
-            wait_time_ms=OverviewSummaryMetric(value=wait_time_ms, delta=self._delta_percent(wait_time_ms, previous["wait_time_ms"])),
-            total_tokens=OverviewSummaryMetric(value=input_tokens + output_tokens, delta=self._delta_percent(input_tokens + output_tokens, previous["input_tokens"] + previous["output_tokens"])),
-            total_cost_usd=OverviewSummaryMetric(value=total_cost_usd, delta=self._delta_percent(total_cost_usd, previous["total_cost_usd"])),
-            input_tokens=OverviewSummaryMetric(value=input_tokens, delta=self._delta_percent(input_tokens, previous["input_tokens"])),
-            cache_read_input_tokens=OverviewSummaryMetric(value=cache_read_input_tokens, delta=self._delta_percent(cache_read_input_tokens, previous["cache_read_input_tokens"])),
-            cache_write_input_tokens=OverviewSummaryMetric(value=cache_write_input_tokens, delta=self._delta_percent(cache_write_input_tokens, previous["cache_write_input_tokens"])),
-            input_cost_usd=OverviewSummaryMetric(value=input_cost_usd, delta=self._delta_percent(input_cost_usd, previous["input_cost_usd"])),
-            output_tokens=OverviewSummaryMetric(value=output_tokens, delta=self._delta_percent(output_tokens, previous["output_tokens"])),
-            output_cost_usd=OverviewSummaryMetric(value=output_cost_usd, delta=self._delta_percent(output_cost_usd, previous["output_cost_usd"])),
+            request_count=OverviewSummaryMetric(
+                value=request_count,
+                delta=self._delta_percent(request_count, previous["request_count"]),
+            ),
+            wait_time_ms=OverviewSummaryMetric(
+                value=wait_time_ms,
+                delta=self._delta_percent(wait_time_ms, previous["wait_time_ms"]),
+            ),
+            total_tokens=OverviewSummaryMetric(
+                value=input_tokens + output_tokens,
+                delta=self._delta_percent(
+                    input_tokens + output_tokens,
+                    previous["input_tokens"] + previous["output_tokens"],
+                ),
+            ),
+            total_cost_usd=OverviewSummaryMetric(
+                value=total_cost_usd,
+                delta=self._delta_percent(total_cost_usd, previous["total_cost_usd"]),
+            ),
+            input_tokens=OverviewSummaryMetric(
+                value=input_tokens,
+                delta=self._delta_percent(input_tokens, previous["input_tokens"]),
+            ),
+            cache_read_input_tokens=OverviewSummaryMetric(
+                value=cache_read_input_tokens,
+                delta=self._delta_percent(
+                    cache_read_input_tokens, previous["cache_read_input_tokens"]
+                ),
+            ),
+            cache_write_input_tokens=OverviewSummaryMetric(
+                value=cache_write_input_tokens,
+                delta=self._delta_percent(
+                    cache_write_input_tokens, previous["cache_write_input_tokens"]
+                ),
+            ),
+            input_cost_usd=OverviewSummaryMetric(
+                value=input_cost_usd,
+                delta=self._delta_percent(input_cost_usd, previous["input_cost_usd"]),
+            ),
+            output_tokens=OverviewSummaryMetric(
+                value=output_tokens,
+                delta=self._delta_percent(output_tokens, previous["output_tokens"]),
+            ),
+            output_cost_usd=OverviewSummaryMetric(
+                value=output_cost_usd,
+                delta=self._delta_percent(output_cost_usd, previous["output_cost_usd"]),
+            ),
         )
 
-    async def list_overview_daily(
-        self, days: int = 0
-    ) -> list[OverviewDailyPoint]:
+    async def list_overview_daily(self, days: int = 0) -> list[OverviewDailyPoint]:
         time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
-            return await self._merged_daily_points(session, days=days, time_zone=time_zone)
+            return await self._merged_daily_points(
+                session, days=days, time_zone=time_zone
+            )
 
     async def get_model_analytics(
         self, days: int = 7, gateway_key_id: str | None = None
@@ -1863,18 +2411,27 @@ class DomainStore:
                     )
             elif days == -1:
                 archived_model_rows = []
-                live_model_rows = await self._request_log_model_hourly_rows(session, days=days, time_zone=time_zone)
+                live_model_rows = await self._request_log_model_hourly_rows(
+                    session, days=days, time_zone=time_zone
+                )
             else:
-                window_start, window_end = self._resolve_imported_date_window(days, time_zone=time_zone)
+                window_start, window_end = self._resolve_imported_date_window(
+                    days, time_zone=time_zone
+                )
                 archived_model_rows = await self._overview_model_daily_rows(
                     session,
                     start_at=window_start,
                     end_at=window_end,
                 )
-                live_model_rows = await self._request_log_model_daily_rows(session, days=days, time_zone=time_zone)
+                live_model_rows = await self._request_log_model_daily_rows(
+                    session, days=days, time_zone=time_zone
+                )
 
         merged_rows: dict[tuple[str, str], dict[str, float | str]] = {}
-        for date_value, model, requests, total_tokens, total_cost in [*archived_model_rows, *live_model_rows]:
+        for date_value, model, requests, total_tokens, total_cost in [
+            *archived_model_rows,
+            *live_model_rows,
+        ]:
             if not model:
                 continue
             key = (str(date_value), str(model))
@@ -1889,10 +2446,17 @@ class DomainStore:
                 }
                 continue
             current["requests"] = float(current["requests"]) + float(requests)
-            current["total_tokens"] = float(current["total_tokens"]) + float(total_tokens)
-            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(total_cost)
+            current["total_tokens"] = float(current["total_tokens"]) + float(
+                total_tokens
+            )
+            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(
+                total_cost
+            )
 
-        trend_rows = sorted(merged_rows.values(), key=lambda item: (str(item["date"]), str(item["model"])))
+        trend_rows = sorted(
+            merged_rows.values(),
+            key=lambda item: (str(item["date"]), str(item["model"])),
+        )
 
         model_rows: dict[str, dict[str, float | str]] = {}
         for item in merged_rows.values():
@@ -1907,12 +2471,22 @@ class DomainStore:
                 }
                 continue
             current["requests"] = float(current["requests"]) + float(item["requests"])
-            current["total_tokens"] = float(current["total_tokens"]) + float(item["total_tokens"])
-            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(item["total_cost_usd"])
+            current["total_tokens"] = float(current["total_tokens"]) + float(
+                item["total_tokens"]
+            )
+            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(
+                item["total_cost_usd"]
+            )
 
         aggregated_models = list(model_rows.values())
-        distribution_rows = sorted(aggregated_models, key=lambda item: (-float(item["total_cost_usd"]), -float(item["requests"])))
-        ranking_rows = sorted(aggregated_models, key=lambda item: (-float(item["requests"]), -float(item["total_cost_usd"])))
+        distribution_rows = sorted(
+            aggregated_models,
+            key=lambda item: (-float(item["total_cost_usd"]), -float(item["requests"])),
+        )
+        ranking_rows = sorted(
+            aggregated_models,
+            key=lambda item: (-float(item["requests"]), -float(item["total_cost_usd"])),
+        )
 
         distribution = [
             OverviewModelMetricPoint(
@@ -1935,11 +2509,19 @@ class DomainStore:
         ]
 
         trend = [
-            OverviewModelTrendPoint(date=str(item["date"]), model=str(item["model"]), value=float(item["total_cost_usd"]))
+            OverviewModelTrendPoint(
+                date=str(item["date"]),
+                model=str(item["model"]),
+                value=float(item["total_cost_usd"]),
+            )
             for item in trend_rows
         ]
 
-        available_models = sorted({item.model for item in distribution} | {item.model for item in ranking} | {item.model for item in trend})
+        available_models = sorted(
+            {item.model for item in distribution}
+            | {item.model for item in ranking}
+            | {item.model for item in trend}
+        )
         return OverviewModelAnalytics(
             distribution=distribution,
             request_ranking=ranking,
@@ -1959,7 +2541,9 @@ class DomainStore:
             return 0.0, 0.0, 0.0
 
         async with self._session_factory() as session:
-            entity = await session.get(ModelPriceEntity, normalize_model_key(model_name))
+            entity = await session.get(
+                ModelPriceEntity, normalize_model_key(model_name)
+            )
             if entity is None:
                 return 0.0, 0.0, 0.0
 
@@ -1970,17 +2554,40 @@ class DomainStore:
             total_input_tokens - cache_read_tokens - cache_write_tokens, 0
         )
 
-        input_cost = (regular_input_tokens / 1_000_000) * float(entity.input_price_per_million)
-        input_cost += (cache_read_tokens / 1_000_000) * float(entity.cache_read_price_per_million)
-        input_cost += (cache_write_tokens / 1_000_000) * float(entity.cache_write_price_per_million)
-        output_cost = (max(output_tokens, 0) / 1_000_000) * float(entity.output_price_per_million)
+        input_cost = (regular_input_tokens / 1_000_000) * float(
+            entity.input_price_per_million
+        )
+        input_cost += (cache_read_tokens / 1_000_000) * float(
+            entity.cache_read_price_per_million
+        )
+        input_cost += (cache_write_tokens / 1_000_000) * float(
+            entity.cache_write_price_per_million
+        )
+        output_cost = (max(output_tokens, 0) / 1_000_000) * float(
+            entity.output_price_per_million
+        )
         total_cost = input_cost + output_cost
         return round(input_cost, 8), round(output_cost, 8), round(total_cost, 8)
 
-    async def _merged_daily_points(self, session: AsyncSession, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> list[OverviewDailyPoint]:
-        imported_points = await self._imported_daily_points(session, days=days, offset_days=offset_days, time_zone=time_zone)
+    async def _merged_daily_points(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        time_zone: ZoneInfo,
+        offset_days: int = 0,
+    ) -> list[OverviewDailyPoint]:
+        imported_points = await self._imported_daily_points(
+            session, days=days, offset_days=offset_days, time_zone=time_zone
+        )
         imported_dates = {item.date for item in imported_points}
-        archived_points = await self._archived_daily_points(session, days=days, offset_days=offset_days, exclude_dates=imported_dates, time_zone=time_zone)
+        archived_points = await self._archived_daily_points(
+            session,
+            days=days,
+            offset_days=offset_days,
+            exclude_dates=imported_dates,
+            time_zone=time_zone,
+        )
         request_log_points = await self._request_log_daily_points(
             session,
             days=days,
@@ -2002,16 +2609,30 @@ class DomainStore:
                 total_tokens=current.total_tokens + item.total_tokens,
                 total_cost_usd=current.total_cost_usd + item.total_cost_usd,
                 wait_time_ms=current.wait_time_ms + item.wait_time_ms,
-                successful_requests=current.successful_requests + item.successful_requests,
+                successful_requests=current.successful_requests
+                + item.successful_requests,
                 failed_requests=current.failed_requests + item.failed_requests,
             )
         return [merged[date] for date in sorted(merged)]
 
-    async def _imported_daily_points(self, session: AsyncSession, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> list[OverviewDailyPoint]:
-        stmt = select(ImportedStatsDailyEntity).order_by(ImportedStatsDailyEntity.date.asc())
-        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days, time_zone=time_zone)
+    async def _imported_daily_points(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        time_zone: ZoneInfo,
+        offset_days: int = 0,
+    ) -> list[OverviewDailyPoint]:
+        stmt = select(ImportedStatsDailyEntity).order_by(
+            ImportedStatsDailyEntity.date.asc()
+        )
+        start_at, end_at = self._resolve_imported_date_window(
+            days, offset_days=offset_days, time_zone=time_zone
+        )
         if start_at is not None and end_at is not None:
-            stmt = stmt.where(ImportedStatsDailyEntity.date >= start_at).where(ImportedStatsDailyEntity.date < end_at)
+            stmt = stmt.where(ImportedStatsDailyEntity.date >= start_at).where(
+                ImportedStatsDailyEntity.date < end_at
+            )
         rows = (await session.execute(stmt)).scalars().all()
         return [
             OverviewDailyPoint(
@@ -2035,12 +2656,20 @@ class DomainStore:
         exclude_dates: set[str] | None = None,
         time_zone: ZoneInfo,
     ) -> list[OverviewDailyPoint]:
-        stmt = select(RequestLogDailyStatsEntity).order_by(RequestLogDailyStatsEntity.date.asc())
-        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days, time_zone=time_zone)
+        stmt = select(RequestLogDailyStatsEntity).order_by(
+            RequestLogDailyStatsEntity.date.asc()
+        )
+        start_at, end_at = self._resolve_imported_date_window(
+            days, offset_days=offset_days, time_zone=time_zone
+        )
         if start_at is not None and end_at is not None:
-            stmt = stmt.where(RequestLogDailyStatsEntity.date >= start_at).where(RequestLogDailyStatsEntity.date < end_at)
+            stmt = stmt.where(RequestLogDailyStatsEntity.date >= start_at).where(
+                RequestLogDailyStatsEntity.date < end_at
+            )
         if exclude_dates:
-            stmt = stmt.where(RequestLogDailyStatsEntity.date.not_in(sorted(exclude_dates)))
+            stmt = stmt.where(
+                RequestLogDailyStatsEntity.date.not_in(sorted(exclude_dates))
+            )
         try:
             rows = (await session.execute(stmt)).scalars().all()
         except OperationalError as exc:
@@ -2090,7 +2719,9 @@ class DomainStore:
         )
         if not include_archived:
             stmt = stmt.where(RequestLogEntity.stats_archived == 0)
-        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days, time_zone=time_zone)
+        stmt = self._apply_request_log_window(
+            stmt, days=days, offset_days=offset_days, time_zone=time_zone
+        )
         stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         rows = (await session.execute(stmt)).all()
         points: list[OverviewDailyPoint] = []
@@ -2113,24 +2744,42 @@ class DomainStore:
             )
         return points
 
-    async def _request_log_totals_excluding_imported_days(self, session: AsyncSession, *, time_zone: ZoneInfo) -> dict[str, float]:
+    async def _request_log_totals_excluding_imported_days(
+        self, session: AsyncSession, *, time_zone: ZoneInfo
+    ) -> dict[str, float]:
         imported_dates = {
             row[0]
-            for row in (await session.execute(select(ImportedStatsDailyEntity.date))).all()
+            for row in (
+                await session.execute(select(ImportedStatsDailyEntity.date))
+            ).all()
         }
-        archived_totals = await self._archived_period_totals(session, days=0, exclude_dates=imported_dates, time_zone=time_zone)
-        live_totals = await self._request_log_period_totals(session, days=0, exclude_dates=imported_dates, time_zone=time_zone)
+        archived_totals = await self._archived_period_totals(
+            session, days=0, exclude_dates=imported_dates, time_zone=time_zone
+        )
+        live_totals = await self._request_log_period_totals(
+            session, days=0, exclude_dates=imported_dates, time_zone=time_zone
+        )
         return {
-            "request_count": archived_totals["request_count"] + live_totals["request_count"],
-            "wait_time_ms": archived_totals["wait_time_ms"] + live_totals["wait_time_ms"],
-            "input_tokens": archived_totals["input_tokens"] + live_totals["input_tokens"],
-            "cache_read_input_tokens": archived_totals["cache_read_input_tokens"] + live_totals["cache_read_input_tokens"],
-            "cache_write_input_tokens": archived_totals["cache_write_input_tokens"] + live_totals["cache_write_input_tokens"],
-            "output_tokens": archived_totals["output_tokens"] + live_totals["output_tokens"],
-            "input_cost_usd": archived_totals["input_cost_usd"] + live_totals["input_cost_usd"],
-            "output_cost_usd": archived_totals["output_cost_usd"] + live_totals["output_cost_usd"],
-            "total_cost_usd": archived_totals["total_cost_usd"] + live_totals["total_cost_usd"],
-            "successful_requests": archived_totals["successful_requests"] + live_totals["successful_requests"],
+            "request_count": archived_totals["request_count"]
+            + live_totals["request_count"],
+            "wait_time_ms": archived_totals["wait_time_ms"]
+            + live_totals["wait_time_ms"],
+            "input_tokens": archived_totals["input_tokens"]
+            + live_totals["input_tokens"],
+            "cache_read_input_tokens": archived_totals["cache_read_input_tokens"]
+            + live_totals["cache_read_input_tokens"],
+            "cache_write_input_tokens": archived_totals["cache_write_input_tokens"]
+            + live_totals["cache_write_input_tokens"],
+            "output_tokens": archived_totals["output_tokens"]
+            + live_totals["output_tokens"],
+            "input_cost_usd": archived_totals["input_cost_usd"]
+            + live_totals["input_cost_usd"],
+            "output_cost_usd": archived_totals["output_cost_usd"]
+            + live_totals["output_cost_usd"],
+            "total_cost_usd": archived_totals["total_cost_usd"]
+            + live_totals["total_cost_usd"],
+            "successful_requests": archived_totals["successful_requests"]
+            + live_totals["successful_requests"],
         }
 
     async def _archived_period_totals(
@@ -2142,28 +2791,29 @@ class DomainStore:
         offset_days: int = 0,
         exclude_dates: set[str] | None = None,
     ) -> dict[str, float]:
-        stmt = (
-            select(
-                func.sum(RequestLogDailyStatsEntity.request_count),
-                func.sum(RequestLogDailyStatsEntity.wait_time_ms),
-                func.sum(RequestLogDailyStatsEntity.input_tokens),
-                func.sum(RequestLogDailyStatsEntity.cache_read_input_tokens),
-                func.sum(RequestLogDailyStatsEntity.cache_write_input_tokens),
-                func.sum(RequestLogDailyStatsEntity.output_tokens),
-                func.sum(RequestLogDailyStatsEntity.input_cost_usd),
-                func.sum(RequestLogDailyStatsEntity.output_cost_usd),
-                func.sum(RequestLogDailyStatsEntity.total_cost_usd),
-                func.sum(RequestLogDailyStatsEntity.successful_requests),
-            )
-            .select_from(RequestLogDailyStatsEntity)
+        stmt = select(
+            func.sum(RequestLogDailyStatsEntity.request_count),
+            func.sum(RequestLogDailyStatsEntity.wait_time_ms),
+            func.sum(RequestLogDailyStatsEntity.input_tokens),
+            func.sum(RequestLogDailyStatsEntity.cache_read_input_tokens),
+            func.sum(RequestLogDailyStatsEntity.cache_write_input_tokens),
+            func.sum(RequestLogDailyStatsEntity.output_tokens),
+            func.sum(RequestLogDailyStatsEntity.input_cost_usd),
+            func.sum(RequestLogDailyStatsEntity.output_cost_usd),
+            func.sum(RequestLogDailyStatsEntity.total_cost_usd),
+            func.sum(RequestLogDailyStatsEntity.successful_requests),
+        ).select_from(RequestLogDailyStatsEntity)
+        start_at, end_at = self._resolve_imported_date_window(
+            days, offset_days=offset_days, time_zone=time_zone
         )
-        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days, time_zone=time_zone)
         if start_at is not None:
             stmt = stmt.where(RequestLogDailyStatsEntity.date >= start_at)
         if end_at is not None:
             stmt = stmt.where(RequestLogDailyStatsEntity.date < end_at)
         if exclude_dates:
-            stmt = stmt.where(RequestLogDailyStatsEntity.date.not_in(sorted(exclude_dates)))
+            stmt = stmt.where(
+                RequestLogDailyStatsEntity.date.not_in(sorted(exclude_dates))
+            )
         try:
             row = (await session.execute(stmt)).one()
         except OperationalError as exc:
@@ -2213,12 +2863,25 @@ class DomainStore:
         if end_at is not None:
             stmt = stmt.where(OverviewModelDailyStatsEntity.date < end_at)
         try:
-            rows = (await session.execute(stmt.order_by(OverviewModelDailyStatsEntity.date.asc()))).all()
+            rows = (
+                await session.execute(
+                    stmt.order_by(OverviewModelDailyStatsEntity.date.asc())
+                )
+            ).all()
         except OperationalError as exc:
             if self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
                 return []
             raise
-        return [(str(date_value), str(model), int(requests), int(total_tokens), float(total_cost)) for date_value, model, requests, total_tokens, total_cost in rows]
+        return [
+            (
+                str(date_value),
+                str(model),
+                int(requests),
+                int(total_tokens),
+                float(total_cost),
+            )
+            for date_value, model, requests, total_tokens, total_cost in rows
+        ]
 
     async def _request_log_model_daily_rows(
         self,
@@ -2230,7 +2893,9 @@ class DomainStore:
         include_archived: bool = False,
         time_zone: ZoneInfo,
     ) -> list[tuple[str, str, int, int, float]]:
-        model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
+        model_expr = func.coalesce(
+            RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name
+        )
         stmt = (
             select(
                 RequestLogEntity.created_at,
@@ -2239,13 +2904,18 @@ class DomainStore:
                 RequestLogEntity.total_cost_usd,
             )
             .where(RequestLogEntity.success == 1)
-            .where(RequestLogEntity.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value)
+            .where(
+                RequestLogEntity.lifecycle_status
+                == RequestLogLifecycleStatus.SUCCEEDED.value
+            )
             .where(model_expr.is_not(None))
             .order_by(RequestLogEntity.created_at.asc())
         )
         if not include_archived:
             stmt = stmt.where(RequestLogEntity.stats_archived == 0)
-        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days, time_zone=time_zone)
+        stmt = self._apply_request_log_window(
+            stmt, days=days, offset_days=offset_days, time_zone=time_zone
+        )
         stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         rows = (await session.execute(stmt)).all()
         return self._model_rows_by_local_bucket(rows, "%Y%m%d", time_zone)
@@ -2260,7 +2930,9 @@ class DomainStore:
         include_archived: bool = False,
         time_zone: ZoneInfo,
     ) -> list[tuple[str, str, int, int, float]]:
-        model_expr = func.coalesce(RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name)
+        model_expr = func.coalesce(
+            RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name
+        )
         stmt = (
             select(
                 RequestLogEntity.created_at,
@@ -2269,19 +2941,33 @@ class DomainStore:
                 RequestLogEntity.total_cost_usd,
             )
             .where(RequestLogEntity.success == 1)
-            .where(RequestLogEntity.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value)
+            .where(
+                RequestLogEntity.lifecycle_status
+                == RequestLogLifecycleStatus.SUCCEEDED.value
+            )
             .where(model_expr.is_not(None))
             .order_by(RequestLogEntity.created_at.asc())
         )
         if not include_archived:
             stmt = stmt.where(RequestLogEntity.stats_archived == 0)
-        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days, time_zone=time_zone)
+        stmt = self._apply_request_log_window(
+            stmt, days=days, offset_days=offset_days, time_zone=time_zone
+        )
         stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         rows = (await session.execute(stmt)).all()
         return self._model_rows_by_local_bucket(rows, "%Y%m%d%H", time_zone)
 
-    async def _merged_period_totals(self, session: AsyncSession, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> dict[str, float]:
-        imported_totals = await self._imported_period_totals(session, days=days, offset_days=offset_days, time_zone=time_zone)
+    async def _merged_period_totals(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        time_zone: ZoneInfo,
+        offset_days: int = 0,
+    ) -> dict[str, float]:
+        imported_totals = await self._imported_period_totals(
+            session, days=days, offset_days=offset_days, time_zone=time_zone
+        )
         archived_totals = await self._archived_period_totals(
             session,
             days=days,
@@ -2297,23 +2983,50 @@ class DomainStore:
             time_zone=time_zone,
         )
         return {
-            "request_count": imported_totals["request_count"] + archived_totals["request_count"] + request_log_totals["request_count"],
-            "wait_time_ms": imported_totals["wait_time_ms"] + archived_totals["wait_time_ms"] + request_log_totals["wait_time_ms"],
-            "input_tokens": imported_totals["input_tokens"] + archived_totals["input_tokens"] + request_log_totals["input_tokens"],
-            "cache_read_input_tokens": imported_totals["cache_read_input_tokens"] + archived_totals["cache_read_input_tokens"] + request_log_totals["cache_read_input_tokens"],
-            "cache_write_input_tokens": imported_totals["cache_write_input_tokens"] + archived_totals["cache_write_input_tokens"] + request_log_totals["cache_write_input_tokens"],
-            "output_tokens": imported_totals["output_tokens"] + archived_totals["output_tokens"] + request_log_totals["output_tokens"],
-            "input_cost_usd": imported_totals["input_cost_usd"] + archived_totals["input_cost_usd"] + request_log_totals["input_cost_usd"],
-            "output_cost_usd": imported_totals["output_cost_usd"] + archived_totals["output_cost_usd"] + request_log_totals["output_cost_usd"],
-            "total_cost_usd": imported_totals["total_cost_usd"] + archived_totals["total_cost_usd"] + request_log_totals["total_cost_usd"],
+            "request_count": imported_totals["request_count"]
+            + archived_totals["request_count"]
+            + request_log_totals["request_count"],
+            "wait_time_ms": imported_totals["wait_time_ms"]
+            + archived_totals["wait_time_ms"]
+            + request_log_totals["wait_time_ms"],
+            "input_tokens": imported_totals["input_tokens"]
+            + archived_totals["input_tokens"]
+            + request_log_totals["input_tokens"],
+            "cache_read_input_tokens": imported_totals["cache_read_input_tokens"]
+            + archived_totals["cache_read_input_tokens"]
+            + request_log_totals["cache_read_input_tokens"],
+            "cache_write_input_tokens": imported_totals["cache_write_input_tokens"]
+            + archived_totals["cache_write_input_tokens"]
+            + request_log_totals["cache_write_input_tokens"],
+            "output_tokens": imported_totals["output_tokens"]
+            + archived_totals["output_tokens"]
+            + request_log_totals["output_tokens"],
+            "input_cost_usd": imported_totals["input_cost_usd"]
+            + archived_totals["input_cost_usd"]
+            + request_log_totals["input_cost_usd"],
+            "output_cost_usd": imported_totals["output_cost_usd"]
+            + archived_totals["output_cost_usd"]
+            + request_log_totals["output_cost_usd"],
+            "total_cost_usd": imported_totals["total_cost_usd"]
+            + archived_totals["total_cost_usd"]
+            + request_log_totals["total_cost_usd"],
         }
 
-    async def _imported_period_totals(self, session: AsyncSession, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> dict[str, float | set[str]]:
+    async def _imported_period_totals(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        time_zone: ZoneInfo,
+        offset_days: int = 0,
+    ) -> dict[str, float | set[str]]:
         if days == 0:
             imported_total = await session.get(ImportedStatsTotalEntity, 1)
             covered_dates = {
                 row[0]
-                for row in (await session.execute(select(ImportedStatsDailyEntity.date))).all()
+                for row in (
+                    await session.execute(select(ImportedStatsDailyEntity.date))
+                ).all()
             }
             if imported_total is None:
                 return {
@@ -2329,7 +3042,9 @@ class DomainStore:
                     "covered_dates": covered_dates,
                 }
             return {
-                "request_count": float(imported_total.request_success + imported_total.request_failed),
+                "request_count": float(
+                    imported_total.request_success + imported_total.request_failed
+                ),
                 "wait_time_ms": float(imported_total.wait_time),
                 "input_tokens": float(imported_total.input_token),
                 "cache_read_input_tokens": 0.0,
@@ -2337,21 +3052,31 @@ class DomainStore:
                 "output_tokens": float(imported_total.output_token),
                 "input_cost_usd": float(imported_total.input_cost),
                 "output_cost_usd": float(imported_total.output_cost),
-                "total_cost_usd": float(imported_total.input_cost + imported_total.output_cost),
+                "total_cost_usd": float(
+                    imported_total.input_cost + imported_total.output_cost
+                ),
                 "covered_dates": covered_dates,
             }
 
-        start_at, end_at = self._resolve_imported_date_window(days, offset_days=offset_days, time_zone=time_zone)
+        start_at, end_at = self._resolve_imported_date_window(
+            days, offset_days=offset_days, time_zone=time_zone
+        )
         rows = (
-            await session.execute(
-                select(ImportedStatsDailyEntity)
-                .where(ImportedStatsDailyEntity.date >= start_at)
-                .where(ImportedStatsDailyEntity.date < end_at)
+            (
+                await session.execute(
+                    select(ImportedStatsDailyEntity)
+                    .where(ImportedStatsDailyEntity.date >= start_at)
+                    .where(ImportedStatsDailyEntity.date < end_at)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         covered_dates = {item.date for item in rows}
         return {
-            "request_count": float(sum(item.request_success + item.request_failed for item in rows)),
+            "request_count": float(
+                sum(item.request_success + item.request_failed for item in rows)
+            ),
             "wait_time_ms": float(sum(item.wait_time for item in rows)),
             "input_tokens": float(sum(item.input_token for item in rows)),
             "cache_read_input_tokens": 0.0,
@@ -2359,7 +3084,9 @@ class DomainStore:
             "output_tokens": float(sum(item.output_token for item in rows)),
             "input_cost_usd": float(sum(item.input_cost for item in rows)),
             "output_cost_usd": float(sum(item.output_cost for item in rows)),
-            "total_cost_usd": float(sum(item.input_cost + item.output_cost for item in rows)),
+            "total_cost_usd": float(
+                sum(item.input_cost + item.output_cost for item in rows)
+            ),
             "covered_dates": covered_dates,
         }
 
@@ -2374,25 +3101,24 @@ class DomainStore:
         include_archived: bool = False,
         time_zone: ZoneInfo,
     ) -> dict[str, float]:
-        stmt = (
-            select(
-                RequestLogEntity.created_at,
-                RequestLogEntity.success,
-                RequestLogEntity.latency_ms,
-                RequestLogEntity.input_tokens,
-                RequestLogEntity.cache_read_input_tokens,
-                RequestLogEntity.cache_write_input_tokens,
-                RequestLogEntity.output_tokens,
-                RequestLogEntity.total_tokens,
-                RequestLogEntity.input_cost_usd,
-                RequestLogEntity.output_cost_usd,
-                RequestLogEntity.total_cost_usd,
-            )
-            .select_from(RequestLogEntity)
-        )
+        stmt = select(
+            RequestLogEntity.created_at,
+            RequestLogEntity.success,
+            RequestLogEntity.latency_ms,
+            RequestLogEntity.input_tokens,
+            RequestLogEntity.cache_read_input_tokens,
+            RequestLogEntity.cache_write_input_tokens,
+            RequestLogEntity.output_tokens,
+            RequestLogEntity.total_tokens,
+            RequestLogEntity.input_cost_usd,
+            RequestLogEntity.output_cost_usd,
+            RequestLogEntity.total_cost_usd,
+        ).select_from(RequestLogEntity)
         if not include_archived:
             stmt = stmt.where(RequestLogEntity.stats_archived == 0)
-        stmt = self._apply_request_log_window(stmt, days=days, offset_days=offset_days, time_zone=time_zone)
+        stmt = self._apply_request_log_window(
+            stmt, days=days, offset_days=offset_days, time_zone=time_zone
+        )
         stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
         rows = (await session.execute(stmt)).all()
         totals = self._zero_totals()
@@ -2404,8 +3130,12 @@ class DomainStore:
             totals["request_count"] += float(values["request_count"])
             totals["wait_time_ms"] += float(values["wait_time_ms"])
             totals["input_tokens"] += float(values["input_tokens"])
-            totals["cache_read_input_tokens"] += float(values["cache_read_input_tokens"])
-            totals["cache_write_input_tokens"] += float(values["cache_write_input_tokens"])
+            totals["cache_read_input_tokens"] += float(
+                values["cache_read_input_tokens"]
+            )
+            totals["cache_write_input_tokens"] += float(
+                values["cache_write_input_tokens"]
+            )
             totals["output_tokens"] += float(values["output_tokens"])
             totals["input_cost_usd"] += float(values["input_cost_usd"])
             totals["output_cost_usd"] += float(values["output_cost_usd"])
@@ -2438,11 +3168,15 @@ class DomainStore:
     @staticmethod
     def _request_log_prune_cutoff(*, keep_days: int, time_zone: ZoneInfo) -> datetime:
         local_now = datetime.now(time_zone)
-        local_cutoff = local_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=max(keep_days, 1) - 1)
+        local_cutoff = local_now.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) - timedelta(days=max(keep_days, 1) - 1)
         return local_cutoff.astimezone(UTC).replace(tzinfo=None)
 
     @staticmethod
-    def _daily_stats_by_local_bucket(rows: list[Any], time_zone: ZoneInfo) -> dict[str, dict[str, float]]:
+    def _daily_stats_by_local_bucket(
+        rows: list[Any], time_zone: ZoneInfo
+    ) -> dict[str, dict[str, float]]:
         buckets: dict[str, dict[str, float]] = {}
         for row in rows:
             (
@@ -2495,7 +3229,9 @@ class DomainStore:
         return buckets
 
     @staticmethod
-    def _model_rows_by_local_bucket(rows: list[Any], format_text: str, time_zone: ZoneInfo) -> list[tuple[str, str, int, int, float]]:
+    def _model_rows_by_local_bucket(
+        rows: list[Any], format_text: str, time_zone: ZoneInfo
+    ) -> list[tuple[str, str, int, int, float]]:
         buckets: dict[tuple[str, str], list[float]] = {}
         for created_at, model, total_tokens, total_cost in rows:
             if not model or created_at is None:
@@ -2515,13 +3251,17 @@ class DomainStore:
         ]
 
     @staticmethod
-    def _resolve_request_log_window(days: int, *, time_zone: ZoneInfo, offset_days: int = 0) -> tuple[datetime | None, datetime | None]:
+    def _resolve_request_log_window(
+        days: int, *, time_zone: ZoneInfo, offset_days: int = 0
+    ) -> tuple[datetime | None, datetime | None]:
         if days == 0:
             return None, None
 
         now = datetime.now(time_zone)
         if days == -1:
-            start_at = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=offset_days)
+            start_at = now.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ) - timedelta(days=offset_days)
             end_at = start_at + timedelta(days=1)
             return (
                 start_at.astimezone(UTC).replace(tzinfo=None),
@@ -2536,8 +3276,12 @@ class DomainStore:
         )
 
     @classmethod
-    def _resolve_imported_date_window(cls, days: int, *, time_zone: ZoneInfo, offset_days: int = 0) -> tuple[str | None, str | None]:
-        start_at, end_at = cls._resolve_request_log_window(days, offset_days=offset_days, time_zone=time_zone)
+    def _resolve_imported_date_window(
+        cls, days: int, *, time_zone: ZoneInfo, offset_days: int = 0
+    ) -> tuple[str | None, str | None]:
+        start_at, end_at = cls._resolve_request_log_window(
+            days, offset_days=offset_days, time_zone=time_zone
+        )
         if start_at is None or end_at is None:
             return None, None
         return (
@@ -2546,8 +3290,12 @@ class DomainStore:
         )
 
     @classmethod
-    def _apply_request_log_window(cls, stmt: Any, *, days: int, time_zone: ZoneInfo, offset_days: int = 0) -> Any:
-        start_at, end_at = cls._resolve_request_log_window(days, offset_days=offset_days, time_zone=time_zone)
+    def _apply_request_log_window(
+        cls, stmt: Any, *, days: int, time_zone: ZoneInfo, offset_days: int = 0
+    ) -> Any:
+        start_at, end_at = cls._resolve_request_log_window(
+            days, offset_days=offset_days, time_zone=time_zone
+        )
         if start_at is not None:
             stmt = stmt.where(RequestLogEntity.created_at >= start_at)
         if end_at is not None:
@@ -2592,12 +3340,7 @@ class DomainStore:
 
     @staticmethod
     def _escape_like_pattern(value: str) -> str:
-        return (
-            value
-            .replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-        )
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     @classmethod
     def _apply_request_log_keyword_filter(
@@ -2654,13 +3397,21 @@ class DomainStore:
             stmt = stmt.where(series_condition)
 
         if status_filter == RequestLogStatusFilter.SUCCESS:
-            stmt = stmt.where(RequestLogEntity.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value)
+            stmt = stmt.where(
+                RequestLogEntity.lifecycle_status
+                == RequestLogLifecycleStatus.SUCCEEDED.value
+            )
             stmt = stmt.where(RequestLogEntity.success == 1)
         elif status_filter == RequestLogStatusFilter.FAILED:
-            stmt = stmt.where(RequestLogEntity.lifecycle_status == RequestLogLifecycleStatus.FAILED.value)
+            stmt = stmt.where(
+                RequestLogEntity.lifecycle_status
+                == RequestLogLifecycleStatus.FAILED.value
+            )
             stmt = stmt.where(RequestLogEntity.success == 0)
         elif status_filter == RequestLogStatusFilter.RUNNING:
-            stmt = stmt.where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_RUNNING_STATUSES))
+            stmt = stmt.where(
+                RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_RUNNING_STATUSES)
+            )
 
         if protocol is not None:
             stmt = stmt.where(RequestLogEntity.protocol == protocol.value)
@@ -2698,7 +3449,9 @@ class DomainStore:
                 RequestLogEntity.created_at.desc(),
                 RequestLogEntity.id.desc(),
             )
-        return stmt.order_by(RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc())
+        return stmt.order_by(
+            RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()
+        )
 
     @staticmethod
     def _normalize_gateway_key_id(gateway_key_id: str | None) -> str | None:
@@ -2809,7 +3562,9 @@ class DomainStore:
                     func.sum(RequestLogEntity.total_cost_usd),
                 )
                 .where(RequestLogEntity.gateway_key_id.in_(unique_ids))
-                .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
+                .where(
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
+                )
                 .group_by(RequestLogEntity.gateway_key_id)
             )
         ).all()
@@ -2898,10 +3653,18 @@ class DomainStore:
             route_group_name=route_group_name,
             sync_filter_mode=entity.sync_filter_mode,
             sync_filter_query=entity.sync_filter_query,
-            input_price_per_million=float(price.input_price_per_million) if price is not None else 0.0,
-            output_price_per_million=float(price.output_price_per_million) if price is not None else 0.0,
-            cache_read_price_per_million=float(price.cache_read_price_per_million) if price is not None else 0.0,
-            cache_write_price_per_million=float(price.cache_write_price_per_million) if price is not None else 0.0,
+            input_price_per_million=(
+                float(price.input_price_per_million) if price is not None else 0.0
+            ),
+            output_price_per_million=(
+                float(price.output_price_per_million) if price is not None else 0.0
+            ),
+            cache_read_price_per_million=(
+                float(price.cache_read_price_per_million) if price is not None else 0.0
+            ),
+            cache_write_price_per_million=(
+                float(price.cache_write_price_per_million) if price is not None else 0.0
+            ),
             items=items,
         )
 
@@ -2910,7 +3673,10 @@ class DomainStore:
         session: AsyncSession, key_ids: list[str | None]
     ) -> dict[str, str]:
         unique_ids = [
-            item for item in dict.fromkeys(str(key_id).strip() for key_id in key_ids if key_id)
+            item
+            for item in dict.fromkeys(
+                str(key_id).strip() for key_id in key_ids if key_id
+            )
             if item
         ]
         if not unique_ids:
@@ -2962,7 +3728,8 @@ class DomainStore:
             success=bool(entity.success),
             lifecycle_status=(
                 RequestLogLifecycleStatus(entity.lifecycle_status)
-                if entity.lifecycle_status in RequestLogLifecycleStatus._value2member_map_
+                if entity.lifecycle_status
+                in RequestLogLifecycleStatus._value2member_map_
                 else (
                     RequestLogLifecycleStatus.SUCCEEDED
                     if entity.success

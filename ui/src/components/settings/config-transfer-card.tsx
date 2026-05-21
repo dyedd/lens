@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import { useMemo, useRef, useState, useTransition } from "react"
-import { toast } from "sonner"
+import { useMemo, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
   CircleAlert,
   Database,
@@ -13,13 +13,13 @@ import {
   Settings2,
   Upload,
   Waypoints,
-} from "lucide-react"
-import { useQueryClient } from "@tanstack/react-query"
+} from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -27,14 +27,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 import {
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemContent,
@@ -43,8 +43,8 @@ import {
   ItemHeader,
   ItemMedia,
   ItemTitle,
-} from "@/components/ui/item"
-import { Switch } from "@/components/ui/switch"
+} from "@/components/ui/item";
+import { Switch } from "@/components/ui/switch";
 import {
   ApiError,
   type ConfigBackupDump,
@@ -52,16 +52,16 @@ import {
   type ConfigImportResult,
   downloadConfigBackup,
   importConfigBackup,
-} from "@/lib/api"
-import { useAppTimeZone } from "@/hooks/use-app-time-zone"
-import { type Locale } from "@/lib/i18n"
+} from "@/lib/api";
+import { useAppTimeZone } from "@/hooks/use-app-time-zone";
+import { type Locale } from "@/lib/i18n";
 
 function titleForLocale(locale: Locale, zh: string, en: string) {
-  return locale === "zh-CN" ? zh : en
+  return locale === "zh-CN" ? zh : en;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
+  return typeof value === "object" && value !== null;
 }
 
 function parseStatsPreview(value: unknown): ConfigBackupStatsSnapshot {
@@ -71,23 +71,27 @@ function parseStatsPreview(value: unknown): ConfigBackupStatsSnapshot {
       imported_daily: [],
       request_daily: [],
       model_daily: [],
-    }
+    };
   }
 
   return {
     imported_total: isRecord(value.imported_total)
       ? (value.imported_total as ConfigBackupStatsSnapshot["imported_total"])
       : null,
-    imported_daily: Array.isArray(value.imported_daily) ? value.imported_daily : [],
-    request_daily: Array.isArray(value.request_daily) ? value.request_daily : [],
+    imported_daily: Array.isArray(value.imported_daily)
+      ? value.imported_daily
+      : [],
+    request_daily: Array.isArray(value.request_daily)
+      ? value.request_daily
+      : [],
     model_daily: Array.isArray(value.model_daily) ? value.model_daily : [],
-  }
+  };
 }
 
 function parseBackupPreview(rawValue: string): ConfigBackupDump {
-  const payload = JSON.parse(rawValue)
+  const payload = JSON.parse(rawValue);
   if (!isRecord(payload)) {
-    throw new Error("Invalid backup file")
+    throw new Error("Invalid backup file");
   }
 
   return {
@@ -104,28 +108,28 @@ function parseBackupPreview(rawValue: string): ConfigBackupDump {
     model_prices: Array.isArray(payload.model_prices)
       ? payload.model_prices
       : [],
-    cronjobs: Array.isArray(payload.cronjobs)
-      ? payload.cronjobs
-      : [],
+    cronjobs: Array.isArray(payload.cronjobs) ? payload.cronjobs : [],
     stats: parseStatsPreview(payload.stats),
     gateway_api_keys: Array.isArray(payload.gateway_api_keys)
       ? payload.gateway_api_keys
       : [],
-    request_logs: Array.isArray(payload.request_logs) ? payload.request_logs : [],
-  }
+    request_logs: Array.isArray(payload.request_logs)
+      ? payload.request_logs
+      : [],
+  };
 }
 
 function formatExportedAt(value: string, locale: Locale, timeZone?: string) {
   if (!value) {
-    return "n/a"
+    return "n/a";
   }
-  const date = new Date(value)
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return value
+    return value;
   }
   return date.toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US", {
     ...(timeZone ? { timeZone } : {}),
-  })
+  });
 }
 
 function resultLabelForLocale(locale: Locale, key: string) {
@@ -148,21 +152,15 @@ function resultLabelForLocale(locale: Locale, key: string) {
     site_protocol_bindings: ["渠道凭据绑定", "Channel credential bindings"],
     site_protocol_configs: ["渠道协议配置", "Channel protocol configs"],
     sites: ["渠道", "Channels"],
-  }
-  const label = labels[key]
+  };
+  const label = labels[key];
   if (!label) {
-    return key
+    return key;
   }
-  return locale === "zh-CN" ? label[0] : label[1]
+  return locale === "zh-CN" ? label[0] : label[1];
 }
 
-function PreviewMeta({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
+function PreviewMeta({ label, value }: { label: string; value: string }) {
   return (
     <Item variant="muted" size="sm">
       <ItemContent>
@@ -172,13 +170,13 @@ function PreviewMeta({
         <ItemTitle>{value}</ItemTitle>
       </ItemContent>
     </Item>
-  )
+  );
 }
 
 function ExportCard({ locale }: { locale: Locale }) {
-  const [includeLogs, setIncludeLogs] = useState(false)
-  const [includeGatewayApiKeys, setIncludeGatewayApiKeys] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
+  const [includeLogs, setIncludeLogs] = useState(false);
+  const [includeGatewayApiKeys, setIncludeGatewayApiKeys] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const alwaysIncludedItems = useMemo(
     () => [
@@ -189,31 +187,31 @@ function ExportCard({ locale }: { locale: Locale }) {
       titleForLocale(locale, "定时任务", "Cron jobs"),
       titleForLocale(locale, "统计数据", "Stats"),
     ],
-    [locale]
-  )
+    [locale],
+  );
 
   async function handleExport() {
-    setIsExporting(true)
+    setIsExporting(true);
     try {
       const result = await downloadConfigBackup({
         includeLogs,
         includeGatewayApiKeys,
-      })
+      });
       toast.success(
         titleForLocale(
           locale,
           `备份已导出: ${result.filename}`,
-          `Backup exported: ${result.filename}`
-        )
-      )
+          `Backup exported: ${result.filename}`,
+        ),
+      );
     } catch (error) {
       const message =
         error instanceof ApiError
           ? error.message
-          : titleForLocale(locale, "导出失败", "Failed to export backup")
-      toast.error(message)
+          : titleForLocale(locale, "导出失败", "Failed to export backup");
+      toast.error(message);
     } finally {
-      setIsExporting(false)
+      setIsExporting(false);
     }
   }
 
@@ -235,7 +233,10 @@ function ExportCard({ locale }: { locale: Locale }) {
         </div>
 
         <FieldGroup>
-          <Field orientation="horizontal" className="flex-wrap items-center justify-between">
+          <Field
+            orientation="horizontal"
+            className="flex-wrap items-center justify-between"
+          >
             <div className="flex min-w-0 flex-col gap-1">
               <FieldLabel className="w-auto">
                 {titleForLocale(locale, "包含请求日志", "Include request logs")}
@@ -244,25 +245,29 @@ function ExportCard({ locale }: { locale: Locale }) {
                 {titleForLocale(
                   locale,
                   "导出所有请求日志明细，文件体积可能明显增大",
-                  "Export all request log details; this can increase file size significantly"
+                  "Export all request log details; this can increase file size significantly",
                 )}
               </FieldDescription>
             </div>
-            <Switch
-              checked={includeLogs}
-              onCheckedChange={setIncludeLogs}
-            />
+            <Switch checked={includeLogs} onCheckedChange={setIncludeLogs} />
           </Field>
-          <Field orientation="horizontal" className="flex-wrap items-center justify-between">
+          <Field
+            orientation="horizontal"
+            className="flex-wrap items-center justify-between"
+          >
             <div className="flex min-w-0 flex-col gap-1">
               <FieldLabel className="w-auto">
-                {titleForLocale(locale, "包含网关 API Key", "Include gateway API keys")}
+                {titleForLocale(
+                  locale,
+                  "包含网关 API Key",
+                  "Include gateway API keys",
+                )}
               </FieldLabel>
               <FieldDescription>
                 {titleForLocale(
                   locale,
                   "会把网关鉴权 Key 一并写入备份，导出后请妥善保管",
-                  "Gateway auth keys will be included in the backup; keep the file secure"
+                  "Gateway auth keys will be included in the backup; keep the file secure",
                 )}
               </FieldDescription>
             </div>
@@ -282,7 +287,7 @@ function ExportCard({ locale }: { locale: Locale }) {
             {titleForLocale(
               locale,
               "渠道配置始终包含上游凭据，统计数据会一并备份；导出文件可直接用于新实例覆盖导入恢复。",
-              "Channel configuration always includes upstream credentials, and stats are backed up together; the exported file can be imported directly into a fresh instance."
+              "Channel configuration always includes upstream credentials, and stats are backed up together; the exported file can be imported directly into a fresh instance.",
             )}
           </AlertDescription>
         </Alert>
@@ -299,32 +304,34 @@ function ExportCard({ locale }: { locale: Locale }) {
         </Button>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 function ImportCard({ locale }: { locale: Locale }) {
-  const queryClient = useQueryClient()
-  const timeZone = useAppTimeZone()
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [isPreviewPending, startPreviewTransition] = useTransition()
+  const queryClient = useQueryClient();
+  const timeZone = useAppTimeZone();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isPreviewPending, startPreviewTransition] = useTransition();
 
-  const [isImporting, setIsImporting] = useState(false)
-  const [confirmImportOpen, setConfirmImportOpen] = useState(false)
+  const [isImporting, setIsImporting] = useState(false);
+  const [confirmImportOpen, setConfirmImportOpen] = useState(false);
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<ConfigBackupDump | null>(null)
-  const [previewError, setPreviewError] = useState("")
-  const [importResult, setImportResult] = useState<ConfigImportResult | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<ConfigBackupDump | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const [importResult, setImportResult] = useState<ConfigImportResult | null>(
+    null,
+  );
 
   const previewSections = useMemo(() => {
     if (!preview) {
-      return []
+      return [];
     }
     const statsCount =
       (preview.stats.imported_total ? 1 : 0) +
       preview.stats.imported_daily.length +
       preview.stats.request_daily.length +
-      preview.stats.model_daily.length
+      preview.stats.model_daily.length;
     const items = [
       {
         key: "settings",
@@ -356,28 +363,28 @@ function ImportCard({ locale }: { locale: Locale }) {
         label: titleForLocale(locale, "统计数据", "Stats"),
         count: statsCount,
       },
-    ]
+    ];
     if (preview.include_gateway_api_keys) {
       items.push({
         key: "gateway_api_keys",
         label: titleForLocale(locale, "网关 API Key", "Gateway API keys"),
         count: preview.gateway_api_keys.length,
-      })
+      });
     }
     if (preview.include_request_logs) {
       items.push({
         key: "request_logs",
         label: titleForLocale(locale, "请求日志", "Request logs"),
         count: preview.request_logs.length,
-      })
+      });
     }
-    return items
-  }, [locale, preview])
+    return items;
+  }, [locale, preview]);
 
   const rowsAffectedList = useMemo(() => {
-    const rowsAffected = importResult?.rows_affected
+    const rowsAffected = importResult?.rows_affected;
     if (!rowsAffected) {
-      return []
+      return [];
     }
     return Object.entries(rowsAffected)
       .sort(([left], [right]) => left.localeCompare(right))
@@ -385,62 +392,60 @@ function ImportCard({ locale }: { locale: Locale }) {
         key,
         label: resultLabelForLocale(locale, key),
         value,
-      }))
-  }, [importResult, locale])
+      }));
+  }, [importResult, locale]);
 
   async function handleFileChange(file: File | null) {
-    setSelectedFile(file)
-    setImportResult(null)
-    setPreview(null)
-    setPreviewError("")
+    setSelectedFile(file);
+    setImportResult(null);
+    setPreview(null);
+    setPreviewError("");
 
     if (!file) {
-      return
+      return;
     }
 
     try {
-      const rawValue = await file.text()
-      const nextPreview = parseBackupPreview(rawValue)
+      const rawValue = await file.text();
+      const nextPreview = parseBackupPreview(rawValue);
       startPreviewTransition(() => {
-        setPreview(nextPreview)
-      })
+        setPreview(nextPreview);
+      });
     } catch {
       startPreviewTransition(() => {
         setPreviewError(
-          titleForLocale(locale, "备份文件格式无效", "Invalid backup file")
-        )
-      })
+          titleForLocale(locale, "备份文件格式无效", "Invalid backup file"),
+        );
+      });
     }
   }
 
   async function handleImport() {
     if (!selectedFile) {
-      return
+      return;
     }
 
-    setIsImporting(true)
+    setIsImporting(true);
     try {
-      const result = await importConfigBackup(selectedFile)
-      setImportResult(result)
-      setConfirmImportOpen(false)
+      const result = await importConfigBackup(selectedFile);
+      setImportResult(result);
+      setConfirmImportOpen(false);
       if (fileInputRef.current) {
-        fileInputRef.current.value = ""
+        fileInputRef.current.value = "";
       }
-      setSelectedFile(null)
-      setPreview(null)
-      setPreviewError("")
-      await queryClient.invalidateQueries()
-      toast.success(
-        titleForLocale(locale, "备份已导入", "Backup imported")
-      )
+      setSelectedFile(null);
+      setPreview(null);
+      setPreviewError("");
+      await queryClient.invalidateQueries();
+      toast.success(titleForLocale(locale, "备份已导入", "Backup imported"));
     } catch (error) {
       const message =
         error instanceof ApiError
           ? error.message
-          : titleForLocale(locale, "导入失败", "Failed to import backup")
-      toast.error(message)
+          : titleForLocale(locale, "导入失败", "Failed to import backup");
+      toast.error(message);
     } finally {
-      setIsImporting(false)
+      setIsImporting(false);
     }
   }
 
@@ -514,7 +519,11 @@ function ImportCard({ locale }: { locale: Locale }) {
                   />
                   <PreviewMeta
                     label={titleForLocale(locale, "导出时间", "Exported at")}
-                    value={formatExportedAt(preview.exported_at, locale, timeZone)}
+                    value={formatExportedAt(
+                      preview.exported_at,
+                      locale,
+                      timeZone,
+                    )}
                   />
                 </div>
 
@@ -539,7 +548,11 @@ function ImportCard({ locale }: { locale: Locale }) {
               </ItemMedia>
               <ItemContent>
                 <ItemTitle>
-                  {titleForLocale(locale, "正在解析备份文件...", "Parsing backup file...")}
+                  {titleForLocale(
+                    locale,
+                    "正在解析备份文件...",
+                    "Parsing backup file...",
+                  )}
                 </ItemTitle>
               </ItemContent>
             </Item>
@@ -554,7 +567,7 @@ function ImportCard({ locale }: { locale: Locale }) {
               {titleForLocale(
                 locale,
                 "导入会替换现有渠道、模型组、设置、模型价格、定时任务和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
-                "Import replaces existing channels, model groups, settings, model prices, cron jobs, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well."
+                "Import replaces existing channels, model groups, settings, model prices, cron jobs, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well.",
               )}
             </AlertDescription>
           </Alert>
@@ -589,7 +602,9 @@ function ImportCard({ locale }: { locale: Locale }) {
                     <Item key={item.key} variant="outline" size="sm">
                       <ItemContent>
                         <ItemHeader>
-                          <ItemTitle className="font-medium">{item.label}</ItemTitle>
+                          <ItemTitle className="font-medium">
+                            {item.label}
+                          </ItemTitle>
                           <Badge variant="secondary">{item.value}</Badge>
                         </ItemHeader>
                       </ItemContent>
@@ -612,7 +627,7 @@ function ImportCard({ locale }: { locale: Locale }) {
               {titleForLocale(
                 locale,
                 "当前实例中的相关配置会被备份文件覆盖，请确认文件内容无误后继续。",
-                "The related configuration in this instance will be overwritten by the backup file."
+                "The related configuration in this instance will be overwritten by the backup file.",
               )}
             </DialogDescription>
           </DialogHeader>
@@ -621,21 +636,21 @@ function ImportCard({ locale }: { locale: Locale }) {
             <Item variant="muted">
               <ItemContent>
                 <ItemTitle>
-                {selectedFile?.name ??
-                  titleForLocale(locale, "未选择文件", "No file selected")}
+                  {selectedFile?.name ??
+                    titleForLocale(locale, "未选择文件", "No file selected")}
                 </ItemTitle>
                 <ItemDescription>
-                {preview
-                  ? titleForLocale(
-                      locale,
-                      `将覆盖 ${preview.sites.length} 个渠道、${preview.groups.length} 个模型组`,
-                      `Will overwrite ${preview.sites.length} channels and ${preview.groups.length} model groups`
-                    )
-                  : titleForLocale(
-                      locale,
-                      "将按备份内容执行覆盖导入",
-                      "Will perform an overwrite import based on the backup contents"
-                    )}
+                  {preview
+                    ? titleForLocale(
+                        locale,
+                        `将覆盖 ${preview.sites.length} 个渠道、${preview.groups.length} 个模型组`,
+                        `Will overwrite ${preview.sites.length} channels and ${preview.groups.length} model groups`,
+                      )
+                    : titleForLocale(
+                        locale,
+                        "将按备份内容执行覆盖导入",
+                        "Will perform an overwrite import based on the backup contents",
+                      )}
                 </ItemDescription>
               </ItemContent>
             </Item>
@@ -700,7 +715,7 @@ function ImportCard({ locale }: { locale: Locale }) {
         </DialogContent>
       </Dialog>
     </>
-  )
+  );
 }
 
 export function ConfigTransferCard({ locale }: { locale: Locale }) {
@@ -709,5 +724,5 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
       <ExportCard locale={locale} />
       <ImportCard locale={locale} />
     </div>
-  )
+  );
 }

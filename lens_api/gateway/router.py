@@ -1,4 +1,3 @@
-
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -6,7 +5,19 @@ import re
 from threading import Lock
 from time import monotonic
 
-from ..models import ChannelConfig, ChannelHealth, ChannelKeyHealth, ChannelKeyItem, ChannelStatus, ProtocolKind, RoutePreview, RoutePreviewItem, RouteState, RouterSnapshot, RoutingStrategy
+from ..models import (
+    ChannelConfig,
+    ChannelHealth,
+    ChannelKeyHealth,
+    ChannelKeyItem,
+    ChannelStatus,
+    ProtocolKind,
+    RoutePreview,
+    RoutePreviewItem,
+    RouteState,
+    RouterSnapshot,
+    RoutingStrategy,
+)
 
 
 class ErrorCategory(Enum):
@@ -36,6 +47,7 @@ def classify_error(status_code: int | None) -> ErrorCategory:
     if 500 <= status_code < 600:
         return ErrorCategory.SERVER
     return ErrorCategory.UNKNOWN
+
 
 @dataclass
 class _HealthState:
@@ -132,19 +144,31 @@ class RoundRobinRouter:
     ) -> RouteSelection:
         with self._lock:
             active = self._build_active_pool(
-                channels, protocol, requested_model,
-                allowed_channel_ids, use_model_matching, route_targets,
+                channels,
+                protocol,
+                requested_model,
+                allowed_channel_ids,
+                use_model_matching,
+                route_targets,
             )
             if not active:
                 all_matching = self._build_active_pool(
-                    channels, protocol, requested_model,
-                    allowed_channel_ids, use_model_matching, route_targets,
+                    channels,
+                    protocol,
+                    requested_model,
+                    allowed_channel_ids,
+                    use_model_matching,
+                    route_targets,
                     skip_health_filter=True,
                 )
                 if all_matching:
-                    detail = f"All {len(all_matching)} matching channels are in cooldown"
+                    detail = (
+                        f"All {len(all_matching)} matching channels are in cooldown"
+                    )
                 else:
-                    detail = f"No enabled channels available for protocol={protocol.value}"
+                    detail = (
+                        f"No enabled channels available for protocol={protocol.value}"
+                    )
                     if requested_model:
                         detail = f"No enabled channels matched {requested_model}"
                 raise LookupError(detail)
@@ -164,7 +188,9 @@ class RoundRobinRouter:
 
             return RouteSelection(primary=primary, fallbacks=fallbacks)
 
-    def record_success(self, channel_id: str, *, credential_id: str | None = None) -> None:
+    def record_success(
+        self, channel_id: str, *, credential_id: str | None = None
+    ) -> None:
         with self._lock:
             self._health[channel_id] = _HealthState()
             if credential_id:
@@ -192,10 +218,18 @@ class RoundRobinRouter:
             self._update_health_window(channel_id, success=False)
 
             should_cooldown_channel = True
-            if category in (ErrorCategory.AUTH, ErrorCategory.RATE_LIMIT) \
-                    and credential_id and channel_keys and sum(1 for k in channel_keys if k.enabled) > 1:
-                self._record_key_failure_locked(channel_id, credential_id, status_code, max_cooldown_seconds)
-                should_cooldown_channel = self._all_keys_cooled_locked(channel_id, channel_keys)
+            if (
+                category in (ErrorCategory.AUTH, ErrorCategory.RATE_LIMIT)
+                and credential_id
+                and channel_keys
+                and sum(1 for k in channel_keys if k.enabled) > 1
+            ):
+                self._record_key_failure_locked(
+                    channel_id, credential_id, status_code, max_cooldown_seconds
+                )
+                should_cooldown_channel = self._all_keys_cooled_locked(
+                    channel_id, channel_keys
+                )
 
             if should_cooldown_channel:
                 self._apply_channel_cooldown_locked(
@@ -215,7 +249,9 @@ class RoundRobinRouter:
         max_cooldown_seconds: int = 0,
     ) -> None:
         with self._lock:
-            self._record_key_failure_locked(channel_id, key_id, status_code, max_cooldown_seconds)
+            self._record_key_failure_locked(
+                channel_id, key_id, status_code, max_cooldown_seconds
+            )
 
     def record_key_success(self, channel_id: str, key_id: str) -> None:
         with self._lock:
@@ -238,7 +274,9 @@ class RoundRobinRouter:
                 self._build_route_state(channels, protocol, now=now)
                 for protocol in ProtocolKind
             ]
-            health = [self._build_channel_health(channel, now=now) for channel in channels]
+            health = [
+                self._build_channel_health(channel, now=now) for channel in channels
+            ]
 
         return RouterSnapshot(routes=routes, health=health)
 
@@ -249,24 +287,32 @@ class RoundRobinRouter:
         *,
         now: float,
     ) -> RouteState:
-        pool = self._build_active_pool(channels, protocol, None, skip_health_filter=True)
+        pool = self._build_active_pool(
+            channels, protocol, None, skip_health_filter=True
+        )
         ordered_targets, _, next_channel_id = self._prepare_diagnostic_targets(
             pool,
             strategy=RoutingStrategy.ROUND_ROBIN,
             cursor_key=protocol.value,
             protocol=protocol,
         )
-        availability = [self._target_is_available(target, now=now) for target in ordered_targets]
+        availability = [
+            self._target_is_available(target, now=now) for target in ordered_targets
+        ]
         return RouteState(
             protocol=protocol,
             next_index=0,
             next_channel_id=next_channel_id,
             channel_ids=[target.channel.id for target in ordered_targets],
             available_channel_ids=[
-                target.channel.id for target, available in zip(ordered_targets, availability) if available
+                target.channel.id
+                for target, available in zip(ordered_targets, availability)
+                if available
             ],
             cooldown_channel_ids=[
-                target.channel.id for target, available in zip(ordered_targets, availability) if not available
+                target.channel.id
+                for target, available in zip(ordered_targets, availability)
+                if not available
             ],
             requested_model=None,
         )
@@ -286,12 +332,19 @@ class RoundRobinRouter:
     ) -> RoutePreview:
         with self._lock:
             pool = self._build_active_pool(
-                channels, protocol, requested_model,
-                allowed_channel_ids, use_model_matching, route_targets,
+                channels,
+                protocol,
+                requested_model,
+                allowed_channel_ids,
+                use_model_matching,
+                route_targets,
                 skip_health_filter=True,
             )
             ordered_targets, _, _ = self._prepare_diagnostic_targets(
-                pool, strategy=strategy, cursor_key=cursor_key, protocol=protocol,
+                pool,
+                strategy=strategy,
+                cursor_key=cursor_key,
+                protocol=protocol,
             )
             now = monotonic()
             return RoutePreview(
@@ -306,7 +359,9 @@ class RoundRobinRouter:
                 ],
             )
 
-    def _build_preview_item(self, target: RouteTarget, *, now: float) -> RoutePreviewItem:
+    def _build_preview_item(
+        self, target: RouteTarget, *, now: float
+    ) -> RoutePreviewItem:
         available = self._target_is_available(target, now=now)
         return RoutePreviewItem(
             channel_id=target.channel.id,
@@ -315,7 +370,9 @@ class RoundRobinRouter:
             credential_id=target.credential_id,
             available=available,
             in_cooldown=not available,
-            cooldown_remaining_seconds=self._target_cooldown_remaining_seconds(target, now=now),
+            cooldown_remaining_seconds=self._target_cooldown_remaining_seconds(
+                target, now=now
+            ),
             score=self._score(target.channel.id),
         )
 
@@ -331,13 +388,21 @@ class RoundRobinRouter:
         skip_health_filter: bool = False,
     ) -> list[RouteTarget]:
         active = self._filter_enabled_targets(
-            channels, protocol, requested_model,
-            allowed_channel_ids, use_model_matching, route_targets,
+            channels,
+            protocol,
+            requested_model,
+            allowed_channel_ids,
+            use_model_matching,
+            route_targets,
         )
 
         if not skip_health_filter:
             now = monotonic()
-            active = [target for target in active if self._target_is_available(target, now=now)]
+            active = [
+                target
+                for target in active
+                if self._target_is_available(target, now=now)
+            ]
             if len(active) > 1:
                 active.sort(key=lambda t: self._score(t.channel.id), reverse=True)
 
@@ -357,14 +422,20 @@ class RoundRobinRouter:
                 target
                 for target in route_targets
                 if target.channel.status == ChannelStatus.ENABLED
-                and (allowed_channel_ids is None or target.channel.id in allowed_channel_ids)
+                and (
+                    allowed_channel_ids is None
+                    or target.channel.id in allowed_channel_ids
+                )
             ]
 
         active: list[RouteTarget] = []
         for channel in sorted(channels, key=lambda item: item.name):
             if channel.protocol != protocol or channel.status != ChannelStatus.ENABLED:
                 continue
-            if allowed_channel_ids is not None and channel.id not in allowed_channel_ids:
+            if (
+                allowed_channel_ids is not None
+                and channel.id not in allowed_channel_ids
+            ):
                 continue
             if use_model_matching and not _matches_model(channel, requested_model):
                 continue
@@ -373,7 +444,11 @@ class RoundRobinRouter:
 
     def _score(self, channel_id: str) -> float:
         window = self._expire_window_if_needed(channel_id)
-        penalty = window.failure_rate * self._health_penalty_weight * window.confidence(self._health_min_samples)
+        penalty = (
+            window.failure_rate
+            * self._health_penalty_weight
+            * window.confidence(self._health_min_samples)
+        )
         return 1.0 - penalty
 
     def _update_health_window(self, channel_id: str, *, success: bool) -> None:
@@ -388,7 +463,10 @@ class RoundRobinRouter:
     def _expire_window_if_needed(self, channel_id: str) -> _HealthWindow:
         window = self._health_windows[channel_id]
         now = monotonic()
-        if window.window_start > 0 and now - window.window_start > self._health_window_seconds:
+        if (
+            window.window_start > 0
+            and now - window.window_start > self._health_window_seconds
+        ):
             window = _HealthWindow(window_start=now)
             self._health_windows[channel_id] = window
         return window
@@ -410,11 +488,14 @@ class RoundRobinRouter:
     def _effective_key_count(self, channel: ChannelConfig) -> int:
         now = monotonic()
         return sum(
-            1 for k in channel.keys
+            1
+            for k in channel.keys
             if k.enabled and self._is_key_available(channel.id, k.id, now=now)
         )
 
-    def _swrr_pick_index(self, active: list[RouteTarget], route_key: str, *, mutate: bool) -> int:
+    def _swrr_pick_index(
+        self, active: list[RouteTarget], route_key: str, *, mutate: bool
+    ) -> int:
         total_weight = 0
         best_idx = 0
         next_weights: list[int] = []
@@ -453,16 +534,22 @@ class RoundRobinRouter:
         state = self._key_health.setdefault((channel_id, key_id), _KeyHealthState())
         state.consecutive_failures += 1
         initial = _DEFAULT_INITIAL_COOLDOWN.get(category, 60)
-        cooldown = self._calculate_exponential_cooldown(state.last_cooldown, initial, max(max_cooldown_seconds, initial))
+        cooldown = self._calculate_exponential_cooldown(
+            state.last_cooldown, initial, max(max_cooldown_seconds, initial)
+        )
         state.last_cooldown = cooldown
         state.cooled_until = monotonic() + cooldown
 
-    def _all_keys_cooled_locked(self, channel_id: str, keys: list[ChannelKeyItem]) -> bool:
+    def _all_keys_cooled_locked(
+        self, channel_id: str, keys: list[ChannelKeyItem]
+    ) -> bool:
         now = monotonic()
         enabled = [k for k in keys if k.enabled]
         if not enabled:
             return True
-        return not any(self._is_key_available(channel_id, k.id, now=now) for k in enabled)
+        return not any(
+            self._is_key_available(channel_id, k.id, now=now) for k in enabled
+        )
 
     def _apply_channel_cooldown_locked(
         self,
@@ -476,12 +563,16 @@ class RoundRobinRouter:
         effective_threshold = self._cooldown_threshold(category, threshold)
         if state.consecutive_failures >= effective_threshold:
             initial = self._initial_cooldown(category, cooldown_seconds)
-            cooldown = self._calculate_exponential_cooldown(state.last_cooldown, initial, max(max_cooldown_seconds, initial))
+            cooldown = self._calculate_exponential_cooldown(
+                state.last_cooldown, initial, max(max_cooldown_seconds, initial)
+            )
             state.last_cooldown = cooldown
             state.opened_until = max(state.opened_until, monotonic() + cooldown)
 
     @staticmethod
-    def _calculate_exponential_cooldown(last_cooldown: float, initial: int, max_cooldown: int) -> float:
+    def _calculate_exponential_cooldown(
+        last_cooldown: float, initial: int, max_cooldown: int
+    ) -> float:
         if last_cooldown > 0:
             return min(last_cooldown * 2, max_cooldown)
         return initial
@@ -490,7 +581,9 @@ class RoundRobinRouter:
         if self._health[target.channel.id].opened_until > now:
             return False
         if target.credential_id:
-            return self._is_key_available(target.channel.id, target.credential_id, now=now)
+            return self._is_key_available(
+                target.channel.id, target.credential_id, now=now
+            )
         if target.channel.keys:
             return self._has_available_key(target.channel, now=now)
         return True
@@ -520,7 +613,9 @@ class RoundRobinRouter:
         available: list[RouteTarget] = []
         cooled: list[RouteTarget] = []
         for target in targets:
-            (available if self._target_is_available(target, now=now) else cooled).append(target)
+            (
+                available if self._target_is_available(target, now=now) else cooled
+            ).append(target)
         available.sort(key=lambda target: self._score(target.channel.id), reverse=True)
         cooled.sort(key=lambda target: self._score(target.channel.id), reverse=True)
 
@@ -533,13 +628,20 @@ class RoundRobinRouter:
         else:
             primary_index = self._swrr_pick_index(available, route_key, mutate=False)
         ordered_available = available[primary_index:] + available[:primary_index]
-        return ordered_available + cooled, primary_index, ordered_available[0].channel.id
+        return (
+            ordered_available + cooled,
+            primary_index,
+            ordered_available[0].channel.id,
+        )
 
-    def _build_channel_health(self, channel: ChannelConfig, *, now: float) -> ChannelHealth:
+    def _build_channel_health(
+        self, channel: ChannelConfig, *, now: float
+    ) -> ChannelHealth:
         state = self._health[channel.id]
         key_health = [
             self._build_key_health(channel.id, key.id, now=now)
-            for key in channel.keys if key.enabled
+            for key in channel.keys
+            if key.enabled
         ]
         available_key_count = sum(1 for item in key_health if item.available)
         cooled_key_count = sum(1 for item in key_health if not item.available)
@@ -547,9 +649,13 @@ class RoundRobinRouter:
             channel_id=channel.id,
             consecutive_failures=state.consecutive_failures,
             last_error=state.last_error,
-            last_error_category=state.last_error_category.value if state.last_error_category else None,
+            last_error_category=(
+                state.last_error_category.value if state.last_error_category else None
+            ),
             opened_until=state.opened_until,
-            cooldown_remaining_seconds=self._remaining_seconds(state.opened_until, now=now),
+            cooldown_remaining_seconds=self._remaining_seconds(
+                state.opened_until, now=now
+            ),
             last_cooldown_seconds=int(state.last_cooldown),
             score=self._score(channel.id),
             available=state.opened_until <= now,
@@ -558,7 +664,9 @@ class RoundRobinRouter:
             key_health=key_health,
         )
 
-    def _build_key_health(self, channel_id: str, key_id: str, *, now: float) -> ChannelKeyHealth:
+    def _build_key_health(
+        self, channel_id: str, key_id: str, *, now: float
+    ) -> ChannelKeyHealth:
         state = self._key_health.get((channel_id, key_id))
         cooled_until = state.cooled_until if state is not None else 0.0
         last_cooldown = state.last_cooldown if state is not None else 0.0
@@ -572,7 +680,9 @@ class RoundRobinRouter:
             available=cooled_until <= now,
         )
 
-    def _target_cooldown_remaining_seconds(self, target: RouteTarget, *, now: float) -> int:
+    def _target_cooldown_remaining_seconds(
+        self, target: RouteTarget, *, now: float
+    ) -> int:
         if target.credential_id:
             key_state = self._key_health.get((target.channel.id, target.credential_id))
             if key_state is not None and key_state.cooled_until > now:
