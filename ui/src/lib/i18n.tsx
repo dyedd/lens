@@ -5,7 +5,6 @@ import { createContext, useContext, useMemo, useState } from 'react'
 export type Locale = 'zh-CN' | 'en-US'
 
 type Copy = {
-  appName: string
   loginTitle: string
   loginSubtitle: string
   username: string
@@ -28,7 +27,6 @@ type Copy = {
 
 const messages: Record<Locale, Copy> = {
   'zh-CN': {
-    appName: '',
     loginTitle: '统一管理渠道、模型组与系统配置',
     loginSubtitle: 'OpenAI Chat / OpenAI Responses / OpenAI Embedding / Anthropic / Gemini',
     username: '用户名',
@@ -49,7 +47,6 @@ const messages: Record<Locale, Copy> = {
     refresh: '刷新'
   },
   'en-US': {
-    appName: '',
     loginTitle: 'Manage channels, model groups, and system settings',
     loginSubtitle: 'OpenAI Chat / OpenAI Responses / OpenAI Embedding / Anthropic / Gemini',
     username: 'Username',

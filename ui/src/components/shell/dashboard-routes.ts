@@ -30,26 +30,9 @@ export const DASHBOARD_ROUTES: Record<DashboardView, DashboardHref> = {
 }
 
 export function getDashboardViewFromPathname(pathname: string): DashboardView {
-  if (pathname === DASHBOARD_ROUTES.requests || pathname.startsWith(`${DASHBOARD_ROUTES.requests}/`)) {
-    return 'requests'
-  }
-  if (pathname === DASHBOARD_ROUTES.channels || pathname.startsWith(`${DASHBOARD_ROUTES.channels}/`)) {
-    return 'channels'
-  }
-  if (pathname === DASHBOARD_ROUTES.groups || pathname.startsWith(`${DASHBOARD_ROUTES.groups}/`)) {
-    return 'groups'
-  }
-  if (pathname === DASHBOARD_ROUTES.settings || pathname.startsWith(`${DASHBOARD_ROUTES.settings}/`)) {
-    return 'settings'
-  }
-  if (pathname === DASHBOARD_ROUTES.apiKeys || pathname.startsWith(`${DASHBOARD_ROUTES.apiKeys}/`)) {
-    return 'apiKeys'
-  }
-  if (pathname === DASHBOARD_ROUTES.cronjobs || pathname.startsWith(`${DASHBOARD_ROUTES.cronjobs}/`)) {
-    return 'cronjobs'
-  }
-  if (pathname === DASHBOARD_ROUTES.backups || pathname.startsWith(`${DASHBOARD_ROUTES.backups}/`)) {
-    return 'backups'
+  for (const [view, href] of Object.entries(DASHBOARD_ROUTES) as [DashboardView, DashboardHref][]) {
+    if (view === 'overview') continue
+    if (pathname === href || pathname.startsWith(`${href}/`)) return view
   }
   return 'overview'
 }
