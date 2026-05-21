@@ -350,10 +350,11 @@ function channelEndpoint(channel?: ProtocolMeta) {
 }
 
 function protocolBaseUrl(site: Site, baseUrlId: string) {
-  return site.base_urls.find((item) => item.id === baseUrlId)?.url
-    || site.base_urls.find((item) => item.enabled)?.url
-    || site.base_urls[0]?.url
-    || ''
+  const bound = site.base_urls.find((item) => item.id === baseUrlId)
+  if (bound?.url) return bound.url
+  const enabled = site.base_urls.find((item) => item.enabled)
+  if (enabled?.url) return enabled.url
+  return site.base_urls[0]?.url || ''
 }
 
 function toForm(group: ModelGroup): FormState {

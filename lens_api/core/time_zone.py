@@ -6,7 +6,9 @@ DEFAULT_APP_TIME_ZONE = "Asia/Shanghai"
 
 
 def normalize_time_zone(value: str | None) -> str:
-    normalized = (value or "").strip() or DEFAULT_APP_TIME_ZONE
+    normalized = value.strip() if value else ""
+    if not normalized:
+        normalized = DEFAULT_APP_TIME_ZONE
     try:
         return ZoneInfo(normalized).key
     except ZoneInfoNotFoundError as exc:

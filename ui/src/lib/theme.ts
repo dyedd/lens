@@ -2,19 +2,15 @@ export type Theme = 'light' | 'dark'
 
 export const THEME_STORAGE_KEY = 'lens_theme'
 
-function applyTheme(theme: Theme) {
-  const root = document.documentElement
-  root.classList.toggle('dark', theme === 'dark')
-  root.style.colorScheme = theme
-}
-
 export function setTheme(theme: Theme) {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   } catch {
     // localStorage may throw on quota/private mode; theme still applies via inline style
   }
-  applyTheme(theme)
+  const root = document.documentElement
+  root.classList.toggle('dark', theme === 'dark')
+  root.style.colorScheme = theme
 }
 
 export function getThemeBootstrapScript() {
