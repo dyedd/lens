@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import { cn } from '@/lib/utils'
 
 type AvatarProps = {
   size?: number
@@ -11,10 +12,6 @@ type BrandIconDefinition = {
   src: string
   imageClassName?: string
   invertInDark?: boolean
-}
-
-function joinClassNames(...values: Array<string | undefined>) {
-  return values.filter(Boolean).join(' ')
 }
 
 const BRAND_ICONS: BrandIconDefinition[] = [
@@ -43,10 +40,10 @@ function createAvatar(definition: BrandIconDefinition): AvatarComponent {
           alt=""
           width={size}
           height={size}
-          className={joinClassNames(
+          className={cn(
             'h-full w-full object-contain',
             definition.imageClassName,
-            definition.invertInDark ? 'dark:invert' : undefined
+            definition.invertInDark && 'dark:invert'
           )}
         />
       </span>

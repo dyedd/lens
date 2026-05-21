@@ -175,22 +175,10 @@ function PreviewMeta({
   )
 }
 
-export function ConfigTransferCard({ locale }: { locale: Locale }) {
-  const queryClient = useQueryClient()
-  const timeZone = useAppTimeZone()
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [isPreviewPending, startPreviewTransition] = useTransition()
-
+function ExportCard({ locale }: { locale: Locale }) {
   const [includeLogs, setIncludeLogs] = useState(false)
   const [includeGatewayApiKeys, setIncludeGatewayApiKeys] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
-  const [confirmImportOpen, setConfirmImportOpen] = useState(false)
-
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<ConfigBackupDump | null>(null)
-  const [previewError, setPreviewError] = useState("")
-  const [importResult, setImportResult] = useState<ConfigImportResult | null>(null)
 
   const alwaysIncludedItems = useMemo(
     () => [
@@ -203,6 +191,130 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
     ],
     [locale]
   )
+
+  async function handleExport() {
+    setIsExporting(true)
+    try {
+      const result = await downloadConfigBackup({
+        includeLogs,
+        includeGatewayApiKeys,
+      })
+      toast.success(
+        titleForLocale(
+          locale,
+          `备份已导出: ${result.filename}`,
+          `Backup exported: ${result.filename}`
+        )
+      )
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : titleForLocale(locale, "导出失败", "Failed to export backup")
+      toast.error(message)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  return (
+    <Card className="py-0">
+      <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+          <Download className="size-4 text-muted-foreground" />
+          <span>{titleForLocale(locale, "导出配置", "Export backup")}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
+        <div className="flex flex-wrap gap-2">
+          {alwaysIncludedItems.map((item) => (
+            <Badge key={item} variant="outline">
+              {item}
+            </Badge>
+          ))}
+        </div>
+
+        <FieldGroup>
+          <Field orientation="horizontal" className="flex-wrap items-center justify-between">
+            <div className="flex min-w-0 flex-col gap-1">
+              <FieldLabel className="w-auto">
+                {titleForLocale(locale, "包含请求日志", "Include request logs")}
+              </FieldLabel>
+              <FieldDescription>
+                {titleForLocale(
+                  locale,
+                  "导出所有请求日志明细，文件体积可能明显增大",
+                  "Export all request log details; this can increase file size significantly"
+                )}
+              </FieldDescription>
+            </div>
+            <Switch
+              checked={includeLogs}
+              onCheckedChange={setIncludeLogs}
+            />
+          </Field>
+          <Field orientation="horizontal" className="flex-wrap items-center justify-between">
+            <div className="flex min-w-0 flex-col gap-1">
+              <FieldLabel className="w-auto">
+                {titleForLocale(locale, "包含网关 API Key", "Include gateway API keys")}
+              </FieldLabel>
+              <FieldDescription>
+                {titleForLocale(
+                  locale,
+                  "会把网关鉴权 Key 一并写入备份，导出后请妥善保管",
+                  "Gateway auth keys will be included in the backup; keep the file secure"
+                )}
+              </FieldDescription>
+            </div>
+            <Switch
+              checked={includeGatewayApiKeys}
+              onCheckedChange={setIncludeGatewayApiKeys}
+            />
+          </Field>
+        </FieldGroup>
+
+        <Alert>
+          <CircleAlert />
+          <AlertTitle>
+            {titleForLocale(locale, "导出说明", "Export notes")}
+          </AlertTitle>
+          <AlertDescription>
+            {titleForLocale(
+              locale,
+              "渠道配置始终包含上游凭据，统计数据会一并备份；导出文件可直接用于新实例覆盖导入恢复。",
+              "Channel configuration always includes upstream credentials, and stats are backed up together; the exported file can be imported directly into a fresh instance."
+            )}
+          </AlertDescription>
+        </Alert>
+
+        <Button
+          type="button"
+          onClick={() => void handleExport()}
+          disabled={isExporting}
+        >
+          <Download data-icon="inline-start" />
+          {isExporting
+            ? titleForLocale(locale, "导出中...", "Exporting...")
+            : titleForLocale(locale, "导出 JSON", "Export JSON")}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ImportCard({ locale }: { locale: Locale }) {
+  const queryClient = useQueryClient()
+  const timeZone = useAppTimeZone()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [isPreviewPending, startPreviewTransition] = useTransition()
+
+  const [isImporting, setIsImporting] = useState(false)
+  const [confirmImportOpen, setConfirmImportOpen] = useState(false)
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<ConfigBackupDump | null>(null)
+  const [previewError, setPreviewError] = useState("")
+  const [importResult, setImportResult] = useState<ConfigImportResult | null>(null)
 
   const previewSections = useMemo(() => {
     if (!preview) {
@@ -276,31 +388,6 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
       }))
   }, [importResult, locale])
 
-  async function handleExport() {
-    setIsExporting(true)
-    try {
-      const result = await downloadConfigBackup({
-        includeLogs,
-        includeGatewayApiKeys,
-      })
-      toast.success(
-        titleForLocale(
-          locale,
-          `备份已导出: ${result.filename}`,
-          `Backup exported: ${result.filename}`
-        )
-      )
-    } catch (error) {
-      const message =
-        error instanceof ApiError
-          ? error.message
-          : titleForLocale(locale, "导出失败", "Failed to export backup")
-      toast.error(message)
-    } finally {
-      setIsExporting(false)
-    }
-  }
-
   async function handleFileChange(file: File | null) {
     setSelectedFile(file)
     setImportResult(null)
@@ -359,245 +446,161 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
 
   return (
     <>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card className="py-0">
-          <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <Download className="size-4 text-muted-foreground" />
-              <span>{titleForLocale(locale, "导出配置", "Export backup")}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
-            <div className="flex flex-wrap gap-2">
-              {alwaysIncludedItems.map((item) => (
-                <Badge key={item} variant="outline">
-                  {item}
-                </Badge>
-              ))}
-            </div>
+      <Card className="py-0">
+        <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+            <Upload className="size-4 text-muted-foreground" />
+            <span>{titleForLocale(locale, "导入配置", "Import backup")}</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
+          <FieldGroup>
+            <Field>
+              <FieldLabel>
+                {titleForLocale(locale, "备份文件", "Backup file")}
+              </FieldLabel>
+              <Input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(event) =>
+                  void handleFileChange(event.target.files?.[0] ?? null)
+                }
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <FileJson data-icon="inline-start" />
+                {titleForLocale(locale, "选择 JSON 文件", "Select JSON file")}
+              </Button>
+            </Field>
+          </FieldGroup>
 
-            <FieldGroup>
-              <Field orientation="horizontal" className="flex-wrap items-center justify-between">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <FieldLabel className="w-auto">
-                    {titleForLocale(locale, "包含请求日志", "Include request logs")}
-                  </FieldLabel>
-                  <FieldDescription>
-                    {titleForLocale(
-                      locale,
-                      "导出所有请求日志明细，文件体积可能明显增大",
-                      "Export all request log details; this can increase file size significantly"
-                    )}
-                  </FieldDescription>
-                </div>
-                <Switch
-                  checked={includeLogs}
-                  onCheckedChange={setIncludeLogs}
-                />
-              </Field>
-              <Field orientation="horizontal" className="flex-wrap items-center justify-between">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <FieldLabel className="w-auto">
-                    {titleForLocale(locale, "包含网关 API Key", "Include gateway API keys")}
-                  </FieldLabel>
-                  <FieldDescription>
-                    {titleForLocale(
-                      locale,
-                      "会把网关鉴权 Key 一并写入备份，导出后请妥善保管",
-                      "Gateway auth keys will be included in the backup; keep the file secure"
-                    )}
-                  </FieldDescription>
-                </div>
-                <Switch
-                  checked={includeGatewayApiKeys}
-                  onCheckedChange={setIncludeGatewayApiKeys}
-                />
-              </Field>
-            </FieldGroup>
-
-            <Alert>
-              <CircleAlert />
-              <AlertTitle>
-                {titleForLocale(locale, "导出说明", "Export notes")}
-              </AlertTitle>
-              <AlertDescription>
-                {titleForLocale(
-                  locale,
-                  "渠道配置始终包含上游凭据，统计数据会一并备份；导出文件可直接用于新实例覆盖导入恢复。",
-                  "Channel configuration always includes upstream credentials, and stats are backed up together; the exported file can be imported directly into a fresh instance."
-                )}
-              </AlertDescription>
-            </Alert>
-
-            <Button
-              type="button"
-              onClick={() => void handleExport()}
-              disabled={isExporting}
-            >
-              <Download data-icon="inline-start" />
-              {isExporting
-                ? titleForLocale(locale, "导出中...", "Exporting...")
-                : titleForLocale(locale, "导出 JSON", "Export JSON")}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="py-0">
-          <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <Upload className="size-4 text-muted-foreground" />
-              <span>{titleForLocale(locale, "导入配置", "Import backup")}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
-            <FieldGroup>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "备份文件", "Backup file")}
-                </FieldLabel>
-                <Input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={(event) =>
-                    void handleFileChange(event.target.files?.[0] ?? null)
-                  }
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <FileJson data-icon="inline-start" />
-                  {titleForLocale(locale, "选择 JSON 文件", "Select JSON file")}
-                </Button>
-              </Field>
-            </FieldGroup>
-
-            {previewError ? (
-              <Alert variant="destructive">
-                <CircleAlert />
-                <AlertDescription>{previewError}</AlertDescription>
-              </Alert>
-            ) : null}
-
-            {selectedFile ? (
-              <Item variant="muted">
-                <ItemMedia variant="icon">
-                  <FileJson />
-                </ItemMedia>
-                <ItemContent>
-                  <ItemTitle className="truncate">{selectedFile.name}</ItemTitle>
-                  <ItemDescription>
-                    {Math.max(selectedFile.size / 1024, 0.1).toFixed(1)} KB
-                  </ItemDescription>
-                </ItemContent>
-              </Item>
-            ) : null}
-
-            {preview ? (
-              <Card className="py-0">
-                <CardContent className="flex flex-col gap-3 p-4">
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <PreviewMeta
-                      label={titleForLocale(locale, "版本", "Version")}
-                      value={"v" + String(preview.version || 1)}
-                    />
-                    <PreviewMeta
-                      label={titleForLocale(locale, "系统版本", "Lens version")}
-                      value={preview.lens_version || "n/a"}
-                    />
-                    <PreviewMeta
-                      label={titleForLocale(locale, "导出时间", "Exported at")}
-                      value={formatExportedAt(preview.exported_at, locale, timeZone)}
-                    />
-                  </div>
-
-                  <ItemGroup className="gap-2">
-                    {previewSections.map((item) => (
-                      <Item key={item.key} variant="outline" size="sm">
-                        <ItemContent>
-                          <ItemHeader>
-                            <ItemTitle>{item.label}</ItemTitle>
-                            <Badge variant="secondary">{item.count}</Badge>
-                          </ItemHeader>
-                        </ItemContent>
-                      </Item>
-                    ))}
-                  </ItemGroup>
-                </CardContent>
-              </Card>
-            ) : selectedFile && isPreviewPending ? (
-              <Item variant="muted">
-                <ItemMedia variant="icon">
-                  <FileJson />
-                </ItemMedia>
-                <ItemContent>
-                  <ItemTitle>
-                    {titleForLocale(locale, "正在解析备份文件...", "Parsing backup file...")}
-                  </ItemTitle>
-                </ItemContent>
-              </Item>
-            ) : null}
-
+          {previewError ? (
             <Alert variant="destructive">
               <CircleAlert />
-              <AlertTitle>
-                {titleForLocale(locale, "覆盖导入", "Overwrite import")}
-              </AlertTitle>
-              <AlertDescription>
-                {titleForLocale(
-                  locale,
-                  "导入会替换现有渠道、模型组、设置、模型价格、定时任务和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
-                  "Import replaces existing channels, model groups, settings, model prices, cron jobs, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well."
-                )}
-              </AlertDescription>
+              <AlertDescription>{previewError}</AlertDescription>
             </Alert>
+          ) : null}
 
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!selectedFile || Boolean(previewError) || isImporting}
-              onClick={() => setConfirmImportOpen(true)}
-            >
-              <Upload data-icon="inline-start" />
-              {isImporting
-                ? titleForLocale(locale, "导入中...", "Importing...")
-                : titleForLocale(locale, "导入并覆盖", "Import and overwrite")}
-            </Button>
+          {selectedFile ? (
+            <Item variant="muted">
+              <ItemMedia variant="icon">
+                <FileJson />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle className="truncate">{selectedFile.name}</ItemTitle>
+                <ItemDescription>
+                  {Math.max(selectedFile.size / 1024, 0.1).toFixed(1)} KB
+                </ItemDescription>
+              </ItemContent>
+            </Item>
+          ) : null}
 
-            {rowsAffectedList.length ? (
-              <Card className="py-0">
-                <CardContent className="flex flex-col gap-3 p-4">
-                  <Item variant="muted" size="sm">
-                    <ItemMedia variant="icon">
-                      <Database />
-                    </ItemMedia>
-                    <ItemContent>
-                      <ItemTitle>
-                        {titleForLocale(locale, "导入结果", "Import result")}
-                      </ItemTitle>
-                    </ItemContent>
-                  </Item>
-                  <ItemGroup className="gap-2">
-                    {rowsAffectedList.map((item) => (
-                      <Item key={item.key} variant="outline" size="sm">
-                        <ItemContent>
-                          <ItemHeader>
-                            <ItemTitle className="font-medium">{item.label}</ItemTitle>
-                            <Badge variant="secondary">{item.value}</Badge>
-                          </ItemHeader>
-                        </ItemContent>
-                      </Item>
-                    ))}
-                  </ItemGroup>
-                </CardContent>
-              </Card>
-            ) : null}
-          </CardContent>
-        </Card>
-      </div>
+          {preview ? (
+            <Card className="py-0">
+              <CardContent className="flex flex-col gap-3 p-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <PreviewMeta
+                    label={titleForLocale(locale, "版本", "Version")}
+                    value={"v" + String(preview.version || 1)}
+                  />
+                  <PreviewMeta
+                    label={titleForLocale(locale, "系统版本", "Lens version")}
+                    value={preview.lens_version || "n/a"}
+                  />
+                  <PreviewMeta
+                    label={titleForLocale(locale, "导出时间", "Exported at")}
+                    value={formatExportedAt(preview.exported_at, locale, timeZone)}
+                  />
+                </div>
+
+                <ItemGroup className="gap-2">
+                  {previewSections.map((item) => (
+                    <Item key={item.key} variant="outline" size="sm">
+                      <ItemContent>
+                        <ItemHeader>
+                          <ItemTitle>{item.label}</ItemTitle>
+                          <Badge variant="secondary">{item.count}</Badge>
+                        </ItemHeader>
+                      </ItemContent>
+                    </Item>
+                  ))}
+                </ItemGroup>
+              </CardContent>
+            </Card>
+          ) : selectedFile && isPreviewPending ? (
+            <Item variant="muted">
+              <ItemMedia variant="icon">
+                <FileJson />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>
+                  {titleForLocale(locale, "正在解析备份文件...", "Parsing backup file...")}
+                </ItemTitle>
+              </ItemContent>
+            </Item>
+          ) : null}
+
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertTitle>
+              {titleForLocale(locale, "覆盖导入", "Overwrite import")}
+            </AlertTitle>
+            <AlertDescription>
+              {titleForLocale(
+                locale,
+                "导入会替换现有渠道、模型组、设置、模型价格、定时任务和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
+                "Import replaces existing channels, model groups, settings, model prices, cron jobs, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well."
+              )}
+            </AlertDescription>
+          </Alert>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!selectedFile || Boolean(previewError) || isImporting}
+            onClick={() => setConfirmImportOpen(true)}
+          >
+            <Upload data-icon="inline-start" />
+            {isImporting
+              ? titleForLocale(locale, "导入中...", "Importing...")
+              : titleForLocale(locale, "导入并覆盖", "Import and overwrite")}
+          </Button>
+
+          {rowsAffectedList.length ? (
+            <Card className="py-0">
+              <CardContent className="flex flex-col gap-3 p-4">
+                <Item variant="muted" size="sm">
+                  <ItemMedia variant="icon">
+                    <Database />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>
+                      {titleForLocale(locale, "导入结果", "Import result")}
+                    </ItemTitle>
+                  </ItemContent>
+                </Item>
+                <ItemGroup className="gap-2">
+                  {rowsAffectedList.map((item) => (
+                    <Item key={item.key} variant="outline" size="sm">
+                      <ItemContent>
+                        <ItemHeader>
+                          <ItemTitle className="font-medium">{item.label}</ItemTitle>
+                          <Badge variant="secondary">{item.value}</Badge>
+                        </ItemHeader>
+                      </ItemContent>
+                    </Item>
+                  ))}
+                </ItemGroup>
+              </CardContent>
+            </Card>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Dialog open={confirmImportOpen} onOpenChange={setConfirmImportOpen}>
         <DialogContent>
@@ -697,5 +700,14 @@ export function ConfigTransferCard({ locale }: { locale: Locale }) {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+export function ConfigTransferCard({ locale }: { locale: Locale }) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <ExportCard locale={locale} />
+      <ImportCard locale={locale} />
+    </div>
   )
 }
