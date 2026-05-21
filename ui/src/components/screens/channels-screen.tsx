@@ -209,7 +209,10 @@ function resolveBaseUrlId(items: Array<{ id: string; enabled: boolean }>, baseUr
 
 function activeBaseUrlValue(form: FormState, protocol: Pick<FormProtocol, 'base_url_id'>) {
   const boundBaseUrl = protocol.base_url_id ? form.base_urls.find((item) => item.id === protocol.base_url_id) : undefined
-  return boundBaseUrl?.url || form.base_urls.find((item) => item.enabled && item.url.trim())?.url || form.base_urls[0]?.url || ''
+  if (boundBaseUrl?.url) return boundBaseUrl.url
+  const enabledUrl = form.base_urls.find((item) => item.enabled && item.url.trim())?.url
+  if (enabledUrl) return enabledUrl
+  return form.base_urls[0]?.url || ''
 }
 
 function formHeaders(protocol: Pick<FormProtocol, 'headers'>) {
@@ -265,7 +268,7 @@ function siteSubtitle(site: Site) {
 
 function siteEndpointSummary(site: Site, locale: string = 'zh-CN') {
   const enabled = site.base_urls.filter((item) => item.enabled)
-  const firstUrl = enabled[0]?.url ?? site.base_urls[0]?.url ?? ''
+  const firstUrl = enabled[0]?.url || site.base_urls[0]?.url || ''
   const extraCount = enabled.length > 1 ? enabled.length - 1 : (site.base_urls.length > 1 ? site.base_urls.length - 1 : 0)
   if (extraCount > 0) {
     const suffix = locale === 'zh-CN' ? ` + ${extraCount}个地址` : ` + ${extraCount} more`
@@ -339,7 +342,7 @@ function getSiteFaviconCandidates(url: string) {
 
 function SiteFavicon({ url, name }: { url: string; name: string }) {
   const [candidateIndex, setCandidateIndex] = useState(0)
-  const candidates = useMemo(() => getSiteFaviconCandidates(url), [url])
+  const candidates = getSiteFaviconCandidates(url)
   const currentSrc = candidates[candidateIndex]
 
   return (
@@ -489,7 +492,7 @@ function SiteHealthPreview({
     (summary?.channel_summaries ?? []).map((item) => [item.channel_id, item] as const)
   )
   const multiProtocol = enabledProtocols.length > 1
-  const bucketTimeFormatter = useMemo(() => createHealthBucketTimeFormatter(locale, timeZone), [locale, timeZone])
+  const bucketTimeFormatter = createHealthBucketTimeFormatter(locale, timeZone)
 
   if (!enabledProtocols.length) {
     return (
