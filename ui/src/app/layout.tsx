@@ -1,10 +1,6 @@
-import { Toaster as SonnerToaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { I18nProvider } from "@/lib/i18n";
+import { AppProviders } from "@/app/providers";
 import { getThemeBootstrapScript } from "@/lib/theme";
-import { ThemeProvider } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Serif } from "next/font/google";
 import "./globals.css";
@@ -33,19 +29,6 @@ export const metadata: Metadata = {
   },
 };
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 60_000,
-      gcTime: 15 * 60_000,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: 1,
-    },
-  },
-});
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -66,16 +49,7 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <QueryClientProvider client={queryClient}>
-          <I18nProvider>
-            <ThemeProvider>
-              <TooltipProvider>
-                {children}
-                <SonnerToaster />
-              </TooltipProvider>
-            </ThemeProvider>
-          </I18nProvider>
-        </QueryClientProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );
