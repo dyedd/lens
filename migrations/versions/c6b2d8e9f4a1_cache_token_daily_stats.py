@@ -5,13 +5,13 @@ Revises: b4c1e9d2a6f7
 Create Date: 2026-04-23 18:35:00.000000
 
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "c6b2d8e9f4a1"
 down_revision: Union[str, Sequence[str], None] = "b4c1e9d2a6f7"
@@ -48,8 +48,7 @@ def upgrade() -> None:
     else:
         date_expr = "strftime('%Y%m%d', request_logs.created_at)"
 
-    op.execute(
-        f"""
+    op.execute(f"""
         UPDATE request_log_daily_stats
         SET
             cache_read_input_tokens = COALESCE((
@@ -64,8 +63,7 @@ def upgrade() -> None:
                 WHERE request_logs.stats_archived = 1
                   AND {date_expr} = request_log_daily_stats.date
             ), 0)
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

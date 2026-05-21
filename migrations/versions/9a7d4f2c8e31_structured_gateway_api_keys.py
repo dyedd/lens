@@ -5,6 +5,7 @@ Revises: ffb1f20c2bd8
 Create Date: 2026-04-21 22:10:00.000000
 
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -14,7 +15,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "9a7d4f2c8e31"
 down_revision: Union[str, Sequence[str], None] = "ffb1f20c2bd8"
@@ -52,7 +52,9 @@ def upgrade() -> None:
     legacy_key_id_map: dict[str, str] = {}
     seen: set[str] = set()
     for index, secret in enumerate(seed_keys, start=1):
-        api_key = _generate_gateway_api_key() if secret == LEGACY_TEST_GATEWAY_KEY else secret
+        api_key = (
+            _generate_gateway_api_key() if secret == LEGACY_TEST_GATEWAY_KEY else secret
+        )
         if api_key in seen:
             continue
         seen.add(api_key)
@@ -95,9 +97,7 @@ def upgrade() -> None:
             )
 
     bind.execute(
-        sa.text(
-            "DELETE FROM settings WHERE key IN (:keys, :hint, :require_key)"
-        ),
+        sa.text("DELETE FROM settings WHERE key IN (:keys, :hint, :require_key)"),
         {
             "keys": LEGACY_GATEWAY_API_KEYS,
             "hint": LEGACY_GATEWAY_API_KEY_HINT,
@@ -109,7 +109,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     rows = bind.execute(
-        sa.text("SELECT id, api_key FROM gateway_api_keys ORDER BY created_at ASC, id ASC")
+        sa.text(
+            "SELECT id, api_key FROM gateway_api_keys ORDER BY created_at ASC, id ASC"
+        )
     ).fetchall()
     keys_value = "\n".join(str(row[1]).strip() for row in rows if str(row[1]).strip())
     for row in rows:

@@ -1,4 +1,3 @@
-
 import json
 import re
 from dataclasses import dataclass
@@ -11,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..models import CronjobItem, CronjobStatus
 from .entities import CronjobEntity
-
 
 MIN_CRONJOB_INTERVAL_HOURS = 1
 SCHEDULE_TYPE_INTERVAL = "interval"
@@ -98,7 +96,9 @@ class CronjobStore:
                 )
             await session.commit()
 
-    async def list_records(self, specs: Sequence[CronjobSpec]) -> dict[str, CronjobRecord]:
+    async def list_records(
+        self, specs: Sequence[CronjobSpec]
+    ) -> dict[str, CronjobRecord]:
         spec_ids = [spec.id for spec in specs]
         if not spec_ids:
             return {}
@@ -108,8 +108,7 @@ class CronjobStore:
                 select(CronjobEntity).where(CronjobEntity.id.in_(spec_ids))
             )
             return {
-                entity.id: self._to_record(entity)
-                for entity in result.scalars().all()
+                entity.id: self._to_record(entity) for entity in result.scalars().all()
             }
 
     async def get_record(self, task_id: str) -> CronjobRecord | None:
@@ -140,9 +139,19 @@ class CronjobStore:
             current_schedule = self._entity_schedule(entity)
             next_schedule = normalize_cronjob_schedule(
                 schedule_type=schedule_type or current_schedule.schedule_type,
-                interval_hours=interval_hours if interval_hours is not None else current_schedule.interval_hours,
-                run_at_time=run_at_time if run_at_time is not None else current_schedule.run_at_time,
-                weekdays=weekdays if weekdays is not None else current_schedule.weekdays,
+                interval_hours=(
+                    interval_hours
+                    if interval_hours is not None
+                    else current_schedule.interval_hours
+                ),
+                run_at_time=(
+                    run_at_time
+                    if run_at_time is not None
+                    else current_schedule.run_at_time
+                ),
+                weekdays=(
+                    weekdays if weekdays is not None else current_schedule.weekdays
+                ),
             )
             self._apply_schedule(entity, next_schedule)
             if enabled is not None:
@@ -189,7 +198,9 @@ class CronjobStore:
                 entity.status = CronjobStatus.DISABLED.value
             return
         if not was_enabled or schedule_changed or entity.next_run_at is None:
-            entity.next_run_at = next_cronjob_run_at(next_schedule, now=now, time_zone=time_zone)
+            entity.next_run_at = next_cronjob_run_at(
+                next_schedule, now=now, time_zone=time_zone
+            )
             if entity.status == CronjobStatus.DISABLED.value:
                 entity.status = CronjobStatus.IDLE.value
 
@@ -278,7 +289,10 @@ class CronjobStore:
                     last_started_at=now,
                     last_error="",
                     lease_owner=owner,
-                    lease_until=now + timedelta(seconds=max(lease_seconds, MIN_CRONJOB_INTERVAL_HOURS * 60 * 60)),
+                    lease_until=now
+                    + timedelta(
+                        seconds=max(lease_seconds, MIN_CRONJOB_INTERVAL_HOURS * 60 * 60)
+                    ),
                     updated_at=now,
                 )
             )
@@ -302,9 +316,7 @@ class CronjobStore:
 
             enabled = bool(entity.enabled)
             entity.status = (
-                CronjobStatus.SUCCEEDED.value
-                if success
-                else CronjobStatus.FAILED.value
+                CronjobStatus.SUCCEEDED.value if success else CronjobStatus.FAILED.value
             )
             entity.last_finished_at = now
             entity.last_error = error[:2000]

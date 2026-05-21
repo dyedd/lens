@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 import uuid
@@ -9,7 +8,6 @@ from sqlalchemy.exc import OperationalError
 
 from ..models import CronjobItem
 from ..persistence.cronjob_store import CronjobSpec, CronjobStore
-
 
 TaskHandler = Callable[[], Awaitable[None]]
 TimeZoneProvider = Callable[[], Awaitable[ZoneInfo]]

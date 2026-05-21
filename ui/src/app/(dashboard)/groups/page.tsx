@@ -1,5 +1,5 @@
-import { GroupsScreen } from '@/components/screens/groups-screen'
+import { GroupsScreen } from "@/components/screens/groups-screen";
 
 export default function GroupsPage() {
-  return <GroupsScreen />
+  return <GroupsScreen />;
 }

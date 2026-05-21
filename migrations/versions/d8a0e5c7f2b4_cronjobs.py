@@ -5,6 +5,7 @@ Revises: c6b2d8e9f4a1
 Create Date: 2026-04-26 00:00:00.000000
 
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -12,7 +13,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "d8a0e5c7f2b4"
 down_revision: Union[str, Sequence[str], None] = "c6b2d8e9f4a1"
@@ -38,10 +38,18 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("cronjobs") as batch_op:
-        batch_op.create_index(batch_op.f("ix_cronjobs_lease_owner"), ["lease_owner"], unique=False)
-        batch_op.create_index(batch_op.f("ix_cronjobs_lease_until"), ["lease_until"], unique=False)
-        batch_op.create_index(batch_op.f("ix_cronjobs_next_run_at"), ["next_run_at"], unique=False)
-        batch_op.create_index(batch_op.f("ix_cronjobs_status"), ["status"], unique=False)
+        batch_op.create_index(
+            batch_op.f("ix_cronjobs_lease_owner"), ["lease_owner"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_cronjobs_lease_until"), ["lease_until"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_cronjobs_next_run_at"), ["next_run_at"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_cronjobs_status"), ["status"], unique=False
+        )
 
     now = datetime.utcnow()
     cronjobs = sa.table(

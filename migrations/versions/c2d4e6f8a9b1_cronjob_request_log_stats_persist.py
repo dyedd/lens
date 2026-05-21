@@ -5,6 +5,7 @@ Revises: a1c9e2f4b6d8
 Create Date: 2026-04-27 00:00:02.000000
 
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -12,7 +13,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "c2d4e6f8a9b1"
 down_revision: Union[str, Sequence[str], None] = "a1c9e2f4b6d8"

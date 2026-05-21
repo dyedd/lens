@@ -1,5 +1,5 @@
-import { ApiKeysScreen } from '@/components/screens/api-keys-screen'
+import { ApiKeysScreen } from "@/components/screens/api-keys-screen";
 
 export default function ApiKeysPage() {
-  return <ApiKeysScreen />
+  return <ApiKeysScreen />;
 }
