@@ -1,6 +1,6 @@
 "use client"
 
-import { startTransition, useMemo, useState } from "react"
+import { startTransition, useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { format } from "date-fns"
 import { enUS, zhCN } from "date-fns/locale"
@@ -227,7 +227,7 @@ function formatGatewayLimit(locale: Locale, item: GatewayApiKey) {
   return titleForLocale(locale, "不限额", "Unlimited")
 }
 
-function formatDateTime(locale: Locale, value?: string | null, timeZone?: string) {
+function formatDateTime(locale: Locale, value: string | null | undefined, timeZone: string) {
   if (!value) {
     return titleForLocale(locale, "未设置", "Not set")
   }
@@ -241,11 +241,11 @@ function formatDateTime(locale: Locale, value?: string | null, timeZone?: string
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    ...(timeZone ? { timeZone } : {}),
+    timeZone,
   })
 }
 
-function formatDateOnly(locale: Locale, value?: string | null, timeZone?: string) {
+function formatDateOnly(locale: Locale, value: string | null | undefined, timeZone: string) {
   if (!value) {
     return titleForLocale(locale, "未设置", "Not set")
   }
@@ -257,7 +257,7 @@ function formatDateOnly(locale: Locale, value?: string | null, timeZone?: string
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    ...(timeZone ? { timeZone } : {}),
+    timeZone,
   })
 }
 
@@ -327,53 +327,43 @@ function protocolSummary(locale: Locale, protocols: ProtocolKind[]) {
     .join(" / ")
 }
 
-export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
-  const queryClient = useQueryClient()
-  const timeZone = useAppTimeZone()
-  const { data: gatewayKeys = [] } = useQuery({
-    queryKey: ["gateway-api-keys"],
-    queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
-    staleTime: 5 * 60_000,
-  })
-  const { data: modelGroups = [] } = useQuery({
-    queryKey: ["model-groups"],
-    queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
-    staleTime: 5 * 60_000,
-  })
+type GatewayApiKeyDialogProps = {
+  locale: Locale
+  open: boolean
+  editingKey: GatewayApiKey | null
+  modelGroupOptions: GatewayModelGroupOption[]
+  timeZone: string
+  onClose: () => void
+  onSaved: () => Promise<void>
+}
 
-  const modelGroupOptions = useMemo(
-    () => buildGatewayModelGroupOptions(modelGroups),
-    [modelGroups]
-  )
-
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingKeyId, setEditingKeyId] = useState<string | null>(null)
-  const [form, setForm] = useState<GatewayApiKeyForm>({ ...EMPTY_FORM })
+function GatewayApiKeyDialog({
+  locale,
+  open,
+  editingKey,
+  modelGroupOptions,
+  timeZone,
+  onClose,
+  onSaved,
+}: GatewayApiKeyDialogProps) {
+  const [form, setForm] = useState<GatewayApiKeyForm>(() => toGatewayApiKeyForm(editingKey ?? undefined, timeZone))
   const [submitting, setSubmitting] = useState(false)
-  const [removingKeyId, setRemovingKeyId] = useState("")
-  const [togglingKeyId, setTogglingKeyId] = useState("")
-  const [copiedKey, setCopiedKey] = useState("")
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setForm(toGatewayApiKeyForm(editingKey ?? undefined, timeZone))
+      setPickerOpen(false)
+    }
+  }, [open, editingKey, timeZone])
+
+  const editingKeyId = editingKey?.id ?? null
 
   const permissionSummary = !form.restrictModels
     ? titleForLocale(locale, "全部当前模型组", "All current model groups")
     : form.allowedModels.length > 0
       ? form.allowedModels.join(", ")
       : titleForLocale(locale, "请选择模型组", "Select model groups")
-
-  function openCreateDialog() {
-    setEditingKeyId(null)
-    setForm({ ...EMPTY_FORM })
-    setPickerOpen(false)
-    setDialogOpen(true)
-  }
-
-  function openEditDialog(item: GatewayApiKey) {
-    setEditingKeyId(item.id)
-    setForm(toGatewayApiKeyForm(item, timeZone))
-    setPickerOpen(false)
-    setDialogOpen(true)
-  }
 
   function updateForm<K extends keyof GatewayApiKeyForm>(
     key: K,
@@ -398,20 +388,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     })
   }
 
-  async function copyGatewayKey(value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopiedKey(value)
-      toast.success(titleForLocale(locale, "API Key 已复制", "API key copied"))
-      window.setTimeout(() => {
-        setCopiedKey((current) => (current === value ? "" : current))
-      }, 1500)
-    } catch {
-      toast.error(titleForLocale(locale, "复制失败", "Failed to copy"))
-    }
-  }
-
-  async function submitGatewayKey() {
+  async function submit() {
     if (form.restrictModels && form.allowedModels.length === 0) {
       toast.error(
         titleForLocale(locale, "至少选择一个模型组", "Select at least one model group")
@@ -439,9 +416,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
           editingKeyId ? "API key updated" : "API key created"
         )
       )
-      setDialogOpen(false)
-      setPickerOpen(false)
-      await queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] })
+      onClose()
+      await onSaved()
     } catch (requestError) {
       const message =
         requestError instanceof ApiError
@@ -455,6 +431,326 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          setPickerOpen(false)
+          onClose()
+        }
+      }}
+    >
+      <AppDialogContent
+        className="sm:max-w-xl"
+        title={titleForLocale(
+          locale,
+          editingKeyId ? "编辑 API Key" : "创建 API Key",
+          editingKeyId ? "Edit API key" : "Create API key"
+        )}
+      >
+        <div className="flex flex-col gap-4">
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="gateway-key-remark">
+                {titleForLocale(locale, "密钥名称", "Key name")}
+              </FieldLabel>
+              <Input
+                id="gateway-key-remark"
+                value={form.remark}
+                onChange={(event) => updateForm("remark", event.target.value)}
+                placeholder={titleForLocale(locale, "可留空", "Optional")}
+              />
+            </Field>
+
+            <Field
+              orientation="horizontal"
+              className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
+            >
+              <FieldContent>
+                <FieldLabel className="w-auto">
+                  {titleForLocale(locale, "启用", "Enabled")}
+                </FieldLabel>
+                <FieldDescription>
+                  {titleForLocale(
+                    locale,
+                    "关闭后立即拒绝该密钥请求",
+                    "Reject requests immediately when disabled"
+                  )}
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                checked={form.enabled}
+                onCheckedChange={(checked) => updateForm("enabled", Boolean(checked))}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="gateway-key-limit">
+                {titleForLocale(locale, "最大余额 (USD)", "Max balance (USD)")}
+              </FieldLabel>
+              <Input
+                id="gateway-key-limit"
+                type="number"
+                min="0"
+                step="0.0001"
+                value={form.maxCostUsd}
+                onChange={(event) => updateForm("maxCostUsd", event.target.value)}
+              />
+              <FieldDescription>
+                {titleForLocale(locale, "填 0 表示不限制", "Use 0 for unlimited")}
+              </FieldDescription>
+            </Field>
+
+            <FieldSet>
+              <FieldLegend variant="label">
+                {titleForLocale(locale, "允许模型组", "Allowed model groups")}
+              </FieldLegend>
+
+              <Field
+                orientation="horizontal"
+                className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
+              >
+                <FieldContent>
+                  <FieldLabel className="w-auto">
+                    {titleForLocale(locale, "仅允许选定模型组", "Restrict to selected groups")}
+                  </FieldLabel>
+                  <FieldDescription>
+                    {titleForLocale(
+                      locale,
+                      "关闭时可调用当前全部启用模型组",
+                      "Disabled means the key can use every enabled model group"
+                    )}
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  checked={form.restrictModels}
+                  onCheckedChange={(checked) => {
+                    startTransition(() => {
+                      setForm((current) => ({
+                        ...current,
+                        restrictModels: Boolean(checked),
+                      }))
+                    })
+                  }}
+                />
+              </Field>
+
+              <Field data-disabled={!form.restrictModels}>
+                <FieldLabel>
+                  {titleForLocale(locale, "模型组", "Model groups")}
+                </FieldLabel>
+                <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-between"
+                      disabled={!form.restrictModels}
+                    >
+                      <span className="truncate text-left">{permissionSummary}</span>
+                      <ChevronsUpDown className="text-muted-foreground" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-[calc(100vw-2rem)] p-0 sm:w-[360px]">
+                    <Command>
+                      <CommandInput
+                        placeholder={titleForLocale(
+                          locale,
+                          "搜索模型组...",
+                          "Search model groups..."
+                        )}
+                      />
+                      <CommandList>
+                        <CommandEmpty>
+                          {modelGroupOptions.length > 0
+                            ? titleForLocale(
+                                locale,
+                                "没有匹配的模型组",
+                                "No matching model groups"
+                              )
+                            : titleForLocale(
+                                locale,
+                                "当前没有可用模型组",
+                                "No model groups available"
+                              )}
+                        </CommandEmpty>
+                        <CommandGroup
+                          heading={titleForLocale(
+                            locale,
+                            "当前启用模型组",
+                            "Enabled model groups"
+                          )}
+                        >
+                          {modelGroupOptions.map((option) => {
+                            const checked = form.allowedModels.includes(option.name)
+                            return (
+                              <CommandItem
+                                key={option.name}
+                                value={`${option.name} ${protocolSummary(locale, option.protocols)} ${option.channelNames.join(" ")}`}
+                                onSelect={() => toggleAllowedModel(option.name)}
+                                className="items-start gap-3"
+                              >
+                                <Checkbox checked={checked} className="mt-0.5 pointer-events-none" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium text-foreground">
+                                    {option.name}
+                                  </div>
+                                  <div className="truncate text-xs text-muted-foreground">
+                                    {protocolSummary(locale, option.protocols)} ·{" "}
+                                    {titleForLocale(
+                                      locale,
+                                      `${option.enabledItemCount} 个启用成员`,
+                                      `${option.enabledItemCount} enabled members`
+                                    )}
+                                  </div>
+                                </div>
+                              </CommandItem>
+                            )
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                <FieldDescription>
+                  {form.restrictModels
+                    ? titleForLocale(
+                        locale,
+                        "权限来源于当前启用模型组；留空将无法保存",
+                        "Permissions come from currently enabled model groups; choose at least one"
+                      )
+                    : titleForLocale(
+                        locale,
+                        "当前为全部放行模式",
+                        "The key can currently access all model groups"
+                      )}
+                </FieldDescription>
+                {form.restrictModels && form.allowedModels.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {form.allowedModels.map((modelName) => (
+                      <Badge key={modelName} variant="outline">
+                        {modelName}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+              </Field>
+            </FieldSet>
+
+            <Field>
+              <FieldLabel>
+                {titleForLocale(locale, "过期日期", "Expires on")}
+              </FieldLabel>
+              <div className="flex flex-col gap-3 md:flex-row">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-between md:flex-1",
+                        !form.expiresOn && "text-muted-foreground"
+                      )}
+                    >
+                      <span>{formatDateLabel(locale, form.expiresOn)}</span>
+                      <ChevronsUpDown className="text-muted-foreground" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-auto overflow-hidden p-0">
+                    <Calendar
+                      mode="single"
+                      selected={form.expiresOn}
+                      defaultMonth={form.expiresOn}
+                      onSelect={(value) => updateForm("expiresOn", value ?? undefined)}
+                      locale={locale === "zh-CN" ? zhCN : enUS}
+                      captionLayout="dropdown"
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => updateForm("expiresOn", undefined)}
+                >
+                  {titleForLocale(locale, "清空", "Clear")}
+                </Button>
+              </div>
+              <FieldDescription>
+                {titleForLocale(locale, "留空表示永不过期", "Leave blank to keep the key active forever")}
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+
+          <DialogFooter className="mx-0 mb-0 rounded-none border-0 bg-transparent p-0 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              {titleForLocale(locale, "取消", "Cancel")}
+            </Button>
+            <Button type="button" onClick={() => void submit()} disabled={submitting}>
+              {submitting
+                ? titleForLocale(locale, "保存中...", "Saving...")
+                : titleForLocale(locale, "保存", "Save")}
+            </Button>
+          </DialogFooter>
+        </div>
+      </AppDialogContent>
+    </Dialog>
+  )
+}
+
+export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
+  const queryClient = useQueryClient()
+  const timeZone = useAppTimeZone()
+  const { data: gatewayKeys = [] } = useQuery({
+    queryKey: ["gateway-api-keys"],
+    queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
+    staleTime: 5 * 60_000,
+  })
+  const { data: modelGroups = [] } = useQuery({
+    queryKey: ["model-groups"],
+    queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
+    staleTime: 5 * 60_000,
+  })
+
+  const modelGroupOptions = useMemo(
+    () => buildGatewayModelGroupOptions(modelGroups),
+    [modelGroups]
+  )
+
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingKey, setEditingKey] = useState<GatewayApiKey | null>(null)
+  const [removingKeyId, setRemovingKeyId] = useState("")
+  const [togglingKeyId, setTogglingKeyId] = useState("")
+  const [copiedKey, setCopiedKey] = useState("")
+
+  function openCreateDialog() {
+    setEditingKey(null)
+    setDialogOpen(true)
+  }
+
+  function openEditDialog(item: GatewayApiKey) {
+    setEditingKey(item)
+    setDialogOpen(true)
+  }
+
+  async function copyGatewayKey(value: string) {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopiedKey(value)
+      toast.success(titleForLocale(locale, "API Key 已复制", "API key copied"))
+      window.setTimeout(() => {
+        setCopiedKey((current) => (current === value ? "" : current))
+      }, 1500)
+    } catch {
+      toast.error(titleForLocale(locale, "复制失败", "Failed to copy"))
+    }
+  }
+
+  async function refreshKeys() {
+    await queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] })
   }
 
   async function removeGatewayKey(keyId: string) {
@@ -471,7 +767,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         method: "DELETE",
       })
       toast.success(titleForLocale(locale, "API Key 已删除", "API key deleted"))
-      await queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] })
+      await refreshKeys()
     } catch (requestError) {
       const message =
         requestError instanceof ApiError
@@ -698,270 +994,15 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         </CardContent>
       </Card>
 
-      <Dialog
+      <GatewayApiKeyDialog
+        locale={locale}
         open={dialogOpen}
-        onOpenChange={(open) => {
-          setDialogOpen(open)
-          if (!open) {
-            setPickerOpen(false)
-          }
-        }}
-      >
-        <AppDialogContent
-          className="sm:max-w-xl"
-          title={titleForLocale(
-            locale,
-            editingKeyId ? "编辑 API Key" : "创建 API Key",
-            editingKeyId ? "Edit API key" : "Create API key"
-          )}
-        >
-          <div className="flex flex-col gap-4">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="gateway-key-remark">
-                  {titleForLocale(locale, "密钥名称", "Key name")}
-                </FieldLabel>
-                <Input
-                  id="gateway-key-remark"
-                  value={form.remark}
-                  onChange={(event) => updateForm("remark", event.target.value)}
-                  placeholder={titleForLocale(locale, "可留空", "Optional")}
-                />
-              </Field>
-
-              <Field
-                orientation="horizontal"
-                className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
-              >
-                <FieldContent>
-                  <FieldLabel className="w-auto">
-                    {titleForLocale(locale, "启用", "Enabled")}
-                  </FieldLabel>
-                  <FieldDescription>
-                    {titleForLocale(
-                      locale,
-                      "关闭后立即拒绝该密钥请求",
-                      "Reject requests immediately when disabled"
-                    )}
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  checked={form.enabled}
-                  onCheckedChange={(checked) => updateForm("enabled", Boolean(checked))}
-                />
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="gateway-key-limit">
-                  {titleForLocale(locale, "最大余额 (USD)", "Max balance (USD)")}
-                </FieldLabel>
-                <Input
-                  id="gateway-key-limit"
-                  type="number"
-                  min="0"
-                  step="0.0001"
-                  value={form.maxCostUsd}
-                  onChange={(event) => updateForm("maxCostUsd", event.target.value)}
-                />
-                <FieldDescription>
-                  {titleForLocale(locale, "填 0 表示不限制", "Use 0 for unlimited")}
-                </FieldDescription>
-              </Field>
-
-              <FieldSet>
-                <FieldLegend variant="label">
-                  {titleForLocale(locale, "允许模型组", "Allowed model groups")}
-                </FieldLegend>
-
-                <Field
-                  orientation="horizontal"
-                  className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
-                >
-                  <FieldContent>
-                    <FieldLabel className="w-auto">
-                      {titleForLocale(locale, "仅允许选定模型组", "Restrict to selected groups")}
-                    </FieldLabel>
-                    <FieldDescription>
-                      {titleForLocale(
-                        locale,
-                        "关闭时可调用当前全部启用模型组",
-                        "Disabled means the key can use every enabled model group"
-                      )}
-                    </FieldDescription>
-                  </FieldContent>
-                  <Switch
-                    checked={form.restrictModels}
-                    onCheckedChange={(checked) => {
-                      startTransition(() => {
-                        setForm((current) => ({
-                          ...current,
-                          restrictModels: Boolean(checked),
-                        }))
-                      })
-                    }}
-                  />
-                </Field>
-
-                <Field data-disabled={!form.restrictModels}>
-                  <FieldLabel>
-                    {titleForLocale(locale, "模型组", "Model groups")}
-                  </FieldLabel>
-                  <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full justify-between"
-                        disabled={!form.restrictModels}
-                      >
-                        <span className="truncate text-left">{permissionSummary}</span>
-                        <ChevronsUpDown className="text-muted-foreground" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-[calc(100vw-2rem)] p-0 sm:w-[360px]">
-                      <Command>
-                        <CommandInput
-                          placeholder={titleForLocale(
-                            locale,
-                            "搜索模型组...",
-                            "Search model groups..."
-                          )}
-                        />
-                        <CommandList>
-                          <CommandEmpty>
-                            {modelGroupOptions.length > 0
-                              ? titleForLocale(
-                                  locale,
-                                  "没有匹配的模型组",
-                                  "No matching model groups"
-                                )
-                              : titleForLocale(
-                                  locale,
-                                  "当前没有可用模型组",
-                                  "No model groups available"
-                                )}
-                          </CommandEmpty>
-                          <CommandGroup
-                            heading={titleForLocale(
-                              locale,
-                              "当前启用模型组",
-                              "Enabled model groups"
-                            )}
-                          >
-                            {modelGroupOptions.map((option) => {
-                              const checked = form.allowedModels.includes(option.name)
-                              return (
-                                <CommandItem
-                                  key={option.name}
-                                  value={`${option.name} ${protocolSummary(locale, option.protocols)} ${option.channelNames.join(" ")}`}
-                                  onSelect={() => toggleAllowedModel(option.name)}
-                                  className="items-start gap-3"
-                                >
-                                  <Checkbox checked={checked} className="mt-0.5 pointer-events-none" />
-                                  <div className="min-w-0 flex-1">
-                                    <div className="truncate font-medium text-foreground">
-                                      {option.name}
-                                    </div>
-                                    <div className="truncate text-xs text-muted-foreground">
-                                      {protocolSummary(locale, option.protocols)} ·{" "}
-                                      {titleForLocale(
-                                        locale,
-                                        `${option.enabledItemCount} 个启用成员`,
-                                        `${option.enabledItemCount} enabled members`
-                                      )}
-                                    </div>
-                                  </div>
-                                </CommandItem>
-                              )
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  <FieldDescription>
-                    {form.restrictModels
-                      ? titleForLocale(
-                          locale,
-                          "权限来源于当前启用模型组；留空将无法保存",
-                          "Permissions come from currently enabled model groups; choose at least one"
-                        )
-                      : titleForLocale(
-                          locale,
-                          "当前为全部放行模式",
-                          "The key can currently access all model groups"
-                        )}
-                  </FieldDescription>
-                  {form.restrictModels && form.allowedModels.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {form.allowedModels.map((modelName) => (
-                        <Badge key={modelName} variant="outline">
-                          {modelName}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : null}
-                </Field>
-              </FieldSet>
-
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "过期日期", "Expires on")}
-                </FieldLabel>
-                <div className="flex flex-col gap-3 md:flex-row">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-between md:flex-1",
-                          !form.expiresOn && "text-muted-foreground"
-                        )}
-                      >
-                        <span>{formatDateLabel(locale, form.expiresOn)}</span>
-                        <ChevronsUpDown className="text-muted-foreground" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-auto overflow-hidden p-0">
-                      <Calendar
-                        mode="single"
-                        selected={form.expiresOn}
-                        defaultMonth={form.expiresOn}
-                        onSelect={(value) => updateForm("expiresOn", value ?? undefined)}
-                        locale={locale === "zh-CN" ? zhCN : enUS}
-                        captionLayout="dropdown"
-                      />
-                    </PopoverContent>
-                  </Popover>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => updateForm("expiresOn", undefined)}
-                  >
-                    {titleForLocale(locale, "清空", "Clear")}
-                  </Button>
-                </div>
-                <FieldDescription>
-                  {titleForLocale(locale, "留空表示永不过期", "Leave blank to keep the key active forever")}
-                </FieldDescription>
-              </Field>
-            </FieldGroup>
-
-            <DialogFooter className="mx-0 mb-0 rounded-none border-0 bg-transparent p-0 pt-2">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                {titleForLocale(locale, "取消", "Cancel")}
-              </Button>
-              <Button type="button" onClick={() => void submitGatewayKey()} disabled={submitting}>
-                {submitting
-                  ? titleForLocale(locale, "保存中...", "Saving...")
-                  : titleForLocale(locale, "保存", "Save")}
-              </Button>
-            </DialogFooter>
-          </div>
-        </AppDialogContent>
-      </Dialog>
+        editingKey={editingKey}
+        modelGroupOptions={modelGroupOptions}
+        timeZone={timeZone}
+        onClose={() => setDialogOpen(false)}
+        onSaved={refreshKeys}
+      />
     </>
   )
 }

@@ -67,7 +67,7 @@ function statusLabel(locale: Locale, status: CronjobItem["status"]) {
     failed: ["失败", "Failed"],
     disabled: ["已停用", "Disabled"],
   }
-  const [zh, en] = labels[status] ?? labels.idle
+  const [zh, en] = labels[status]
   return titleForLocale(locale, zh, en)
 }
 
@@ -138,11 +138,11 @@ function taskDraft(item: CronjobItem): TaskDraft {
   const runAt = splitRunAtTime(item.run_at_time)
   return {
     enabled: item.enabled,
-    scheduleType: item.schedule_type ?? "interval",
+    scheduleType: item.schedule_type,
     intervalHours: String(Math.max(item.interval_hours, 1)),
     runAtHour: runAt.runAtHour,
     runAtMinute: runAt.runAtMinute,
-    weekdays: sortedWeekdays((item.weekdays ?? []).map(String)),
+    weekdays: sortedWeekdays(item.weekdays.map(String)),
   }
 }
 
@@ -237,10 +237,6 @@ function ScheduleEditor({
   invalid: boolean
   onChange: (value: Partial<TaskDraft>) => void
 }) {
-  function setRunAtTime(value: Partial<Pick<TaskDraft, "runAtHour" | "runAtMinute">>) {
-    onChange(value)
-  }
-
   return (
     <div className="mx-auto flex min-w-72 max-w-72 flex-col items-center gap-2">
       <SegmentedControl
@@ -270,7 +266,7 @@ function ScheduleEditor({
           hour={draft.runAtHour}
           minute={draft.runAtMinute}
           invalid={invalid}
-          onChange={setRunAtTime}
+          onChange={onChange}
         />
       ) : null}
       {draft.scheduleType === "weekly" ? (
@@ -294,7 +290,7 @@ function ScheduleEditor({
             hour={draft.runAtHour}
             minute={draft.runAtMinute}
             invalid={invalid}
-            onChange={setRunAtTime}
+            onChange={onChange}
           />
         </div>
       ) : null}

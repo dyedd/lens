@@ -178,11 +178,9 @@ export function AppDialogContent({
   title: React.ReactNode
   description?: React.ReactNode
 }) {
-  const descriptionProps = description ? {} : { "aria-describedby": undefined }
-
   return (
     <DialogContent
-      {...descriptionProps}
+      {...(description ? {} : { "aria-describedby": undefined })}
       className={cn("flex max-h-[92dvh] flex-col overflow-hidden sm:max-h-[88vh]", className)}
     >
       <DialogHeader>

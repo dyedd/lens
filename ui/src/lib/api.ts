@@ -1,3 +1,5 @@
+import { getStoredToken } from '@/lib/auth'
+
 export type ProtocolKind = 'openai_chat' | 'openai_responses' | 'openai_embedding' | 'anthropic' | 'gemini'
 
 export type RoutingStrategy = 'round_robin' | 'failover'
@@ -672,13 +674,6 @@ export type CronjobRunResult = {
   cronjob: CronjobItem
 }
 
-function getToken() {
-  if (typeof window === 'undefined') {
-    return ''
-  }
-  return window.localStorage.getItem('lens_token') ?? ''
-}
-
 export class ApiError extends Error {
   status: number
 
@@ -708,23 +703,15 @@ async function readErrorMessage(response: Response): Promise<string> {
   return text || ('Request failed with status ' + response.status)
 }
 
-function buildApiHeaders(init?: RequestInit) {
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers)
-
   if (typeof init?.body === 'string' && !headers.has('content-type')) {
     headers.set('content-type', 'application/json')
   }
-
-  const token = getToken()
+  const token = getStoredToken()
   if (token) {
     headers.set('authorization', 'Bearer ' + token)
   }
-
-  return headers
-}
-
-export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers = buildApiHeaders(init)
 
   const response = await fetch('/api' + path, { ...init, headers })
   if (!response.ok) {
@@ -744,23 +731,21 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   return response.json() as Promise<T>
 }
 
-function parseDownloadFilename(contentDisposition: string | null) {
-  if (!contentDisposition) {
-    return null
-  }
-  const match = contentDisposition.match(/filename="([^"]+)"/i)
-  return match?.[1] ?? null
-}
+export async function downloadConfigBackup(options?: {
+  includeLogs?: boolean
+  includeGatewayApiKeys?: boolean
+}) {
+  const params = new URLSearchParams()
+  params.set('include_logs', String(Boolean(options?.includeLogs)))
+  params.set('include_gateway_api_keys', String(Boolean(options?.includeGatewayApiKeys)))
 
-function fallbackBackupFilename() {
-  const date = new Date().toISOString()
-  const timestamp = date
-    .replace(/\D/g, '')
-    .slice(0, 14)
-  return 'lens-backup-' + timestamp + '.json'
-}
+  const response = await apiFetch('/admin/backups/export?' + params.toString(), { method: 'GET' })
+  const blob = await response.blob()
 
-async function downloadBlob(blob: Blob, filename: string) {
+  const disposition = response.headers.get('content-disposition')
+  const match = disposition?.match(/filename="([^"]+)"/i)
+  const filename = match?.[1] ?? `lens-backup-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}.json`
+
   const url = URL.createObjectURL(blob)
   try {
     const anchor = document.createElement('a')
@@ -772,27 +757,6 @@ async function downloadBlob(blob: Blob, filename: string) {
   } finally {
     URL.revokeObjectURL(url)
   }
-}
-
-export async function downloadConfigBackup(options?: {
-  includeLogs?: boolean
-  includeGatewayApiKeys?: boolean
-}) {
-  const params = new URLSearchParams()
-  params.set('include_logs', String(Boolean(options?.includeLogs)))
-  params.set(
-    'include_gateway_api_keys',
-    String(Boolean(options?.includeGatewayApiKeys))
-  )
-
-  const response = await apiFetch('/admin/backups/export?' + params.toString(), {
-    method: 'GET',
-  })
-  const blob = await response.blob()
-  const filename =
-    parseDownloadFilename(response.headers.get('content-disposition')) ??
-    fallbackBackupFilename()
-  await downloadBlob(blob, filename)
   return { filename }
 }
 

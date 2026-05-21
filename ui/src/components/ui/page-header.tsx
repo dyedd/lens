@@ -22,9 +22,9 @@ export function PageHeader({
               {eyebrow}
             </Badge>
             <h2 className="mt-3 text-2xl font-semibold leading-tight text-foreground sm:text-3xl">{title}</h2>
-            {description ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p> : null}
+            {description && <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>}
           </div>
-          {actions ? <div className={cn('flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3')}>{actions}</div> : null}
+          {actions && <div className={cn('flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3')}>{actions}</div>}
         </div>
       </CardContent>
     </Card>

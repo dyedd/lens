@@ -22,9 +22,9 @@ export function MetricCard({
         <span
           className={cn(
             'flex size-9 items-center justify-center rounded-md border bg-muted',
-            tone === 'accent' ? 'bg-primary/10 text-primary' :
-            tone === 'danger' ? 'bg-destructive/10 text-destructive' :
-            'text-foreground'
+            tone === 'accent' && 'bg-primary/10 text-primary',
+            tone === 'danger' && 'bg-destructive/10 text-destructive',
+            tone === 'default' && 'text-foreground'
           )}
         >
           <Icon className="size-4.5" strokeWidth={2.25} />
@@ -34,9 +34,9 @@ export function MetricCard({
         <div
           className={cn(
             'text-2xl font-semibold tracking-tight',
-            tone === 'accent' ? 'text-primary' :
-            tone === 'danger' ? 'text-destructive' :
-            'text-foreground'
+            tone === 'accent' && 'text-primary',
+            tone === 'danger' && 'text-destructive',
+            tone === 'default' && 'text-foreground'
           )}
         >
           {value}

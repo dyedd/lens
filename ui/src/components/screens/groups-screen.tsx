@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, Filter, GripVertical, LayoutGrid, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  ApiError,
   ModelGroup,
   ModelGroupCandidateItem,
   ModelGroupCandidatesPayload,
@@ -292,10 +291,6 @@ function protocolOptions(locale: 'zh-CN' | 'en-US') {
   }))
 }
 
-function panelClassName(extra = '') {
-  return cn('rounded-lg bg-muted/10', extra)
-}
-
 function formatMoney(value: number) {
   if (value === 0) return '0'
   return new Intl.NumberFormat('en-US', {
@@ -318,22 +313,10 @@ function metricLabel(
   return labels[key][locale === 'zh-CN' ? 'zh' : 'en']
 }
 
-function compactMetricLabel(
-  key: 'input' | 'output' | 'cache_read' | 'cache_write',
-  locale: 'zh-CN' | 'en-US'
-) {
-  const labels: Record<'input' | 'output' | 'cache_read' | 'cache_write', { zh: string; en: string }> = {
-    input: { zh: '输入', en: 'Input' },
-    output: { zh: '输出', en: 'Output' },
-    cache_read: { zh: '缓存读取', en: 'Cache Read' },
-    cache_write: { zh: '缓存写入', en: 'Cache Write' },
-  }
+const selectClassName = 'w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground'
 
-  return labels[key][locale === 'zh-CN' ? 'zh' : 'en']
-}
-
-function selectClassName() {
-  return 'w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground'
+function apiErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
 }
 
 function itemKey(item: Pick<FormItem, 'channel_id' | 'credential_id' | 'model_name'>) {
@@ -413,10 +396,6 @@ function toPayload(form: FormState): ModelGroupPayload {
   }
 }
 
-function SwitchButton({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
-  return <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
-}
-
 function CompactPriceSummary({
   locale,
   inputPrice,
@@ -434,10 +413,10 @@ function CompactPriceSummary({
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span>{compactMetricLabel('input', locale)} ${formatMoney(inputPrice)}</span>
-          <span>{compactMetricLabel('output', locale)} ${formatMoney(outputPrice)}</span>
-          <span>{compactMetricLabel('cache_read', locale)} ${formatMoney(cacheReadPrice)}</span>
-          <span>{compactMetricLabel('cache_write', locale)} ${formatMoney(cacheWritePrice)}</span>
+          <span>{metricLabel('input', locale)} ${formatMoney(inputPrice)}</span>
+          <span>{metricLabel('output', locale)} ${formatMoney(outputPrice)}</span>
+          <span>{metricLabel('cache_read', locale)} ${formatMoney(cacheReadPrice)}</span>
+          <span>{metricLabel('cache_write', locale)} ${formatMoney(cacheWritePrice)}</span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="top" align="start">
@@ -606,7 +585,7 @@ function SelectedMemberRow({
         <div className="truncate text-xs text-muted-foreground">{sourceParts.join(' · ')}{!item.enabled ? ' · 已关闭' : ''}</div>
       </div>
       <div className="flex h-8 w-8 items-center justify-center">
-        <SwitchButton checked={item.enabled} disabled={busy} onChange={onToggle} />
+        <Switch checked={item.enabled} disabled={busy} onCheckedChange={onToggle} />
       </div>
       <Button type="button" variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={onRemove}>
         <X size={13} />
@@ -968,12 +947,7 @@ export function GroupsScreen() {
       setEditingId(null)
       setForm(emptyForm)
     } catch (e) {
-      const message = e instanceof ApiError
-        ? e.message
-        : e instanceof Error
-          ? e.message
-          : (locale === 'zh-CN' ? '保存模型组失败' : 'Failed to save group')
-      toast.error(message)
+      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '保存模型组失败' : 'Failed to save group'))
     }
   }
 
@@ -984,8 +958,7 @@ export function GroupsScreen() {
       await queryClient.invalidateQueries({ queryKey: ['groups'] })
       toast.success(locale === 'zh-CN' ? '模型价格已同步' : 'Model prices synced')
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '同步模型价格失败' : 'Failed to sync model prices')
-      toast.error(message)
+      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '同步模型价格失败' : 'Failed to sync model prices'))
     } finally {
       setSyncingPrices(false)
     }
@@ -999,8 +972,7 @@ export function GroupsScreen() {
       await invalidateGroupData()
       toast.success(locale === 'zh-CN' ? '模型组已删除' : 'Group deleted')
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '删除模型组失败' : 'Failed to delete group')
-      toast.error(message)
+      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '删除模型组失败' : 'Failed to delete group'))
     } finally {
       setBusyId(null)
     }
@@ -1042,8 +1014,7 @@ export function GroupsScreen() {
       await saveGroup({ ...toForm(group), ...updates }, group.id)
       return true
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '更新模型组失败' : 'Failed to update group')
-      toast.error(message)
+      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '更新模型组失败' : 'Failed to update group'))
       return false
     } finally {
       setBusyId(null)
@@ -1172,8 +1143,7 @@ export function GroupsScreen() {
       setForm((current) => ({ ...current, items: nextItems }))
       toast.success(locale === 'zh-CN' ? `已按规则更新 ${nextItems.length} 个模型，保存后生效` : `Updated ${nextItems.length} models by rule. Save to apply`)
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : (locale === 'zh-CN' ? '按规则更新失败' : 'Failed to update by rule')
-      toast.error(message)
+      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '按规则更新失败' : 'Failed to update by rule'))
     }
   }
 
@@ -1425,10 +1395,10 @@ export function GroupsScreen() {
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
-                          <SwitchButton
+                          <Switch
                             checked={isGroupEnabled(group)}
                             disabled={group.is_route_group || busyId === group.id || !group.items.length}
-                            onChange={(checked) => void toggleGroupEnabled(group, checked)}
+                            onCheckedChange={(checked) => void toggleGroupEnabled(group, checked)}
                           />
                           <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(group)}>
                             <Trash2 data-icon="inline-start" />
@@ -1499,7 +1469,7 @@ export function GroupsScreen() {
 
                   <Field>
                     <FieldLabel>{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
-                    <NativeSelect value={protocolFilter} className={selectClassName()} onChange={(event) => setProtocolFilter(event.target.value as 'all' | ProtocolKind)}>
+                    <NativeSelect value={protocolFilter} className={selectClassName} onChange={(event) => setProtocolFilter(event.target.value as 'all' | ProtocolKind)}>
                       <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
                       {protocolOptions(locale).map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
                     </NativeSelect>
@@ -1528,7 +1498,7 @@ export function GroupsScreen() {
 
                   <Field>
                     <FieldLabel>{locale === 'zh-CN' ? '排序' : 'Sort'}</FieldLabel>
-                    <NativeSelect value={sortBy} className={selectClassName()} onChange={(event) => setSortBy(event.target.value as GroupSort)}>
+                    <NativeSelect value={sortBy} className={selectClassName} onChange={(event) => setSortBy(event.target.value as GroupSort)}>
                       <NativeSelectOption value="members-desc">{locale === 'zh-CN' ? '成员优先' : 'Members first'}</NativeSelectOption>
                       <NativeSelectOption value="enabled-desc">{locale === 'zh-CN' ? '启用优先' : 'Enabled first'}</NativeSelectOption>
                       <NativeSelectOption value="name-asc">{locale === 'zh-CN' ? '名称 A-Z' : 'Name A-Z'}</NativeSelectOption>
@@ -1551,7 +1521,7 @@ export function GroupsScreen() {
                 <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <Field>
                     <FieldLabel htmlFor="group-protocol">{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
-                    <NativeSelect id="group-protocol" className={selectClassName()} value={form.protocol} onChange={(e) => changeProtocol(e.target.value as ProtocolKind)}>
+                    <NativeSelect id="group-protocol" className={selectClassName} value={form.protocol} onChange={(e) => changeProtocol(e.target.value as ProtocolKind)}>
                       {protocolOptions(locale).map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
                     </NativeSelect>
                   </Field>
@@ -1561,7 +1531,7 @@ export function GroupsScreen() {
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="group-route-target">{locale === 'zh-CN' ? '路由目标模型组' : 'Route target group'}</FieldLabel>
-                    <NativeSelect id="group-route-target" className={selectClassName()} value={form.route_group_id} onChange={(event) => changeRouteTarget(event.target.value)}>
+                    <NativeSelect id="group-route-target" className={selectClassName} value={form.route_group_id} onChange={(event) => changeRouteTarget(event.target.value)}>
                       <NativeSelectOption value="">{locale === 'zh-CN' ? '不启用模型组路由' : 'No group routing'}</NativeSelectOption>
                       {routeTargetOptions.map((group) => <NativeSelectOption key={group.id} value={group.id}>{group.name}</NativeSelectOption>)}
                     </NativeSelect>
@@ -1604,7 +1574,7 @@ export function GroupsScreen() {
                   <Separator />
 
                   <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-                  <section className={panelClassName('flex flex-col')}>
+                  <section className="flex flex-col rounded-lg bg-muted/10">
                 <div className="grid gap-3 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <div className="grid min-w-0 gap-2 sm:grid-cols-[128px_minmax(0,1fr)]">
                     <NativeSelect size="sm" className="w-full" value={candidateSearchMode} onChange={(event) => changeCandidateSearchMode(event.target.value as CandidateSearchMode)}>
@@ -1704,7 +1674,7 @@ export function GroupsScreen() {
                 </div>
               </section>
 
-              <section className={panelClassName('flex flex-col')}>
+              <section className="flex flex-col rounded-lg bg-muted/10">
                 <div className="flex flex-col items-start justify-between gap-3 px-2 py-1 sm:flex-row sm:items-center">
                   <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
                   <div className="flex flex-wrap items-center justify-end gap-2">
