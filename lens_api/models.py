@@ -87,19 +87,6 @@ class ProtocolKind(str, Enum):
     GEMINI = "gemini"
 
 
-class RequestLogModelSeries(str, Enum):
-    ALL = "all"
-    OPENAI = "openai"
-    CLAUDE = "claude"
-    GEMINI = "gemini"
-    DEEPSEEK = "deepseek"
-    QWEN = "qwen"
-    KIMI = "kimi"
-    GLM = "glm"
-    MINIMAX = "minimax"
-    OTHER = "other"
-
-
 class RequestLogStatusFilter(str, Enum):
     RUNNING = "running"
     SUCCESS = "success"
@@ -960,6 +947,7 @@ class RequestLogPage(BaseModel):
     limit: int = 0
     offset: int = 0
     channels: list[str] = Field(default_factory=list)
+    model_names: list[str] = Field(default_factory=list)
 
 
 class OverviewMetrics(BaseModel):

@@ -66,12 +66,7 @@ def db_stamp(args: argparse.Namespace) -> None:
 def serve(args: argparse.Namespace) -> None:
     import uvicorn
 
-    if args.reload:
-        uvicorn.run(
-            APP_IMPORT_PATH, host=settings.host, port=settings.port, reload=True
-        )
-    else:
-        uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port)
+    uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port)
 
 
 def dev(_args: argparse.Namespace) -> None:
@@ -103,7 +98,6 @@ def dev(_args: argparse.Namespace) -> None:
             backend_host,
             "--port",
             backend_port,
-            "--reload",
         ],
         cwd=project_dir,
         env=backend_env,
@@ -213,9 +207,6 @@ def main(argv: list[str] | None = None) -> None:
     stmp.set_defaults(func=db_stamp)
 
     srv = sub.add_parser("serve", help="Start the API server")
-    srv.add_argument(
-        "--reload", action="store_true", help="Enable auto-reload on code changes"
-    )
     srv.set_defaults(func=serve)
 
     dev_parser = sub.add_parser("dev", help="Start API and UI development servers")

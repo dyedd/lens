@@ -637,6 +637,7 @@ export type RequestLogPage = {
   limit: number;
   offset: number;
   channels: string[];
+  model_names: string[];
 };
 
 export type CronjobStatus =
