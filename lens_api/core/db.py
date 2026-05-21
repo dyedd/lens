@@ -1,5 +1,10 @@
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -39,6 +44,7 @@ def create_engine(database_url: str) -> AsyncEngine:
     engine = create_async_engine(database_url, connect_args=connect_args)
 
     if is_sqlite:
+
         @event.listens_for(engine.sync_engine, "connect")
         def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
             cursor = dbapi_connection.cursor()

@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -26,7 +25,9 @@ def register(app: FastAPI, service_module) -> None:
 
     brand_icons_dir = static_dir / "brand-icons"
     if brand_icons_dir.is_dir():
-        app.mount("/brand-icons", StaticFiles(directory=brand_icons_dir), name="brand-icons")
+        app.mount(
+            "/brand-icons", StaticFiles(directory=brand_icons_dir), name="brand-icons"
+        )
 
     async def ui_entry(path: str = "") -> FileResponse:
         normalized = path.strip("/")
@@ -36,7 +37,9 @@ def register(app: FastAPI, service_module) -> None:
 
         if normalized:
             for candidate in _next_rsc_candidates(static_dir, normalized):
-                if candidate.is_file() and candidate.resolve().is_relative_to(static_dir.resolve()):
+                if candidate.is_file() and candidate.resolve().is_relative_to(
+                    static_dir.resolve()
+                ):
                     return FileResponse(candidate)
             html_candidates = [
                 static_dir / normalized / "index.html",
@@ -46,12 +49,16 @@ def register(app: FastAPI, service_module) -> None:
             html_candidates = [static_dir / "index.html"]
 
         for candidate in html_candidates:
-            if candidate.is_file() and candidate.resolve().is_relative_to(static_dir.resolve()):
+            if candidate.is_file() and candidate.resolve().is_relative_to(
+                static_dir.resolve()
+            ):
                 return FileResponse(candidate)
         raise HTTPException(status_code=404, detail="Not Found")
 
     app.add_api_route("/", ui_entry, methods=["GET", "HEAD"], include_in_schema=False)
-    app.add_api_route("/{path:path}", ui_entry, methods=["GET", "HEAD"], include_in_schema=False)
+    app.add_api_route(
+        "/{path:path}", ui_entry, methods=["GET", "HEAD"], include_in_schema=False
+    )
 
 
 def _add_file_route(app: FastAPI, path: str, file_path: Path) -> None:
@@ -61,7 +68,9 @@ def _add_file_route(app: FastAPI, path: str, file_path: Path) -> None:
     async def serve_file() -> FileResponse:
         return FileResponse(file_path)
 
-    app.add_api_route(path, serve_file, methods=["GET", "HEAD"], include_in_schema=False)
+    app.add_api_route(
+        path, serve_file, methods=["GET", "HEAD"], include_in_schema=False
+    )
 
 
 def _next_rsc_candidates(static_dir: Path, normalized_path: str) -> list[Path]:
@@ -78,9 +87,21 @@ def _next_rsc_candidates(static_dir: Path, normalized_path: str) -> list[Path]:
                 continue
             candidates.append(static_dir / normalized_path)
             leaf = f"{rest_parts[-2]}.txt"
-            mapped_parts = (*parts[:index], prefix, *rest_parts[:-2], leaf, *parts[index + 1 :])
+            mapped_parts = (
+                *parts[:index],
+                prefix,
+                *rest_parts[:-2],
+                leaf,
+                *parts[index + 1 :],
+            )
             candidates.append(static_dir.joinpath(*mapped_parts))
             alternate_prefix = "__next" if prefix == "_next" else "_next"
-            alternate_parts = (*parts[:index], alternate_prefix, *rest_parts[:-2], leaf, *parts[index + 1 :])
+            alternate_parts = (
+                *parts[:index],
+                alternate_prefix,
+                *rest_parts[:-2],
+                leaf,
+                *parts[index + 1 :],
+            )
             candidates.append(static_dir.joinpath(*alternate_parts))
     return candidates

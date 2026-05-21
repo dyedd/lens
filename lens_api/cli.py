@@ -1,4 +1,3 @@
-
 import argparse
 import asyncio
 import os
@@ -68,7 +67,9 @@ def serve(args: argparse.Namespace) -> None:
     import uvicorn
 
     if args.reload:
-        uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port, reload=True)
+        uvicorn.run(
+            APP_IMPORT_PATH, host=settings.host, port=settings.port, reload=True
+        )
     else:
         uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port)
 
@@ -108,7 +109,9 @@ def dev(_args: argparse.Namespace) -> None:
         env=backend_env,
     )
     frontend_command = "pnpm dev" if os.name == "nt" else ["pnpm", "dev"]
-    frontend = subprocess.Popen(frontend_command, cwd=ui_dir, env=frontend_env, shell=os.name == "nt")
+    frontend = subprocess.Popen(
+        frontend_command, cwd=ui_dir, env=frontend_env, shell=os.name == "nt"
+    )
 
     processes = (backend, frontend)
 
@@ -128,7 +131,9 @@ def dev(_args: argparse.Namespace) -> None:
             if process.poll() is None:
                 process.terminate()
         deadline = time.monotonic() + 8
-        while time.monotonic() < deadline and any(process.poll() is None for process in processes):
+        while time.monotonic() < deadline and any(
+            process.poll() is None for process in processes
+        ):
             time.sleep(0.1)
         for process in processes:
             if process.poll() is None:
@@ -186,7 +191,12 @@ def main(argv: list[str] | None = None) -> None:
 
     rev = db_sub.add_parser("revision", help="Create a new migration revision")
     rev.add_argument("-m", "--message", required=True, help="Revision message")
-    rev.add_argument("--autogenerate", action="store_true", default=True, help="Auto-detect changes (default)")
+    rev.add_argument(
+        "--autogenerate",
+        action="store_true",
+        default=True,
+        help="Auto-detect changes (default)",
+    )
     rev.add_argument("--no-autogenerate", dest="autogenerate", action="store_false")
     rev.set_defaults(func=db_revision)
 
@@ -196,18 +206,24 @@ def main(argv: list[str] | None = None) -> None:
     hist = db_sub.add_parser("history", help="Show revision history")
     hist.set_defaults(func=db_history)
 
-    stmp = db_sub.add_parser("stamp", help="Stamp database with a revision without running migrations")
+    stmp = db_sub.add_parser(
+        "stamp", help="Stamp database with a revision without running migrations"
+    )
     stmp.add_argument("revision", nargs="?", default="head")
     stmp.set_defaults(func=db_stamp)
 
     srv = sub.add_parser("serve", help="Start the API server")
-    srv.add_argument("--reload", action="store_true", help="Enable auto-reload on code changes")
+    srv.add_argument(
+        "--reload", action="store_true", help="Enable auto-reload on code changes"
+    )
     srv.set_defaults(func=serve)
 
     dev_parser = sub.add_parser("dev", help="Start API and UI development servers")
     dev_parser.set_defaults(func=dev)
 
-    seed = sub.add_parser("seed-admin", help="Create an initial admin user when none exists")
+    seed = sub.add_parser(
+        "seed-admin", help="Create an initial admin user when none exists"
+    )
     seed.add_argument("--username", required=True, help="Admin username")
     seed.add_argument("--password", required=True, help="Admin password")
     seed.set_defaults(func=seed_admin)

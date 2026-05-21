@@ -1,57 +1,72 @@
-"use client"
+"use client";
 
-import { Globe2 } from 'lucide-react'
-import Image from 'next/image'
-import { useQuery } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
-import { FormEvent, useState } from 'react'
-import { toast } from 'sonner'
-import { ApiError, apiRequest, type PublicBranding } from '@/lib/api'
-import { setStoredToken } from '@/lib/auth'
-import { useI18n } from '@/lib/i18n'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Globe2 } from "lucide-react";
+import Image from "next/image";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { FormEvent, useState } from "react";
+import { toast } from "sonner";
+import { ApiError, apiRequest, type PublicBranding } from "@/lib/api";
+import { setStoredToken } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type LoginResponse = {
-  access_token: string
-  token_type: string
-  expires_in: number
-}
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+};
 
 export function LoginScreen() {
-  const router = useRouter()
-  const { locale, setLocale, t } = useI18n()
+  const router = useRouter();
+  const { locale, setLocale, t } = useI18n();
   const { data: branding } = useQuery({
-    queryKey: ['public-branding'],
-    queryFn: () => apiRequest<PublicBranding>('/public/branding'),
+    queryKey: ["public-branding"],
+    queryFn: () => apiRequest<PublicBranding>("/public/branding"),
     staleTime: 5 * 60_000,
-  })
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const siteName = branding?.site_name?.trim() || 'Lens'
-  const logoUrl = branding?.logo_url?.trim() || '/logo.svg'
-  const nextLocale = locale === 'zh-CN' ? 'en-US' : 'zh-CN'
-  const languageActionLabel = locale === 'zh-CN' ? '切换到 English' : 'Switch to 中文'
+  });
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const siteName = branding?.site_name?.trim() || "Lens";
+  const logoUrl = branding?.logo_url?.trim() || "/logo.svg";
+  const nextLocale = locale === "zh-CN" ? "en-US" : "zh-CN";
+  const languageActionLabel =
+    locale === "zh-CN" ? "切换到 English" : "Switch to 中文";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSubmitting(true)
+    event.preventDefault();
+    setSubmitting(true);
 
     try {
-      const data = await apiRequest<LoginResponse>('/admin/session', {
-        method: 'POST',
-        body: JSON.stringify({ username: username.trim(), password })
-      })
-      setStoredToken(data.access_token)
-      router.push('/')
+      const data = await apiRequest<LoginResponse>("/admin/session", {
+        method: "POST",
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      setStoredToken(data.access_token);
+      router.push("/");
     } catch (requestError) {
-      toast.error(requestError instanceof ApiError ? requestError.message : 'Login failed')
+      toast.error(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "Login failed",
+      );
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
@@ -86,24 +101,32 @@ export function LoginScreen() {
               fill
               loading="eager"
               className="object-contain"
-              unoptimized={logoUrl !== '/logo.svg'}
+              unoptimized={logoUrl !== "/logo.svg"}
             />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">{siteName}</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {siteName}
+          </h1>
         </header>
 
         <Card>
           <CardHeader>
-            <CardTitle>{locale === 'zh-CN' ? '登录你的账户' : 'Login to your account'}</CardTitle>
+            <CardTitle>
+              {locale === "zh-CN" ? "登录你的账户" : "Login to your account"}
+            </CardTitle>
             <CardDescription>
-              {locale === 'zh-CN' ? '输入用户名和密码继续' : 'Enter your username and password to continue'}
+              {locale === "zh-CN"
+                ? "输入用户名和密码继续"
+                : "Enter your username and password to continue"}
             </CardDescription>
           </CardHeader>
 
           <CardContent>
             <form onSubmit={submit} className="grid gap-5">
               <label className="grid gap-2">
-                <span className="text-sm font-medium text-foreground">{t.username}</span>
+                <span className="text-sm font-medium text-foreground">
+                  {t.username}
+                </span>
                 <Input
                   name="username"
                   value={username}
@@ -116,7 +139,9 @@ export function LoginScreen() {
               </label>
 
               <label className="grid gap-2">
-                <span className="text-sm font-medium text-foreground">{t.password}</span>
+                <span className="text-sm font-medium text-foreground">
+                  {t.password}
+                </span>
                 <Input
                   name="password"
                   type="password"
@@ -127,7 +152,11 @@ export function LoginScreen() {
                   required
                 />
               </label>
-              <Button className="h-10 w-full" type="submit" disabled={submitting}>
+              <Button
+                className="h-10 w-full"
+                type="submit"
+                disabled={submitting}
+              >
                 {submitting ? t.signingIn : t.signIn}
               </Button>
             </form>
@@ -146,5 +175,5 @@ export function LoginScreen() {
         </footer>
       </div>
     </div>
-  )
+  );
 }

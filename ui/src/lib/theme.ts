@@ -1,20 +1,20 @@
-export type Theme = 'light' | 'dark'
+export type Theme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = 'lens_theme'
+export const THEME_STORAGE_KEY = "lens_theme";
 
 export function setTheme(theme: Theme) {
   try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
     // localStorage may throw on quota/private mode; theme still applies via inline style
   }
-  const root = document.documentElement
-  root.classList.toggle('dark', theme === 'dark')
-  root.style.colorScheme = theme
+  const root = document.documentElement;
+  root.classList.toggle("dark", theme === "dark");
+  root.style.colorScheme = theme;
 }
 
 export function getThemeBootstrapScript() {
-  const storageKey = JSON.stringify(THEME_STORAGE_KEY)
+  const storageKey = JSON.stringify(THEME_STORAGE_KEY);
 
   return `(() => {
     try {
@@ -26,5 +26,5 @@ export function getThemeBootstrapScript() {
     } catch (error) {
       // localStorage may throw on quota/private mode; default theme still applies
     }
-  })();`
+  })();`;
 }

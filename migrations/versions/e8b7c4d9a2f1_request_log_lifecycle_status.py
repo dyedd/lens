@@ -5,13 +5,13 @@ Revises: c2d4e6f8a9b1
 Create Date: 2026-04-29 22:30:00.000000
 
 """
+
 from __future__ import annotations
 
 from typing import Any, Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "e8b7c4d9a2f1"
 down_revision: Union[str, Sequence[str], None] = "c2d4e6f8a9b1"
@@ -29,19 +29,17 @@ def upgrade() -> None:
                 "lifecycle_status",
                 sa.String(length=32),
                 nullable=True,
-            )
+            ),
         )
 
-    op.execute(
-        """
+    op.execute("""
         UPDATE request_logs
         SET lifecycle_status = CASE
             WHEN success = 1 THEN 'succeeded'
             ELSE 'failed'
         END
         WHERE lifecycle_status IS NULL
-        """
-    )
+        """)
 
     sa.inspect(op.get_bind()).clear_cache()
 
@@ -113,6 +111,5 @@ def _request_logs_columns() -> dict[str, dict[str, Any]]:
 
 def _request_logs_indexes() -> set[str]:
     return {
-        index["name"]
-        for index in sa.inspect(op.get_bind()).get_indexes("request_logs")
+        index["name"] for index in sa.inspect(op.get_bind()).get_indexes("request_logs")
     }

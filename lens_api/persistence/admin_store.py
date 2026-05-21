@@ -1,4 +1,3 @@
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -27,10 +26,14 @@ class AdminStore:
             await session.commit()
             return True
 
-    async def authenticate(self, username: str, password: str) -> AdminUserEntity | None:
+    async def authenticate(
+        self, username: str, password: str
+    ) -> AdminUserEntity | None:
         async with self._session_factory() as session:
             result = await session.execute(
-                select(AdminUserEntity).where(AdminUserEntity.username == username).limit(1)
+                select(AdminUserEntity)
+                .where(AdminUserEntity.username == username)
+                .limit(1)
             )
             user = result.scalar_one_or_none()
             if user is None or user.is_active != 1:
@@ -42,14 +45,20 @@ class AdminStore:
     async def get_by_username(self, username: str) -> AdminUserEntity | None:
         async with self._session_factory() as session:
             result = await session.execute(
-                select(AdminUserEntity).where(AdminUserEntity.username == username).limit(1)
+                select(AdminUserEntity)
+                .where(AdminUserEntity.username == username)
+                .limit(1)
             )
             return result.scalar_one_or_none()
 
-    async def update_password(self, username: str, current_password: str, new_password: str) -> None:
+    async def update_password(
+        self, username: str, current_password: str, new_password: str
+    ) -> None:
         async with self._session_factory() as session:
             result = await session.execute(
-                select(AdminUserEntity).where(AdminUserEntity.username == username).limit(1)
+                select(AdminUserEntity)
+                .where(AdminUserEntity.username == username)
+                .limit(1)
             )
             user = result.scalar_one_or_none()
             if user is None or user.is_active != 1:
@@ -71,7 +80,9 @@ class AdminStore:
 
         async with self._session_factory() as session:
             result = await session.execute(
-                select(AdminUserEntity).where(AdminUserEntity.username == current_username).limit(1)
+                select(AdminUserEntity)
+                .where(AdminUserEntity.username == current_username)
+                .limit(1)
             )
             user = result.scalar_one_or_none()
             if user is None or user.is_active != 1:
@@ -80,7 +91,10 @@ class AdminStore:
             if normalized_username != user.username:
                 duplicate = await session.execute(
                     select(AdminUserEntity.id)
-                    .where(AdminUserEntity.username == normalized_username, AdminUserEntity.id != user.id)
+                    .where(
+                        AdminUserEntity.username == normalized_username,
+                        AdminUserEntity.id != user.id,
+                    )
                     .limit(1)
                 )
                 if duplicate.scalar_one_or_none() is not None:

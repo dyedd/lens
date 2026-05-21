@@ -16,7 +16,17 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import jwt
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from packaging import version
@@ -115,7 +125,6 @@ from .upstreams import (
     resolve_upstream_proxy_url,
 )
 
-
 TASK_REQUEST_LOG_PRUNE = "request_log_prune"
 TASK_MODEL_PRICE_SYNC = "model_price_sync"
 TASK_REQUEST_LOG_STATS_PERSIST = "request_log_stats_persist"
@@ -185,7 +194,9 @@ class AppState:
             specs=CRONJOB_SPECS,
             handlers={
                 TASK_REQUEST_LOG_PRUNE: self.domain_store.prune_request_logs,
-                TASK_MODEL_PRICE_SYNC: lambda: _sync_group_prices(self, overwrite_existing=True),
+                TASK_MODEL_PRICE_SYNC: lambda: _sync_group_prices(
+                    self, overwrite_existing=True
+                ),
                 TASK_REQUEST_LOG_STATS_PERSIST: self.domain_store.persist_request_log_stats,
                 TASK_VERSION_CHECK: self._check_version_update,
             },
@@ -214,7 +225,7 @@ class AppState:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.get(
                     "https://api.github.com/repos/dyedd/lens/releases/latest",
-                    headers={"Accept": "application/vnd.github.v3+json"}
+                    headers={"Accept": "application/vnd.github.v3+json"},
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -224,18 +235,34 @@ class AppState:
 
                 current_version = _read_system_version()
 
-                if latest_version and version.parse(latest_version) > version.parse(current_version):
-                    await self.domain_store.upsert_settings([
-                        SettingItem(key=SETTING_LATEST_VERSION, value=latest_version),
-                        SettingItem(key=SETTING_LATEST_VERSION_URL, value=release_url),
-                        SettingItem(key=SETTING_VERSION_CHECK_AT, value=datetime.now(UTC).isoformat()),
-                    ])
+                if latest_version and version.parse(latest_version) > version.parse(
+                    current_version
+                ):
+                    await self.domain_store.upsert_settings(
+                        [
+                            SettingItem(
+                                key=SETTING_LATEST_VERSION, value=latest_version
+                            ),
+                            SettingItem(
+                                key=SETTING_LATEST_VERSION_URL, value=release_url
+                            ),
+                            SettingItem(
+                                key=SETTING_VERSION_CHECK_AT,
+                                value=datetime.now(UTC).isoformat(),
+                            ),
+                        ]
+                    )
                 else:
-                    await self.domain_store.upsert_settings([
-                        SettingItem(key=SETTING_VERSION_CHECK_AT, value=datetime.now(UTC).isoformat()),
-                        SettingItem(key=SETTING_LATEST_VERSION, value=""),
-                        SettingItem(key=SETTING_LATEST_VERSION_URL, value=""),
-                    ])
+                    await self.domain_store.upsert_settings(
+                        [
+                            SettingItem(
+                                key=SETTING_VERSION_CHECK_AT,
+                                value=datetime.now(UTC).isoformat(),
+                            ),
+                            SettingItem(key=SETTING_LATEST_VERSION, value=""),
+                            SettingItem(key=SETTING_LATEST_VERSION_URL, value=""),
+                        ]
+                    )
         except (httpx.HTTPError, ValueError, version.InvalidVersion) as exc:
             logger.warning("版本检查失败: %s", exc)
 
@@ -331,7 +358,9 @@ async def _close_app_state(state: AppState) -> None:
 app_state = AppState()
 
 
-def _overview_window_minutes(days: int, daily_points: list[OverviewDailyPoint], time_zone_name: str) -> int:
+def _overview_window_minutes(
+    days: int, daily_points: list[OverviewDailyPoint], time_zone_name: str
+) -> int:
     time_zone = resolve_time_zone(time_zone_name)
     now = datetime.now(time_zone)
     if days == -1:
@@ -341,7 +370,9 @@ def _overview_window_minutes(days: int, daily_points: list[OverviewDailyPoint], 
         return max(days * 24 * 60, 1)
     if daily_points:
         try:
-            start_at = datetime.strptime(daily_points[0].date, "%Y%m%d").replace(tzinfo=time_zone)
+            start_at = datetime.strptime(daily_points[0].date, "%Y%m%d").replace(
+                tzinfo=time_zone
+            )
         except ValueError:
             return max(len(daily_points) * 24 * 60, 1)
         return max(int((now - start_at).total_seconds() // 60), 1)
@@ -489,7 +520,9 @@ async def get_current_gateway_key(request: Request) -> GatewayApiKey:
         gateway_key = await app_state.domain_store.get_gateway_api_key_by_secret(secret)
     except OperationalError as exc:
         response = _database_error_response(exc)
-        raise HTTPException(status_code=response.status_code, detail=response.body.decode()) from exc
+        raise HTTPException(
+            status_code=response.status_code, detail=response.body.decode()
+        ) from exc
 
     if gateway_key is None:
         raise HTTPException(
@@ -498,15 +531,20 @@ async def get_current_gateway_key(request: Request) -> GatewayApiKey:
 
     if not gateway_key.enabled:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Gateway API key is disabled"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Gateway API key is disabled",
         )
 
     if _is_gateway_key_expired(gateway_key):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Gateway API key has expired"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Gateway API key has expired",
         )
 
-    if gateway_key.max_cost_usd > 0 and gateway_key.spent_cost_usd >= gateway_key.max_cost_usd:
+    if (
+        gateway_key.max_cost_usd > 0
+        and gateway_key.spent_cost_usd >= gateway_key.max_cost_usd
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Gateway API key has reached the max balance",
@@ -529,12 +567,16 @@ def _is_gateway_key_expired(gateway_key: GatewayApiKey) -> bool:
     return expires_at <= datetime.now(UTC)
 
 
-def _gateway_key_allows_model(gateway_key: GatewayApiKey, model_name: str | None) -> bool:
+def _gateway_key_allows_model(
+    gateway_key: GatewayApiKey, model_name: str | None
+) -> bool:
     if not gateway_key.allowed_models:
         return True
     if not model_name:
         return True
-    normalized_allowed = {item.strip().lower() for item in gateway_key.allowed_models if item.strip()}
+    normalized_allowed = {
+        item.strip().lower() for item in gateway_key.allowed_models if item.strip()
+    }
     return model_name.strip().lower() in normalized_allowed
 
 
@@ -574,7 +616,11 @@ async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResu
         try:
             has_update = version.parse(latest_version) > version.parse(current_version)
         except version.InvalidVersion:
-            logger.warning("Invalid version string when comparing %r vs %r", latest_version, current_version)
+            logger.warning(
+                "Invalid version string when comparing %r vs %r",
+                latest_version,
+                current_version,
+            )
 
     return VersionCheckResult(
         current_version=current_version,
@@ -756,7 +802,9 @@ async def test_site_model(
             "stream": False,
         }
     else:
-        raise HTTPException(status_code=500, detail=f"Unsupported protocol={payload.protocol.value}")
+        raise HTTPException(
+            status_code=500, detail=f"Unsupported protocol={payload.protocol.value}"
+        )
     try:
         body = _apply_param_override(channel, body)
         body["stream"] = False
@@ -851,12 +899,12 @@ async def overview_dashboard(
     total_tokens = summary.total_tokens.value
     window_minutes = _overview_window_minutes(days, daily, str(runtime["time_zone"]))
     performance = OverviewPerformanceMetrics(
-        avg_requests_per_minute=round(total_requests / window_minutes, 2)
-        if window_minutes > 0
-        else 0.0,
-        avg_tokens_per_minute=round(total_tokens / window_minutes, 2)
-        if window_minutes > 0
-        else 0.0,
+        avg_requests_per_minute=(
+            round(total_requests / window_minutes, 2) if window_minutes > 0 else 0.0
+        ),
+        avg_tokens_per_minute=(
+            round(total_tokens / window_minutes, 2) if window_minutes > 0 else 0.0
+        ),
     )
     return OverviewDashboardData(
         summary=summary,
@@ -1014,13 +1062,19 @@ async def update_cronjob(
         return await app_state.cronjob_runner.update_cronjob(
             task_id,
             enabled=payload.enabled,
-            schedule_type=payload.schedule_type.value if payload.schedule_type is not None else None,
+            schedule_type=(
+                payload.schedule_type.value
+                if payload.schedule_type is not None
+                else None
+            ),
             interval_hours=payload.interval_hours,
             run_at_time=payload.run_at_time,
             weekdays=payload.weekdays,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Cron job not found: {task_id}") from exc
+        raise HTTPException(
+            status_code=404, detail=f"Cron job not found: {task_id}"
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1032,9 +1086,13 @@ async def run_cronjob(
     try:
         task = await app_state.cronjob_runner.run_cronjob_now(task_id)
     except CronjobAlreadyRunningError as exc:
-        raise HTTPException(status_code=409, detail=f"Cron job is already running: {task_id}") from exc
+        raise HTTPException(
+            status_code=409, detail=f"Cron job is already running: {task_id}"
+        ) from exc
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Cron job not found: {task_id}") from exc
+        raise HTTPException(
+            status_code=404, detail=f"Cron job not found: {task_id}"
+        ) from exc
     return CronjobRunResult(cronjob=task)
 
 
@@ -1175,7 +1233,9 @@ async def export_settings_bundle(
         include_gateway_api_keys=include_gateway_api_keys,
     )
     runtime = await app_state.domain_store.get_runtime_settings()
-    timestamp = datetime.now(resolve_time_zone(str(runtime["time_zone"]))).strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(resolve_time_zone(str(runtime["time_zone"]))).strftime(
+        "%Y%m%d%H%M%S"
+    )
     return JSONResponse(
         content=dump.model_dump(mode="json"),
         headers={
@@ -1306,7 +1366,9 @@ def _build_openai_models_payload(
 def _build_anthropic_models_payload(
     groups: list[ModelGroup], gateway_key: GatewayApiKey
 ) -> dict[str, Any]:
-    names = _filtered_group_names(groups, gateway_key, frozenset({ProtocolKind.ANTHROPIC}))
+    names = _filtered_group_names(
+        groups, gateway_key, frozenset({ProtocolKind.ANTHROPIC})
+    )
     return {
         "data": [
             {
@@ -1447,7 +1509,9 @@ class _RequestLogger:
             is_stream=is_stream,
             first_token_latency_ms=first_token_latency_ms,
             latency_ms=_elapsed_ms(self.started_at),
-            request_content=request_content if request_content is not None else self.request_content,
+            request_content=(
+                request_content if request_content is not None else self.request_content
+            ),
             response_content=response_content,
             attempts=[item.__dict__ for item in self.attempts],
             error_message=error_message,
@@ -1533,7 +1597,9 @@ async def _proxy_protocol(
             )
         except LookupError as exc:
             await log_ctx.update(
-                requested_group_name=plan.requested_group_name if plan else requested_model,
+                requested_group_name=(
+                    plan.requested_group_name if plan else requested_model
+                ),
                 resolved_group_name=plan.resolved_group_name if plan else None,
                 upstream_model_name=None,
                 channel=None,
@@ -1613,7 +1679,9 @@ async def _try_target(
             break
 
     if needs_conversion(protocol, channel.protocol):
-        upstream_body = convert_request(protocol, channel.protocol, body, target.model_name)
+        upstream_body = convert_request(
+            protocol, channel.protocol, body, target.model_name
+        )
     else:
         upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
     try:
@@ -1809,10 +1877,14 @@ async def _call_channel(
         response.raise_for_status()
         app_state.router.record_success(channel.id, credential_id=credential_id)
 
-        is_event_stream = "text/event-stream" in (
-            response.headers.get("content-type") or ""
-        ).lower()
-        if is_event_stream and not is_stream_request and channel.protocol == ProtocolKind.ANTHROPIC:
+        is_event_stream = (
+            "text/event-stream" in (response.headers.get("content-type") or "").lower()
+        )
+        if (
+            is_event_stream
+            and not is_stream_request
+            and channel.protocol == ProtocolKind.ANTHROPIC
+        ):
             return await _build_anthropic_sse_to_json_result(
                 response, channel, pricing_group_name, request_content
             )
@@ -1826,7 +1898,12 @@ async def _call_channel(
                 stream_started_at,
             )
         return await _build_json_result(
-            response, channel, client_protocol, body, pricing_group_name, request_content
+            response,
+            channel,
+            client_protocol,
+            body,
+            pricing_group_name,
+            request_content,
         )
     except httpx.HTTPStatusError as exc:
         await exc.response.aread()
@@ -1867,7 +1944,10 @@ async def _send_upstream(
 ) -> httpx.Response:
     if stream:
         request = client.build_request(
-            upstream.method, upstream.url, headers=upstream.headers, json=upstream.json_body
+            upstream.method,
+            upstream.url,
+            headers=upstream.headers,
+            json=upstream.json_body,
         )
         return await client.send(request, stream=True)
     return await client.request(
@@ -1881,7 +1961,9 @@ async def _build_anthropic_sse_to_json_result(
     pricing_group_name: str | None,
     request_content: str | None,
 ) -> UpstreamResult:
-    content = response.content if hasattr(response, "content") else await response.aread()
+    content = (
+        response.content if hasattr(response, "content") else await response.aread()
+    )
     raw_content = _decode_content_bytes(content)
     parsed = _extract_stream_usage(channel.protocol, raw_content)
     distilled_content = _distill_stream_response_content(channel.protocol, raw_content)
@@ -1946,7 +2028,9 @@ def _build_stream_result(
     )
     raw_iter = _consume_stream_queue(chunk_queue, capture)
 
-    if client_protocol is not None and needs_conversion(client_protocol, channel.protocol):
+    if client_protocol is not None and needs_conversion(
+        client_protocol, channel.protocol
+    ):
         converted_iter = convert_stream_iterator(
             client_protocol, channel.protocol, raw_iter, body.get("model", "")
         )
@@ -1978,10 +2062,16 @@ async def _build_json_result(
     pricing_group_name: str | None,
     request_content: str | None,
 ) -> UpstreamResult:
-    content = response.content if hasattr(response, "content") else await response.aread()
+    content = (
+        response.content if hasattr(response, "content") else await response.aread()
+    )
     parsed = _extract_response_usage(channel.protocol, response)
-    if client_protocol is not None and needs_conversion(client_protocol, channel.protocol):
-        content = convert_response(client_protocol, channel.protocol, content, body.get("model", ""))
+    if client_protocol is not None and needs_conversion(
+        client_protocol, channel.protocol
+    ):
+        content = convert_response(
+            client_protocol, channel.protocol, content, body.get("model", "")
+        )
 
     cost = await app_state.domain_store.estimate_model_cost(
         pricing_group_name,
@@ -2035,8 +2125,6 @@ def _model_test_channel(payload: SiteModelTestRequest) -> ChannelConfig:
         param_override=payload.param_override,
         match_regex="",
     )
-
-
 
 
 async def _call_model_test_channel(
@@ -2122,7 +2210,10 @@ async def _call_model_test_channel(
                         if not isinstance(content, list):
                             continue
                         for part in content:
-                            if isinstance(part, dict) and part.get("type") == "output_text":
+                            if (
+                                isinstance(part, dict)
+                                and part.get("type") == "output_text"
+                            ):
                                 text = part.get("text")
                                 if isinstance(text, str) and text.strip():
                                     parts.append(text.strip())
@@ -2146,7 +2237,9 @@ async def _call_model_test_channel(
                 parts = [
                     str(item.get("text")).strip()
                     for item in content
-                    if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+                    if isinstance(item, dict)
+                    and item.get("type") == "text"
+                    and item.get("text")
                 ]
                 output_text = "\n".join(parts)
         elif channel.protocol == ProtocolKind.GEMINI:
@@ -2239,7 +2332,9 @@ def _format_channel_error(detail: Any) -> str:
 def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
     error_type = exc.__class__.__name__
     request = exc.request if hasattr(exc, "request") else None
-    target_url = str(request.url) if request and hasattr(request, "url") else fallback_url
+    target_url = (
+        str(request.url) if request and hasattr(request, "url") else fallback_url
+    )
     try:
         target_label = str(httpx.URL(target_url).copy_with(query=None))
     except httpx.InvalidURL:
@@ -2250,8 +2345,6 @@ def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
     return f"Transport error ({error_type}) while requesting {target_label}"
 
 
-
-
 def _default_lens_user_agent() -> str:
     return f"Lens/{_read_system_version()}"
 
@@ -2260,9 +2353,9 @@ def _normalize_user_agent(value: str | None) -> str:
     normalized = (value or "").strip()
     if not normalized:
         return ""
-    return "".join(
-        char for char in normalized if ord(char) >= 32 and ord(char) != 127
-    )[:300].strip()
+    return "".join(char for char in normalized if ord(char) >= 32 and ord(char) != 127)[
+        :300
+    ].strip()
 
 
 def _is_generic_user_agent(value: str) -> bool:
@@ -2720,11 +2813,15 @@ async def _pump_stream_response(
                 capture.saw_first_chunk = True
                 capture.first_token_latency_ms = _elapsed_ms(stream_started_at)
                 if capture.request_log_id is not None:
-                    capture.last_persisted_first_token_latency_ms = capture.first_token_latency_ms
+                    capture.last_persisted_first_token_latency_ms = (
+                        capture.first_token_latency_ms
+                    )
                     await app_state.domain_store.update_request_log_runtime(
                         capture.request_log_id,
                         first_token_latency_ms=capture.first_token_latency_ms,
-                        latency_ms=_elapsed_ms(capture.stream_started_at or stream_started_at),
+                        latency_ms=_elapsed_ms(
+                            capture.stream_started_at or stream_started_at
+                        ),
                     )
             text = chunk.decode("utf-8", errors="replace")
             if text:
@@ -2735,9 +2832,7 @@ async def _pump_stream_response(
     except asyncio.CancelledError:
         capture.errors.append("stream pump cancelled")
     except httpx.HTTPError as exc:
-        capture.errors.append(
-            f"stream pump failed: {type(exc).__name__}: {exc}"
-        )
+        capture.errors.append(f"stream pump failed: {type(exc).__name__}: {exc}")
     finally:
         if not capture.client_disconnected:
             chunk_queue.put_nowait(None)
@@ -3117,11 +3212,15 @@ def _openai_cached_tokens(usage: Mapping[str, Any], detail_key: str) -> int:
     return _usage_int(details, "cached_tokens")
 
 
-def _anthropic_usage(usage: Mapping[str, Any], *, model: str | None) -> dict[str, int | str | None]:
+def _anthropic_usage(
+    usage: Mapping[str, Any], *, model: str | None
+) -> dict[str, int | str | None]:
     base_input_tokens = _usage_int(usage, "input_tokens")
     cache_read_input_tokens = _usage_int(usage, "cache_read_input_tokens")
     cache_write_input_tokens = _usage_int(usage, "cache_creation_input_tokens")
-    input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
+    input_tokens = (
+        base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
+    )
     output_tokens = _usage_int(usage, "output_tokens")
     return {
         "resolved_model": model,
@@ -3138,7 +3237,9 @@ def _gemini_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
     input_tokens = _usage_int(usage, "promptTokenCount")
     cache_read_input_tokens = _usage_int(usage, "cachedContentTokenCount")
     output_tokens = _usage_int(usage, "candidatesTokenCount")
-    total_tokens = _usage_int(usage, "totalTokenCount") or (input_tokens + output_tokens)
+    total_tokens = _usage_int(usage, "totalTokenCount") or (
+        input_tokens + output_tokens
+    )
     return {
         "resolved_model": payload.get("modelVersion") or payload.get("model"),
         "input_tokens": input_tokens,
@@ -3208,7 +3309,9 @@ def _extract_stream_usage(
         return dict(_EMPTY_USAGE)
 
     if protocol == ProtocolKind.GEMINI:
-        payloads = _parse_sse_payloads(raw_content) or _parse_ndjson_payloads(raw_content)
+        payloads = _parse_sse_payloads(raw_content) or _parse_ndjson_payloads(
+            raw_content
+        )
         return _extract_usage_from_payload(protocol, payloads[-1] if payloads else {})
 
     payloads = _parse_sse_payloads(raw_content)
@@ -3320,10 +3423,14 @@ def _extract_usage_from_payload(
     if protocol == ProtocolKind.ANTHROPIC:
         if payload.get("type") == "message_start":
             message = _usage_mapping(payload.get("message"))
-            return _anthropic_usage(_usage_mapping(message.get("usage")), model=message.get("model"))
+            return _anthropic_usage(
+                _usage_mapping(message.get("usage")), model=message.get("model")
+            )
         if payload.get("type") == "message_delta":
             return _anthropic_usage(_usage_mapping(payload.get("usage")), model=None)
-        return _anthropic_usage(_usage_mapping(payload.get("usage")), model=payload.get("model"))
+        return _anthropic_usage(
+            _usage_mapping(payload.get("usage")), model=payload.get("model")
+        )
     return _gemini_usage(payload)
 
 
@@ -3338,7 +3445,9 @@ def _extract_response_usage(
     if protocol == ProtocolKind.OPENAI_EMBEDDING:
         return _openai_embedding_usage(payload)
     if protocol == ProtocolKind.ANTHROPIC:
-        return _anthropic_usage(_usage_mapping(payload.get("usage")), model=payload.get("model"))
+        return _anthropic_usage(
+            _usage_mapping(payload.get("usage")), model=payload.get("model")
+        )
     return _gemini_usage(payload)
 
 
@@ -3355,9 +3464,7 @@ async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) 
     await state.domain_store.sync_model_prices(
         payloads, overwrite_existing=overwrite_existing, allowed_keys=group_names
     )
-    await state.domain_store.set_model_price_sync_time(
-        datetime.now(UTC).isoformat()
-    )
+    await state.domain_store.set_model_price_sync_time(datetime.now(UTC).isoformat())
 
 
 app = create_app(service_module=__import__(__name__, fromlist=["*"]))

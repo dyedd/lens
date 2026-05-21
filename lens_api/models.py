@@ -1,10 +1,16 @@
-
 from enum import Enum
 import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    field_validator,
+    model_validator,
+)
 
 
 class StrictBaseModel(BaseModel):
@@ -19,7 +25,9 @@ def normalize_base_url(value: Any) -> Any:
         path = path[:-7]
     elif path.endswith("/v1"):
         path = path[:-3]
-    rebuilt = urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment))
+    rebuilt = urlunsplit(
+        (parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment)
+    )
     before_fragment, fragment_separator, _ = text.partition("#")
     has_empty_query = "?" in before_fragment and parsed.query == ""
     has_empty_fragment = bool(fragment_separator) and parsed.fragment == ""
@@ -57,7 +65,11 @@ def _normalize_weekdays_list(value: list[int]) -> list[int]:
     return sorted(normalized)
 
 
-def _validate_cronjob_schedule(schedule_type: "CronjobScheduleType | None", run_at_time: str | None, weekdays: list[int] | None) -> None:
+def _validate_cronjob_schedule(
+    schedule_type: "CronjobScheduleType | None",
+    run_at_time: str | None,
+    weekdays: list[int] | None,
+) -> None:
     if schedule_type == CronjobScheduleType.DAILY and not run_at_time:
         raise ValueError("Daily cron jobs require run_at_time")
     if schedule_type == CronjobScheduleType.WEEKLY:
@@ -497,10 +509,12 @@ class ModelGroup(StrictBaseModel):
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroup":
-        self.sync_filter_mode, self.sync_filter_query = normalize_model_group_sync_filter(
-            self.sync_filter_mode,
-            self.sync_filter_query,
-            route_group_id=self.route_group_id,
+        self.sync_filter_mode, self.sync_filter_query = (
+            normalize_model_group_sync_filter(
+                self.sync_filter_mode,
+                self.sync_filter_query,
+                route_group_id=self.route_group_id,
+            )
         )
         return self
 
@@ -535,10 +549,12 @@ class ModelGroupCreate(StrictBaseModel):
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroupCreate":
-        self.sync_filter_mode, self.sync_filter_query = normalize_model_group_sync_filter(
-            self.sync_filter_mode,
-            self.sync_filter_query,
-            route_group_id=self.route_group_id,
+        self.sync_filter_mode, self.sync_filter_query = (
+            normalize_model_group_sync_filter(
+                self.sync_filter_mode,
+                self.sync_filter_query,
+                route_group_id=self.route_group_id,
+            )
         )
         return self
 
@@ -556,12 +572,18 @@ class ModelGroupUpdate(StrictBaseModel):
     def validate_sync_filter(self) -> "ModelGroupUpdate":
         if self.sync_filter_mode is None and self.sync_filter_query is None:
             return self
-        mode = self.sync_filter_mode if self.sync_filter_mode is not None else ModelGroupSyncFilterMode.NONE
+        mode = (
+            self.sync_filter_mode
+            if self.sync_filter_mode is not None
+            else ModelGroupSyncFilterMode.NONE
+        )
         query = self.sync_filter_query if self.sync_filter_query is not None else ""
-        self.sync_filter_mode, self.sync_filter_query = normalize_model_group_sync_filter(
-            mode,
-            query,
-            route_group_id=self.route_group_id or "",
+        self.sync_filter_mode, self.sync_filter_query = (
+            normalize_model_group_sync_filter(
+                mode,
+                query,
+                route_group_id=self.route_group_id or "",
+            )
         )
         return self
 
@@ -581,7 +603,9 @@ def normalize_model_group_sync_filter(
         try:
             re.compile(normalized_query)
         except re.error as exc:
-            raise ValueError(f"Invalid model group sync regex: {normalized_query}. {exc}") from exc
+            raise ValueError(
+                f"Invalid model group sync regex: {normalized_query}. {exc}"
+            ) from exc
     return mode, normalized_query
 
 
@@ -675,7 +699,9 @@ class CronjobUpdate(StrictBaseModel):
     enabled: bool | None = None
     schedule_type: CronjobScheduleType | None = None
     interval_hours: int | None = Field(default=None, ge=1)
-    run_at_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    run_at_time: str | None = Field(
+        default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$"
+    )
     weekdays: list[int] | None = None
 
     @field_validator("weekdays")
@@ -805,7 +831,9 @@ class ConfigBackupCronjob(StrictBaseModel):
     enabled: bool = True
     schedule_type: CronjobScheduleType = CronjobScheduleType.INTERVAL
     interval_hours: int = Field(default=1, ge=1)
-    run_at_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    run_at_time: str | None = Field(
+        default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$"
+    )
     weekdays: list[int] = Field(default_factory=list)
 
     @field_validator("weekdays")

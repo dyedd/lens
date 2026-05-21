@@ -63,7 +63,14 @@ class ChannelStore:
         async with self._session_factory() as session:
             await self._ensure_site_name_unique(session, payload.name)
             site_id = str(uuid.uuid4())
-            await self._upsert_site_payload(session, site_id, payload.name, payload.base_urls, payload.credentials, payload.protocols)
+            await self._upsert_site_payload(
+                session,
+                site_id,
+                payload.name,
+                payload.base_urls,
+                payload.credentials,
+                payload.protocols,
+            )
             await session.commit()
         return await self.get_site(site_id)
 
@@ -72,8 +79,17 @@ class ChannelStore:
             site = await session.get(SiteEntity, site_id)
             if site is None:
                 raise KeyError(site_id)
-            await self._ensure_site_name_unique(session, payload.name, exclude_site_id=site_id)
-            await self._upsert_site_payload(session, site_id, payload.name, payload.base_urls, payload.credentials, payload.protocols)
+            await self._ensure_site_name_unique(
+                session, payload.name, exclude_site_id=site_id
+            )
+            await self._upsert_site_payload(
+                session,
+                site_id,
+                payload.name,
+                payload.base_urls,
+                payload.credentials,
+                payload.protocols,
+            )
             await session.commit()
         return await self.get_site(site_id)
 
@@ -86,17 +102,43 @@ class ChannelStore:
             protocol_ids = await self._site_protocol_ids(session, site_id)
             credential_ids = await self._site_credential_ids(session, site_id)
             if protocol_ids:
-                await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.channel_id.in_(protocol_ids)))
-                await session.execute(delete(SiteDiscoveredModelEntity).where(SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_ids)))
-                await session.execute(delete(SiteProtocolCredentialBindingEntity).where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(protocol_ids)))
-                await session.execute(delete(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(protocol_ids)))
+                await session.execute(
+                    delete(ModelGroupItemEntity).where(
+                        ModelGroupItemEntity.channel_id.in_(protocol_ids)
+                    )
+                )
+                await session.execute(
+                    delete(SiteDiscoveredModelEntity).where(
+                        SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_ids)
+                    )
+                )
+                await session.execute(
+                    delete(SiteProtocolCredentialBindingEntity).where(
+                        SiteProtocolCredentialBindingEntity.protocol_config_id.in_(
+                            protocol_ids
+                        )
+                    )
+                )
+                await session.execute(
+                    delete(SiteProtocolConfigEntity).where(
+                        SiteProtocolConfigEntity.id.in_(protocol_ids)
+                    )
+                )
             if credential_ids:
-                await session.execute(delete(SiteCredentialEntity).where(SiteCredentialEntity.id.in_(credential_ids)))
-            await session.execute(delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id))
+                await session.execute(
+                    delete(SiteCredentialEntity).where(
+                        SiteCredentialEntity.id.in_(credential_ids)
+                    )
+                )
+            await session.execute(
+                delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id)
+            )
             await session.delete(site)
             await session.commit()
 
-    async def fetch_models_preview(self, payload: SiteModelFetchRequest) -> list[dict[str, str]]:
+    async def fetch_models_preview(
+        self, payload: SiteModelFetchRequest
+    ) -> list[dict[str, str]]:
         credentials = [
             SiteCredential(
                 id=item.id or str(uuid.uuid4()),
@@ -109,12 +151,21 @@ class ChannelStore:
             if item.name.strip() and item.api_key.strip()
         ]
         credential_map = {item.id: item for item in credentials}
-        binding_ids = [item.credential_id for item in payload.bindings if item.enabled and item.credential_id in credential_map]
+        binding_ids = [
+            item.credential_id
+            for item in payload.bindings
+            if item.enabled and item.credential_id in credential_map
+        ]
         if not binding_ids:
             binding_ids = [item.id for item in credentials if item.enabled]
-        return [{"credential_id": item_id, "credential_name": credential_map[item_id].name} for item_id in binding_ids]
+        return [
+            {"credential_id": item_id, "credential_name": credential_map[item_id].name}
+            for item_id in binding_ids
+        ]
 
-    async def _load_sites(self, session: AsyncSession, site_ids: list[str] | None = None) -> list[SiteConfig]:
+    async def _load_sites(
+        self, session: AsyncSession, site_ids: list[str] | None = None
+    ) -> list[SiteConfig]:
         site_query = select(SiteEntity).order_by(SiteEntity.name.asc())
         if site_ids is not None:
             site_query = site_query.where(SiteEntity.id.in_(site_ids))
@@ -124,50 +175,102 @@ class ChannelStore:
 
         ids = [item.id for item in site_rows]
         base_url_rows = (
-            await session.execute(
-                select(SiteBaseUrlEntity)
-                .where(SiteBaseUrlEntity.site_id.in_(ids))
-                .order_by(SiteBaseUrlEntity.site_id.asc(), SiteBaseUrlEntity.sort_order.asc(), SiteBaseUrlEntity.id.asc())
+            (
+                await session.execute(
+                    select(SiteBaseUrlEntity)
+                    .where(SiteBaseUrlEntity.site_id.in_(ids))
+                    .order_by(
+                        SiteBaseUrlEntity.site_id.asc(),
+                        SiteBaseUrlEntity.sort_order.asc(),
+                        SiteBaseUrlEntity.id.asc(),
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         credential_rows = (
-            await session.execute(
-                select(SiteCredentialEntity)
-                .where(SiteCredentialEntity.site_id.in_(ids))
-                .order_by(SiteCredentialEntity.site_id.asc(), SiteCredentialEntity.sort_order.asc(), SiteCredentialEntity.id.asc())
+            (
+                await session.execute(
+                    select(SiteCredentialEntity)
+                    .where(SiteCredentialEntity.site_id.in_(ids))
+                    .order_by(
+                        SiteCredentialEntity.site_id.asc(),
+                        SiteCredentialEntity.sort_order.asc(),
+                        SiteCredentialEntity.id.asc(),
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         protocol_rows = (
-            await session.execute(
-                select(SiteProtocolConfigEntity)
-                .where(SiteProtocolConfigEntity.site_id.in_(ids))
-                .order_by(SiteProtocolConfigEntity.site_id.asc(), SiteProtocolConfigEntity.protocol.asc(), SiteProtocolConfigEntity.id.asc())
+            (
+                await session.execute(
+                    select(SiteProtocolConfigEntity)
+                    .where(SiteProtocolConfigEntity.site_id.in_(ids))
+                    .order_by(
+                        SiteProtocolConfigEntity.site_id.asc(),
+                        SiteProtocolConfigEntity.protocol.asc(),
+                        SiteProtocolConfigEntity.id.asc(),
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         protocol_ids = [item.id for item in protocol_rows]
         binding_rows = []
         model_rows = []
         if protocol_ids:
             binding_rows = (
-                await session.execute(
-                    select(SiteProtocolCredentialBindingEntity)
-                    .where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(protocol_ids))
-                    .order_by(SiteProtocolCredentialBindingEntity.protocol_config_id.asc(), SiteProtocolCredentialBindingEntity.sort_order.asc(), SiteProtocolCredentialBindingEntity.id.asc())
+                (
+                    await session.execute(
+                        select(SiteProtocolCredentialBindingEntity)
+                        .where(
+                            SiteProtocolCredentialBindingEntity.protocol_config_id.in_(
+                                protocol_ids
+                            )
+                        )
+                        .order_by(
+                            SiteProtocolCredentialBindingEntity.protocol_config_id.asc(),
+                            SiteProtocolCredentialBindingEntity.sort_order.asc(),
+                            SiteProtocolCredentialBindingEntity.id.asc(),
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             model_rows = (
-                await session.execute(
-                    select(SiteDiscoveredModelEntity)
-                    .where(SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_ids))
-                    .order_by(SiteDiscoveredModelEntity.protocol_config_id.asc(), SiteDiscoveredModelEntity.sort_order.asc(), SiteDiscoveredModelEntity.id.asc())
+                (
+                    await session.execute(
+                        select(SiteDiscoveredModelEntity)
+                        .where(
+                            SiteDiscoveredModelEntity.protocol_config_id.in_(
+                                protocol_ids
+                            )
+                        )
+                        .order_by(
+                            SiteDiscoveredModelEntity.protocol_config_id.asc(),
+                            SiteDiscoveredModelEntity.sort_order.asc(),
+                            SiteDiscoveredModelEntity.id.asc(),
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
         base_urls_by_site = self._group_base_urls(base_url_rows)
-        credentials_by_site, credentials_by_id = self._group_credentials(credential_rows)
+        credentials_by_site, credentials_by_id = self._group_credentials(
+            credential_rows
+        )
         bindings_by_protocol = self._group_bindings(binding_rows, credentials_by_id)
         models_by_protocol = self._group_models(model_rows, credentials_by_id)
-        protocols_by_site = self._group_protocols(protocol_rows, bindings_by_protocol, models_by_protocol)
+        protocols_by_site = self._group_protocols(
+            protocol_rows, bindings_by_protocol, models_by_protocol
+        )
 
         return [
             SiteConfig(
@@ -191,11 +294,11 @@ class ChannelStore:
     ) -> None:
         normalized_name = name.strip()
         if not normalized_name:
-            raise ValueError('Site name is required')
+            raise ValueError("Site name is required")
         if not base_urls:
-            raise ValueError('At least one base URL is required')
+            raise ValueError("At least one base URL is required")
         if not protocols:
-            raise ValueError('At least one protocol config is required')
+            raise ValueError("At least one protocol config is required")
 
         normalized_base_urls = self._normalize_base_urls(base_urls)
         normalized_credentials = self._normalize_credentials(credentials)
@@ -228,28 +331,40 @@ class ChannelStore:
             normalized_credentials,
         )
 
-        await self._cleanup_deleted_protocols(session, current_protocol_ids - next_protocol_ids)
-        await self._cleanup_deleted_credentials(session, current_credential_ids - next_credential_ids)
+        await self._cleanup_deleted_protocols(
+            session, current_protocol_ids - next_protocol_ids
+        )
+        await self._cleanup_deleted_credentials(
+            session, current_credential_ids - next_credential_ids
+        )
 
     def _flatten_site(self, site: SiteConfig) -> list[ChannelConfig]:
         credentials_by_id = {item.id: item for item in site.credentials}
         base_urls_by_id = {item.id: item for item in site.base_urls}
-        default_base_url = next((item.url for item in site.base_urls if item.enabled), site.base_urls[0].url)
+        default_base_url = next(
+            (item.url for item in site.base_urls if item.enabled), site.base_urls[0].url
+        )
         items: list[ChannelConfig] = []
         for protocol in site.protocols:
             bound_base_url = base_urls_by_id.get(protocol.base_url_id)
             active_base_url = bound_base_url.url if bound_base_url else default_base_url
             keys = self._build_channel_keys(protocol, credentials_by_id)
             models = self._build_channel_models(protocol, credentials_by_id)
-            active_key = next((item for item in keys if item.enabled), keys[0] if keys else None)
+            active_key = next(
+                (item for item in keys if item.enabled), keys[0] if keys else None
+            )
             items.append(
                 ChannelConfig(
                     id=protocol.id,
                     name=site.name,
                     protocol=protocol.protocol,
                     base_url=active_base_url,
-                    api_key=active_key.key if active_key else 'placeholder-key',
-                    status=ChannelStatus.ENABLED if protocol.enabled else ChannelStatus.DISABLED,
+                    api_key=active_key.key if active_key else "placeholder-key",
+                    status=(
+                        ChannelStatus.ENABLED
+                        if protocol.enabled
+                        else ChannelStatus.DISABLED
+                    ),
                     headers=protocol.headers,
                     model_patterns=[item.model_name for item in models if item.enabled],
                     keys=keys,
@@ -286,7 +401,11 @@ class ChannelStore:
             ChannelDiscoveredModel(
                 id=item.id,
                 credential_id=item.credential_id,
-                credential_name=credentials_by_id[item.credential_id].name if item.credential_id in credentials_by_id else '',
+                credential_name=(
+                    credentials_by_id[item.credential_id].name
+                    if item.credential_id in credentials_by_id
+                    else ""
+                ),
                 model_name=item.model_name,
                 enabled=item.enabled,
                 sort_order=item.sort_order,
@@ -294,16 +413,18 @@ class ChannelStore:
             for item in protocol.models
         ]
 
-    def _normalize_credentials(self, items: list[SiteCredentialInput]) -> list[SiteCredential]:
+    def _normalize_credentials(
+        self, items: list[SiteCredentialInput]
+    ) -> list[SiteCredential]:
         normalized: list[SiteCredential] = []
         seen_names: set[str] = set()
         for index, item in enumerate(items):
             name = item.name.strip()
             if not name:
-                raise ValueError('Credential name is required')
+                raise ValueError("Credential name is required")
             name_key = name.lower()
             if name_key in seen_names:
-                raise ValueError(f'Duplicate credential name: {name}')
+                raise ValueError(f"Duplicate credential name: {name}")
             seen_names.add(name_key)
             normalized.append(
                 SiteCredential(
@@ -315,7 +436,7 @@ class ChannelStore:
                 )
             )
         if not normalized:
-            raise ValueError('At least one credential is required')
+            raise ValueError("At least one credential is required")
         return normalized
 
     def _normalize_base_urls(self, items: list[SiteBaseUrlInput]) -> list[SiteBaseUrl]:
@@ -323,7 +444,7 @@ class ChannelStore:
         for index, item in enumerate(items):
             url_str = str(item.url).strip()
             if not url_str:
-                raise ValueError('Base URL is required')
+                raise ValueError("Base URL is required")
             normalized.append(
                 SiteBaseUrl(
                     id=item.id or str(uuid.uuid4()),
@@ -335,20 +456,50 @@ class ChannelStore:
             )
         return normalized
 
-    async def _ensure_site_name_unique(self, session: AsyncSession, name: str, exclude_site_id: str | None = None) -> None:
+    async def _ensure_site_name_unique(
+        self, session: AsyncSession, name: str, exclude_site_id: str | None = None
+    ) -> None:
         normalized_name = name.strip()
-        result = await session.execute(select(SiteEntity).where(SiteEntity.name == normalized_name).limit(1))
+        result = await session.execute(
+            select(SiteEntity).where(SiteEntity.name == normalized_name).limit(1)
+        )
         row = result.scalar_one_or_none()
         if row is not None and row.id != exclude_site_id:
-            raise ValueError(f'Site already exists: {normalized_name}')
+            raise ValueError(f"Site already exists: {normalized_name}")
 
-    async def _site_protocol_ids(self, session: AsyncSession, site_id: str) -> list[str]:
-        return list((await session.execute(select(SiteProtocolConfigEntity.id).where(SiteProtocolConfigEntity.site_id == site_id))).scalars().all())
+    async def _site_protocol_ids(
+        self, session: AsyncSession, site_id: str
+    ) -> list[str]:
+        return list(
+            (
+                await session.execute(
+                    select(SiteProtocolConfigEntity.id).where(
+                        SiteProtocolConfigEntity.site_id == site_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-    async def _site_credential_ids(self, session: AsyncSession, site_id: str) -> list[str]:
-        return list((await session.execute(select(SiteCredentialEntity.id).where(SiteCredentialEntity.site_id == site_id))).scalars().all())
+    async def _site_credential_ids(
+        self, session: AsyncSession, site_id: str
+    ) -> list[str]:
+        return list(
+            (
+                await session.execute(
+                    select(SiteCredentialEntity.id).where(
+                        SiteCredentialEntity.site_id == site_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-    def _group_base_urls(self, rows: list[SiteBaseUrlEntity]) -> dict[str, list[SiteBaseUrl]]:
+    def _group_base_urls(
+        self, rows: list[SiteBaseUrlEntity]
+    ) -> dict[str, list[SiteBaseUrl]]:
         result: dict[str, list[SiteBaseUrl]] = defaultdict(list)
         for row in rows:
             result[row.site_id].append(
@@ -362,7 +513,9 @@ class ChannelStore:
             )
         return result
 
-    def _group_credentials(self, rows: list[SiteCredentialEntity]) -> tuple[dict[str, list[SiteCredential]], dict[str, SiteCredential]]:
+    def _group_credentials(
+        self, rows: list[SiteCredentialEntity]
+    ) -> tuple[dict[str, list[SiteCredential]], dict[str, SiteCredential]]:
         by_site: dict[str, list[SiteCredential]] = defaultdict(list)
         by_id: dict[str, SiteCredential] = {}
         for row in rows:
@@ -388,7 +541,7 @@ class ChannelStore:
             result[row.protocol_config_id].append(
                 SiteProtocolCredentialBinding(
                     credential_id=row.credential_id,
-                    credential_name=credential.name if credential else '',
+                    credential_name=credential.name if credential else "",
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
                 )
@@ -407,7 +560,7 @@ class ChannelStore:
                 SiteModel(
                     id=row.id,
                     credential_id=row.credential_id,
-                    credential_name=credential.name if credential else '',
+                    credential_name=credential.name if credential else "",
                     model_name=row.model_name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
@@ -439,8 +592,12 @@ class ChannelStore:
             )
         return result
 
-    async def _upsert_base_urls(self, session: AsyncSession, site_id: str, items: list[SiteBaseUrl]) -> None:
-        await session.execute(delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id))
+    async def _upsert_base_urls(
+        self, session: AsyncSession, site_id: str, items: list[SiteBaseUrl]
+    ) -> None:
+        await session.execute(
+            delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id)
+        )
         for index, item in enumerate(items):
             session.add(
                 SiteBaseUrlEntity(
@@ -453,8 +610,12 @@ class ChannelStore:
                 )
             )
 
-    async def _upsert_credentials(self, session: AsyncSession, site_id: str, items: list[SiteCredential]) -> None:
-        await session.execute(delete(SiteCredentialEntity).where(SiteCredentialEntity.site_id == site_id))
+    async def _upsert_credentials(
+        self, session: AsyncSession, site_id: str, items: list[SiteCredential]
+    ) -> None:
+        await session.execute(
+            delete(SiteCredentialEntity).where(SiteCredentialEntity.site_id == site_id)
+        )
         for index, item in enumerate(items):
             session.add(
                 SiteCredentialEntity(
@@ -484,10 +645,14 @@ class ChannelStore:
             protocol_ids.add(protocol_id)
             resolved_base_url_id = protocol.base_url_id or default_base_url_id
             if resolved_base_url_id not in base_url_ids:
-                raise ValueError(f'Base URL not found for protocol config {protocol.protocol.value}: {resolved_base_url_id}')
+                raise ValueError(
+                    f"Base URL not found for protocol config {protocol.protocol.value}: {resolved_base_url_id}"
+                )
             protocol_key = (protocol.protocol.value, resolved_base_url_id)
             if protocol_key in protocol_keys:
-                raise ValueError(f'Duplicate protocol config for protocol={protocol.protocol.value} base_url_id={resolved_base_url_id}')
+                raise ValueError(
+                    f"Duplicate protocol config for protocol={protocol.protocol.value} base_url_id={resolved_base_url_id}"
+                )
             protocol_keys.add(protocol_key)
 
             existing_protocol = await session.get(SiteProtocolConfigEntity, protocol_id)
@@ -497,14 +662,20 @@ class ChannelStore:
             existing_protocol.site_id = site_id
             existing_protocol.protocol = protocol.protocol.value
             existing_protocol.enabled = int(protocol.enabled)
-            existing_protocol.headers_json = json.dumps(protocol.headers, ensure_ascii=True)
+            existing_protocol.headers_json = json.dumps(
+                protocol.headers, ensure_ascii=True
+            )
             existing_protocol.channel_proxy = protocol.channel_proxy
             existing_protocol.param_override = protocol.param_override
             existing_protocol.match_regex = protocol.match_regex
             existing_protocol.base_url_id = resolved_base_url_id
 
-            await self._upsert_protocol_bindings(session, protocol_id, protocol, credential_ids, normalized_credentials)
-            await self._upsert_protocol_models(session, protocol_id, protocol, credential_ids)
+            await self._upsert_protocol_bindings(
+                session, protocol_id, protocol, credential_ids, normalized_credentials
+            )
+            await self._upsert_protocol_models(
+                session, protocol_id, protocol, credential_ids
+            )
         return protocol_ids
 
     async def _upsert_protocol_bindings(
@@ -515,17 +686,27 @@ class ChannelStore:
         credential_ids: set[str],
         normalized_credentials: list[SiteCredential],
     ) -> None:
-        await session.execute(delete(SiteProtocolCredentialBindingEntity).where(SiteProtocolCredentialBindingEntity.protocol_config_id == protocol_id))
+        await session.execute(
+            delete(SiteProtocolCredentialBindingEntity).where(
+                SiteProtocolCredentialBindingEntity.protocol_config_id == protocol_id
+            )
+        )
         bindings = protocol.bindings or [
-            SiteProtocolCredentialBindingInput(credential_id=item.id, enabled=item.enabled)
+            SiteProtocolCredentialBindingInput(
+                credential_id=item.id, enabled=item.enabled
+            )
             for item in normalized_credentials
         ]
         seen_binding_ids: set[str] = set()
         for binding_index, binding in enumerate(bindings):
             if binding.credential_id not in credential_ids:
-                raise ValueError(f'Credential not found for protocol config {protocol.protocol.value}: {binding.credential_id}')
+                raise ValueError(
+                    f"Credential not found for protocol config {protocol.protocol.value}: {binding.credential_id}"
+                )
             if binding.credential_id in seen_binding_ids:
-                raise ValueError(f'Duplicate credential binding in protocol config {protocol.protocol.value}: {binding.credential_id}')
+                raise ValueError(
+                    f"Duplicate credential binding in protocol config {protocol.protocol.value}: {binding.credential_id}"
+                )
             seen_binding_ids.add(binding.credential_id)
             session.add(
                 SiteProtocolCredentialBindingEntity(
@@ -544,17 +725,27 @@ class ChannelStore:
         protocol: SiteProtocolConfigInput,
         credential_ids: set[str],
     ) -> None:
-        await session.execute(delete(SiteDiscoveredModelEntity).where(SiteDiscoveredModelEntity.protocol_config_id == protocol_id))
+        await session.execute(
+            delete(SiteDiscoveredModelEntity).where(
+                SiteDiscoveredModelEntity.protocol_config_id == protocol_id
+            )
+        )
         seen_models: set[tuple[str, str]] = set()
         for model_index, model in enumerate(protocol.models):
             model_name = model.model_name.strip()
             if not model_name:
-                raise ValueError(f'Model name is required in protocol config {protocol.protocol.value}')
+                raise ValueError(
+                    f"Model name is required in protocol config {protocol.protocol.value}"
+                )
             if model.credential_id not in credential_ids:
-                raise ValueError(f'Model credential not found in protocol config {protocol.protocol.value}: {model.credential_id}')
+                raise ValueError(
+                    f"Model credential not found in protocol config {protocol.protocol.value}: {model.credential_id}"
+                )
             model_key = (model.credential_id, model_name)
             if model_key in seen_models:
-                raise ValueError(f'Duplicate model in protocol config {protocol.protocol.value}: {model_name}')
+                raise ValueError(
+                    f"Duplicate model in protocol config {protocol.protocol.value}: {model_name}"
+                )
             seen_models.add(model_key)
             session.add(
                 SiteDiscoveredModelEntity(
@@ -567,15 +758,39 @@ class ChannelStore:
                 )
             )
 
-    async def _cleanup_deleted_protocols(self, session: AsyncSession, protocol_ids: set[str]) -> None:
+    async def _cleanup_deleted_protocols(
+        self, session: AsyncSession, protocol_ids: set[str]
+    ) -> None:
         if not protocol_ids:
             return
-        await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.channel_id.in_(protocol_ids)))
-        await session.execute(delete(SiteDiscoveredModelEntity).where(SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_ids)))
-        await session.execute(delete(SiteProtocolCredentialBindingEntity).where(SiteProtocolCredentialBindingEntity.protocol_config_id.in_(protocol_ids)))
-        await session.execute(delete(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(protocol_ids)))
+        await session.execute(
+            delete(ModelGroupItemEntity).where(
+                ModelGroupItemEntity.channel_id.in_(protocol_ids)
+            )
+        )
+        await session.execute(
+            delete(SiteDiscoveredModelEntity).where(
+                SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_ids)
+            )
+        )
+        await session.execute(
+            delete(SiteProtocolCredentialBindingEntity).where(
+                SiteProtocolCredentialBindingEntity.protocol_config_id.in_(protocol_ids)
+            )
+        )
+        await session.execute(
+            delete(SiteProtocolConfigEntity).where(
+                SiteProtocolConfigEntity.id.in_(protocol_ids)
+            )
+        )
 
-    async def _cleanup_deleted_credentials(self, session: AsyncSession, credential_ids: set[str]) -> None:
+    async def _cleanup_deleted_credentials(
+        self, session: AsyncSession, credential_ids: set[str]
+    ) -> None:
         if not credential_ids:
             return
-        await session.execute(delete(SiteCredentialEntity).where(SiteCredentialEntity.id.in_(credential_ids)))
+        await session.execute(
+            delete(SiteCredentialEntity).where(
+                SiteCredentialEntity.id.in_(credential_ids)
+            )
+        )

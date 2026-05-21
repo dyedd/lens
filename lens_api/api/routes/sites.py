@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 
 
@@ -10,9 +9,21 @@ def register(app: FastAPI, service_module) -> None:
         methods=["GET"],
         response_model=list[service_module.SiteRuntimeSummary],
     )
-    app.add_api_route("/api/admin/sites", service_module.create_site, methods=["POST"], status_code=201)
-    app.add_api_route("/api/admin/sites/{site_id}", service_module.update_site, methods=["PUT"])
-    app.add_api_route("/api/admin/sites/{site_id}", service_module.delete_site, methods=["DELETE"], status_code=204)
+    app.add_api_route(
+        "/api/admin/sites",
+        service_module.create_site,
+        methods=["POST"],
+        status_code=201,
+    )
+    app.add_api_route(
+        "/api/admin/sites/{site_id}", service_module.update_site, methods=["PUT"]
+    )
+    app.add_api_route(
+        "/api/admin/sites/{site_id}",
+        service_module.delete_site,
+        methods=["DELETE"],
+        status_code=204,
+    )
     app.add_api_route(
         "/api/admin/site-model-discoveries",
         service_module.fetch_site_models,
