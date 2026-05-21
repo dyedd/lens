@@ -139,13 +139,10 @@ def downgrade() -> None:
 
 
 def _load_legacy_gateway_keys(bind) -> list[str]:
-    try:
-        row = bind.execute(
-            sa.text("SELECT value FROM settings WHERE key = :key"),
-            {"key": LEGACY_GATEWAY_API_KEYS},
-        ).fetchone()
-    except Exception:
-        return []
+    row = bind.execute(
+        sa.text("SELECT value FROM settings WHERE key = :key"),
+        {"key": LEGACY_GATEWAY_API_KEYS},
+    ).fetchone()
     if row is None:
         return []
 

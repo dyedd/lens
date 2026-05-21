@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -7,7 +6,7 @@ DEFAULT_APP_TIME_ZONE = "Asia/Shanghai"
 
 
 def normalize_time_zone(value: str | None) -> str:
-    normalized = (value or DEFAULT_APP_TIME_ZONE).strip() or DEFAULT_APP_TIME_ZONE
+    normalized = (value or "").strip() or DEFAULT_APP_TIME_ZONE
     try:
         return ZoneInfo(normalized).key
     except ZoneInfoNotFoundError as exc:

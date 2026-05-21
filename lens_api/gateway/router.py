@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -74,7 +73,6 @@ class _HealthWindow:
 
 @dataclass
 class _SWRRNode:
-    channel_id: str
     current_weight: int = 0
 
 
@@ -155,7 +153,7 @@ class RoundRobinRouter:
             if strategy == RoutingStrategy.FAILOVER:
                 primary_index = 0
             else:
-                primary_index = self._swrr_select(active, route_key)
+                primary_index = self._swrr_pick_index(active, route_key, mutate=True)
 
             primary = active[primary_index]
             fallbacks = active[primary_index + 1 :] + active[:primary_index]
@@ -193,26 +191,13 @@ class RoundRobinRouter:
             state.last_error_category = category
             self._update_health_window(channel_id, success=False)
 
-            if category in (ErrorCategory.AUTH, ErrorCategory.RATE_LIMIT):
-                if credential_id and channel_keys and self._enabled_key_count(channel_keys) > 1:
-                    self._record_key_failure_locked(channel_id, credential_id, status_code, max_cooldown_seconds)
-                    if self._all_keys_cooled_locked(channel_id, channel_keys):
-                        self._apply_channel_cooldown_locked(
-                            state,
-                            category,
-                            threshold=threshold,
-                            cooldown_seconds=cooldown_seconds,
-                            max_cooldown_seconds=max_cooldown_seconds,
-                        )
-                else:
-                    self._apply_channel_cooldown_locked(
-                        state,
-                        category,
-                        threshold=threshold,
-                        cooldown_seconds=cooldown_seconds,
-                        max_cooldown_seconds=max_cooldown_seconds,
-                    )
-            else:
+            should_cooldown_channel = True
+            if category in (ErrorCategory.AUTH, ErrorCategory.RATE_LIMIT) \
+                    and credential_id and channel_keys and self._enabled_key_count(channel_keys) > 1:
+                self._record_key_failure_locked(channel_id, credential_id, status_code, max_cooldown_seconds)
+                should_cooldown_channel = self._all_keys_cooled_locked(channel_id, channel_keys)
+
+            if should_cooldown_channel:
                 self._apply_channel_cooldown_locked(
                     state,
                     category,
@@ -343,7 +328,6 @@ class RoundRobinRouter:
         *,
         skip_health_filter: bool = False,
     ) -> list[RouteTarget]:
-        channel_map = {channel.id: channel for channel in channels}
         if route_targets is not None:
             active = [
                 target
@@ -360,8 +344,7 @@ class RoundRobinRouter:
                     continue
                 if use_model_matching and not _matches_model(channel, requested_model):
                     continue
-                resolved = channel_map.get(channel.id, channel)
-                active.append(RouteTarget(channel=resolved, model_name=requested_model))
+                active.append(RouteTarget(channel=channel, model_name=requested_model))
 
         if not skip_health_filter:
             now = monotonic()
@@ -405,27 +388,17 @@ class RoundRobinRouter:
         for i in range(len(enabled_keys)):
             idx = (cursor + i) % len(enabled_keys)
             key = enabled_keys[idx]
-            state = self._key_health.get((channel.id, key.id))
-            if state is None or state.cooled_until <= now:
+            if self._is_key_available(channel.id, key.id, now=now):
                 self._key_cursors[channel.id] = (idx + 1) % len(enabled_keys)
                 return key.id
         return None
 
     def _effective_key_count(self, channel: ChannelConfig) -> int:
         now = monotonic()
-        enabled_keys = [k for k in channel.keys if k.enabled]
-        cooled = sum(
-            1 for k in enabled_keys
-            if (state := self._key_health.get((channel.id, k.id)))
-            and state.cooled_until > now
+        return sum(
+            1 for k in channel.keys
+            if k.enabled and self._is_key_available(channel.id, k.id, now=now)
         )
-        return max(len(enabled_keys) - cooled, 0)
-
-    def _swrr_select(self, active: list[RouteTarget], route_key: str) -> int:
-        return self._swrr_pick_index(active, route_key, mutate=True)
-
-    def _swrr_peek(self, active: list[RouteTarget], route_key: str) -> int:
-        return self._swrr_pick_index(active, route_key, mutate=False)
 
     def _swrr_pick_index(self, active: list[RouteTarget], route_key: str, *, mutate: bool) -> int:
         total_weight = 0
@@ -433,10 +406,9 @@ class RoundRobinRouter:
         next_weights: list[int] = []
 
         for i, target in enumerate(active):
-            cid = target.channel.id
-            node_key = (route_key, cid)
+            node_key = (route_key, target.channel.id)
             node = self._swrr_nodes.get(node_key)
-            current_weight = node.current_weight if node is not None and node.channel_id == cid else 0
+            current_weight = node.current_weight if node is not None else 0
             weight = max(self._effective_key_count(target.channel), 1)
             next_weight = current_weight + weight
             next_weights.append(next_weight)
@@ -446,11 +418,10 @@ class RoundRobinRouter:
 
         if mutate:
             for i, target in enumerate(active):
-                cid = target.channel.id
-                node_key = (route_key, cid)
+                node_key = (route_key, target.channel.id)
                 node = self._swrr_nodes.get(node_key)
-                if node is None or node.channel_id != cid:
-                    node = _SWRRNode(channel_id=cid)
+                if node is None:
+                    node = _SWRRNode()
                     self._swrr_nodes[node_key] = node
                 node.current_weight = next_weights[i]
             best_cid = active[best_idx].channel.id
@@ -481,11 +452,7 @@ class RoundRobinRouter:
         enabled = [k for k in keys if k.enabled]
         if not enabled:
             return True
-        return all(
-            (state := self._key_health.get((channel_id, k.id)))
-            and state.cooled_until > now
-            for k in enabled
-        )
+        return not any(self._is_key_available(channel_id, k.id, now=now) for k in enabled)
 
     def _apply_channel_cooldown_locked(
         self,
@@ -555,7 +522,7 @@ class RoundRobinRouter:
         if strategy == RoutingStrategy.FAILOVER:
             primary_index = 0
         else:
-            primary_index = self._swrr_peek(available, route_key)
+            primary_index = self._swrr_pick_index(available, route_key, mutate=False)
         ordered_available = available[primary_index:] + available[:primary_index]
         ordered = ordered_available + cooled
         return ordered, primary_index, ordered_available[0].channel.id

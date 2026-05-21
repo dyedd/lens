@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import json
 from typing import Any, AsyncIterator
@@ -15,7 +14,6 @@ from .chat_to_responses import (
     responses_request_to_chat,
 )
 
-# (channel_protocol, client_protocol) pairs that support conversion
 _SUPPORTED_CONVERSIONS: set[tuple[str, str]] = {
     (ProtocolKind.OPENAI_CHAT.value, ProtocolKind.ANTHROPIC.value),
     (ProtocolKind.OPENAI_CHAT.value, ProtocolKind.OPENAI_RESPONSES.value),
