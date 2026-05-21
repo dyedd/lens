@@ -124,12 +124,7 @@ class CronjobRunner:
         if handler is None:
             raise KeyError(task_id)
 
-        record = await self._store.get_record(task_id)
-        if record is None:
-            await self._store.ensure_cronjobs(self._specs)
-            record = await self._store.get_record(task_id)
-        if record is None:
-            raise KeyError(task_id)
+        record = await self._get_or_ensure_record(task_id)
 
         acquired = await self._store.acquire_cronjob(
             task_id,
@@ -163,8 +158,15 @@ class CronjobRunner:
             )
 
         if finished_record is None:
-            record = await self._store.get_record(task_id)
-            if record is None:
-                raise KeyError(task_id)
+            record = await self._get_or_ensure_record(task_id)
             return self._store.to_item(spec, record)
         return self._store.to_item(spec, finished_record)
+
+    async def _get_or_ensure_record(self, task_id: str):
+        record = await self._store.get_record(task_id)
+        if record is None:
+            await self._store.ensure_cronjobs(self._specs)
+            record = await self._store.get_record(task_id)
+        if record is None:
+            raise KeyError(task_id)
+        return record

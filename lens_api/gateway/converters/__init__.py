@@ -23,7 +23,6 @@ _SUPPORTED_CONVERSIONS: set[tuple[str, str]] = {
 def can_reach_protocol(
     channel_protocol: ProtocolKind, group_protocol: ProtocolKind
 ) -> bool:
-    """Whether a channel's protocol can serve a group's client protocol (passthrough or conversion)."""
     if channel_protocol == group_protocol:
         return True
     return (channel_protocol.value, group_protocol.value) in _SUPPORTED_CONVERSIONS

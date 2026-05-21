@@ -371,15 +371,14 @@ async def lifespan(_: FastAPI):
 auth_scheme = HTTPBearer(auto_error=False)
 
 
-def _database_error_status_and_detail(exc: OperationalError) -> tuple[int, str]:
-    message = str(getattr(exc, "orig", exc)).lower()
-    if "database is locked" in message:
-        return status.HTTP_503_SERVICE_UNAVAILABLE, "Database is busy, please retry"
-    return status.HTTP_500_INTERNAL_SERVER_ERROR, "Database operation failed"
-
-
 def _database_error_response(exc: OperationalError) -> JSONResponse:
-    status_code, detail = _database_error_status_and_detail(exc)
+    message = str(exc.orig if hasattr(exc, "orig") else exc).lower()
+    if "database is locked" in message:
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        detail = "Database is busy, please retry"
+    else:
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        detail = "Database operation failed"
     return JSONResponse(status_code=status_code, content={"detail": detail})
 
 
@@ -489,8 +488,8 @@ async def get_current_gateway_key(request: Request) -> GatewayApiKey:
     try:
         gateway_key = await app_state.domain_store.get_gateway_api_key_by_secret(secret)
     except OperationalError as exc:
-        status_code, detail = _database_error_status_and_detail(exc)
-        raise HTTPException(status_code=status_code, detail=detail) from exc
+        response = _database_error_response(exc)
+        raise HTTPException(status_code=response.status_code, detail=response.body.decode()) from exc
 
     if gateway_key is None:
         raise HTTPException(
@@ -1357,6 +1356,70 @@ async def proxy_gemini_stream_generate_content(
     )
 
 
+@dataclass
+class _RequestLogger:
+    request_log_id: int
+    protocol: ProtocolKind
+    gateway_key: GatewayApiKey
+    started_at: float
+    body: dict[str, Any]
+    request_content: str | None
+    attempts: list[AttemptLog]
+
+    async def update(
+        self,
+        *,
+        requested_group_name: str | None,
+        resolved_group_name: str | None,
+        upstream_model_name: str | None,
+        channel: ChannelConfig | None,
+        user_agent: str,
+        lifecycle_status: RequestLogLifecycleStatus,
+        status_code: int | None,
+        success: bool,
+        is_stream: bool,
+        first_token_latency_ms: int = 0,
+        request_content: str | None = None,
+        response_content: str | None = None,
+        error_message: str | None = None,
+        result: UpstreamResult | None = None,
+    ) -> None:
+        kwargs: dict[str, Any] = {}
+        if result is not None:
+            kwargs.update(
+                input_tokens=result.input_tokens,
+                cache_read_input_tokens=result.cache_read_input_tokens,
+                cache_write_input_tokens=result.cache_write_input_tokens,
+                output_tokens=result.output_tokens,
+                total_tokens=result.total_tokens,
+                input_cost_usd=result.input_cost_usd,
+                output_cost_usd=result.output_cost_usd,
+                total_cost_usd=result.total_cost_usd,
+            )
+        await _update_request_log(
+            self.request_log_id,
+            protocol=self.protocol,
+            requested_group_name=requested_group_name,
+            resolved_group_name=resolved_group_name,
+            upstream_model_name=upstream_model_name,
+            channel_id=channel.id if channel else None,
+            channel_name=channel.name if channel else None,
+            gateway_key=self.gateway_key,
+            user_agent=user_agent,
+            lifecycle_status=lifecycle_status,
+            status_code=status_code,
+            success=success,
+            is_stream=is_stream,
+            first_token_latency_ms=first_token_latency_ms,
+            latency_ms=_elapsed_ms(self.started_at),
+            request_content=request_content if request_content is not None else self.request_content,
+            response_content=response_content,
+            attempts=[item.__dict__ for item in self.attempts],
+            error_message=error_message,
+            **kwargs,
+        )
+
+
 async def _proxy_protocol(
     protocol: ProtocolKind,
     body: dict[str, Any],
@@ -1371,14 +1434,14 @@ async def _proxy_protocol(
     started_at = perf_counter()
     requested_model = body.get("model")
     if not _gateway_key_allows_model(gateway_key, requested_model):
-        error_body = ErrorResponse(
-            error={
-                "type": "forbidden_model",
-                "message": "Gateway API key is not allowed to use this model",
-            }
-        )
         return JSONResponse(
-            status_code=403, content=error_body.model_dump(mode="json")
+            status_code=403,
+            content=ErrorResponse(
+                error={
+                    "type": "forbidden_model",
+                    "message": "Gateway API key is not allowed to use this model",
+                }
+            ).model_dump(mode="json"),
         )
     request_content = _dump_json(body)
     inbound_ua = _normalize_user_agent(inbound_user_agent)
@@ -1388,7 +1451,7 @@ async def _proxy_protocol(
         else _default_lens_user_agent()
     )
     plan: RoutingPlan | None = None
-    attempts: list[AttemptLog] = []
+    is_stream_body = bool(body.get("stream"))
     request_log = await app_state.domain_store.create_pending_request_log(
         protocol=protocol.value,
         user_agent=upstream_user_agent,
@@ -1398,10 +1461,18 @@ async def _proxy_protocol(
         channel_id=None,
         channel_name=None,
         gateway_key_id=gateway_key.id,
-        is_stream=bool(body.get("stream")),
+        is_stream=is_stream_body,
         request_content=request_content,
     )
-    request_log_id = request_log.id
+    log_ctx = _RequestLogger(
+        request_log_id=request_log.id,
+        protocol=protocol,
+        gateway_key=gateway_key,
+        started_at=started_at,
+        body=body,
+        request_content=request_content,
+        attempts=[],
+    )
     try:
         try:
             plan = await _resolve_routing_plan(protocol, requested_model)
@@ -1414,275 +1485,262 @@ async def _proxy_protocol(
                 use_model_matching=plan.use_model_matching,
                 cursor_key=plan.cursor_key,
             )
-            await _update_request_log(
-                request_log_id,
-                protocol=protocol,
+            await log_ctx.update(
                 requested_group_name=plan.requested_group_name,
                 resolved_group_name=plan.resolved_group_name,
                 upstream_model_name=None,
-                channel_id=None,
-                channel_name=None,
-                gateway_key=gateway_key,
+                channel=None,
                 user_agent=upstream_user_agent,
                 lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
                 status_code=None,
                 success=False,
-                is_stream=bool(body.get("stream")),
-                first_token_latency_ms=0,
-                latency_ms=_elapsed_ms(started_at),
-                request_content=request_content,
-                response_content=None,
-                attempts=[item.__dict__ for item in attempts],
-                error_message=None,
+                is_stream=is_stream_body,
             )
         except LookupError as exc:
-            await _update_request_log(
-                request_log_id,
-                protocol=protocol,
-                requested_group_name=(
-                    plan.requested_group_name if plan is not None else requested_model
-                ),
-                resolved_group_name=(
-                    plan.resolved_group_name if plan is not None else None
-                ),
+            await log_ctx.update(
+                requested_group_name=plan.requested_group_name if plan else requested_model,
+                resolved_group_name=plan.resolved_group_name if plan else None,
                 upstream_model_name=None,
-                channel_id=None,
-                channel_name=None,
-                gateway_key=gateway_key,
+                channel=None,
                 user_agent=upstream_user_agent,
                 lifecycle_status=RequestLogLifecycleStatus.FAILED,
                 status_code=503,
                 success=False,
-                is_stream=bool(body.get("stream")),
-                first_token_latency_ms=0,
-                latency_ms=_elapsed_ms(started_at),
-                request_content=request_content,
-                response_content=None,
-                attempts=[item.__dict__ for item in attempts],
+                is_stream=is_stream_body,
                 error_message=str(exc),
             )
-            error_body = ErrorResponse(
-                error={
-                    "type": "routing_error",
-                    "message": str(exc),
-                }
+            return JSONResponse(
+                status_code=503,
+                content=ErrorResponse(
+                    error={"type": "routing_error", "message": str(exc)}
+                ).model_dump(mode="json"),
             )
-            return JSONResponse(status_code=503, content=error_body.model_dump(mode="json"))
 
-        pricing_group_name = plan.resolved_group_name
         errors: list[str] = []
-
         for target in [selection.primary, *selection.fallbacks]:
-            channel = target.channel
-            attempt_started_at = perf_counter()
-            try:
-                effective_user_agent = _resolve_effective_upstream_user_agent(
-                    channel, upstream_user_agent
-                )
-                if needs_conversion(protocol, channel.protocol):
-                    upstream_body = convert_request(
-                        protocol, channel.protocol, body, target.model_name
-                    )
-                else:
-                    upstream_body = _prepare_upstream_body(
-                        protocol, body, target.model_name
-                    )
-                upstream_body = _apply_param_override(channel, upstream_body)
-                if protocol == ProtocolKind.OPENAI_EMBEDDING:
-                    upstream_body.pop("stream", None)
-                await _update_request_log(
-                    request_log_id,
-                    protocol=protocol,
-                    requested_group_name=plan.requested_group_name,
-                    resolved_group_name=plan.resolved_group_name,
-                    upstream_model_name=target.model_name,
-                    channel_id=channel.id,
-                    channel_name=channel.name,
-                    gateway_key=gateway_key,
-                    user_agent=effective_user_agent,
-                    lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
-                    status_code=None,
-                    success=False,
-                    is_stream=bool(upstream_body.get("stream")),
-                    first_token_latency_ms=0,
-                    latency_ms=_elapsed_ms(started_at),
-                    request_content=_dump_json(upstream_body),
-                    response_content=None,
-                    attempts=[item.__dict__ for item in attempts],
-                    error_message=None,
-                )
-                result = await _call_channel(
-                    channel,
-                    upstream_body,
-                    pricing_group_name=pricing_group_name,
-                    client_protocol=protocol,
-                    credential_id=target.credential_id,
-                    user_agent=upstream_user_agent,
-                )
-                attempts.append(
-                    AttemptLog(
-                        channel_id=channel.id,
-                        channel_name=channel.name,
-                        model_name=target.model_name,
-                        status_code=result.status_code,
-                        success=True,
-                        duration_ms=_elapsed_ms(attempt_started_at),
-                    )
-                )
-                if result.is_stream:
-                    if result.stream_capture is not None:
-                        result.stream_capture.request_log_id = request_log_id
-                        result.stream_capture.stream_started_at = started_at
-                    await _update_request_log(
-                        request_log_id,
-                        protocol=protocol,
-                        requested_group_name=plan.requested_group_name,
-                        resolved_group_name=plan.resolved_group_name,
-                        upstream_model_name=result.upstream_model_name,
-                        channel_id=channel.id,
-                        channel_name=channel.name,
-                        gateway_key=gateway_key,
-                        user_agent=effective_user_agent,
-                        lifecycle_status=RequestLogLifecycleStatus.STREAMING,
-                        status_code=result.status_code,
-                        success=False,
-                        is_stream=True,
-                        first_token_latency_ms=0,
-                        latency_ms=_elapsed_ms(started_at),
-                        request_content=result.request_content or _dump_json(upstream_body),
-                        response_content=None,
-                        attempts=[item.__dict__ for item in attempts],
-                        error_message=None,
-                    )
-                    result.response.background = BackgroundTask(
-                        _record_stream_request_log,
-                        request_log_id=request_log_id,
-                        protocol=protocol,
-                        requested_group_name=plan.requested_group_name,
-                        resolved_group_name=plan.resolved_group_name,
-                        channel=channel,
-                        gateway_key=gateway_key,
-                        user_agent=effective_user_agent,
-                        started_at=started_at,
-                        upstream_body=upstream_body,
-                        result=result,
-                        attempts=[item.__dict__ for item in attempts],
-                    )
-                    return result.response
-                await _update_request_log(
-                    request_log_id,
-                    protocol=protocol,
-                    requested_group_name=plan.requested_group_name,
-                    resolved_group_name=plan.resolved_group_name,
-                    upstream_model_name=result.upstream_model_name,
-                    channel_id=channel.id,
-                    channel_name=channel.name,
-                    gateway_key=gateway_key,
-                    user_agent=effective_user_agent,
-                    lifecycle_status=RequestLogLifecycleStatus.SUCCEEDED,
-                    status_code=result.status_code,
-                    success=True,
-                    is_stream=result.is_stream,
-                    first_token_latency_ms=result.first_token_latency_ms,
-                    latency_ms=_elapsed_ms(started_at),
-                    input_tokens=result.input_tokens,
-                    cache_read_input_tokens=result.cache_read_input_tokens,
-                    cache_write_input_tokens=result.cache_write_input_tokens,
-                    output_tokens=result.output_tokens,
-                    total_tokens=result.total_tokens,
-                    input_cost_usd=result.input_cost_usd,
-                    output_cost_usd=result.output_cost_usd,
-                    total_cost_usd=result.total_cost_usd,
-                    request_content=result.request_content or _dump_json(upstream_body),
-                    response_content=result.response_content,
-                    attempts=[item.__dict__ for item in attempts],
-                    error_message=None,
-                )
-                return result.response
-            except HTTPException as exc:
-                message = _format_channel_error(exc.detail)
-                app_state.router.record_failure(
-                    channel.id,
-                    message,
-                    status_code=getattr(exc, "router_status_code", exc.status_code),
-                    credential_id=target.credential_id,
-                    channel_keys=channel.keys,
-                    threshold=int(runtime["circuit_breaker_threshold"]),
-                    cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
-                    max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
-                )
-                errors.append(message)
-                attempts.append(
-                    AttemptLog(
-                        channel_id=channel.id,
-                        channel_name=channel.name,
-                        model_name=target.model_name,
-                        status_code=exc.status_code,
-                        success=False,
-                        duration_ms=_elapsed_ms(attempt_started_at),
-                        error_message=message,
-                    )
-                )
-                await _update_request_log(
-                    request_log_id,
-                    protocol=protocol,
-                    requested_group_name=plan.requested_group_name,
-                    resolved_group_name=plan.resolved_group_name,
-                    upstream_model_name=None,
-                    channel_id=channel.id,
-                    channel_name=channel.name,
-                    gateway_key=gateway_key,
-                    user_agent=_resolve_effective_upstream_user_agent(
-                        channel, upstream_user_agent
-                    ),
-                    lifecycle_status=RequestLogLifecycleStatus.FAILED,
-                    status_code=exc.status_code,
-                    success=False,
-                    is_stream=bool(upstream_body.get("stream")),
-                    first_token_latency_ms=0,
-                    latency_ms=_elapsed_ms(started_at),
-                    request_content=_dump_json(upstream_body),
-                    response_content=None,
-                    attempts=[item.__dict__ for item in attempts],
-                    error_message=message,
-                )
+            response = await _try_target(
+                target=target,
+                protocol=protocol,
+                body=body,
+                runtime=runtime,
+                upstream_user_agent=upstream_user_agent,
+                plan=plan,
+                log_ctx=log_ctx,
+                errors=errors,
+            )
+            if response is not None:
+                return response
 
-        error_body = ErrorResponse(
-            error={
-                "type": "upstream_error",
-                "message": "All upstream channels failed",
-                "details": errors,
-            }
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(
+                error={
+                    "type": "upstream_error",
+                    "message": "All upstream channels failed",
+                    "details": errors,
+                }
+            ).model_dump(mode="json"),
         )
-        return JSONResponse(status_code=502, content=error_body.model_dump(mode="json"))
     except Exception as exc:
         logger.exception("Proxy request failed unexpectedly")
-        await _update_request_log(
-            request_log_id,
-            protocol=protocol,
-            requested_group_name=(
-                plan.requested_group_name if plan is not None else requested_model
-            ),
-            resolved_group_name=(
-                plan.resolved_group_name if plan is not None else None
-            ),
+        await log_ctx.update(
+            requested_group_name=plan.requested_group_name if plan else requested_model,
+            resolved_group_name=plan.resolved_group_name if plan else None,
             upstream_model_name=None,
-            channel_id=None,
-            channel_name=None,
-            gateway_key=gateway_key,
+            channel=None,
             user_agent=upstream_user_agent,
             lifecycle_status=RequestLogLifecycleStatus.FAILED,
             status_code=500,
             success=False,
-            is_stream=bool(body.get("stream")),
-            first_token_latency_ms=0,
-            latency_ms=_elapsed_ms(started_at),
-            request_content=request_content,
-            response_content=None,
-            attempts=[item.__dict__ for item in attempts],
+            is_stream=is_stream_body,
             error_message=f"Unexpected proxy error: {type(exc).__name__}: {exc}",
         )
         raise
+
+
+async def _try_target(
+    *,
+    target: RouteTarget,
+    protocol: ProtocolKind,
+    body: dict[str, Any],
+    runtime: dict[str, Any],
+    upstream_user_agent: str,
+    plan: RoutingPlan,
+    log_ctx: _RequestLogger,
+    errors: list[str],
+) -> Response | None:
+    channel = target.channel
+    attempt_started_at = perf_counter()
+    effective_user_agent = _resolve_effective_upstream_user_agent(channel, upstream_user_agent)
+
+    if needs_conversion(protocol, channel.protocol):
+        upstream_body = convert_request(protocol, channel.protocol, body, target.model_name)
+    else:
+        upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
+    try:
+        upstream_body = _apply_param_override(channel, upstream_body)
+    except UpstreamRequestError as exc:
+        return await _record_target_failure(
+            target=target,
+            channel=channel,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=effective_user_agent,
+            upstream_body=upstream_body,
+            exc=exc,
+        )
+    if protocol == ProtocolKind.OPENAI_EMBEDDING:
+        upstream_body.pop("stream", None)
+
+    upstream_request_content = _dump_json(upstream_body)
+    await log_ctx.update(
+        requested_group_name=plan.requested_group_name,
+        resolved_group_name=plan.resolved_group_name,
+        upstream_model_name=target.model_name,
+        channel=channel,
+        user_agent=effective_user_agent,
+        lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+        status_code=None,
+        success=False,
+        is_stream=bool(upstream_body.get("stream")),
+        request_content=upstream_request_content,
+    )
+    try:
+        result = await _call_channel(
+            channel,
+            upstream_body,
+            pricing_group_name=plan.resolved_group_name,
+            client_protocol=protocol,
+            credential_id=target.credential_id,
+            user_agent=upstream_user_agent,
+        )
+    except UpstreamRequestError as exc:
+        return await _record_target_failure(
+            target=target,
+            channel=channel,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=effective_user_agent,
+            upstream_body=upstream_body,
+            exc=exc,
+        )
+
+    log_ctx.attempts.append(
+        AttemptLog(
+            channel_id=channel.id,
+            channel_name=channel.name,
+            model_name=target.model_name,
+            status_code=result.status_code,
+            success=True,
+            duration_ms=_elapsed_ms(attempt_started_at),
+        )
+    )
+    merged_request_content = result.request_content or upstream_request_content
+    if result.is_stream:
+        if result.stream_capture is not None:
+            result.stream_capture.request_log_id = log_ctx.request_log_id
+            result.stream_capture.stream_started_at = log_ctx.started_at
+        await log_ctx.update(
+            requested_group_name=plan.requested_group_name,
+            resolved_group_name=plan.resolved_group_name,
+            upstream_model_name=result.upstream_model_name,
+            channel=channel,
+            user_agent=effective_user_agent,
+            lifecycle_status=RequestLogLifecycleStatus.STREAMING,
+            status_code=result.status_code,
+            success=False,
+            is_stream=True,
+            request_content=merged_request_content,
+        )
+        result.response.background = BackgroundTask(
+            _record_stream_request_log,
+            request_log_id=log_ctx.request_log_id,
+            protocol=protocol,
+            requested_group_name=plan.requested_group_name,
+            resolved_group_name=plan.resolved_group_name,
+            channel=channel,
+            gateway_key=log_ctx.gateway_key,
+            user_agent=effective_user_agent,
+            started_at=log_ctx.started_at,
+            upstream_body=upstream_body,
+            result=result,
+            attempts=[item.__dict__ for item in log_ctx.attempts],
+        )
+        return result.response
+    await log_ctx.update(
+        requested_group_name=plan.requested_group_name,
+        resolved_group_name=plan.resolved_group_name,
+        upstream_model_name=result.upstream_model_name,
+        channel=channel,
+        user_agent=effective_user_agent,
+        lifecycle_status=RequestLogLifecycleStatus.SUCCEEDED,
+        status_code=result.status_code,
+        success=True,
+        is_stream=result.is_stream,
+        first_token_latency_ms=result.first_token_latency_ms,
+        request_content=merged_request_content,
+        response_content=result.response_content,
+        result=result,
+    )
+    return result.response
+
+
+async def _record_target_failure(
+    *,
+    target: RouteTarget,
+    channel: ChannelConfig,
+    runtime: dict[str, Any],
+    log_ctx: _RequestLogger,
+    plan: RoutingPlan,
+    errors: list[str],
+    attempt_started_at: float,
+    effective_user_agent: str,
+    upstream_body: dict[str, Any],
+    exc: UpstreamRequestError,
+) -> None:
+    message = _format_channel_error(exc.detail)
+    app_state.router.record_failure(
+        channel.id,
+        message,
+        status_code=exc.router_status_code,
+        credential_id=target.credential_id,
+        channel_keys=channel.keys,
+        threshold=int(runtime["circuit_breaker_threshold"]),
+        cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
+        max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+    )
+    errors.append(message)
+    log_ctx.attempts.append(
+        AttemptLog(
+            channel_id=channel.id,
+            channel_name=channel.name,
+            model_name=target.model_name,
+            status_code=exc.status_code,
+            success=False,
+            duration_ms=_elapsed_ms(attempt_started_at),
+            error_message=message,
+        )
+    )
+    await log_ctx.update(
+        requested_group_name=plan.requested_group_name,
+        resolved_group_name=plan.resolved_group_name,
+        upstream_model_name=None,
+        channel=channel,
+        user_agent=effective_user_agent,
+        lifecycle_status=RequestLogLifecycleStatus.FAILED,
+        status_code=exc.status_code,
+        success=False,
+        is_stream=bool(upstream_body.get("stream")),
+        request_content=_dump_json(upstream_body),
+        error_message=message,
+    )
+    return None
 
 
 async def _call_channel(
@@ -1701,188 +1759,35 @@ async def _call_channel(
         user_agent=user_agent,
     )
     request_content = _dump_json(upstream.json_body)
-    client = app_state.http
-    close_client = False
     runtime = await app_state.domain_store.get_runtime_settings()
-
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
-
-    if proxy_url:
-        client = httpx.AsyncClient(
-            proxy=proxy_url,
-            timeout=app_state.http.timeout,
-            limits=httpx.Limits(
-                max_connections=settings.max_connections,
-                max_keepalive_connections=settings.max_keepalive_connections,
-            ),
-            trust_env=False,
-        )
-        close_client = True
+    client, close_client = _resolve_http_client(proxy_url)
+    is_stream_request = bool(body.get("stream"))
 
     try:
-        is_stream_request = bool(body.get("stream"))
         stream_started_at = perf_counter()
-        if is_stream_request:
-            request = client.build_request(
-                upstream.method,
-                upstream.url,
-                headers=upstream.headers,
-                json=upstream.json_body,
-            )
-            response = await client.send(request, stream=True)
-        else:
-            response = await client.request(
-                upstream.method,
-                upstream.url,
-                headers=upstream.headers,
-                json=upstream.json_body,
-            )
+        response = await _send_upstream(client, upstream, stream=is_stream_request)
         response.raise_for_status()
         app_state.router.record_success(channel.id, credential_id=credential_id)
 
-        if "text/event-stream" in (response.headers.get("content-type") or "").lower():
-            if not is_stream_request and channel.protocol == ProtocolKind.ANTHROPIC:
-                content = (
-                    response.content
-                    if hasattr(response, "content")
-                    else await response.aread()
-                )
-                raw_content = _decode_content_bytes(content)
-                parsed = _extract_stream_usage(channel.protocol, raw_content)
-                distilled_content = _distill_stream_response_content(
-                    channel.protocol, raw_content
-                )
-                response_headers = _passthrough_headers(response.headers)
-                media_type = response.headers.get("content-type")
-                response_content = raw_content
-
-                if distilled_content and distilled_content != raw_content:
-                    content = distilled_content.encode("utf-8")
-                    response_content = distilled_content
-                    media_type = "application/json"
-                    response_headers.pop("content-type", None)
-
-                input_cost_usd, output_cost_usd, total_cost_usd = (
-                    await app_state.domain_store.estimate_model_cost(
-                        pricing_group_name,
-                        parsed["input_tokens"],
-                        parsed["output_tokens"],
-                        parsed["cache_read_input_tokens"],
-                        parsed["cache_write_input_tokens"],
-                    )
-                )
-
-                return UpstreamResult(
-                    response=Response(
-                        content=content,
-                        status_code=response.status_code,
-                        media_type=media_type,
-                        headers=response_headers,
-                    ),
-                    status_code=response.status_code,
-                    is_stream=False,
-                    first_token_latency_ms=0,
-                    upstream_model_name=parsed["resolved_model"],
-                    input_tokens=parsed["input_tokens"],
-                    cache_read_input_tokens=parsed["cache_read_input_tokens"],
-                    cache_write_input_tokens=parsed["cache_write_input_tokens"],
-                    output_tokens=parsed["output_tokens"],
-                    total_tokens=parsed["total_tokens"],
-                    input_cost_usd=input_cost_usd,
-                    output_cost_usd=output_cost_usd,
-                    total_cost_usd=total_cost_usd,
-                    request_content=request_content,
-                    response_content=response_content,
-                )
-
-            capture = StreamCapture()
-            do_convert = client_protocol is not None and needs_conversion(
-                client_protocol, channel.protocol
+        is_event_stream = "text/event-stream" in (
+            response.headers.get("content-type") or ""
+        ).lower()
+        if is_event_stream and not is_stream_request and channel.protocol == ProtocolKind.ANTHROPIC:
+            return await _build_anthropic_sse_to_json_result(
+                response, channel, pricing_group_name, request_content
             )
-            chunk_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-            capture.drain_task = asyncio.create_task(
-                _pump_stream_response(
-                    response=response,
-                    protocol=channel.protocol,
-                    capture=capture,
-                    chunk_queue=chunk_queue,
-                    stream_started_at=stream_started_at,
-                )
+        if is_event_stream:
+            return _build_stream_result(
+                response,
+                channel,
+                client_protocol,
+                body,
+                request_content,
+                stream_started_at,
             )
-            raw_iter = _consume_stream_queue(chunk_queue, capture)
-
-            if do_convert:
-                converted_iter = convert_stream_iterator(
-                    client_protocol,
-                    channel.protocol,
-                    raw_iter,
-                    body.get("model", ""),
-                )
-                stream_media = "text/event-stream"
-            else:
-                converted_iter = raw_iter
-                stream_media = response.headers.get("content-type")
-
-            upstream_model_name = body.get("model")
-            return UpstreamResult(
-                response=StreamingResponse(
-                    converted_iter,
-                    status_code=response.status_code,
-                    media_type=stream_media,
-                    headers=_passthrough_headers(response.headers),
-                ),
-                is_stream=True,
-                status_code=response.status_code,
-                upstream_model_name=upstream_model_name,
-                first_token_latency_ms=0,
-                request_content=request_content,
-                response_content=None,
-                stream_capture=capture,
-            )
-
-        content = (
-            response.content if hasattr(response, "content") else await response.aread()
-        )
-
-        parsed = _extract_response_usage(channel.protocol, response)
-        if client_protocol is not None and needs_conversion(
-            client_protocol, channel.protocol
-        ):
-            content = convert_response(
-                client_protocol, channel.protocol, content, body.get("model", "")
-            )
-
-        input_cost_usd, output_cost_usd, total_cost_usd = (
-            await app_state.domain_store.estimate_model_cost(
-                pricing_group_name,
-                parsed["input_tokens"],
-                parsed["output_tokens"],
-                parsed["cache_read_input_tokens"],
-                parsed["cache_write_input_tokens"],
-            )
-        )
-
-        return UpstreamResult(
-            response=Response(
-                content=content,
-                status_code=response.status_code,
-                media_type=response.headers.get("content-type"),
-                headers=_passthrough_headers(response.headers),
-            ),
-            status_code=response.status_code,
-            is_stream=False,
-            first_token_latency_ms=0,
-            upstream_model_name=parsed["resolved_model"],
-            input_tokens=parsed["input_tokens"],
-            cache_read_input_tokens=parsed["cache_read_input_tokens"],
-            cache_write_input_tokens=parsed["cache_write_input_tokens"],
-            output_tokens=parsed["output_tokens"],
-            total_tokens=parsed["total_tokens"],
-            input_cost_usd=input_cost_usd,
-            output_cost_usd=output_cost_usd,
-            total_cost_usd=total_cost_usd,
-            request_content=request_content,
-            response_content=_decode_content_bytes(response.content),
+        return await _build_json_result(
+            response, channel, client_protocol, body, pricing_group_name, request_content
         )
     except httpx.HTTPStatusError as exc:
         await exc.response.aread()
@@ -1901,6 +1806,172 @@ async def _call_channel(
     finally:
         if close_client:
             await client.aclose()
+
+
+def _resolve_http_client(proxy_url: str | None) -> tuple[httpx.AsyncClient, bool]:
+    if not proxy_url:
+        return app_state.http, False
+    client = httpx.AsyncClient(
+        proxy=proxy_url,
+        timeout=app_state.http.timeout,
+        limits=httpx.Limits(
+            max_connections=settings.max_connections,
+            max_keepalive_connections=settings.max_keepalive_connections,
+        ),
+        trust_env=False,
+    )
+    return client, True
+
+
+async def _send_upstream(
+    client: httpx.AsyncClient, upstream: Any, *, stream: bool
+) -> httpx.Response:
+    if stream:
+        request = client.build_request(
+            upstream.method, upstream.url, headers=upstream.headers, json=upstream.json_body
+        )
+        return await client.send(request, stream=True)
+    return await client.request(
+        upstream.method, upstream.url, headers=upstream.headers, json=upstream.json_body
+    )
+
+
+async def _build_anthropic_sse_to_json_result(
+    response: httpx.Response,
+    channel: ChannelConfig,
+    pricing_group_name: str | None,
+    request_content: str | None,
+) -> UpstreamResult:
+    content = response.content if hasattr(response, "content") else await response.aread()
+    raw_content = _decode_content_bytes(content)
+    parsed = _extract_stream_usage(channel.protocol, raw_content)
+    distilled_content = _distill_stream_response_content(channel.protocol, raw_content)
+    response_headers = _passthrough_headers(response.headers)
+    media_type = response.headers.get("content-type")
+    response_content = raw_content
+
+    if distilled_content and distilled_content != raw_content:
+        content = distilled_content.encode("utf-8")
+        response_content = distilled_content
+        media_type = "application/json"
+        response_headers.pop("content-type", None)
+
+    cost = await app_state.domain_store.estimate_model_cost(
+        pricing_group_name,
+        parsed["input_tokens"],
+        parsed["output_tokens"],
+        parsed["cache_read_input_tokens"],
+        parsed["cache_write_input_tokens"],
+    )
+    return UpstreamResult(
+        response=Response(
+            content=content,
+            status_code=response.status_code,
+            media_type=media_type,
+            headers=response_headers,
+        ),
+        status_code=response.status_code,
+        is_stream=False,
+        upstream_model_name=parsed["resolved_model"],
+        input_tokens=parsed["input_tokens"],
+        cache_read_input_tokens=parsed["cache_read_input_tokens"],
+        cache_write_input_tokens=parsed["cache_write_input_tokens"],
+        output_tokens=parsed["output_tokens"],
+        total_tokens=parsed["total_tokens"],
+        input_cost_usd=cost[0],
+        output_cost_usd=cost[1],
+        total_cost_usd=cost[2],
+        request_content=request_content,
+        response_content=response_content,
+    )
+
+
+def _build_stream_result(
+    response: httpx.Response,
+    channel: ChannelConfig,
+    client_protocol: ProtocolKind | None,
+    body: dict[str, Any],
+    request_content: str | None,
+    stream_started_at: float,
+) -> UpstreamResult:
+    capture = StreamCapture()
+    chunk_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    capture.drain_task = asyncio.create_task(
+        _pump_stream_response(
+            response=response,
+            protocol=channel.protocol,
+            capture=capture,
+            chunk_queue=chunk_queue,
+            stream_started_at=stream_started_at,
+        )
+    )
+    raw_iter = _consume_stream_queue(chunk_queue, capture)
+
+    if client_protocol is not None and needs_conversion(client_protocol, channel.protocol):
+        converted_iter = convert_stream_iterator(
+            client_protocol, channel.protocol, raw_iter, body.get("model", "")
+        )
+        stream_media = "text/event-stream"
+    else:
+        converted_iter = raw_iter
+        stream_media = response.headers.get("content-type")
+
+    return UpstreamResult(
+        response=StreamingResponse(
+            converted_iter,
+            status_code=response.status_code,
+            media_type=stream_media,
+            headers=_passthrough_headers(response.headers),
+        ),
+        is_stream=True,
+        status_code=response.status_code,
+        upstream_model_name=body.get("model"),
+        request_content=request_content,
+        stream_capture=capture,
+    )
+
+
+async def _build_json_result(
+    response: httpx.Response,
+    channel: ChannelConfig,
+    client_protocol: ProtocolKind | None,
+    body: dict[str, Any],
+    pricing_group_name: str | None,
+    request_content: str | None,
+) -> UpstreamResult:
+    content = response.content if hasattr(response, "content") else await response.aread()
+    parsed = _extract_response_usage(channel.protocol, response)
+    if client_protocol is not None and needs_conversion(client_protocol, channel.protocol):
+        content = convert_response(client_protocol, channel.protocol, content, body.get("model", ""))
+
+    cost = await app_state.domain_store.estimate_model_cost(
+        pricing_group_name,
+        parsed["input_tokens"],
+        parsed["output_tokens"],
+        parsed["cache_read_input_tokens"],
+        parsed["cache_write_input_tokens"],
+    )
+    return UpstreamResult(
+        response=Response(
+            content=content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type"),
+            headers=_passthrough_headers(response.headers),
+        ),
+        status_code=response.status_code,
+        is_stream=False,
+        upstream_model_name=parsed["resolved_model"],
+        input_tokens=parsed["input_tokens"],
+        cache_read_input_tokens=parsed["cache_read_input_tokens"],
+        cache_write_input_tokens=parsed["cache_write_input_tokens"],
+        output_tokens=parsed["output_tokens"],
+        total_tokens=parsed["total_tokens"],
+        input_cost_usd=cost[0],
+        output_cost_usd=cost[1],
+        total_cost_usd=cost[2],
+        request_content=request_content,
+        response_content=_decode_content_bytes(response.content),
+    )
 
 
 def _model_test_channel(payload: SiteModelTestRequest) -> ChannelConfig:
@@ -2170,12 +2241,8 @@ def _format_channel_error(detail: Any) -> str:
 
 def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
     error_type = exc.__class__.__name__
-    request = getattr(exc, "request", None)
-    target_url = (
-        str(request.url)
-        if request is not None and getattr(request, "url", None) is not None
-        else fallback_url
-    )
+    request = exc.request if hasattr(exc, "request") else None
+    target_url = str(request.url) if request and hasattr(request, "url") else fallback_url
     try:
         target_label = str(httpx.URL(target_url).copy_with(query=None))
     except httpx.InvalidURL:
@@ -3060,74 +3127,120 @@ def _openai_cached_tokens(usage: Mapping[str, Any], detail_key: str) -> int:
     return _usage_int(details, "cached_tokens")
 
 
-def _extract_stream_usage(
-    protocol: ProtocolKind, raw_content: str | None
+def _anthropic_usage(usage: Mapping[str, Any], *, model: str | None) -> dict[str, int | str | None]:
+    base_input_tokens = _usage_int(usage, "input_tokens")
+    cache_read_input_tokens = _usage_int(usage, "cache_read_input_tokens")
+    cache_write_input_tokens = _usage_int(usage, "cache_creation_input_tokens")
+    input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
+    output_tokens = _usage_int(usage, "output_tokens")
+    return {
+        "resolved_model": model,
+        "input_tokens": input_tokens,
+        "cache_read_input_tokens": cache_read_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def _gemini_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
+    usage = _usage_mapping(payload.get("usageMetadata"))
+    input_tokens = _usage_int(usage, "promptTokenCount")
+    cache_read_input_tokens = _usage_int(usage, "cachedContentTokenCount")
+    output_tokens = _usage_int(usage, "candidatesTokenCount")
+    total_tokens = _usage_int(usage, "totalTokenCount") or (input_tokens + output_tokens)
+    return {
+        "resolved_model": payload.get("modelVersion") or payload.get("model"),
+        "input_tokens": input_tokens,
+        "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+        "cache_write_input_tokens": 0,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def _openai_chat_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
+    usage = _usage_mapping(payload.get("usage"))
+    cache_read_input_tokens = _openai_cached_tokens(usage, "prompt_tokens_details")
+    input_tokens = _usage_int(usage, "prompt_tokens")
+    return {
+        "resolved_model": payload.get("model"),
+        "input_tokens": input_tokens,
+        "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+        "cache_write_input_tokens": 0,
+        "output_tokens": _usage_int(usage, "completion_tokens"),
+        "total_tokens": _usage_int(usage, "total_tokens"),
+    }
+
+
+def _openai_responses_usage(
+    payload: Mapping[str, Any], *, model: str | None
 ) -> dict[str, int | str | None]:
-    if protocol == ProtocolKind.OPENAI_EMBEDDING:
-        return {
-            "resolved_model": None,
-            "input_tokens": 0,
-            "cache_read_input_tokens": 0,
-            "cache_write_input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-        }
+    usage = _usage_mapping(payload.get("usage"))
+    cache_read_input_tokens = _openai_cached_tokens(usage, "input_tokens_details")
+    input_tokens = _usage_int(usage, "input_tokens")
+    return {
+        "resolved_model": model,
+        "input_tokens": input_tokens,
+        "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+        "cache_write_input_tokens": 0,
+        "output_tokens": _usage_int(usage, "output_tokens"),
+        "total_tokens": _usage_int(usage, "total_tokens"),
+    }
 
-    if not raw_content:
-        return {
-            "resolved_model": None,
-            "input_tokens": 0,
-            "cache_read_input_tokens": 0,
-            "cache_write_input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-        }
 
-    if protocol == ProtocolKind.GEMINI:
-        payloads = _parse_sse_payloads(raw_content)
-        if not payloads:
-            payloads = _parse_ndjson_payloads(raw_content)
-        merged = payloads[-1] if payloads else {}
-        return _extract_usage_from_payload(protocol, merged)
-
-    payloads = _parse_sse_payloads(raw_content)
-    merged = {
-        "resolved_model": None,
-        "input_tokens": 0,
+def _openai_embedding_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
+    usage = _usage_mapping(payload.get("usage"))
+    return {
+        "resolved_model": payload.get("model"),
+        "input_tokens": _usage_int(usage, "prompt_tokens"),
         "cache_read_input_tokens": 0,
         "cache_write_input_tokens": 0,
         "output_tokens": 0,
-        "total_tokens": 0,
+        "total_tokens": _usage_int(usage, "total_tokens"),
     }
+
+
+_EMPTY_USAGE: dict[str, int | str | None] = {
+    "resolved_model": None,
+    "input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+}
+
+
+def _extract_stream_usage(
+    protocol: ProtocolKind, raw_content: str | None
+) -> dict[str, int | str | None]:
+    if protocol == ProtocolKind.OPENAI_EMBEDDING or not raw_content:
+        return dict(_EMPTY_USAGE)
+
+    if protocol == ProtocolKind.GEMINI:
+        payloads = _parse_sse_payloads(raw_content) or _parse_ndjson_payloads(raw_content)
+        return _extract_usage_from_payload(protocol, payloads[-1] if payloads else {})
+
+    payloads = _parse_sse_payloads(raw_content)
+    merged: dict[str, int | str | None] = dict(_EMPTY_USAGE)
+    int_keys = (
+        "input_tokens",
+        "cache_read_input_tokens",
+        "cache_write_input_tokens",
+        "output_tokens",
+        "total_tokens",
+    )
     for payload in payloads:
         parsed = _extract_usage_from_payload(protocol, payload)
         if parsed["resolved_model"]:
             merged["resolved_model"] = parsed["resolved_model"]
-        if parsed["input_tokens"]:
-            merged["input_tokens"] = max(
-                int(merged["input_tokens"]), int(parsed["input_tokens"])
-            )
-        if parsed["cache_read_input_tokens"]:
-            merged["cache_read_input_tokens"] = max(
-                int(merged["cache_read_input_tokens"]),
-                int(parsed["cache_read_input_tokens"]),
-            )
-        if parsed["cache_write_input_tokens"]:
-            merged["cache_write_input_tokens"] = max(
-                int(merged["cache_write_input_tokens"]),
-                int(parsed["cache_write_input_tokens"]),
-            )
-        if parsed["output_tokens"]:
-            merged["output_tokens"] = max(
-                int(merged["output_tokens"]), int(parsed["output_tokens"])
-            )
-        if parsed["total_tokens"]:
-            merged["total_tokens"] = max(
-                int(merged["total_tokens"]), int(parsed["total_tokens"])
-            )
+        for key in int_keys:
+            value = int(parsed[key] or 0)
+            if value:
+                merged[key] = max(int(merged[key] or 0), value)
     if not merged["total_tokens"]:
-        merged["total_tokens"] = int(merged["input_tokens"]) + int(
-            merged["output_tokens"]
+        merged["total_tokens"] = int(merged["input_tokens"] or 0) + int(
+            merged["output_tokens"] or 0
         )
     return merged
 
@@ -3204,190 +3317,40 @@ def _extract_usage_from_payload(
     protocol: ProtocolKind, payload: dict[str, Any]
 ) -> dict[str, int | str | None]:
     if protocol == ProtocolKind.OPENAI_CHAT:
-        usage = _usage_mapping(payload.get("usage"))
-        cache_read_input_tokens = _openai_cached_tokens(usage, "prompt_tokens_details")
-        input_tokens = _usage_int(usage, "prompt_tokens")
-        return {
-            "resolved_model": payload.get("model"),
-            "input_tokens": input_tokens,
-            "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-            "cache_write_input_tokens": 0,
-            "output_tokens": _usage_int(usage, "completion_tokens"),
-            "total_tokens": _usage_int(usage, "total_tokens"),
-        }
+        return _openai_chat_usage(payload)
     if protocol == ProtocolKind.OPENAI_RESPONSES:
         if payload.get("type") == "response.completed":
             response_payload = _usage_mapping(payload.get("response"))
-            usage = _usage_mapping(response_payload.get("usage"))
-            cache_read_input_tokens = _openai_cached_tokens(usage, "input_tokens_details")
-            input_tokens = _usage_int(usage, "input_tokens")
-            return {
-                "resolved_model": response_payload.get("model") or payload.get("model"),
-                "input_tokens": input_tokens,
-                "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-                "cache_write_input_tokens": 0,
-                "output_tokens": _usage_int(usage, "output_tokens"),
-                "total_tokens": _usage_int(usage, "total_tokens"),
-            }
-        usage = _usage_mapping(payload.get("usage"))
-        cache_read_input_tokens = _openai_cached_tokens(usage, "input_tokens_details")
-        input_tokens = _usage_int(usage, "input_tokens")
-        return {
-            "resolved_model": payload.get("model"),
-            "input_tokens": input_tokens,
-            "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-            "cache_write_input_tokens": 0,
-            "output_tokens": _usage_int(usage, "output_tokens"),
-            "total_tokens": _usage_int(usage, "total_tokens"),
-        }
+            return _openai_responses_usage(
+                response_payload,
+                model=response_payload.get("model") or payload.get("model"),
+            )
+        return _openai_responses_usage(payload, model=payload.get("model"))
     if protocol == ProtocolKind.OPENAI_EMBEDDING:
-        usage = _usage_mapping(payload.get("usage"))
-        input_tokens = _usage_int(usage, "prompt_tokens")
-        return {
-            "resolved_model": payload.get("model"),
-            "input_tokens": input_tokens,
-            "cache_read_input_tokens": 0,
-            "cache_write_input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": _usage_int(usage, "total_tokens"),
-        }
+        return _openai_embedding_usage(payload)
     if protocol == ProtocolKind.ANTHROPIC:
         if payload.get("type") == "message_start":
             message = _usage_mapping(payload.get("message"))
-            usage = _usage_mapping(message.get("usage"))
-            base_input_tokens = int(usage.get("input_tokens") or 0)
-            cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
-            cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
-            input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
-            output_tokens = int(usage.get("output_tokens") or 0)
-            return {
-                "resolved_model": message.get("model"),
-                "input_tokens": input_tokens,
-                "cache_read_input_tokens": cache_read_input_tokens,
-                "cache_write_input_tokens": cache_write_input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": input_tokens + output_tokens,
-            }
+            return _anthropic_usage(_usage_mapping(message.get("usage")), model=message.get("model"))
         if payload.get("type") == "message_delta":
-            delta = _usage_mapping(payload.get("usage"))
-            base_input_tokens = int(delta.get("input_tokens") or 0)
-            cache_read_input_tokens = int(delta.get("cache_read_input_tokens") or 0)
-            cache_write_input_tokens = int(delta.get("cache_creation_input_tokens") or 0)
-            input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
-            output_tokens = int(delta.get("output_tokens") or 0)
-            return {
-                "resolved_model": None,
-                "input_tokens": input_tokens,
-                "cache_read_input_tokens": cache_read_input_tokens,
-                "cache_write_input_tokens": cache_write_input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": input_tokens + output_tokens,
-            }
-        usage = _usage_mapping(payload.get("usage"))
-        base_input_tokens = int(usage.get("input_tokens") or 0)
-        cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
-        cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
-        input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
-        output_tokens = int(usage.get("output_tokens") or 0)
-        return {
-            "resolved_model": payload.get("model"),
-            "input_tokens": input_tokens,
-            "cache_read_input_tokens": cache_read_input_tokens,
-            "cache_write_input_tokens": cache_write_input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-        }
-    usage = _usage_mapping(payload.get("usageMetadata"))
-    input_tokens = int(usage.get("promptTokenCount") or 0)
-    cache_read_input_tokens = int(
-        usage.get("cachedContentTokenCount") or 0
-    )
-    output_tokens = int(usage.get("candidatesTokenCount") or 0)
-    total_tokens = int(usage.get("totalTokenCount") or (input_tokens + output_tokens))
-    return {
-        "resolved_model": payload.get("modelVersion") or payload.get("model"),
-        "input_tokens": input_tokens,
-        "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-        "cache_write_input_tokens": 0,
-        "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
-    }
+            return _anthropic_usage(_usage_mapping(payload.get("usage")), model=None)
+        return _anthropic_usage(_usage_mapping(payload.get("usage")), model=payload.get("model"))
+    return _gemini_usage(payload)
 
 
 def _extract_response_usage(
     protocol: ProtocolKind, response: httpx.Response
 ) -> dict[str, int | str | None]:
     payload = response.json()
-
     if protocol == ProtocolKind.OPENAI_CHAT:
-        usage = _usage_mapping(payload.get("usage"))
-        cache_read_input_tokens = _openai_cached_tokens(usage, "prompt_tokens_details")
-        input_tokens = _usage_int(usage, "prompt_tokens")
-        return {
-            "resolved_model": payload.get("model"),
-            "input_tokens": input_tokens,
-            "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-            "cache_write_input_tokens": 0,
-            "output_tokens": _usage_int(usage, "completion_tokens"),
-            "total_tokens": _usage_int(usage, "total_tokens"),
-        }
-
+        return _openai_chat_usage(payload)
     if protocol == ProtocolKind.OPENAI_RESPONSES:
-        usage = _usage_mapping(payload.get("usage"))
-        cache_read_input_tokens = _openai_cached_tokens(usage, "input_tokens_details")
-        input_tokens = _usage_int(usage, "input_tokens")
-        return {
-            "resolved_model": payload.get("model"),
-            "input_tokens": input_tokens,
-            "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-            "cache_write_input_tokens": 0,
-            "output_tokens": _usage_int(usage, "output_tokens"),
-            "total_tokens": _usage_int(usage, "total_tokens"),
-        }
-
+        return _openai_responses_usage(payload, model=payload.get("model"))
     if protocol == ProtocolKind.OPENAI_EMBEDDING:
-        usage = _usage_mapping(payload.get("usage"))
-        input_tokens = _usage_int(usage, "prompt_tokens")
-        return {
-            "resolved_model": payload.get("model"),
-            "input_tokens": input_tokens,
-            "cache_read_input_tokens": 0,
-            "cache_write_input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": _usage_int(usage, "total_tokens"),
-        }
-
+        return _openai_embedding_usage(payload)
     if protocol == ProtocolKind.ANTHROPIC:
-        usage = _usage_mapping(payload.get("usage"))
-        base_input_tokens = int(usage.get("input_tokens") or 0)
-        cache_read_input_tokens = int(usage.get("cache_read_input_tokens") or 0)
-        cache_write_input_tokens = int(usage.get("cache_creation_input_tokens") or 0)
-        input_tokens = base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
-        output_tokens = int(usage.get("output_tokens") or 0)
-        return {
-            "resolved_model": payload.get("model"),
-            "input_tokens": input_tokens,
-            "cache_read_input_tokens": cache_read_input_tokens,
-            "cache_write_input_tokens": cache_write_input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-        }
-
-    usage = _usage_mapping(payload.get("usageMetadata"))
-    input_tokens = int(usage.get("promptTokenCount") or 0)
-    cache_read_input_tokens = int(
-        usage.get("cachedContentTokenCount") or 0
-    )
-    output_tokens = int(usage.get("candidatesTokenCount") or 0)
-    total_tokens = int(usage.get("totalTokenCount") or (input_tokens + output_tokens))
-    return {
-        "resolved_model": payload.get("modelVersion") or payload.get("model"),
-        "input_tokens": input_tokens,
-        "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-        "cache_write_input_tokens": 0,
-        "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
-    }
+        return _anthropic_usage(_usage_mapping(payload.get("usage")), model=payload.get("model"))
+    return _gemini_usage(payload)
 
 
 async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) -> None:
