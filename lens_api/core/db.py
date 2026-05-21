@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -35,13 +33,12 @@ def is_sqlite_url(database_url: str) -> bool:
 
 def create_engine(database_url: str) -> AsyncEngine:
     database_url = normalize_async_database_url(database_url)
-    connect_args: dict[str, object] = {}
-    if is_sqlite_url(database_url):
-        connect_args["timeout"] = 30
+    is_sqlite = database_url.startswith("sqlite")
+    connect_args: dict[str, object] = {"timeout": 30} if is_sqlite else {}
 
-    engine = create_async_engine(database_url, future=True, connect_args=connect_args)
+    engine = create_async_engine(database_url, connect_args=connect_args)
 
-    if is_sqlite_url(database_url):
+    if is_sqlite:
         @event.listens_for(engine.sync_engine, "connect")
         def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
             cursor = dbapi_connection.cursor()

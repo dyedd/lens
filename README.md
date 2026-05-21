@@ -222,7 +222,7 @@ docker run -d --name lens \
 pip install -e ".[dev]"
 ```
 
-安装前端依赖：
+安装前端依赖（需要 Node.js；若尚未启用 pnpm，先运行 `corepack enable`，会按 `ui/package.json` 中 `packageManager` 字段激活对应版本）：
 
 ```bash
 cd ui

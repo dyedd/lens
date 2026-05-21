@@ -110,11 +110,9 @@ async def main(export_path: str) -> None:
             continue
 
         credentials: list[SiteCredentialInput] = []
-        credential_id_by_value: dict[str, str] = {}
         for index, key_info in enumerate(key_infos):
             credential_id = str(uuid.uuid4())
             api_key = str(key_info.get('channel_key'))
-            credential_id_by_value[api_key] = credential_id
             credentials.append(
                 SiteCredentialInput(
                     id=credential_id,
@@ -124,7 +122,7 @@ async def main(export_path: str) -> None:
                 )
             )
 
-        default_credential_id = credentials[0].id or ''
+        default_credential_id = credentials[0].id
         direct_models = normalize_model_names(channel.get('model'))
         custom_models = normalize_model_names(channel.get('custom_model'))
         all_models = list(dict.fromkeys([*direct_models, *custom_models]))
@@ -145,7 +143,7 @@ async def main(export_path: str) -> None:
                         param_override=channel.get('param_override') or '',
                         match_regex=channel.get('match_regex') or '',
                         bindings=[
-                            SiteProtocolCredentialBindingInput(credential_id=item.id or '', enabled=item.enabled)
+                            SiteProtocolCredentialBindingInput(credential_id=item.id, enabled=item.enabled)
                             for item in credentials
                         ],
                         models=[
@@ -206,20 +204,15 @@ async def main(export_path: str) -> None:
             group_name = str(group['name'])
             if len(grouped_members) > 1:
                 group_name = f'{group_name}{PROTOCOL_SUFFIX[protocol]}'
-            try:
-                await domain_store.create_group(
-                    ModelGroupCreate(
-                        name=group_name,
-                        protocol=protocol,
-                        strategy=strategy,
-                        match_regex=group.get('match_regex') or '',
-                        items=group_members,
-                    )
+            await domain_store.create_group(
+                ModelGroupCreate(
+                    name=group_name,
+                    protocol=protocol,
+                    strategy=strategy,
+                    match_regex=group.get('match_regex') or '',
+                    items=group_members,
                 )
-            except Exception as exc:
-                raise RuntimeError(
-                    f'Failed to import group={group_name} protocol={protocol.value} members={len(group_members)}'
-                ) from exc
+            )
 
     print(f"Imported sites={len(imported_channels)} groups={len(payload.get('groups', []))}")
     await engine.dispose()

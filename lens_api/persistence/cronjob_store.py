@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import json
 import re
@@ -154,13 +153,21 @@ class CronjobStore:
                 weekdays=weekdays if weekdays is not None else current_schedule.weekdays,
             )
             schedule_changed = next_schedule != current_schedule
-            self._apply_schedule(entity, next_schedule)
+            entity.schedule_type = next_schedule.schedule_type
+            entity.interval_hours = next_schedule.interval_hours
+            entity.run_at_time = next_schedule.run_at_time
+            entity.weekdays_json = encode_weekdays(next_schedule.weekdays)
             if enabled is not None:
                 entity.enabled = 1 if enabled else 0
 
+            lease_active = (
+                bool(entity.lease_owner)
+                and entity.lease_until is not None
+                and entity.lease_until > now
+            )
             if not entity.enabled:
                 entity.next_run_at = None
-                if not self._is_lease_active(entity, now):
+                if not lease_active:
                     entity.status = CronjobStatus.DISABLED.value
             elif not was_enabled or schedule_changed or entity.next_run_at is None:
                 entity.next_run_at = next_cronjob_run_at(
@@ -308,7 +315,22 @@ class CronjobStore:
             return self._to_record(entity)
 
     def to_item(self, spec: CronjobSpec, record: CronjobRecord) -> CronjobItem:
-        status = self._display_status(record)
+        now = self._utc_now()
+        lease_active = (
+            bool(record.lease_owner)
+            and record.lease_until is not None
+            and record.lease_until > now
+        )
+        if lease_active:
+            status = CronjobStatus.RUNNING
+        elif not record.enabled:
+            status = CronjobStatus.DISABLED
+        elif record.status == CronjobStatus.SUCCEEDED.value:
+            status = CronjobStatus.SUCCEEDED
+        elif record.status in (CronjobStatus.FAILED.value, CronjobStatus.RUNNING.value):
+            status = CronjobStatus.FAILED
+        else:
+            status = CronjobStatus.IDLE
         next_run_at = None if status == CronjobStatus.DISABLED else record.next_run_at
         return CronjobItem(
             id=spec.id,
@@ -326,21 +348,6 @@ class CronjobStore:
             next_run_at=self._format_datetime(next_run_at),
         )
 
-    @classmethod
-    def _display_status(cls, record: CronjobRecord) -> CronjobStatus:
-        now = cls._utc_now()
-        if cls._record_lease_active(record, now):
-            return CronjobStatus.RUNNING
-        if not record.enabled:
-            return CronjobStatus.DISABLED
-        if record.status == CronjobStatus.SUCCEEDED.value:
-            return CronjobStatus.SUCCEEDED
-        if record.status == CronjobStatus.FAILED.value:
-            return CronjobStatus.FAILED
-        if record.status == CronjobStatus.RUNNING.value:
-            return CronjobStatus.FAILED
-        return CronjobStatus.IDLE
-
     @staticmethod
     def _to_record(entity: CronjobEntity) -> CronjobRecord:
         schedule = CronjobStore._entity_schedule(entity)
@@ -354,9 +361,9 @@ class CronjobStore:
             status=entity.status,
             last_started_at=entity.last_started_at,
             last_finished_at=entity.last_finished_at,
-            last_error=entity.last_error or "",
+            last_error=entity.last_error,
             next_run_at=entity.next_run_at,
-            lease_owner=entity.lease_owner or "",
+            lease_owner=entity.lease_owner,
             lease_until=entity.lease_until,
         )
 
@@ -368,24 +375,6 @@ class CronjobStore:
             run_at_time=entity.run_at_time,
             weekdays=decode_weekdays(entity.weekdays_json),
         )
-
-    @staticmethod
-    def _apply_schedule(
-        entity: CronjobEntity,
-        schedule: CronjobSchedule,
-    ) -> None:
-        entity.schedule_type = schedule.schedule_type
-        entity.interval_hours = schedule.interval_hours
-        entity.run_at_time = schedule.run_at_time
-        entity.weekdays_json = encode_weekdays(schedule.weekdays)
-
-    @classmethod
-    def _is_lease_active(cls, entity: CronjobEntity, now: datetime) -> bool:
-        return bool(entity.lease_owner) and entity.lease_until is not None and entity.lease_until > now
-
-    @staticmethod
-    def _record_lease_active(record: CronjobRecord, now: datetime) -> bool:
-        return bool(record.lease_owner) and record.lease_until is not None and record.lease_until > now
 
     @staticmethod
     def _format_datetime(value: datetime | None) -> str | None:
@@ -411,7 +400,7 @@ def normalize_cronjob_schedule(
     if schedule_type_value not in SCHEDULE_TYPES:
         raise ValueError(f"Invalid cron job type: {schedule_type_value}")
 
-    interval_value = max(int(interval_hours or 0), MIN_CRONJOB_INTERVAL_HOURS)
+    interval_value = max(interval_hours or 0, MIN_CRONJOB_INTERVAL_HOURS)
     run_at_time_value = _normalize_run_at_time(run_at_time)
     weekdays_value = normalize_weekdays(weekdays or ())
 
@@ -448,10 +437,11 @@ def next_cronjob_run_at(
     time_zone: ZoneInfo,
 ) -> datetime:
     if schedule.schedule_type == SCHEDULE_TYPE_INTERVAL:
-        return now + timedelta(hours=max(schedule.interval_hours, MIN_CRONJOB_INTERVAL_HOURS))
+        return now + timedelta(hours=schedule.interval_hours)
 
     local_now = now.replace(tzinfo=UTC).astimezone(time_zone)
-    run_time = _parse_run_at_time(schedule.run_at_time)
+    hour_text, minute_text = schedule.run_at_time.split(":", 1)
+    run_time = time(hour=int(hour_text), minute=int(minute_text))
     if schedule.schedule_type == SCHEDULE_TYPE_DAILY:
         candidate = datetime.combine(local_now.date(), run_time, tzinfo=time_zone)
         if candidate <= local_now:
@@ -508,11 +498,3 @@ def _normalize_run_at_time(value: str | None) -> str | None:
     if not RUN_AT_TIME_PATTERN.fullmatch(normalized):
         raise ValueError("Cron job run time must use HH:mm")
     return normalized
-
-
-def _parse_run_at_time(value: str | None) -> time:
-    normalized = _normalize_run_at_time(value)
-    if normalized is None:
-        raise ValueError("Cron job run time is required")
-    hour_text, minute_text = normalized.split(":", 1)
-    return time(hour=int(hour_text), minute=int(minute_text))

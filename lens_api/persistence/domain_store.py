@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import asyncio
 import json
@@ -16,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
 from ..models import GatewayApiKey, GatewayApiKeyCreate, GatewayApiKeyUpdate, ModelGroup, ModelGroupCandidateItem, ModelGroupCandidatesRequest, ModelGroupCandidatesResponse, ModelGroupCreate, ModelGroupItem, ModelGroupItemInput, ModelGroupStats, ModelGroupUpdate, ModelPriceItem, ModelPriceListResponse, ModelPriceUpdate, OverviewDailyPoint, OverviewMetrics, OverviewModelAnalytics, OverviewModelMetricPoint, OverviewModelTrendPoint, OverviewSummary, OverviewSummaryMetric, ProtocolKind, RequestLogAttempt, RequestLogDetail, RequestLogItem, RequestLogLifecycleStatus, RequestLogModelSeries, RequestLogPage, RequestLogSortMode, RequestLogStatusFilter, SettingItem, SiteChannelHealthBucket, SiteChannelRuntimeSummary, SiteRuntimeSummary
-from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
+from ..gateway.converters import can_reach_protocol
+from .entities import GatewayApiKeyEntity, ImportedStatsDailyEntity, ImportedStatsTotalEntity, ModelGroupEntity, ModelGroupItemEntity, ModelPriceEntity, OverviewModelDailyStatsEntity, RequestLogDailyStatsEntity, RequestLogEntity, SettingEntity, SiteBaseUrlEntity, SiteCredentialEntity, SiteDiscoveredModelEntity, SiteEntity, SiteProtocolConfigEntity, SiteProtocolCredentialBindingEntity
 
 
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
@@ -76,12 +76,9 @@ class DomainStore:
         self._settings_cache_at = monotonic()
         return self._clone_settings_items(items)
 
-    def _clear_settings_cache(self) -> None:
+    def invalidate_settings_cache(self) -> None:
         self._settings_cache = None
         self._settings_cache_at = 0.0
-
-    def invalidate_settings_cache(self) -> None:
-        self._clear_settings_cache()
 
     async def fail_running_request_logs(self) -> None:
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -100,7 +97,7 @@ class DomainStore:
                 entity.success = 0
                 entity.status_code = None
                 entity.latency_ms = max(
-                    int(entity.latency_ms or 0),
+                    entity.latency_ms,
                     max(int((now - created_at).total_seconds() * 1000), 0),
                 )
                 if not (entity.error_message or "").strip():
@@ -110,12 +107,12 @@ class DomainStore:
 
     @staticmethod
     def _is_missing_sqlite_table(exc: OperationalError, table_name: str) -> bool:
-        message = str(getattr(exc, "orig", exc)).lower()
+        message = str(exc.orig).lower()
         return f"no such table: {table_name}" in message
 
     @staticmethod
     def _runtime_time_zone(runtime: dict[str, Any]) -> ZoneInfo:
-        return resolve_time_zone(str(runtime.get("time_zone") or ""))
+        return resolve_time_zone(runtime["time_zone"])
 
     async def replace_imported_stats(
         self,
@@ -132,7 +129,10 @@ class DomainStore:
             await session.execute(delete(ModelPriceEntity))
             await session.execute(update(RequestLogEntity).values(stats_archived=0))
 
-            total_item = self._normalize_total_payload(total)
+            if isinstance(total, list):
+                total_item = total[0] if total else None
+            else:
+                total_item = total
 
             if total_item is not None:
                 session.add(
@@ -402,8 +402,6 @@ class DomainStore:
             query = select(SiteProtocolConfigEntity).order_by(SiteProtocolConfigEntity.protocol.asc(), SiteProtocolConfigEntity.id.asc())
             channels = (await session.execute(query)).scalars().all()
             if payload.protocol is not None:
-                from ..gateway.converters import can_reach_protocol
-
                 channels = [
                     channel for channel in channels
                     if can_reach_protocol(ProtocolKind(channel.protocol), payload.protocol)
@@ -421,7 +419,6 @@ class DomainStore:
                 ).scalars().all()
             channel_rows = []
             if channel_ids:
-                from .entities import SiteBaseUrlEntity
                 channel_rows = (
                     await session.execute(
                         select(
@@ -549,11 +546,11 @@ class DomainStore:
 
         aggregates = {
             str(name): {
-                "request_count": int(request_count or 0),
-                "success_count": int(success_count or 0),
-                "total_tokens": int(total_tokens or 0),
-                "total_cost_usd": float(total_cost_usd or 0.0),
-                "avg_latency_ms": int(avg_latency_ms or 0),
+                "request_count": int(request_count),
+                "success_count": int(success_count),
+                "total_tokens": int(total_tokens),
+                "total_cost_usd": float(total_cost_usd),
+                "avg_latency_ms": int(avg_latency_ms),
             }
             for name, request_count, success_count, total_tokens, total_cost_usd, avg_latency_ms in grouped_rows
             if name
@@ -588,7 +585,7 @@ class DomainStore:
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:
-            route_group, channels_by_id, channel_site_names = await self._validate_group_payload(
+            route_group = await self._validate_group_payload(
                 session,
                 payload.protocol.value,
                 payload.name,
@@ -606,7 +603,7 @@ class DomainStore:
             )
             session.add(entity)
             await session.flush()
-            await self._replace_group_items(session, entity.id, payload.items, channels_by_id, channel_site_names)
+            await self._replace_group_items(session, entity.id, payload.items)
             await session.commit()
             await session.refresh(entity)
             hydrated = await self._hydrate_groups(session, [entity])
@@ -641,7 +638,7 @@ class DomainStore:
                     for item in current_items.get(group_id, [])
                 ]
             )
-            route_group, channels_by_id, channel_site_names = await self._validate_group_payload(
+            route_group = await self._validate_group_payload(
                 session,
                 next_protocol,
                 next_name,
@@ -675,7 +672,7 @@ class DomainStore:
 
             if payload.items is not None or payload.protocol is not None:
                 await session.execute(delete(ModelGroupItemEntity).where(ModelGroupItemEntity.group_id == group_id))
-                await self._replace_group_items(session, group_id, next_items, channels_by_id, channel_site_names)
+                await self._replace_group_items(session, group_id, next_items)
 
             await session.commit()
             await session.refresh(entity)
@@ -707,7 +704,7 @@ class DomainStore:
         items: list[ModelGroupItemInput],
         route_group_id: str = "",
         exclude_group_id: str | None = None,
-    ) -> tuple[ModelGroupEntity | None, dict[str, SiteProtocolConfigEntity], dict[str, str]]:
+    ) -> ModelGroupEntity | None:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError('Model group name is required')
@@ -736,28 +733,16 @@ class DomainStore:
                 raise ValueError(f'Route target must be an execution group: {route_group.name}')
 
         if not items:
-            return route_group, {}, {}
+            return route_group
 
         channel_ids = list(dict.fromkeys(item.channel_id for item in items))
         channel_result = await session.execute(select(SiteProtocolConfigEntity).where(SiteProtocolConfigEntity.id.in_(channel_ids)))
         channel_rows = channel_result.scalars().all()
-        channels_by_id = {row.id: row for row in channel_rows}
-        channel_site_names = {}
-        site_rows = (
-            await session.execute(
-                select(SiteProtocolConfigEntity.id, SiteEntity.name)
-                .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
-                .where(SiteProtocolConfigEntity.id.in_(channel_ids))
-            )
-        ).all()
-        channel_site_names = {channel_id: site_name for channel_id, site_name in site_rows}
-        existing_channel_ids = set(channels_by_id)
+        existing_channel_ids = {row.id for row in channel_rows}
         missing_channel_ids = [channel_id for channel_id in channel_ids if channel_id not in existing_channel_ids]
         if missing_channel_ids:
             raise ValueError(f'Channels not found: {", ".join(missing_channel_ids)}')
 
-        from ..gateway.converters import can_reach_protocol
-        from ..models import ProtocolKind
         invalid_channel_ids = [
             channel.id for channel in channel_rows
             if not can_reach_protocol(ProtocolKind(channel.protocol), ProtocolKind(protocol))
@@ -785,7 +770,7 @@ class DomainStore:
             elif not any(model_name == item.model_name for _, model_name in channel_models):
                 raise ValueError(f'Model not found in channel {item.channel_id}: {item.model_name}')
 
-        return route_group, channels_by_id, channel_site_names
+        return route_group
 
     async def _hydrate_groups(self, session: AsyncSession, entities: list[ModelGroupEntity]) -> list[ModelGroup]:
         if not entities:
@@ -867,8 +852,6 @@ class DomainStore:
         session: AsyncSession,
         group_id: str,
         items: list[ModelGroupItemInput],
-        channels_by_id: dict[str, SiteProtocolConfigEntity],
-        channel_site_names: dict[str, str],
     ) -> None:
         for index, item in enumerate(items):
             session.add(
@@ -982,7 +965,7 @@ class DomainStore:
             ).scalar_one_or_none()
             if entity is None:
                 return None
-            spent = await self._gateway_key_spend(session, entity.id)
+            spent = (await self._gateway_key_spend_by_id(session, [entity.id])).get(entity.id, 0.0)
             return self._to_gateway_api_key(entity, spent)
 
     async def create_gateway_api_key(self, payload: GatewayApiKeyCreate) -> GatewayApiKey:
@@ -1022,7 +1005,7 @@ class DomainStore:
             entity.updated_at = datetime.now(UTC).replace(tzinfo=None)
             await session.commit()
             await session.refresh(entity)
-            spent = await self._gateway_key_spend(session, entity.id)
+            spent = (await self._gateway_key_spend_by_id(session, [entity.id])).get(entity.id, 0.0)
             return self._to_gateway_api_key(entity, spent)
 
     async def delete_gateway_api_key(self, key_id: str) -> None:
@@ -1082,9 +1065,16 @@ class DomainStore:
             return self._store_settings_cache(items)
 
     async def upsert_settings(self, items: list[SettingItem]) -> list[SettingItem]:
+        if not items:
+            return await self.list_settings()
+        keys = [item.key for item in items]
         async with self._session_factory() as session:
+            existing = await session.execute(
+                select(SettingEntity).where(SettingEntity.key.in_(keys))
+            )
+            existing_by_key = {entity.key: entity for entity in existing.scalars().all()}
             for item in items:
-                entity = await session.get(SettingEntity, item.key)
+                entity = existing_by_key.get(item.key)
                 if entity is None:
                     session.add(SettingEntity(key=item.key, value=item.value))
                 else:
@@ -1222,9 +1212,9 @@ class DomainStore:
                 if entity is None:
                     entity = OverviewModelDailyStatsEntity(**key, requests=0, total_tokens=0, total_cost_usd=0.0)
                     session.add(entity)
-                entity.requests += int(requests or 0)
-                entity.total_tokens += int(total_tokens or 0)
-                entity.total_cost_usd += float(total_cost or 0.0)
+                entity.requests += int(requests)
+                entity.total_tokens += int(total_tokens)
+                entity.total_cost_usd += float(total_cost)
 
             if daily_rows or model_rows:
                 archive_stmt = (
@@ -1523,7 +1513,7 @@ class DomainStore:
 
             return RequestLogPage(
                 items=await self._hydrate_request_logs(session, entities),
-                total=int(total or 0),
+                total=int(total),
                 limit=max(limit, 0),
                 offset=max(offset, 0),
                 channels=channels,
@@ -1575,7 +1565,7 @@ class DomainStore:
                 .group_by(SiteProtocolConfigEntity.site_id)
             )
             recent_request_count_by_site = {
-                str(row.site_id): int(row.recent_request_count or 0)
+                str(row.site_id): int(row.recent_request_count)
                 for row in recent_count_rows.all()
             }
 
@@ -1787,7 +1777,7 @@ class DomainStore:
                 success_value = int(archived_totals["successful_requests"] + live_totals["successful_requests"])
 
             total_groups = int(
-                await session.scalar(select(func.count()).select_from(ModelGroupEntity)) or 0
+                await session.scalar(select(func.count()).select_from(ModelGroupEntity))
             )
 
         gateway_keys = await self.list_gateway_api_keys()
@@ -1893,14 +1883,14 @@ class DomainStore:
                 merged_rows[key] = {
                     "date": str(date_value),
                     "model": str(model),
-                    "requests": float(requests or 0),
-                    "total_tokens": float(total_tokens or 0),
-                    "total_cost_usd": float(total_cost or 0.0),
+                    "requests": float(requests),
+                    "total_tokens": float(total_tokens),
+                    "total_cost_usd": float(total_cost),
                 }
                 continue
-            current["requests"] = float(current["requests"]) + float(requests or 0)
-            current["total_tokens"] = float(current["total_tokens"]) + float(total_tokens or 0)
-            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(total_cost or 0.0)
+            current["requests"] = float(current["requests"]) + float(requests)
+            current["total_tokens"] = float(current["total_tokens"]) + float(total_tokens)
+            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(total_cost)
 
         trend_rows = sorted(merged_rows.values(), key=lambda item: (str(item["date"]), str(item["model"])))
 
@@ -1998,13 +1988,13 @@ class DomainStore:
             exclude_dates=imported_dates,
             time_zone=time_zone,
         )
-        merged = {item.date: item.model_copy(deep=True) for item in imported_points}
+        merged = {item.date: item for item in imported_points}
         for item in archived_points:
-            merged[item.date] = item.model_copy(deep=True)
+            merged[item.date] = item
         for item in request_log_points:
             current = merged.get(item.date)
             if current is None:
-                merged[item.date] = item.model_copy(deep=True)
+                merged[item.date] = item
                 continue
             merged[item.date] = OverviewDailyPoint(
                 date=item.date,
@@ -2228,7 +2218,7 @@ class DomainStore:
             if self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
                 return []
             raise
-        return [(str(date_value), str(model), int(requests or 0), int(total_tokens or 0), float(total_cost or 0.0)) for date_value, model, requests, total_tokens, total_cost in rows]
+        return [(str(date_value), str(model), int(requests), int(total_tokens), float(total_cost)) for date_value, model, requests, total_tokens, total_cost in rows]
 
     async def _request_log_model_daily_rows(
         self,
@@ -2489,19 +2479,19 @@ class DomainStore:
                     "total_cost_usd": 0.0,
                 },
             )
-            success_value = 1.0 if int(success or 0) else 0.0
+            success_value = 1.0 if int(success) else 0.0
             current["request_count"] += 1.0
             current["successful_requests"] += success_value
             current["failed_requests"] += 0.0 if success_value else 1.0
-            current["wait_time_ms"] += float(latency_ms or 0)
-            current["input_tokens"] += float(input_tokens or 0)
-            current["cache_read_input_tokens"] += float(cache_read_input_tokens or 0)
-            current["cache_write_input_tokens"] += float(cache_write_input_tokens or 0)
-            current["output_tokens"] += float(output_tokens or 0)
-            current["total_tokens"] += float(total_tokens or 0)
-            current["input_cost_usd"] += float(input_cost_usd or 0.0)
-            current["output_cost_usd"] += float(output_cost_usd or 0.0)
-            current["total_cost_usd"] += float(total_cost_usd or 0.0)
+            current["wait_time_ms"] += float(latency_ms)
+            current["input_tokens"] += float(input_tokens)
+            current["cache_read_input_tokens"] += float(cache_read_input_tokens)
+            current["cache_write_input_tokens"] += float(cache_write_input_tokens)
+            current["output_tokens"] += float(output_tokens)
+            current["total_tokens"] += float(total_tokens)
+            current["input_cost_usd"] += float(input_cost_usd)
+            current["output_cost_usd"] += float(output_cost_usd)
+            current["total_cost_usd"] += float(total_cost_usd)
         return buckets
 
     @staticmethod
@@ -2517,8 +2507,8 @@ class DomainStore:
             key = (bucket, str(model))
             current = buckets.setdefault(key, [0.0, 0.0, 0.0])
             current[0] += 1
-            current[1] += float(total_tokens or 0)
-            current[2] += float(total_cost or 0.0)
+            current[1] += float(total_tokens)
+            current[2] += float(total_cost)
         return [
             (date_value, model, int(values[0]), int(values[1]), float(values[2]))
             for (date_value, model), values in sorted(buckets.items())
@@ -2731,12 +2721,6 @@ class DomainStore:
         return round(((current - previous) / previous) * 100, 2)
 
     @staticmethod
-    def _normalize_total_payload(total: dict[str, int | float] | list[dict[str, int | float]] | None) -> dict[str, int | float] | None:
-        if isinstance(total, list):
-            return total[0] if total else None
-        return total
-
-    @staticmethod
     def _load_gateway_key_models(raw_value: str | None) -> list[str]:
         if not raw_value:
             return []
@@ -2829,10 +2813,7 @@ class DomainStore:
                 .group_by(RequestLogEntity.gateway_key_id)
             )
         ).all()
-        return {str(key_id): float(total or 0.0) for key_id, total in rows}
-
-    async def _gateway_key_spend(self, session: AsyncSession, key_id: str) -> float:
-        return (await self._gateway_key_spend_by_id(session, [key_id])).get(key_id, 0.0)
+        return {str(key_id): float(total) for key_id, total in rows}
 
     @classmethod
     def _to_gateway_api_key(
@@ -2844,11 +2825,11 @@ class DomainStore:
             api_key=entity.api_key,
             enabled=bool(entity.enabled),
             allowed_models=cls._load_gateway_key_models(entity.allowed_models_json),
-            max_cost_usd=max(float(entity.max_cost_usd or 0.0), 0.0),
+            max_cost_usd=max(float(entity.max_cost_usd), 0.0),
             spent_cost_usd=max(float(spent_cost_usd), 0.0),
             expires_at=cls._format_datetime(entity.expires_at),
-            created_at=cls._format_datetime(entity.created_at) or "",
-            updated_at=cls._format_datetime(entity.updated_at) or "",
+            created_at=cls._format_datetime(entity.created_at),
+            updated_at=cls._format_datetime(entity.updated_at),
         )
 
     @staticmethod
@@ -2942,7 +2923,7 @@ class DomainStore:
             )
         ).all()
         return {
-            str(key_id): str(remark or "").strip()
+            str(key_id): str(remark).strip()
             for key_id, remark in rows
             if key_id is not None
         }

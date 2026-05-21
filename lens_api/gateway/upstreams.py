@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
@@ -19,6 +18,14 @@ class UpstreamRequest:
     proxy_url: str | None = None
 
 
+_OPENAI_LIKE_PATH = {
+    ProtocolKind.OPENAI_CHAT: "chat/completions",
+    ProtocolKind.OPENAI_RESPONSES: "responses",
+    ProtocolKind.OPENAI_EMBEDDING: "embeddings",
+    ProtocolKind.ANTHROPIC: "messages",
+}
+
+
 def build_upstream_request(
     channel: ChannelConfig,
     body: dict[str, Any],
@@ -26,74 +33,8 @@ def build_upstream_request(
     credential_id: str | None = None,
     user_agent: str | None = None,
 ) -> UpstreamRequest:
-    api_key = _resolve_api_key(channel, credential_id=credential_id)
+    api_key = resolve_channel_api_key(channel, credential_id=credential_id)
     proxy_url = _resolve_proxy_url(channel)
-    target_url = _protocol_request_url(channel, body)
-
-    if channel.protocol == ProtocolKind.OPENAI_CHAT:
-        return UpstreamRequest(
-            method="POST",
-            url=target_url,
-            headers=build_upstream_headers(
-                {
-                    "authorization": f"Bearer {api_key}",
-                    "content-type": "application/json",
-                },
-                channel.headers,
-                user_agent=user_agent,
-            ),
-            json_body=dict(body),
-            proxy_url=proxy_url,
-        )
-
-    if channel.protocol == ProtocolKind.OPENAI_RESPONSES:
-        return UpstreamRequest(
-            method="POST",
-            url=target_url,
-            headers=build_upstream_headers(
-                {
-                    "authorization": f"Bearer {api_key}",
-                    "content-type": "application/json",
-                },
-                channel.headers,
-                user_agent=user_agent,
-            ),
-            json_body=dict(body),
-            proxy_url=proxy_url,
-        )
-
-    if channel.protocol == ProtocolKind.OPENAI_EMBEDDING:
-        return UpstreamRequest(
-            method="POST",
-            url=target_url,
-            headers=build_upstream_headers(
-                {
-                    "authorization": f"Bearer {api_key}",
-                    "content-type": "application/json",
-                },
-                channel.headers,
-                user_agent=user_agent,
-            ),
-            json_body=dict(body),
-            proxy_url=proxy_url,
-        )
-
-    if channel.protocol == ProtocolKind.ANTHROPIC:
-        return UpstreamRequest(
-            method="POST",
-            url=target_url,
-            headers=build_upstream_headers(
-                {
-                    "x-api-key": api_key,
-                    "anthropic-version": settings.anthropic_version,
-                    "content-type": "application/json",
-                },
-                channel.headers,
-                user_agent=user_agent,
-            ),
-            json_body=dict(body),
-            proxy_url=proxy_url,
-        )
 
     if channel.protocol == ProtocolKind.GEMINI:
         model_name = body.get("model")
@@ -104,7 +45,12 @@ def build_upstream_request(
         payload = {key: value for key, value in body.items() if key not in {"model", "stream"}}
         return UpstreamRequest(
             method="POST",
-            url=_gemini_request_url(channel, model_name, path, api_key),
+            url=_append_url_path(
+                _protocol_base_url(channel),
+                "models",
+                f"{model_name}:{path}",
+                query_params={"key": api_key},
+            ),
             headers=build_upstream_headers(
                 {"content-type": "application/json"},
                 channel.headers,
@@ -114,37 +60,29 @@ def build_upstream_request(
             proxy_url=proxy_url,
         )
 
-    raise HTTPException(status_code=500, detail=f"Unsupported protocol={channel.protocol.value}")
+    suffix = _OPENAI_LIKE_PATH.get(channel.protocol)
+    if suffix is None:
+        raise HTTPException(status_code=500, detail=f"Unsupported protocol={channel.protocol.value}")
 
-
-def protocol_for_path(path: str) -> ProtocolKind:
-    mapping = {
-        "/v1/chat/completions": ProtocolKind.OPENAI_CHAT,
-        "/v1/responses": ProtocolKind.OPENAI_RESPONSES,
-        "/v1/embeddings": ProtocolKind.OPENAI_EMBEDDING,
-        "/v1/messages": ProtocolKind.ANTHROPIC,
-        "/v1beta/models": ProtocolKind.GEMINI,
-    }
-    try:
-        return mapping[path]
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Unsupported path={path}") from exc
-
-
-def _resolve_base_url(channel: ChannelConfig) -> str:
-    return _normalize_base_url(str(channel.base_url))
-
-
-def _protocol_request_url(channel: ChannelConfig, body: dict[str, Any]) -> str:
-    if channel.protocol == ProtocolKind.OPENAI_CHAT:
-        return _append_url_path(_protocol_base_url(channel), "chat/completions")
-    if channel.protocol == ProtocolKind.OPENAI_RESPONSES:
-        return _append_url_path(_protocol_base_url(channel), "responses")
-    if channel.protocol == ProtocolKind.OPENAI_EMBEDDING:
-        return _append_url_path(_protocol_base_url(channel), "embeddings")
     if channel.protocol == ProtocolKind.ANTHROPIC:
-        return _append_url_path(_protocol_base_url(channel), "messages")
-    raise HTTPException(status_code=500, detail=f"Unsupported protocol={channel.protocol.value}")
+        default_headers = {
+            "x-api-key": api_key,
+            "anthropic-version": settings.anthropic_version,
+            "content-type": "application/json",
+        }
+    else:
+        default_headers = {
+            "authorization": f"Bearer {api_key}",
+            "content-type": "application/json",
+        }
+
+    return UpstreamRequest(
+        method="POST",
+        url=_append_url_path(_protocol_base_url(channel), suffix),
+        headers=build_upstream_headers(default_headers, channel.headers, user_agent=user_agent),
+        json_body=dict(body),
+        proxy_url=proxy_url,
+    )
 
 
 def build_upstream_headers(
@@ -153,30 +91,21 @@ def build_upstream_headers(
     user_agent: str | None = None,
 ) -> dict[str, str]:
     headers = dict(default_headers)
-    if user_agent and not _has_header(channel_headers, "user-agent"):
+    if user_agent and not any(key.lower() == "user-agent" for key in channel_headers):
         headers["user-agent"] = user_agent
     headers.update(channel_headers)
     return headers
 
 
-def _has_header(headers: dict[str, str], name: str) -> bool:
-    normalized = name.lower()
-    return any(key.lower() == normalized for key in headers)
-
-
-def _gemini_request_url(channel: ChannelConfig, model_name: str, path: str, api_key: str) -> str:
-    return _append_url_path(
-        _protocol_base_url(channel),
-        "models",
-        f"{model_name}:{path}",
-        query_params={"key": api_key},
-    )
-
-
 def _protocol_base_url(channel: ChannelConfig) -> str:
-    root = _resolve_base_url(channel)
-    if _is_bigmodel_openai_chat_prefix(root, channel.protocol):
-        return root
+    root = _normalize_base_url(str(channel.base_url))
+    if channel.protocol == ProtocolKind.OPENAI_CHAT:
+        parsed = urlsplit(root)
+        if parsed.hostname == "open.bigmodel.cn" and parsed.path.rstrip("/") in {
+            "/api/paas/v4",
+            "/api/coding/paas/v4",
+        }:
+            return root
     if channel.protocol in {
         ProtocolKind.OPENAI_CHAT,
         ProtocolKind.OPENAI_RESPONSES,
@@ -187,18 +116,6 @@ def _protocol_base_url(channel: ChannelConfig) -> str:
     if channel.protocol == ProtocolKind.GEMINI:
         return _append_url_path(root, "v1beta")
     return root
-
-
-def _is_bigmodel_openai_chat_prefix(root: str, protocol: ProtocolKind) -> bool:
-    if protocol != ProtocolKind.OPENAI_CHAT:
-        return False
-
-    parsed = urlsplit(root)
-    if parsed.hostname != "open.bigmodel.cn":
-        return False
-
-    normalized_path = parsed.path.rstrip("/")
-    return normalized_path in {"/api/paas/v4", "/api/coding/paas/v4"}
 
 
 def _normalize_base_url(value: str) -> str:
@@ -219,7 +136,7 @@ def _normalize_base_url(value: str) -> str:
     )
 
 
-def _resolve_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:
+def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:
     if credential_id:
         for item in channel.keys:
             if item.id == credential_id and item.enabled and item.key.strip():
@@ -250,20 +167,8 @@ def resolve_upstream_proxy_url(channel: ChannelConfig, global_proxy_url: str | N
     return value or None
 
 
-def resolve_channel_base_url(channel: ChannelConfig) -> str:
-    return _resolve_base_url(channel)
-
-
 def resolve_channel_model_list_url(channel: ChannelConfig) -> str:
     return _append_url_path(_protocol_base_url(channel), "models")
-
-
-def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:
-    return _resolve_api_key(channel, credential_id=credential_id)
-
-
-def resolve_channel_proxy_url(channel: ChannelConfig) -> str | None:
-    return _resolve_proxy_url(channel)
 
 
 def append_channel_url_path(
@@ -272,7 +177,7 @@ def append_channel_url_path(
     query_params: dict[str, str] | None = None,
 ) -> str:
     return _append_url_path(
-        resolve_channel_base_url(channel),
+        _normalize_base_url(str(channel.base_url)),
         *segments,
         query_params=query_params,
     )

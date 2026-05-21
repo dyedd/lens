@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import json
 import uuid
@@ -86,11 +85,9 @@ async def chat_stream_to_anthropic_stream(
     original_model: str,
 ) -> AsyncIterator[bytes]:
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
-    input_tokens = 0
     output_tokens = 0
-    resolved_model = original_model
     text_started = False
-    tool_index: dict[str, int] = {}  # call_id -> content block index
+    tool_index: dict[str, int] = {}
     next_block_index = 0
 
     yield format_sse_event(
@@ -101,7 +98,7 @@ async def chat_stream_to_anthropic_stream(
                 "id": msg_id,
                 "type": "message",
                 "role": "assistant",
-                "model": resolved_model,
+                "model": original_model,
                 "content": [],
                 "stop_reason": None,
                 "stop_sequence": None,
@@ -129,11 +126,7 @@ async def chat_stream_to_anthropic_stream(
             except json.JSONDecodeError:
                 continue
 
-            if payload.get("model"):
-                resolved_model = payload["model"]
             usage = payload.get("usage") or {}
-            if usage.get("prompt_tokens"):
-                input_tokens = usage["prompt_tokens"]
             if usage.get("completion_tokens"):
                 output_tokens = usage["completion_tokens"]
 
@@ -201,7 +194,6 @@ async def chat_stream_to_anthropic_stream(
                                 },
                             )
 
-    # close open blocks
     for i in range(next_block_index):
         yield format_sse_event(
             "content_block_stop",

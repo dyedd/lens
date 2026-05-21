@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -14,9 +15,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
+import jwt
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from packaging import version
 from sqlalchemy.exc import OperationalError
 from starlette.background import BackgroundTask
 
@@ -207,8 +210,6 @@ class AppState:
         return resolve_time_zone(str(runtime["time_zone"]))
 
     async def _check_version_update(self) -> None:
-        from packaging import version
-
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.get(
@@ -235,8 +236,8 @@ class AppState:
                         SettingItem(key=SETTING_LATEST_VERSION, value=""),
                         SettingItem(key=SETTING_LATEST_VERSION_URL, value=""),
                     ])
-        except Exception:
-            logger.exception("版本检查失败")
+        except (httpx.HTTPError, ValueError, version.InvalidVersion) as exc:
+            logger.warning("版本检查失败: %s", exc)
 
 
 @dataclass
@@ -354,8 +355,7 @@ async def _managed_lifespan(state: AppState):
     try:
         yield
     except asyncio.CancelledError:
-        # Uvicorn on Windows can cancel the lifespan receive loop during Ctrl+C.
-        # Treat it as normal shutdown so the console does not dump an extra traceback.
+        # Uvicorn on Windows cancels the lifespan receive loop during Ctrl+C; treat as normal shutdown.
         pass
     finally:
         await state.cronjob_runner.stop()
@@ -371,13 +371,9 @@ async def lifespan(_: FastAPI):
 auth_scheme = HTTPBearer(auto_error=False)
 
 
-def _is_sqlite_database_locked(exc: OperationalError) -> bool:
-    message = str(getattr(exc, "orig", exc)).lower()
-    return "database is locked" in message
-
-
 def _database_error_status_and_detail(exc: OperationalError) -> tuple[int, str]:
-    if _is_sqlite_database_locked(exc):
+    message = str(getattr(exc, "orig", exc)).lower()
+    if "database is locked" in message:
         return status.HTTP_503_SERVICE_UNAVAILABLE, "Database is busy, please retry"
     return status.HTTP_500_INTERNAL_SERVER_ERROR, "Database operation failed"
 
@@ -385,11 +381,6 @@ def _database_error_status_and_detail(exc: OperationalError) -> tuple[int, str]:
 def _database_error_response(exc: OperationalError) -> JSONResponse:
     status_code, detail = _database_error_status_and_detail(exc)
     return JSONResponse(status_code=status_code, content={"detail": detail})
-
-
-def _raise_database_http_error(exc: OperationalError) -> None:
-    status_code, detail = _database_error_status_and_detail(exc)
-    raise HTTPException(status_code=status_code, detail=detail) from exc
 
 
 def _apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
@@ -458,7 +449,7 @@ async def get_current_admin(
     try:
         payload = decode_access_token(credentials.credentials, settings)
         username = payload.get("sub")
-    except Exception as exc:
+    except jwt.InvalidTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         ) from exc
@@ -498,7 +489,8 @@ async def get_current_gateway_key(request: Request) -> GatewayApiKey:
     try:
         gateway_key = await app_state.domain_store.get_gateway_api_key_by_secret(secret)
     except OperationalError as exc:
-        _raise_database_http_error(exc)
+        status_code, detail = _database_error_status_and_detail(exc)
+        raise HTTPException(status_code=status_code, detail=detail) from exc
 
     if gateway_key is None:
         raise HTTPException(
@@ -569,8 +561,6 @@ async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
 
 
 async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResult:
-    from packaging import version
-
     current_version = _read_system_version()
 
     settings = await app_state.domain_store.list_settings()
@@ -584,8 +574,8 @@ async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResu
     if latest_version:
         try:
             has_update = version.parse(latest_version) > version.parse(current_version)
-        except Exception:
-            pass
+        except version.InvalidVersion:
+            logger.warning("Invalid version string when comparing %r vs %r", latest_version, current_version)
 
     return VersionCheckResult(
         current_version=current_version,
@@ -743,7 +733,7 @@ async def test_site_model(
             latency_ms=0,
             model_name=payload.model_name,
             credential_id=payload.credential.id,
-            error_message=_format_channel_error(channel, exc.detail),
+            error_message=_format_channel_error(exc.detail),
         )
     return await _call_model_test_channel(
         channel=channel,
@@ -823,8 +813,8 @@ async def overview_dashboard(
         ),
     )
     runtime = await app_state.domain_store.get_runtime_settings()
-    total_requests = int(summary.request_count.value or 0)
-    total_tokens = float(summary.total_tokens.value or 0.0)
+    total_requests = summary.request_count.value
+    total_tokens = summary.total_tokens.value
     window_minutes = _overview_window_minutes(days, daily, str(runtime["time_zone"]))
     performance = OverviewPerformanceMetrics(
         avg_requests_per_minute=round(total_requests / window_minutes, 2)
@@ -1011,8 +1001,6 @@ async def run_cronjob(
         raise HTTPException(status_code=409, detail=f"Cron job is already running: {task_id}") from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Cron job not found: {task_id}") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc) or "Cron job failed") from exc
     return CronjobRunResult(cronjob=task)
 
 
@@ -1172,7 +1160,7 @@ async def import_settings_bundle(
 
     try:
         dump = ConfigBackupDump.model_validate_json(payload)
-    except Exception as exc:
+    except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=400, detail="Invalid backup file") from exc
 
     try:
@@ -1375,11 +1363,13 @@ async def _proxy_protocol(
     gateway_key: GatewayApiKey,
     inbound_user_agent: str | None = None,
 ) -> Response:
-    channels = await app_state.store.list()
-    runtime = await app_state.domain_store.get_runtime_settings()
+    channels, runtime = await asyncio.gather(
+        app_state.store.list(),
+        app_state.domain_store.get_runtime_settings(),
+    )
     _apply_router_runtime_settings(runtime)
     started_at = perf_counter()
-    requested_model = _requested_model(protocol, body)
+    requested_model = body.get("model")
     if not _gateway_key_allows_model(gateway_key, requested_model):
         error_body = ErrorResponse(
             error={
@@ -1391,7 +1381,12 @@ async def _proxy_protocol(
             status_code=403, content=error_body.model_dump(mode="json")
         )
     request_content = _dump_json(body)
-    upstream_user_agent = _resolve_upstream_user_agent(inbound_user_agent)
+    inbound_ua = _normalize_user_agent(inbound_user_agent)
+    upstream_user_agent = (
+        inbound_ua
+        if inbound_ua and not _is_generic_user_agent(inbound_ua)
+        else _default_lens_user_agent()
+    )
     plan: RoutingPlan | None = None
     attempts: list[AttemptLog] = []
     request_log = await app_state.domain_store.create_pending_request_log(
@@ -1480,7 +1475,6 @@ async def _proxy_protocol(
         for target in [selection.primary, *selection.fallbacks]:
             channel = target.channel
             attempt_started_at = perf_counter()
-            upstream_body = deepcopy(body)
             try:
                 effective_user_agent = _resolve_effective_upstream_user_agent(
                     channel, upstream_user_agent
@@ -1606,7 +1600,7 @@ async def _proxy_protocol(
                 )
                 return result.response
             except HTTPException as exc:
-                message = _format_channel_error(channel, exc.detail)
+                message = _format_channel_error(exc.detail)
                 app_state.router.record_failure(
                     channel.id,
                     message,
@@ -1746,7 +1740,7 @@ async def _call_channel(
         response.raise_for_status()
         app_state.router.record_success(channel.id, credential_id=credential_id)
 
-        if _is_event_stream_response(response):
+        if "text/event-stream" in (response.headers.get("content-type") or "").lower():
             if not is_stream_request and channel.protocol == ProtocolKind.ANTHROPIC:
                 content = (
                     response.content
@@ -1888,7 +1882,7 @@ async def _call_channel(
             output_cost_usd=output_cost_usd,
             total_cost_usd=total_cost_usd,
             request_content=request_content,
-            response_content=_decode_response_content(response),
+            response_content=_decode_content_bytes(response.content),
         )
     except httpx.HTTPStatusError as exc:
         await exc.response.aread()
@@ -2167,12 +2161,7 @@ def _passthrough_headers(headers: httpx.Headers) -> dict[str, str]:
     return allowed
 
 
-def _is_event_stream_response(response: httpx.Response) -> bool:
-    content_type = (response.headers.get("content-type") or "").lower()
-    return "text/event-stream" in content_type
-
-
-def _format_channel_error(_: ChannelConfig, detail: Any) -> str:
+def _format_channel_error(detail: Any) -> str:
     detail_text = str(detail).strip() if detail is not None else ""
     if not detail_text:
         detail_text = "Unknown error"
@@ -2187,35 +2176,14 @@ def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
         if request is not None and getattr(request, "url", None) is not None
         else fallback_url
     )
-    target_label = _redact_url_for_error(target_url)
+    try:
+        target_label = str(httpx.URL(target_url).copy_with(query=None))
+    except httpx.InvalidURL:
+        target_label = target_url
     detail_text = str(exc).strip()
     if detail_text:
         return f"Transport error ({error_type}) while requesting {target_label}: {detail_text}"
     return f"Transport error ({error_type}) while requesting {target_label}"
-
-
-def _redact_url_for_error(url: str) -> str:
-    try:
-        parsed = httpx.URL(url)
-    except Exception:
-        return url
-    return str(parsed.copy_with(query=None))
-
-
-def _requested_model(protocol: ProtocolKind, body: dict[str, Any]) -> str | None:
-    if protocol == ProtocolKind.GEMINI:
-        return body.get("model")
-    return body.get("model")
-
-
-def _resolve_upstream_user_agent(
-    inbound_user_agent: str | None,
-) -> str:
-    inbound = _normalize_user_agent(inbound_user_agent)
-    if inbound and not _is_generic_user_agent(inbound):
-        return inbound
-
-    return _default_lens_user_agent()
 
 
 def _resolve_effective_upstream_user_agent(
@@ -2357,8 +2325,6 @@ def _parse_model_list(
     if not match_regex.strip():
         return unique_names
 
-    import re
-
     pattern = re.compile(match_regex)
     return [name for name in unique_names if pattern.search(name)]
 
@@ -2427,9 +2393,6 @@ def _prepare_upstream_body(
     if protocol == ProtocolKind.OPENAI_RESPONSES and "input" in payload:
         payload["input"] = _normalize_openai_responses_input(payload.get("input"))
     if not target_model_name:
-        return payload
-    if protocol == ProtocolKind.GEMINI:
-        payload["model"] = target_model_name
         return payload
     payload["model"] = target_model_name
     return payload
@@ -2675,13 +2638,6 @@ def _dump_json(value: Any) -> str | None:
         return None
 
 
-def _decode_response_content(response: httpx.Response) -> str | None:
-    content = response.content
-    if not content:
-        return None
-    return _decode_content_bytes(content)
-
-
 def _decode_content_bytes(content: bytes | None) -> str | None:
     if not content:
         return None
@@ -2689,15 +2645,6 @@ def _decode_content_bytes(content: bytes | None) -> str | None:
         return content.decode("utf-8")
     except UnicodeDecodeError:
         return content.decode("utf-8", errors="replace")
-
-
-def _capture_stream_chunk(
-    protocol: ProtocolKind, chunk: bytes, capture: StreamCapture
-) -> None:
-    text = chunk.decode("utf-8", errors="replace")
-    if not text:
-        return
-    capture.response_content = (capture.response_content or "") + text
 
 
 async def _pump_stream_response(
@@ -2722,13 +2669,15 @@ async def _pump_stream_response(
                         first_token_latency_ms=capture.first_token_latency_ms,
                         latency_ms=_elapsed_ms(capture.stream_started_at or stream_started_at),
                     )
-            _capture_stream_chunk(protocol, chunk, capture)
+            text = chunk.decode("utf-8", errors="replace")
+            if text:
+                capture.response_content = (capture.response_content or "") + text
             if not capture.client_disconnected:
                 chunk_queue.put_nowait(chunk)
         capture.completed = True
     except asyncio.CancelledError:
         capture.errors.append("stream pump cancelled")
-    except Exception as exc:
+    except httpx.HTTPError as exc:
         capture.errors.append(
             f"stream pump failed: {type(exc).__name__}: {exc}"
         )
@@ -3139,16 +3088,7 @@ def _extract_stream_usage(
         if not payloads:
             payloads = _parse_ndjson_payloads(raw_content)
         merged = payloads[-1] if payloads else {}
-        if isinstance(merged, dict):
-            return _extract_usage_from_payload(protocol, merged)
-        return {
-            "resolved_model": None,
-            "input_tokens": 0,
-            "cache_read_input_tokens": 0,
-            "cache_write_input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-        }
+        return _extract_usage_from_payload(protocol, merged)
 
     payloads = _parse_sse_payloads(raw_content)
     merged = {
@@ -3165,29 +3105,29 @@ def _extract_stream_usage(
             merged["resolved_model"] = parsed["resolved_model"]
         if parsed["input_tokens"]:
             merged["input_tokens"] = max(
-                int(merged["input_tokens"] or 0), int(parsed["input_tokens"] or 0)
+                int(merged["input_tokens"]), int(parsed["input_tokens"])
             )
         if parsed["cache_read_input_tokens"]:
             merged["cache_read_input_tokens"] = max(
-                int(merged["cache_read_input_tokens"] or 0),
-                int(parsed["cache_read_input_tokens"] or 0),
+                int(merged["cache_read_input_tokens"]),
+                int(parsed["cache_read_input_tokens"]),
             )
         if parsed["cache_write_input_tokens"]:
             merged["cache_write_input_tokens"] = max(
-                int(merged["cache_write_input_tokens"] or 0),
-                int(parsed["cache_write_input_tokens"] or 0),
+                int(merged["cache_write_input_tokens"]),
+                int(parsed["cache_write_input_tokens"]),
             )
         if parsed["output_tokens"]:
             merged["output_tokens"] = max(
-                int(merged["output_tokens"] or 0), int(parsed["output_tokens"] or 0)
+                int(merged["output_tokens"]), int(parsed["output_tokens"])
             )
         if parsed["total_tokens"]:
             merged["total_tokens"] = max(
-                int(merged["total_tokens"] or 0), int(parsed["total_tokens"] or 0)
+                int(merged["total_tokens"]), int(parsed["total_tokens"])
             )
     if not merged["total_tokens"]:
-        merged["total_tokens"] = int(merged["input_tokens"] or 0) + int(
-            merged["output_tokens"] or 0
+        merged["total_tokens"] = int(merged["input_tokens"]) + int(
+            merged["output_tokens"]
         )
     return merged
 

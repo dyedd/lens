@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from pathlib import Path
 
@@ -35,14 +34,21 @@ def register(app: FastAPI, service_module) -> None:
         if first_segment in RESERVED_PREFIXES:
             raise HTTPException(status_code=404, detail="Not Found")
 
-        static_file = _resolve_static_file(static_dir, normalized)
-        if static_file is not None:
-            return FileResponse(static_file)
+        if normalized:
+            for candidate in _next_rsc_candidates(static_dir, normalized):
+                if candidate.is_file() and _is_relative_to(candidate, static_dir):
+                    return FileResponse(candidate)
+            html_candidates = [
+                static_dir / normalized / "index.html",
+                static_dir / f"{normalized}.html",
+            ]
+        else:
+            html_candidates = [static_dir / "index.html"]
 
-        html_file = _resolve_html_file(static_dir, normalized)
-        if html_file is None:
-            raise HTTPException(status_code=404, detail="Not Found")
-        return FileResponse(html_file)
+        for candidate in html_candidates:
+            if candidate.is_file() and _is_relative_to(candidate, static_dir):
+                return FileResponse(candidate)
+        raise HTTPException(status_code=404, detail="Not Found")
 
     app.add_api_route("/", ui_entry, methods=["GET", "HEAD"], include_in_schema=False)
     app.add_api_route("/{path:path}", ui_entry, methods=["GET", "HEAD"], include_in_schema=False)
@@ -56,31 +62,6 @@ def _add_file_route(app: FastAPI, path: str, file_path: Path) -> None:
         return FileResponse(file_path)
 
     app.add_api_route(path, serve_file, methods=["GET", "HEAD"], include_in_schema=False)
-
-
-def _resolve_html_file(static_dir: Path, normalized_path: str) -> Path | None:
-    candidates = [static_dir / "index.html"]
-    if normalized_path:
-        candidates = [
-            static_dir / normalized_path / "index.html",
-            static_dir / f"{normalized_path}.html",
-        ]
-
-    for candidate in candidates:
-        if candidate.is_file() and _is_relative_to(candidate, static_dir):
-            return candidate
-    return None
-
-
-def _resolve_static_file(static_dir: Path, normalized_path: str) -> Path | None:
-    if not normalized_path:
-        return None
-
-    candidates = _next_rsc_candidates(static_dir, normalized_path)
-    for candidate in candidates:
-        if candidate.is_file() and _is_relative_to(candidate, static_dir):
-            return candidate
-    return None
 
 
 def _next_rsc_candidates(static_dir: Path, normalized_path: str) -> list[Path]:
