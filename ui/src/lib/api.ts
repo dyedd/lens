@@ -684,25 +684,6 @@ export class ApiError extends Error {
   }
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
-  const contentType = response.headers.get('content-type') ?? ''
-
-  if (contentType.includes('application/json')) {
-    const payload = await response.json().catch(() => null)
-    const detail = payload?.detail
-    if (typeof detail === 'string' && detail) {
-      return detail
-    }
-    const message = payload?.error?.message
-    if (typeof message === 'string' && message) {
-      return message
-    }
-  }
-
-  const text = await response.text()
-  return text || ('Request failed with status ' + response.status)
-}
-
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers)
   if (typeof init?.body === 'string' && !headers.has('content-type')) {
@@ -715,7 +696,28 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 
   const response = await fetch('/api' + path, { ...init, headers })
   if (!response.ok) {
-    throw new ApiError(await readErrorMessage(response), response.status)
+    const contentType = response.headers.get('content-type') ?? ''
+    let errorMessage = ''
+
+    if (contentType.includes('application/json')) {
+      const payload = await response.json().catch(() => null)
+      const detail = payload?.detail
+      if (typeof detail === 'string' && detail) {
+        errorMessage = detail
+      } else {
+        const message = payload?.error?.message
+        if (typeof message === 'string' && message) {
+          errorMessage = message
+        }
+      }
+    }
+
+    if (!errorMessage) {
+      const text = await response.text()
+      errorMessage = text || ('Request failed with status ' + response.status)
+    }
+
+    throw new ApiError(errorMessage, response.status)
   }
 
   return response

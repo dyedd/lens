@@ -721,7 +721,42 @@ async def test_site_model(
     payload: SiteModelTestRequest, _: Any = Depends(get_current_admin)
 ) -> SiteModelTestResult:
     channel = _model_test_channel(payload)
-    body = _model_test_body(payload.protocol, payload.model_name, payload.prompt)
+    text = payload.prompt.strip()
+    if payload.protocol == ProtocolKind.OPENAI_CHAT:
+        body = {
+            "model": payload.model_name,
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": 64,
+            "stream": False,
+        }
+    elif payload.protocol == ProtocolKind.OPENAI_RESPONSES:
+        body = {
+            "model": payload.model_name,
+            "input": text,
+            "max_output_tokens": 64,
+            "stream": False,
+        }
+    elif payload.protocol == ProtocolKind.OPENAI_EMBEDDING:
+        body = {
+            "model": payload.model_name,
+            "input": text,
+        }
+    elif payload.protocol == ProtocolKind.ANTHROPIC:
+        body = {
+            "model": payload.model_name,
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": 64,
+            "stream": False,
+        }
+    elif payload.protocol == ProtocolKind.GEMINI:
+        body = {
+            "model": payload.model_name,
+            "contents": [{"role": "user", "parts": [{"text": text}]}],
+            "generationConfig": {"maxOutputTokens": 64},
+            "stream": False,
+        }
+    else:
+        raise HTTPException(status_code=500, detail=f"Unsupported protocol={payload.protocol.value}")
     try:
         body = _apply_param_override(channel, body)
         body["stream"] = False
@@ -1541,7 +1576,7 @@ async def _proxy_protocol(
                 }
             ).model_dump(mode="json"),
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("Proxy request failed unexpectedly")
         await log_ctx.update(
             requested_group_name=plan.requested_group_name if plan else requested_model,
@@ -1571,7 +1606,11 @@ async def _try_target(
 ) -> Response | None:
     channel = target.channel
     attempt_started_at = perf_counter()
-    effective_user_agent = _resolve_effective_upstream_user_agent(channel, upstream_user_agent)
+    effective_user_agent = upstream_user_agent
+    for name, value in channel.headers.items():
+        if name.lower() == "user-agent":
+            effective_user_agent = _normalize_user_agent(value)
+            break
 
     if needs_conversion(protocol, channel.protocol):
         upstream_body = convert_request(protocol, channel.protocol, body, target.model_name)
@@ -1998,42 +2037,6 @@ def _model_test_channel(payload: SiteModelTestRequest) -> ChannelConfig:
     )
 
 
-def _model_test_body(protocol: ProtocolKind, model_name: str, prompt: str) -> dict[str, Any]:
-    text = prompt.strip()
-    if protocol == ProtocolKind.OPENAI_CHAT:
-        return {
-            "model": model_name,
-            "messages": [{"role": "user", "content": text}],
-            "max_tokens": 64,
-            "stream": False,
-        }
-    if protocol == ProtocolKind.OPENAI_RESPONSES:
-        return {
-            "model": model_name,
-            "input": text,
-            "max_output_tokens": 64,
-            "stream": False,
-        }
-    if protocol == ProtocolKind.OPENAI_EMBEDDING:
-        return {
-            "model": model_name,
-            "input": text,
-        }
-    if protocol == ProtocolKind.ANTHROPIC:
-        return {
-            "model": model_name,
-            "messages": [{"role": "user", "content": text}],
-            "max_tokens": 64,
-            "stream": False,
-        }
-    if protocol == ProtocolKind.GEMINI:
-        return {
-            "model": model_name,
-            "contents": [{"role": "user", "parts": [{"text": text}]}],
-            "generationConfig": {"maxOutputTokens": 64},
-            "stream": False,
-        }
-    raise HTTPException(status_code=500, detail=f"Unsupported protocol={protocol.value}")
 
 
 async def _call_model_test_channel(
@@ -2090,13 +2093,89 @@ async def _call_model_test_channel(
                 error_message=detail,
             )
         raw_payload = response.json()
+        output_text = ""
+        if channel.protocol == ProtocolKind.OPENAI_CHAT:
+            choices = raw_payload.get("choices")
+            if isinstance(choices, list):
+                for choice in choices:
+                    if not isinstance(choice, dict):
+                        continue
+                    message = choice.get("message")
+                    if not isinstance(message, dict):
+                        continue
+                    text = _stringify_text_content(message.get("content")).strip()
+                    if text:
+                        output_text = text
+                        break
+        elif channel.protocol == ProtocolKind.OPENAI_RESPONSES:
+            output_text_raw = raw_payload.get("output_text")
+            if isinstance(output_text_raw, str) and output_text_raw.strip():
+                output_text = output_text_raw.strip()
+            else:
+                output = raw_payload.get("output")
+                if isinstance(output, list):
+                    parts: list[str] = []
+                    for item in output:
+                        if not isinstance(item, dict):
+                            continue
+                        content = item.get("content")
+                        if not isinstance(content, list):
+                            continue
+                        for part in content:
+                            if isinstance(part, dict) and part.get("type") == "output_text":
+                                text = part.get("text")
+                                if isinstance(text, str) and text.strip():
+                                    parts.append(text.strip())
+                    output_text = "\n".join(parts)
+        elif channel.protocol == ProtocolKind.OPENAI_EMBEDDING:
+            data = raw_payload.get("data")
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    vector = item.get("embedding")
+                    if isinstance(vector, list):
+                        output_text = f"<vector dim={len(vector)}>"
+                        break
+                    if isinstance(vector, str) and vector:
+                        output_text = f"<vector base64 len={len(vector)}>"
+                        break
+        elif channel.protocol == ProtocolKind.ANTHROPIC:
+            content = raw_payload.get("content")
+            if isinstance(content, list):
+                parts = [
+                    str(item.get("text")).strip()
+                    for item in content
+                    if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+                ]
+                output_text = "\n".join(parts)
+        elif channel.protocol == ProtocolKind.GEMINI:
+            candidates = raw_payload.get("candidates")
+            if isinstance(candidates, list):
+                for candidate in candidates:
+                    if not isinstance(candidate, dict):
+                        continue
+                    content = candidate.get("content")
+                    if not isinstance(content, dict):
+                        continue
+                    parts_list = content.get("parts")
+                    if not isinstance(parts_list, list):
+                        continue
+                    parts = [
+                        str(part.get("text")).strip()
+                        for part in parts_list
+                        if isinstance(part, dict) and part.get("text")
+                    ]
+                    if parts:
+                        output_text = "\n".join(parts)
+                        break
         return SiteModelTestResult(
             success=True,
             status_code=response.status_code,
             latency_ms=latency_ms,
             model_name=model_name,
             credential_id=credential_id,
-            output_text=_extract_model_test_text(channel.protocol, raw_payload),
+            output_text=output_text,
         )
     except httpx.HTTPError as exc:
         return SiteModelTestResult(
@@ -2119,88 +2198,6 @@ async def _call_model_test_channel(
     finally:
         if close_client:
             await client.aclose()
-
-
-def _extract_model_test_text(protocol: ProtocolKind, payload: dict[str, Any]) -> str:
-    if protocol == ProtocolKind.OPENAI_CHAT:
-        choices = payload.get("choices")
-        if isinstance(choices, list):
-            for choice in choices:
-                if not isinstance(choice, dict):
-                    continue
-                message = choice.get("message")
-                if not isinstance(message, dict):
-                    continue
-                text = _stringify_text_content(message.get("content")).strip()
-                if text:
-                    return text
-        return ""
-
-    if protocol == ProtocolKind.OPENAI_RESPONSES:
-        output_text = payload.get("output_text")
-        if isinstance(output_text, str) and output_text.strip():
-            return output_text.strip()
-        output = payload.get("output")
-        if isinstance(output, list):
-            parts: list[str] = []
-            for item in output:
-                if not isinstance(item, dict):
-                    continue
-                content = item.get("content")
-                if not isinstance(content, list):
-                    continue
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "output_text":
-                        text = part.get("text")
-                        if isinstance(text, str) and text.strip():
-                            parts.append(text.strip())
-            return "\n".join(parts)
-        return ""
-
-    if protocol == ProtocolKind.OPENAI_EMBEDDING:
-        data = payload.get("data")
-        if not isinstance(data, list):
-            return ""
-        for item in data:
-            if not isinstance(item, dict):
-                continue
-            vector = item.get("embedding")
-            if isinstance(vector, list):
-                return f"<vector dim={len(vector)}>"
-            if isinstance(vector, str) and vector:
-                return f"<vector base64 len={len(vector)}>"
-        return ""
-
-    if protocol == ProtocolKind.ANTHROPIC:
-        content = payload.get("content")
-        if not isinstance(content, list):
-            return ""
-        parts = [
-            str(item.get("text")).strip()
-            for item in content
-            if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
-        ]
-        return "\n".join(part for part in parts if part)
-
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list):
-        return ""
-    parts: list[str] = []
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        content = candidate.get("content")
-        if not isinstance(content, dict):
-            continue
-        candidate_parts = content.get("parts")
-        if not isinstance(candidate_parts, list):
-            continue
-        for part in candidate_parts:
-            if isinstance(part, dict) and isinstance(part.get("text"), str):
-                text = part["text"].strip()
-                if text:
-                    parts.append(text)
-    return "\n".join(parts)
 
 
 def _stringify_text_content(value: Any) -> str:
@@ -2253,13 +2250,6 @@ def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
     return f"Transport error ({error_type}) while requesting {target_label}"
 
 
-def _resolve_effective_upstream_user_agent(
-    channel: ChannelConfig, upstream_user_agent: str
-) -> str:
-    for name, value in channel.headers.items():
-        if name.lower() == "user-agent":
-            return _normalize_user_agent(value)
-    return upstream_user_agent
 
 
 def _default_lens_user_agent() -> str:
@@ -3235,13 +3225,12 @@ def _extract_stream_usage(
         if parsed["resolved_model"]:
             merged["resolved_model"] = parsed["resolved_model"]
         for key in int_keys:
-            value = int(parsed[key] or 0)
+            value = parsed[key]
+            assert isinstance(value, int)
             if value:
-                merged[key] = max(int(merged[key] or 0), value)
+                merged[key] = max(merged[key], value)
     if not merged["total_tokens"]:
-        merged["total_tokens"] = int(merged["input_tokens"] or 0) + int(
-            merged["output_tokens"] or 0
-        )
+        merged["total_tokens"] = merged["input_tokens"] + merged["output_tokens"]
     return merged
 
 
