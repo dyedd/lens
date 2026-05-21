@@ -1,4 +1,3 @@
-
 from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
@@ -8,7 +7,6 @@ from typing import Any
 import jwt
 
 from .config import Settings
-
 
 PBKDF2_ITERATIONS = 600_000
 JWT_ALGORITHM = "HS256"

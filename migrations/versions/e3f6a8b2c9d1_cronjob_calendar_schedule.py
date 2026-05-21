@@ -5,13 +5,13 @@ Revises: d8a0e5c7f2b4
 Create Date: 2026-04-26 00:00:01.000000
 
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "e3f6a8b2c9d1"
 down_revision: Union[str, Sequence[str], None] = "d8a0e5c7f2b4"
@@ -35,7 +35,9 @@ def upgrade() -> None:
                 server_default="interval",
             )
         )
-        batch_op.add_column(sa.Column("run_at_time", sa.String(length=5), nullable=True))
+        batch_op.add_column(
+            sa.Column("run_at_time", sa.String(length=5), nullable=True)
+        )
         batch_op.add_column(
             sa.Column(
                 "weekdays_json",

@@ -1,6 +1,4 @@
-
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
 
 DEFAULT_APP_TIME_ZONE = "Asia/Shanghai"
 

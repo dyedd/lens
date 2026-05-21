@@ -5,13 +5,13 @@ Revises: f4b7c9d2e1a3
 Create Date: 2026-04-27 00:00:01.000000
 
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "a1c9e2f4b6d8"
 down_revision: Union[str, Sequence[str], None] = "f4b7c9d2e1a3"
@@ -31,7 +31,9 @@ def _tables() -> set[str]:
 
 
 def _index_names(table_name: str) -> set[str]:
-    return {index["name"] for index in sa.inspect(op.get_bind()).get_indexes(table_name)}
+    return {
+        index["name"] for index in sa.inspect(op.get_bind()).get_indexes(table_name)
+    }
 
 
 def _rename_indexes(table_name: str, renames: Sequence[tuple[str, str, str]]) -> None:
@@ -56,7 +58,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    reverse = tuple((new_name, old_name, column_name) for old_name, new_name, column_name in INDEX_RENAMES)
+    reverse = tuple(
+        (new_name, old_name, column_name)
+        for old_name, new_name, column_name in INDEX_RENAMES
+    )
     if "cronjobs" in _tables():
         _rename_indexes("cronjobs", reverse)
 

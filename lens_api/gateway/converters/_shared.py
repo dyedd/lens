@@ -1,4 +1,3 @@
-
 import json
 from typing import Any, AsyncIterator
 
@@ -17,7 +16,9 @@ FINISH_REASON_CHAT_TO_RESPONSES: dict[str | None, str] = {
 }
 
 
-async def _parse_chat_sse_stream(raw_iterator: AsyncIterator[bytes]) -> AsyncIterator[dict[str, Any]]:
+async def _parse_chat_sse_stream(
+    raw_iterator: AsyncIterator[bytes],
+) -> AsyncIterator[dict[str, Any]]:
     buffer = b""
     async for chunk in raw_iterator:
         buffer += chunk
@@ -47,7 +48,9 @@ def _build_chat_image_part(url: str) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": url}}
 
 
-def _assemble_content_parts(text_parts: list[str], image_parts: list[dict[str, Any]]) -> list[dict[str, Any]] | str:
+def _assemble_content_parts(
+    text_parts: list[str], image_parts: list[dict[str, Any]]
+) -> list[dict[str, Any]] | str:
     if not image_parts:
         return "\n".join(text_parts)
     parts: list[dict[str, Any]] = []
@@ -83,7 +86,9 @@ def anthropic_content_to_chat_messages(
                 if source.get("type") == "base64":
                     mt = source.get("media_type", "image/png")
                     data = source.get("data", "")
-                    image_parts.append(_build_chat_image_part(f"data:{mt};base64,{data}"))
+                    image_parts.append(
+                        _build_chat_image_part(f"data:{mt};base64,{data}")
+                    )
                 elif source.get("type") == "url":
                     image_parts.append(_build_chat_image_part(source.get("url", "")))
             elif bt == "tool_use":
@@ -118,7 +123,10 @@ def anthropic_content_to_chat_messages(
             result.append(msg_out)
         elif image_parts or text_parts:
             result.append(
-                {"role": role, "content": _assemble_content_parts(text_parts, image_parts)}
+                {
+                    "role": role,
+                    "content": _assemble_content_parts(text_parts, image_parts),
+                }
             )
 
         for tr in tool_results:
@@ -230,7 +238,10 @@ def responses_input_to_chat_messages(
                     image_parts.append(_build_chat_image_part(url))
             if image_parts or text_parts:
                 result.append(
-                    {"role": role, "content": _assemble_content_parts(text_parts, image_parts)}
+                    {
+                        "role": role,
+                        "content": _assemble_content_parts(text_parts, image_parts),
+                    }
                 )
             continue
 

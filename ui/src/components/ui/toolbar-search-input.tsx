@@ -1,9 +1,9 @@
-"use client"
+"use client";
 
-import { Search, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { cn } from "@/lib/utils"
+import { Search, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 export function ToolbarSearchInput({
   value,
@@ -12,11 +12,11 @@ export function ToolbarSearchInput({
   placeholder,
   className,
 }: {
-  value: string
-  onChange: (value: string) => void
-  onClear: () => void
-  placeholder: string
-  className?: string
+  value: string;
+  onChange: (value: string) => void;
+  onClear: () => void;
+  placeholder: string;
+  className?: string;
 }) {
   return (
     <div className={cn("relative w-full max-w-sm", className)}>
@@ -39,5 +39,5 @@ export function ToolbarSearchInput({
         </Button>
       )}
     </div>
-  )
+  );
 }

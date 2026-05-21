@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -42,7 +41,9 @@ def build_upstream_request(
             raise HTTPException(status_code=400, detail="Gemini request requires model")
 
         path = "streamGenerateContent" if body.get("stream") else "generateContent"
-        payload = {key: value for key, value in body.items() if key not in {"model", "stream"}}
+        payload = {
+            key: value for key, value in body.items() if key not in {"model", "stream"}
+        }
         return UpstreamRequest(
             method="POST",
             url=_append_url_path(
@@ -62,7 +63,9 @@ def build_upstream_request(
 
     suffix = _OPENAI_LIKE_PATH.get(channel.protocol)
     if suffix is None:
-        raise HTTPException(status_code=500, detail=f"Unsupported protocol={channel.protocol.value}")
+        raise HTTPException(
+            status_code=500, detail=f"Unsupported protocol={channel.protocol.value}"
+        )
 
     if channel.protocol == ProtocolKind.ANTHROPIC:
         default_headers = {
@@ -79,7 +82,9 @@ def build_upstream_request(
     return UpstreamRequest(
         method="POST",
         url=_append_url_path(_protocol_base_url(channel), suffix),
-        headers=build_upstream_headers(default_headers, channel.headers, user_agent=user_agent),
+        headers=build_upstream_headers(
+            default_headers, channel.headers, user_agent=user_agent
+        ),
         json_body=dict(body),
         proxy_url=proxy_url,
     )
@@ -136,7 +141,9 @@ def _normalize_base_url(value: str) -> str:
     )
 
 
-def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = None) -> str:
+def resolve_channel_api_key(
+    channel: ChannelConfig, credential_id: str | None = None
+) -> str:
     if credential_id:
         for item in channel.keys:
             if item.id == credential_id and item.enabled and item.key.strip():
@@ -154,7 +161,9 @@ def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = 
     return channel.api_key.strip()
 
 
-def resolve_upstream_proxy_url(channel: ChannelConfig, global_proxy_url: str | None = None) -> str | None:
+def resolve_upstream_proxy_url(
+    channel: ChannelConfig, global_proxy_url: str | None = None
+) -> str | None:
     channel_proxy = channel.channel_proxy.strip()
     if channel_proxy:
         return channel_proxy

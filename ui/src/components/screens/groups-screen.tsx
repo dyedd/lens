@@ -1,9 +1,21 @@
-"use client"
+"use client";
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, Filter, GripVertical, LayoutGrid, Plus, RefreshCcw, Search, Sparkles, Trash2, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Check,
+  ChevronDown,
+  Filter,
+  GripVertical,
+  LayoutGrid,
+  Plus,
+  RefreshCcw,
+  Search,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
 import {
   ModelGroup,
   ModelGroupCandidateItem,
@@ -15,16 +27,22 @@ import {
   RoutingStrategy,
   Site,
   apiRequest,
-} from '@/lib/api'
-import { useI18n } from '@/lib/i18n'
-import { cn } from '@/lib/utils'
-import { getModelGroupAvatar, ModelAvatar } from '@/lib/model-icons'
-import { Dialog, AppDialogContent } from '@/components/ui/dialog'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+} from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { getModelGroupAvatar, ModelAvatar } from "@/lib/model-icons";
+import { Dialog, AppDialogContent } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -34,177 +52,188 @@ import {
   ItemGroup,
   ItemMedia,
   ItemTitle,
-} from '@/components/ui/item'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
-import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ToolbarSearchInput } from '@/components/ui/toolbar-search-input'
+} from "@/components/ui/item";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
 
 type FormItem = {
-  channel_id: string
-  channel_name: string
-  protocol?: ProtocolKind | null
-  credential_id: string
-  credential_name: string
-  credential_number: number
-  model_name: string
-  enabled: boolean
-}
+  channel_id: string;
+  channel_name: string;
+  protocol?: ProtocolKind | null;
+  credential_id: string;
+  credential_name: string;
+  credential_number: number;
+  model_name: string;
+  enabled: boolean;
+};
 
 type FormState = {
-  name: string
-  protocol: ProtocolKind
-  strategy: RoutingStrategy
-  route_group_id: string
-  sync_filter_mode: ModelGroupSyncFilterMode
-  sync_filter_query: string
-  input_price_per_million: string
-  output_price_per_million: string
-  cache_read_price_per_million: string
-  cache_write_price_per_million: string
-  items: FormItem[]
-}
+  name: string;
+  protocol: ProtocolKind;
+  strategy: RoutingStrategy;
+  route_group_id: string;
+  sync_filter_mode: ModelGroupSyncFilterMode;
+  sync_filter_query: string;
+  input_price_per_million: string;
+  output_price_per_million: string;
+  cache_read_price_per_million: string;
+  cache_write_price_per_million: string;
+  items: FormItem[];
+};
 
 type CandidateChannel = {
-  site_id: string
-  channel_id: string
-  channel_name: string
+  site_id: string;
+  channel_id: string;
+  channel_name: string;
   protocols: Array<{
-    channel_id: string
-    protocol: ProtocolKind
-    base_url: string
-    items: ModelGroupCandidateItem[]
-  }>
-}
+    channel_id: string;
+    protocol: ProtocolKind;
+    base_url: string;
+    items: ModelGroupCandidateItem[];
+  }>;
+};
 
-type GroupSort = 'members-desc' | 'enabled-desc' | 'name-asc' | 'name-desc'
-type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, ''>
+type GroupSort = "members-desc" | "enabled-desc" | "name-asc" | "name-desc";
+type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, "">;
 
 type GroupRow = ModelGroup & {
-  member_count: number
-  enabled_member_count: number
-  channel_summary: string
-  channel_names: string[]
-  is_route_group: boolean
-}
+  member_count: number;
+  enabled_member_count: number;
+  channel_summary: string;
+  channel_names: string[];
+  is_route_group: boolean;
+};
 
 const MODEL_SERIES_PRESETS = [
   {
-    key: 'openai',
-    zh: 'OpenAI',
-    en: 'OpenAI',
-    sampleModel: 'gpt-5.4',
-    prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'openai', 'text-embedding'],
+    key: "openai",
+    zh: "OpenAI",
+    en: "OpenAI",
+    sampleModel: "gpt-5.4",
+    prefixes: ["gpt-", "o1", "o3", "o4", "chatgpt", "openai", "text-embedding"],
   },
   {
-    key: 'claude',
-    zh: 'Claude',
-    en: 'Claude',
-    sampleModel: 'claude-opus-4-6',
-    prefixes: ['claude', 'anthropic'],
+    key: "claude",
+    zh: "Claude",
+    en: "Claude",
+    sampleModel: "claude-opus-4-6",
+    prefixes: ["claude", "anthropic"],
   },
   {
-    key: 'gemini',
-    zh: 'Gemini',
-    en: 'Gemini',
-    sampleModel: 'gemini-2.5-pro',
-    prefixes: ['gemini', 'gemma', 'google'],
+    key: "gemini",
+    zh: "Gemini",
+    en: "Gemini",
+    sampleModel: "gemini-2.5-pro",
+    prefixes: ["gemini", "gemma", "google"],
   },
   {
-    key: 'deepseek',
-    zh: 'DeepSeek',
-    en: 'DeepSeek',
-    sampleModel: 'deepseek-v3',
-    prefixes: ['deepseek'],
+    key: "deepseek",
+    zh: "DeepSeek",
+    en: "DeepSeek",
+    sampleModel: "deepseek-v3",
+    prefixes: ["deepseek"],
   },
   {
-    key: 'qwen',
-    zh: 'Qwen',
-    en: 'Qwen',
-    sampleModel: 'qwen-max',
-    prefixes: ['qwen', 'qwq', 'alibaba'],
+    key: "qwen",
+    zh: "Qwen",
+    en: "Qwen",
+    sampleModel: "qwen-max",
+    prefixes: ["qwen", "qwq", "alibaba"],
   },
   {
-    key: 'kimi',
-    zh: 'Kimi',
-    en: 'Kimi',
-    sampleModel: 'kimi-k2',
-    prefixes: ['moonshot', 'kimi'],
+    key: "kimi",
+    zh: "Kimi",
+    en: "Kimi",
+    sampleModel: "kimi-k2",
+    prefixes: ["moonshot", "kimi"],
   },
   {
-    key: 'glm',
-    zh: 'GLM',
-    en: 'GLM',
-    sampleModel: 'glm-4.5',
-    prefixes: ['glm', 'chatglm', 'zhipu', 'z-ai'],
+    key: "glm",
+    zh: "GLM",
+    en: "GLM",
+    sampleModel: "glm-4.5",
+    prefixes: ["glm", "chatglm", "zhipu", "z-ai"],
   },
   {
-    key: 'minimax',
-    zh: 'MiniMax',
-    en: 'MiniMax',
-    sampleModel: 'minimax-text-01',
-    prefixes: ['minimax', 'abab', 'minmax'],
+    key: "minimax",
+    zh: "MiniMax",
+    en: "MiniMax",
+    sampleModel: "minimax-text-01",
+    prefixes: ["minimax", "abab", "minmax"],
   },
   {
-    key: 'other',
-    zh: '其他',
-    en: 'Other',
-    sampleModel: 'other',
+    key: "other",
+    zh: "其他",
+    en: "Other",
+    sampleModel: "other",
     prefixes: [],
   },
-] as const
+] as const;
 
-type ModelSeriesKey = typeof MODEL_SERIES_PRESETS[number]['key']
-type SelectedSeries = 'all' | ModelSeriesKey
+type ModelSeriesKey = (typeof MODEL_SERIES_PRESETS)[number]["key"];
+type SelectedSeries = "all" | ModelSeriesKey;
 
 const emptyForm: FormState = {
-  name: '',
-  protocol: 'openai_chat',
-  strategy: 'round_robin',
-  route_group_id: '',
-  sync_filter_mode: '',
-  sync_filter_query: '',
-  input_price_per_million: '0',
-  output_price_per_million: '0',
-  cache_read_price_per_million: '0',
-  cache_write_price_per_million: '0',
+  name: "",
+  protocol: "openai_chat",
+  strategy: "round_robin",
+  route_group_id: "",
+  sync_filter_mode: "",
+  sync_filter_query: "",
+  input_price_per_million: "0",
+  output_price_per_million: "0",
+  cache_read_price_per_million: "0",
+  cache_write_price_per_million: "0",
   items: [],
-}
+};
 
 function buildCandidateHaystack(
   item: ModelGroupCandidateItem,
   channelMap: Map<string, ProtocolMeta>,
-  locale: 'zh-CN' | 'en-US',
+  locale: "zh-CN" | "en-US",
 ) {
-  const channel = channelMap.get(item.channel_id)
-  const channelName = channel?.name || item.channel_name
-  const endpoint = item.base_url || channelEndpoint(channel)
-  return `${item.model_name} ${channelName} ${protocolLabel(item.protocol, locale)} ${credentialDisplayLabel(item, locale)} ${item.credential_name} ${endpoint}`
+  const channel = channelMap.get(item.channel_id);
+  const channelName = channel?.name || item.channel_name;
+  const endpoint = item.base_url || channelEndpoint(channel);
+  return `${item.model_name} ${channelName} ${protocolLabel(item.protocol, locale)} ${credentialDisplayLabel(item, locale)} ${item.credential_name} ${endpoint}`;
 }
 
 function compileCandidateRegex(value: string) {
   try {
-    return new RegExp(value.trim(), 'i')
+    return new RegExp(value.trim(), "i");
   } catch {
-    return null
+    return null;
   }
 }
 
-function matchesCandidateSearch(haystack: string, mode: CandidateSearchMode, query: string) {
-  const normalizedQuery = query.trim()
+function matchesCandidateSearch(
+  haystack: string,
+  mode: CandidateSearchMode,
+  query: string,
+) {
+  const normalizedQuery = query.trim();
   if (!normalizedQuery) {
-    return true
+    return true;
   }
-  if (mode === 'regex') {
-    const regex = compileCandidateRegex(normalizedQuery)
+  if (mode === "regex") {
+    const regex = compileCandidateRegex(normalizedQuery);
     if (!regex) {
-      return false
+      return false;
     }
-    return regex.test(haystack)
+    return regex.test(haystack);
   }
-  return haystack.toLowerCase().includes(normalizedQuery.toLowerCase())
+  return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
 }
 
 function candidateToFormItem(item: ModelGroupCandidateItem): FormItem {
@@ -217,144 +246,175 @@ function candidateToFormItem(item: ModelGroupCandidateItem): FormItem {
     credential_number: item.credential_number,
     model_name: item.model_name,
     enabled: true,
-  }
+  };
 }
 
 function normalizeModelName(value: string | null | undefined) {
-  return (value || '').trim().toLowerCase()
+  return (value || "").trim().toLowerCase();
 }
 
 function getSeriesPreset(name: string) {
-  const normalized = normalizeModelName(name)
-  return MODEL_SERIES_PRESETS.find((item) => item.key !== 'other' && item.prefixes.some((prefix) => normalized.startsWith(prefix))) ?? MODEL_SERIES_PRESETS.find((item) => item.key === 'other')!
+  const normalized = normalizeModelName(name);
+  return (
+    MODEL_SERIES_PRESETS.find(
+      (item) =>
+        item.key !== "other" &&
+        item.prefixes.some((prefix) => normalized.startsWith(prefix)),
+    ) ?? MODEL_SERIES_PRESETS.find((item) => item.key === "other")!
+  );
 }
 
-function getSeriesKey(group: Pick<ModelGroup, 'name'>): ModelSeriesKey {
-  return getSeriesPreset(group.name).key
+function getSeriesKey(group: Pick<ModelGroup, "name">): ModelSeriesKey {
+  return getSeriesPreset(group.name).key;
 }
 
-const strategyOptions: Array<{ value: RoutingStrategy; zh: string; en: string }> = [
-  { value: 'round_robin', zh: '轮询', en: 'Round Robin' },
-  { value: 'failover', zh: '故障转移', en: 'Failover' },
-]
+const strategyOptions: Array<{
+  value: RoutingStrategy;
+  zh: string;
+  en: string;
+}> = [
+  { value: "round_robin", zh: "轮询", en: "Round Robin" },
+  { value: "failover", zh: "故障转移", en: "Failover" },
+];
 
 const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> = {
-  openai_chat: { zh: 'OpenAI Chat', en: 'OpenAI Chat' },
-  openai_responses: { zh: 'OpenAI Responses', en: 'OpenAI Responses' },
-  openai_embedding: { zh: 'OpenAI Embedding', en: 'OpenAI Embedding' },
-  anthropic: { zh: 'Anthropic', en: 'Anthropic' },
-  gemini: { zh: 'Gemini', en: 'Gemini' },
-}
+  openai_chat: { zh: "OpenAI Chat", en: "OpenAI Chat" },
+  openai_responses: { zh: "OpenAI Responses", en: "OpenAI Responses" },
+  openai_embedding: { zh: "OpenAI Embedding", en: "OpenAI Embedding" },
+  anthropic: { zh: "Anthropic", en: "Anthropic" },
+  gemini: { zh: "Gemini", en: "Gemini" },
+};
 
-function protocolLabel(protocol: ProtocolKind, locale: 'zh-CN' | 'en-US') {
-  return protocolLabels[protocol][locale === 'zh-CN' ? 'zh' : 'en']
+function protocolLabel(protocol: ProtocolKind, locale: "zh-CN" | "en-US") {
+  return protocolLabels[protocol][locale === "zh-CN" ? "zh" : "en"];
 }
 
 function isGeneratedCredentialName(value: string) {
-  const normalized = value.trim().toLowerCase()
-  return normalized === '默认密钥' || /^key\s*\d+$/.test(normalized) || /^密钥\s*\d+$/.test(value.trim())
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === "默认密钥" ||
+    /^key\s*\d+$/.test(normalized) ||
+    /^密钥\s*\d+$/.test(value.trim())
+  );
 }
 
 function credentialDisplayLabel(
-  item: Pick<FormItem | ModelGroupCandidateItem, 'credential_name' | 'credential_number'>,
-  locale: 'zh-CN' | 'en-US',
+  item: Pick<
+    FormItem | ModelGroupCandidateItem,
+    "credential_name" | "credential_number"
+  >,
+  locale: "zh-CN" | "en-US",
 ) {
-  const name = item.credential_name.trim()
+  const name = item.credential_name.trim();
   if (name && !isGeneratedCredentialName(name)) {
-    return name
+    return name;
   }
-  const number = item.credential_number > 0 ? item.credential_number : 1
-  return locale === 'zh-CN' ? `密钥 ${number}` : `Key ${number}`
+  const number = item.credential_number > 0 ? item.credential_number : 1;
+  return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
 }
 
 function protocolBadgeClassName(protocol: ProtocolKind) {
   switch (protocol) {
-    case 'openai_chat':
-      return 'border-transparent bg-sky-500/10 text-sky-700'
-    case 'openai_responses':
-      return 'border-transparent bg-indigo-500/10 text-indigo-700'
-    case 'openai_embedding':
-      return 'border-transparent bg-cyan-500/10 text-cyan-700'
-    case 'anthropic':
-      return 'border-transparent bg-amber-500/10 text-amber-700'
-    case 'gemini':
-      return 'border-transparent bg-emerald-500/10 text-emerald-700'
+    case "openai_chat":
+      return "border-transparent bg-sky-500/10 text-sky-700";
+    case "openai_responses":
+      return "border-transparent bg-indigo-500/10 text-indigo-700";
+    case "openai_embedding":
+      return "border-transparent bg-cyan-500/10 text-cyan-700";
+    case "anthropic":
+      return "border-transparent bg-amber-500/10 text-amber-700";
+    case "gemini":
+      return "border-transparent bg-emerald-500/10 text-emerald-700";
     default:
-      return 'border-transparent bg-secondary text-secondary-foreground'
+      return "border-transparent bg-secondary text-secondary-foreground";
   }
 }
 
-function protocolOptions(locale: 'zh-CN' | 'en-US') {
+function protocolOptions(locale: "zh-CN" | "en-US") {
   return (Object.keys(protocolLabels) as ProtocolKind[]).map((value) => ({
     value,
     label: protocolLabel(value, locale),
-  }))
+  }));
 }
 
 function formatMoney(value: number) {
-  if (value === 0) return '0'
-  return new Intl.NumberFormat('en-US', {
+  if (value === 0) return "0";
+  return new Intl.NumberFormat("en-US", {
     minimumFractionDigits: value >= 1 ? 2 : 0,
     maximumFractionDigits: 4,
-  }).format(value)
+  }).format(value);
 }
 
 function metricLabel(
-  key: 'input' | 'output' | 'cache_read' | 'cache_write',
-  locale: 'zh-CN' | 'en-US'
+  key: "input" | "output" | "cache_read" | "cache_write",
+  locale: "zh-CN" | "en-US",
 ) {
-  const labels: Record<'input' | 'output' | 'cache_read' | 'cache_write', { zh: string; en: string }> = {
-    input: { zh: '输入', en: 'Input' },
-    output: { zh: '输出', en: 'Output' },
-    cache_read: { zh: '缓存读取', en: 'Cache Read' },
-    cache_write: { zh: '缓存写入', en: 'Cache Write' },
-  }
+  const labels: Record<
+    "input" | "output" | "cache_read" | "cache_write",
+    { zh: string; en: string }
+  > = {
+    input: { zh: "输入", en: "Input" },
+    output: { zh: "输出", en: "Output" },
+    cache_read: { zh: "缓存读取", en: "Cache Read" },
+    cache_write: { zh: "缓存写入", en: "Cache Write" },
+  };
 
-  return labels[key][locale === 'zh-CN' ? 'zh' : 'en']
+  return labels[key][locale === "zh-CN" ? "zh" : "en"];
 }
 
-const selectClassName = 'w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground'
+const selectClassName =
+  "w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground";
 
 function apiErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
+  return error instanceof Error ? error.message : fallback;
 }
 
-function itemKey(item: Pick<FormItem, 'channel_id' | 'credential_id' | 'model_name'>) {
-  return `${item.channel_id}::${item.credential_id}::${item.model_name}`
+function itemKey(
+  item: Pick<FormItem, "channel_id" | "credential_id" | "model_name">,
+) {
+  return `${item.channel_id}::${item.credential_id}::${item.model_name}`;
 }
 
-function isGroupEnabled(group: Pick<GroupRow, 'enabled_member_count' | 'is_route_group'>) {
-  return group.is_route_group || group.enabled_member_count > 0
+function isGroupEnabled(
+  group: Pick<GroupRow, "enabled_member_count" | "is_route_group">,
+) {
+  return group.is_route_group || group.enabled_member_count > 0;
 }
 
 function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
-  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
-    return items
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= items.length ||
+    toIndex >= items.length
+  ) {
+    return items;
   }
-  const nextItems = items.slice()
-  const [target] = nextItems.splice(fromIndex, 1)
-  nextItems.splice(toIndex, 0, target)
-  return nextItems
+  const nextItems = items.slice();
+  const [target] = nextItems.splice(fromIndex, 1);
+  nextItems.splice(toIndex, 0, target);
+  return nextItems;
 }
 
 type ProtocolMeta = {
-  id: string
-  name: string
-  base_url: string
-  protocol: ProtocolKind
-}
+  id: string;
+  name: string;
+  base_url: string;
+  protocol: ProtocolKind;
+};
 
 function channelEndpoint(channel?: ProtocolMeta) {
-  if (!channel) return ''
-  return channel.base_url || ''
+  if (!channel) return "";
+  return channel.base_url || "";
 }
 
 function protocolBaseUrl(site: Site, baseUrlId: string) {
-  const bound = site.base_urls.find((item) => item.id === baseUrlId)
-  if (bound?.url) return bound.url
-  const enabled = site.base_urls.find((item) => item.enabled)
-  if (enabled?.url) return enabled.url
-  return site.base_urls[0]?.url || ''
+  const bound = site.base_urls.find((item) => item.id === baseUrlId);
+  if (bound?.url) return bound.url;
+  const enabled = site.base_urls.find((item) => item.enabled);
+  if (enabled?.url) return enabled.url;
+  return site.base_urls[0]?.url || "";
 }
 
 function toForm(group: ModelGroup): FormState {
@@ -362,7 +422,7 @@ function toForm(group: ModelGroup): FormState {
     name: group.name,
     protocol: group.protocol,
     strategy: group.strategy,
-    route_group_id: group.route_group_id ?? '',
+    route_group_id: group.route_group_id ?? "",
     sync_filter_mode: group.sync_filter_mode,
     sync_filter_query: group.sync_filter_query,
     input_price_per_million: String(group.input_price_per_million),
@@ -382,7 +442,7 @@ function toForm(group: ModelGroup): FormState {
         model_name: item.model_name,
         enabled: item.enabled,
       })),
-  }
+  };
 }
 
 function toPayload(form: FormState): ModelGroupPayload {
@@ -391,10 +451,20 @@ function toPayload(form: FormState): ModelGroupPayload {
     protocol: form.protocol,
     strategy: form.strategy,
     route_group_id: form.route_group_id.trim(),
-    sync_filter_mode: form.route_group_id.trim() || !form.sync_filter_query.trim() ? '' : form.sync_filter_mode,
-    sync_filter_query: form.route_group_id.trim() ? '' : form.sync_filter_query.trim(),
-    items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
-  }
+    sync_filter_mode:
+      form.route_group_id.trim() || !form.sync_filter_query.trim()
+        ? ""
+        : form.sync_filter_mode,
+    sync_filter_query: form.route_group_id.trim()
+      ? ""
+      : form.sync_filter_query.trim(),
+    items: form.items.map((item) => ({
+      channel_id: item.channel_id,
+      credential_id: item.credential_id,
+      model_name: item.model_name,
+      enabled: item.enabled,
+    })),
+  };
 }
 
 function CompactPriceSummary({
@@ -404,32 +474,52 @@ function CompactPriceSummary({
   cacheReadPrice,
   cacheWritePrice,
 }: {
-  locale: 'zh-CN' | 'en-US'
-  inputPrice: number
-  outputPrice: number
-  cacheReadPrice: number
-  cacheWritePrice: number
+  locale: "zh-CN" | "en-US";
+  inputPrice: number;
+  outputPrice: number;
+  cacheReadPrice: number;
+  cacheWritePrice: number;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span>{metricLabel('input', locale)} ${formatMoney(inputPrice)}</span>
-          <span>{metricLabel('output', locale)} ${formatMoney(outputPrice)}</span>
-          <span>{metricLabel('cache_read', locale)} ${formatMoney(cacheReadPrice)}</span>
-          <span>{metricLabel('cache_write', locale)} ${formatMoney(cacheWritePrice)}</span>
+          <span>
+            {metricLabel("input", locale)} ${formatMoney(inputPrice)}
+          </span>
+          <span>
+            {metricLabel("output", locale)} ${formatMoney(outputPrice)}
+          </span>
+          <span>
+            {metricLabel("cache_read", locale)} ${formatMoney(cacheReadPrice)}
+          </span>
+          <span>
+            {metricLabel("cache_write", locale)} ${formatMoney(cacheWritePrice)}
+          </span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="top" align="start">
         <div className="grid gap-1">
-          <div>{metricLabel('input', locale)}: ${formatMoney(inputPrice)} / 1M tokens</div>
-          <div>{metricLabel('output', locale)}: ${formatMoney(outputPrice)} / 1M tokens</div>
-          <div>{metricLabel('cache_read', locale)}: ${formatMoney(cacheReadPrice)} / 1M tokens</div>
-          <div>{metricLabel('cache_write', locale)}: ${formatMoney(cacheWritePrice)} / 1M tokens</div>
+          <div>
+            {metricLabel("input", locale)}: ${formatMoney(inputPrice)} / 1M
+            tokens
+          </div>
+          <div>
+            {metricLabel("output", locale)}: ${formatMoney(outputPrice)} / 1M
+            tokens
+          </div>
+          <div>
+            {metricLabel("cache_read", locale)}: ${formatMoney(cacheReadPrice)}{" "}
+            / 1M tokens
+          </div>
+          <div>
+            {metricLabel("cache_write", locale)}: $
+            {formatMoney(cacheWritePrice)} / 1M tokens
+          </div>
         </div>
       </TooltipContent>
     </Tooltip>
-  )
+  );
 }
 
 function EditablePriceRow({
@@ -441,43 +531,51 @@ function EditablePriceRow({
   onPrimaryChange,
   onSecondaryChange,
 }: {
-  locale: 'zh-CN' | 'en-US'
-  primaryLabel: 'input' | 'output'
-  primaryValue: string
-  secondaryLabel: 'cache_read' | 'cache_write'
-  secondaryValue: string
-  onPrimaryChange: (value: string) => void
-  onSecondaryChange: (value: string) => void
+  locale: "zh-CN" | "en-US";
+  primaryLabel: "input" | "output";
+  primaryValue: string;
+  secondaryLabel: "cache_read" | "cache_write";
+  secondaryValue: string;
+  onPrimaryChange: (value: string) => void;
+  onSecondaryChange: (value: string) => void;
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <Field className="min-w-0">
         <FieldLabel>${metricLabel(primaryLabel, locale)}</FieldLabel>
-        <Input className="mt-2" value={primaryValue} onChange={(event) => onPrimaryChange(event.target.value)} />
+        <Input
+          className="mt-2"
+          value={primaryValue}
+          onChange={(event) => onPrimaryChange(event.target.value)}
+        />
       </Field>
 
       <Field className="min-w-0">
         <FieldLabel>${metricLabel(secondaryLabel, locale)}</FieldLabel>
-        <Input className="mt-2" value={secondaryValue} onChange={(event) => onSecondaryChange(event.target.value)} />
+        <Input
+          className="mt-2"
+          value={secondaryValue}
+          onChange={(event) => onSecondaryChange(event.target.value)}
+        />
       </Field>
     </div>
-  )
+  );
 }
 
 function StrategyToggle({
   value,
   locale,
   disabled = false,
-  size = 'default',
+  size = "default",
   className,
   onChange,
 }: {
-  value: RoutingStrategy
-  locale: 'zh-CN' | 'en-US'
-  disabled?: boolean
-  size?: 'default' | 'sm'
-  className?: string
-  onChange: (value: RoutingStrategy) => void
+  value: RoutingStrategy;
+  locale: "zh-CN" | "en-US";
+  disabled?: boolean;
+  size?: "default" | "sm";
+  className?: string;
+  onChange: (value: RoutingStrategy) => void;
 }) {
   return (
     <ToggleGroup
@@ -485,21 +583,26 @@ function StrategyToggle({
       value={value}
       onValueChange={(nextValue) => {
         if (nextValue) {
-          onChange(nextValue as RoutingStrategy)
+          onChange(nextValue as RoutingStrategy);
         }
       }}
       variant="outline"
       size={size}
       spacing={1}
-      className={cn('max-w-full flex-wrap', className)}
+      className={cn("max-w-full flex-wrap", className)}
     >
       {strategyOptions.map((option) => (
-        <ToggleGroupItem key={option.value} value={option.value} disabled={disabled} className="max-w-full">
-          {locale === 'zh-CN' ? option.zh : option.en}
+        <ToggleGroupItem
+          key={option.value}
+          value={option.value}
+          disabled={disabled}
+          className="max-w-full"
+        >
+          {locale === "zh-CN" ? option.zh : option.en}
         </ToggleGroupItem>
       ))}
     </ToggleGroup>
-  )
+  );
 }
 
 function CandidateRow({
@@ -508,32 +611,42 @@ function CandidateRow({
   locale,
   onClick,
 }: {
-  item: ModelGroupCandidateItem
-  active: boolean
-  locale: 'zh-CN' | 'en-US'
-  onClick: () => void
+  item: ModelGroupCandidateItem;
+  active: boolean;
+  locale: "zh-CN" | "en-US";
+  onClick: () => void;
 }) {
-  const credentialLabel = credentialDisplayLabel(item, locale)
+  const credentialLabel = credentialDisplayLabel(item, locale);
   return (
     <Button
       type="button"
       variant="ghost"
       className={cn(
-        'h-8 w-full justify-between rounded-md px-3 text-left',
-        active ? 'cursor-not-allowed opacity-60' : 'hover:bg-muted'
+        "h-8 w-full justify-between rounded-md px-3 text-left",
+        active ? "cursor-not-allowed opacity-60" : "hover:bg-muted",
       )}
       onClick={onClick}
       disabled={active}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">{item.model_name}</div>
+        <div className="truncate text-sm font-medium text-foreground">
+          {item.model_name}
+        </div>
       </div>
       <div className="flex min-w-0 shrink-0 items-center gap-2">
-        <span className="max-w-28 truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{credentialLabel}</span>
-        <span className="text-muted-foreground">{active ? <Check size={15} className="text-primary" /> : <Plus size={15} />}</span>
+        <span className="max-w-28 truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          {credentialLabel}
+        </span>
+        <span className="text-muted-foreground">
+          {active ? (
+            <Check size={15} className="text-primary" />
+          ) : (
+            <Plus size={15} />
+          )}
+        </span>
       </div>
     </Button>
-  )
+  );
 }
 
 function SelectedMemberRow({
@@ -548,22 +661,22 @@ function SelectedMemberRow({
   onDragEnd,
   locale,
 }: {
-  item: FormItem
-  index: number
-  dragging: boolean
-  busy: boolean
-  onToggle: () => void
-  onRemove: () => void
-  onDragStart: () => void
-  onDragEnter: () => void
-  onDragEnd: () => void
-  locale: 'zh-CN' | 'en-US'
+  item: FormItem;
+  index: number;
+  dragging: boolean;
+  busy: boolean;
+  onToggle: () => void;
+  onRemove: () => void;
+  onDragStart: () => void;
+  onDragEnter: () => void;
+  onDragEnd: () => void;
+  locale: "zh-CN" | "en-US";
 }) {
   const sourceParts = [
     item.channel_name,
-    item.protocol ? protocolLabel(item.protocol, locale) : '',
+    item.protocol ? protocolLabel(item.protocol, locale) : "",
     credentialDisplayLabel(item, locale),
-  ].filter(Boolean)
+  ].filter(Boolean);
   return (
     <div
       draggable
@@ -572,27 +685,44 @@ function SelectedMemberRow({
       onDragOver={(event) => event.preventDefault()}
       onDragEnd={onDragEnd}
       className={cn(
-        'flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0',
-        dragging && 'opacity-60 shadow-sm',
-        !item.enabled && 'opacity-55'
+        "flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0",
+        dragging && "opacity-60 shadow-sm",
+        !item.enabled && "opacity-55",
       )}
     >
-      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">{index + 1}</span>
+      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
+        {index + 1}
+      </span>
       <span className="cursor-grab text-muted-foreground active:cursor-grabbing">
         <GripVertical size={14} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">{item.model_name}</div>
-        <div className="truncate text-xs text-muted-foreground">{sourceParts.join(' · ')}{!item.enabled ? ' · 已关闭' : ''}</div>
+        <div className="truncate text-sm font-medium text-foreground">
+          {item.model_name}
+        </div>
+        <div className="truncate text-xs text-muted-foreground">
+          {sourceParts.join(" · ")}
+          {!item.enabled ? " · 已关闭" : ""}
+        </div>
       </div>
       <div className="flex h-8 w-8 items-center justify-center">
-        <Switch checked={item.enabled} disabled={busy} onCheckedChange={onToggle} />
+        <Switch
+          checked={item.enabled}
+          disabled={busy}
+          onCheckedChange={onToggle}
+        />
       </div>
-      <Button type="button" variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={onRemove}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="text-muted-foreground hover:text-destructive"
+        onClick={onRemove}
+      >
         <X size={13} />
       </Button>
     </div>
-  )
+  );
 }
 
 function SeriesChip({
@@ -602,84 +732,116 @@ function SeriesChip({
   onClick,
   isAll = false,
 }: {
-  selected: boolean
-  label: string
-  sampleModel: string
-  onClick: () => void
-  isAll?: boolean
+  selected: boolean;
+  label: string;
+  sampleModel: string;
+  onClick: () => void;
+  isAll?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        'group flex min-w-[108px] snap-start flex-col items-center justify-center gap-2 rounded-[22px] border bg-card px-4 py-4 text-center transition-all',
+        "group flex min-w-[108px] snap-start flex-col items-center justify-center gap-2 rounded-[22px] border bg-card px-4 py-4 text-center transition-all",
         selected
-          ? 'border-primary bg-primary/[0.05] shadow-[0_0_0_1px_rgba(37,99,235,0.08)]'
-          : 'border-border/70 hover:border-primary/25 hover:bg-muted/20'
+          ? "border-primary bg-primary/[0.05] shadow-[0_0_0_1px_rgba(37,99,235,0.08)]"
+          : "border-border/70 hover:border-primary/25 hover:bg-muted/20",
       )}
     >
       <span
         className={cn(
-          'flex size-11 items-center justify-center rounded-2xl border bg-background',
-          selected ? 'border-primary/20 bg-primary/[0.06]' : 'border-border/60'
+          "flex size-11 items-center justify-center rounded-2xl border bg-background",
+          selected ? "border-primary/20 bg-primary/[0.06]" : "border-border/60",
         )}
       >
-        {isAll ? <LayoutGrid size={20} className={selected ? 'text-primary' : 'text-muted-foreground'} /> : <ModelAvatar name={sampleModel} size={28} />}
+        {isAll ? (
+          <LayoutGrid
+            size={20}
+            className={selected ? "text-primary" : "text-muted-foreground"}
+          />
+        ) : (
+          <ModelAvatar name={sampleModel} size={28} />
+        )}
       </span>
       <div className="text-sm font-medium text-foreground">{label}</div>
     </button>
-  )
+  );
 }
 
 export function GroupsScreen() {
-  const queryClient = useQueryClient()
-  const { locale } = useI18n()
-  const [selectedSeries, setSelectedSeries] = useState<SelectedSeries>('all')
-  const [search, setSearch] = useState('')
-  const [protocolFilter, setProtocolFilter] = useState<'all' | ProtocolKind>('all')
-  const [strategyFilter, setStrategyFilter] = useState<'all' | RoutingStrategy>('all')
-  const [sortBy, setSortBy] = useState<GroupSort>('members-desc')
-  const [candidateSearchMode, setCandidateSearchMode] = useState<CandidateSearchMode>('contains')
-  const [candidateSearch, setCandidateSearch] = useState('')
-  const [candidateSearchUsesGroupName, setCandidateSearchUsesGroupName] = useState(true)
-  const [form, setForm] = useState<FormState>(emptyForm)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null)
-  const [expandedChannels, setExpandedChannels] = useState<string[]>([])
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
-  const [cardDragging, setCardDragging] = useState<{ groupId: string; index: number } | null>(null)
-  const [showEnabledOnly, setShowEnabledOnly] = useState(false)
-  const [syncingPrices, setSyncingPrices] = useState(false)
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
+  const queryClient = useQueryClient();
+  const { locale } = useI18n();
+  const [selectedSeries, setSelectedSeries] = useState<SelectedSeries>("all");
+  const [search, setSearch] = useState("");
+  const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
+    "all",
+  );
+  const [strategyFilter, setStrategyFilter] = useState<"all" | RoutingStrategy>(
+    "all",
+  );
+  const [sortBy, setSortBy] = useState<GroupSort>("members-desc");
+  const [candidateSearchMode, setCandidateSearchMode] =
+    useState<CandidateSearchMode>("contains");
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [candidateSearchUsesGroupName, setCandidateSearchUsesGroupName] =
+    useState(true);
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null);
+  const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [cardDragging, setCardDragging] = useState<{
+    groupId: string;
+    index: number;
+  } | null>(null);
+  const [showEnabledOnly, setShowEnabledOnly] = useState(false);
+  const [syncingPrices, setSyncingPrices] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const { data: groups, isLoading } = useQuery({
-    queryKey: ['groups'],
-    queryFn: () => apiRequest<ModelGroup[]>('/admin/model-groups'),
+    queryKey: ["groups"],
+    queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
     staleTime: 2 * 60_000,
-  })
+  });
   const { data: sites } = useQuery({
-    queryKey: ['sites'],
-    queryFn: () => apiRequest<Site[]>('/admin/sites'),
+    queryKey: ["sites"],
+    queryFn: () => apiRequest<Site[]>("/admin/sites"),
     staleTime: 2 * 60_000,
-  })
-  const candidatePayload: ModelGroupCandidatesPayload = useMemo(() => ({
-    protocol: form.protocol,
-    exclude_items: form.items.map((item) => ({ channel_id: item.channel_id, credential_id: item.credential_id, model_name: item.model_name, enabled: item.enabled })),
-  }), [form.items, form.protocol])
-  const { data: candidateResponse, refetch: refetchCandidates, isFetching: isFetchingCandidates } = useQuery({
-    queryKey: ['group-candidates', candidatePayload],
-    queryFn: () => apiRequest<ModelGroupCandidatesResponse>('/admin/model-group-candidates', {
-      method: 'POST',
-      body: JSON.stringify(candidatePayload),
+  });
+  const candidatePayload: ModelGroupCandidatesPayload = useMemo(
+    () => ({
+      protocol: form.protocol,
+      exclude_items: form.items.map((item) => ({
+        channel_id: item.channel_id,
+        credential_id: item.credential_id,
+        model_name: item.model_name,
+        enabled: item.enabled,
+      })),
     }),
+    [form.items, form.protocol],
+  );
+  const {
+    data: candidateResponse,
+    refetch: refetchCandidates,
+    isFetching: isFetchingCandidates,
+  } = useQuery({
+    queryKey: ["group-candidates", candidatePayload],
+    queryFn: () =>
+      apiRequest<ModelGroupCandidatesResponse>(
+        "/admin/model-group-candidates",
+        {
+          method: "POST",
+          body: JSON.stringify(candidatePayload),
+        },
+      ),
     enabled: dialogOpen && !form.route_group_id,
-  })
+  });
 
   const channelMap = useMemo(() => {
-    const map = new Map<string, ProtocolMeta>()
+    const map = new Map<string, ProtocolMeta>();
     for (const site of sites ?? []) {
       for (const protocol of site.protocols) {
         map.set(protocol.id, {
@@ -687,93 +849,152 @@ export function GroupsScreen() {
           name: site.name,
           base_url: protocolBaseUrl(site, protocol.base_url_id),
           protocol: protocol.protocol,
-        })
+        });
       }
     }
-    return map
-  }, [sites])
+    return map;
+  }, [sites]);
 
-  const groupRows = useMemo<GroupRow[]>(() => (
-    (groups ?? []).map((group) => {
-      const isRouteGroup = Boolean(group.route_group_id)
-      const items = group.items.slice().sort((a, b) => a.sort_order - b.sort_order)
-      const channelNames = isRouteGroup
-        ? [group.route_group_name || group.route_group_id || '']
-        : [...new Set(items.map((item) => item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id).filter(Boolean))]
-      return {
-        ...group,
-        items,
-        member_count: isRouteGroup ? 1 : items.length,
-        enabled_member_count: isRouteGroup ? 1 : items.filter((item) => item.enabled).length,
-        channel_summary: channelNames.slice(0, 2).join(' · '),
-        channel_names: channelNames,
-        is_route_group: isRouteGroup,
-      }
-    })
-  ), [channelMap, groups])
+  const groupRows = useMemo<GroupRow[]>(
+    () =>
+      (groups ?? []).map((group) => {
+        const isRouteGroup = Boolean(group.route_group_id);
+        const items = group.items
+          .slice()
+          .sort((a, b) => a.sort_order - b.sort_order);
+        const channelNames = isRouteGroup
+          ? [group.route_group_name || group.route_group_id || ""]
+          : [
+              ...new Set(
+                items
+                  .map(
+                    (item) =>
+                      item.channel_name ||
+                      channelMap.get(item.channel_id)?.name ||
+                      item.channel_id,
+                  )
+                  .filter(Boolean),
+              ),
+            ];
+        return {
+          ...group,
+          items,
+          member_count: isRouteGroup ? 1 : items.length,
+          enabled_member_count: isRouteGroup
+            ? 1
+            : items.filter((item) => item.enabled).length,
+          channel_summary: channelNames.slice(0, 2).join(" · "),
+          channel_names: channelNames,
+          is_route_group: isRouteGroup,
+        };
+      }),
+    [channelMap, groups],
+  );
 
-  const routeTargetOptions = useMemo(() => (
-    (groups ?? [])
-      .filter((group) => group.protocol === form.protocol && !group.route_group_id && group.id !== editingId)
-      .sort((left, right) => left.name.localeCompare(right.name, locale))
-  ), [editingId, form.protocol, groups, locale])
+  const routeTargetOptions = useMemo(
+    () =>
+      (groups ?? [])
+        .filter(
+          (group) =>
+            group.protocol === form.protocol &&
+            !group.route_group_id &&
+            group.id !== editingId,
+        )
+        .sort((left, right) => left.name.localeCompare(right.name, locale)),
+    [editingId, form.protocol, groups, locale],
+  );
 
   const seriesOptions = useMemo(() => {
-    const availableKeys = new Set<ModelSeriesKey>()
+    const availableKeys = new Set<ModelSeriesKey>();
     for (const group of groupRows) {
-      availableKeys.add(getSeriesKey(group))
+      availableKeys.add(getSeriesKey(group));
     }
 
-    const available = MODEL_SERIES_PRESETS.filter((item) => item.key !== 'other' && availableKeys.has(item.key))
-    if (availableKeys.has('other')) {
-      const other = MODEL_SERIES_PRESETS.find((item) => item.key === 'other')
+    const available = MODEL_SERIES_PRESETS.filter(
+      (item) => item.key !== "other" && availableKeys.has(item.key),
+    );
+    if (availableKeys.has("other")) {
+      const other = MODEL_SERIES_PRESETS.find((item) => item.key === "other");
       if (other) {
-        available.push(other)
+        available.push(other);
       }
     }
 
-    return [{
-      key: 'all' as const,
-      zh: '全部',
-      en: 'All',
-      sampleModel: 'all',
-    }, ...available]
-  }, [groupRows])
+    return [
+      {
+        key: "all" as const,
+        zh: "全部",
+        en: "All",
+        sampleModel: "all",
+      },
+      ...available,
+    ];
+  }, [groupRows]);
 
-  const effectiveSelectedSeries = seriesOptions.some((item) => item.key === selectedSeries)
+  const effectiveSelectedSeries = seriesOptions.some(
+    (item) => item.key === selectedSeries,
+  )
     ? selectedSeries
-    : 'all'
+    : "all";
 
   const visibleGroups = useMemo<GroupRow[]>(() => {
-    const keyword = search.trim().toLowerCase()
+    const keyword = search.trim().toLowerCase();
     const filtered = groupRows.filter((group) => {
-      if (effectiveSelectedSeries !== 'all' && getSeriesKey(group) !== effectiveSelectedSeries) return false
-      if (protocolFilter !== 'all' && group.protocol !== protocolFilter) return false
-      if (strategyFilter !== 'all' && group.strategy !== strategyFilter) return false
-      if (!keyword) return true
+      if (
+        effectiveSelectedSeries !== "all" &&
+        getSeriesKey(group) !== effectiveSelectedSeries
+      )
+        return false;
+      if (protocolFilter !== "all" && group.protocol !== protocolFilter)
+        return false;
+      if (strategyFilter !== "all" && group.strategy !== strategyFilter)
+        return false;
+      if (!keyword) return true;
       const haystack = [
         group.name,
         group.channel_summary,
         ...group.channel_names,
         ...group.items.map((item) => item.model_name),
-      ].join(' ').toLowerCase()
-      return haystack.includes(keyword)
-    })
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(keyword);
+    });
 
     return [...filtered].sort((left, right) => {
-      if (sortBy === 'name-asc') return left.name.localeCompare(right.name, locale)
-      if (sortBy === 'name-desc') return right.name.localeCompare(left.name, locale)
-      if (sortBy === 'enabled-desc') return right.enabled_member_count - left.enabled_member_count || left.name.localeCompare(right.name, locale)
-      return right.member_count - left.member_count || left.name.localeCompare(right.name, locale)
-    })
-  }, [effectiveSelectedSeries, groupRows, locale, protocolFilter, search, sortBy, strategyFilter])
+      if (sortBy === "name-asc")
+        return left.name.localeCompare(right.name, locale);
+      if (sortBy === "name-desc")
+        return right.name.localeCompare(left.name, locale);
+      if (sortBy === "enabled-desc")
+        return (
+          right.enabled_member_count - left.enabled_member_count ||
+          left.name.localeCompare(right.name, locale)
+        );
+      return (
+        right.member_count - left.member_count ||
+        left.name.localeCompare(right.name, locale)
+      );
+    });
+  }, [
+    effectiveSelectedSeries,
+    groupRows,
+    locale,
+    protocolFilter,
+    search,
+    sortBy,
+    strategyFilter,
+  ]);
   const activeFilterCount = [
-    effectiveSelectedSeries !== 'all',
+    effectiveSelectedSeries !== "all",
     Boolean(search.trim()),
-    protocolFilter !== 'all',
-    strategyFilter !== 'all',
-  ].filter(Boolean).length
-  const candidateRegexInvalid = candidateSearchMode === 'regex' && Boolean(candidateSearch.trim()) && !compileCandidateRegex(candidateSearch)
+    protocolFilter !== "all",
+    strategyFilter !== "all",
+  ].filter(Boolean).length;
+  const candidateRegexInvalid =
+    candidateSearchMode === "regex" &&
+    Boolean(candidateSearch.trim()) &&
+    !compileCandidateRegex(candidateSearch);
 
   const filteredCandidates = useMemo(() => {
     return (candidateResponse?.candidates ?? []).filter((item) => {
@@ -781,148 +1002,191 @@ export function GroupsScreen() {
         buildCandidateHaystack(item, channelMap, locale),
         candidateSearchMode,
         candidateSearch,
-      )
-    })
-  }, [candidateResponse, candidateSearch, candidateSearchMode, channelMap, locale])
+      );
+    });
+  }, [
+    candidateResponse,
+    candidateSearch,
+    candidateSearchMode,
+    channelMap,
+    locale,
+  ]);
 
   const groupedCandidates = useMemo(() => {
-    const groupsByChannel = new Map<string, CandidateChannel>()
+    const groupsByChannel = new Map<string, CandidateChannel>();
 
     for (const item of filteredCandidates) {
-      const channel = channelMap.get(item.channel_id)
-      const channelName = channel?.name || item.channel_name
-      const channelKey = item.site_id || item.channel_id
-      let existing = groupsByChannel.get(channelKey)
+      const channel = channelMap.get(item.channel_id);
+      const channelName = channel?.name || item.channel_name;
+      const channelKey = item.site_id || item.channel_id;
+      let existing = groupsByChannel.get(channelKey);
       if (!existing) {
         existing = {
           site_id: item.site_id,
           channel_id: item.channel_id,
           channel_name: channelName,
           protocols: [],
-        }
-        groupsByChannel.set(channelKey, existing)
+        };
+        groupsByChannel.set(channelKey, existing);
       }
-      const protocolGroup = existing.protocols.find((protocol) => protocol.channel_id === item.channel_id)
+      const protocolGroup = existing.protocols.find(
+        (protocol) => protocol.channel_id === item.channel_id,
+      );
       if (protocolGroup) {
-        protocolGroup.items.push(item)
+        protocolGroup.items.push(item);
       } else {
         existing.protocols.push({
           channel_id: item.channel_id,
           protocol: item.protocol,
           base_url: item.base_url || channelEndpoint(channel),
           items: [item],
-        })
+        });
       }
     }
 
-    return Array.from(groupsByChannel.values()).sort((a, b) => a.channel_name.localeCompare(b.channel_name, locale))
-  }, [channelMap, filteredCandidates, locale])
+    return Array.from(groupsByChannel.values()).sort((a, b) =>
+      a.channel_name.localeCompare(b.channel_name, locale),
+    );
+  }, [channelMap, filteredCandidates, locale]);
 
   const visibleSelectedMembers = useMemo(() => {
     if (!showEnabledOnly) {
-      return form.items.map((item, index) => ({ item, index }))
+      return form.items.map((item, index) => ({ item, index }));
     }
-    return form.items.flatMap((item, index) => (item.enabled ? [{ item, index }] : []))
-  }, [form.items, showEnabledOnly])
+    return form.items.flatMap((item, index) =>
+      item.enabled ? [{ item, index }] : [],
+    );
+  }, [form.items, showEnabledOnly]);
 
   useEffect(() => {
     if (!dialogOpen) {
-      setCandidateSearch('')
-      setCandidateSearchMode('contains')
-      setCandidateSearchUsesGroupName(true)
-      setExpandedChannels([])
-      setDraggingIndex(null)
+      setCandidateSearch("");
+      setCandidateSearchMode("contains");
+      setCandidateSearchUsesGroupName(true);
+      setExpandedChannels([]);
+      setDraggingIndex(null);
     }
-  }, [dialogOpen])
+  }, [dialogOpen]);
 
   useEffect(() => {
-    if (!dialogOpen || candidateSearchMode !== 'contains' || !candidateSearchUsesGroupName) {
-      return
+    if (
+      !dialogOpen ||
+      candidateSearchMode !== "contains" ||
+      !candidateSearchUsesGroupName
+    ) {
+      return;
     }
-    setCandidateSearch(form.name)
-  }, [candidateSearchMode, candidateSearchUsesGroupName, dialogOpen, form.name])
+    setCandidateSearch(form.name);
+  }, [
+    candidateSearchMode,
+    candidateSearchUsesGroupName,
+    dialogOpen,
+    form.name,
+  ]);
 
   useEffect(() => {
     if (!groupedCandidates.length) {
-      setExpandedChannels([])
-      return
+      setExpandedChannels([]);
+      return;
     }
     setExpandedChannels((current) => {
-      const available = new Set(groupedCandidates.map((item) => item.site_id || item.channel_id))
-      const filtered = current.filter((item) => available.has(item))
+      const available = new Set(
+        groupedCandidates.map((item) => item.site_id || item.channel_id),
+      );
+      const filtered = current.filter((item) => available.has(item));
       if (filtered.length) {
-        return filtered
+        return filtered;
       }
-      return [groupedCandidates[0].site_id || groupedCandidates[0].channel_id]
-    })
-  }, [groupedCandidates])
+      return [groupedCandidates[0].site_id || groupedCandidates[0].channel_id];
+    });
+  }, [groupedCandidates]);
 
   async function invalidateGroupData() {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['groups'] }),
-      queryClient.invalidateQueries({ queryKey: ['sites'] }),
-      queryClient.invalidateQueries({ queryKey: ['group-candidates'] }),
-    ])
+      queryClient.invalidateQueries({ queryKey: ["groups"] }),
+      queryClient.invalidateQueries({ queryKey: ["sites"] }),
+      queryClient.invalidateQueries({ queryKey: ["group-candidates"] }),
+    ]);
   }
 
   function openCreate() {
-    setEditingId(null)
-    setForm(emptyForm)
-    setCandidateSearch('')
-    setCandidateSearchMode('contains')
-    setCandidateSearchUsesGroupName(true)
-    setDialogOpen(true)
+    setEditingId(null);
+    setForm(emptyForm);
+    setCandidateSearch("");
+    setCandidateSearchMode("contains");
+    setCandidateSearchUsesGroupName(true);
+    setDialogOpen(true);
   }
 
   function openEdit(item: ModelGroup) {
-    const hasSavedFilter = Boolean(item.sync_filter_mode && item.sync_filter_query.trim())
-    setEditingId(item.id)
-    setForm(toForm(item))
-    setCandidateSearch(hasSavedFilter ? item.sync_filter_query : item.name)
-    setCandidateSearchMode(item.sync_filter_mode === 'regex' ? 'regex' : 'contains')
-    setCandidateSearchUsesGroupName(!hasSavedFilter && item.sync_filter_mode !== 'regex')
-    setDialogOpen(true)
+    const hasSavedFilter = Boolean(
+      item.sync_filter_mode && item.sync_filter_query.trim(),
+    );
+    setEditingId(item.id);
+    setForm(toForm(item));
+    setCandidateSearch(hasSavedFilter ? item.sync_filter_query : item.name);
+    setCandidateSearchMode(
+      item.sync_filter_mode === "regex" ? "regex" : "contains",
+    );
+    setCandidateSearchUsesGroupName(
+      !hasSavedFilter && item.sync_filter_mode !== "regex",
+    );
+    setDialogOpen(true);
   }
 
   async function saveGroup(payload: FormState, groupId: string | null) {
-    const savedGroup = await apiRequest<ModelGroup>(groupId ? '/admin/model-groups/' + groupId : '/admin/model-groups', {
-      method: groupId ? 'PUT' : 'POST',
-      body: JSON.stringify(toPayload(payload)),
-    })
-    await invalidateGroupData()
-    return savedGroup
+    const savedGroup = await apiRequest<ModelGroup>(
+      groupId ? "/admin/model-groups/" + groupId : "/admin/model-groups",
+      {
+        method: groupId ? "PUT" : "POST",
+        body: JSON.stringify(toPayload(payload)),
+      },
+    );
+    await invalidateGroupData();
+    return savedGroup;
   }
 
-  async function saveGroupPrice(groupName: string, payload: {
-    input_price_per_million: number
-    output_price_per_million: number
-    cache_read_price_per_million: number
-    cache_write_price_per_million: number
-  }) {
-    await apiRequest('/admin/model-prices/' + encodeURIComponent(groupName), {
-      method: 'PUT',
+  async function saveGroupPrice(
+    groupName: string,
+    payload: {
+      input_price_per_million: number;
+      output_price_per_million: number;
+      cache_read_price_per_million: number;
+      cache_write_price_per_million: number;
+    },
+  ) {
+    await apiRequest("/admin/model-prices/" + encodeURIComponent(groupName), {
+      method: "PUT",
       body: JSON.stringify({
         model_key: groupName,
         display_name: groupName,
         ...payload,
       }),
-    })
-    await queryClient.invalidateQueries({ queryKey: ['groups'] })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["groups"] });
   }
 
   function parsePriceForm(payload: FormState) {
-    const input = Number(payload.input_price_per_million)
-    const output = Number(payload.output_price_per_million)
-    const cacheRead = Number(payload.cache_read_price_per_million)
-    const cacheWrite = Number(payload.cache_write_price_per_million)
+    const input = Number(payload.input_price_per_million);
+    const output = Number(payload.output_price_per_million);
+    const cacheRead = Number(payload.cache_read_price_per_million);
+    const cacheWrite = Number(payload.cache_write_price_per_million);
 
     if (
-      !Number.isFinite(input) || input < 0 ||
-      !Number.isFinite(output) || output < 0 ||
-      !Number.isFinite(cacheRead) || cacheRead < 0 ||
-      !Number.isFinite(cacheWrite) || cacheWrite < 0
+      !Number.isFinite(input) ||
+      input < 0 ||
+      !Number.isFinite(output) ||
+      output < 0 ||
+      !Number.isFinite(cacheRead) ||
+      cacheRead < 0 ||
+      !Number.isFinite(cacheWrite) ||
+      cacheWrite < 0
     ) {
-      throw new Error(locale === 'zh-CN' ? '价格必须是大于等于 0 的数字' : 'Prices must be numbers greater than or equal to 0')
+      throw new Error(
+        locale === "zh-CN"
+          ? "价格必须是大于等于 0 的数字"
+          : "Prices must be numbers greater than or equal to 0",
+      );
     }
 
     return {
@@ -930,300 +1194,409 @@ export function GroupsScreen() {
       output_price_per_million: output,
       cache_read_price_per_million: cacheRead,
       cache_write_price_per_million: cacheWrite,
-    }
+    };
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+    event.preventDefault();
     try {
-      const savedGroup = await saveGroup(form, editingId)
+      const savedGroup = await saveGroup(form, editingId);
       if (!savedGroup.route_group_id) {
-        const pricePayload = parsePriceForm(form)
-        await saveGroupPrice(savedGroup.name, pricePayload)
+        const pricePayload = parsePriceForm(form);
+        await saveGroupPrice(savedGroup.name, pricePayload);
       }
-      toast.success(editingId
-        ? (locale === 'zh-CN' ? '模型组已更新' : 'Group updated')
-        : (locale === 'zh-CN' ? '模型组已创建' : 'Group created'))
-      setDialogOpen(false)
-      setEditingId(null)
-      setForm(emptyForm)
+      toast.success(
+        editingId
+          ? locale === "zh-CN"
+            ? "模型组已更新"
+            : "Group updated"
+          : locale === "zh-CN"
+            ? "模型组已创建"
+            : "Group created",
+      );
+      setDialogOpen(false);
+      setEditingId(null);
+      setForm(emptyForm);
     } catch (e) {
-      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '保存模型组失败' : 'Failed to save group'))
+      toast.error(
+        apiErrorMessage(
+          e,
+          locale === "zh-CN" ? "保存模型组失败" : "Failed to save group",
+        ),
+      );
     }
   }
 
   async function syncPrices() {
-    setSyncingPrices(true)
+    setSyncingPrices(true);
     try {
-      await apiRequest('/admin/model-price-sync-jobs', { method: 'POST' })
-      await queryClient.invalidateQueries({ queryKey: ['groups'] })
-      toast.success(locale === 'zh-CN' ? '模型价格已同步' : 'Model prices synced')
+      await apiRequest("/admin/model-price-sync-jobs", { method: "POST" });
+      await queryClient.invalidateQueries({ queryKey: ["groups"] });
+      toast.success(
+        locale === "zh-CN" ? "模型价格已同步" : "Model prices synced",
+      );
     } catch (e) {
-      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '同步模型价格失败' : 'Failed to sync model prices'))
+      toast.error(
+        apiErrorMessage(
+          e,
+          locale === "zh-CN"
+            ? "同步模型价格失败"
+            : "Failed to sync model prices",
+        ),
+      );
     } finally {
-      setSyncingPrices(false)
+      setSyncingPrices(false);
     }
   }
 
   async function remove(item: ModelGroup) {
-    setBusyId(item.id)
+    setBusyId(item.id);
     try {
-      await apiRequest<void>('/admin/model-groups/' + item.id, { method: 'DELETE' })
-      setDeleteTarget(null)
-      await invalidateGroupData()
-      toast.success(locale === 'zh-CN' ? '模型组已删除' : 'Group deleted')
+      await apiRequest<void>("/admin/model-groups/" + item.id, {
+        method: "DELETE",
+      });
+      setDeleteTarget(null);
+      await invalidateGroupData();
+      toast.success(locale === "zh-CN" ? "模型组已删除" : "Group deleted");
     } catch (e) {
-      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '删除模型组失败' : 'Failed to delete group'))
+      toast.error(
+        apiErrorMessage(
+          e,
+          locale === "zh-CN" ? "删除模型组失败" : "Failed to delete group",
+        ),
+      );
     } finally {
-      setBusyId(null)
+      setBusyId(null);
     }
   }
 
   function addItem(item: ModelGroupCandidateItem) {
-    const key = itemKey(item)
+    const key = itemKey(item);
     setForm((current) => {
       if (current.items.some((member) => itemKey(member) === key)) {
-        return current
+        return current;
       }
       return {
         ...current,
         items: [...current.items, candidateToFormItem(item)],
-      }
-    })
+      };
+    });
   }
 
   function removeItem(index: number) {
     setForm((current) => ({
       ...current,
       items: current.items.filter((_, itemIndex) => itemIndex !== index),
-    }))
+    }));
   }
 
   function moveItem(fromIndex: number, toIndex: number) {
     setForm((current) => {
-      const nextItems = moveItems(current.items, fromIndex, toIndex)
+      const nextItems = moveItems(current.items, fromIndex, toIndex);
       if (nextItems === current.items) {
-        return current
+        return current;
       }
-      return { ...current, items: nextItems }
-    })
+      return { ...current, items: nextItems };
+    });
   }
 
-  async function updateGroupPartial(group: ModelGroup, updates: Partial<FormState>) {
-    setBusyId(group.id)
+  async function updateGroupPartial(
+    group: ModelGroup,
+    updates: Partial<FormState>,
+  ) {
+    setBusyId(group.id);
     try {
-      await saveGroup({ ...toForm(group), ...updates }, group.id)
-      return true
+      await saveGroup({ ...toForm(group), ...updates }, group.id);
+      return true;
     } catch (e) {
-      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '更新模型组失败' : 'Failed to update group'))
-      return false
+      toast.error(
+        apiErrorMessage(
+          e,
+          locale === "zh-CN" ? "更新模型组失败" : "Failed to update group",
+        ),
+      );
+      return false;
     } finally {
-      setBusyId(null)
+      setBusyId(null);
     }
   }
 
-  async function reorderGroupItems(group: GroupRow, fromIndex: number, toIndex: number) {
+  async function reorderGroupItems(
+    group: GroupRow,
+    fromIndex: number,
+    toIndex: number,
+  ) {
     if (group.is_route_group || fromIndex === toIndex || busyId === group.id) {
-      return
+      return;
     }
-    const nextItems = moveItems(toForm(group).items, fromIndex, toIndex)
+    const nextItems = moveItems(toForm(group).items, fromIndex, toIndex);
     if (nextItems === toForm(group).items) {
-      return
+      return;
     }
-    await updateGroupPartial(group, { items: nextItems })
+    await updateGroupPartial(group, { items: nextItems });
   }
 
   async function changeStrategy(group: GroupRow, strategy: RoutingStrategy) {
-    if (group.is_route_group || busyId === group.id || group.strategy === strategy) {
-      return
+    if (
+      group.is_route_group ||
+      busyId === group.id ||
+      group.strategy === strategy
+    ) {
+      return;
     }
-    const updated = await updateGroupPartial(group, { strategy })
+    const updated = await updateGroupPartial(group, { strategy });
     if (updated) {
-      toast.success(locale === 'zh-CN' ? '策略已更新' : 'Strategy updated')
+      toast.success(locale === "zh-CN" ? "策略已更新" : "Strategy updated");
     }
   }
 
   async function toggleGroupEnabled(group: GroupRow, enabled: boolean) {
-    if (group.is_route_group || !group.items.length || busyId === group.id || isGroupEnabled(group) === enabled) {
-      return
+    if (
+      group.is_route_group ||
+      !group.items.length ||
+      busyId === group.id ||
+      isGroupEnabled(group) === enabled
+    ) {
+      return;
     }
-    const nextItems = toForm(group).items.map((item) => ({ ...item, enabled }))
-    const updated = await updateGroupPartial(group, { items: nextItems })
+    const nextItems = toForm(group).items.map((item) => ({ ...item, enabled }));
+    const updated = await updateGroupPartial(group, { items: nextItems });
     if (updated) {
-      toast.success(enabled
-        ? (locale === 'zh-CN' ? '模型组已启动' : 'Group enabled')
-        : (locale === 'zh-CN' ? '模型组已停止' : 'Group disabled'))
+      toast.success(
+        enabled
+          ? locale === "zh-CN"
+            ? "模型组已启动"
+            : "Group enabled"
+          : locale === "zh-CN"
+            ? "模型组已停止"
+            : "Group disabled",
+      );
     }
   }
 
   async function removeGroupItem(group: GroupRow, index: number) {
     if (group.is_route_group || busyId === group.id) {
-      return
+      return;
     }
-    const nextItems = toForm(group).items.filter((_, itemIndex) => itemIndex !== index)
-    const updated = await updateGroupPartial(group, { items: nextItems })
+    const nextItems = toForm(group).items.filter(
+      (_, itemIndex) => itemIndex !== index,
+    );
+    const updated = await updateGroupPartial(group, { items: nextItems });
     if (updated) {
-      toast.success(locale === 'zh-CN' ? '成员已删除' : 'Member removed')
+      toast.success(locale === "zh-CN" ? "成员已删除" : "Member removed");
     }
   }
 
   function toggleChannel(channelId: string) {
-    setExpandedChannels((current) => current.includes(channelId) ? current.filter((item) => item !== channelId) : [...current, channelId])
+    setExpandedChannels((current) =>
+      current.includes(channelId)
+        ? current.filter((item) => item !== channelId)
+        : [...current, channelId],
+    );
   }
 
   function addMatchedItems() {
     if (!filteredCandidates.length && !candidateSearch.trim()) {
-      return
+      return;
     }
     setForm((current) => {
-      const existing = new Set(current.items.map((item) => itemKey(item)))
+      const existing = new Set(current.items.map((item) => itemKey(item)));
       const additions = filteredCandidates
         .filter((item) => !existing.has(itemKey(item)))
-        .map(candidateToFormItem)
+        .map(candidateToFormItem);
       return {
         ...current,
-        sync_filter_mode: candidateSearch.trim() ? candidateSearchMode : '',
+        sync_filter_mode: candidateSearch.trim() ? candidateSearchMode : "",
         sync_filter_query: candidateSearch.trim(),
-        items: additions.length ? [...current.items, ...additions] : current.items,
-      }
-    })
+        items: additions.length
+          ? [...current.items, ...additions]
+          : current.items,
+      };
+    });
   }
 
   async function applySavedFilter() {
     if (!form.sync_filter_mode || !form.sync_filter_query.trim()) {
-      return
+      return;
     }
-    const regex = form.sync_filter_mode === 'regex' ? compileCandidateRegex(form.sync_filter_query) : null
-    if (form.sync_filter_mode === 'regex' && !regex) {
-      toast.error(locale === 'zh-CN' ? '保存的正则表达式无效' : 'Saved regex is invalid')
-      return
+    const regex =
+      form.sync_filter_mode === "regex"
+        ? compileCandidateRegex(form.sync_filter_query)
+        : null;
+    if (form.sync_filter_mode === "regex" && !regex) {
+      toast.error(
+        locale === "zh-CN" ? "保存的正则表达式无效" : "Saved regex is invalid",
+      );
+      return;
     }
     try {
-      const response = await apiRequest<ModelGroupCandidatesResponse>('/admin/model-group-candidates', {
-        method: 'POST',
-        body: JSON.stringify({
-          protocol: form.protocol,
-          exclude_items: [],
-        } satisfies ModelGroupCandidatesPayload),
-      })
-      const previous = new Map(form.items.map((item) => [itemKey(item), item]))
-      const matchedByKey = new Map<string, FormItem>()
-      const matchedKeys: string[] = []
+      const response = await apiRequest<ModelGroupCandidatesResponse>(
+        "/admin/model-group-candidates",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            protocol: form.protocol,
+            exclude_items: [],
+          } satisfies ModelGroupCandidatesPayload),
+        },
+      );
+      const previous = new Map(form.items.map((item) => [itemKey(item), item]));
+      const matchedByKey = new Map<string, FormItem>();
+      const matchedKeys: string[] = [];
       for (const item of response.candidates) {
-        if (!matchesCandidateSearch(
-          buildCandidateHaystack(item, channelMap, locale),
-          form.sync_filter_mode as CandidateSearchMode,
-          form.sync_filter_query,
-        )) {
-          continue
+        if (
+          !matchesCandidateSearch(
+            buildCandidateHaystack(item, channelMap, locale),
+            form.sync_filter_mode as CandidateSearchMode,
+            form.sync_filter_query,
+          )
+        ) {
+          continue;
         }
-        const key = itemKey(item)
+        const key = itemKey(item);
         if (matchedByKey.has(key)) {
-          continue
+          continue;
         }
-        matchedKeys.push(key)
-        matchedByKey.set(key, (() => {
-          const nextItem = candidateToFormItem(item)
-          const oldItem = previous.get(itemKey(nextItem))
-          return oldItem ? { ...nextItem, enabled: oldItem.enabled } : nextItem
-        })())
+        matchedKeys.push(key);
+        matchedByKey.set(
+          key,
+          (() => {
+            const nextItem = candidateToFormItem(item);
+            const oldItem = previous.get(itemKey(nextItem));
+            return oldItem
+              ? { ...nextItem, enabled: oldItem.enabled }
+              : nextItem;
+          })(),
+        );
       }
       const existingItems = form.items.flatMap((item) => {
-        const matched = matchedByKey.get(itemKey(item))
-        return matched ? [matched] : []
-      })
-      const existingKeys = new Set(existingItems.map((item) => itemKey(item)))
+        const matched = matchedByKey.get(itemKey(item));
+        return matched ? [matched] : [];
+      });
+      const existingKeys = new Set(existingItems.map((item) => itemKey(item)));
       const newItems = matchedKeys.flatMap((key) => {
         if (existingKeys.has(key)) {
-          return []
+          return [];
         }
-        const matched = matchedByKey.get(key)
-        return matched ? [matched] : []
-      })
-      const nextItems = [...existingItems, ...newItems]
-      setForm((current) => ({ ...current, items: nextItems }))
-      toast.success(locale === 'zh-CN' ? `已按规则更新 ${nextItems.length} 个模型，保存后生效` : `Updated ${nextItems.length} models by rule. Save to apply`)
+        const matched = matchedByKey.get(key);
+        return matched ? [matched] : [];
+      });
+      const nextItems = [...existingItems, ...newItems];
+      setForm((current) => ({ ...current, items: nextItems }));
+      toast.success(
+        locale === "zh-CN"
+          ? `已按规则更新 ${nextItems.length} 个模型，保存后生效`
+          : `Updated ${nextItems.length} models by rule. Save to apply`,
+      );
     } catch (e) {
-      toast.error(apiErrorMessage(e, locale === 'zh-CN' ? '按规则更新失败' : 'Failed to update by rule'))
+      toast.error(
+        apiErrorMessage(
+          e,
+          locale === "zh-CN" ? "按规则更新失败" : "Failed to update by rule",
+        ),
+      );
     }
   }
 
   function clearSavedFilter() {
-    setForm((current) => ({ ...current, sync_filter_mode: '', sync_filter_query: '' }))
+    setForm((current) => ({
+      ...current,
+      sync_filter_mode: "",
+      sync_filter_query: "",
+    }));
   }
 
   function changeCandidateSearchMode(mode: CandidateSearchMode) {
-    setCandidateSearchMode(mode)
-    if (mode === 'contains') {
-      setCandidateSearch(form.name)
-      setCandidateSearchUsesGroupName(true)
-      return
+    setCandidateSearchMode(mode);
+    if (mode === "contains") {
+      setCandidateSearch(form.name);
+      setCandidateSearchUsesGroupName(true);
+      return;
     }
-    setCandidateSearchUsesGroupName(false)
+    setCandidateSearchUsesGroupName(false);
   }
 
   function changeCandidateSearch(value: string) {
-    setCandidateSearch(value)
-    setCandidateSearchUsesGroupName(false)
+    setCandidateSearch(value);
+    setCandidateSearchUsesGroupName(false);
   }
 
   function changeProtocol(protocol: ProtocolKind) {
     setForm((current) => {
       if (current.protocol === protocol) {
-        return current
+        return current;
       }
       return {
         ...current,
         protocol,
-        route_group_id: '',
-        sync_filter_mode: '',
-        sync_filter_query: '',
+        route_group_id: "",
+        sync_filter_mode: "",
+        sync_filter_query: "",
         items: [],
-      }
-    })
-    setCandidateSearch('')
-    setCandidateSearchMode('contains')
-    setCandidateSearchUsesGroupName(true)
-    setExpandedChannels([])
+      };
+    });
+    setCandidateSearch("");
+    setCandidateSearchMode("contains");
+    setCandidateSearchUsesGroupName(true);
+    setExpandedChannels([]);
   }
 
   function changeRouteTarget(routeGroupId: string) {
     setForm((current) => ({
       ...current,
       route_group_id: routeGroupId,
-      sync_filter_mode: routeGroupId ? '' : current.sync_filter_mode,
-      sync_filter_query: routeGroupId ? '' : current.sync_filter_query,
-    }))
-    setExpandedChannels([])
+      sync_filter_mode: routeGroupId ? "" : current.sync_filter_mode,
+      sync_filter_query: routeGroupId ? "" : current.sync_filter_query,
+    }));
+    setExpandedChannels([]);
   }
 
   function setAllMembersEnabled(enabled: boolean) {
     setForm((current) => ({
       ...current,
       items: current.items.map((item) => ({ ...item, enabled })),
-    }))
+    }));
   }
 
   function resetFilters() {
-    setSelectedSeries('all')
-    setSearch('')
-    setProtocolFilter('all')
-    setStrategyFilter('all')
-    setSortBy('members-desc')
+    setSelectedSeries("all");
+    setSearch("");
+    setProtocolFilter("all");
+    setStrategyFilter("all");
+    setSortBy("members-desc");
   }
 
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-foreground">{locale === 'zh-CN' ? '模型组' : 'Groups'}</h1>
+        <h1 className="text-xl font-semibold text-foreground">
+          {locale === "zh-CN" ? "模型组" : "Groups"}
+        </h1>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => void syncPrices()} disabled={syncingPrices}>
-            <RefreshCcw data-icon="inline-start" className={syncingPrices ? 'animate-spin' : ''} />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void syncPrices()}
+            disabled={syncingPrices}
+          >
+            <RefreshCcw
+              data-icon="inline-start"
+              className={syncingPrices ? "animate-spin" : ""}
+            />
             {syncingPrices
-              ? (locale === 'zh-CN' ? '同步中...' : 'Syncing...')
-              : (locale === 'zh-CN' ? '同步价格' : 'Sync prices')}
+              ? locale === "zh-CN"
+                ? "同步中..."
+                : "Syncing..."
+              : locale === "zh-CN"
+                ? "同步价格"
+                : "Sync prices"}
           </Button>
-          <Button className="rounded-full" size="icon-sm" type="button" onClick={openCreate}>
+          <Button
+            className="rounded-full"
+            size="icon-sm"
+            type="button"
+            onClick={openCreate}
+          >
             <Plus size={18} />
           </Button>
         </div>
@@ -1234,18 +1607,22 @@ export function GroupsScreen() {
           <div className="rounded-2xl border bg-card px-4 py-3 sm:px-5 sm:py-4">
             <div className="flex items-center justify-between gap-3 sm:mb-3">
               <div>
-                <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '选择模型系列' : 'Choose model series'}</div>
+                <div className="text-base font-semibold text-foreground">
+                  {locale === "zh-CN" ? "选择模型系列" : "Choose model series"}
+                </div>
               </div>
             </div>
 
             <NativeSelect
               className="mt-3 w-full sm:hidden"
               value={effectiveSelectedSeries}
-              onChange={(event) => setSelectedSeries(event.target.value as SelectedSeries)}
+              onChange={(event) =>
+                setSelectedSeries(event.target.value as SelectedSeries)
+              }
             >
               {seriesOptions.map((option) => (
                 <NativeSelectOption key={option.key} value={option.key}>
-                  {locale === 'zh-CN' ? option.zh : option.en}
+                  {locale === "zh-CN" ? option.zh : option.en}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
@@ -1255,9 +1632,9 @@ export function GroupsScreen() {
                 <SeriesChip
                   key={option.key}
                   selected={effectiveSelectedSeries === option.key}
-                  label={locale === 'zh-CN' ? option.zh : option.en}
+                  label={locale === "zh-CN" ? option.zh : option.en}
                   sampleModel={option.sampleModel}
-                  isAll={option.key === 'all'}
+                  isAll={option.key === "all"}
                   onClick={() => setSelectedSeries(option.key)}
                 />
               ))}
@@ -1267,11 +1644,15 @@ export function GroupsScreen() {
           <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-18rem)]">
             <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
               {isLoading ? (
-                <div className="px-2 py-6 text-sm text-muted-foreground">{locale === 'zh-CN' ? '正在加载模型组...' : 'Loading groups...'}</div>
+                <div className="px-2 py-6 text-sm text-muted-foreground">
+                  {locale === "zh-CN"
+                    ? "正在加载模型组..."
+                    : "Loading groups..."}
+                </div>
               ) : visibleGroups.length ? (
                 <ItemGroup className="gap-3">
                   {visibleGroups.map((group) => {
-                    const GroupAvatar = getModelGroupAvatar(group.name)
+                    const GroupAvatar = getModelGroupAvatar(group.name);
                     return (
                       <Item
                         key={group.id}
@@ -1281,39 +1662,59 @@ export function GroupsScreen() {
                         className="items-start gap-3 rounded-2xl border-border/80 bg-background px-4 py-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
                         onClick={() => openEdit(group)}
                         onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault()
-                            openEdit(group)
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openEdit(group);
                           }
                         }}
                       >
-                        <ItemMedia variant="icon" className="mt-0.5 hidden size-11 self-start rounded-xl bg-muted/40 sm:flex">
+                        <ItemMedia
+                          variant="icon"
+                          className="mt-0.5 hidden size-11 self-start rounded-xl bg-muted/40 sm:flex"
+                        >
                           <GroupAvatar size={30} />
                         </ItemMedia>
                         <ItemContent className="min-w-0">
                           <div className="flex flex-col gap-1.5">
                             <div className="flex flex-wrap items-center gap-2">
-                              <ItemTitle className="truncate text-base">{group.name}</ItemTitle>
-                              <Badge variant="outline" className={cn('px-2.5 py-0.5', protocolBadgeClassName(group.protocol))}>
+                              <ItemTitle className="truncate text-base">
+                                {group.name}
+                              </ItemTitle>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "px-2.5 py-0.5",
+                                  protocolBadgeClassName(group.protocol),
+                                )}
+                              >
                                 {protocolLabel(group.protocol, locale)}
                               </Badge>
                               {group.is_route_group ? (
-                                <Badge variant="outline" className="px-2.5 py-0.5">
-                                  {locale === 'zh-CN' ? '路由组' : 'Route group'}
+                                <Badge
+                                  variant="outline"
+                                  className="px-2.5 py-0.5"
+                                >
+                                  {locale === "zh-CN"
+                                    ? "路由组"
+                                    : "Route group"}
                                 </Badge>
                               ) : null}
                             </div>
                             {group.is_route_group ? (
                               <ItemDescription className="text-sm">
-                                {`${group.name} -> ${group.route_group_name || group.route_group_id || 'n/a'}`}
+                                {`${group.name} -> ${group.route_group_name || group.route_group_id || "n/a"}`}
                               </ItemDescription>
                             ) : (
                               <CompactPriceSummary
                                 locale={locale}
                                 inputPrice={group.input_price_per_million}
                                 outputPrice={group.output_price_per_million}
-                                cacheReadPrice={group.cache_read_price_per_million}
-                                cacheWritePrice={group.cache_write_price_per_million}
+                                cacheReadPrice={
+                                  group.cache_read_price_per_million
+                                }
+                                cacheWritePrice={
+                                  group.cache_write_price_per_million
+                                }
                               />
                             )}
                           </div>
@@ -1329,7 +1730,9 @@ export function GroupsScreen() {
                                 disabled={busyId === group.id}
                                 size="sm"
                                 className="w-fit max-w-full"
-                                onChange={(value) => void changeStrategy(group, value)}
+                                onChange={(value) =>
+                                  void changeStrategy(group, value)
+                                }
                               />
                             </ItemFooter>
                           ) : null}
@@ -1340,53 +1743,83 @@ export function GroupsScreen() {
                           >
                             {group.is_route_group ? (
                               <Badge variant="outline" className="px-3 py-1.5">
-                                {group.route_group_name || group.route_group_id || 'n/a'}
+                                {group.route_group_name ||
+                                  group.route_group_id ||
+                                  "n/a"}
                               </Badge>
-                            ) : group.items.length ? group.items.map((item, index) => {
-                              const channelName = item.channel_name || channelMap.get(item.channel_id)?.name || item.channel_id
-                              return (
-                                <div
-                                  key={`${itemKey(item)}::${index}`}
-                                  className={cn(
-                                    'flex min-w-0 max-w-full items-center rounded-full border bg-background',
-                                    !item.enabled && 'opacity-55',
-                                    cardDragging?.groupId === group.id && cardDragging.index === index && 'opacity-60'
-                                  )}
-                                  title={`${channelName} · ${item.model_name}`}
-                                >
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    draggable={busyId !== group.id}
-                                    className="h-auto min-w-0 max-w-full rounded-full rounded-r-none border-0 px-3 py-1.5 cursor-grab active:cursor-grabbing"
-                                    onDragStart={() => setCardDragging({ groupId: group.id, index })}
-                                    onDragOver={(event) => event.preventDefault()}
-                                    onDrop={() => {
-                                      if (!cardDragging || cardDragging.groupId !== group.id) return
-                                      void reorderGroupItems(group, cardDragging.index, index)
-                                    }}
-                                    onDragEnd={() => setCardDragging(null)}
+                            ) : group.items.length ? (
+                              group.items.map((item, index) => {
+                                const channelName =
+                                  item.channel_name ||
+                                  channelMap.get(item.channel_id)?.name ||
+                                  item.channel_id;
+                                return (
+                                  <div
+                                    key={`${itemKey(item)}::${index}`}
+                                    className={cn(
+                                      "flex min-w-0 max-w-full items-center rounded-full border bg-background",
+                                      !item.enabled && "opacity-55",
+                                      cardDragging?.groupId === group.id &&
+                                        cardDragging.index === index &&
+                                        "opacity-60",
+                                    )}
+                                    title={`${channelName} · ${item.model_name}`}
                                   >
-                                    <GripVertical data-icon="inline-start" />
-                                    <span className="min-w-0 truncate">{item.model_name}</span>
-                                    <span className="min-w-0 truncate text-muted-foreground">· {channelName}</span>
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
-                                    disabled={busyId === group.id}
-                                    onClick={() => void removeGroupItem(group, index)}
-                                  >
-                                    <X />
-                                  </Button>
-                                </div>
-                              )
-                            }) : (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      draggable={busyId !== group.id}
+                                      className="h-auto min-w-0 max-w-full rounded-full rounded-r-none border-0 px-3 py-1.5 cursor-grab active:cursor-grabbing"
+                                      onDragStart={() =>
+                                        setCardDragging({
+                                          groupId: group.id,
+                                          index,
+                                        })
+                                      }
+                                      onDragOver={(event) =>
+                                        event.preventDefault()
+                                      }
+                                      onDrop={() => {
+                                        if (
+                                          !cardDragging ||
+                                          cardDragging.groupId !== group.id
+                                        )
+                                          return;
+                                        void reorderGroupItems(
+                                          group,
+                                          cardDragging.index,
+                                          index,
+                                        );
+                                      }}
+                                      onDragEnd={() => setCardDragging(null)}
+                                    >
+                                      <GripVertical data-icon="inline-start" />
+                                      <span className="min-w-0 truncate">
+                                        {item.model_name}
+                                      </span>
+                                      <span className="min-w-0 truncate text-muted-foreground">
+                                        · {channelName}
+                                      </span>
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-xs"
+                                      className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+                                      disabled={busyId === group.id}
+                                      onClick={() =>
+                                        void removeGroupItem(group, index)
+                                      }
+                                    >
+                                      <X />
+                                    </Button>
+                                  </div>
+                                );
+                              })
+                            ) : (
                               <ItemDescription className="text-sm">
-                                {locale === 'zh-CN' ? '暂无成员' : 'No members'}
+                                {locale === "zh-CN" ? "暂无成员" : "No members"}
                               </ItemDescription>
                             )}
                           </div>
@@ -1398,23 +1831,42 @@ export function GroupsScreen() {
                         >
                           <Switch
                             checked={isGroupEnabled(group)}
-                            disabled={group.is_route_group || busyId === group.id || !group.items.length}
-                            onCheckedChange={(checked) => void toggleGroupEnabled(group, checked)}
+                            disabled={
+                              group.is_route_group ||
+                              busyId === group.id ||
+                              !group.items.length
+                            }
+                            onCheckedChange={(checked) =>
+                              void toggleGroupEnabled(group, checked)
+                            }
                           />
-                          <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(group)}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setDeleteTarget(group)}
+                          >
                             <Trash2 data-icon="inline-start" />
-                            {locale === 'zh-CN' ? '删除' : 'Delete'}
+                            {locale === "zh-CN" ? "删除" : "Delete"}
                           </Button>
                         </ItemActions>
                       </Item>
-                    )
+                    );
                   })}
                 </ItemGroup>
               ) : (
                 <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-                  {effectiveSelectedSeries !== 'all' || search.trim() || protocolFilter !== 'all' || strategyFilter !== 'all'
-                    ? (locale === 'zh-CN' ? '没有匹配的模型组。' : 'No matching groups.')
-                    : (locale === 'zh-CN' ? '当前还没有模型组。' : 'No groups yet.')}
+                  {effectiveSelectedSeries !== "all" ||
+                  search.trim() ||
+                  protocolFilter !== "all" ||
+                  strategyFilter !== "all"
+                    ? locale === "zh-CN"
+                      ? "没有匹配的模型组。"
+                      : "No matching groups."
+                    : locale === "zh-CN"
+                      ? "当前还没有模型组。"
+                      : "No groups yet."}
                 </div>
               )}
             </CardContent>
@@ -1429,15 +1881,25 @@ export function GroupsScreen() {
                   <Filter size={16} />
                 </span>
                 <div>
-                  <div className="text-sm font-semibold text-foreground">{locale === 'zh-CN' ? '筛选' : 'Filters'}</div>
+                  <div className="text-sm font-semibold text-foreground">
+                    {locale === "zh-CN" ? "筛选" : "Filters"}
+                  </div>
                   <div className="text-xs text-muted-foreground">
-                    {locale === 'zh-CN' ? `已启用 ${activeFilterCount} 项` : `${activeFilterCount} active`}
+                    {locale === "zh-CN"
+                      ? `已启用 ${activeFilterCount} 项`
+                      : `${activeFilterCount} active`}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <Button type="button" variant="ghost" size="sm" onClick={resetFilters} disabled={!activeFilterCount && sortBy === 'members-desc'}>
-                  {locale === 'zh-CN' ? '清空' : 'Clear'}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetFilters}
+                  disabled={!activeFilterCount && sortBy === "members-desc"}
+                >
+                  {locale === "zh-CN" ? "清空" : "Clear"}
                 </Button>
                 <Button
                   type="button"
@@ -1446,44 +1908,82 @@ export function GroupsScreen() {
                   className="xl:hidden"
                   onClick={() => setMobileFiltersOpen((current) => !current)}
                   aria-expanded={mobileFiltersOpen}
-                  aria-label={locale === 'zh-CN' ? '展开筛选' : 'Toggle filters'}
+                  aria-label={
+                    locale === "zh-CN" ? "展开筛选" : "Toggle filters"
+                  }
                 >
-                  <ChevronDown className={cn('transition-transform', mobileFiltersOpen && 'rotate-180')} />
+                  <ChevronDown
+                    className={cn(
+                      "transition-transform",
+                      mobileFiltersOpen && "rotate-180",
+                    )}
+                  />
                 </Button>
               </div>
             </div>
 
-            <div className={cn('mt-4', !mobileFiltersOpen && 'hidden xl:block')}>
+            <div
+              className={cn("mt-4", !mobileFiltersOpen && "hidden xl:block")}
+            >
               <FieldSet className="gap-4">
-                <FieldLegend>{locale === 'zh-CN' ? '筛选条件' : 'Refine results'}</FieldLegend>
+                <FieldLegend>
+                  {locale === "zh-CN" ? "筛选条件" : "Refine results"}
+                </FieldLegend>
                 <FieldGroup className="gap-4">
                   <Field>
-                    <FieldLabel>{locale === 'zh-CN' ? '关键词' : 'Keyword'}</FieldLabel>
+                    <FieldLabel>
+                      {locale === "zh-CN" ? "关键词" : "Keyword"}
+                    </FieldLabel>
                     <ToolbarSearchInput
                       value={search}
                       onChange={setSearch}
-                      onClear={() => setSearch('')}
-                      placeholder={locale === 'zh-CN' ? '模型组 / 渠道 / 模型' : 'Group / channel / model'}
+                      onClear={() => setSearch("")}
+                      placeholder={
+                        locale === "zh-CN"
+                          ? "模型组 / 渠道 / 模型"
+                          : "Group / channel / model"
+                      }
                       className="max-w-none"
                     />
                   </Field>
 
                   <Field>
-                    <FieldLabel>{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
-                    <NativeSelect value={protocolFilter} className={selectClassName} onChange={(event) => setProtocolFilter(event.target.value as 'all' | ProtocolKind)}>
-                      <NativeSelectOption value="all">{locale === 'zh-CN' ? '全部协议' : 'All protocols'}</NativeSelectOption>
-                      {protocolOptions(locale).map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
+                    <FieldLabel>
+                      {locale === "zh-CN" ? "协议" : "Protocol"}
+                    </FieldLabel>
+                    <NativeSelect
+                      value={protocolFilter}
+                      className={selectClassName}
+                      onChange={(event) =>
+                        setProtocolFilter(
+                          event.target.value as "all" | ProtocolKind,
+                        )
+                      }
+                    >
+                      <NativeSelectOption value="all">
+                        {locale === "zh-CN" ? "全部协议" : "All protocols"}
+                      </NativeSelectOption>
+                      {protocolOptions(locale).map((option) => (
+                        <NativeSelectOption
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </NativeSelectOption>
+                      ))}
                     </NativeSelect>
                   </Field>
 
                   <Field>
-                    <FieldLabel>{locale === 'zh-CN' ? '策略' : 'Strategy'}</FieldLabel>
+                    <FieldLabel>
+                      {locale === "zh-CN" ? "策略" : "Strategy"}
+                    </FieldLabel>
                     <ToggleGroup
                       type="single"
                       value={strategyFilter}
                       onValueChange={(value) => {
                         if (value) {
-                          setStrategyFilter(value as 'all' | RoutingStrategy)
+                          setStrategyFilter(value as "all" | RoutingStrategy);
                         }
                       }}
                       variant="outline"
@@ -1491,19 +1991,50 @@ export function GroupsScreen() {
                       spacing={1}
                       className="grid w-full grid-cols-3"
                     >
-                      <ToggleGroupItem value="all" className="w-full truncate px-1.5">{locale === 'zh-CN' ? '全部' : 'All'}</ToggleGroupItem>
-                      <ToggleGroupItem value="round_robin" className="w-full truncate px-1.5">{locale === 'zh-CN' ? '轮询' : 'Round Robin'}</ToggleGroupItem>
-                      <ToggleGroupItem value="failover" className="w-full truncate px-1.5">{locale === 'zh-CN' ? '故障转移' : 'Failover'}</ToggleGroupItem>
+                      <ToggleGroupItem
+                        value="all"
+                        className="w-full truncate px-1.5"
+                      >
+                        {locale === "zh-CN" ? "全部" : "All"}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem
+                        value="round_robin"
+                        className="w-full truncate px-1.5"
+                      >
+                        {locale === "zh-CN" ? "轮询" : "Round Robin"}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem
+                        value="failover"
+                        className="w-full truncate px-1.5"
+                      >
+                        {locale === "zh-CN" ? "故障转移" : "Failover"}
+                      </ToggleGroupItem>
                     </ToggleGroup>
                   </Field>
 
                   <Field>
-                    <FieldLabel>{locale === 'zh-CN' ? '排序' : 'Sort'}</FieldLabel>
-                    <NativeSelect value={sortBy} className={selectClassName} onChange={(event) => setSortBy(event.target.value as GroupSort)}>
-                      <NativeSelectOption value="members-desc">{locale === 'zh-CN' ? '成员优先' : 'Members first'}</NativeSelectOption>
-                      <NativeSelectOption value="enabled-desc">{locale === 'zh-CN' ? '启用优先' : 'Enabled first'}</NativeSelectOption>
-                      <NativeSelectOption value="name-asc">{locale === 'zh-CN' ? '名称 A-Z' : 'Name A-Z'}</NativeSelectOption>
-                      <NativeSelectOption value="name-desc">{locale === 'zh-CN' ? '名称 Z-A' : 'Name Z-A'}</NativeSelectOption>
+                    <FieldLabel>
+                      {locale === "zh-CN" ? "排序" : "Sort"}
+                    </FieldLabel>
+                    <NativeSelect
+                      value={sortBy}
+                      className={selectClassName}
+                      onChange={(event) =>
+                        setSortBy(event.target.value as GroupSort)
+                      }
+                    >
+                      <NativeSelectOption value="members-desc">
+                        {locale === "zh-CN" ? "成员优先" : "Members first"}
+                      </NativeSelectOption>
+                      <NativeSelectOption value="enabled-desc">
+                        {locale === "zh-CN" ? "启用优先" : "Enabled first"}
+                      </NativeSelectOption>
+                      <NativeSelectOption value="name-asc">
+                        {locale === "zh-CN" ? "名称 A-Z" : "Name A-Z"}
+                      </NativeSelectOption>
+                      <NativeSelectOption value="name-desc">
+                        {locale === "zh-CN" ? "名称 Z-A" : "Name Z-A"}
+                      </NativeSelectOption>
                     </NativeSelect>
                   </Field>
                 </FieldGroup>
@@ -1514,32 +2045,102 @@ export function GroupsScreen() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AppDialogContent className="h-[92dvh] max-w-6xl sm:h-[88vh]" title={editingId ? (locale === 'zh-CN' ? '编辑模型组' : 'Edit group') : (locale === 'zh-CN' ? '新建模型组' : 'Create group')}>
+        <AppDialogContent
+          className="h-[92dvh] max-w-6xl sm:h-[88vh]"
+          title={
+            editingId
+              ? locale === "zh-CN"
+                ? "编辑模型组"
+                : "Edit group"
+              : locale === "zh-CN"
+                ? "新建模型组"
+                : "Create group"
+          }
+        >
           <form className="flex flex-col gap-4 pr-1" onSubmit={submit}>
             <div className="flex flex-col gap-4">
               <section className="grid gap-4">
-                <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '基本信息' : 'Group settings'}</div>
+                <div className="text-base font-semibold text-foreground">
+                  {locale === "zh-CN" ? "基本信息" : "Group settings"}
+                </div>
                 <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <Field>
-                    <FieldLabel htmlFor="group-protocol">{locale === 'zh-CN' ? '协议' : 'Protocol'}</FieldLabel>
-                    <NativeSelect id="group-protocol" className={selectClassName} value={form.protocol} onChange={(e) => changeProtocol(e.target.value as ProtocolKind)}>
-                      {protocolOptions(locale).map((option) => <NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}
+                    <FieldLabel htmlFor="group-protocol">
+                      {locale === "zh-CN" ? "协议" : "Protocol"}
+                    </FieldLabel>
+                    <NativeSelect
+                      id="group-protocol"
+                      className={selectClassName}
+                      value={form.protocol}
+                      onChange={(e) =>
+                        changeProtocol(e.target.value as ProtocolKind)
+                      }
+                    >
+                      {protocolOptions(locale).map((option) => (
+                        <NativeSelectOption
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </NativeSelectOption>
+                      ))}
                     </NativeSelect>
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="group-name">{locale === 'zh-CN' ? '模型组名称' : 'Group name'}</FieldLabel>
-                    <Input id="group-name" placeholder={locale === 'zh-CN' ? '输入模型组名称' : 'Enter group name'} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                    <FieldLabel htmlFor="group-name">
+                      {locale === "zh-CN" ? "模型组名称" : "Group name"}
+                    </FieldLabel>
+                    <Input
+                      id="group-name"
+                      placeholder={
+                        locale === "zh-CN"
+                          ? "输入模型组名称"
+                          : "Enter group name"
+                      }
+                      value={form.name}
+                      onChange={(e) =>
+                        setForm({ ...form, name: e.target.value })
+                      }
+                    />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="group-route-target">{locale === 'zh-CN' ? '路由目标模型组' : 'Route target group'}</FieldLabel>
-                    <NativeSelect id="group-route-target" className={selectClassName} value={form.route_group_id} onChange={(event) => changeRouteTarget(event.target.value)}>
-                      <NativeSelectOption value="">{locale === 'zh-CN' ? '不启用模型组路由' : 'No group routing'}</NativeSelectOption>
-                      {routeTargetOptions.map((group) => <NativeSelectOption key={group.id} value={group.id}>{group.name}</NativeSelectOption>)}
+                    <FieldLabel htmlFor="group-route-target">
+                      {locale === "zh-CN"
+                        ? "路由目标模型组"
+                        : "Route target group"}
+                    </FieldLabel>
+                    <NativeSelect
+                      id="group-route-target"
+                      className={selectClassName}
+                      value={form.route_group_id}
+                      onChange={(event) =>
+                        changeRouteTarget(event.target.value)
+                      }
+                    >
+                      <NativeSelectOption value="">
+                        {locale === "zh-CN"
+                          ? "不启用模型组路由"
+                          : "No group routing"}
+                      </NativeSelectOption>
+                      {routeTargetOptions.map((group) => (
+                        <NativeSelectOption key={group.id} value={group.id}>
+                          {group.name}
+                        </NativeSelectOption>
+                      ))}
                     </NativeSelect>
                   </Field>
                   <Field>
-                    <FieldLabel>{locale === 'zh-CN' ? '模型组策略' : 'Group strategy'}</FieldLabel>
-                    <StrategyToggle value={form.strategy} locale={locale} disabled={Boolean(form.route_group_id)} onChange={(value) => setForm((current) => ({ ...current, strategy: value }))} />
+                    <FieldLabel>
+                      {locale === "zh-CN" ? "模型组策略" : "Group strategy"}
+                    </FieldLabel>
+                    <StrategyToggle
+                      value={form.strategy}
+                      locale={locale}
+                      disabled={Boolean(form.route_group_id)}
+                      onChange={(value) =>
+                        setForm((current) => ({ ...current, strategy: value }))
+                      }
+                    />
                   </Field>
                 </FieldGroup>
               </section>
@@ -1549,7 +2150,9 @@ export function GroupsScreen() {
                   <Separator />
 
                   <section className="grid gap-4">
-                    <div className="text-base font-semibold text-foreground">{locale === 'zh-CN' ? '价格' : 'Pricing'}</div>
+                    <div className="text-base font-semibold text-foreground">
+                      {locale === "zh-CN" ? "价格" : "Pricing"}
+                    </div>
                     <div className="grid gap-3 xl:grid-cols-2">
                       <EditablePriceRow
                         locale={locale}
@@ -1557,8 +2160,18 @@ export function GroupsScreen() {
                         primaryValue={form.input_price_per_million}
                         secondaryLabel="cache_read"
                         secondaryValue={form.cache_read_price_per_million}
-                        onPrimaryChange={(value) => setForm((current) => ({ ...current, input_price_per_million: value }))}
-                        onSecondaryChange={(value) => setForm((current) => ({ ...current, cache_read_price_per_million: value }))}
+                        onPrimaryChange={(value) =>
+                          setForm((current) => ({
+                            ...current,
+                            input_price_per_million: value,
+                          }))
+                        }
+                        onSecondaryChange={(value) =>
+                          setForm((current) => ({
+                            ...current,
+                            cache_read_price_per_million: value,
+                          }))
+                        }
                       />
                       <EditablePriceRow
                         locale={locale}
@@ -1566,8 +2179,18 @@ export function GroupsScreen() {
                         primaryValue={form.output_price_per_million}
                         secondaryLabel="cache_write"
                         secondaryValue={form.cache_write_price_per_million}
-                        onPrimaryChange={(value) => setForm((current) => ({ ...current, output_price_per_million: value }))}
-                        onSecondaryChange={(value) => setForm((current) => ({ ...current, cache_write_price_per_million: value }))}
+                        onPrimaryChange={(value) =>
+                          setForm((current) => ({
+                            ...current,
+                            output_price_per_million: value,
+                          }))
+                        }
+                        onSecondaryChange={(value) =>
+                          setForm((current) => ({
+                            ...current,
+                            cache_write_price_per_million: value,
+                          }))
+                        }
                       />
                     </div>
                   </section>
@@ -1575,169 +2198,402 @@ export function GroupsScreen() {
                   <Separator />
 
                   <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-                  <section className="flex flex-col rounded-lg bg-muted/10">
-                <div className="grid gap-3 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <div className="grid min-w-0 gap-2 sm:grid-cols-[128px_minmax(0,1fr)]">
-                    <NativeSelect size="sm" className="w-full" value={candidateSearchMode} onChange={(event) => changeCandidateSearchMode(event.target.value as CandidateSearchMode)}>
-                      <NativeSelectOption value="contains">{locale === 'zh-CN' ? '包含' : 'Contains'}</NativeSelectOption>
-                      <NativeSelectOption value="regex">{locale === 'zh-CN' ? '正则' : 'Regex'}</NativeSelectOption>
-                    </NativeSelect>
-                    <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
-                      <Search size={14} className="text-muted-foreground" />
-                      <Input
-                        className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0"
-                        value={candidateSearch}
-                        onChange={(e) => changeCandidateSearch(e.target.value)}
-                        placeholder={candidateSearchMode === 'regex'
-                          ? (locale === 'zh-CN' ? '输入正则表达式' : 'Enter regular expression')
-                          : (locale === 'zh-CN' ? '输入包含条件' : 'Enter contains filter')}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button type="button" variant="outline" onClick={addMatchedItems} disabled={candidateRegexInvalid || (!filteredCandidates.length && !candidateSearch.trim())}>
-                      <Sparkles size={13} />
-                      {candidateSearch.trim()
-                        ? (locale === 'zh-CN' ? `加入并保存筛选 ${filteredCandidates.length}` : `Add and save filter ${filteredCandidates.length}`)
-                        : (locale === 'zh-CN' ? `加入全部 ${filteredCandidates.length}` : `Add all ${filteredCandidates.length}`)}
-                    </Button>
-                    <Button type="button" variant="outline" onClick={() => void refetchCandidates()} disabled={isFetchingCandidates}>
-                      <RefreshCcw size={13} />
-                      {locale === 'zh-CN' ? '刷新列表' : 'Refresh'}
-                    </Button>
-                  </div>
-                </div>
-                {candidateRegexInvalid ? (
-                  <div className="px-2 text-sm text-destructive">{locale === 'zh-CN' ? '正则表达式无效' : 'Invalid regex'}</div>
-                ) : null}
-                {form.sync_filter_mode && form.sync_filter_query ? (
-                  <div className="mx-2 mb-2 flex flex-col gap-2 rounded-md border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0 text-sm text-muted-foreground">
-                      <span className="text-foreground">{locale === 'zh-CN' ? '已保存筛选' : 'Saved filter'}</span>
-                      <span className="mx-2">·</span>
-                      <span>{form.sync_filter_mode === 'regex' ? (locale === 'zh-CN' ? '正则' : 'Regex') : (locale === 'zh-CN' ? '包含' : 'Contains')}</span>
-                      <span className="mx-2">·</span>
-                      <span className="break-all">{form.sync_filter_query}</span>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={() => void applySavedFilter()}>
-                        <RefreshCcw data-icon="inline-start" />
-                        {locale === 'zh-CN' ? '按规则更新' : 'Update by rule'}
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" className="text-muted-foreground" onClick={clearSavedFilter}>
-                        <X data-icon="inline-start" />
-                        {locale === 'zh-CN' ? '清除规则' : 'Clear rule'}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="px-2 pb-2">
-                  <div className="flex flex-col">
-                    {groupedCandidates.map((channel) => {
-                      const channelKey = channel.site_id || channel.channel_id
-                      const isOpen = expandedChannels.includes(channelKey)
-                      const protocolSummary = channel.protocols.length > 1
-                        ? channel.protocols.map((protocol) => protocolLabel(protocol.protocol, locale)).join(' / ')
-                        : ''
-                      const modelCount = channel.protocols.reduce((total, protocol) => total + protocol.items.length, 0)
-                      return (
-                        <div key={channelKey} className="border-b last:border-b-0">
-                          <Button type="button" variant="ghost" className="h-auto min-h-11 w-full justify-start gap-3 rounded-none px-3 py-2 text-left hover:bg-muted" onClick={() => toggleChannel(channelKey)}>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium text-foreground">{channel.channel_name}</div>
-                              {protocolSummary ? <div className="mt-1 truncate text-xs text-muted-foreground">{protocolSummary}</div> : null}
-                            </div>
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{modelCount}</span>
-                            <ChevronDown size={15} className={cn('text-muted-foreground transition-transform', isOpen && 'rotate-180')} />
+                    <section className="flex flex-col rounded-lg bg-muted/10">
+                      <div className="grid gap-3 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                        <div className="grid min-w-0 gap-2 sm:grid-cols-[128px_minmax(0,1fr)]">
+                          <NativeSelect
+                            size="sm"
+                            className="w-full"
+                            value={candidateSearchMode}
+                            onChange={(event) =>
+                              changeCandidateSearchMode(
+                                event.target.value as CandidateSearchMode,
+                              )
+                            }
+                          >
+                            <NativeSelectOption value="contains">
+                              {locale === "zh-CN" ? "包含" : "Contains"}
+                            </NativeSelectOption>
+                            <NativeSelectOption value="regex">
+                              {locale === "zh-CN" ? "正则" : "Regex"}
+                            </NativeSelectOption>
+                          </NativeSelect>
+                          <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
+                            <Search
+                              size={14}
+                              className="text-muted-foreground"
+                            />
+                            <Input
+                              className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+                              value={candidateSearch}
+                              onChange={(e) =>
+                                changeCandidateSearch(e.target.value)
+                              }
+                              placeholder={
+                                candidateSearchMode === "regex"
+                                  ? locale === "zh-CN"
+                                    ? "输入正则表达式"
+                                    : "Enter regular expression"
+                                  : locale === "zh-CN"
+                                    ? "输入包含条件"
+                                    : "Enter contains filter"
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={addMatchedItems}
+                            disabled={
+                              candidateRegexInvalid ||
+                              (!filteredCandidates.length &&
+                                !candidateSearch.trim())
+                            }
+                          >
+                            <Sparkles size={13} />
+                            {candidateSearch.trim()
+                              ? locale === "zh-CN"
+                                ? `加入并保存筛选 ${filteredCandidates.length}`
+                                : `Add and save filter ${filteredCandidates.length}`
+                              : locale === "zh-CN"
+                                ? `加入全部 ${filteredCandidates.length}`
+                                : `Add all ${filteredCandidates.length}`}
                           </Button>
-                          {isOpen ? (
-                            <div className="flex flex-col gap-1.5 px-3 pb-2 pt-1">
-                              <Separator />
-                              {channel.protocols.map((protocol) => (
-                                <div key={`${channelKey}-${protocol.channel_id}`} className="flex flex-col gap-1 py-1">
-                                  <div className="flex min-w-0 items-center justify-between gap-3 px-1 text-xs text-muted-foreground">
-                                    <span className="shrink-0 font-medium text-foreground">{protocolLabel(protocol.protocol, locale)}</span>
-                                    {protocol.base_url ? <span className="min-w-0 truncate text-right">{protocol.base_url}</span> : null}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => void refetchCandidates()}
+                            disabled={isFetchingCandidates}
+                          >
+                            <RefreshCcw size={13} />
+                            {locale === "zh-CN" ? "刷新列表" : "Refresh"}
+                          </Button>
+                        </div>
+                      </div>
+                      {candidateRegexInvalid ? (
+                        <div className="px-2 text-sm text-destructive">
+                          {locale === "zh-CN"
+                            ? "正则表达式无效"
+                            : "Invalid regex"}
+                        </div>
+                      ) : null}
+                      {form.sync_filter_mode && form.sync_filter_query ? (
+                        <div className="mx-2 mb-2 flex flex-col gap-2 rounded-md border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0 text-sm text-muted-foreground">
+                            <span className="text-foreground">
+                              {locale === "zh-CN"
+                                ? "已保存筛选"
+                                : "Saved filter"}
+                            </span>
+                            <span className="mx-2">·</span>
+                            <span>
+                              {form.sync_filter_mode === "regex"
+                                ? locale === "zh-CN"
+                                  ? "正则"
+                                  : "Regex"
+                                : locale === "zh-CN"
+                                  ? "包含"
+                                  : "Contains"}
+                            </span>
+                            <span className="mx-2">·</span>
+                            <span className="break-all">
+                              {form.sync_filter_query}
+                            </span>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void applySavedFilter()}
+                            >
+                              <RefreshCcw data-icon="inline-start" />
+                              {locale === "zh-CN"
+                                ? "按规则更新"
+                                : "Update by rule"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="text-muted-foreground"
+                              onClick={clearSavedFilter}
+                            >
+                              <X data-icon="inline-start" />
+                              {locale === "zh-CN" ? "清除规则" : "Clear rule"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="px-2 pb-2">
+                        <div className="flex flex-col">
+                          {groupedCandidates.map((channel) => {
+                            const channelKey =
+                              channel.site_id || channel.channel_id;
+                            const isOpen =
+                              expandedChannels.includes(channelKey);
+                            const protocolSummary =
+                              channel.protocols.length > 1
+                                ? channel.protocols
+                                    .map((protocol) =>
+                                      protocolLabel(protocol.protocol, locale),
+                                    )
+                                    .join(" / ")
+                                : "";
+                            const modelCount = channel.protocols.reduce(
+                              (total, protocol) =>
+                                total + protocol.items.length,
+                              0,
+                            );
+                            return (
+                              <div
+                                key={channelKey}
+                                className="border-b last:border-b-0"
+                              >
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  className="h-auto min-h-11 w-full justify-start gap-3 rounded-none px-3 py-2 text-left hover:bg-muted"
+                                  onClick={() => toggleChannel(channelKey)}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate text-sm font-medium text-foreground">
+                                      {channel.channel_name}
+                                    </div>
+                                    {protocolSummary ? (
+                                      <div className="mt-1 truncate text-xs text-muted-foreground">
+                                        {protocolSummary}
+                                      </div>
+                                    ) : null}
                                   </div>
-                                  {protocol.items.map((item) => (
-                                    <CandidateRow key={`${item.channel_id}-${item.credential_id}-${item.model_name}`} item={item} active={form.items.some((member) => itemKey(member) === itemKey(item))} locale={locale} onClick={() => addItem(item)} />
-                                  ))}
-                                </div>
-                              ))}
-                            </div>
+                                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                    {modelCount}
+                                  </span>
+                                  <ChevronDown
+                                    size={15}
+                                    className={cn(
+                                      "text-muted-foreground transition-transform",
+                                      isOpen && "rotate-180",
+                                    )}
+                                  />
+                                </Button>
+                                {isOpen ? (
+                                  <div className="flex flex-col gap-1.5 px-3 pb-2 pt-1">
+                                    <Separator />
+                                    {channel.protocols.map((protocol) => (
+                                      <div
+                                        key={`${channelKey}-${protocol.channel_id}`}
+                                        className="flex flex-col gap-1 py-1"
+                                      >
+                                        <div className="flex min-w-0 items-center justify-between gap-3 px-1 text-xs text-muted-foreground">
+                                          <span className="shrink-0 font-medium text-foreground">
+                                            {protocolLabel(
+                                              protocol.protocol,
+                                              locale,
+                                            )}
+                                          </span>
+                                          {protocol.base_url ? (
+                                            <span className="min-w-0 truncate text-right">
+                                              {protocol.base_url}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        {protocol.items.map((item) => (
+                                          <CandidateRow
+                                            key={`${item.channel_id}-${item.credential_id}-${item.model_name}`}
+                                            item={item}
+                                            active={form.items.some(
+                                              (member) =>
+                                                itemKey(member) ===
+                                                itemKey(item),
+                                            )}
+                                            locale={locale}
+                                            onClick={() => addItem(item)}
+                                          />
+                                        ))}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                          {!groupedCandidates.length ? (
+                            <p className="px-1 py-6 text-center text-sm text-muted-foreground">
+                              {locale === "zh-CN"
+                                ? "暂无可选模型"
+                                : "No candidates found"}
+                            </p>
                           ) : null}
                         </div>
-                      )
-                    })}
-                    {!groupedCandidates.length ? <p className="px-1 py-6 text-center text-sm text-muted-foreground">{locale === 'zh-CN' ? '暂无可选模型' : 'No candidates found'}</p> : null}
-                  </div>
-                </div>
-              </section>
+                      </div>
+                    </section>
 
-              <section className="flex flex-col rounded-lg bg-muted/10">
-                <div className="flex flex-col items-start justify-between gap-3 px-2 py-1 sm:flex-row sm:items-center">
-                  <div className="text-sm font-medium text-foreground">{locale === 'zh-CN' ? '已选模型' : 'Selected models'}</div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button type="button" variant="outline" className="text-muted-foreground" onClick={() => setAllMembersEnabled(true)}>{locale === 'zh-CN' ? '全开' : 'Enable all'}</Button>
-                    <Button type="button" variant="outline" className="text-muted-foreground" onClick={() => setAllMembersEnabled(false)}>{locale === 'zh-CN' ? '全关' : 'Disable all'}</Button>
-                    <Button type="button" variant={showEnabledOnly ? 'default' : 'outline'} className={cn(!showEnabledOnly && 'text-muted-foreground')} onClick={() => setShowEnabledOnly((current) => !current)}>{locale === 'zh-CN' ? '仅看启用' : 'Enabled only'}</Button>
-                    <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{visibleSelectedMembers.length}/{form.items.length}</span>
+                    <section className="flex flex-col rounded-lg bg-muted/10">
+                      <div className="flex flex-col items-start justify-between gap-3 px-2 py-1 sm:flex-row sm:items-center">
+                        <div className="text-sm font-medium text-foreground">
+                          {locale === "zh-CN" ? "已选模型" : "Selected models"}
+                        </div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="text-muted-foreground"
+                            onClick={() => setAllMembersEnabled(true)}
+                          >
+                            {locale === "zh-CN" ? "全开" : "Enable all"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="text-muted-foreground"
+                            onClick={() => setAllMembersEnabled(false)}
+                          >
+                            {locale === "zh-CN" ? "全关" : "Disable all"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={showEnabledOnly ? "default" : "outline"}
+                            className={cn(
+                              !showEnabledOnly && "text-muted-foreground",
+                            )}
+                            onClick={() =>
+                              setShowEnabledOnly((current) => !current)
+                            }
+                          >
+                            {locale === "zh-CN" ? "仅看启用" : "Enabled only"}
+                          </Button>
+                          <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                            {visibleSelectedMembers.length}/{form.items.length}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="px-2 pb-2 pt-1">
+                        <div className="flex flex-col gap-1.5">
+                          {visibleSelectedMembers.length ? (
+                            visibleSelectedMembers.map(({ item, index }) => (
+                              <SelectedMemberRow
+                                key={`${itemKey(item)}::${index}`}
+                                item={item}
+                                index={index}
+                                dragging={draggingIndex === index}
+                                busy={false}
+                                onToggle={() =>
+                                  setForm((current) => ({
+                                    ...current,
+                                    items: current.items.map(
+                                      (member, memberIndex) =>
+                                        memberIndex === index
+                                          ? {
+                                              ...member,
+                                              enabled: !member.enabled,
+                                            }
+                                          : member,
+                                    ),
+                                  }))
+                                }
+                                onRemove={() => removeItem(index)}
+                                onDragStart={() => setDraggingIndex(index)}
+                                onDragEnter={() => {
+                                  if (
+                                    draggingIndex === null ||
+                                    draggingIndex === index
+                                  )
+                                    return;
+                                  moveItem(draggingIndex, index);
+                                  setDraggingIndex(index);
+                                }}
+                                onDragEnd={() => setDraggingIndex(null)}
+                                locale={locale}
+                              />
+                            ))
+                          ) : (
+                            <p className="px-1 py-6 text-center text-sm text-muted-foreground">
+                              {locale === "zh-CN"
+                                ? "当前筛选下没有成员"
+                                : "No members under current filter"}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </section>
                   </div>
-                </div>
-                <div className="px-2 pb-2 pt-1">
-                  <div className="flex flex-col gap-1.5">
-                    {visibleSelectedMembers.length ? visibleSelectedMembers.map(({ item, index }) => (
-                      <SelectedMemberRow
-                        key={`${itemKey(item)}::${index}`}
-                        item={item}
-                        index={index}
-                        dragging={draggingIndex === index}
-                        busy={false}
-                        onToggle={() => setForm((current) => ({
-                          ...current,
-                          items: current.items.map((member, memberIndex) => memberIndex === index ? { ...member, enabled: !member.enabled } : member),
-                        }))}
-                        onRemove={() => removeItem(index)}
-                        onDragStart={() => setDraggingIndex(index)}
-                        onDragEnter={() => {
-                          if (draggingIndex === null || draggingIndex === index) return
-                          moveItem(draggingIndex, index)
-                          setDraggingIndex(index)
-                        }}
-                        onDragEnd={() => setDraggingIndex(null)}
-                        locale={locale}
-                      />
-                    )) : <p className="px-1 py-6 text-center text-sm text-muted-foreground">{locale === 'zh-CN' ? '当前筛选下没有成员' : 'No members under current filter'}</p>}
-                  </div>
-                </div>
-              </section>
-            </div>
-            </>
+                </>
               ) : null}
             </div>
 
             <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
-                <Button type="submit">{editingId ? (locale === 'zh-CN' ? '保存模型组' : 'Save group') : (locale === 'zh-CN' ? '创建模型组' : 'Create group')}</Button>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setDialogOpen(false)}
+                >
+                  {locale === "zh-CN" ? "取消" : "Cancel"}
+                </Button>
+                <Button type="submit">
+                  {editingId
+                    ? locale === "zh-CN"
+                      ? "保存模型组"
+                      : "Save group"
+                    : locale === "zh-CN"
+                      ? "创建模型组"
+                      : "Create group"}
+                </Button>
               </div>
             </div>
           </form>
         </AppDialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
-        <AppDialogContent className="max-w-lg" title={locale === 'zh-CN' ? '确认删除模型组' : 'Delete group'} description={locale === 'zh-CN' ? '删除后，该模型组名称将不再参与路由匹配。' : 'This group will no longer participate in routing.'}>
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AppDialogContent
+          className="max-w-lg"
+          title={locale === "zh-CN" ? "确认删除模型组" : "Delete group"}
+          description={
+            locale === "zh-CN"
+              ? "删除后，该模型组名称将不再参与路由匹配。"
+              : "This group will no longer participate in routing."
+          }
+        >
           <div className="grid gap-5 overflow-y-auto pr-1">
-            <div className="rounded-md border bg-muted/30 p-4"><strong>{deleteTarget?.name}</strong></div>
+            <div className="rounded-md border bg-muted/30 p-4">
+              <strong>{deleteTarget?.name}</strong>
+            </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button variant="outline" type="button" onClick={() => setDeleteTarget(null)}>{locale === 'zh-CN' ? '取消' : 'Cancel'}</Button>
-              <Button variant="destructive" type="button" onClick={() => deleteTarget && void remove(deleteTarget)} disabled={busyId === deleteTarget?.id}>{busyId === deleteTarget?.id ? (locale === 'zh-CN' ? '删除中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认删除' : 'Delete')}</Button>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+              >
+                {locale === "zh-CN" ? "取消" : "Cancel"}
+              </Button>
+              <Button
+                variant="destructive"
+                type="button"
+                onClick={() => deleteTarget && void remove(deleteTarget)}
+                disabled={busyId === deleteTarget?.id}
+              >
+                {busyId === deleteTarget?.id
+                  ? locale === "zh-CN"
+                    ? "删除中..."
+                    : "Deleting..."
+                  : locale === "zh-CN"
+                    ? "确认删除"
+                    : "Delete"}
+              </Button>
             </div>
           </div>
         </AppDialogContent>
       </Dialog>
     </section>
-  )
+  );
 }

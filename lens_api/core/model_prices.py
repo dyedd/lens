@@ -1,29 +1,29 @@
-
 from typing import Any
 
-
 PRICE_PAYLOAD_FIELDS = (
-    'input_price_per_million',
-    'output_price_per_million',
-    'cache_read_price_per_million',
-    'cache_write_price_per_million',
+    "input_price_per_million",
+    "output_price_per_million",
+    "cache_read_price_per_million",
+    "cache_write_price_per_million",
 )
 
 
 def normalize_model_key(value: str | None) -> str:
-    return (value or '').strip().lower()
+    return (value or "").strip().lower()
 
 
 def _has_price_value(price_payload: dict[str, float]) -> bool:
     return any(price_payload[field] > 0 for field in PRICE_PAYLOAD_FIELDS)
 
 
-def build_models_dev_price_index(payload: dict[str, Any]) -> dict[str, dict[str, float]]:
+def build_models_dev_price_index(
+    payload: dict[str, Any],
+) -> dict[str, dict[str, float]]:
     index: dict[str, dict[str, float]] = {}
     for provider_id, provider_payload in payload.items():
         if not isinstance(provider_payload, dict):
             continue
-        models = provider_payload.get('models')
+        models = provider_payload.get("models")
         if not isinstance(models, dict):
             continue
 
@@ -31,30 +31,38 @@ def build_models_dev_price_index(payload: dict[str, Any]) -> dict[str, dict[str,
         for model_id, model_payload in models.items():
             if not isinstance(model_payload, dict):
                 continue
-            cost_payload = model_payload.get('cost')
+            cost_payload = model_payload.get("cost")
             if not isinstance(cost_payload, dict):
                 continue
 
             aliases = {
                 normalize_model_key(str(model_id)),
-                normalize_model_key(f'{normalized_provider_id}/{model_id}'),
+                normalize_model_key(f"{normalized_provider_id}/{model_id}"),
             }
             price_payload = {
-                'input_price_per_million': float(cost_payload.get('input') or 0.0),
-                'output_price_per_million': float(cost_payload.get('output') or 0.0),
-                'cache_read_price_per_million': float(cost_payload.get('cache_read') or 0.0),
-                'cache_write_price_per_million': float(cost_payload.get('cache_write') or 0.0),
+                "input_price_per_million": float(cost_payload.get("input") or 0.0),
+                "output_price_per_million": float(cost_payload.get("output") or 0.0),
+                "cache_read_price_per_million": float(
+                    cost_payload.get("cache_read") or 0.0
+                ),
+                "cache_write_price_per_million": float(
+                    cost_payload.get("cache_write") or 0.0
+                ),
             }
             for alias in aliases:
                 if not alias:
                     continue
                 existing = index.get(alias)
-                if existing is None or (not _has_price_value(existing) and _has_price_value(price_payload)):
+                if existing is None or (
+                    not _has_price_value(existing) and _has_price_value(price_payload)
+                ):
                     index[alias] = price_payload
     return index
 
 
-def build_group_price_payloads(group_names: list[str], price_index: dict[str, dict[str, float]]) -> list[dict[str, float | str]]:
+def build_group_price_payloads(
+    group_names: list[str], price_index: dict[str, dict[str, float]]
+) -> list[dict[str, float | str]]:
     payloads: list[dict[str, float | str]] = []
     seen: set[str] = set()
 
@@ -66,19 +74,23 @@ def build_group_price_payloads(group_names: list[str], price_index: dict[str, di
         seen.add(model_key)
 
         price_payload = price_index.get(model_key)
-        if price_payload is None and '/' in model_key:
-            price_payload = price_index.get(model_key.split('/', 1)[1])
+        if price_payload is None and "/" in model_key:
+            price_payload = price_index.get(model_key.split("/", 1)[1])
         if price_payload is None:
             continue
 
         payloads.append(
             {
-                'model_key': model_key,
-                'display_name': display_name,
-                'input_price_per_million': price_payload['input_price_per_million'],
-                'output_price_per_million': price_payload['output_price_per_million'],
-                'cache_read_price_per_million': price_payload['cache_read_price_per_million'],
-                'cache_write_price_per_million': price_payload['cache_write_price_per_million'],
+                "model_key": model_key,
+                "display_name": display_name,
+                "input_price_per_million": price_payload["input_price_per_million"],
+                "output_price_per_million": price_payload["output_price_per_million"],
+                "cache_read_price_per_million": price_payload[
+                    "cache_read_price_per_million"
+                ],
+                "cache_write_price_per_million": price_payload[
+                    "cache_write_price_per_million"
+                ],
             }
         )
 

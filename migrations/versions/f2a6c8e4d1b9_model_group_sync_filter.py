@@ -5,13 +5,13 @@ Revises: e8b7c4d9a2f1
 Create Date: 2026-05-08 00:00:00.000000
 
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 revision: str = "f2a6c8e4d1b9"
 down_revision: Union[str, Sequence[str], None] = "e8b7c4d9a2f1"

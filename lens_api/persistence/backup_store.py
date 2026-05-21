@@ -1,4 +1,3 @@
-
 import json
 from datetime import UTC, datetime
 
@@ -100,12 +99,16 @@ class BackupStore:
     ) -> ConfigBackupDump:
         async with self._session_factory() as session:
             settings_rows = (
-                await session.execute(
-                    select(SettingEntity)
-                    .where(SettingEntity.key.in_(EXPORTABLE_SETTING_KEYS))
-                    .order_by(SettingEntity.key.asc())
+                (
+                    await session.execute(
+                        select(SettingEntity)
+                        .where(SettingEntity.key.in_(EXPORTABLE_SETTING_KEYS))
+                        .order_by(SettingEntity.key.asc())
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             sites = await self._load_sites(session)
             groups = await self._load_groups(session)
             model_prices = await self._load_model_prices(session)
@@ -117,9 +120,7 @@ class BackupStore:
                 else []
             )
             request_logs = (
-                await self._load_request_logs(session)
-                if include_request_logs
-                else []
+                await self._load_request_logs(session) if include_request_logs else []
             )
 
         return ConfigBackupDump(
@@ -198,9 +199,7 @@ class BackupStore:
             rows_affected["overview_model_daily_stats"] = len(dump.stats.model_daily)
 
             if dump.include_gateway_api_keys:
-                await self._replace_gateway_api_keys(
-                    session, dump.gateway_api_keys
-                )
+                await self._replace_gateway_api_keys(session, dump.gateway_api_keys)
                 rows_affected["gateway_api_keys"] = len(dump.gateway_api_keys)
 
             if dump.include_request_logs:
@@ -242,9 +241,7 @@ class BackupStore:
 
             for base_url in site.base_urls:
                 if base_url.id in base_url_ids:
-                    raise ValueError(
-                        f"Duplicate base url id in backup: {base_url.id}"
-                    )
+                    raise ValueError(f"Duplicate base url id in backup: {base_url.id}")
                 base_url_ids.add(base_url.id)
                 site_base_url_ids.add(base_url.id)
                 session.add(
@@ -278,9 +275,7 @@ class BackupStore:
 
             for protocol in site.protocols:
                 if protocol.id in channel_ids:
-                    raise ValueError(
-                        f"Duplicate channel id in backup: {protocol.id}"
-                    )
+                    raise ValueError(f"Duplicate channel id in backup: {protocol.id}")
                 channel_ids.add(protocol.id)
                 if (
                     protocol.base_url_id
@@ -372,9 +367,7 @@ class BackupStore:
 
             protocol_name_key = (group.protocol.value, group.name)
             if protocol_name_key in seen_protocol_name:
-                raise ValueError(
-                    f"Duplicate model group name in backup: {group.name}"
-                )
+                raise ValueError(f"Duplicate model group name in backup: {group.name}")
             seen_protocol_name.add(protocol_name_key)
 
             if group.route_group_id and group.route_group_id not in group_ids:
@@ -399,7 +392,10 @@ class BackupStore:
                     raise ValueError(
                         f"Model group channel not found in backup sites: {item.channel_id}"
                     )
-                if item.credential_id and item.credential_id not in available_credential_ids:
+                if (
+                    item.credential_id
+                    and item.credential_id not in available_credential_ids
+                ):
                     raise ValueError(
                         f"Model group credential not found in backup sites: {item.credential_id}"
                     )
@@ -492,9 +488,7 @@ class BackupStore:
         request_daily_dates: set[str] = set()
         for item in stats.request_daily:
             if item.date in request_daily_dates:
-                raise ValueError(
-                    f"Duplicate request stats date in backup: {item.date}"
-                )
+                raise ValueError(f"Duplicate request stats date in backup: {item.date}")
             request_daily_dates.add(item.date)
             session.add(
                 RequestLogDailyStatsEntity(
@@ -545,7 +539,11 @@ class BackupStore:
             if item.key in setting_keys:
                 raise ValueError(f"Duplicate setting key in backup: {item.key}")
             setting_keys.add(item.key)
-            value = normalize_time_zone(item.value) if item.key == SETTING_TIME_ZONE else item.value
+            value = (
+                normalize_time_zone(item.value)
+                if item.key == SETTING_TIME_ZONE
+                else item.value
+            )
             session.add(SettingEntity(key=item.key, value=value))
 
     async def _replace_cronjobs(
@@ -692,77 +690,101 @@ class BackupStore:
 
     async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
         site_rows = (
-            await session.execute(select(SiteEntity).order_by(SiteEntity.name.asc()))
-        ).scalars().all()
+            (await session.execute(select(SiteEntity).order_by(SiteEntity.name.asc())))
+            .scalars()
+            .all()
+        )
         if not site_rows:
             return []
 
         site_ids = [item.id for item in site_rows]
         base_url_rows = (
-            await session.execute(
-                select(SiteBaseUrlEntity)
-                .where(SiteBaseUrlEntity.site_id.in_(site_ids))
-                .order_by(
-                    SiteBaseUrlEntity.site_id.asc(),
-                    SiteBaseUrlEntity.sort_order.asc(),
-                    SiteBaseUrlEntity.id.asc(),
+            (
+                await session.execute(
+                    select(SiteBaseUrlEntity)
+                    .where(SiteBaseUrlEntity.site_id.in_(site_ids))
+                    .order_by(
+                        SiteBaseUrlEntity.site_id.asc(),
+                        SiteBaseUrlEntity.sort_order.asc(),
+                        SiteBaseUrlEntity.id.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         credential_rows = (
-            await session.execute(
-                select(SiteCredentialEntity)
-                .where(SiteCredentialEntity.site_id.in_(site_ids))
-                .order_by(
-                    SiteCredentialEntity.site_id.asc(),
-                    SiteCredentialEntity.sort_order.asc(),
-                    SiteCredentialEntity.id.asc(),
+            (
+                await session.execute(
+                    select(SiteCredentialEntity)
+                    .where(SiteCredentialEntity.site_id.in_(site_ids))
+                    .order_by(
+                        SiteCredentialEntity.site_id.asc(),
+                        SiteCredentialEntity.sort_order.asc(),
+                        SiteCredentialEntity.id.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         protocol_rows = (
-            await session.execute(
-                select(SiteProtocolConfigEntity)
-                .where(SiteProtocolConfigEntity.site_id.in_(site_ids))
-                .order_by(
-                    SiteProtocolConfigEntity.site_id.asc(),
-                    SiteProtocolConfigEntity.protocol.asc(),
-                    SiteProtocolConfigEntity.id.asc(),
+            (
+                await session.execute(
+                    select(SiteProtocolConfigEntity)
+                    .where(SiteProtocolConfigEntity.site_id.in_(site_ids))
+                    .order_by(
+                        SiteProtocolConfigEntity.site_id.asc(),
+                        SiteProtocolConfigEntity.protocol.asc(),
+                        SiteProtocolConfigEntity.id.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         protocol_ids = [item.id for item in protocol_rows]
         binding_rows = []
         model_rows = []
         if protocol_ids:
             binding_rows = (
-                await session.execute(
-                    select(SiteProtocolCredentialBindingEntity)
-                    .where(
-                        SiteProtocolCredentialBindingEntity.protocol_config_id.in_(
-                            protocol_ids
+                (
+                    await session.execute(
+                        select(SiteProtocolCredentialBindingEntity)
+                        .where(
+                            SiteProtocolCredentialBindingEntity.protocol_config_id.in_(
+                                protocol_ids
+                            )
+                        )
+                        .order_by(
+                            SiteProtocolCredentialBindingEntity.protocol_config_id.asc(),
+                            SiteProtocolCredentialBindingEntity.sort_order.asc(),
+                            SiteProtocolCredentialBindingEntity.id.asc(),
                         )
                     )
-                    .order_by(
-                        SiteProtocolCredentialBindingEntity.protocol_config_id.asc(),
-                        SiteProtocolCredentialBindingEntity.sort_order.asc(),
-                        SiteProtocolCredentialBindingEntity.id.asc(),
-                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             model_rows = (
-                await session.execute(
-                    select(SiteDiscoveredModelEntity)
-                    .where(
-                        SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_ids)
-                    )
-                    .order_by(
-                        SiteDiscoveredModelEntity.protocol_config_id.asc(),
-                        SiteDiscoveredModelEntity.sort_order.asc(),
-                        SiteDiscoveredModelEntity.id.asc(),
+                (
+                    await session.execute(
+                        select(SiteDiscoveredModelEntity)
+                        .where(
+                            SiteDiscoveredModelEntity.protocol_config_id.in_(
+                                protocol_ids
+                            )
+                        )
+                        .order_by(
+                            SiteDiscoveredModelEntity.protocol_config_id.asc(),
+                            SiteDiscoveredModelEntity.sort_order.asc(),
+                            SiteDiscoveredModelEntity.id.asc(),
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
         base_urls_by_site: dict[str, list[dict[str, object]]] = {}
         for row in base_url_rows:
@@ -861,23 +883,33 @@ class BackupStore:
 
     async def _load_groups(self, session: AsyncSession) -> list[ModelGroup]:
         group_rows = (
-            await session.execute(select(ModelGroupEntity).order_by(ModelGroupEntity.name))
-        ).scalars().all()
+            (
+                await session.execute(
+                    select(ModelGroupEntity).order_by(ModelGroupEntity.name)
+                )
+            )
+            .scalars()
+            .all()
+        )
         if not group_rows:
             return []
 
         group_ids = [item.id for item in group_rows]
         item_rows = (
-            await session.execute(
-                select(ModelGroupItemEntity)
-                .where(ModelGroupItemEntity.group_id.in_(group_ids))
-                .order_by(
-                    ModelGroupItemEntity.group_id.asc(),
-                    ModelGroupItemEntity.sort_order.asc(),
-                    ModelGroupItemEntity.id.asc(),
+            (
+                await session.execute(
+                    select(ModelGroupItemEntity)
+                    .where(ModelGroupItemEntity.group_id.in_(group_ids))
+                    .order_by(
+                        ModelGroupItemEntity.group_id.asc(),
+                        ModelGroupItemEntity.sort_order.asc(),
+                        ModelGroupItemEntity.id.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         site_names = {
             row.id: row.name
@@ -888,20 +920,26 @@ class BackupStore:
         credential_names = {
             row.id: row.name
             for row in (
-                await session.execute(select(SiteCredentialEntity.id, SiteCredentialEntity.name))
+                await session.execute(
+                    select(SiteCredentialEntity.id, SiteCredentialEntity.name)
+                )
             ).all()
         }
         route_group_names = {
             row.id: row.name
             for row in (
-                await session.execute(select(ModelGroupEntity.id, ModelGroupEntity.name))
+                await session.execute(
+                    select(ModelGroupEntity.id, ModelGroupEntity.name)
+                )
             ).all()
         }
         channel_site_ids = {
             row.id: row.site_id
             for row in (
                 await session.execute(
-                    select(SiteProtocolConfigEntity.id, SiteProtocolConfigEntity.site_id)
+                    select(
+                        SiteProtocolConfigEntity.id, SiteProtocolConfigEntity.site_id
+                    )
                 )
             ).all()
         }
@@ -922,9 +960,7 @@ class BackupStore:
                 }
             )
 
-        price_rows = (
-            await session.execute(select(ModelPriceEntity))
-        ).scalars().all()
+        price_rows = (await session.execute(select(ModelPriceEntity))).scalars().all()
         prices_by_key = {row.model_key: row for row in price_rows}
 
         groups: list[ModelGroup] = []
@@ -939,30 +975,46 @@ class BackupStore:
                         "protocol": row.protocol,
                         "strategy": row.strategy,
                         "route_group_id": row.route_group_id,
-                        "route_group_name": route_group_names.get(row.route_group_id, ""),
+                        "route_group_name": route_group_names.get(
+                            row.route_group_id, ""
+                        ),
                         "sync_filter_mode": row.sync_filter_mode,
                         "sync_filter_query": row.sync_filter_query,
-                        "input_price_per_million": price.input_price_per_million if price is not None else 0.0,
-                        "output_price_per_million": price.output_price_per_million if price is not None else 0.0,
-                        "cache_read_price_per_million": price.cache_read_price_per_million if price is not None else 0.0,
-                        "cache_write_price_per_million": price.cache_write_price_per_million if price is not None else 0.0,
+                        "input_price_per_million": (
+                            price.input_price_per_million if price is not None else 0.0
+                        ),
+                        "output_price_per_million": (
+                            price.output_price_per_million if price is not None else 0.0
+                        ),
+                        "cache_read_price_per_million": (
+                            price.cache_read_price_per_million
+                            if price is not None
+                            else 0.0
+                        ),
+                        "cache_write_price_per_million": (
+                            price.cache_write_price_per_million
+                            if price is not None
+                            else 0.0
+                        ),
                         "items": items_by_group.get(row.id, []),
                     }
                 )
             )
         return groups
 
-    async def _load_model_prices(
-        self, session: AsyncSession
-    ) -> list[ModelPriceItem]:
+    async def _load_model_prices(self, session: AsyncSession) -> list[ModelPriceItem]:
         rows = (
-            await session.execute(
-                select(ModelPriceEntity).order_by(
-                    ModelPriceEntity.display_name.asc(),
-                    ModelPriceEntity.model_key.asc(),
+            (
+                await session.execute(
+                    select(ModelPriceEntity).order_by(
+                        ModelPriceEntity.display_name.asc(),
+                        ModelPriceEntity.model_key.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [
             ModelPriceItem(
                 model_key=row.model_key,
@@ -976,32 +1028,42 @@ class BackupStore:
             for row in rows
         ]
 
-    async def _load_stats(
-        self, session: AsyncSession
-    ) -> ConfigBackupStatsSnapshot:
+    async def _load_stats(self, session: AsyncSession) -> ConfigBackupStatsSnapshot:
         imported_total_row = await session.get(ImportedStatsTotalEntity, 1)
         imported_daily_rows = (
-            await session.execute(
-                select(ImportedStatsDailyEntity).order_by(
-                    ImportedStatsDailyEntity.date.asc()
+            (
+                await session.execute(
+                    select(ImportedStatsDailyEntity).order_by(
+                        ImportedStatsDailyEntity.date.asc()
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         request_daily_rows = (
-            await session.execute(
-                select(RequestLogDailyStatsEntity).order_by(
-                    RequestLogDailyStatsEntity.date.asc()
+            (
+                await session.execute(
+                    select(RequestLogDailyStatsEntity).order_by(
+                        RequestLogDailyStatsEntity.date.asc()
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         model_daily_rows = (
-            await session.execute(
-                select(OverviewModelDailyStatsEntity).order_by(
-                    OverviewModelDailyStatsEntity.date.asc(),
-                    OverviewModelDailyStatsEntity.model.asc(),
+            (
+                await session.execute(
+                    select(OverviewModelDailyStatsEntity).order_by(
+                        OverviewModelDailyStatsEntity.date.asc(),
+                        OverviewModelDailyStatsEntity.model.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         imported_total = None
         if imported_total_row is not None:
@@ -1064,13 +1126,17 @@ class BackupStore:
         self, session: AsyncSession
     ) -> list[ConfigBackupGatewayApiKey]:
         rows = (
-            await session.execute(
-                select(GatewayApiKeyEntity).order_by(
-                    GatewayApiKeyEntity.created_at.asc(),
-                    GatewayApiKeyEntity.id.asc(),
+            (
+                await session.execute(
+                    select(GatewayApiKeyEntity).order_by(
+                        GatewayApiKeyEntity.created_at.asc(),
+                        GatewayApiKeyEntity.id.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [
             ConfigBackupGatewayApiKey(
                 id=row.id,
@@ -1086,12 +1152,16 @@ class BackupStore:
             for row in rows
         ]
 
-    async def _load_cronjobs(
-        self, session: AsyncSession
-    ) -> list[ConfigBackupCronjob]:
+    async def _load_cronjobs(self, session: AsyncSession) -> list[ConfigBackupCronjob]:
         rows = (
-            await session.execute(select(CronjobEntity).order_by(CronjobEntity.id.asc()))
-        ).scalars().all()
+            (
+                await session.execute(
+                    select(CronjobEntity).order_by(CronjobEntity.id.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
         return [
             ConfigBackupCronjob(
                 id=row.id,
@@ -1108,13 +1178,17 @@ class BackupStore:
         self, session: AsyncSession
     ) -> list[ConfigBackupRequestLog]:
         rows = (
-            await session.execute(
-                select(RequestLogEntity).order_by(
-                    RequestLogEntity.created_at.asc(),
-                    RequestLogEntity.id.asc(),
+            (
+                await session.execute(
+                    select(RequestLogEntity).order_by(
+                        RequestLogEntity.created_at.asc(),
+                        RequestLogEntity.id.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         logs: list[ConfigBackupRequestLog] = []
         for row in rows:
             attempts = self._parse_attempts(row.attempts_json)
@@ -1132,7 +1206,8 @@ class BackupStore:
                     success=bool(row.success),
                     lifecycle_status=(
                         row.lifecycle_status
-                        if row.lifecycle_status in RequestLogLifecycleStatus._value2member_map_
+                        if row.lifecycle_status
+                        in RequestLogLifecycleStatus._value2member_map_
                         else (
                             RequestLogLifecycleStatus.SUCCEEDED.value
                             if row.success
