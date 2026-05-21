@@ -69,7 +69,7 @@ class ChannelStore:
 
     async def update_site(self, site_id: str, payload: SiteUpdate) -> SiteConfig:
         async with self._session_factory() as session:
-            site = await self._get_site_entity(session, site_id)
+            site = await session.get(SiteEntity, site_id)
             if site is None:
                 raise KeyError(site_id)
             await self._ensure_site_name_unique(session, payload.name, exclude_site_id=site_id)
@@ -79,7 +79,7 @@ class ChannelStore:
 
     async def delete_site(self, site_id: str) -> None:
         async with self._session_factory() as session:
-            site = await self._get_site_entity(session, site_id)
+            site = await session.get(SiteEntity, site_id)
             if site is None:
                 raise KeyError(site_id)
 
@@ -221,7 +221,7 @@ class ChannelStore:
                     id=row.id,
                     protocol=row.protocol,
                     enabled=bool(row.enabled),
-                    headers=json.loads(row.headers_json or '{}'),
+                    headers=json.loads(row.headers_json),
                     channel_proxy=row.channel_proxy,
                     param_override=row.param_override,
                     match_regex=row.match_regex,
@@ -268,7 +268,7 @@ class ChannelStore:
             normalized_base_urls[0].id,
         )
 
-        site = await self._get_site_entity(session, site_id)
+        site = await session.get(SiteEntity, site_id)
         if site is None:
             session.add(SiteEntity(id=site_id, name=normalized_name))
         else:
@@ -282,7 +282,7 @@ class ChannelStore:
                     site_id=site_id,
                     url=str(item.url),
                     name=item.name,
-                    enabled=1 if item.enabled else 0,
+                    enabled=int(item.enabled),
                     sort_order=index,
                 )
             )
@@ -300,7 +300,7 @@ class ChannelStore:
                     site_id=site_id,
                     name=item.name,
                     api_key=item.api_key,
-                    enabled=1 if item.enabled else 0,
+                    enabled=int(item.enabled),
                     sort_order=index,
                 )
             )
@@ -319,27 +319,16 @@ class ChannelStore:
 
             existing_protocol = await session.get(SiteProtocolConfigEntity, protocol_id)
             if existing_protocol is None:
-                existing_protocol = SiteProtocolConfigEntity(
-                    id=protocol_id,
-                    site_id=site_id,
-                    protocol=protocol.protocol.value,
-                    enabled=1 if protocol.enabled else 0,
-                    headers_json=json.dumps(protocol.headers, ensure_ascii=True),
-                    channel_proxy=protocol.channel_proxy,
-                    param_override=protocol.param_override,
-                    match_regex=protocol.match_regex,
-                    base_url_id=resolved_base_url_id,
-                )
+                existing_protocol = SiteProtocolConfigEntity(id=protocol_id)
                 session.add(existing_protocol)
-            else:
-                existing_protocol.site_id = site_id
-                existing_protocol.protocol = protocol.protocol.value
-                existing_protocol.enabled = 1 if protocol.enabled else 0
-                existing_protocol.headers_json = json.dumps(protocol.headers, ensure_ascii=True)
-                existing_protocol.channel_proxy = protocol.channel_proxy
-                existing_protocol.param_override = protocol.param_override
-                existing_protocol.match_regex = protocol.match_regex
-                existing_protocol.base_url_id = resolved_base_url_id
+            existing_protocol.site_id = site_id
+            existing_protocol.protocol = protocol.protocol.value
+            existing_protocol.enabled = int(protocol.enabled)
+            existing_protocol.headers_json = json.dumps(protocol.headers, ensure_ascii=True)
+            existing_protocol.channel_proxy = protocol.channel_proxy
+            existing_protocol.param_override = protocol.param_override
+            existing_protocol.match_regex = protocol.match_regex
+            existing_protocol.base_url_id = resolved_base_url_id
 
             await session.execute(delete(SiteProtocolCredentialBindingEntity).where(SiteProtocolCredentialBindingEntity.protocol_config_id == protocol_id))
             bindings = protocol.bindings or [
@@ -358,7 +347,7 @@ class ChannelStore:
                         id=str(uuid.uuid4()),
                         protocol_config_id=protocol_id,
                         credential_id=binding.credential_id,
-                        enabled=1 if binding.enabled else 0,
+                        enabled=int(binding.enabled),
                         sort_order=binding_index,
                     )
                 )
@@ -381,7 +370,7 @@ class ChannelStore:
                         protocol_config_id=protocol_id,
                         credential_id=model.credential_id,
                         model_name=model_name,
-                        enabled=1 if model.enabled else 0,
+                        enabled=int(model.enabled),
                         sort_order=model_index,
                     )
                 )
@@ -457,9 +446,10 @@ class ChannelStore:
             name = item.name.strip()
             if not name:
                 raise ValueError('Credential name is required')
-            if name.lower() in seen_names:
+            name_key = name.lower()
+            if name_key in seen_names:
                 raise ValueError(f'Duplicate credential name: {name}')
-            seen_names.add(name.lower())
+            seen_names.add(name_key)
             normalized.append(
                 SiteCredential(
                     id=item.id or str(uuid.uuid4()),
@@ -504,6 +494,3 @@ class ChannelStore:
 
     async def _site_credential_ids(self, session: AsyncSession, site_id: str) -> list[str]:
         return list((await session.execute(select(SiteCredentialEntity.id).where(SiteCredentialEntity.site_id == site_id))).scalars().all())
-
-    async def _get_site_entity(self, session: AsyncSession, site_id: str) -> SiteEntity | None:
-        return await session.get(SiteEntity, site_id)

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import argparse
 import asyncio
@@ -65,45 +64,29 @@ def db_stamp(args: argparse.Namespace) -> None:
     command.stamp(_alembic_cfg(), args.revision)
 
 
-def _configured_workers() -> int:
-    return max(int(settings.workers or 1), 1)
-
-
-def _serve_worker_plan(reload: bool) -> tuple[int, int, str | None]:
-    requested = _configured_workers()
-    if requested == 1:
-        return requested, 1, None
-    if reload:
-        return requested, 1, "--reload does not support multiple Uvicorn workers"
-    if is_sqlite_url(settings.database_url):
-        return requested, 1, "SQLite uses a single-writer lock, so Lens runs one worker to avoid write contention"
-    return requested, requested, None
-
-
-def _print_worker_plan(requested: int, effective: int, reason: str | None) -> None:
-    if reason is None:
-        print(f"Starting Lens with workers: requested={requested}, effective={effective}", flush=True)
-        return
-    print(
-        f"Starting Lens with workers: requested={requested}, effective={effective}. "
-        f"Reason: {reason}.",
-        flush=True,
-    )
-
-
 def serve(args: argparse.Namespace) -> None:
     import uvicorn
-    requested_workers, effective_workers, worker_reason = _serve_worker_plan(args.reload)
-    _print_worker_plan(requested_workers, effective_workers, worker_reason)
+
+    requested = max(settings.workers, 1)
+    if args.reload:
+        reason = "--reload does not support multiple Uvicorn workers" if requested > 1 else None
+        effective = 1
+    elif requested > 1 and is_sqlite_url(settings.database_url):
+        reason = "SQLite uses a single-writer lock, so Lens runs one worker to avoid write contention"
+        effective = 1
+    else:
+        reason = None
+        effective = requested
+
+    message = f"Starting Lens with workers: requested={requested}, effective={effective}"
+    if reason is not None:
+        message += f". Reason: {reason}."
+    print(message, flush=True)
+
     if args.reload:
         uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port, reload=True)
     else:
-        uvicorn.run(
-            APP_IMPORT_PATH,
-            host=settings.host,
-            port=settings.port,
-            workers=effective_workers,
-        )
+        uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port, workers=effective)
 
 
 def dev(_args: argparse.Namespace) -> None:
@@ -179,7 +162,6 @@ def dev(_args: argparse.Namespace) -> None:
             for process in processes:
                 return_code = process.poll()
                 if return_code is not None:
-                    stop_processes()
                     raise SystemExit(return_code)
             time.sleep(0.25)
     finally:

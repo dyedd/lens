@@ -1,11 +1,10 @@
-from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from pydantic import ValidationError
 
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
@@ -436,14 +435,10 @@ class BackupStore:
                 ModelPriceEntity(
                     model_key=model_key,
                     display_name=item.display_name or model_key,
-                    input_price_per_million=float(item.input_price_per_million),
-                    output_price_per_million=float(item.output_price_per_million),
-                    cache_read_price_per_million=float(
-                        item.cache_read_price_per_million
-                    ),
-                    cache_write_price_per_million=float(
-                        item.cache_write_price_per_million
-                    ),
+                    input_price_per_million=item.input_price_per_million,
+                    output_price_per_million=item.output_price_per_million,
+                    cache_read_price_per_million=item.cache_read_price_per_million,
+                    cache_write_price_per_million=item.cache_write_price_per_million,
                 )
             )
 
@@ -466,8 +461,8 @@ class BackupStore:
                     id=1,
                     input_token=stats.imported_total.input_token,
                     output_token=stats.imported_total.output_token,
-                    input_cost=float(stats.imported_total.input_cost),
-                    output_cost=float(stats.imported_total.output_cost),
+                    input_cost=stats.imported_total.input_cost,
+                    output_cost=stats.imported_total.output_cost,
                     wait_time=stats.imported_total.wait_time,
                     request_success=stats.imported_total.request_success,
                     request_failed=stats.imported_total.request_failed,
@@ -486,8 +481,8 @@ class BackupStore:
                     date=item.date,
                     input_token=item.input_token,
                     output_token=item.output_token,
-                    input_cost=float(item.input_cost),
-                    output_cost=float(item.output_cost),
+                    input_cost=item.input_cost,
+                    output_cost=item.output_cost,
                     wait_time=item.wait_time,
                     request_success=item.request_success,
                     request_failed=item.request_failed,
@@ -513,9 +508,9 @@ class BackupStore:
                     cache_write_input_tokens=item.cache_write_input_tokens,
                     output_tokens=item.output_tokens,
                     total_tokens=item.total_tokens,
-                    input_cost_usd=float(item.input_cost_usd),
-                    output_cost_usd=float(item.output_cost_usd),
-                    total_cost_usd=float(item.total_cost_usd),
+                    input_cost_usd=item.input_cost_usd,
+                    output_cost_usd=item.output_cost_usd,
+                    total_cost_usd=item.total_cost_usd,
                 )
             )
 
@@ -533,7 +528,7 @@ class BackupStore:
                     model=item.model,
                     requests=item.requests,
                     total_tokens=item.total_tokens,
-                    total_cost_usd=float(item.total_cost_usd),
+                    total_cost_usd=item.total_cost_usd,
                 )
             )
 
@@ -558,7 +553,10 @@ class BackupStore:
     ) -> None:
         task_ids: set[str] = set()
         now = datetime.now(UTC).replace(tzinfo=None)
-        time_zone = await self._runtime_time_zone(session)
+        time_zone_setting = await session.get(SettingEntity, SETTING_TIME_ZONE)
+        time_zone = resolve_time_zone(
+            time_zone_setting.value if time_zone_setting is not None else None
+        )
         for item in cronjobs:
             task_id = item.id.strip()
             if not task_id:
@@ -641,7 +639,7 @@ class BackupStore:
                         ensure_ascii=True,
                         separators=(",", ":"),
                     ),
-                    max_cost_usd=max(float(item.max_cost_usd), 0.0),
+                    max_cost_usd=max(item.max_cost_usd, 0.0),
                     expires_at=self._parse_optional_datetime(item.expires_at),
                     created_at=self._parse_optional_datetime(item.created_at) or now,
                     updated_at=self._parse_optional_datetime(item.updated_at) or now,
@@ -677,9 +675,9 @@ class BackupStore:
                     cache_write_input_tokens=max(item.cache_write_input_tokens, 0),
                     output_tokens=max(item.output_tokens, 0),
                     total_tokens=max(item.total_tokens, 0),
-                    input_cost_usd=max(float(item.input_cost_usd), 0.0),
-                    output_cost_usd=max(float(item.output_cost_usd), 0.0),
-                    total_cost_usd=max(float(item.total_cost_usd), 0.0),
+                    input_cost_usd=max(item.input_cost_usd, 0.0),
+                    output_cost_usd=max(item.output_cost_usd, 0.0),
+                    total_cost_usd=max(item.total_cost_usd, 0.0),
                     request_content=item.request_content,
                     response_content=item.response_content,
                     attempts_json=json.dumps(
@@ -914,7 +912,7 @@ class BackupStore:
                 {
                     "channel_id": row.channel_id,
                     "channel_name": site_names.get(
-                        str(channel_site_ids.get(row.channel_id, "")), ""
+                        channel_site_ids.get(row.channel_id, ""), ""
                     ),
                     "credential_id": row.credential_id,
                     "credential_name": credential_names.get(row.credential_id, ""),
@@ -944,10 +942,10 @@ class BackupStore:
                         "route_group_name": route_group_names.get(row.route_group_id, ""),
                         "sync_filter_mode": row.sync_filter_mode,
                         "sync_filter_query": row.sync_filter_query,
-                        "input_price_per_million": float(price.input_price_per_million) if price is not None else 0.0,
-                        "output_price_per_million": float(price.output_price_per_million) if price is not None else 0.0,
-                        "cache_read_price_per_million": float(price.cache_read_price_per_million) if price is not None else 0.0,
-                        "cache_write_price_per_million": float(price.cache_write_price_per_million) if price is not None else 0.0,
+                        "input_price_per_million": price.input_price_per_million if price is not None else 0.0,
+                        "output_price_per_million": price.output_price_per_million if price is not None else 0.0,
+                        "cache_read_price_per_million": price.cache_read_price_per_million if price is not None else 0.0,
+                        "cache_write_price_per_million": price.cache_write_price_per_million if price is not None else 0.0,
                         "items": items_by_group.get(row.id, []),
                     }
                 )
@@ -970,10 +968,10 @@ class BackupStore:
                 model_key=row.model_key,
                 display_name=row.display_name,
                 protocols=[],
-                input_price_per_million=float(row.input_price_per_million),
-                output_price_per_million=float(row.output_price_per_million),
-                cache_read_price_per_million=float(row.cache_read_price_per_million),
-                cache_write_price_per_million=float(row.cache_write_price_per_million),
+                input_price_per_million=row.input_price_per_million,
+                output_price_per_million=row.output_price_per_million,
+                cache_read_price_per_million=row.cache_read_price_per_million,
+                cache_write_price_per_million=row.cache_write_price_per_million,
             )
             for row in rows
         ]
@@ -1010,8 +1008,8 @@ class BackupStore:
             imported_total = ConfigBackupImportedStatsTotal(
                 input_token=imported_total_row.input_token,
                 output_token=imported_total_row.output_token,
-                input_cost=float(imported_total_row.input_cost),
-                output_cost=float(imported_total_row.output_cost),
+                input_cost=imported_total_row.input_cost,
+                output_cost=imported_total_row.output_cost,
                 wait_time=imported_total_row.wait_time,
                 request_success=imported_total_row.request_success,
                 request_failed=imported_total_row.request_failed,
@@ -1024,8 +1022,8 @@ class BackupStore:
                     date=row.date,
                     input_token=row.input_token,
                     output_token=row.output_token,
-                    input_cost=float(row.input_cost),
-                    output_cost=float(row.output_cost),
+                    input_cost=row.input_cost,
+                    output_cost=row.output_cost,
                     wait_time=row.wait_time,
                     request_success=row.request_success,
                     request_failed=row.request_failed,
@@ -1044,9 +1042,9 @@ class BackupStore:
                     cache_write_input_tokens=row.cache_write_input_tokens,
                     output_tokens=row.output_tokens,
                     total_tokens=row.total_tokens,
-                    input_cost_usd=float(row.input_cost_usd),
-                    output_cost_usd=float(row.output_cost_usd),
-                    total_cost_usd=float(row.total_cost_usd),
+                    input_cost_usd=row.input_cost_usd,
+                    output_cost_usd=row.output_cost_usd,
+                    total_cost_usd=row.total_cost_usd,
                 )
                 for row in request_daily_rows
             ],
@@ -1056,7 +1054,7 @@ class BackupStore:
                     model=row.model,
                     requests=row.requests,
                     total_tokens=row.total_tokens,
-                    total_cost_usd=float(row.total_cost_usd),
+                    total_cost_usd=row.total_cost_usd,
                 )
                 for row in model_daily_rows
             ],
@@ -1080,7 +1078,7 @@ class BackupStore:
                 api_key=row.api_key,
                 enabled=bool(row.enabled),
                 allowed_models=self._load_allowed_models(row.allowed_models_json),
-                max_cost_usd=max(float(row.max_cost_usd or 0.0), 0.0),
+                max_cost_usd=max(row.max_cost_usd, 0.0),
                 expires_at=self._format_optional_datetime(row.expires_at),
                 created_at=self._format_optional_datetime(row.created_at),
                 updated_at=self._format_optional_datetime(row.updated_at),
@@ -1099,9 +1097,9 @@ class BackupStore:
                 id=row.id,
                 enabled=bool(row.enabled),
                 schedule_type=row.schedule_type,
-                interval_hours=max(int(row.interval_hours), 1),
+                interval_hours=max(row.interval_hours, 1),
                 run_at_time=row.run_at_time,
-                weekdays=list(self._load_weekdays(row.weekdays_json)),
+                weekdays=self._load_weekdays(row.weekdays_json),
             )
             for row in rows
         ]
@@ -1228,11 +1226,6 @@ class BackupStore:
         return sorted(weekdays)
 
     @staticmethod
-    async def _runtime_time_zone(session: AsyncSession) -> ZoneInfo:
-        setting = await session.get(SettingEntity, SETTING_TIME_ZONE)
-        return resolve_time_zone(setting.value if setting is not None else None)
-
-    @staticmethod
     def _parse_attempts(raw_value: str | None) -> list[RequestLogAttempt]:
         if not raw_value:
             return []
@@ -1248,6 +1241,6 @@ class BackupStore:
                 continue
             try:
                 attempts.append(RequestLogAttempt.model_validate(item))
-            except Exception:
+            except ValidationError:
                 continue
         return attempts
