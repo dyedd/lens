@@ -1,6 +1,6 @@
 
 import json
-from typing import Any
+from typing import Any, AsyncIterator
 
 FINISH_REASON_CHAT_TO_ANTHROPIC: dict[str | None, str] = {
     "stop": "end_turn",
@@ -15,6 +15,46 @@ FINISH_REASON_CHAT_TO_RESPONSES: dict[str | None, str] = {
     "tool_calls": "completed",
     "content_filter": "failed",
 }
+
+
+async def _parse_chat_sse_stream(raw_iterator: AsyncIterator[bytes]) -> AsyncIterator[dict[str, Any]]:
+    buffer = b""
+    async for chunk in raw_iterator:
+        buffer += chunk
+        while b"\n" in buffer:
+            line, buffer = buffer.split(b"\n", 1)
+            line_str = line.decode("utf-8", errors="replace").strip()
+            if not line_str.startswith("data:"):
+                continue
+            data_str = line_str[5:].strip()
+            if data_str == "[DONE]":
+                return
+            try:
+                yield json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+
+
+def _build_chat_tool_call(call_id: str, name: str, arguments: str) -> dict[str, Any]:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments},
+    }
+
+
+def _build_chat_image_part(url: str) -> dict[str, Any]:
+    return {"type": "image_url", "image_url": {"url": url}}
+
+
+def _assemble_content_parts(text_parts: list[str], image_parts: list[dict[str, Any]]) -> list[dict[str, Any]] | str:
+    if not image_parts:
+        return "\n".join(text_parts)
+    parts: list[dict[str, Any]] = []
+    if text_parts:
+        parts.append({"type": "text", "text": "\n".join(text_parts)})
+    parts.extend(image_parts)
+    return parts
 
 
 def anthropic_content_to_chat_messages(
@@ -43,31 +83,16 @@ def anthropic_content_to_chat_messages(
                 if source.get("type") == "base64":
                     mt = source.get("media_type", "image/png")
                     data = source.get("data", "")
-                    image_parts.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mt};base64,{data}"},
-                        }
-                    )
+                    image_parts.append(_build_chat_image_part(f"data:{mt};base64,{data}"))
                 elif source.get("type") == "url":
-                    image_parts.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": source.get("url", "")},
-                        }
-                    )
+                    image_parts.append(_build_chat_image_part(source.get("url", "")))
             elif bt == "tool_use":
                 tool_calls.append(
-                    {
-                        "id": block.get("id", ""),
-                        "type": "function",
-                        "function": {
-                            "name": block.get("name", ""),
-                            "arguments": json.dumps(
-                                block.get("input", {}), ensure_ascii=False
-                            ),
-                        },
-                    }
+                    _build_chat_tool_call(
+                        block.get("id", ""),
+                        block.get("name", ""),
+                        json.dumps(block.get("input", {}), ensure_ascii=False),
+                    )
                 )
             elif bt == "tool_result":
                 trc = block.get("content", "")
@@ -91,14 +116,10 @@ def anthropic_content_to_chat_messages(
                 msg_out["content"] = "\n".join(text_parts)
             msg_out["tool_calls"] = tool_calls
             result.append(msg_out)
-        elif image_parts:
-            parts_out: list[dict[str, Any]] = []
-            if text_parts:
-                parts_out.append({"type": "text", "text": "\n".join(text_parts)})
-            parts_out.extend(image_parts)
-            result.append({"role": role, "content": parts_out})
-        elif text_parts:
-            result.append({"role": role, "content": "\n".join(text_parts)})
+        elif image_parts or text_parts:
+            result.append(
+                {"role": role, "content": _assemble_content_parts(text_parts, image_parts)}
+            )
 
         for tr in tool_results:
             result.append(tr)
@@ -181,14 +202,11 @@ def responses_input_to_chat_messages(
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [
-                        {
-                            "id": item.get("call_id", ""),
-                            "type": "function",
-                            "function": {
-                                "name": item.get("name", ""),
-                                "arguments": item.get("arguments", "{}"),
-                            },
-                        }
+                        _build_chat_tool_call(
+                            item.get("call_id", ""),
+                            item.get("name", ""),
+                            item.get("arguments", "{}"),
+                        )
                     ],
                 }
             )
@@ -209,15 +227,11 @@ def responses_input_to_chat_messages(
                     url = block.get("image_url", "")
                     if isinstance(url, dict):
                         url = url.get("url", "")
-                    image_parts.append({"type": "image_url", "image_url": {"url": url}})
-            if image_parts:
-                parts_out: list[dict[str, Any]] = []
-                if text_parts:
-                    parts_out.append({"type": "text", "text": "\n".join(text_parts)})
-                parts_out.extend(image_parts)
-                result.append({"role": role, "content": parts_out})
-            elif text_parts:
-                result.append({"role": role, "content": "\n".join(text_parts)})
+                    image_parts.append(_build_chat_image_part(url))
+            if image_parts or text_parts:
+                result.append(
+                    {"role": role, "content": _assemble_content_parts(text_parts, image_parts)}
+                )
             continue
 
         if role or content is not None:

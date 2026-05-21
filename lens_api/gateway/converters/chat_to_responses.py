@@ -1,11 +1,11 @@
 
-import json
 import time
 import uuid
 from typing import Any, AsyncIterator
 
 from ._shared import (
     FINISH_REASON_CHAT_TO_RESPONSES,
+    _parse_chat_sse_stream,
     format_sse_event,
     responses_input_to_chat_messages,
     responses_tools_to_chat_tools,
@@ -131,112 +131,97 @@ async def chat_stream_to_responses_stream(
         },
     )
 
-    buffer = b""
-    async for chunk in raw_iterator:
-        buffer += chunk
-        while b"\n" in buffer:
-            line, buffer = buffer.split(b"\n", 1)
-            line_str = line.decode("utf-8", errors="replace").strip()
-            if not line_str.startswith("data:"):
-                continue
-            data_str = line_str[5:].strip()
-            if data_str == "[DONE]":
-                break
-            try:
-                payload = json.loads(data_str)
-            except json.JSONDecodeError:
-                continue
+    async for payload in _parse_chat_sse_stream(raw_iterator):
+        if payload.get("model"):
+            resolved_model = payload["model"]
+        usage = payload.get("usage") or {}
+        if usage.get("prompt_tokens"):
+            input_tokens = usage["prompt_tokens"]
+        if usage.get("completion_tokens"):
+            output_tokens = usage["completion_tokens"]
 
-            if payload.get("model"):
-                resolved_model = payload["model"]
-            usage = payload.get("usage") or {}
-            if usage.get("prompt_tokens"):
-                input_tokens = usage["prompt_tokens"]
-            if usage.get("completion_tokens"):
-                output_tokens = usage["completion_tokens"]
+        for choice in payload.get("choices", []):
+            finish_reason = choice.get("finish_reason") or finish_reason
+            delta = choice.get("delta", {})
+            text_delta = delta.get("content")
+            tc_deltas = delta.get("tool_calls")
 
-            for choice in payload.get("choices", []):
-                finish_reason = choice.get("finish_reason") or finish_reason
-                delta = choice.get("delta", {})
-                text_delta = delta.get("content")
-                tc_deltas = delta.get("tool_calls")
+            if text_delta:
+                if not text_started:
+                    text_started = True
+                    oi = next_output_index
+                    next_output_index += 1
+                    yield format_sse_event(
+                        "response.output_item.added",
+                        {
+                            "type": "response.output_item.added",
+                            "output_index": oi,
+                            "item": {
+                                "id": msg_id,
+                                "type": "message",
+                                "status": "in_progress",
+                                "role": "assistant",
+                                "content": [],
+                            },
+                        },
+                    )
+                    yield format_sse_event(
+                        "response.content_part.added",
+                        {
+                            "type": "response.content_part.added",
+                            "output_index": oi,
+                            "content_index": 0,
+                            "part": {
+                                "type": "output_text",
+                                "text": "",
+                                "annotations": [],
+                            },
+                        },
+                    )
+                yield format_sse_event(
+                    "response.output_text.delta",
+                    {
+                        "type": "response.output_text.delta",
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": text_delta,
+                    },
+                )
 
-                if text_delta:
-                    if not text_started:
-                        text_started = True
+            if tc_deltas:
+                for tc in tc_deltas:
+                    tc_idx = tc.get("index", 0)
+                    if tc_idx not in tool_calls_by_idx:
+                        func = tc.get("function", {})
+                        call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:24]}"
                         oi = next_output_index
                         next_output_index += 1
+                        tool_calls_by_idx[tc_idx] = oi
                         yield format_sse_event(
                             "response.output_item.added",
                             {
                                 "type": "response.output_item.added",
                                 "output_index": oi,
                                 "item": {
-                                    "id": msg_id,
-                                    "type": "message",
+                                    "id": f"fc_{uuid.uuid4().hex[:24]}",
+                                    "type": "function_call",
                                     "status": "in_progress",
-                                    "role": "assistant",
-                                    "content": [],
+                                    "name": func.get("name", ""),
+                                    "arguments": "",
+                                    "call_id": call_id,
                                 },
                             },
                         )
+                    args_delta = (tc.get("function") or {}).get("arguments", "")
+                    if args_delta:
                         yield format_sse_event(
-                            "response.content_part.added",
+                            "response.function_call_arguments.delta",
                             {
-                                "type": "response.content_part.added",
-                                "output_index": oi,
-                                "content_index": 0,
-                                "part": {
-                                    "type": "output_text",
-                                    "text": "",
-                                    "annotations": [],
-                                },
+                                "type": "response.function_call_arguments.delta",
+                                "output_index": tool_calls_by_idx[tc_idx],
+                                "delta": args_delta,
                             },
                         )
-                    yield format_sse_event(
-                        "response.output_text.delta",
-                        {
-                            "type": "response.output_text.delta",
-                            "output_index": 0,
-                            "content_index": 0,
-                            "delta": text_delta,
-                        },
-                    )
-
-                if tc_deltas:
-                    for tc in tc_deltas:
-                        tc_idx = tc.get("index", 0)
-                        if tc_idx not in tool_calls_by_idx:
-                            func = tc.get("function", {})
-                            call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:24]}"
-                            oi = next_output_index
-                            next_output_index += 1
-                            tool_calls_by_idx[tc_idx] = oi
-                            yield format_sse_event(
-                                "response.output_item.added",
-                                {
-                                    "type": "response.output_item.added",
-                                    "output_index": oi,
-                                    "item": {
-                                        "id": f"fc_{uuid.uuid4().hex[:24]}",
-                                        "type": "function_call",
-                                        "status": "in_progress",
-                                        "name": func.get("name", ""),
-                                        "arguments": "",
-                                        "call_id": call_id,
-                                    },
-                                },
-                            )
-                        args_delta = (tc.get("function") or {}).get("arguments", "")
-                        if args_delta:
-                            yield format_sse_event(
-                                "response.function_call_arguments.delta",
-                                {
-                                    "type": "response.function_call_arguments.delta",
-                                    "output_index": tool_calls_by_idx[tc_idx],
-                                    "delta": args_delta,
-                                },
-                            )
 
     status = FINISH_REASON_CHAT_TO_RESPONSES.get(finish_reason, "completed")
     total = input_tokens + output_tokens

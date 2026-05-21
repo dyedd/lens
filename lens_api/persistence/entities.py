@@ -7,6 +7,22 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..core.db import Base
 
 
+def enabled_column() -> Mapped[int]:
+    return mapped_column(Integer, nullable=False, default=1)
+
+
+def sort_order_column() -> Mapped[int]:
+    return mapped_column(Integer, nullable=False, default=0)
+
+
+def timestamp_column() -> Mapped[datetime]:
+    return mapped_column(default=datetime.utcnow, nullable=False)
+
+
+def auto_timestamp_column() -> Mapped[datetime]:
+    return mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class AdminUserEntity(Base):
     __tablename__ = "admin_users"
 
@@ -14,8 +30,8 @@ class AdminUserEntity(Base):
     username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = timestamp_column()
+    updated_at: Mapped[datetime] = auto_timestamp_column()
 
 
 class SiteEntity(Base):
@@ -32,8 +48,8 @@ class SiteBaseUrlEntity(Base):
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    enabled: Mapped[int] = enabled_column()
+    sort_order: Mapped[int] = sort_order_column()
 
 
 class SiteCredentialEntity(Base):
@@ -43,8 +59,8 @@ class SiteCredentialEntity(Base):
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     api_key: Mapped[str] = mapped_column(Text, nullable=False)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    enabled: Mapped[int] = enabled_column()
+    sort_order: Mapped[int] = sort_order_column()
 
 
 class SiteProtocolConfigEntity(Base):
@@ -53,7 +69,7 @@ class SiteProtocolConfigEntity(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    enabled: Mapped[int] = enabled_column()
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -67,8 +83,8 @@ class SiteProtocolCredentialBindingEntity(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     protocol_config_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    enabled: Mapped[int] = enabled_column()
+    sort_order: Mapped[int] = sort_order_column()
 
 
 class SiteDiscoveredModelEntity(Base):
@@ -78,8 +94,8 @@ class SiteDiscoveredModelEntity(Base):
     protocol_config_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    enabled: Mapped[int] = enabled_column()
+    sort_order: Mapped[int] = sort_order_column()
 
 
 class ModelGroupEntity(Base):
@@ -108,8 +124,8 @@ class ModelGroupItemEntity(Base):
     channel_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     credential_id: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    enabled: Mapped[int] = enabled_column()
+    sort_order: Mapped[int] = sort_order_column()
 
 
 class SettingEntity(Base):
@@ -125,12 +141,12 @@ class GatewayApiKeyEntity(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     remark: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     api_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    enabled: Mapped[int] = enabled_column()
     allowed_models_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     max_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = timestamp_column()
+    updated_at: Mapped[datetime] = auto_timestamp_column()
 
 
 class RequestLogEntity(Base):
@@ -182,7 +198,7 @@ class CronjobEntity(Base):
     __tablename__ = "cronjobs"
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    enabled: Mapped[int] = enabled_column()
     schedule_type: Mapped[str] = mapped_column(String(16), nullable=False, default="interval")
     interval_hours: Mapped[int] = mapped_column(Integer, nullable=False)
     run_at_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
@@ -194,8 +210,8 @@ class CronjobEntity(Base):
     next_run_at: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
     lease_owner: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
     lease_until: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = timestamp_column()
+    updated_at: Mapped[datetime] = auto_timestamp_column()
 
 
 class ImportedStatsTotalEntity(Base):
