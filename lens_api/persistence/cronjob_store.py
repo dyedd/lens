@@ -140,48 +140,58 @@ class CronjobStore:
             current_schedule = self._entity_schedule(entity)
             next_schedule = normalize_cronjob_schedule(
                 schedule_type=schedule_type or current_schedule.schedule_type,
-                interval_hours=(
-                    interval_hours
-                    if interval_hours is not None
-                    else current_schedule.interval_hours
-                ),
-                run_at_time=(
-                    run_at_time
-                    if run_at_time is not None
-                    else current_schedule.run_at_time
-                ),
+                interval_hours=interval_hours if interval_hours is not None else current_schedule.interval_hours,
+                run_at_time=run_at_time if run_at_time is not None else current_schedule.run_at_time,
                 weekdays=weekdays if weekdays is not None else current_schedule.weekdays,
             )
-            schedule_changed = next_schedule != current_schedule
-            entity.schedule_type = next_schedule.schedule_type
-            entity.interval_hours = next_schedule.interval_hours
-            entity.run_at_time = next_schedule.run_at_time
-            entity.weekdays_json = encode_weekdays(next_schedule.weekdays)
+            self._apply_schedule(entity, next_schedule)
             if enabled is not None:
                 entity.enabled = 1 if enabled else 0
 
-            lease_active = (
-                bool(entity.lease_owner)
-                and entity.lease_until is not None
-                and entity.lease_until > now
+            self._update_run_state(
+                entity,
+                next_schedule=next_schedule,
+                schedule_changed=next_schedule != current_schedule,
+                was_enabled=was_enabled,
+                now=now,
+                time_zone=time_zone,
             )
-            if not entity.enabled:
-                entity.next_run_at = None
-                if not lease_active:
-                    entity.status = CronjobStatus.DISABLED.value
-            elif not was_enabled or schedule_changed or entity.next_run_at is None:
-                entity.next_run_at = next_cronjob_run_at(
-                    next_schedule,
-                    now=now,
-                    time_zone=time_zone,
-                )
-                if entity.status == CronjobStatus.DISABLED.value:
-                    entity.status = CronjobStatus.IDLE.value
-
             entity.updated_at = now
             await session.commit()
             await session.refresh(entity)
             return self._to_record(entity)
+
+    @staticmethod
+    def _apply_schedule(entity: CronjobEntity, schedule: CronjobSchedule) -> None:
+        entity.schedule_type = schedule.schedule_type
+        entity.interval_hours = schedule.interval_hours
+        entity.run_at_time = schedule.run_at_time
+        entity.weekdays_json = encode_weekdays(schedule.weekdays)
+
+    @staticmethod
+    def _update_run_state(
+        entity: CronjobEntity,
+        *,
+        next_schedule: CronjobSchedule,
+        schedule_changed: bool,
+        was_enabled: bool,
+        now: datetime,
+        time_zone: ZoneInfo,
+    ) -> None:
+        lease_active = (
+            bool(entity.lease_owner)
+            and entity.lease_until is not None
+            and entity.lease_until > now
+        )
+        if not entity.enabled:
+            entity.next_run_at = None
+            if not lease_active:
+                entity.status = CronjobStatus.DISABLED.value
+            return
+        if not was_enabled or schedule_changed or entity.next_run_at is None:
+            entity.next_run_at = next_cronjob_run_at(next_schedule, now=now, time_zone=time_zone)
+            if entity.status == CronjobStatus.DISABLED.value:
+                entity.status = CronjobStatus.IDLE.value
 
     async def reschedule_cronjobs(
         self,

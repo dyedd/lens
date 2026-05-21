@@ -36,7 +36,7 @@ def register(app: FastAPI, service_module) -> None:
 
         if normalized:
             for candidate in _next_rsc_candidates(static_dir, normalized):
-                if candidate.is_file() and _is_relative_to(candidate, static_dir):
+                if candidate.is_file() and candidate.resolve().is_relative_to(static_dir.resolve()):
                     return FileResponse(candidate)
             html_candidates = [
                 static_dir / normalized / "index.html",
@@ -46,7 +46,7 @@ def register(app: FastAPI, service_module) -> None:
             html_candidates = [static_dir / "index.html"]
 
         for candidate in html_candidates:
-            if candidate.is_file() and _is_relative_to(candidate, static_dir):
+            if candidate.is_file() and candidate.resolve().is_relative_to(static_dir.resolve()):
                 return FileResponse(candidate)
         raise HTTPException(status_code=404, detail="Not Found")
 
@@ -84,11 +84,3 @@ def _next_rsc_candidates(static_dir: Path, normalized_path: str) -> list[Path]:
             alternate_parts = (*parts[:index], alternate_prefix, *rest_parts[:-2], leaf, *parts[index + 1 :])
             candidates.append(static_dir.joinpath(*alternate_parts))
     return candidates
-
-
-def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-    except ValueError:
-        return False
-    return True

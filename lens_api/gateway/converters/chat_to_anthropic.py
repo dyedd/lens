@@ -1,10 +1,10 @@
 
-import json
 import uuid
 from typing import Any, AsyncIterator
 
 from ._shared import (
     FINISH_REASON_CHAT_TO_ANTHROPIC,
+    _parse_chat_sse_stream,
     anthropic_content_to_chat_messages,
     anthropic_tool_choice_to_chat,
     anthropic_tools_to_chat_tools,
@@ -89,6 +89,7 @@ async def chat_stream_to_anthropic_stream(
     text_started = False
     tool_index: dict[str, int] = {}
     next_block_index = 0
+    finish_reason: str | None = None
 
     yield format_sse_event(
         "message_start",
@@ -108,91 +109,73 @@ async def chat_stream_to_anthropic_stream(
     )
     yield format_sse_event("ping", {"type": "ping"})
 
-    finish_reason: str | None = None
-    buffer = b""
+    async for payload in _parse_chat_sse_stream(raw_iterator):
+        usage = payload.get("usage") or {}
+        if usage.get("completion_tokens"):
+            output_tokens = usage["completion_tokens"]
 
-    async for chunk in raw_iterator:
-        buffer += chunk
-        while b"\n" in buffer:
-            line, buffer = buffer.split(b"\n", 1)
-            line_str = line.decode("utf-8", errors="replace").strip()
-            if not line_str.startswith("data:"):
-                continue
-            data_str = line_str[5:].strip()
-            if data_str == "[DONE]":
-                break
-            try:
-                payload = json.loads(data_str)
-            except json.JSONDecodeError:
-                continue
+        for choice in payload.get("choices", []):
+            finish_reason = choice.get("finish_reason") or finish_reason
+            delta = choice.get("delta", {})
+            text_delta = delta.get("content")
+            tc_deltas = delta.get("tool_calls")
 
-            usage = payload.get("usage") or {}
-            if usage.get("completion_tokens"):
-                output_tokens = usage["completion_tokens"]
+            if text_delta:
+                if not text_started:
+                    text_started = True
+                    yield format_sse_event(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": next_block_index,
+                            "content_block": {"type": "text", "text": ""},
+                        },
+                    )
+                    next_block_index += 1
+                yield format_sse_event(
+                    "content_block_delta",
+                    {
+                        "type": "content_block_delta",
+                        "index": next_block_index - 1,
+                        "delta": {"type": "text_delta", "text": text_delta},
+                    },
+                )
 
-            for choice in payload.get("choices", []):
-                finish_reason = choice.get("finish_reason") or finish_reason
-                delta = choice.get("delta", {})
-                text_delta = delta.get("content")
-                tc_deltas = delta.get("tool_calls")
-
-                if text_delta:
-                    if not text_started:
-                        text_started = True
+            if tc_deltas:
+                for tc in tc_deltas:
+                    call_id = tc.get("id") or ""
+                    tc_idx = tc.get("index", 0)
+                    key = call_id or str(tc_idx)
+                    if key not in tool_index:
+                        func = tc.get("function", {})
+                        tool_index[key] = next_block_index
+                        next_block_index += 1
                         yield format_sse_event(
                             "content_block_start",
                             {
                                 "type": "content_block_start",
-                                "index": next_block_index,
-                                "content_block": {"type": "text", "text": ""},
+                                "index": tool_index[key],
+                                "content_block": {
+                                    "type": "tool_use",
+                                    "id": call_id or f"toolu_{uuid.uuid4().hex[:24]}",
+                                    "name": func.get("name", ""),
+                                    "input": {},
+                                },
                             },
                         )
-                        next_block_index += 1
-                    yield format_sse_event(
-                        "content_block_delta",
-                        {
-                            "type": "content_block_delta",
-                            "index": next_block_index - 1,
-                            "delta": {"type": "text_delta", "text": text_delta},
-                        },
-                    )
-
-                if tc_deltas:
-                    for tc in tc_deltas:
-                        call_id = tc.get("id") or ""
-                        tc_idx = tc.get("index", 0)
-                        key = call_id or str(tc_idx)
-                        if key not in tool_index:
-                            func = tc.get("function", {})
-                            tool_index[key] = next_block_index
-                            next_block_index += 1
-                            yield format_sse_event(
-                                "content_block_start",
-                                {
-                                    "type": "content_block_start",
-                                    "index": tool_index[key],
-                                    "content_block": {
-                                        "type": "tool_use",
-                                        "id": call_id
-                                        or f"toolu_{uuid.uuid4().hex[:24]}",
-                                        "name": func.get("name", ""),
-                                        "input": {},
-                                    },
+                    args_delta = (tc.get("function") or {}).get("arguments", "")
+                    if args_delta:
+                        yield format_sse_event(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": tool_index[key],
+                                "delta": {
+                                    "type": "input_json_delta",
+                                    "partial_json": args_delta,
                                 },
-                            )
-                        args_delta = (tc.get("function") or {}).get("arguments", "")
-                        if args_delta:
-                            yield format_sse_event(
-                                "content_block_delta",
-                                {
-                                    "type": "content_block_delta",
-                                    "index": tool_index[key],
-                                    "delta": {
-                                        "type": "input_json_delta",
-                                        "partial_json": args_delta,
-                                    },
-                                },
-                            )
+                            },
+                        )
 
     for i in range(next_block_index):
         yield format_sse_event(

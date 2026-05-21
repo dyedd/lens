@@ -33,6 +33,40 @@ def normalize_base_url(value: Any) -> Any:
     return rebuilt
 
 
+def _validate_regex_pattern(pattern: str) -> str:
+    if not pattern:
+        return pattern
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
+    return pattern
+
+
+def _normalize_weekdays_list(value: list[int]) -> list[int]:
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for item in value:
+        weekday = int(item)
+        if weekday < 1 or weekday > 7:
+            raise ValueError("Weekday must be between 1 and 7")
+        if weekday in seen:
+            continue
+        seen.add(weekday)
+        normalized.append(weekday)
+    return sorted(normalized)
+
+
+def _validate_cronjob_schedule(schedule_type: "CronjobScheduleType | None", run_at_time: str | None, weekdays: list[int] | None) -> None:
+    if schedule_type == CronjobScheduleType.DAILY and not run_at_time:
+        raise ValueError("Daily cron jobs require run_at_time")
+    if schedule_type == CronjobScheduleType.WEEKLY:
+        if not run_at_time:
+            raise ValueError("Weekly cron jobs require run_at_time")
+        if not weekdays:
+            raise ValueError("Weekly cron jobs require weekdays")
+
+
 class ProtocolKind(str, Enum):
     OPENAI_CHAT = "openai_chat"
     OPENAI_RESPONSES = "openai_responses"
@@ -214,13 +248,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
     @field_validator("match_regex")
     @classmethod
     def validate_match_regex(cls, pattern: str) -> str:
-        if not pattern:
-            return pattern
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
-        return pattern
+        return _validate_regex_pattern(pattern)
 
 
 class SiteConfig(StrictBaseModel):
@@ -284,13 +312,7 @@ class SiteModelFetchRequest(StrictBaseModel):
     @field_validator("match_regex")
     @classmethod
     def validate_match_regex(cls, pattern: str) -> str:
-        if not pattern:
-            return pattern
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {pattern}. {exc}") from exc
-        return pattern
+        return _validate_regex_pattern(pattern)
 
 
 class SiteModelFetchItem(StrictBaseModel):
@@ -661,27 +683,11 @@ class CronjobUpdate(StrictBaseModel):
     def normalize_weekdays(cls, value: list[int] | None) -> list[int] | None:
         if value is None:
             return None
-        normalized: list[int] = []
-        seen: set[int] = set()
-        for item in value:
-            weekday = int(item)
-            if weekday < 1 or weekday > 7:
-                raise ValueError("Weekday must be between 1 and 7")
-            if weekday in seen:
-                continue
-            seen.add(weekday)
-            normalized.append(weekday)
-        return sorted(normalized)
+        return _normalize_weekdays_list(value)
 
     @model_validator(mode="after")
     def validate_schedule(self) -> "CronjobUpdate":
-        if self.schedule_type == CronjobScheduleType.DAILY and not self.run_at_time:
-            raise ValueError("Daily cron jobs require run_at_time")
-        if self.schedule_type == CronjobScheduleType.WEEKLY:
-            if not self.run_at_time:
-                raise ValueError("Weekly cron jobs require run_at_time")
-            if not self.weekdays:
-                raise ValueError("Weekly cron jobs require weekdays")
+        _validate_cronjob_schedule(self.schedule_type, self.run_at_time, self.weekdays)
         return self
 
 
@@ -805,27 +811,11 @@ class ConfigBackupCronjob(StrictBaseModel):
     @field_validator("weekdays")
     @classmethod
     def normalize_weekdays(cls, value: list[int]) -> list[int]:
-        normalized: list[int] = []
-        seen: set[int] = set()
-        for item in value:
-            weekday = int(item)
-            if weekday < 1 or weekday > 7:
-                raise ValueError("Weekday must be between 1 and 7")
-            if weekday in seen:
-                continue
-            seen.add(weekday)
-            normalized.append(weekday)
-        return sorted(normalized)
+        return _normalize_weekdays_list(value)
 
     @model_validator(mode="after")
     def validate_schedule(self) -> "ConfigBackupCronjob":
-        if self.schedule_type == CronjobScheduleType.DAILY and not self.run_at_time:
-            raise ValueError("Daily cron jobs require run_at_time")
-        if self.schedule_type == CronjobScheduleType.WEEKLY:
-            if not self.run_at_time:
-                raise ValueError("Weekly cron jobs require run_at_time")
-            if not self.weekdays:
-                raise ValueError("Weekly cron jobs require weekdays")
+        _validate_cronjob_schedule(self.schedule_type, self.run_at_time, self.weekdays)
         return self
 
 

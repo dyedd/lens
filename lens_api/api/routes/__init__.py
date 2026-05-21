@@ -5,18 +5,21 @@ from . import admin_auth, backups, cronjobs, gateway_api_keys, model_groups, mod
 
 
 def include_routes(app: FastAPI, service_module) -> None:
-    public.register(app, service_module)
-    admin_auth.register(app, service_module)
-    sites.register(app, service_module)
-    version.register(app, service_module)
-    routing.register(app, service_module)
-    overview.register(app, service_module)
-    request_logs.register(app, service_module)
-    model_groups.register(app, service_module)
-    model_prices.register(app, service_module)
-    cronjobs.register(app, service_module)
-    gateway_api_keys.register(app, service_module)
-    backups.register(app, service_module)
-    settings.register(app, service_module)
-    proxy.register(app, service_module)
-    ui_static.register(app, service_module)
+    for module in (
+        public,
+        admin_auth,
+        sites,
+        version,
+        routing,
+        overview,
+        request_logs,
+        model_groups,
+        model_prices,
+        cronjobs,
+        gateway_api_keys,
+        backups,
+        settings,
+        proxy,
+        ui_static,
+    ):
+        module.register(app, service_module)

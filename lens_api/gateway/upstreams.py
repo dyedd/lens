@@ -34,7 +34,7 @@ def build_upstream_request(
     user_agent: str | None = None,
 ) -> UpstreamRequest:
     api_key = resolve_channel_api_key(channel, credential_id=credential_id)
-    proxy_url = _resolve_proxy_url(channel)
+    proxy_url = channel.channel_proxy.strip() or None
 
     if channel.protocol == ProtocolKind.GEMINI:
         model_name = body.get("model")
@@ -154,17 +154,12 @@ def resolve_channel_api_key(channel: ChannelConfig, credential_id: str | None = 
     return channel.api_key.strip()
 
 
-def _resolve_proxy_url(channel: ChannelConfig) -> str | None:
-    value = channel.channel_proxy.strip()
-    return value or None
-
-
 def resolve_upstream_proxy_url(channel: ChannelConfig, global_proxy_url: str | None = None) -> str | None:
-    channel_proxy = _resolve_proxy_url(channel)
+    channel_proxy = channel.channel_proxy.strip()
     if channel_proxy:
         return channel_proxy
-    value = (global_proxy_url or "").strip()
-    return value or None
+    global_proxy = (global_proxy_url or "").strip()
+    return global_proxy or None
 
 
 def resolve_channel_model_list_url(channel: ChannelConfig) -> str:
