@@ -864,7 +864,7 @@ function toPayload(form: FormState): SitePayload {
       channel_proxy: item.channel_proxy.trim(),
       param_override: item.param_override.trim(),
       match_regex: safeText(item.match_regex).trim(),
-      base_url_id: resolveBaseUrlId(baseUrls, item.base_url_id),
+      base_url_id: item.base_url_id,
       bindings: item.bindings.filter((binding) => binding.credential_id),
       models: item.models
         .map((model) => ({
@@ -880,23 +880,32 @@ function toPayload(form: FormState): SitePayload {
 
 function protocolBaseUrlKey(
   protocol: FormProtocol,
-  baseUrls: Array<{ id: string; enabled: boolean }>,
+  baseUrlIds: Set<string>,
 ) {
-  return `${protocol.protocol}:${resolveBaseUrlId(baseUrls, protocol.base_url_id)}`;
+  return baseUrlIds.has(protocol.base_url_id)
+    ? `${protocol.protocol}:${protocol.base_url_id}`
+    : "";
 }
 
 function duplicateProtocolBaseUrlKeys(
   protocols: FormProtocol[],
-  baseUrls: Array<{ id: string; enabled: boolean }>,
+  baseUrls: Array<{ id: string }>,
 ) {
+  const baseUrlIds = new Set(baseUrls.map((item) => item.id));
   const counts = new Map<string, number>();
   for (const item of protocols) {
-    const key = protocolBaseUrlKey(item, baseUrls);
+    const key = protocolBaseUrlKey(item, baseUrlIds);
+    if (!key) continue;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return new Set(
     [...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key),
   );
+}
+
+function invalidProtocolBaseUrlCount(form: FormState) {
+  const baseUrlIds = new Set(formBaseUrlsForPayload(form).map((item) => item.id));
+  return form.protocols.filter((item) => !baseUrlIds.has(item.base_url_id)).length;
 }
 
 function SwitchButton({
@@ -1103,12 +1112,13 @@ function ProtocolConfigItem({
   onOpenModelTest: (protocolIndex: number, modelIndex: number) => void;
 }) {
   const submittedBaseUrls = formBaseUrlsForPayload(form);
+  const submittedBaseUrlIds = new Set(submittedBaseUrls.map((item) => item.id));
   const duplicatedProtocolBaseUrls = duplicateProtocolBaseUrlKeys(
     form.protocols,
     submittedBaseUrls,
   );
   const protocolBaseUrlDuplicated = duplicatedProtocolBaseUrls.has(
-    protocolBaseUrlKey(protocol, submittedBaseUrls),
+    protocolBaseUrlKey(protocol, submittedBaseUrlIds),
   );
   const activeCredentialIds = new Set(
     form.credentials
@@ -2144,6 +2154,14 @@ export function ChannelsScreen() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (invalidProtocolBaseUrlCount(form)) {
+      toast.error(
+        locale === "zh-CN"
+          ? "协议地址来源无效"
+          : "Protocol Base URL is invalid",
+      );
+      return;
+    }
     const duplicatedProtocolBaseUrls = duplicateProtocolBaseUrlKeys(
       form.protocols,
       formBaseUrlsForPayload(form),

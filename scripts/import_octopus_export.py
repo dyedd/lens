@@ -17,8 +17,9 @@ from lens_api.models import (
     ProtocolKind,
     RoutingStrategy,
     SiteCreate,
+    SiteBaseUrlInput,
     SiteCredentialInput,
-    SiteModel,
+    SiteModelInput,
     SiteProtocolConfigInput,
     SiteProtocolCredentialBindingInput,
 )
@@ -137,18 +138,20 @@ async def main(export_path: str) -> None:
         direct_models = normalize_model_names(channel.get("model"))
         custom_models = normalize_model_names(channel.get("custom_model"))
         all_models = list(dict.fromkeys([*direct_models, *custom_models]))
+        base_url_id = str(uuid.uuid4())
         protocol_id = str(uuid.uuid4())
 
         site = await channel_store.create_site(
             SiteCreate(
                 name=channel.get("name") or f"channel-{channel_id}",
-                base_url=base_url,
+                base_urls=[SiteBaseUrlInput(id=base_url_id, url=base_url)],
                 credentials=credentials,
                 protocols=[
                     SiteProtocolConfigInput(
                         id=protocol_id,
                         protocol=protocol,
                         enabled=bool(channel.get("enabled", True)),
+                        base_url_id=base_url_id,
                         headers={},
                         channel_proxy=channel.get("channel_proxy") or "",
                         param_override=channel.get("param_override") or "",
@@ -160,15 +163,13 @@ async def main(export_path: str) -> None:
                             for item in credentials
                         ],
                         models=[
-                            SiteModel(
+                            SiteModelInput(
                                 id=str(uuid.uuid4()),
                                 credential_id=default_credential_id,
-                                credential_name="",
                                 model_name=model_name,
                                 enabled=True,
-                                sort_order=index,
                             )
-                            for index, model_name in enumerate(all_models)
+                            for model_name in all_models
                         ],
                     )
                 ],

@@ -275,10 +275,7 @@ class BackupStore:
                 if protocol.id in channel_ids:
                     raise ValueError(f"Duplicate channel id in backup: {protocol.id}")
                 channel_ids.add(protocol.id)
-                if (
-                    protocol.base_url_id
-                    and protocol.base_url_id not in site_base_url_ids
-                ):
+                if protocol.base_url_id not in site_base_url_ids:
                     raise ValueError(
                         f"Channel base url not found in backup site {site.name}: {protocol.base_url_id}"
                     )

@@ -619,15 +619,9 @@ class DomainStore:
                     if site_ids_for_urls
                     else []
                 )
-                first_url_by_site: dict[str, str] = {}
                 url_by_id: dict[str, str] = {}
                 for row in base_url_rows:
                     url_by_id[row.id] = row.url
-                    if row.enabled == 1 and row.site_id not in first_url_by_site:
-                        first_url_by_site[row.site_id] = row.url
-                for row in base_url_rows:
-                    if row.site_id not in first_url_by_site:
-                        first_url_by_site[row.site_id] = row.url
 
         candidates: list[ModelGroupCandidateItem] = []
         seen: set[tuple[str, str, str]] = set()
@@ -674,8 +668,7 @@ class DomainStore:
                 "site_id": site_id,
                 "name": site_name,
                 "protocol": protocol,
-                "base_url": url_by_id.get(base_url_id)
-                or first_url_by_site.get(site_id, ""),
+                "base_url": url_by_id.get(base_url_id, ""),
             }
             for channel_id, protocol, base_url_id, site_name, site_id in channel_rows
         }
