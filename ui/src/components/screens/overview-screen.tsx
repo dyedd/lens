@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   Activity,
   ArrowDownToLine,
@@ -207,13 +208,20 @@ export function OverviewScreen() {
     return `/admin/overview-dashboard?${params.toString()}`;
   }, [days, logOffset]);
 
-  const { data: dashboardData } = useQuery({
+  const {
+    data: dashboardData,
+    error: dashboardError,
+    isError: dashboardIsError,
+  } = useQuery({
     queryKey: ["overview-dashboard", days, logOffset],
     queryFn: () => apiRequest<OverviewDashboardData>(dashboardQuery),
     placeholderData: keepPreviousData,
   });
 
-  const { data: overviewMetrics } = useQuery({
+  const {
+    data: overviewMetrics,
+    error: overviewMetricsError,
+  } = useQuery({
     queryKey: ["overview-metrics"],
     queryFn: () => apiRequest<OverviewMetrics>("/admin/overview"),
     staleTime: 30_000,
@@ -225,6 +233,20 @@ export function OverviewScreen() {
   const daily = dashboardData?.daily;
   const models = dashboardData?.models;
   const logs = dashboardData?.logs ?? [];
+  const pageError = dashboardIsError ? dashboardError : overviewMetricsError;
+
+  useEffect(() => {
+    if (!pageError) return;
+    toast.error(zh ? "总览数据加载失败" : "Failed to load overview", {
+      id: "overview-load-error",
+      description:
+        pageError instanceof Error
+          ? pageError.message
+          : zh
+            ? "无法读取总览数据"
+            : "Unable to read overview data",
+    });
+  }, [pageError, zh]);
 
   const periodMetrics = useMemo(() => {
     const source = daily ?? [];
@@ -606,7 +628,7 @@ export function OverviewScreen() {
                   />
                 </PieChart>
               </ChartContainer>
-            ) : (
+            ) : dashboardIsError ? null : (
               <div className="flex h-[280px] w-full items-center justify-center text-sm text-muted-foreground">
                 {zh ? "暂无数据" : "No data"}
               </div>
@@ -689,7 +711,7 @@ export function OverviewScreen() {
                 ))}
               </BarChart>
             </ChartContainer>
-          ) : (
+          ) : dashboardIsError ? null : (
             <div className="flex h-[280px] w-full items-center justify-center text-sm text-muted-foreground">
               {zh ? "暂无模型日志数据" : "No model logs yet"}
             </div>
@@ -790,7 +812,7 @@ export function OverviewScreen() {
                   ))}
                 </TableBody>
               </Table>
-            ) : (
+            ) : dashboardIsError ? null : (
               <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
                 {zh ? "暂无日志" : "No logs"}
               </div>

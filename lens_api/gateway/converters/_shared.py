@@ -32,8 +32,8 @@ async def _parse_chat_sse_stream(
                 return
             try:
                 yield json.loads(data_str)
-            except json.JSONDecodeError:
-                continue
+            except json.JSONDecodeError as exc:
+                raise ValueError("Invalid stream JSON") from exc
 
 
 def _build_chat_tool_call(call_id: str, name: str, arguments: str) -> dict[str, Any]:
@@ -172,8 +172,8 @@ def chat_tool_calls_to_anthropic_content(
         func = tc.get("function", {})
         try:
             parsed_input = json.loads(func.get("arguments", "{}"))
-        except (json.JSONDecodeError, TypeError):
-            parsed_input = {}
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise ValueError("Invalid tool call arguments JSON") from exc
         blocks.append(
             {
                 "type": "tool_use",

@@ -48,6 +48,7 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { ModelAvatar } from "@/lib/model-icons";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1061,6 +1062,8 @@ export function RequestsScreen() {
 
   const {
     data,
+    error,
+    isError,
     isLoading,
     isFetching,
     refetch: refetchRequestLogs,
@@ -1087,17 +1090,24 @@ export function RequestsScreen() {
     staleTime: 60_000,
   });
 
-  const { data: detail, isLoading: detailLoading, refetch: refetchDetail } =
-    useQuery({
-      queryKey: ["request-log-detail", detailId],
-      queryFn: () =>
-        apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
-      enabled: detailId !== null,
-      staleTime: 60_000,
-    });
+  const {
+    data: detail,
+    error: detailError,
+    isError: detailIsError,
+    isLoading: detailLoading,
+    refetch: refetchDetail,
+  } = useQuery({
+    queryKey: ["request-log-detail", detailId],
+    queryFn: () =>
+      apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
+    enabled: detailId !== null,
+    staleTime: 60_000,
+  });
 
   const {
     data: attemptDetail,
+    error: attemptDetailError,
+    isError: attemptDetailIsError,
     isLoading: attemptDetailLoading,
     refetch: refetchAttemptDetail,
   } = useQuery({
@@ -1189,6 +1199,24 @@ export function RequestsScreen() {
       setSelectedModelPrefix(effectiveSelectedModelPrefix);
     }
   }, [effectiveSelectedModelPrefix, selectedModelPrefix]);
+
+  useEffect(() => {
+    if (!isError) return;
+    toast.error(
+      titleForLocale(locale, "请求日志加载失败", "Failed to load request logs"),
+      {
+        id: "request-logs-load-error",
+        description:
+          error instanceof Error
+            ? error.message
+            : titleForLocale(
+                locale,
+                "无法读取请求日志",
+                "Unable to read request logs",
+              ),
+      },
+    );
+  }, [error, isError, locale]);
 
   useEffect(() => {
     function handleScroll() {
@@ -1380,7 +1408,7 @@ export function RequestsScreen() {
                 </p>
               ) : null}
 
-              {!isLoading && visibleData.length === 0 ? (
+              {!isError && !isLoading && visibleData.length === 0 ? (
                 <div className="rounded-xl border border-dashed bg-background px-6 py-14 text-center text-sm text-muted-foreground">
                   {activeFilterCount
                     ? titleForLocale(
@@ -1694,7 +1722,27 @@ export function RequestsScreen() {
             className="max-w-6xl"
             title={titleForLocale(locale, "日志详情", "Log detail")}
           >
-            {detailLoading || !detail ? (
+            {detailIsError ? (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>
+                  {titleForLocale(
+                    locale,
+                    "详情加载失败",
+                    "Failed to load detail",
+                  )}
+                </AlertTitle>
+                <AlertDescription>
+                  {detailError instanceof Error
+                    ? detailError.message
+                    : titleForLocale(
+                        locale,
+                        "无法读取日志详情",
+                        "Unable to read log detail",
+                      )}
+                </AlertDescription>
+              </Alert>
+            ) : detailLoading || !detail ? (
               <div className="rounded-md border bg-background px-5 py-8 text-sm text-muted-foreground">
                 {titleForLocale(locale, "正在加载详情...", "Loading detail...")}
               </div>
@@ -1738,7 +1786,27 @@ export function RequestsScreen() {
             className="max-w-4xl"
             title={titleForLocale(locale, "尝试链路", "Attempts")}
           >
-            {attemptDetailLoading || !attemptDetail ? (
+            {attemptDetailIsError ? (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>
+                  {titleForLocale(
+                    locale,
+                    "尝试链路加载失败",
+                    "Failed to load attempts",
+                  )}
+                </AlertTitle>
+                <AlertDescription>
+                  {attemptDetailError instanceof Error
+                    ? attemptDetailError.message
+                    : titleForLocale(
+                        locale,
+                        "无法读取尝试链路",
+                        "Unable to read attempts",
+                      )}
+                </AlertDescription>
+              </Alert>
+            ) : attemptDetailLoading || !attemptDetail ? (
               <div className="rounded-md border bg-background px-5 py-8 text-sm text-muted-foreground">
                 {titleForLocale(
                   locale,

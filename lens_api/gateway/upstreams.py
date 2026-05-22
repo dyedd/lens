@@ -156,9 +156,10 @@ def resolve_channel_api_key(
     for item in channel.keys:
         if item.enabled and item.key.strip():
             return item.key.strip()
-    if channel.keys:
-        return channel.keys[0].key.strip()
-    return channel.api_key.strip()
+    raise HTTPException(
+        status_code=503,
+        detail=f"No enabled credentials available for channel {channel.name}",
+    )
 
 
 def resolve_upstream_proxy_url(

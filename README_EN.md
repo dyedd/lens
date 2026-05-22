@@ -71,7 +71,7 @@ curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/.env.example
 cp .env.example .env
 ```
 
-Edit `.env` and configure as needed. You must change `LENS_AUTH_SECRET_KEY` in production.
+Edit `.env` and configure as needed. `LENS_AUTH_SECRET_KEY` is required.
 
 To change the data directory, edit only the host path on the left side of `volumes`; keep `/app/data` unchanged:
 
@@ -210,7 +210,7 @@ Core variables:
 | `LENS_HOST`                      | `127.0.0.1`                           | Backend listen host; Docker sets it to `0.0.0.0` |
 | `LENS_PORT`                      | `18080`                               | Backend listen port; Docker sets it to `3000`    |
 | `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | Database URL; defaults to SQLite, can point to external PostgreSQL |
-| `LENS_AUTH_SECRET_KEY`           | `lens-dev-jwt-signing-secret-2026-default` | JWT signing key; must be changed in production |
+| `LENS_AUTH_SECRET_KEY`           | Required                              | JWT signing key                                |
 | `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | Upstream request timeout                         |
 
 ### PostgreSQL Configuration

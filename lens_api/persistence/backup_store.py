@@ -3,8 +3,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from pydantic import ValidationError
-
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
 from ..models import (
@@ -843,15 +841,10 @@ class BackupStore:
 
         protocols_by_site: dict[str, list[dict[str, object]]] = {}
         for row in protocol_rows:
-            headers: dict[str, str] = {}
-            try:
-                raw_headers = json.loads(row.headers_json)
-                if isinstance(raw_headers, dict):
-                    headers = {
-                        str(key): str(value) for key, value in raw_headers.items()
-                    }
-            except json.JSONDecodeError:
-                headers = {}
+            raw_headers = json.loads(row.headers_json)
+            if not isinstance(raw_headers, dict):
+                raise ValueError(f"Invalid headers JSON for protocol config {row.id}")
+            headers = {str(key): str(value) for key, value in raw_headers.items()}
 
             protocols_by_site.setdefault(row.site_id, []).append(
                 {
@@ -1261,12 +1254,9 @@ class BackupStore:
     def _load_allowed_models(raw_value: str | None) -> list[str]:
         if not raw_value:
             return []
-        try:
-            payload = json.loads(raw_value)
-        except json.JSONDecodeError:
-            return []
+        payload = json.loads(raw_value)
         if not isinstance(payload, list):
-            return []
+            raise ValueError("Invalid gateway API key allowed models JSON")
         models: list[str] = []
         seen: set[str] = set()
         for item in payload:
@@ -1281,12 +1271,9 @@ class BackupStore:
     def _load_weekdays(raw_value: str | None) -> list[int]:
         if not raw_value:
             return []
-        try:
-            payload = json.loads(raw_value)
-        except json.JSONDecodeError:
-            return []
+        payload = json.loads(raw_value)
         if not isinstance(payload, list):
-            return []
+            raise ValueError("Invalid cronjob weekdays JSON")
         weekdays: list[int] = []
         seen: set[int] = set()
         for item in payload:
@@ -1304,18 +1291,10 @@ class BackupStore:
     def _parse_attempts(raw_value: str | None) -> list[RequestLogAttempt]:
         if not raw_value:
             return []
-        try:
-            payload = json.loads(raw_value)
-        except json.JSONDecodeError:
-            return []
+        payload = json.loads(raw_value)
         if not isinstance(payload, list):
-            return []
+            raise ValueError("Invalid request log attempts JSON")
         attempts: list[RequestLogAttempt] = []
         for item in payload:
-            if not isinstance(item, dict):
-                continue
-            try:
-                attempts.append(RequestLogAttempt.model_validate(item))
-            except ValidationError:
-                continue
+            attempts.append(RequestLogAttempt.model_validate(item))
         return attempts

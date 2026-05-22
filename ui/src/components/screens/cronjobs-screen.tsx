@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, RotateCcw, Save } from "lucide-react";
 import { toast } from "sonner";
@@ -476,13 +476,23 @@ export function CronjobsScreen() {
   const [retentionDraftOverride, setRetentionDraftOverride] =
     useState<RetentionDraft | null>(null);
 
-  const { data: tasks = [], isFetching } = useQuery({
+  const {
+    data: tasks = [],
+    error: tasksError,
+    isError: tasksIsError,
+    isFetching,
+  } = useQuery({
     queryKey: ["cronjobs"],
     queryFn: () => apiRequest<CronjobItem[]>("/admin/cronjobs"),
     staleTime: 10_000,
   });
 
-  const { data: settings, isFetching: isFetchingSettings } = useQuery({
+  const {
+    data: settings,
+    error: settingsError,
+    isError: settingsIsError,
+    isFetching: isFetchingSettings,
+  } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
     staleTime: 5 * 60_000,
@@ -591,7 +601,29 @@ export function CronjobsScreen() {
   const savingTaskId = updateTask.isPending
     ? updateTask.variables?.id
     : undefined;
+  const pageError = tasksIsError ? tasksError : settingsIsError ? settingsError : null;
   const hasTasks = tasks.length > 0;
+
+  useEffect(() => {
+    if (!pageError) return;
+    toast.error(
+      tasksIsError
+        ? titleForLocale(locale, "定时任务加载失败", "Failed to load cron jobs")
+        : titleForLocale(
+            locale,
+            "定时任务设置加载失败",
+            "Failed to load cron job settings",
+          ),
+      {
+        id: "cronjobs-load-error",
+        description:
+          pageError instanceof Error
+            ? pageError.message
+            : titleForLocale(locale, "无法读取定时任务", "Unable to read cron jobs"),
+      },
+    );
+  }, [locale, pageError, tasksIsError]);
+
   function setDraftValue(task: CronjobItem, value: Partial<TaskDraft>) {
     const currentDraft = drafts[task.id] ?? taskDraft(task);
     setDrafts((current) => ({
@@ -669,7 +701,7 @@ export function CronjobsScreen() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {hasTasks ? (
+                {!tasksIsError && hasTasks ? (
                   tasks.map((task) => {
                     const draft = drafts[task.id] ?? taskDraft(task);
                     const invalidDraft = isDraftInvalid(draft);
@@ -793,7 +825,7 @@ export function CronjobsScreen() {
                       </TableRow>
                     );
                   })
-                ) : (
+                ) : tasksIsError ? null : (
                   <TableRow>
                     <TableCell
                       colSpan={8}

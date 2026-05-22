@@ -98,8 +98,15 @@ from ..persistence.admin_store import AdminStore
 from ..persistence.backup_store import BackupStore
 from ..persistence.channel_store import ChannelStore
 from ..persistence.domain_store import (
+    SETTING_CIRCUIT_BREAKER_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_THRESHOLD,
+    SETTING_HEALTH_MIN_SAMPLES,
+    SETTING_HEALTH_PENALTY_WEIGHT,
+    SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_LATEST_VERSION,
     SETTING_LATEST_VERSION_URL,
+    SETTING_RELAY_LOG_KEEP_PERIOD,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
@@ -168,6 +175,16 @@ CRONJOB_SPECS = (
 )
 
 logger = logging.getLogger(__name__)
+
+INTEGER_SETTING_KEYS = {
+    SETTING_RELAY_LOG_KEEP_PERIOD,
+    SETTING_CIRCUIT_BREAKER_THRESHOLD,
+    SETTING_CIRCUIT_BREAKER_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
+    SETTING_HEALTH_WINDOW_SECONDS,
+    SETTING_HEALTH_MIN_SAMPLES,
+}
+FLOAT_SETTING_KEYS = {SETTING_HEALTH_PENALTY_WEIGHT}
 
 
 @lru_cache(maxsize=1)
@@ -329,6 +346,7 @@ class StreamCapture:
     completed: bool = False
     client_disconnected: bool = False
     drain_task: asyncio.Task[None] | None = None
+    parse_errors: list[str] = field(default_factory=list)
     input_tokens: int = 0
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0
@@ -342,6 +360,8 @@ class StreamCapture:
 
 
 async def _startup_app_state(state: AppState) -> None:
+    if not settings.auth_secret_key.strip():
+        raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
     resolve_time_zone(None)
     if state.http.is_closed:
         state.http = state._create_http_client()
@@ -698,7 +718,10 @@ async def site_runtime_summaries(
 async def create_site(
     payload: SiteCreate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
-    return await app_state.store.create_site(payload)
+    try:
+        return await app_state.store.create_site(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def update_site(
@@ -710,6 +733,8 @@ async def update_site(
         raise HTTPException(
             status_code=404, detail=f"Site not found: {site_id}"
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Response:
@@ -831,13 +856,14 @@ async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]
 
 async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetrics:
     metrics = await app_state.domain_store.get_overview_metrics()
-    channels = await app_state.store.list()
+    sites = await app_state.store.list_sites()
+    protocols = [protocol for site in sites for protocol in site.protocols]
     return metrics.model_copy(
         update={
             "enabled_channels": sum(
-                1 for item in channels if item.status.value == "enabled"
+                1 for protocol in protocols if protocol.enabled
             ),
-            "total_channels": len(channels),
+            "total_channels": len(protocols),
         }
     )
 
@@ -1171,6 +1197,26 @@ async def update_settings(
             next_time_zone = time_zone.key
             next_time_zone_value = time_zone
             normalized_items.append(SettingItem(key=item.key, value=time_zone.key))
+            continue
+        if item.key in INTEGER_SETTING_KEYS:
+            value = item.value.strip()
+            try:
+                int(value)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid integer setting: {item.key}"
+                ) from exc
+            normalized_items.append(SettingItem(key=item.key, value=value))
+            continue
+        if item.key in FLOAT_SETTING_KEYS:
+            value = item.value.strip()
+            try:
+                float(value)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid numeric setting: {item.key}"
+                ) from exc
+            normalized_items.append(SettingItem(key=item.key, value=value))
             continue
         normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
     stored_items = await app_state.domain_store.upsert_settings(normalized_items)
@@ -1641,7 +1687,7 @@ async def _proxy_protocol(
                 }
             ).model_dump(mode="json"),
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Proxy request failed unexpectedly")
         await log_ctx.update(
             requested_group_name=plan.requested_group_name if plan else requested_model,
@@ -1874,7 +1920,6 @@ async def _call_channel(
         stream_started_at = perf_counter()
         response = await _send_upstream(client, upstream, stream=is_stream_request)
         response.raise_for_status()
-        app_state.router.record_success(channel.id, credential_id=credential_id)
 
         is_event_stream = (
             "text/event-stream" in (response.headers.get("content-type") or "").lower()
@@ -1884,11 +1929,11 @@ async def _call_channel(
             and not is_stream_request
             and channel.protocol == ProtocolKind.ANTHROPIC
         ):
-            return await _build_anthropic_sse_to_json_result(
+            result = await _build_anthropic_sse_to_json_result(
                 response, channel, pricing_group_name, request_content
             )
-        if is_event_stream:
-            return _build_stream_result(
+        elif is_event_stream:
+            result = _build_stream_result(
                 response,
                 channel,
                 client_protocol,
@@ -1896,14 +1941,17 @@ async def _call_channel(
                 request_content,
                 stream_started_at,
             )
-        return await _build_json_result(
-            response,
-            channel,
-            client_protocol,
-            body,
-            pricing_group_name,
-            request_content,
-        )
+        else:
+            result = await _build_json_result(
+                response,
+                channel,
+                client_protocol,
+                body,
+                pricing_group_name,
+                request_content,
+            )
+        app_state.router.record_success(channel.id, credential_id=credential_id)
+        return result
     except httpx.HTTPStatusError as exc:
         await exc.response.aread()
         detail = exc.response.text or f"HTTP {exc.response.status_code}"
@@ -1964,8 +2012,24 @@ async def _build_anthropic_sse_to_json_result(
         response.content if hasattr(response, "content") else await response.aread()
     )
     raw_content = _decode_content_bytes(content)
-    parsed = _extract_stream_usage(channel.protocol, raw_content)
-    distilled_content = _distill_stream_response_content(channel.protocol, raw_content)
+    try:
+        parsed = _extract_stream_usage(channel.protocol, raw_content)
+    except ValueError as exc:
+        raise UpstreamRequestError(
+            status_code=502,
+            detail=f"Invalid upstream usage: {exc}",
+            router_status_code=502,
+        ) from exc
+    try:
+        distilled_content = _distill_stream_response_content(
+            channel.protocol, raw_content
+        )
+    except ValueError as exc:
+        raise UpstreamRequestError(
+            status_code=502,
+            detail=f"Invalid upstream response: {exc}",
+            router_status_code=502,
+        ) from exc
     response_headers = _passthrough_headers(response.headers)
     media_type = response.headers.get("content-type")
     response_content = raw_content
@@ -2033,6 +2097,7 @@ def _build_stream_result(
         converted_iter = convert_stream_iterator(
             client_protocol, channel.protocol, raw_iter, body.get("model", "")
         )
+        converted_iter = _capture_stream_iterator_errors(converted_iter, capture)
         stream_media = "text/event-stream"
     else:
         converted_iter = raw_iter
@@ -2064,7 +2129,14 @@ async def _build_json_result(
     content = (
         response.content if hasattr(response, "content") else await response.aread()
     )
-    parsed = _extract_response_usage(channel.protocol, response)
+    try:
+        parsed = _extract_response_usage(channel.protocol, response)
+    except ValueError as exc:
+        raise UpstreamRequestError(
+            status_code=502,
+            detail=f"Invalid upstream usage: {exc}",
+            router_status_code=502,
+        ) from exc
     if client_protocol is not None and needs_conversion(
         client_protocol, channel.protocol
     ):
@@ -2456,10 +2528,17 @@ def _parse_model_list(
     protocol: ProtocolKind, payload: dict[str, Any], match_regex: str
 ) -> list[str]:
     names: list[str] = []
-    items = payload.get("data") or payload.get("models") or []
+    if "data" in payload:
+        items = payload["data"]
+    elif "models" in payload:
+        items = payload["models"]
+    else:
+        raise ValueError("Model list response missing data/models")
+    if not isinstance(items, list):
+        raise ValueError("Model list response data/models must be a list")
     for item in items:
         if not isinstance(item, dict):
-            continue
+            raise ValueError("Model list item must be an object")
         if protocol == ProtocolKind.GEMINI:
             value = str(item.get("name") or "")
             if value.startswith("models/"):
@@ -2467,8 +2546,9 @@ def _parse_model_list(
         else:
             value = str(item.get("id") or item.get("name") or "")
         value = value.strip()
-        if value:
-            names.append(value)
+        if not value:
+            raise ValueError("Model list item missing model name")
+        names.append(value)
 
     unique_names = list(dict.fromkeys(names))
     if not match_regex.strip():
@@ -2662,8 +2742,19 @@ async def _record_stream_request_log(
     raw_content = (
         capture.response_content if capture is not None else result.response_content
     )
-    parsed = _extract_stream_usage(protocol, raw_content)
-    distilled_content = _distill_stream_response_content(protocol, raw_content)
+    parse_errors = capture.parse_errors if capture is not None else None
+    try:
+        parsed = _extract_stream_usage(protocol, raw_content, parse_errors=parse_errors)
+    except ValueError as exc:
+        if capture is not None:
+            capture.parse_errors.append(str(exc))
+        parsed = dict(_EMPTY_USAGE)
+    try:
+        distilled_content = _distill_stream_response_content(protocol, raw_content)
+    except ValueError as exc:
+        if capture is not None:
+            capture.parse_errors.append(str(exc))
+        distilled_content = raw_content
     capture_issue = _describe_stream_capture_issue(protocol, capture, raw_content)
     upstream_model_name = parsed["resolved_model"] or result.upstream_model_name
     input_tokens = parsed["input_tokens"]
@@ -2852,6 +2943,16 @@ async def _consume_stream_queue(
         raise
 
 
+async def _capture_stream_iterator_errors(
+    raw_iterator: AsyncIterator[bytes], capture: StreamCapture
+) -> AsyncIterator[bytes]:
+    try:
+        async for chunk in raw_iterator:
+            yield chunk
+    except ValueError as exc:
+        capture.errors.append(str(exc))
+
+
 def _distill_stream_response_content(
     protocol: ProtocolKind, raw_content: str | None
 ) -> str | None:
@@ -2985,14 +3086,15 @@ def _finalize_anthropic_tool_use_input(
         current_input = block.get("input")
         if isinstance(current_input, dict):
             return
-        block["input"] = {}
-        return
+        raise ValueError("Invalid Anthropic tool input")
 
     try:
         parsed_input = json.loads(buffer)
-    except json.JSONDecodeError:
-        parsed_input = block.get("input")
-    block["input"] = parsed_input if isinstance(parsed_input, dict) else {}
+    except json.JSONDecodeError as exc:
+        raise ValueError("Invalid Anthropic tool input JSON") from exc
+    if not isinstance(parsed_input, dict):
+        raise ValueError("Invalid Anthropic tool input")
+    block["input"] = parsed_input
 
 
 def _compact_openai_response_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -3190,24 +3292,35 @@ def _coerce_openai_output_index(value: Any, default: int | None = None) -> int |
         return default
 
 
-def _usage_mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
+def _usage_mapping(value: Any, key: str = "usage") -> Mapping[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError(f"Invalid usage object: {key}")
+    return value
 
 
 def _usage_int(mapping: Mapping[str, Any], key: str) -> int:
     value = mapping.get(key)
     if value is None:
         return 0
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid usage value: {key}")
     try:
-        return max(int(value), 0)
+        parsed = int(value)
     except (TypeError, ValueError):
-        return 0
+        raise ValueError(f"Invalid usage value: {key}") from None
+    if parsed < 0:
+        raise ValueError(f"Invalid negative usage value: {key}")
+    return parsed
 
 
 def _openai_cached_tokens(usage: Mapping[str, Any], detail_key: str) -> int:
     details = usage.get(detail_key)
-    if not isinstance(details, Mapping):
+    if details is None:
         return 0
+    if not isinstance(details, Mapping):
+        raise ValueError(f"Invalid usage object: {detail_key}")
     return _usage_int(details, "cached_tokens")
 
 
@@ -3232,7 +3345,7 @@ def _anthropic_usage(
 
 
 def _gemini_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
-    usage = _usage_mapping(payload.get("usageMetadata"))
+    usage = _usage_mapping(payload.get("usageMetadata"), "usageMetadata")
     input_tokens = _usage_int(usage, "promptTokenCount")
     cache_read_input_tokens = _usage_int(usage, "cachedContentTokenCount")
     output_tokens = _usage_int(usage, "candidatesTokenCount")
@@ -3302,18 +3415,20 @@ _EMPTY_USAGE: dict[str, int | str | None] = {
 
 
 def _extract_stream_usage(
-    protocol: ProtocolKind, raw_content: str | None
+    protocol: ProtocolKind,
+    raw_content: str | None,
+    parse_errors: list[str] | None = None,
 ) -> dict[str, int | str | None]:
     if protocol == ProtocolKind.OPENAI_EMBEDDING or not raw_content:
         return dict(_EMPTY_USAGE)
 
     if protocol == ProtocolKind.GEMINI:
-        payloads = _parse_sse_payloads(raw_content) or _parse_ndjson_payloads(
-            raw_content
-        )
+        payloads = _parse_sse_payloads(
+            raw_content, errors=parse_errors
+        ) or _parse_ndjson_payloads(raw_content, errors=parse_errors)
         return _extract_usage_from_payload(protocol, payloads[-1] if payloads else {})
 
-    payloads = _parse_sse_payloads(raw_content)
+    payloads = _parse_sse_payloads(raw_content, errors=parse_errors)
     merged: dict[str, int | str | None] = dict(_EMPTY_USAGE)
     int_keys = (
         "input_tokens",
@@ -3336,7 +3451,9 @@ def _extract_stream_usage(
     return merged
 
 
-def _parse_sse_payloads(raw_content: str) -> list[dict[str, Any]]:
+def _parse_sse_payloads(
+    raw_content: str, *, errors: list[str] | None = None
+) -> list[dict[str, Any]]:
     normalized = _normalize_event_stream_newlines(raw_content)
     payloads: list[dict[str, Any]] = []
     for block in normalized.split("\n\n"):
@@ -3350,14 +3467,18 @@ def _parse_sse_payloads(raw_content: str) -> list[dict[str, Any]]:
             continue
         try:
             payload = json.loads(joined)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            if errors is not None:
+                errors.append(f"invalid SSE JSON: {exc.msg}")
             continue
         if isinstance(payload, dict):
             payloads.append(payload)
     return payloads
 
 
-def _parse_ndjson_payloads(raw_content: str) -> list[dict[str, Any]]:
+def _parse_ndjson_payloads(
+    raw_content: str, *, errors: list[str] | None = None
+) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for line in _normalize_event_stream_newlines(raw_content).splitlines():
         line = line.strip()
@@ -3365,7 +3486,9 @@ def _parse_ndjson_payloads(raw_content: str) -> list[dict[str, Any]]:
             continue
         try:
             payload = json.loads(line)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            if errors is not None:
+                errors.append(f"invalid NDJSON: {exc.msg}")
             continue
         if isinstance(payload, dict):
             payloads.append(payload)
@@ -3384,6 +3507,7 @@ def _describe_stream_capture_issue(
     issues: list[str] = []
     if capture is not None:
         issues.extend(error for error in capture.errors if error)
+        issues.extend(error for error in capture.parse_errors if error)
 
     if not raw_content:
         issues.append("no stream content captured")
@@ -3437,6 +3561,8 @@ def _extract_response_usage(
     protocol: ProtocolKind, response: httpx.Response
 ) -> dict[str, int | str | None]:
     payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("Upstream response JSON must be an object")
     if protocol == ProtocolKind.OPENAI_CHAT:
         return _openai_chat_usage(payload)
     if protocol == ProtocolKind.OPENAI_RESPONSES:
