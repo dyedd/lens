@@ -341,9 +341,17 @@ class ChannelStore:
     def _flatten_site(self, site: SiteConfig) -> list[ChannelConfig]:
         credentials_by_id = {item.id: item for item in site.credentials}
         base_urls_by_id = {item.id: item for item in site.base_urls}
+        default_base_url = next(
+            (item for item in site.base_urls if item.enabled),
+            site.base_urls[0] if site.base_urls else None,
+        )
         items: list[ChannelConfig] = []
         for protocol in site.protocols:
-            bound_base_url = base_urls_by_id.get(protocol.base_url_id)
+            bound_base_url = (
+                base_urls_by_id.get(protocol.base_url_id)
+                if protocol.base_url_id
+                else default_base_url
+            )
             if bound_base_url is None:
                 raise ValueError(
                     f"Base URL not found for protocol config {protocol.protocol.value}: {protocol.base_url_id}"
