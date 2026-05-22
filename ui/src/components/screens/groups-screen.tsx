@@ -342,10 +342,7 @@ function channelEndpoint(channel?: ProtocolMeta) {
 
 function protocolBaseUrl(site: Site, baseUrlId: string) {
   const bound = site.base_urls.find((item) => item.id === baseUrlId);
-  if (bound?.url) return bound.url;
-  const enabled = site.base_urls.find((item) => item.enabled);
-  if (enabled?.url) return enabled.url;
-  return site.base_urls[0]?.url || "";
+  return bound?.url || "";
 }
 
 function toForm(group: ModelGroup): FormState {

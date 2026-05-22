@@ -227,7 +227,7 @@ class SiteProtocolConfig(StrictBaseModel):
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
-    base_url_id: str = ""
+    base_url_id: str = Field(min_length=1)
     bindings: list[SiteProtocolCredentialBinding] = Field(default_factory=list)
     models: list[SiteModel] = Field(default_factory=list)
 
@@ -240,7 +240,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
-    base_url_id: str = ""
+    base_url_id: str = Field(min_length=1)
     bindings: list[SiteProtocolCredentialBindingInput] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
 

@@ -304,10 +304,6 @@ class ChannelStore:
         normalized_credentials = self._normalize_credentials(credentials)
         credential_ids = {item.id for item in normalized_credentials}
         base_url_ids = {item.id for item in normalized_base_urls}
-        default_base_url_id = next(
-            (item.id for item in normalized_base_urls if item.enabled),
-            normalized_base_urls[0].id,
-        )
 
         site = await session.get(SiteEntity, site_id)
         if site is None:
@@ -327,7 +323,6 @@ class ChannelStore:
             protocols,
             credential_ids,
             base_url_ids,
-            default_base_url_id,
             normalized_credentials,
         )
 
@@ -341,17 +336,9 @@ class ChannelStore:
     def _flatten_site(self, site: SiteConfig) -> list[ChannelConfig]:
         credentials_by_id = {item.id: item for item in site.credentials}
         base_urls_by_id = {item.id: item for item in site.base_urls}
-        default_base_url = next(
-            (item for item in site.base_urls if item.enabled),
-            site.base_urls[0] if site.base_urls else None,
-        )
         items: list[ChannelConfig] = []
         for protocol in site.protocols:
-            bound_base_url = (
-                base_urls_by_id.get(protocol.base_url_id)
-                if protocol.base_url_id
-                else default_base_url
-            )
+            bound_base_url = base_urls_by_id.get(protocol.base_url_id)
             if bound_base_url is None:
                 raise ValueError(
                     f"Base URL not found for protocol config {protocol.protocol.value}: {protocol.base_url_id}"
@@ -643,7 +630,6 @@ class ChannelStore:
         protocols: list[SiteProtocolConfigInput],
         credential_ids: set[str],
         base_url_ids: set[str],
-        default_base_url_id: str,
         normalized_credentials: list[SiteCredential],
     ) -> set[str]:
         protocol_ids: set[str] = set()
@@ -651,15 +637,14 @@ class ChannelStore:
         for protocol in protocols:
             protocol_id = protocol.id or str(uuid.uuid4())
             protocol_ids.add(protocol_id)
-            resolved_base_url_id = protocol.base_url_id or default_base_url_id
-            if resolved_base_url_id not in base_url_ids:
+            if protocol.base_url_id not in base_url_ids:
                 raise ValueError(
-                    f"Base URL not found for protocol config {protocol.protocol.value}: {resolved_base_url_id}"
+                    f"Base URL not found for protocol config {protocol.protocol.value}: {protocol.base_url_id}"
                 )
-            protocol_key = (protocol.protocol.value, resolved_base_url_id)
+            protocol_key = (protocol.protocol.value, protocol.base_url_id)
             if protocol_key in protocol_keys:
                 raise ValueError(
-                    f"Duplicate protocol config for protocol={protocol.protocol.value} base_url_id={resolved_base_url_id}"
+                    f"Duplicate protocol config for protocol={protocol.protocol.value} base_url_id={protocol.base_url_id}"
                 )
             protocol_keys.add(protocol_key)
 
@@ -676,7 +661,7 @@ class ChannelStore:
             existing_protocol.channel_proxy = protocol.channel_proxy
             existing_protocol.param_override = protocol.param_override
             existing_protocol.match_regex = protocol.match_regex
-            existing_protocol.base_url_id = resolved_base_url_id
+            existing_protocol.base_url_id = protocol.base_url_id
 
             await self._upsert_protocol_bindings(
                 session, protocol_id, protocol, credential_ids, normalized_credentials
