@@ -8,7 +8,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import String, cast, delete, func, literal, or_, select, update
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..core.model_prices import normalize_model_key
@@ -153,11 +152,6 @@ class DomainStore:
                     )
                 entity.stats_archived = 0
             await session.commit()
-
-    @staticmethod
-    def _is_missing_sqlite_table(exc: OperationalError, table_name: str) -> bool:
-        message = str(exc.orig).lower()
-        return f"no such table: {table_name}" in message
 
     @staticmethod
     def _runtime_time_zone(runtime: dict[str, Any]) -> ZoneInfo:
@@ -1495,18 +1489,6 @@ class DomainStore:
         )
 
         async with self._session_factory() as session:
-            try:
-                await session.execute(select(RequestLogDailyStatsEntity.date).limit(1))
-                await session.execute(
-                    select(OverviewModelDailyStatsEntity.date).limit(1)
-                )
-            except OperationalError as exc:
-                if self._is_missing_sqlite_table(
-                    exc, "request_log_daily_stats"
-                ) or self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
-                    return
-                raise
-
             stored_time_zone = await session.get(SettingEntity, SETTING_STATS_TIME_ZONE)
             if stored_time_zone is None:
                 session.add(
@@ -2256,7 +2238,7 @@ class DomainStore:
         if not runtime["relay_log_keep_enabled"]:
             return
         await self.persist_request_log_stats(force=True)
-        keep_days = max(int(runtime["relay_log_keep_period"]), 1)
+        keep_days = int(runtime["relay_log_keep_period"])
         cutoff = self._request_log_prune_cutoff(
             keep_days=keep_days,
             time_zone=self._runtime_time_zone(runtime),
@@ -2690,12 +2672,7 @@ class DomainStore:
             stmt = stmt.where(
                 RequestLogDailyStatsEntity.date.not_in(sorted(exclude_dates))
             )
-        try:
-            rows = (await session.execute(stmt)).scalars().all()
-        except OperationalError as exc:
-            if self._is_missing_sqlite_table(exc, "request_log_daily_stats"):
-                return []
-            raise
+        rows = (await session.execute(stmt)).scalars().all()
         return [
             OverviewDailyPoint(
                 date=item.date,
@@ -2834,23 +2811,7 @@ class DomainStore:
             stmt = stmt.where(
                 RequestLogDailyStatsEntity.date.not_in(sorted(exclude_dates))
             )
-        try:
-            row = (await session.execute(stmt)).one()
-        except OperationalError as exc:
-            if self._is_missing_sqlite_table(exc, "request_log_daily_stats"):
-                return {
-                    "request_count": 0.0,
-                    "wait_time_ms": 0.0,
-                    "input_tokens": 0.0,
-                    "cache_read_input_tokens": 0.0,
-                    "cache_write_input_tokens": 0.0,
-                    "output_tokens": 0.0,
-                    "input_cost_usd": 0.0,
-                    "output_cost_usd": 0.0,
-                    "total_cost_usd": 0.0,
-                    "successful_requests": 0.0,
-                }
-            raise
+        row = (await session.execute(stmt)).one()
         return {
             "request_count": float(row[0] or 0),
             "wait_time_ms": float(row[1] or 0),
@@ -2882,16 +2843,9 @@ class DomainStore:
             stmt = stmt.where(OverviewModelDailyStatsEntity.date >= start_at)
         if end_at is not None:
             stmt = stmt.where(OverviewModelDailyStatsEntity.date < end_at)
-        try:
-            rows = (
-                await session.execute(
-                    stmt.order_by(OverviewModelDailyStatsEntity.date.asc())
-                )
-            ).all()
-        except OperationalError as exc:
-            if self._is_missing_sqlite_table(exc, "overview_model_daily_stats"):
-                return []
-            raise
+        rows = (
+            await session.execute(stmt.order_by(OverviewModelDailyStatsEntity.date.asc()))
+        ).all()
         return [
             (
                 str(date_value),
@@ -3483,12 +3437,9 @@ class DomainStore:
     def _load_gateway_key_models(raw_value: str | None) -> list[str]:
         if not raw_value:
             return []
-        try:
-            payload = json.loads(raw_value)
-        except json.JSONDecodeError:
-            return []
+        payload = json.loads(raw_value)
         if not isinstance(payload, list):
-            return []
+            raise ValueError("Invalid gateway API key allowed models JSON")
         models: list[str] = []
         seen: set[str] = set()
         for item in payload:
@@ -3629,19 +3580,13 @@ class DomainStore:
     def _parse_int(value: str | None, *, default: int) -> int:
         if value is None:
             return default
-        try:
-            return int(value.strip())
-        except ValueError:
-            return default
+        return int(value.strip())
 
     @staticmethod
     def _parse_float(value: str | None, *, default: float) -> float:
         if value is None:
             return default
-        try:
-            return float(value.strip())
-        except ValueError:
-            return default
+        return float(value.strip())
 
     @staticmethod
     def _to_group(
@@ -3778,10 +3723,9 @@ class DomainStore:
     def _parse_attempts_json(raw_value: str | None) -> list[dict[str, Any]]:
         if not raw_value:
             return []
-        try:
-            payload = json.loads(raw_value)
-        except json.JSONDecodeError:
-            return []
+        payload = json.loads(raw_value)
         if not isinstance(payload, list):
-            return []
-        return [item for item in payload if isinstance(item, dict)]
+            raise ValueError("Invalid request log attempts JSON")
+        if not all(isinstance(item, dict) for item in payload):
+            raise ValueError("Invalid request log attempts JSON")
+        return payload

@@ -176,7 +176,7 @@ function SettingCard({
 export function SettingsScreen() {
   const queryClient = useQueryClient();
   const { locale, setLocale } = useI18n();
-  const { data: settings } = useQuery({
+  const settingsQuery = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
     staleTime: 5 * 60_000,
@@ -198,8 +198,10 @@ export function SettingsScreen() {
   const [updatingAccount, setUpdatingAccount] = useState(false);
 
   useEffect(() => {
-    setDraft(parseSettings(settings));
-  }, [settings]);
+    if (settingsQuery.isSuccess) {
+      setDraft(parseSettings(settingsQuery.data));
+    }
+  }, [settingsQuery.data, settingsQuery.isSuccess]);
 
   useEffect(() => {
     setAccountForm((current) => ({
@@ -207,6 +209,24 @@ export function SettingsScreen() {
       username: profile?.username || "admin",
     }));
   }, [profile?.username]);
+
+  useEffect(() => {
+    if (!settingsQuery.isError) return;
+    toast.error(
+      titleForLocale(locale, "设置加载失败", "Failed to load settings"),
+      {
+        id: "settings-load-error",
+        description:
+          settingsQuery.error instanceof Error
+            ? settingsQuery.error.message
+            : titleForLocale(
+                locale,
+                "无法读取系统设置",
+                "Unable to read system settings",
+              ),
+      },
+    );
+  }, [locale, settingsQuery.error, settingsQuery.isError]);
 
   function setDraftValue<K extends keyof DraftState>(
     key: K,
@@ -228,6 +248,9 @@ export function SettingsScreen() {
   }
 
   async function submitSettings() {
+    if (!settingsQuery.isSuccess) {
+      return;
+    }
     setSaving(true);
     try {
       const items: SettingItem[] = [
@@ -395,7 +418,7 @@ export function SettingsScreen() {
             </Button>
             <Button
               type="button"
-              disabled={saving}
+              disabled={saving || !settingsQuery.isSuccess}
               onClick={() => void submitSettings()}
             >
               <Save data-icon="inline-start" />

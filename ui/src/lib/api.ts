@@ -703,10 +703,22 @@ export async function apiFetch(
   const response = await fetch("/api" + path, { ...init, headers });
   if (!response.ok) {
     const contentType = response.headers.get("content-type") ?? "";
+    const text = await response.text();
     let errorMessage = "";
 
-    if (contentType.includes("application/json")) {
-      const payload = await response.json().catch(() => null);
+    if (contentType.includes("application/json") && text) {
+      let payload: {
+        detail?: unknown;
+        error?: { message?: unknown };
+      };
+      try {
+        payload = JSON.parse(text);
+      } catch (parseError) {
+        throw new ApiError(
+          "Invalid JSON error response from API: " + String(parseError),
+          response.status,
+        );
+      }
       const detail = payload?.detail;
       if (typeof detail === "string" && detail) {
         errorMessage = detail;
@@ -719,7 +731,6 @@ export async function apiFetch(
     }
 
     if (!errorMessage) {
-      const text = await response.text();
       errorMessage = text || "Request failed with status " + response.status;
     }
 
