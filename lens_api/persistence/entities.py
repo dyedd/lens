@@ -79,7 +79,7 @@ class SiteProtocolConfigEntity(Base):
     channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
     match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    base_url_id: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    base_url_id: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
 class SiteProtocolCredentialBindingEntity(Base):
