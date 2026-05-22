@@ -1917,24 +1917,35 @@ export function ChannelsScreen() {
   const [testingModel, setTestingModel] = useState(false);
   const [formSnapshot, setFormSnapshot] = useState("");
 
-  const { data: sites, isLoading } = useQuery({
+  const {
+    data: sites,
+    error: sitesError,
+    isError: sitesIsError,
+    isLoading,
+  } = useQuery({
     queryKey: ["sites"],
     queryFn: () => apiRequest<Site[]>("/admin/sites"),
     staleTime: 2 * 60_000,
   });
-  const { data: siteRuntimeSummaries } = useQuery({
+  const {
+    data: siteRuntimeSummaries,
+  } = useQuery({
     queryKey: ["site-runtime-summaries"],
     queryFn: () => apiRequest<SiteRuntimeSummary[]>("/admin/sites/runtime"),
     staleTime: 5_000,
     refetchInterval: 5000,
   });
-  const { data: routerSnapshot } = useQuery({
+  const {
+    data: routerSnapshot,
+  } = useQuery({
     queryKey: ["router-snapshot"],
     queryFn: () => apiRequest<RouteSnapshot>("/admin/routes"),
     staleTime: 5_000,
     refetchInterval: 5000,
   });
-  const { data: settings } = useQuery({
+  const {
+    data: settings,
+  } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
     staleTime: 5 * 60_000,
@@ -2043,7 +2054,6 @@ export function ChannelsScreen() {
     [form],
   );
   const hasUnsavedChanges = dialogOpen && currentSnapshot !== formSnapshot;
-
   useEffect(() => {
     if (!dialogOpen) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -2054,6 +2064,22 @@ export function ChannelsScreen() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dialogOpen, hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!sitesIsError) return;
+    toast.error(
+      locale === "zh-CN" ? "渠道加载失败" : "Failed to load channels",
+      {
+        id: "channels-load-error",
+        description:
+          sitesError instanceof Error
+            ? sitesError.message
+            : locale === "zh-CN"
+              ? "无法读取渠道"
+              : "Unable to read channels",
+      },
+    );
+  }, [locale, sitesError, sitesIsError]);
 
   async function invalidateChannelData() {
     await Promise.all([
@@ -2672,7 +2698,7 @@ export function ChannelsScreen() {
                     ? "正在加载渠道..."
                     : "Loading channels..."}
                 </div>
-              ) : visibleSites.length ? (
+              ) : sitesIsError ? null : visibleSites.length ? (
                 <ItemGroup className="gap-3">
                   {visibleSites.map((site) => {
                     const runtimeSummary = siteRuntimeById.get(site.id);

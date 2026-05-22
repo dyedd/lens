@@ -42,6 +42,8 @@ def verify_password(password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(subject: str, settings: Settings) -> tuple[str, int]:
+    if not settings.auth_secret_key.strip():
+        raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
     expires_in = settings.auth_access_token_minutes * 60
     expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
     token = jwt.encode(
@@ -56,4 +58,6 @@ def create_access_token(subject: str, settings: Settings) -> tuple[str, int]:
 
 
 def decode_access_token(token: str, settings: Settings) -> dict[str, Any]:
+    if not settings.auth_secret_key.strip():
+        raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
     return jwt.decode(token, settings.auth_secret_key, algorithms=[JWT_ALGORITHM])

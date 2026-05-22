@@ -71,7 +71,7 @@ curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/.env.example
 cp .env.example .env
 ```
 
-编辑 `.env`，根据需要修改配置项。生产环境必须修改 `LENS_AUTH_SECRET_KEY`。
+编辑 `.env`，根据需要修改配置项。必须设置 `LENS_AUTH_SECRET_KEY`。
 
 如需修改数据目录，只改 `volumes` 左侧的宿主机路径，右侧 `/app/data` 保持不变：
 
@@ -210,7 +210,7 @@ pnpm dev
 | `LENS_HOST`                      | `127.0.0.1`                           | 后端监听地址；Docker 中设为 `0.0.0.0`           |
 | `LENS_PORT`                      | `18080`                               | 后端监听端口；Docker 中设为 `3000`              |
 | `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | 数据库连接；默认 SQLite，也可指向外部 PostgreSQL |
-| `LENS_AUTH_SECRET_KEY`           | `lens-dev-jwt-signing-secret-2026-default` | JWT 签名密钥，生产环境必须修改            |
+| `LENS_AUTH_SECRET_KEY`           | 必填                                  | JWT 签名密钥                                 |
 | `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | 上游请求超时                                     |
 
 ### PostgreSQL 配置

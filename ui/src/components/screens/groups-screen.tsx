@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertCircle,
   Check,
   ChevronDown,
   Filter,
@@ -31,6 +32,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { getModelGroupAvatar, ModelAvatar } from "@/lib/model-icons";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -730,12 +732,21 @@ export function GroupsScreen() {
   } | null>(null);
   const [showEnabledOnly, setShowEnabledOnly] = useState(false);
   const [syncingPrices, setSyncingPrices] = useState(false);
-  const { data: groups, isLoading } = useQuery({
+  const {
+    data: groups,
+    error: groupsError,
+    isError: groupsIsError,
+    isLoading,
+  } = useQuery({
     queryKey: ["groups"],
     queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
     staleTime: 2 * 60_000,
   });
-  const { data: sites } = useQuery({
+  const {
+    data: sites,
+    error: sitesError,
+    isError: sitesIsError,
+  } = useQuery({
     queryKey: ["sites"],
     queryFn: () => apiRequest<Site[]>("/admin/sites"),
     staleTime: 2 * 60_000,
@@ -754,6 +765,8 @@ export function GroupsScreen() {
   );
   const {
     data: candidateResponse,
+    error: candidateError,
+    isError: candidateIsError,
     refetch: refetchCandidates,
     isFetching: isFetchingCandidates,
   } = useQuery({
@@ -1033,6 +1046,22 @@ export function GroupsScreen() {
       return [groupedCandidates[0].site_id || groupedCandidates[0].channel_id];
     });
   }, [groupedCandidates]);
+
+  useEffect(() => {
+    if (!groupsIsError) return;
+    toast.error(
+      locale === "zh-CN" ? "模型组加载失败" : "Failed to load groups",
+      {
+        id: "groups-load-error",
+        description:
+          groupsError instanceof Error
+            ? groupsError.message
+            : locale === "zh-CN"
+              ? "无法读取模型组"
+              : "Unable to read groups",
+      },
+    );
+  }, [groupsError, groupsIsError, locale]);
 
   async function invalidateGroupData() {
     await Promise.all([
@@ -1584,7 +1613,7 @@ export function GroupsScreen() {
                     ? "正在加载模型组..."
                     : "Loading groups..."}
                 </div>
-              ) : visibleGroups.length ? (
+              ) : groupsIsError ? null : visibleGroups.length ? (
                 <ItemGroup className="gap-3">
                   {visibleGroups.map((group) => {
                     const GroupAvatar = getModelGroupAvatar(group.name);
@@ -2326,7 +2355,32 @@ export function GroupsScreen() {
                               </div>
                             );
                           })}
-                          {!groupedCandidates.length ? (
+                          {sitesIsError || candidateIsError ? (
+                            <Alert variant="destructive" className="my-2">
+                              <AlertCircle />
+                              <AlertTitle>
+                                {candidateIsError
+                                  ? locale === "zh-CN"
+                                    ? "候选模型加载失败"
+                                    : "Failed to load candidates"
+                                  : locale === "zh-CN"
+                                    ? "渠道加载失败"
+                                    : "Failed to load channels"}
+                              </AlertTitle>
+                              <AlertDescription>
+                                {(candidateIsError
+                                  ? candidateError
+                                  : sitesError) instanceof Error
+                                  ? (candidateIsError
+                                      ? candidateError
+                                      : sitesError
+                                    ).message
+                                  : locale === "zh-CN"
+                                    ? "无法读取候选模型"
+                                    : "Unable to read candidates"}
+                              </AlertDescription>
+                            </Alert>
+                          ) : !groupedCandidates.length ? (
                             <p className="px-1 py-6 text-center text-sm text-muted-foreground">
                               {locale === "zh-CN"
                                 ? "暂无可选模型"

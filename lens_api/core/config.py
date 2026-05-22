@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     app_name: str = "Lens"
     host: str = "127.0.0.1"
     port: int = 18080
-    auth_secret_key: str = "lens-dev-jwt-signing-secret-2026-default"
+    auth_secret_key: str = ""
     auth_access_token_minutes: int = 60 * 12
     request_timeout_seconds: float = 180.0
     connect_timeout_seconds: float = 10.0
