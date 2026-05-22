@@ -994,6 +994,7 @@ export function GroupsScreen() {
       a.channel_name.localeCompare(b.channel_name, locale),
     );
   }, [channelMap, filteredCandidates, locale]);
+  const candidateListError = candidateIsError ? candidateError : sitesError;
 
   const visibleSelectedMembers = useMemo(() => {
     if (!showEnabledOnly) {
@@ -2368,13 +2369,8 @@ export function GroupsScreen() {
                                     : "Failed to load channels"}
                               </AlertTitle>
                               <AlertDescription>
-                                {(candidateIsError
-                                  ? candidateError
-                                  : sitesError) instanceof Error
-                                  ? (candidateIsError
-                                      ? candidateError
-                                      : sitesError
-                                    ).message
+                                {candidateListError instanceof Error
+                                  ? candidateListError.message
                                   : locale === "zh-CN"
                                     ? "无法读取候选模型"
                                     : "Unable to read candidates"}
