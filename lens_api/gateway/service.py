@@ -319,6 +319,8 @@ class UpstreamResult:
 class AttemptLog:
     channel_id: str
     channel_name: str
+    credential_id: str | None
+    credential_name: str
     model_name: str | None
     status_code: int | None
     success: bool
@@ -1013,6 +1015,15 @@ async def router_preview(
     channels = await app_state.store.list()
     runtime = await app_state.domain_store.get_runtime_settings()
     _apply_router_runtime_settings(runtime)
+    if not payload.model:
+        return app_state.router.preview(
+            channels,
+            payload.protocol,
+            None,
+            strategy=RoutingStrategy.ROUND_ROBIN,
+            route_targets=None,
+            use_model_matching=True,
+        ).model_dump(mode="json")
     plan = await _resolve_routing_plan(payload.protocol, payload.model)
     return app_state.router.preview(
         channels,
@@ -1576,7 +1587,58 @@ async def _proxy_protocol(
     )
     _apply_router_runtime_settings(runtime)
     started_at = perf_counter()
+    request_content = _dump_json(body)
+    inbound_ua = _normalize_user_agent(inbound_user_agent)
+    upstream_user_agent = (
+        inbound_ua
+        if inbound_ua and not _is_generic_user_agent(inbound_ua)
+        else _default_lens_user_agent()
+    )
+    is_stream_body = bool(body.get("stream"))
     requested_model = body.get("model")
+    if not isinstance(requested_model, str) or not requested_model.strip():
+        request_log = await app_state.domain_store.create_pending_request_log(
+            protocol=protocol.value,
+            user_agent=upstream_user_agent,
+            requested_group_name=None,
+            resolved_group_name=None,
+            upstream_model_name=None,
+            channel_id=None,
+            channel_name=None,
+            gateway_key_id=gateway_key.id,
+            is_stream=is_stream_body,
+            request_content=request_content,
+        )
+        await _update_request_log(
+            request_log.id,
+            protocol=protocol,
+            requested_group_name=None,
+            resolved_group_name=None,
+            upstream_model_name=None,
+            channel_id=None,
+            channel_name=None,
+            gateway_key=gateway_key,
+            user_agent=upstream_user_agent,
+            lifecycle_status=RequestLogLifecycleStatus.FAILED,
+            status_code=400,
+            success=False,
+            is_stream=is_stream_body,
+            first_token_latency_ms=0,
+            latency_ms=_elapsed_ms(started_at),
+            request_content=request_content,
+            attempts=[],
+            error_message="Request model is required",
+        )
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error={
+                    "type": "missing_model",
+                    "message": "Request model is required",
+                }
+            ).model_dump(mode="json"),
+        )
+    requested_model = requested_model.strip()
     if not _gateway_key_allows_model(gateway_key, requested_model):
         return JSONResponse(
             status_code=403,
@@ -1587,15 +1649,7 @@ async def _proxy_protocol(
                 }
             ).model_dump(mode="json"),
         )
-    request_content = _dump_json(body)
-    inbound_ua = _normalize_user_agent(inbound_user_agent)
-    upstream_user_agent = (
-        inbound_ua
-        if inbound_ua and not _is_generic_user_agent(inbound_ua)
-        else _default_lens_user_agent()
-    )
     plan: RoutingPlan | None = None
-    is_stream_body = bool(body.get("stream"))
     request_log = await app_state.domain_store.create_pending_request_log(
         protocol=protocol.value,
         user_agent=upstream_user_agent,
@@ -1664,6 +1718,8 @@ async def _proxy_protocol(
 
         errors: list[str] = []
         for target in [selection.primary, *selection.fallbacks]:
+            if not app_state.router.is_target_available(target):
+                continue
             response = await _try_target(
                 target=target,
                 protocol=protocol,
@@ -1787,6 +1843,8 @@ async def _try_target(
         AttemptLog(
             channel_id=channel.id,
             channel_name=channel.name,
+            credential_id=target.credential_id,
+            credential_name=target.credential_name or "",
             model_name=target.model_name,
             status_code=result.status_code,
             success=True,
@@ -1872,6 +1930,8 @@ async def _record_target_failure(
         AttemptLog(
             channel_id=channel.id,
             channel_name=channel.name,
+            credential_id=target.credential_id,
+            credential_name=target.credential_name or "",
             model_name=target.model_name,
             status_code=exc.status_code,
             success=False,
@@ -2559,7 +2619,7 @@ def _parse_model_list(
 
 
 async def _resolve_routing_plan(
-    protocol: ProtocolKind, requested_model: str | None
+    protocol: ProtocolKind, requested_model: str
 ) -> RoutingPlan:
     matched_group = await app_state.domain_store.find_group_by_name(
         protocol.value, requested_model
@@ -2586,6 +2646,7 @@ async def _resolve_routing_plan(
                 channel=channel_map[item.channel_id],
                 model_name=item.model_name,
                 credential_id=item.credential_id or None,
+                credential_name=item.credential_name or None,
             )
             for item in resolved_group.items
             if item.enabled and item.channel_id in channel_map
@@ -2601,18 +2662,7 @@ async def _resolve_routing_plan(
             cursor_key=f"{protocol.value}:{resolved_group.id}",
         )
 
-    if requested_model:
-        raise LookupError(f"No model group matched {requested_model}")
-
-    return RoutingPlan(
-        requested_group_name=requested_model,
-        resolved_group_name=None,
-        requested_group=None,
-        resolved_group=None,
-        strategy=RoutingStrategy.ROUND_ROBIN,
-        route_targets=None,
-        use_model_matching=True,
-    )
+    raise LookupError(f"No model group matched {requested_model}")
 
 
 def _prepare_upstream_body(

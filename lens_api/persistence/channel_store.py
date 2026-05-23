@@ -381,7 +381,10 @@ class ChannelStore:
                 id=credentials_by_id[binding.credential_id].id,
                 key=credentials_by_id[binding.credential_id].api_key,
                 remark=credentials_by_id[binding.credential_id].name,
-                enabled=credentials_by_id[binding.credential_id].enabled,
+                enabled=(
+                    credentials_by_id[binding.credential_id].enabled
+                    and binding.enabled
+                ),
             )
             for binding in protocol.bindings
             if binding.credential_id in credentials_by_id
@@ -633,7 +636,8 @@ class ChannelStore:
         normalized_credentials: list[SiteCredential],
     ) -> set[str]:
         protocol_ids: set[str] = set()
-        protocol_keys: set[tuple[str, str]] = set()
+        protocol_keys: set[tuple[str, str, str]] = set()
+        all_credential_ids = [item.id for item in normalized_credentials]
         for protocol in protocols:
             protocol_id = protocol.id or str(uuid.uuid4())
             protocol_ids.add(protocol_id)
@@ -641,12 +645,32 @@ class ChannelStore:
                 raise ValueError(
                     f"Base URL not found for protocol config {protocol.protocol.value}: {protocol.base_url_id}"
                 )
-            protocol_key = (protocol.protocol.value, protocol.base_url_id)
-            if protocol_key in protocol_keys:
-                raise ValueError(
-                    f"Duplicate protocol config for protocol={protocol.protocol.value} base_url_id={protocol.base_url_id}"
+            effective_credential_ids: list[str] = []
+            seen_binding_ids: set[str] = set()
+            for binding in protocol.bindings:
+                if binding.credential_id not in credential_ids:
+                    raise ValueError(
+                        f"Credential not found for protocol config {protocol.protocol.value}: {binding.credential_id}"
+                    )
+                if binding.credential_id in seen_binding_ids:
+                    raise ValueError(
+                        f"Duplicate credential binding in protocol config {protocol.protocol.value}: {binding.credential_id}"
+                    )
+                seen_binding_ids.add(binding.credential_id)
+                effective_credential_ids.append(binding.credential_id)
+            if not effective_credential_ids:
+                effective_credential_ids = all_credential_ids
+            for credential_id in effective_credential_ids:
+                protocol_key = (
+                    protocol.protocol.value,
+                    protocol.base_url_id,
+                    credential_id,
                 )
-            protocol_keys.add(protocol_key)
+                if protocol_key in protocol_keys:
+                    raise ValueError(
+                        f"Duplicate protocol config for protocol={protocol.protocol.value} base_url_id={protocol.base_url_id} credential_id={credential_id}"
+                    )
+                protocol_keys.add(protocol_key)
 
             existing_protocol = await session.get(SiteProtocolConfigEntity, protocol_id)
             if existing_protocol is None:
@@ -667,7 +691,11 @@ class ChannelStore:
                 session, protocol_id, protocol, credential_ids, normalized_credentials
             )
             await self._upsert_protocol_models(
-                session, protocol_id, protocol, credential_ids
+                session,
+                protocol_id,
+                protocol,
+                credential_ids,
+                set(effective_credential_ids),
             )
         return protocol_ids
 
@@ -717,6 +745,7 @@ class ChannelStore:
         protocol_id: str,
         protocol: SiteProtocolConfigInput,
         credential_ids: set[str],
+        effective_credential_ids: set[str],
     ) -> None:
         await session.execute(
             delete(SiteDiscoveredModelEntity).where(
@@ -733,6 +762,10 @@ class ChannelStore:
             if model.credential_id not in credential_ids:
                 raise ValueError(
                     f"Model credential not found in protocol config {protocol.protocol.value}: {model.credential_id}"
+                )
+            if model.credential_id not in effective_credential_ids:
+                raise ValueError(
+                    f"Model credential is not bound in protocol config {protocol.protocol.value}: {model.credential_id}"
                 )
             model_key = (model.credential_id, model_name)
             if model_key in seen_models:

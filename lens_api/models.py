@@ -405,6 +405,7 @@ class RoutePreviewItem(BaseModel):
     channel_name: str = ""
     model_name: str | None = None
     credential_id: str | None = None
+    credential_name: str | None = None
     available: bool = True
     in_cooldown: bool = False
     cooldown_remaining_seconds: int = 0
@@ -928,6 +929,8 @@ class RequestLogItem(BaseModel):
 class RequestLogAttempt(BaseModel):
     channel_id: str
     channel_name: str
+    credential_id: str | None = None
+    credential_name: str = ""
     model_name: str | None = None
     status_code: int | None = None
     success: bool

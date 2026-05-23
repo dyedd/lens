@@ -93,6 +93,7 @@ class RouteTarget:
     channel: ChannelConfig
     model_name: str | None = None
     credential_id: str | None = None
+    credential_name: str | None = None
 
 
 @dataclass
@@ -112,9 +113,8 @@ class RoundRobinRouter:
         self._lock = Lock()
         self._health: dict[str, _HealthState] = defaultdict(_HealthState)
         self._key_health: dict[tuple[str, str], _KeyHealthState] = {}
-        self._key_cursors: dict[str, int] = {}
         self._health_windows: dict[str, _HealthWindow] = defaultdict(_HealthWindow)
-        self._swrr_nodes: dict[tuple[str, str], _SWRRNode] = {}
+        self._swrr_nodes: dict[tuple[str, str, str], _SWRRNode] = {}
         self._health_window_seconds = health_window_seconds
         self._health_penalty_weight = health_penalty_weight
         self._health_min_samples = health_min_samples
@@ -181,10 +181,6 @@ class RoundRobinRouter:
 
             primary = active[primary_index]
             fallbacks = active[primary_index + 1 :] + active[:primary_index]
-
-            for target in [primary, *fallbacks]:
-                if target.credential_id is None and target.channel.keys:
-                    target.credential_id = self._select_key(target.channel)
 
             return RouteSelection(primary=primary, fallbacks=fallbacks)
 
@@ -266,6 +262,10 @@ class RoundRobinRouter:
                 state.opened_until = 0.0
                 return True
             return False
+
+    def is_target_available(self, target: RouteTarget) -> bool:
+        with self._lock:
+            return self._target_is_available(target, now=monotonic())
 
     def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:
         with self._lock:
@@ -368,6 +368,7 @@ class RoundRobinRouter:
             channel_name=target.channel.name,
             model_name=target.model_name,
             credential_id=target.credential_id,
+            credential_name=target.credential_name,
             available=available,
             in_cooldown=not available,
             cooldown_remaining_seconds=self._target_cooldown_remaining_seconds(
@@ -418,15 +419,17 @@ class RoundRobinRouter:
         route_targets: list[RouteTarget] | None,
     ) -> list[RouteTarget]:
         if route_targets is not None:
-            return [
-                target
-                for target in route_targets
-                if target.channel.status == ChannelStatus.ENABLED
-                and (
-                    allowed_channel_ids is None
-                    or target.channel.id in allowed_channel_ids
-                )
-            ]
+            active: list[RouteTarget] = []
+            for target in route_targets:
+                if target.channel.status != ChannelStatus.ENABLED:
+                    continue
+                if (
+                    allowed_channel_ids is not None
+                    and target.channel.id not in allowed_channel_ids
+                ):
+                    continue
+                active.extend(self._expand_target_credentials(target))
+            return active
 
         active: list[RouteTarget] = []
         for channel in sorted(channels, key=lambda item: item.name):
@@ -439,8 +442,60 @@ class RoundRobinRouter:
                 continue
             if use_model_matching and not _matches_model(channel, requested_model):
                 continue
-            active.append(RouteTarget(channel=channel, model_name=requested_model))
+            active.extend(
+                self._expand_target_credentials(
+                    RouteTarget(channel=channel, model_name=requested_model)
+                )
+            )
         return active
+
+    def _expand_target_credentials(self, target: RouteTarget) -> list[RouteTarget]:
+        if target.credential_id:
+            key = self._find_key(target.channel, target.credential_id)
+            if key is None or not key.enabled:
+                return []
+            return [
+                RouteTarget(
+                    channel=target.channel,
+                    model_name=target.model_name,
+                    credential_id=key.id,
+                    credential_name=target.credential_name or key.remark,
+                )
+            ]
+
+        if not target.channel.keys:
+            return [target]
+
+        return [
+            RouteTarget(
+                channel=target.channel,
+                model_name=target.model_name,
+                credential_id=key.id,
+                credential_name=key.remark,
+            )
+            for key in self._candidate_keys(target.channel, target.model_name)
+        ]
+
+    def _candidate_keys(
+        self, channel: ChannelConfig, model_name: str | None
+    ) -> list[ChannelKeyItem]:
+        enabled_keys = [key for key in channel.keys if key.enabled]
+        if not model_name or not channel.models:
+            return enabled_keys
+
+        credential_ids = {
+            item.credential_id
+            for item in channel.models
+            if item.enabled and _matches_pattern(item.model_name, model_name)
+        }
+        return [key for key in enabled_keys if key.id in credential_ids]
+
+    @staticmethod
+    def _find_key(channel: ChannelConfig, credential_id: str) -> ChannelKeyItem | None:
+        for key in channel.keys:
+            if key.id == credential_id:
+                return key
+        return None
 
     def _score(self, channel_id: str) -> float:
         window = self._expire_window_if_needed(channel_id)
@@ -471,28 +526,6 @@ class RoundRobinRouter:
             self._health_windows[channel_id] = window
         return window
 
-    def _select_key(self, channel: ChannelConfig) -> str | None:
-        enabled_keys = [k for k in channel.keys if k.enabled]
-        if not enabled_keys:
-            return None
-        now = monotonic()
-        cursor = self._key_cursors.get(channel.id, 0)
-        for i in range(len(enabled_keys)):
-            idx = (cursor + i) % len(enabled_keys)
-            key = enabled_keys[idx]
-            if self._is_key_available(channel.id, key.id, now=now):
-                self._key_cursors[channel.id] = (idx + 1) % len(enabled_keys)
-                return key.id
-        return None
-
-    def _effective_key_count(self, channel: ChannelConfig) -> int:
-        now = monotonic()
-        return sum(
-            1
-            for k in channel.keys
-            if k.enabled and self._is_key_available(channel.id, k.id, now=now)
-        )
-
     def _swrr_pick_index(
         self, active: list[RouteTarget], route_key: str, *, mutate: bool
     ) -> int:
@@ -501,10 +534,10 @@ class RoundRobinRouter:
         next_weights: list[int] = []
 
         for i, target in enumerate(active):
-            node_key = (route_key, target.channel.id)
+            node_key = (route_key, target.channel.id, target.credential_id or "")
             node = self._swrr_nodes.get(node_key)
             current_weight = node.current_weight if node is not None else 0
-            weight = max(self._effective_key_count(target.channel), 1)
+            weight = 1
             next_weight = current_weight + weight
             next_weights.append(next_weight)
             total_weight += weight
@@ -513,14 +546,16 @@ class RoundRobinRouter:
 
         if mutate:
             for i, target in enumerate(active):
-                node_key = (route_key, target.channel.id)
+                node_key = (route_key, target.channel.id, target.credential_id or "")
                 node = self._swrr_nodes.get(node_key)
                 if node is None:
                     node = _SWRRNode()
                     self._swrr_nodes[node_key] = node
                 node.current_weight = next_weights[i]
-            best_cid = active[best_idx].channel.id
-            self._swrr_nodes[(route_key, best_cid)].current_weight -= total_weight
+            best = active[best_idx]
+            self._swrr_nodes[
+                (route_key, best.channel.id, best.credential_id or "")
+            ].current_weight -= total_weight
         return best_idx
 
     def _record_key_failure_locked(
@@ -717,11 +752,15 @@ def _matches_model(channel: ChannelConfig, requested_model: str | None) -> bool:
 
     if channel.model_patterns:
         for pattern in channel.model_patterns:
-            try:
-                if re.search(pattern, requested_model):
-                    return True
-            except re.error:
-                continue
+            if _matches_pattern(pattern, requested_model):
+                return True
         return False
 
     return True
+
+
+def _matches_pattern(pattern: str, value: str) -> bool:
+    try:
+        return bool(re.search(pattern, value))
+    except re.error:
+        return False
