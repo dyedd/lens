@@ -777,6 +777,8 @@ function AttemptChain({
         {
           channel_id: detail.channel_id || "n/a",
           channel_name: detail.channel_name || detail.channel_id || "n/a",
+          credential_id: null,
+          credential_name: "",
           model_name:
             detail.upstream_model_name ||
             detail.resolved_group_name ||
@@ -807,6 +809,11 @@ function AttemptChain({
                   <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
                     {attempt.channel_name}
                   </span>
+                  {attempt.credential_name || attempt.credential_id ? (
+                    <Badge variant="secondary" className="max-w-[160px] truncate">
+                      {attempt.credential_name || attempt.credential_id}
+                    </Badge>
+                  ) : null}
                   {attempt.model_name ? (
                     <span className="max-w-[220px] truncate text-xs text-muted-foreground">
                       {attempt.model_name}
