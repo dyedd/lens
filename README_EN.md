@@ -21,41 +21,77 @@ Self-hosted LLM gateway for managing multiple model providers.
 ## Architecture
 
 ```
-┌─────────────┐
-│   Clients   │  OpenAI SDK / Anthropic SDK / curl
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────────────────────────────────┐
-│              Lens Gateway                       │
-│  ┌──────────────────────────────────────────┐  │
-│  │  /v1/chat/completions                    │  │
-│  │  /v1/messages                            │  │
-│  │  /v1/responses                           │  │
-│  │  /v1/embeddings                          │  │
-│  │  /v1beta/models/{model}:generateContent  │  │
-│  └──────────────────────────────────────────┘  │
-│                                                 │
-│  ┌──────────────────────────────────────────┐  │
-│  │  Routing Layer                           │  │
-│  │  - Model group matching                  │  │
-│  │  - Load balancing (round_robin/failover) │  │
-│  │  - Protocol conversion                   │  │
-│  │  - Health checks                         │  │
-│  └──────────────────────────────────────────┘  │
-└────────┬────────────────────────────────────────┘
-         │
-         ├─────────────┬─────────────┬─────────────┐
-         ▼             ▼             ▼             ▼
-    ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
-    │ OpenAI  │  │Anthropic│  │ Gemini  │  │Compatible│
-    └─────────┘  └─────────┘  └─────────┘  └─────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ Clients                                                              │
+│ OpenAI SDK / Anthropic SDK / Gemini SDK / curl                       │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │ Lens Base URL + sk-lens-...
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Lens Gateway                                                         │
+│                                                                      │
+│  Entry protocols                                                     │
+│  /v1/chat/completions                                                │
+│  /v1/messages                                                        │
+│  /v1/responses                                                       │
+│  /v1/embeddings                                                      │
+│  /v1beta/models/{model}:generateContent                              │
+│                                                                      │
+│  Request resolution                                                  │
+│  - Validate gateway key                                              │
+│  - Resolve client protocol and required model name                   │
+│  - Match model group by entry protocol and model name                │
+│                                                                      │
+│  Routing plan                                                        │
+│  - Model group item: channel + key + upstream model                  │
+│  - Strategy: round robin / failover                                  │
+│  - Protocol conversion: OpenAI Chat -> Anthropic / Responses         │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Candidate expansion                                                  │
+│                                                                      │
+│  Channel protocol config                                             │
+│  protocol + Base URL source + bound keys                             │
+│                                                                      │
+│  Runtime candidate                                                   │
+│  Runtime candidate = channel + key + upstream model                  │
+│                                                                      │
+│  Example                                                             │
+│  Model group member: stable pool / gpt-5.5                           │
+│      ├─ Channel A / promo key  / gpt-5.5                             │
+│      ├─ Channel A / stable key / gpt-5.5                             │
+│      └─ Channel B / backup key / gpt-5.5                             │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Load balancing and failover                                          │
+│                                                                      │
+│  Round robin: smooth rotation across key-level candidates            │
+│  failover: try model group items in order, then switch key / channel │
+│                                                                      │
+│  Cooldown scope                                                      │
+│  401 / 403 / 429: cool down one key, prefer another same-site key    │
+│  5xx / timeout / network error: cool down the channel, switch target │
+│                                                                      │
+│  Request logs                                                        │
+│  Attempt chain records channel, key, upstream model, status, time    │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                                ▼
+        ┌──────────────┬──────────────┬──────────────┬──────────────┐
+        ▼              ▼              ▼              ▼
+   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌──────────┐
+   │ OpenAI  │    │Anthropic│    │ Gemini  │    │Compatible│
+   └─────────┘    └─────────┘    └─────────┘    └──────────┘
 ```
 
 ## Features
 
 - Unified entry: One Base URL, one API Key, supports OpenAI / Anthropic / Gemini protocols
-- Load balancing: round_robin or failover strategies
+- Load balancing: round robin or failover at the channel + key + upstream model level
 - Protocol conversion: Forward OpenAI Chat to Anthropic Messages or OpenAI Responses
 - Request logs: Track protocol, model, latency, tokens, cost
 - Config backup: Export/import sites, channels, model groups, pricing
@@ -181,8 +217,8 @@ Common Base URLs:
 
 Open `/groups`, create a model group, select protocol, add upstream models, choose routing strategy:
 
-- **round_robin**: Distribute requests with smooth weighted round robin
-- **failover**: Prefer earlier members, switch after failures
+- **Round robin**: Smoothly rotate across expanded key-level candidates
+- **Failover**: Prefer earlier members, then switch to the next key or channel after failures
 
 **Protocol conversion**: Lens can currently put OpenAI Chat upstream models into Anthropic or OpenAI Responses model groups and convert at runtime.
 

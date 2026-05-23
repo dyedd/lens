@@ -499,6 +499,7 @@ export type RoutePreview = {
     channel_name: string;
     model_name?: string | null;
     credential_id?: string | null;
+    credential_name?: string | null;
     available: boolean;
     in_cooldown: boolean;
     cooldown_remaining_seconds: number;
@@ -618,6 +619,8 @@ export type RequestLogLifecycleStatus =
 export type RequestLogAttempt = {
   channel_id: string;
   channel_name: string;
+  credential_id?: string | null;
+  credential_name: string;
   model_name?: string | null;
   status_code?: number | null;
   success: boolean;
