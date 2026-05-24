@@ -148,7 +148,22 @@ GENERIC_USER_AGENT_TOKENS = (
     "urllib",
 )
 
-ANTHROPIC_FORWARD_HEADER_PREFIX = "anthropic-"
+ANTHROPIC_FORWARD_HEADER_PREFIXES = (
+    "anthropic-",
+    "x-anthropic-",
+    "x-claude-code-",
+    "x-claude-remote-",
+    "x-stainless-",
+)
+ANTHROPIC_FORWARD_HEADERS = frozenset(
+    {
+        "x-app",
+        "x-app-name",
+        "x-app-ver",
+        "x-client-app",
+        "x-environment-runner-version",
+    }
+)
 
 CRONJOB_SPECS = (
     CronjobSpec(
@@ -2565,7 +2580,9 @@ def _forward_anthropic_headers(headers: Mapping[str, str]) -> dict[str, str]:
     forwarded: dict[str, str] = {}
     for name, value in headers.items():
         normalized_name = name.lower()
-        if not normalized_name.startswith(ANTHROPIC_FORWARD_HEADER_PREFIX):
+        if normalized_name not in ANTHROPIC_FORWARD_HEADERS and not (
+            normalized_name.startswith(ANTHROPIC_FORWARD_HEADER_PREFIXES)
+        ):
             continue
         normalized_value = value.strip()
         if normalized_value:
