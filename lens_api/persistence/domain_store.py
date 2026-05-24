@@ -989,9 +989,6 @@ class DomainStore:
             )
         )
         channel_rows = channel_result.scalars().all()
-        channel_credential_ids = {
-            channel.id: channel.credential_id for channel in channel_rows
-        }
         existing_channel_ids = {row.id for row in channel_rows}
         missing_channel_ids = [
             channel_id
@@ -1033,10 +1030,6 @@ class DomainStore:
             )
 
         for item in items:
-            if item.credential_id != channel_credential_ids[item.channel_id]:
-                raise ValueError(
-                    f"Credential is not bound in channel {item.channel_id}: {item.credential_id}"
-                )
             channel_models = model_names_by_channel.get(item.channel_id, set())
             target = (item.credential_id, item.model_name)
             if target not in channel_models:
@@ -1212,12 +1205,12 @@ class DomainStore:
         rows = await session.execute(
             select(
                 SiteProtocolConfigEntity.id,
-                SiteProtocolConfigEntity.credential_id,
+                SiteCredentialEntity.id,
                 SiteCredentialEntity.name,
             )
             .join(
                 SiteCredentialEntity,
-                SiteCredentialEntity.id == SiteProtocolConfigEntity.credential_id,
+                SiteCredentialEntity.site_id == SiteProtocolConfigEntity.site_id,
             )
             .where(SiteProtocolConfigEntity.id.in_(channel_ids))
         )
