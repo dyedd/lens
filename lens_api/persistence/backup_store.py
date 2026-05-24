@@ -147,7 +147,7 @@ class BackupStore:
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 
-            channel_ids, channel_credential_ids, available_model_keys = await self._replace_sites(
+            channel_ids, available_model_keys = await self._replace_sites(
                 session, dump.sites
             )
             rows_affected["sites"] = len(dump.sites)
@@ -170,7 +170,6 @@ class BackupStore:
                 session,
                 dump.groups,
                 available_channel_ids=channel_ids,
-                channel_credential_ids=channel_credential_ids,
                 available_model_keys=available_model_keys,
             )
             rows_affected["model_groups"] = len(dump.groups)
@@ -209,7 +208,7 @@ class BackupStore:
 
     async def _replace_sites(
         self, session: AsyncSession, sites: list[SiteConfig]
-    ) -> tuple[set[str], dict[str, str], set[tuple[str, str, str]]]:
+    ) -> tuple[set[str], set[tuple[str, str, str]]]:
         await session.execute(delete(SiteDiscoveredModelEntity))
         await session.execute(delete(SiteProtocolConfigEntity))
         await session.execute(delete(SiteCredentialEntity))
@@ -220,7 +219,6 @@ class BackupStore:
         site_names: set[str] = set()
         channel_ids: set[str] = set()
         credential_ids: set[str] = set()
-        channel_credential_ids: dict[str, str] = {}
         available_model_keys: set[tuple[str, str, str]] = set()
         base_url_ids: set[str] = set()
         model_ids: set[str] = set()
@@ -286,7 +284,6 @@ class BackupStore:
                     raise ValueError(
                         f"Channel credential not found in backup site {site.name}: {protocol.credential_id}"
                     )
-                channel_credential_ids[protocol.id] = protocol.credential_id
                 session.add(
                     SiteProtocolConfigEntity(
                         id=protocol.id,
@@ -315,10 +312,6 @@ class BackupStore:
                         raise ValueError(
                             f"Discovered model credential not found in backup site {site.name}: {model.credential_id}"
                         )
-                    if model.credential_id != protocol.credential_id:
-                        raise ValueError(
-                            f"Discovered model credential is not bound in backup channel {protocol.id}: {model.credential_id}"
-                        )
                     if model.enabled:
                         available_model_keys.add(
                             (
@@ -338,7 +331,7 @@ class BackupStore:
                         )
                     )
 
-        return channel_ids, channel_credential_ids, available_model_keys
+        return channel_ids, available_model_keys
 
     async def _replace_groups(
         self,
@@ -346,7 +339,6 @@ class BackupStore:
         groups: list[ModelGroup],
         *,
         available_channel_ids: set[str],
-        channel_credential_ids: dict[str, str],
         available_model_keys: set[tuple[str, str, str]],
     ) -> None:
         await session.execute(delete(ModelGroupItemEntity))
@@ -387,10 +379,6 @@ class BackupStore:
                 if item.channel_id not in available_channel_ids:
                     raise ValueError(
                         f"Model group channel not found in backup sites: {item.channel_id}"
-                    )
-                if item.credential_id != channel_credential_ids[item.channel_id]:
-                    raise ValueError(
-                        f"Model group credential is not bound in backup channel {item.channel_id}: {item.credential_id}"
                     )
                 target = (item.channel_id, item.credential_id, item.model_name)
                 if target not in available_model_keys:

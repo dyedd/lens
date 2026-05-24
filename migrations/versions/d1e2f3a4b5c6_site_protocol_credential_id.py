@@ -33,6 +33,24 @@ def upgrade() -> None:
             )
         )
 
+    bind.execute(
+        sa.text("""
+            UPDATE site_protocol_configs
+            SET credential_id = (
+                SELECT credential_id
+                FROM site_protocol_credential_bindings
+                WHERE protocol_config_id = site_protocol_configs.id
+                ORDER BY enabled DESC, sort_order ASC, id ASC
+                LIMIT 1
+            )
+            WHERE EXISTS (
+                SELECT 1
+                FROM site_protocol_credential_bindings
+                WHERE protocol_config_id = site_protocol_configs.id
+            )
+            """)
+    )
+
     with op.batch_alter_table("site_protocol_configs") as batch_op:
         batch_op.alter_column("credential_id", server_default=None)
         batch_op.create_index(

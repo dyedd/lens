@@ -240,12 +240,7 @@ class ChannelStore:
         credentials_by_site, credentials_by_id = self._group_credentials(
             credential_rows
         )
-        protocol_credentials_by_id = {
-            item.id: item.credential_id for item in protocol_rows
-        }
-        models_by_protocol = self._group_models(
-            model_rows, credentials_by_id, protocol_credentials_by_id
-        )
+        models_by_protocol = self._group_models(model_rows, credentials_by_id)
         protocols_by_site = self._group_protocols(protocol_rows, models_by_protocol)
 
         return [
@@ -352,9 +347,12 @@ class ChannelStore:
         protocol: SiteProtocolConfig,
         credentials_by_id: dict[str, SiteCredential],
     ) -> list[ChannelKeyItem]:
-        credential = credentials_by_id.get(protocol.credential_id)
-        if credential is None:
-            return []
+        credential_ids = list(
+            dict.fromkeys(
+                [protocol.credential_id]
+                + [item.credential_id for item in protocol.models]
+            )
+        )
         return [
             ChannelKeyItem(
                 id=credential.id,
@@ -362,6 +360,8 @@ class ChannelStore:
                 remark=credential.name,
                 enabled=credential.enabled,
             )
+            for credential_id in credential_ids
+            if credential_id and (credential := credentials_by_id.get(credential_id))
         ]
 
     def _build_channel_models(
@@ -502,12 +502,9 @@ class ChannelStore:
         self,
         rows: list[SiteDiscoveredModelEntity],
         credentials_by_id: dict[str, SiteCredential],
-        protocol_credentials_by_id: dict[str, str],
     ) -> dict[str, list[SiteModel]]:
         result: dict[str, list[SiteModel]] = defaultdict(list)
         for row in rows:
-            if protocol_credentials_by_id.get(row.protocol_config_id) != row.credential_id:
-                continue
             credential = credentials_by_id.get(row.credential_id)
             result[row.protocol_config_id].append(
                 SiteModel(
@@ -633,7 +630,6 @@ class ChannelStore:
                 protocol_id,
                 protocol,
                 credential_ids,
-                protocol.credential_id,
             )
         return protocol_ids
 
@@ -643,7 +639,6 @@ class ChannelStore:
         protocol_id: str,
         protocol: SiteProtocolConfigInput,
         credential_ids: set[str],
-        effective_credential_id: str,
     ) -> None:
         await session.execute(
             delete(SiteDiscoveredModelEntity).where(
@@ -660,10 +655,6 @@ class ChannelStore:
             if model.credential_id not in credential_ids:
                 raise ValueError(
                     f"Model credential not found in protocol config {protocol.protocol.value}: {model.credential_id}"
-                )
-            if model.credential_id != effective_credential_id:
-                raise ValueError(
-                    f"Model credential is not bound in protocol config {protocol.protocol.value}: {model.credential_id}"
                 )
             model_key = (model.credential_id, model_name)
             if model_key in seen_models:
