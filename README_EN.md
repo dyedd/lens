@@ -53,15 +53,15 @@ Self-hosted LLM gateway for managing multiple model providers.
 │ Candidate expansion                                                  │
 │                                                                      │
 │  Channel protocol config                                             │
-│  protocol + Base URL source + bound keys                             │
+│  protocol + Base URL source + bound key                              │
 │                                                                      │
 │  Runtime candidate                                                   │
 │  Runtime candidate = channel + key + upstream model                  │
 │                                                                      │
 │  Example                                                             │
 │  Model group member: stable pool / gpt-5.5                           │
-│      ├─ Channel A / promo key  / gpt-5.5                             │
-│      ├─ Channel A / stable key / gpt-5.5                             │
+│      ├─ Channel A / URL 1 / promo key  / gpt-5.5                     │
+│      ├─ Channel A / URL 1 / stable key / gpt-5.5                     │
 │      └─ Channel B / backup key / gpt-5.5                             │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
@@ -73,7 +73,7 @@ Self-hosted LLM gateway for managing multiple model providers.
 │  failover: try model group items in order, then switch key / channel │
 │                                                                      │
 │  Cooldown scope                                                      │
-│  401 / 403 / 429: cool down one key, prefer another same-site key    │
+│  401 / 403 / 429: cool down one key, prefer another same-site target │
 │  5xx / timeout / network error: cool down the channel, switch target │
 │                                                                      │
 │  Request logs                                                        │

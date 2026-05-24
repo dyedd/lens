@@ -65,7 +65,6 @@ from .entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolCredentialBindingEntity,
 )
 
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
@@ -677,12 +676,7 @@ class DomainStore:
             channel_items = list(dict.fromkeys(models_by_channel.get(channel.id, [])))
             for credential_id, model_name in channel_items:
                 candidate_key = (channel.id, credential_id, model_name)
-                wildcard_key = (channel.id, "", model_name)
-                if (
-                    candidate_key in seen
-                    or candidate_key in excluded
-                    or wildcard_key in excluded
-                ):
+                if candidate_key in seen or candidate_key in excluded:
                     continue
                 seen.add(candidate_key)
                 meta = channel_meta_by_id.get(channel.id, {})
@@ -994,6 +988,9 @@ class DomainStore:
             )
         )
         channel_rows = channel_result.scalars().all()
+        channel_credential_ids = {
+            channel.id: channel.credential_id for channel in channel_rows
+        }
         existing_channel_ids = {row.id for row in channel_rows}
         missing_channel_ids = [
             channel_id
@@ -1035,20 +1032,15 @@ class DomainStore:
             )
 
         for item in items:
-            channel_models = model_names_by_channel.get(item.channel_id, set())
-            target = (
-                (item.credential_id, item.model_name) if item.credential_id else None
-            )
-            if target is not None:
-                if target not in channel_models:
-                    raise ValueError(
-                        f"Model not found in channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
-                    )
-            elif not any(
-                model_name == item.model_name for _, model_name in channel_models
-            ):
+            if item.credential_id != channel_credential_ids[item.channel_id]:
                 raise ValueError(
-                    f"Model not found in channel {item.channel_id}: {item.model_name}"
+                    f"Credential is not bound in channel {item.channel_id}: {item.credential_id}"
+                )
+            channel_models = model_names_by_channel.get(item.channel_id, set())
+            target = (item.credential_id, item.model_name)
+            if target not in channel_models:
+                raise ValueError(
+                    f"Model not found in channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
                 )
 
         return route_group
@@ -1218,24 +1210,21 @@ class DomainStore:
             return {}
         rows = await session.execute(
             select(
-                SiteProtocolCredentialBindingEntity.protocol_config_id,
-                SiteProtocolCredentialBindingEntity.credential_id,
+                SiteProtocolConfigEntity.id,
+                SiteProtocolConfigEntity.credential_id,
                 SiteCredentialEntity.name,
             )
             .join(
                 SiteCredentialEntity,
-                SiteCredentialEntity.id
-                == SiteProtocolCredentialBindingEntity.credential_id,
+                SiteCredentialEntity.id == SiteProtocolConfigEntity.credential_id,
             )
-            .where(
-                SiteProtocolCredentialBindingEntity.protocol_config_id.in_(channel_ids)
-            )
+            .where(SiteProtocolConfigEntity.id.in_(channel_ids))
         )
         credential_names_by_channel: dict[str, dict[str, str]] = {}
-        for protocol_config_id, credential_id, credential_name in rows.all():
-            credential_names_by_channel.setdefault(protocol_config_id, {})[
-                credential_id
-            ] = credential_name
+        for channel_id, credential_id, credential_name in rows.all():
+            credential_names_by_channel.setdefault(channel_id, {})[credential_id] = (
+                credential_name
+            )
         return credential_names_by_channel
 
     async def _load_credential_numbers_by_channel(
@@ -1247,11 +1236,12 @@ class DomainStore:
             select(
                 SiteProtocolConfigEntity.id,
                 SiteCredentialEntity.id,
-                SiteCredentialEntity.site_id,
                 SiteCredentialEntity.sort_order,
             )
-            .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
-            .join(SiteCredentialEntity, SiteCredentialEntity.site_id == SiteEntity.id)
+            .join(
+                SiteCredentialEntity,
+                SiteCredentialEntity.site_id == SiteProtocolConfigEntity.site_id,
+            )
             .where(SiteProtocolConfigEntity.id.in_(channel_ids))
             .order_by(
                 SiteProtocolConfigEntity.id.asc(),
@@ -1261,7 +1251,7 @@ class DomainStore:
         )
         numbers_by_channel: dict[str, dict[str, int]] = {}
         counts_by_channel: dict[str, int] = {}
-        for channel_id, credential_id, _site_id, _sort_order in rows.all():
+        for channel_id, credential_id, _sort_order in rows.all():
             counts_by_channel[channel_id] = counts_by_channel.get(channel_id, 0) + 1
             numbers_by_channel.setdefault(channel_id, {})[credential_id] = (
                 counts_by_channel[channel_id]

@@ -21,7 +21,6 @@ from lens_api.models import (
     SiteCredentialInput,
     SiteModelInput,
     SiteProtocolConfigInput,
-    SiteProtocolCredentialBindingInput,
 )
 from lens_api.persistence.domain_store import DomainStore
 from lens_api.persistence.entities import (
@@ -31,7 +30,6 @@ from lens_api.persistence.entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolCredentialBindingEntity,
 )
 from lens_api.persistence.channel_store import ChannelStore
 
@@ -100,13 +98,12 @@ async def main(export_path: str) -> None:
         await session.execute(delete(ModelGroupItemEntity))
         await session.execute(delete(ModelGroupEntity))
         await session.execute(delete(SiteDiscoveredModelEntity))
-        await session.execute(delete(SiteProtocolCredentialBindingEntity))
         await session.execute(delete(SiteProtocolConfigEntity))
         await session.execute(delete(SiteCredentialEntity))
         await session.execute(delete(SiteEntity))
         await session.commit()
 
-    imported_channels: dict[int, tuple[str, str]] = {}
+    imported_channels: dict[int, tuple[str, str, str]] = {}
 
     for channel in payload.get("channels", []):
         channel_id = channel.get("id")
@@ -156,12 +153,7 @@ async def main(export_path: str) -> None:
                         channel_proxy=channel.get("channel_proxy") or "",
                         param_override=channel.get("param_override") or "",
                         match_regex=channel.get("match_regex") or "",
-                        bindings=[
-                            SiteProtocolCredentialBindingInput(
-                                credential_id=item.id, enabled=item.enabled
-                            )
-                            for item in credentials
-                        ],
+                        credential_id=default_credential_id,
                         models=[
                             SiteModelInput(
                                 id=str(uuid.uuid4()),
@@ -175,7 +167,11 @@ async def main(export_path: str) -> None:
                 ],
             )
         )
-        imported_channels[int(channel_id)] = (site.id, site.protocols[0].id)
+        imported_channels[int(channel_id)] = (
+            site.id,
+            site.protocols[0].id,
+            default_credential_id,
+        )
 
     group_items_by_group: dict[int, list[dict]] = defaultdict(list)
     for item in payload.get("group_items", []):
@@ -203,7 +199,7 @@ async def main(export_path: str) -> None:
             model_name = str(item.get("model_name") or "").strip()
             if not imported or not model_name:
                 continue
-            _, channel_config_id = imported
+            _, channel_config_id, credential_id = imported
             channel_payload = channels_by_id.get(channel_id)
             protocol = (
                 TYPE_TO_PROTOCOL.get(channel_payload.get("type"))
@@ -215,7 +211,7 @@ async def main(export_path: str) -> None:
             grouped_members[protocol].append(
                 ModelGroupItemInput(
                     channel_id=channel_config_id,
-                    credential_id="",
+                    credential_id=credential_id,
                     model_name=model_name,
                     enabled=True,
                 )

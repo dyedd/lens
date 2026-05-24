@@ -74,24 +74,13 @@ class SiteProtocolConfigEntity(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     enabled: Mapped[int] = enabled_column()
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
     match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
     base_url_id: Mapped[str] = mapped_column(String(80), nullable=False)
-
-
-class SiteProtocolCredentialBindingEntity(Base):
-    __tablename__ = "site_protocol_credential_bindings"
-
-    id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    protocol_config_id: Mapped[str] = mapped_column(
-        String(80), nullable=False, index=True
-    )
-    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    enabled: Mapped[int] = enabled_column()
-    sort_order: Mapped[int] = sort_order_column()
 
 
 class SiteDiscoveredModelEntity(Base):
@@ -133,13 +122,17 @@ class ModelGroupEntity(Base):
 
 class ModelGroupItemEntity(Base):
     __tablename__ = "model_group_items"
+    __table_args__ = (
+        CheckConstraint(
+            "credential_id <> ''",
+            name="ck_model_group_items_credential_id_not_empty",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     channel_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    credential_id: Mapped[str] = mapped_column(
-        String(80), nullable=False, default="", index=True
-    )
+    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
