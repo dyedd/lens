@@ -191,18 +191,6 @@ class SiteCredentialInput(StrictBaseModel):
     enabled: bool = True
 
 
-class SiteProtocolCredentialBinding(StrictBaseModel):
-    credential_id: str
-    credential_name: str = ""
-    enabled: bool = True
-    sort_order: int = Field(default=0, ge=0)
-
-
-class SiteProtocolCredentialBindingInput(StrictBaseModel):
-    credential_id: str = Field(min_length=1)
-    enabled: bool = True
-
-
 class SiteModel(StrictBaseModel):
     id: str
     credential_id: str
@@ -228,7 +216,7 @@ class SiteProtocolConfig(StrictBaseModel):
     param_override: str = ""
     match_regex: str = ""
     base_url_id: str = Field(min_length=1)
-    bindings: list[SiteProtocolCredentialBinding] = Field(default_factory=list)
+    credential_id: str = ""
     models: list[SiteModel] = Field(default_factory=list)
 
 
@@ -241,7 +229,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
     param_override: str = ""
     match_regex: str = ""
     base_url_id: str = Field(min_length=1)
-    bindings: list[SiteProtocolCredentialBindingInput] = Field(default_factory=list)
+    credential_id: str = ""
     models: list[SiteModelInput] = Field(default_factory=list)
 
     @field_validator("match_regex")
@@ -304,7 +292,7 @@ class SiteModelFetchRequest(StrictBaseModel):
     channel_proxy: str = ""
     match_regex: str = ""
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
-    bindings: list[SiteProtocolCredentialBindingInput] = Field(default_factory=list)
+    credential_id: str = Field(min_length=1)
 
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
@@ -511,7 +499,7 @@ class ModelGroupItem(StrictBaseModel):
     channel_id: str
     channel_name: str = ""
     protocol: ProtocolKind | None = None
-    credential_id: str = ""
+    credential_id: str = Field(min_length=1)
     credential_name: str = ""
     credential_number: int = Field(default=0, ge=0)
     model_name: str
@@ -521,7 +509,7 @@ class ModelGroupItem(StrictBaseModel):
 
 class ModelGroupItemInput(StrictBaseModel):
     channel_id: str = Field(min_length=1)
-    credential_id: str = ""
+    credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     enabled: bool = True
 
@@ -613,7 +601,7 @@ class ModelGroupCandidateItem(StrictBaseModel):
     channel_id: str
     channel_name: str
     protocol: ProtocolKind
-    credential_id: str = ""
+    credential_id: str = Field(min_length=1)
     credential_name: str = ""
     credential_number: int = Field(default=0, ge=0)
     base_url: str

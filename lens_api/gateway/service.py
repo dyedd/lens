@@ -752,23 +752,34 @@ async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Resp
 async def fetch_site_models(
     payload: SiteModelFetchRequest, _: Any = Depends(get_current_admin)
 ) -> list[SiteModelFetchItem]:
-    previews = await app_state.store.fetch_models_preview(payload)
+    try:
+        previews = await app_state.store.fetch_models_preview(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     items: list[SiteModelFetchItem] = []
     seen: set[tuple[str, str]] = set()
     for preview in previews:
+        credential = next(
+            item
+            for item in payload.credentials
+            if (item.id or "") == preview["credential_id"]
+        )
         channel = ChannelConfig(
             id="preview",
             name=preview["credential_name"] or "preview",
             protocol=payload.protocol,
             base_url=payload.base_url,
-            api_key=next(
-                item.api_key
-                for item in payload.credentials
-                if (item.id or "") == preview["credential_id"]
-            ),
+            api_key=credential.api_key,
             headers=payload.headers,
             model_patterns=[],
-            keys=[],
+            keys=[
+                {
+                    "id": preview["credential_id"],
+                    "key": credential.api_key,
+                    "remark": preview["credential_name"],
+                    "enabled": True,
+                }
+            ],
             models=[],
             channel_proxy=payload.channel_proxy,
             param_override="",
@@ -1838,6 +1849,23 @@ async def _try_target(
             upstream_body=upstream_body,
             exc=exc,
         )
+    except HTTPException as exc:
+        return await _record_target_failure(
+            target=target,
+            channel=channel,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=effective_user_agent,
+            upstream_body=upstream_body,
+            exc=UpstreamRequestError(
+                status_code=exc.status_code,
+                detail=exc.detail,
+                router_status_code=exc.status_code,
+            ),
+        )
 
     log_ctx.attempts.append(
         AttemptLog(
@@ -2645,7 +2673,7 @@ async def _resolve_routing_plan(
             RouteTarget(
                 channel=channel_map[item.channel_id],
                 model_name=item.model_name,
-                credential_id=item.credential_id or None,
+                credential_id=item.credential_id,
                 credential_name=item.credential_name or None,
             )
             for item in resolved_group.items
