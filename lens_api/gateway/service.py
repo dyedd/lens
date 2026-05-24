@@ -106,6 +106,7 @@ from ..persistence.domain_store import (
     SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_LATEST_VERSION,
     SETTING_LATEST_VERSION_URL,
+    SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
     SETTING_RELAY_LOG_KEEP_PERIOD,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
@@ -1372,6 +1373,7 @@ _OPENAI_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
         ProtocolKind.OPENAI_EMBEDDING,
     }
 )
+_ALL_MODEL_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(ProtocolKind)
 
 
 def _filtered_group_names(
@@ -1391,9 +1393,11 @@ def _filtered_group_names(
 
 
 def _build_openai_models_payload(
-    groups: list[ModelGroup], gateway_key: GatewayApiKey
+    groups: list[ModelGroup],
+    gateway_key: GatewayApiKey,
+    protocols: frozenset[ProtocolKind] | set[ProtocolKind] = _OPENAI_LIST_PROTOCOLS,
 ) -> dict[str, Any]:
-    names = _filtered_group_names(groups, gateway_key, _OPENAI_LIST_PROTOCOLS)
+    names = _filtered_group_names(groups, gateway_key, protocols)
     return {
         "object": "list",
         "data": [
@@ -1456,6 +1460,11 @@ async def list_gateway_models(
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
     groups = await app_state.domain_store.list_groups()
+    runtime = await app_state.domain_store.get_runtime_settings()
+    if runtime["model_list_compat_mode_enabled"]:
+        return _build_openai_models_payload(
+            groups, gateway_key, _ALL_MODEL_LIST_PROTOCOLS
+        )
     if request.headers.get("anthropic-version"):
         return _build_anthropic_models_payload(groups, gateway_key)
     return _build_openai_models_payload(groups, gateway_key)
