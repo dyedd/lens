@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
@@ -31,6 +32,7 @@ def build_upstream_request(
     settings: Settings,
     credential_id: str | None = None,
     user_agent: str | None = None,
+    forwarded_headers: Mapping[str, str] | None = None,
 ) -> UpstreamRequest:
     api_key = resolve_channel_api_key(channel, credential_id=credential_id)
     proxy_url = channel.channel_proxy.strip() or None
@@ -73,6 +75,8 @@ def build_upstream_request(
             "anthropic-version": settings.anthropic_version,
             "content-type": "application/json",
         }
+        if forwarded_headers:
+            default_headers.update(forwarded_headers)
     else:
         default_headers = {
             "authorization": f"Bearer {api_key}",
