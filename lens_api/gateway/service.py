@@ -347,7 +347,8 @@ class UpstreamRequestError(HTTPException):
 class StreamCapture:
     saw_first_chunk: bool = False
     first_token_latency_ms: int = 0
-    response_content: str | None = None
+    response_content_chunks: list[str] = field(default_factory=list)
+    client_response_content_chunks: list[str] = field(default_factory=list)
     completed: bool = False
     client_disconnected: bool = False
     drain_task: asyncio.Task[None] | None = None
@@ -2221,7 +2222,7 @@ def _build_stream_result(
         converted_iter = convert_stream_iterator(
             client_protocol, channel.protocol, raw_iter, body.get("model", "")
         )
-        converted_iter = _capture_stream_iterator_errors(converted_iter, capture)
+        converted_iter = _capture_converted_stream_iterator(converted_iter, capture)
         stream_media = "text/event-stream"
     else:
         converted_iter = raw_iter
@@ -2294,7 +2295,7 @@ async def _build_json_result(
         output_cost_usd=cost[1],
         total_cost_usd=cost[2],
         request_content=request_content,
-        response_content=_decode_content_bytes(response.content),
+        response_content=_decode_content_bytes(content),
     )
 
 
@@ -2866,22 +2867,44 @@ async def _record_stream_request_log(
     if capture is not None and capture.drain_task is not None:
         await capture.drain_task
     raw_content = (
-        capture.response_content if capture is not None else result.response_content
+        _join_stream_chunks(capture.response_content_chunks)
+        if capture is not None
+        else result.response_content
     )
+    response_protocol = channel.protocol
+    response_raw_content = raw_content
+    client_response_content = (
+        _join_stream_chunks(capture.client_response_content_chunks)
+        if capture is not None
+        else None
+    )
+    if (
+        capture is not None
+        and needs_conversion(protocol, channel.protocol)
+        and client_response_content
+    ):
+        response_protocol = protocol
+        response_raw_content = client_response_content
     parse_errors = capture.parse_errors if capture is not None else None
     try:
-        parsed = _extract_stream_usage(protocol, raw_content, parse_errors=parse_errors)
+        parsed = _extract_stream_usage(
+            channel.protocol, raw_content, parse_errors=parse_errors
+        )
     except ValueError as exc:
         if capture is not None:
             capture.parse_errors.append(str(exc))
         parsed = dict(_EMPTY_USAGE)
     try:
-        distilled_content = _distill_stream_response_content(protocol, raw_content)
+        distilled_content = _distill_stream_response_content(
+            response_protocol, response_raw_content
+        )
     except ValueError as exc:
         if capture is not None:
             capture.parse_errors.append(str(exc))
-        distilled_content = raw_content
-    capture_issue = _describe_stream_capture_issue(protocol, capture, raw_content)
+        distilled_content = response_raw_content
+    capture_issue = _describe_stream_capture_issue(
+        channel.protocol, capture, raw_content
+    )
     upstream_model_name = parsed["resolved_model"] or result.upstream_model_name
     input_tokens = parsed["input_tokens"]
     cache_read_input_tokens = parsed["cache_read_input_tokens"]
@@ -3041,7 +3064,7 @@ async def _pump_stream_response(
                     )
             text = chunk.decode("utf-8", errors="replace")
             if text:
-                capture.response_content = (capture.response_content or "") + text
+                capture.response_content_chunks.append(text)
             if not capture.client_disconnected:
                 chunk_queue.put_nowait(chunk)
         capture.completed = True
@@ -3069,14 +3092,21 @@ async def _consume_stream_queue(
         raise
 
 
-async def _capture_stream_iterator_errors(
+async def _capture_converted_stream_iterator(
     raw_iterator: AsyncIterator[bytes], capture: StreamCapture
 ) -> AsyncIterator[bytes]:
     try:
         async for chunk in raw_iterator:
+            text = chunk.decode("utf-8", errors="replace")
+            if text:
+                capture.client_response_content_chunks.append(text)
             yield chunk
     except ValueError as exc:
         capture.errors.append(str(exc))
+
+
+def _join_stream_chunks(chunks: list[str]) -> str | None:
+    return "".join(chunks) if chunks else None
 
 
 def _distill_stream_response_content(
