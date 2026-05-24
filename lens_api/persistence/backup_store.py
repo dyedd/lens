@@ -56,7 +56,6 @@ from .entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolCredentialBindingEntity,
 )
 from .cronjob_store import (
     encode_weekdays,
@@ -146,7 +145,9 @@ class BackupStore:
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 
-            channel_ids, credential_ids = await self._replace_sites(session, dump.sites)
+            channel_ids, channel_credential_ids, available_model_keys = await self._replace_sites(
+                session, dump.sites
+            )
             rows_affected["sites"] = len(dump.sites)
             rows_affected["site_base_urls"] = sum(
                 len(site.base_urls) for site in dump.sites
@@ -156,11 +157,6 @@ class BackupStore:
             )
             rows_affected["site_protocol_configs"] = sum(
                 len(site.protocols) for site in dump.sites
-            )
-            rows_affected["site_protocol_bindings"] = sum(
-                len(protocol.bindings)
-                for site in dump.sites
-                for protocol in site.protocols
             )
             rows_affected["site_models"] = sum(
                 len(protocol.models)
@@ -172,7 +168,8 @@ class BackupStore:
                 session,
                 dump.groups,
                 available_channel_ids=channel_ids,
-                available_credential_ids=credential_ids,
+                channel_credential_ids=channel_credential_ids,
+                available_model_keys=available_model_keys,
             )
             rows_affected["model_groups"] = len(dump.groups)
             rows_affected["model_group_items"] = sum(
@@ -210,9 +207,8 @@ class BackupStore:
 
     async def _replace_sites(
         self, session: AsyncSession, sites: list[SiteConfig]
-    ) -> tuple[set[str], set[str]]:
+    ) -> tuple[set[str], dict[str, str], set[tuple[str, str, str]]]:
         await session.execute(delete(SiteDiscoveredModelEntity))
-        await session.execute(delete(SiteProtocolCredentialBindingEntity))
         await session.execute(delete(SiteProtocolConfigEntity))
         await session.execute(delete(SiteCredentialEntity))
         await session.execute(delete(SiteBaseUrlEntity))
@@ -222,6 +218,8 @@ class BackupStore:
         site_names: set[str] = set()
         channel_ids: set[str] = set()
         credential_ids: set[str] = set()
+        channel_credential_ids: dict[str, str] = {}
+        available_model_keys: set[tuple[str, str, str]] = set()
         base_url_ids: set[str] = set()
         model_ids: set[str] = set()
 
@@ -279,6 +277,14 @@ class BackupStore:
                     raise ValueError(
                         f"Channel base url not found in backup site {site.name}: {protocol.base_url_id}"
                     )
+                if (
+                    protocol.credential_id
+                    and protocol.credential_id not in site_credential_ids
+                ):
+                    raise ValueError(
+                        f"Channel credential not found in backup site {site.name}: {protocol.credential_id}"
+                    )
+                channel_credential_ids[protocol.id] = protocol.credential_id
                 session.add(
                     SiteProtocolConfigEntity(
                         id=protocol.id,
@@ -290,29 +296,9 @@ class BackupStore:
                         param_override=protocol.param_override,
                         match_regex=protocol.match_regex,
                         base_url_id=protocol.base_url_id,
+                        credential_id=protocol.credential_id,
                     )
                 )
-
-                seen_binding_credentials: set[str] = set()
-                for binding in protocol.bindings:
-                    if binding.credential_id not in site_credential_ids:
-                        raise ValueError(
-                            f"Channel binding credential not found in backup site {site.name}: {binding.credential_id}"
-                        )
-                    if binding.credential_id in seen_binding_credentials:
-                        raise ValueError(
-                            f"Duplicate channel binding credential in backup channel {protocol.id}: {binding.credential_id}"
-                        )
-                    seen_binding_credentials.add(binding.credential_id)
-                    session.add(
-                        SiteProtocolCredentialBindingEntity(
-                            id=f"{protocol.id}:{binding.credential_id}",
-                            protocol_config_id=protocol.id,
-                            credential_id=binding.credential_id,
-                            enabled=1 if binding.enabled else 0,
-                            sort_order=binding.sort_order,
-                        )
-                    )
 
                 for model in protocol.models:
                     if model.id in model_ids:
@@ -321,11 +307,23 @@ class BackupStore:
                         )
                     model_ids.add(model.id)
                     if (
-                        model.credential_id
-                        and model.credential_id not in site_credential_ids
+                        not model.credential_id
+                        or model.credential_id not in site_credential_ids
                     ):
                         raise ValueError(
                             f"Discovered model credential not found in backup site {site.name}: {model.credential_id}"
+                        )
+                    if model.credential_id != protocol.credential_id:
+                        raise ValueError(
+                            f"Discovered model credential is not bound in backup channel {protocol.id}: {model.credential_id}"
+                        )
+                    if model.enabled:
+                        available_model_keys.add(
+                            (
+                                protocol.id,
+                                model.credential_id,
+                                model.model_name,
+                            )
                         )
                     session.add(
                         SiteDiscoveredModelEntity(
@@ -338,7 +336,7 @@ class BackupStore:
                         )
                     )
 
-        return channel_ids, credential_ids
+        return channel_ids, channel_credential_ids, available_model_keys
 
     async def _replace_groups(
         self,
@@ -346,7 +344,8 @@ class BackupStore:
         groups: list[ModelGroup],
         *,
         available_channel_ids: set[str],
-        available_credential_ids: set[str],
+        channel_credential_ids: dict[str, str],
+        available_model_keys: set[tuple[str, str, str]],
     ) -> None:
         await session.execute(delete(ModelGroupItemEntity))
         await session.execute(delete(ModelGroupEntity))
@@ -387,12 +386,14 @@ class BackupStore:
                     raise ValueError(
                         f"Model group channel not found in backup sites: {item.channel_id}"
                     )
-                if (
-                    item.credential_id
-                    and item.credential_id not in available_credential_ids
-                ):
+                if item.credential_id != channel_credential_ids[item.channel_id]:
                     raise ValueError(
-                        f"Model group credential not found in backup sites: {item.credential_id}"
+                        f"Model group credential is not bound in backup channel {item.channel_id}: {item.credential_id}"
+                    )
+                target = (item.channel_id, item.credential_id, item.model_name)
+                if target not in available_model_keys:
+                    raise ValueError(
+                        f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
                     )
                 session.add(
                     ModelGroupItemEntity(
@@ -739,28 +740,8 @@ class BackupStore:
             .all()
         )
         protocol_ids = [item.id for item in protocol_rows]
-        binding_rows = []
         model_rows = []
         if protocol_ids:
-            binding_rows = (
-                (
-                    await session.execute(
-                        select(SiteProtocolCredentialBindingEntity)
-                        .where(
-                            SiteProtocolCredentialBindingEntity.protocol_config_id.in_(
-                                protocol_ids
-                            )
-                        )
-                        .order_by(
-                            SiteProtocolCredentialBindingEntity.protocol_config_id.asc(),
-                            SiteProtocolCredentialBindingEntity.sort_order.asc(),
-                            SiteProtocolCredentialBindingEntity.id.asc(),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
             model_rows = (
                 (
                     await session.execute(
@@ -806,20 +787,6 @@ class BackupStore:
             credentials_by_site.setdefault(row.site_id, []).append(item)
             credentials_by_id[row.id] = item
 
-        bindings_by_protocol: dict[str, list[dict[str, object]]] = {}
-        for row in binding_rows:
-            credential_name = str(
-                credentials_by_id.get(row.credential_id, {}).get("name", "")
-            )
-            bindings_by_protocol.setdefault(row.protocol_config_id, []).append(
-                {
-                    "credential_id": row.credential_id,
-                    "credential_name": credential_name,
-                    "enabled": bool(row.enabled),
-                    "sort_order": row.sort_order,
-                }
-            )
-
         models_by_protocol: dict[str, list[dict[str, object]]] = {}
         for row in model_rows:
             credential_name = str(
@@ -853,7 +820,7 @@ class BackupStore:
                     "param_override": row.param_override,
                     "match_regex": row.match_regex,
                     "base_url_id": row.base_url_id,
-                    "bindings": bindings_by_protocol.get(row.id, []),
+                    "credential_id": row.credential_id,
                     "models": models_by_protocol.get(row.id, []),
                 }
             )

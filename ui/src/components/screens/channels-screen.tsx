@@ -29,7 +29,6 @@ import {
   SiteModelTestPayload,
   SiteModelTestResult,
   SitePayload,
-  SiteProtocolCredentialBindingInput,
   SiteModelInput,
   SiteRuntimeSummary,
   SettingItem,
@@ -46,7 +45,6 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
   FieldDescription,
@@ -123,10 +121,9 @@ type FormProtocol = {
   match_regex: string;
   manual_model_name: string;
   base_url_id: string;
-  bindings: SiteProtocolCredentialBindingInput[];
+  credential_id: string;
   models: SiteModelInput[];
   expanded: boolean;
-  model_filter_credential_id?: string | null;
 };
 
 type FormState = {
@@ -161,7 +158,6 @@ type ChannelSort =
   | "name-desc"
   | "models-desc"
   | "protocols-desc";
-type SiteProtocolLike = Site["protocols"][number];
 
 const emptyProtocol = (baseUrlId = ""): FormProtocol => ({
   id: null,
@@ -173,10 +169,9 @@ const emptyProtocol = (baseUrlId = ""): FormProtocol => ({
   match_regex: "",
   manual_model_name: "",
   base_url_id: baseUrlId,
-  bindings: [],
+  credential_id: "",
   models: [],
   expanded: true,
-  model_filter_credential_id: null,
 });
 
 const emptyForm = (): FormState => {
@@ -726,63 +721,6 @@ function SiteHealthPreview({
   );
 }
 
-function protocolFilterStorageKey(siteId: string, protocolId: string) {
-  return `lens:channel-model-filter:${siteId}:${protocolId}`;
-}
-
-function readStoredProtocolFilter(siteId: string, protocolId: string) {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(
-    protocolFilterStorageKey(siteId, protocolId),
-  );
-}
-
-function writeStoredProtocolFilter(
-  siteId: string,
-  protocolId: string,
-  credentialId: string | null,
-) {
-  if (typeof window === "undefined") return;
-  const key = protocolFilterStorageKey(siteId, protocolId);
-  if (!credentialId) {
-    window.localStorage.removeItem(key);
-    return;
-  }
-  window.localStorage.setItem(key, credentialId);
-}
-
-function inferProtocolFilterCredential(
-  siteId: string,
-  protocol: SiteProtocolLike,
-) {
-  const availableCredentialIds = new Set(
-    protocol.bindings
-      .filter((binding) => binding.enabled)
-      .map((binding) => binding.credential_id),
-  );
-  const stored = readStoredProtocolFilter(siteId, protocol.id);
-  if (stored && availableCredentialIds.has(stored)) {
-    return stored;
-  }
-
-  const modelCredentialId =
-    protocol.models.find(
-      (model) =>
-        model.enabled && availableCredentialIds.has(model.credential_id),
-    )?.credential_id ??
-    protocol.models.find((model) =>
-      availableCredentialIds.has(model.credential_id),
-    )?.credential_id;
-  if (modelCredentialId) {
-    return modelCredentialId;
-  }
-
-  const firstEnabledBinding = protocol.bindings.find(
-    (binding) => binding.enabled,
-  )?.credential_id;
-  return firstEnabledBinding ?? null;
-}
-
 function toForm(site: Site): FormState {
   const baseUrls = site.base_urls.length
     ? site.base_urls.map((item) => ({
@@ -813,10 +751,7 @@ function toForm(site: Site): FormState {
       match_regex: safeText(item.match_regex),
       manual_model_name: "",
       base_url_id: resolveBaseUrlId(baseUrls, item.base_url_id),
-      bindings: item.bindings.map((binding) => ({
-        credential_id: binding.credential_id,
-        enabled: binding.enabled,
-      })),
+      credential_id: item.credential_id,
       models: item.models.map((model) => ({
         id: model.id,
         credential_id: model.credential_id,
@@ -824,7 +759,6 @@ function toForm(site: Site): FormState {
         enabled: model.enabled,
       })),
       expanded: true,
-      model_filter_credential_id: inferProtocolFilterCredential(site.id, item),
     })),
   };
 }
@@ -853,65 +787,69 @@ function toPayload(form: FormState): SitePayload {
         enabled: item.enabled,
       }))
       .filter((item) => item.api_key),
-    protocols: form.protocols.map((item) => ({
-      id: item.id,
-      protocol: item.protocol,
-      enabled: item.enabled,
-      headers: Object.fromEntries(
-        item.headers
-          .map((entry) => [entry.key.trim(), entry.value] as const)
-          .filter(([key]) => key),
-      ),
-      channel_proxy: item.channel_proxy.trim(),
-      param_override: item.param_override.trim(),
-      match_regex: safeText(item.match_regex).trim(),
-      base_url_id: item.base_url_id,
-      bindings: item.bindings.filter((binding) => binding.credential_id),
-      models: item.models
-        .map((model) => ({
-          id: model.id,
-          credential_id: model.credential_id,
-          model_name: model.model_name.trim(),
-          enabled: model.enabled,
-        }))
-        .filter((model) => model.credential_id && model.model_name),
-    })),
+    protocols: form.protocols.map((item) => {
+      const credentialId = effectiveProtocolCredentialId(
+        item,
+        form.credentials,
+      );
+      return {
+        id: item.id,
+        protocol: item.protocol,
+        enabled: item.enabled,
+        headers: Object.fromEntries(
+          item.headers
+            .map((entry) => [entry.key.trim(), entry.value] as const)
+            .filter(([key]) => key),
+        ),
+        channel_proxy: item.channel_proxy.trim(),
+        param_override: item.param_override.trim(),
+        match_regex: safeText(item.match_regex).trim(),
+        base_url_id: item.base_url_id,
+        credential_id: credentialId,
+        models: item.models
+          .map((model) => ({
+            id: model.id,
+            credential_id: model.credential_id,
+            model_name: model.model_name.trim(),
+            enabled: model.enabled,
+          }))
+          .filter(
+            (model) =>
+              model.credential_id === credentialId && model.model_name,
+          ),
+      };
+    }),
   };
 }
 
-function effectiveProtocolBindingIds(
-  protocol: Pick<FormProtocol, "bindings">,
+function effectiveProtocolCredentialId(
+  protocol: Pick<FormProtocol, "credential_id">,
   credentials: Array<Pick<FormCredential, "id" | "api_key">>,
 ) {
   const credentialIds = credentials
     .filter((item) => item.api_key.trim())
     .map((item) => item.id);
-  const bindingIds = protocol.bindings
-    .filter((binding) => credentialIds.includes(binding.credential_id))
-    .map((binding) => binding.credential_id);
-  return bindingIds.length ? bindingIds : credentialIds;
+  return credentialIds.includes(protocol.credential_id)
+    ? protocol.credential_id
+    : "";
 }
 
-function protocolEffectiveBindingKeys(
+function protocolCredentialKeys(
   protocol: FormProtocol,
   baseUrlIds: Set<string>,
-  credentials: Array<Pick<FormCredential, "id" | "api_key">>,
 ) {
   if (!baseUrlIds.has(protocol.base_url_id)) return [];
-  return effectiveProtocolBindingIds(protocol, credentials).map((credentialId) =>
-    [protocol.protocol, protocol.base_url_id, credentialId].join(":"),
-  );
+  return [[protocol.protocol, protocol.base_url_id, protocol.credential_id].join(":")];
 }
 
-function duplicateProtocolBindingKeys(
+function duplicateProtocolCredentialKeys(
   protocols: FormProtocol[],
   baseUrls: Array<{ id: string }>,
-  credentials: Array<Pick<FormCredential, "id" | "api_key">>,
 ) {
   const baseUrlIds = new Set(baseUrls.map((item) => item.id));
   const counts = new Map<string, number>();
   for (const item of protocols) {
-    for (const key of protocolEffectiveBindingKeys(item, baseUrlIds, credentials)) {
+    for (const key of protocolCredentialKeys(item, baseUrlIds)) {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
@@ -1107,8 +1045,8 @@ function ProtocolConfigItem({
   protocolIndex,
   locale,
   fetchingProtocolIndex,
+  duplicatedProtocolCredentialKeys,
   onUpdateProtocol,
-  onUpdateProtocolFilter,
   onRemoveProtocol,
   onAddManualModel,
   onFetchModels,
@@ -1120,8 +1058,8 @@ function ProtocolConfigItem({
   protocolIndex: number;
   locale: Locale;
   fetchingProtocolIndex: number | null;
+  duplicatedProtocolCredentialKeys: Set<string>;
   onUpdateProtocol: (index: number, patch: Partial<FormProtocol>) => void;
-  onUpdateProtocolFilter: (index: number, credentialId: string | null) => void;
   onRemoveProtocol: (index: number) => void;
   onAddManualModel: (index: number, credentialId: string) => void;
   onFetchModels: (index: number) => void;
@@ -1130,46 +1068,34 @@ function ProtocolConfigItem({
 }) {
   const submittedBaseUrls = formBaseUrlsForPayload(form);
   const submittedBaseUrlIds = new Set(submittedBaseUrls.map((item) => item.id));
-  const duplicatedProtocolBindingKeys = duplicateProtocolBindingKeys(
-    form.protocols,
-    submittedBaseUrls,
-    form.credentials,
-  );
-  const protocolBaseUrlDuplicated = protocolEffectiveBindingKeys(
+  const protocolBaseUrlDuplicated = protocolCredentialKeys(
     protocol,
     submittedBaseUrlIds,
-    form.credentials,
-  ).some((key) => duplicatedProtocolBindingKeys.has(key));
+  ).some((key) => duplicatedProtocolCredentialKeys.has(key));
   const activeCredentialIds = new Set(
     form.credentials
       .filter((item) => item.enabled && item.api_key.trim())
       .map((item) => item.id),
   );
-  const boundCredentialOptions = form.credentials
+  const credentialOptions = form.credentials
     .map((item, index) => ({
       ...item,
       display_name: credentialLabel(item, index, locale),
     }))
     .filter((item) => item.api_key.trim());
-  const effectiveBindingIds = new Set(
-    effectiveProtocolBindingIds(protocol, form.credentials),
+  const selectedCredentialId = protocol.credential_id;
+  const selectedCredentialActive = activeCredentialIds.has(selectedCredentialId);
+  const selectedCredentialKnown = credentialOptions.some(
+    (item) => item.id === selectedCredentialId,
   );
-  const credentialOptions = boundCredentialOptions.filter(
-    (item) => activeCredentialIds.has(item.id) && effectiveBindingIds.has(item.id),
-  );
-  const selectedCredentialId = credentialOptions.some(
-    (item) => item.id === protocol.model_filter_credential_id,
-  )
-    ? protocol.model_filter_credential_id || ""
-    : credentialOptions[0]?.id || "";
   const credentialLabelsById = new Map(
-    boundCredentialOptions.map((item) => [item.id, item.display_name] as const),
+    credentialOptions.map((item) => [item.id, item.display_name] as const),
   );
   const visibleModels = protocol.models
     .map((model, modelIndex) => ({ model, modelIndex }))
     .filter(
       ({ model }) =>
-        !selectedCredentialId || model.credential_id === selectedCredentialId,
+        selectedCredentialId && model.credential_id === selectedCredentialId,
     );
 
   return (
@@ -1216,29 +1142,38 @@ function ProtocolConfigItem({
           </Field>
           <Field>
             <FieldLabel>
-              {locale === "zh-CN" ? "当前操作密钥" : "Operation key"}
+              {locale === "zh-CN" ? "密钥" : "Key"}
             </FieldLabel>
             <NativeSelect
               className={selectClassName()}
               value={selectedCredentialId}
-              onChange={(event) =>
-                onUpdateProtocolFilter(
-                  protocolIndex,
-                  event.target.value || null,
-                )
-              }
+              onChange={(event) => {
+                const credentialId = event.target.value;
+                onUpdateProtocol(protocolIndex, {
+                  credential_id: credentialId,
+                  models: protocol.models.filter(
+                    (model) => model.credential_id === credentialId,
+                  ),
+                });
+              }}
             >
+              <NativeSelectOption value="">
+                {locale === "zh-CN" ? "未绑定" : "Unbound"}
+              </NativeSelectOption>
+              {selectedCredentialId && !selectedCredentialKnown ? (
+                <NativeSelectOption value={selectedCredentialId} disabled>
+                  {locale === "zh-CN"
+                    ? `无效密钥：${selectedCredentialId}`
+                    : `Invalid key: ${selectedCredentialId}`}
+                </NativeSelectOption>
+              ) : null}
               {credentialOptions.length ? (
                 credentialOptions.map((item) => (
                   <NativeSelectOption key={item.id} value={item.id}>
                     {item.display_name}
                   </NativeSelectOption>
                 ))
-              ) : (
-                <NativeSelectOption value="">
-                  {locale === "zh-CN" ? "无可用密钥" : "No key"}
-                </NativeSelectOption>
-              )}
+              ) : null}
             </NativeSelect>
           </Field>
           <div className="flex h-8 w-8 items-center justify-center xl:self-end">
@@ -1298,65 +1233,6 @@ function ProtocolConfigItem({
               : "Duplicate protocol, Base URL, and key"}
           </div>
         ) : null}
-
-        <FieldSet className="gap-2">
-          <FieldLegend>
-            {locale === "zh-CN" ? "绑定密钥" : "Bound keys"}
-          </FieldLegend>
-          <FieldGroup className="flex flex-wrap gap-2">
-            {boundCredentialOptions.length ? (
-              boundCredentialOptions.map((item) => {
-                const checked = effectiveBindingIds.has(item.id);
-                const disabled = checked && effectiveBindingIds.size <= 1;
-                return (
-                  <Field
-                    key={item.id}
-                    orientation="horizontal"
-                    data-disabled={disabled ? "" : undefined}
-                    className="min-h-8 flex-none rounded-md border px-2.5 py-1.5"
-                  >
-                    <Checkbox
-                      checked={checked}
-                      disabled={disabled}
-                      onCheckedChange={(value) => {
-                        const nextIds = new Set(effectiveBindingIds);
-                        if (value === true) {
-                          nextIds.add(item.id);
-                        } else if (nextIds.size > 1) {
-                          nextIds.delete(item.id);
-                        }
-                        const nextBindings = boundCredentialOptions
-                          .filter((credential) => nextIds.has(credential.id))
-                          .map((credential) => ({
-                            credential_id: credential.id,
-                            enabled: true,
-                          }));
-                        onUpdateProtocol(protocolIndex, {
-                          bindings: nextBindings,
-                          models: protocol.models.filter((model) =>
-                            nextIds.has(model.credential_id),
-                          ),
-                          model_filter_credential_id: nextIds.has(
-                            selectedCredentialId,
-                          )
-                            ? selectedCredentialId
-                            : nextBindings[0]?.credential_id || null,
-                        });
-                      }}
-                    />
-                    <FieldLabel className="text-sm font-normal">
-                      {item.display_name}
-                    </FieldLabel>
-                  </Field>
-                );
-              })
-            ) : (
-              <div className="text-sm text-muted-foreground">
-                {locale === "zh-CN" ? "无可用密钥" : "No key"}
-              </div>
-            )}
-          </FieldGroup>
-        </FieldSet>
 
         {protocol.expanded ? (
           <div className="grid gap-3 pt-1">
@@ -1439,7 +1315,7 @@ function ProtocolConfigItem({
                       !form.base_urls.some(
                         (item) => item.enabled && item.url.trim(),
                       ) ||
-                      !activeCredentialIds.size
+                      !selectedCredentialActive
                     }
                   >
                     <RefreshCcw
@@ -2151,6 +2027,18 @@ export function ChannelsScreen() {
     statusFilter !== "all",
     protocolFilter !== "all",
   ].filter(Boolean).length;
+  const submittedBaseUrls = useMemo(
+    () => formBaseUrlsForPayload(form),
+    [form],
+  );
+  const duplicatedProtocolCredentialKeys = useMemo(
+    () =>
+      duplicateProtocolCredentialKeys(
+        form.protocols,
+        submittedBaseUrls,
+      ),
+    [form.protocols, submittedBaseUrls],
+  );
   const currentSnapshot = useMemo(
     () => JSON.stringify(toPayload(form)),
     [form],
@@ -2226,17 +2114,6 @@ export function ChannelsScreen() {
     setEditingSiteId(null);
   }
 
-  function updateProtocolFilter(
-    protocolIndex: number,
-    credentialId: string | null,
-  ) {
-    const protocol = form.protocols[protocolIndex];
-    if (editingSiteId && protocol?.id) {
-      writeStoredProtocolFilter(editingSiteId, protocol.id, credentialId);
-    }
-    updateProtocol(protocolIndex, { model_filter_credential_id: credentialId });
-  }
-
   function resetFilters() {
     setSearch("");
     setStatusFilter("all");
@@ -2254,12 +2131,7 @@ export function ChannelsScreen() {
       );
       return;
     }
-    const duplicatedProtocolBindings = duplicateProtocolBindingKeys(
-      form.protocols,
-      formBaseUrlsForPayload(form),
-      form.credentials,
-    );
-    if (duplicatedProtocolBindings.size) {
+    if (duplicatedProtocolCredentialKeys.size) {
       const message =
         locale === "zh-CN"
           ? "同一个渠道内不允许重复协议、地址来源和密钥"
@@ -2361,10 +2233,7 @@ export function ChannelsScreen() {
             param_override: item.param_override,
             match_regex: item.match_regex,
             base_url_id: item.base_url_id,
-            bindings: item.bindings.map((binding) => ({
-              credential_id: binding.credential_id,
-              enabled: binding.enabled,
-            })),
+            credential_id: item.credential_id,
             models: item.models.map((model) => ({
               id: model.id,
               credential_id: model.credential_id,
@@ -2420,24 +2289,23 @@ export function ChannelsScreen() {
       if (!target) {
         return current;
       }
+      const nextCredentials = current.credentials.filter(
+        (_, itemIndex) => itemIndex !== index,
+      );
       return {
         ...current,
-        credentials: current.credentials.filter(
-          (_, itemIndex) => itemIndex !== index,
-        ),
-        protocols: current.protocols.map((protocol) => ({
-          ...protocol,
-          bindings: protocol.bindings.filter(
-            (binding) => binding.credential_id !== target.id,
-          ),
-          models: protocol.models.filter(
-            (model) => model.credential_id !== target.id,
-          ),
-          model_filter_credential_id:
-            protocol.model_filter_credential_id === target.id
-              ? null
-              : protocol.model_filter_credential_id,
-        })),
+        credentials: nextCredentials,
+        protocols: current.protocols.map((protocol) => {
+          const credentialId =
+            protocol.credential_id === target.id ? "" : protocol.credential_id;
+          return {
+            ...protocol,
+            credential_id: credentialId,
+            models: protocol.models.filter(
+              (model) => model.credential_id !== target.id,
+            ),
+          };
+        }),
       };
     });
   }
@@ -2634,17 +2502,14 @@ export function ChannelsScreen() {
   async function fetchProtocolModels(protocolIndex: number) {
     const protocol = form.protocols[protocolIndex];
     if (!protocol) return;
-    const activeCredentials = form.credentials
-      .filter((item) => item.enabled && item.api_key.trim())
-      .map((item, index) => ({
-        ...item,
-        display_name: credentialLabel(item, index, locale),
-      }));
-    const selectedCredentialId = activeCredentials.some(
-      (item) => item.id === protocol.model_filter_credential_id,
-    )
-      ? protocol.model_filter_credential_id || ""
-      : activeCredentials[0]?.id || "";
+    const selectedCredentialId = effectiveProtocolCredentialId(
+      protocol,
+      form.credentials,
+    );
+    if (!selectedCredentialId) {
+      toast.error(locale === "zh-CN" ? "协议密钥无效" : "Protocol key is invalid");
+      return;
+    }
     setFetchingProtocolIndex(protocolIndex);
     try {
       const activeBaseUrl = activeBaseUrlValue(form, protocol);
@@ -2662,11 +2527,7 @@ export function ChannelsScreen() {
             enabled: item.enabled,
           }))
           .filter((item) => item.api_key),
-        bindings: selectedCredentialId
-          ? [{ credential_id: selectedCredentialId, enabled: true }]
-          : form.credentials
-              .filter((item) => item.enabled && item.api_key.trim())
-              .map((item) => ({ credential_id: item.id, enabled: true })),
+        credential_id: selectedCredentialId,
       };
       const models = await apiRequest<SiteModelFetchItem[]>(
         "/admin/site-model-discoveries",
@@ -3195,7 +3056,9 @@ export function ChannelsScreen() {
                           ...current,
                           protocols: [
                             ...current.protocols,
-                            emptyProtocol(defaultBaseUrlId(current.base_urls)),
+                            {
+                              ...emptyProtocol(defaultBaseUrlId(current.base_urls)),
+                            },
                           ],
                         }))
                       }
@@ -3215,8 +3078,10 @@ export function ChannelsScreen() {
                         protocolIndex={protocolIndex}
                         locale={locale}
                         fetchingProtocolIndex={fetchingProtocolIndex}
+                        duplicatedProtocolCredentialKeys={
+                          duplicatedProtocolCredentialKeys
+                        }
                         onUpdateProtocol={updateProtocol}
-                        onUpdateProtocolFilter={updateProtocolFilter}
                         onRemoveProtocol={(index) =>
                           setForm((current) => ({
                             ...current,

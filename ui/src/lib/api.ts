@@ -97,18 +97,6 @@ export type SiteCredentialInput = {
   enabled: boolean;
 };
 
-export type SiteProtocolCredentialBinding = {
-  credential_id: string;
-  credential_name: string;
-  enabled: boolean;
-  sort_order: number;
-};
-
-export type SiteProtocolCredentialBindingInput = {
-  credential_id: string;
-  enabled: boolean;
-};
-
 export type SiteModel = {
   id: string;
   credential_id: string;
@@ -134,7 +122,7 @@ export type SiteProtocolConfig = {
   param_override: string;
   match_regex: string;
   base_url_id: string;
-  bindings: SiteProtocolCredentialBinding[];
+  credential_id: string;
   models: SiteModel[];
 };
 
@@ -147,7 +135,7 @@ export type SiteProtocolConfigInput = {
   param_override: string;
   match_regex: string;
   base_url_id: string;
-  bindings: SiteProtocolCredentialBindingInput[];
+  credential_id: string;
   models: SiteModelInput[];
 };
 
@@ -198,7 +186,7 @@ export type SiteModelFetchPayload = {
   channel_proxy: string;
   match_regex: string;
   credentials: SiteCredentialInput[];
-  bindings: SiteProtocolCredentialBindingInput[];
+  credential_id: string;
 };
 
 export type SiteModelFetchItem = {
