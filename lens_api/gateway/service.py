@@ -148,6 +148,8 @@ GENERIC_USER_AGENT_TOKENS = (
     "urllib",
 )
 
+ANTHROPIC_FORWARD_HEADER_PREFIX = "anthropic-"
+
 CRONJOB_SPECS = (
     CronjobSpec(
         id=TASK_REQUEST_LOG_PRUNE,
@@ -1367,6 +1369,7 @@ async def proxy_anthropic_messages(
         body,
         gateway_key,
         request.headers.get("user-agent"),
+        _forward_anthropic_headers(request.headers),
     )
 
 
@@ -1600,6 +1603,7 @@ async def _proxy_protocol(
     body: dict[str, Any],
     gateway_key: GatewayApiKey,
     inbound_user_agent: str | None = None,
+    inbound_headers: Mapping[str, str] | None = None,
 ) -> Response:
     channels, runtime = await asyncio.gather(
         app_state.store.list(),
@@ -1746,6 +1750,7 @@ async def _proxy_protocol(
                 body=body,
                 runtime=runtime,
                 upstream_user_agent=upstream_user_agent,
+                inbound_headers=inbound_headers,
                 plan=plan,
                 log_ctx=log_ctx,
                 errors=errors,
@@ -1787,6 +1792,7 @@ async def _try_target(
     body: dict[str, Any],
     runtime: dict[str, Any],
     upstream_user_agent: str,
+    inbound_headers: Mapping[str, str] | None,
     plan: RoutingPlan,
     log_ctx: _RequestLogger,
     errors: list[str],
@@ -1800,9 +1806,27 @@ async def _try_target(
             break
 
     if needs_conversion(protocol, channel.protocol):
-        upstream_body = convert_request(
-            protocol, channel.protocol, body, target.model_name
-        )
+        try:
+            upstream_body = convert_request(
+                protocol, channel.protocol, body, target.model_name
+            )
+        except ValueError as exc:
+            return await _record_target_failure(
+                target=target,
+                channel=channel,
+                runtime=runtime,
+                log_ctx=log_ctx,
+                plan=plan,
+                errors=errors,
+                attempt_started_at=attempt_started_at,
+                effective_user_agent=effective_user_agent,
+                upstream_body=body,
+                exc=UpstreamRequestError(
+                    status_code=400,
+                    detail=str(exc),
+                    router_status_code=None,
+                ),
+            )
     else:
         upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
     try:
@@ -1844,6 +1868,7 @@ async def _try_target(
             client_protocol=protocol,
             credential_id=target.credential_id,
             user_agent=upstream_user_agent,
+            forwarded_headers=inbound_headers,
         )
     except UpstreamRequestError as exc:
         return await _record_target_failure(
@@ -1999,6 +2024,7 @@ async def _call_channel(
     client_protocol: ProtocolKind | None = None,
     credential_id: str | None = None,
     user_agent: str | None = None,
+    forwarded_headers: Mapping[str, str] | None = None,
 ) -> UpstreamResult:
     upstream = build_upstream_request(
         channel,
@@ -2006,6 +2032,7 @@ async def _call_channel(
         settings,
         credential_id=credential_id,
         user_agent=user_agent,
+        forwarded_headers=forwarded_headers,
     )
     request_content = _dump_json(upstream.json_body)
     runtime = await app_state.domain_store.get_runtime_settings()
@@ -2531,6 +2558,18 @@ def _is_generic_user_agent(value: str) -> bool:
     if not normalized:
         return True
     return any(token in normalized for token in GENERIC_USER_AGENT_TOKENS)
+
+
+def _forward_anthropic_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    forwarded: dict[str, str] = {}
+    for name, value in headers.items():
+        normalized_name = name.lower()
+        if not normalized_name.startswith(ANTHROPIC_FORWARD_HEADER_PREFIX):
+            continue
+        normalized_value = value.strip()
+        if normalized_value:
+            forwarded[normalized_name] = normalized_value
+    return forwarded
 
 
 async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
@@ -3119,6 +3158,14 @@ def _restore_anthropic_stream_message(
             elif delta_type == "input_json_delta":
                 input_buffers[index] = (
                     f"{input_buffers.get(index, '')}{delta.get('partial_json') or ''}"
+                )
+            elif delta_type == "thinking_delta":
+                block["thinking"] = (
+                    f"{block.get('thinking') or ''}{delta.get('thinking') or ''}"
+                )
+            elif delta_type == "signature_delta":
+                block["signature"] = delta.get("signature") or block.get(
+                    "signature", ""
                 )
             continue
 
