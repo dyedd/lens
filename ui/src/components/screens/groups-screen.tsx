@@ -31,7 +31,12 @@ import {
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { getModelGroupAvatar, ModelAvatar } from "@/lib/model-icons";
+import {
+  getModelFamilyKey,
+  getModelFamilyLabel,
+  getModelGroupAvatar,
+  ModelAvatar,
+} from "@/lib/model-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -174,16 +179,6 @@ function matchesCandidateSearch(
     return regex.test(haystack);
   }
   return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
-}
-
-function getModelPrefix(value: string) {
-  const normalized = value.trim().toLowerCase();
-  const match = /^[a-z0-9]+/.exec(normalized);
-  return match?.[0] || normalized;
-}
-
-function formatModelPrefixLabel(value: string) {
-  return value ? value[0].toUpperCase() + value.slice(1) : value;
 }
 
 function candidateToFormItem(item: ModelGroupCandidateItem): FormItem {
@@ -846,11 +841,11 @@ export function GroupsScreen() {
   const modelPrefixOptions = useMemo(() => {
     const optionsByPrefix = new Map<string, ModelPrefixOption>();
     for (const group of groupRows) {
-      const prefix = getModelPrefix(group.name);
+      const prefix = getModelFamilyKey(group.name);
       if (prefix && !optionsByPrefix.has(prefix)) {
         optionsByPrefix.set(prefix, {
           key: prefix,
-          label: formatModelPrefixLabel(prefix),
+          label: getModelFamilyLabel(group.name),
           sampleModel: group.name,
         });
       }
@@ -885,7 +880,7 @@ export function GroupsScreen() {
     const filtered = groupRows.filter((group) => {
       if (
         effectiveSelectedModelPrefix !== "all" &&
-        getModelPrefix(group.name) !== effectiveSelectedModelPrefix
+        getModelFamilyKey(group.name) !== effectiveSelectedModelPrefix
       )
         return false;
       if (protocolFilter !== "all" && group.protocol !== protocolFilter)
@@ -1948,7 +1943,9 @@ export function GroupsScreen() {
                 </Field>
 
                 <Field>
-                  <FieldLabel>{locale === "zh-CN" ? "排序" : "Sort"}</FieldLabel>
+                  <FieldLabel>
+                    {locale === "zh-CN" ? "排序" : "Sort"}
+                  </FieldLabel>
                   <NativeSelect
                     value={sortBy}
                     className="w-full"
