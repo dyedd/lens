@@ -112,14 +112,14 @@ class ChannelStatus(str, Enum):
     DISABLED = "disabled"
 
 
-class ChannelKeyItem(BaseModel):
+class ChannelKeyItem(StrictBaseModel):
     id: str = ""
     key: str = Field(min_length=1)
     remark: str = ""
     enabled: bool = True
 
 
-class ChannelDiscoveredModel(BaseModel):
+class ChannelDiscoveredModel(StrictBaseModel):
     id: str = ""
     credential_id: str = ""
     credential_name: str = ""
@@ -345,7 +345,7 @@ class SiteModelTestResult(StrictBaseModel):
     error_message: str = ""
 
 
-class ChannelKeyHealth(BaseModel):
+class ChannelKeyHealth(StrictBaseModel):
     credential_id: str
     consecutive_failures: int = 0
     cooled_until: float = 0.0
@@ -354,7 +354,7 @@ class ChannelKeyHealth(BaseModel):
     available: bool = True
 
 
-class ChannelHealth(BaseModel):
+class ChannelHealth(StrictBaseModel):
     channel_id: str
     consecutive_failures: int = 0
     last_error: str | None = None
@@ -369,7 +369,7 @@ class ChannelHealth(BaseModel):
     key_health: list[ChannelKeyHealth] = Field(default_factory=list)
 
 
-class RouteState(BaseModel):
+class RouteState(StrictBaseModel):
     protocol: ProtocolKind
     next_index: int = 0
     next_channel_id: str | None = None
@@ -379,7 +379,7 @@ class RouteState(BaseModel):
     requested_model: str | None = None
 
 
-class RoutePreview(BaseModel):
+class RoutePreview(StrictBaseModel):
     protocol: ProtocolKind
     requested_group_name: str | None = None
     resolved_group_name: str | None = None
@@ -388,7 +388,7 @@ class RoutePreview(BaseModel):
     items: list["RoutePreviewItem"] = Field(default_factory=list)
 
 
-class RoutePreviewItem(BaseModel):
+class RoutePreviewItem(StrictBaseModel):
     channel_id: str
     channel_name: str = ""
     model_name: str | None = None
@@ -405,12 +405,12 @@ class RoutePreviewRequest(StrictBaseModel):
     model: str | None = None
 
 
-class RouterSnapshot(BaseModel):
+class RouterSnapshot(StrictBaseModel):
     routes: list[RouteState]
     health: list[ChannelHealth]
 
 
-class ErrorResponse(BaseModel):
+class ErrorResponse(StrictBaseModel):
     error: dict[str, Any]
 
 
@@ -419,13 +419,13 @@ class AdminLoginRequest(StrictBaseModel):
     password: str = Field(min_length=1)
 
 
-class AuthTokenResponse(BaseModel):
+class AuthTokenResponse(StrictBaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
 
 
-class AdminProfile(BaseModel):
+class AdminProfile(StrictBaseModel):
     id: int
     username: str
 
@@ -441,26 +441,26 @@ class AdminProfileUpdateRequest(StrictBaseModel):
     new_password: str = ""
 
 
-class AdminProfileUpdateResponse(BaseModel):
+class AdminProfileUpdateResponse(StrictBaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
     profile: AdminProfile
 
 
-class PublicBranding(BaseModel):
+class PublicBranding(StrictBaseModel):
     site_name: str
     logo_url: str = ""
 
 
-class AppInfo(BaseModel):
+class AppInfo(StrictBaseModel):
     system_version: str
     site_name: str
     logo_url: str = ""
     time_zone: str
 
 
-class VersionCheckResult(BaseModel):
+class VersionCheckResult(StrictBaseModel):
     current_version: str
     latest_version: str
     release_url: str
@@ -697,7 +697,7 @@ class CronjobRunResult(StrictBaseModel):
     cronjob: CronjobItem
 
 
-class SettingItem(BaseModel):
+class SettingItem(StrictBaseModel):
     key: str
     value: str
 
@@ -884,7 +884,7 @@ class ConfigImportResult(StrictBaseModel):
     rows_affected: dict[str, int] = Field(default_factory=dict)
 
 
-class RequestLogItem(BaseModel):
+class RequestLogItem(StrictBaseModel):
     id: int
     protocol: ProtocolKind
     user_agent: str = ""
@@ -914,7 +914,7 @@ class RequestLogItem(BaseModel):
     created_at: str
 
 
-class RequestLogAttempt(BaseModel):
+class RequestLogAttempt(StrictBaseModel):
     channel_id: str
     channel_name: str
     credential_id: str | None = None
@@ -932,7 +932,7 @@ class RequestLogDetail(RequestLogItem):
     attempts: list[RequestLogAttempt] = Field(default_factory=list)
 
 
-class RequestLogPage(BaseModel):
+class RequestLogPage(StrictBaseModel):
     items: list[RequestLogItem] = Field(default_factory=list)
     total: int = 0
     limit: int = 0
@@ -941,7 +941,7 @@ class RequestLogPage(BaseModel):
     model_names: list[str] = Field(default_factory=list)
 
 
-class OverviewMetrics(BaseModel):
+class OverviewMetrics(StrictBaseModel):
     total_requests: int = 0
     successful_requests: int = 0
     failed_requests: int = 0
@@ -953,17 +953,17 @@ class OverviewMetrics(BaseModel):
     total_channels: int = 0
 
 
-class OverviewPerformanceMetrics(BaseModel):
+class OverviewPerformanceMetrics(StrictBaseModel):
     avg_requests_per_minute: float = 0.0
     avg_tokens_per_minute: float = 0.0
 
 
-class OverviewSummaryMetric(BaseModel):
+class OverviewSummaryMetric(StrictBaseModel):
     value: float
     delta: float = 0.0
 
 
-class OverviewSummary(BaseModel):
+class OverviewSummary(StrictBaseModel):
     request_count: OverviewSummaryMetric
     wait_time_ms: OverviewSummaryMetric
     total_tokens: OverviewSummaryMetric
@@ -976,7 +976,7 @@ class OverviewSummary(BaseModel):
     output_cost_usd: OverviewSummaryMetric
 
 
-class OverviewDailyPoint(BaseModel):
+class OverviewDailyPoint(StrictBaseModel):
     date: str
     request_count: int = 0
     total_tokens: int = 0
@@ -986,27 +986,27 @@ class OverviewDailyPoint(BaseModel):
     failed_requests: int = 0
 
 
-class OverviewModelMetricPoint(BaseModel):
+class OverviewModelMetricPoint(StrictBaseModel):
     model: str
     requests: int = 0
     total_tokens: int = 0
     total_cost_usd: float = 0.0
 
 
-class OverviewModelTrendPoint(BaseModel):
+class OverviewModelTrendPoint(StrictBaseModel):
     date: str
     model: str
     value: float
 
 
-class OverviewModelAnalytics(BaseModel):
+class OverviewModelAnalytics(StrictBaseModel):
     distribution: list[OverviewModelMetricPoint] = Field(default_factory=list)
     request_ranking: list[OverviewModelMetricPoint] = Field(default_factory=list)
     trend: list[OverviewModelTrendPoint] = Field(default_factory=list)
     available_models: list[str] = Field(default_factory=list)
 
 
-class OverviewDashboardData(BaseModel):
+class OverviewDashboardData(StrictBaseModel):
     summary: OverviewSummary
     performance: OverviewPerformanceMetrics
     daily: list[OverviewDailyPoint] = Field(default_factory=list)

@@ -1,9 +1,11 @@
+from types import ModuleType
+
 from fastapi import FastAPI
 
 from .routes import include_routes
 
 
-def create_app(service_module) -> FastAPI:
+def create_app(service_module: ModuleType) -> FastAPI:
     app = FastAPI(
         title=service_module.settings.app_name, lifespan=service_module.lifespan
     )
