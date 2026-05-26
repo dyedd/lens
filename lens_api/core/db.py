@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -46,7 +48,7 @@ def create_engine(database_url: str) -> AsyncEngine:
     if is_sqlite:
 
         @event.listens_for(engine.sync_engine, "connect")
-        def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+        def _set_sqlite_pragmas(dbapi_connection: Any, _connection_record: Any) -> None:
             cursor = dbapi_connection.cursor()
             try:
                 cursor.execute("PRAGMA journal_mode=DELETE")
