@@ -15,6 +15,7 @@ def register(app: FastAPI, service_module) -> None:
     static_dir = Path(static_dir_value)
     if not static_dir.is_dir():
         raise RuntimeError(f"LENS_UI_STATIC_DIR does not exist: {static_dir}")
+    static_root = static_dir.resolve()
 
     assets_dir = static_dir / "_next"
     if assets_dir.is_dir():
@@ -29,7 +30,7 @@ def register(app: FastAPI, service_module) -> None:
             "/brand-icons", StaticFiles(directory=brand_icons_dir), name="brand-icons"
         )
 
-    async def ui_entry(path: str = "") -> FileResponse:
+    def ui_entry(path: str = "") -> FileResponse:
         normalized = path.strip("/")
         first_segment = normalized.split("/", 1)[0] if normalized else ""
         if first_segment in RESERVED_PREFIXES:
@@ -38,7 +39,7 @@ def register(app: FastAPI, service_module) -> None:
         if normalized:
             for candidate in _next_rsc_candidates(static_dir, normalized):
                 if candidate.is_file() and candidate.resolve().is_relative_to(
-                    static_dir.resolve()
+                    static_root
                 ):
                     return FileResponse(candidate)
             html_candidates = [
@@ -50,7 +51,7 @@ def register(app: FastAPI, service_module) -> None:
 
         for candidate in html_candidates:
             if candidate.is_file() and candidate.resolve().is_relative_to(
-                static_dir.resolve()
+                static_root
             ):
                 return FileResponse(candidate)
         raise HTTPException(status_code=404, detail="Not Found")
@@ -65,7 +66,7 @@ def _add_file_route(app: FastAPI, path: str, file_path: Path) -> None:
     if not file_path.is_file():
         return
 
-    async def serve_file() -> FileResponse:
+    def serve_file() -> FileResponse:
         return FileResponse(file_path)
 
     app.add_api_route(
