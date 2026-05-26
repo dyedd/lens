@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
+from http import HTTPStatus
 from time import perf_counter
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -27,12 +28,15 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from packaging import version
 from sqlalchemy.exc import OperationalError
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..api import create_app
 from ..core.auth import create_access_token, decode_access_token
@@ -122,9 +126,10 @@ from .converters import (
     convert_stream_iterator,
     needs_conversion,
 )
-from .router import RoundRobinRouter, RouteTarget
+from .router import RoundRobinRouter, RouteSelection, RouteTarget
 from .cronjob_runner import CronjobAlreadyRunningError, CronjobRunner
 from .upstreams import (
+    UpstreamRequest,
     append_channel_url_path,
     build_upstream_headers,
     build_upstream_request,
@@ -443,6 +448,122 @@ async def lifespan(_: FastAPI):
 auth_scheme = HTTPBearer(auto_error=False)
 
 
+def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_exception_handler(
+        request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse:
+        return await handle_http_exception(request, exc)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        return await handle_validation_error(request, exc)
+
+    @app.exception_handler(OperationalError)
+    async def _operational_error_handler(
+        request: Request, exc: OperationalError
+    ) -> JSONResponse:
+        return await handle_operational_error(request, exc)
+
+    @app.exception_handler(jwt.InvalidTokenError)
+    async def _invalid_token_handler(
+        request: Request, exc: jwt.InvalidTokenError
+    ) -> JSONResponse:
+        return await handle_invalid_token_error(request, exc)
+
+    @app.exception_handler(CronjobAlreadyRunningError)
+    async def _cronjob_running_handler(
+        request: Request, exc: CronjobAlreadyRunningError
+    ) -> JSONResponse:
+        return await handle_cronjob_already_running(request, exc)
+
+    @app.exception_handler(KeyError)
+    async def _key_error_handler(request: Request, exc: KeyError) -> JSONResponse:
+        return await handle_key_error(request, exc)
+
+    @app.exception_handler(LookupError)
+    async def _lookup_error_handler(request: Request, exc: LookupError) -> JSONResponse:
+        return await handle_lookup_error(request, exc)
+
+    @app.exception_handler(ValueError)
+    async def _value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+        return await handle_value_error(request, exc)
+
+    @app.exception_handler(json.JSONDecodeError)
+    async def _json_decode_error_handler(
+        request: Request, exc: json.JSONDecodeError
+    ) -> JSONResponse:
+        return await handle_json_decode_error(request, exc)
+
+    @app.exception_handler(Exception)
+    async def _unexpected_error_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        return await handle_unexpected_error(request, exc)
+
+
+def _error_response(
+    *,
+    status_code: int,
+    error_type: str,
+    message: str,
+    details: Any | None = None,
+    headers: Mapping[str, str] | None = None,
+) -> JSONResponse:
+    error: dict[str, Any] = {"type": error_type, "message": message}
+    if details is not None:
+        error["details"] = jsonable_encoder(details)
+    return JSONResponse(
+        status_code=status_code,
+        content=ErrorResponse(error=error).model_dump(mode="json"),
+        headers=dict(headers) if headers else None,
+    )
+
+
+def _status_error_type(status_code: int) -> str:
+    if status_code == status.HTTP_400_BAD_REQUEST:
+        return "bad_request"
+    if status_code == status.HTTP_401_UNAUTHORIZED:
+        return "unauthorized"
+    if status_code == status.HTTP_403_FORBIDDEN:
+        return "forbidden"
+    if status_code == status.HTTP_404_NOT_FOUND:
+        return "not_found"
+    if status_code == status.HTTP_409_CONFLICT:
+        return "conflict"
+    if status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+        return "validation_error"
+    if status_code >= 500:
+        return "server_error"
+    return "http_error"
+
+
+def _status_message(status_code: int) -> str:
+    try:
+        return HTTPStatus(status_code).phrase
+    except ValueError:
+        return "Request failed"
+
+
+def _detail_message(detail: Any, fallback: str) -> str:
+    if isinstance(detail, str) and detail:
+        return detail
+    if isinstance(detail, Mapping):
+        message = detail.get("message")
+        if isinstance(message, str) and message:
+            return message
+    return fallback
+
+
+def _key_error_message(exc: KeyError) -> str:
+    if not exc.args:
+        return "Resource not found"
+    key = exc.args[0]
+    return f"Resource not found: {key}"
+
+
 def _database_error_response(exc: OperationalError) -> JSONResponse:
     message = str(exc.orig if hasattr(exc, "orig") else exc).lower()
     if "database is locked" in message:
@@ -451,7 +572,104 @@ def _database_error_response(exc: OperationalError) -> JSONResponse:
     else:
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         detail = "Database operation failed"
-    return JSONResponse(status_code=status_code, content={"detail": detail})
+    return _error_response(
+        status_code=status_code,
+        error_type="database_error",
+        message=detail,
+    )
+
+
+async def handle_http_exception(
+    _: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    status_code = int(exc.status_code)
+    detail = getattr(exc, "detail", None)
+    details = None
+    if isinstance(detail, Mapping) and "details" in detail:
+        details = detail["details"]
+    return _error_response(
+        status_code=status_code,
+        error_type=_status_error_type(status_code),
+        message=_detail_message(detail, _status_message(status_code)),
+        details=details,
+        headers=getattr(exc, "headers", None),
+    )
+
+
+async def handle_validation_error(
+    _: Request, exc: RequestValidationError
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        error_type="validation_error",
+        message="Request validation failed",
+        details=exc.errors(),
+    )
+
+
+async def handle_invalid_token_error(
+    _: Request, __: jwt.InvalidTokenError
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        error_type="unauthorized",
+        message="Invalid token",
+    )
+
+
+async def handle_cronjob_already_running(
+    _: Request, exc: CronjobAlreadyRunningError
+) -> JSONResponse:
+    task_id = exc.args[0] if exc.args else ""
+    message = f"Cron job is already running: {task_id}" if task_id else str(exc)
+    return _error_response(
+        status_code=status.HTTP_409_CONFLICT,
+        error_type="conflict",
+        message=message,
+    )
+
+
+async def handle_key_error(_: Request, exc: KeyError) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        error_type="not_found",
+        message=_key_error_message(exc),
+    )
+
+
+async def handle_lookup_error(_: Request, exc: LookupError) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        error_type="not_found",
+        message=str(exc) or "Resource not found",
+    )
+
+
+async def handle_value_error(_: Request, exc: ValueError) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        error_type="bad_request",
+        message=str(exc) or "Invalid request",
+    )
+
+
+async def handle_json_decode_error(
+    _: Request, __: json.JSONDecodeError
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        error_type="bad_request",
+        message="Invalid JSON payload",
+    )
+
+
+async def handle_unexpected_error(_: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled API error")
+    return _error_response(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        error_type="server_error",
+        message="Internal server error",
+    )
 
 
 def _apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
@@ -487,11 +705,8 @@ async def dynamic_cors_middleware(request: Request, call_next):
 
 
 async def cors_preflight(path: str, request: Request) -> Response:
-    try:
-        runtime = await app_state.domain_store.get_runtime_settings()
-        _apply_router_runtime_settings(runtime)
-    except OperationalError as exc:
-        return _database_error_response(exc)
+    runtime = await app_state.domain_store.get_runtime_settings()
+    _apply_router_runtime_settings(runtime)
     allow_origins = runtime["cors_allow_origins"]
     origin = request.headers.get("origin", "")
     headers = {
@@ -517,15 +732,10 @@ async def get_current_admin(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
         )
 
-    try:
-        payload = await run_in_threadpool(
-            decode_access_token, credentials.credentials, settings
-        )
-        username = payload.get("sub")
-    except jwt.InvalidTokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        ) from exc
+    payload = await run_in_threadpool(
+        decode_access_token, credentials.credentials, settings
+    )
+    username = payload.get("sub")
 
     if not username:
         raise HTTPException(
@@ -559,13 +769,7 @@ async def get_current_gateway_key(request: Request) -> GatewayApiKey:
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing gateway API key"
         )
 
-    try:
-        gateway_key = await app_state.domain_store.get_gateway_api_key_by_secret(secret)
-    except OperationalError as exc:
-        response = _database_error_response(exc)
-        raise HTTPException(
-            status_code=response.status_code, detail=response.body.decode()
-        ) from exc
+    gateway_key = await app_state.domain_store.get_gateway_api_key_by_secret(secret)
 
     if gateway_key is None:
         raise HTTPException(
@@ -623,6 +827,20 @@ def _gateway_key_allows_model(
     return model_name.strip().lower() in normalized_allowed
 
 
+def _has_version_update(latest_version: str, current_version: str) -> bool:
+    if not latest_version:
+        return False
+    try:
+        return version.parse(latest_version) > version.parse(current_version)
+    except version.InvalidVersion:
+        logger.warning(
+            "Invalid version string when comparing %r vs %r",
+            latest_version,
+            current_version,
+        )
+        return False
+
+
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
@@ -654,16 +872,7 @@ async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResu
     latest_url = settings_dict.get(SETTING_LATEST_VERSION_URL, "")
     checked_at = settings_dict.get(SETTING_VERSION_CHECK_AT, "")
 
-    has_update = False
-    if latest_version:
-        try:
-            has_update = version.parse(latest_version) > version.parse(current_version)
-        except version.InvalidVersion:
-            logger.warning(
-                "Invalid version string when comparing %r vs %r",
-                latest_version,
-                current_version,
-            )
+    has_update = _has_version_update(latest_version, current_version)
 
     return VersionCheckResult(
         current_version=current_version,
@@ -699,17 +908,12 @@ async def update_profile(
     if not normalized_username:
         raise HTTPException(status_code=400, detail="Username is required")
 
-    try:
-        updated_admin = await app_state.admin_store.update_profile(
-            admin.username,
-            normalized_username,
-            payload.current_password,
-            payload.new_password,
-        )
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Admin not found") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    updated_admin = await app_state.admin_store.update_profile(
+        admin.username,
+        normalized_username,
+        payload.current_password,
+        payload.new_password,
+    )
 
     access_token, expires_in = await run_in_threadpool(
         create_access_token, updated_admin.username, settings
@@ -724,12 +928,9 @@ async def update_profile(
 async def change_password(
     payload: AdminPasswordChangeRequest, admin=Depends(get_current_admin)
 ) -> Response:
-    try:
-        await app_state.admin_store.update_password(
-            admin.username, payload.current_password, payload.new_password
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await app_state.admin_store.update_password(
+        admin.username, payload.current_password, payload.new_password
+    )
     return Response(status_code=204)
 
 
@@ -746,42 +947,24 @@ async def site_runtime_summaries(
 async def create_site(
     payload: SiteCreate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
-    try:
-        return await app_state.store.create_site(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.store.create_site(payload)
 
 
 async def update_site(
     site_id: str, payload: SiteUpdate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
-    try:
-        return await app_state.store.update_site(site_id, payload)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Site not found: {site_id}"
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.store.update_site(site_id, payload)
 
 
 async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Response:
-    try:
-        await app_state.store.delete_site(site_id)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Site not found: {site_id}"
-        ) from exc
+    await app_state.store.delete_site(site_id)
     return Response(status_code=204)
 
 
 async def fetch_site_models(
     payload: SiteModelFetchRequest, _: Any = Depends(get_current_admin)
 ) -> list[SiteModelFetchItem]:
-    try:
-        previews = await app_state.store.fetch_models_preview(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    previews = await app_state.store.fetch_models_preview(payload)
     items: list[SiteModelFetchItem] = []
     seen: set[tuple[str, str]] = set()
     for preview in previews:
@@ -830,59 +1013,13 @@ async def test_site_model(
     payload: SiteModelTestRequest, _: Any = Depends(get_current_admin)
 ) -> SiteModelTestResult:
     channel = _model_test_channel(payload)
-    text = payload.prompt.strip()
-    if payload.protocol == ProtocolKind.OPENAI_CHAT:
-        body = {
-            "model": payload.model_name,
-            "messages": [{"role": "user", "content": text}],
-            "max_tokens": 64,
-            "stream": False,
-        }
-    elif payload.protocol == ProtocolKind.OPENAI_RESPONSES:
-        body = {
-            "model": payload.model_name,
-            "input": text,
-            "max_output_tokens": 64,
-            "stream": False,
-        }
-    elif payload.protocol == ProtocolKind.OPENAI_EMBEDDING:
-        body = {
-            "model": payload.model_name,
-            "input": text,
-        }
-    elif payload.protocol == ProtocolKind.ANTHROPIC:
-        body = {
-            "model": payload.model_name,
-            "messages": [{"role": "user", "content": text}],
-            "max_tokens": 64,
-            "stream": False,
-        }
-    elif payload.protocol == ProtocolKind.GEMINI:
-        body = {
-            "model": payload.model_name,
-            "contents": [{"role": "user", "parts": [{"text": text}]}],
-            "generationConfig": {"maxOutputTokens": 64},
-            "stream": False,
-        }
-    else:
-        raise HTTPException(
-            status_code=500, detail=f"Unsupported protocol={payload.protocol.value}"
-        )
-    try:
-        body = _apply_param_override(channel, body)
-        body["stream"] = False
-    except UpstreamRequestError as exc:
-        return SiteModelTestResult(
-            success=False,
-            status_code=exc.status_code,
-            latency_ms=0,
-            model_name=payload.model_name,
-            credential_id=payload.credential.id,
-            error_message=_format_channel_error(exc.detail),
-        )
+    body = _model_test_body(payload)
+    prepared_body = _apply_model_test_param_override(channel, body, payload)
+    if isinstance(prepared_body, SiteModelTestResult):
+        return prepared_body
     return await _call_model_test_channel(
         channel=channel,
-        body=body,
+        body=prepared_body,
         model_name=payload.model_name,
         credential_id=payload.credential.id,
     )
@@ -1036,12 +1173,7 @@ async def clear_request_logs(_: Any = Depends(get_current_admin)) -> Response:
 async def request_log_detail(
     log_id: int, _: Any = Depends(get_current_admin)
 ) -> RequestLogDetail:
-    try:
-        return await app_state.domain_store.get_request_log(log_id)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Request log not found: {log_id}"
-        ) from exc
+    return await app_state.domain_store.get_request_log(log_id)
 
 
 async def router_preview(
@@ -1080,12 +1212,7 @@ async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGr
 async def get_model_group(
     group_id: str, _: Any = Depends(get_current_admin)
 ) -> ModelGroup:
-    try:
-        return await app_state.domain_store.get_group(group_id)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Model group not found: {group_id}"
-        ) from exc
+    return await app_state.domain_store.get_group(group_id)
 
 
 async def list_model_group_stats(
@@ -1103,12 +1230,9 @@ async def list_model_prices(
 async def update_model_price(
     model_key: str, payload: ModelPriceUpdate, _: Any = Depends(get_current_admin)
 ) -> ModelPriceItem:
-    try:
-        return await app_state.domain_store.upsert_model_price(
-            payload.model_copy(update={"model_key": model_key})
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.domain_store.upsert_model_price(
+        payload.model_copy(update={"model_key": model_key})
+    )
 
 
 async def sync_model_prices(
@@ -1129,86 +1253,48 @@ async def update_cronjob(
     payload: CronjobUpdate,
     _: Any = Depends(get_current_admin),
 ) -> CronjobItem:
-    try:
-        return await app_state.cronjob_runner.update_cronjob(
-            task_id,
-            enabled=payload.enabled,
-            schedule_type=(
-                payload.schedule_type.value
-                if payload.schedule_type is not None
-                else None
-            ),
-            interval_hours=payload.interval_hours,
-            run_at_time=payload.run_at_time,
-            weekdays=payload.weekdays,
-        )
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Cron job not found: {task_id}"
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.cronjob_runner.update_cronjob(
+        task_id,
+        enabled=payload.enabled,
+        schedule_type=(
+            payload.schedule_type.value if payload.schedule_type is not None else None
+        ),
+        interval_hours=payload.interval_hours,
+        run_at_time=payload.run_at_time,
+        weekdays=payload.weekdays,
+    )
 
 
 async def run_cronjob(
     task_id: str,
     _: Any = Depends(get_current_admin),
 ) -> CronjobRunResult:
-    try:
-        task = await app_state.cronjob_runner.run_cronjob_now(task_id)
-    except CronjobAlreadyRunningError as exc:
-        raise HTTPException(
-            status_code=409, detail=f"Cron job is already running: {task_id}"
-        ) from exc
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Cron job not found: {task_id}"
-        ) from exc
+    task = await app_state.cronjob_runner.run_cronjob_now(task_id)
     return CronjobRunResult(cronjob=task)
 
 
 async def model_group_candidates(
     payload: ModelGroupCandidatesRequest, _: Any = Depends(get_current_admin)
 ) -> ModelGroupCandidatesResponse:
-    try:
-        return await app_state.domain_store.list_group_candidates(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.domain_store.list_group_candidates(payload)
 
 
 async def create_model_group(
     payload: ModelGroupCreate, _: Any = Depends(get_current_admin)
 ) -> ModelGroup:
-    try:
-        return await app_state.domain_store.create_group(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.domain_store.create_group(payload)
 
 
 async def update_model_group(
     group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)
 ) -> ModelGroup:
-    try:
-        return await app_state.domain_store.update_group(group_id, payload)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Model group not found: {group_id}"
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.domain_store.update_group(group_id, payload)
 
 
 async def delete_model_group(
     group_id: str, _: Any = Depends(get_current_admin)
 ) -> Response:
-    try:
-        await app_state.domain_store.delete_group(group_id)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Model group not found: {group_id}"
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await app_state.domain_store.delete_group(group_id)
     return Response(status_code=204)
 
 
@@ -1236,32 +1322,19 @@ async def update_settings(
             normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
             continue
         if item.key == SETTING_TIME_ZONE:
-            try:
-                time_zone = resolve_time_zone(item.value)
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            time_zone = resolve_time_zone(item.value)
             next_time_zone = time_zone.key
             next_time_zone_value = time_zone
             normalized_items.append(SettingItem(key=item.key, value=time_zone.key))
             continue
         if item.key in INTEGER_SETTING_KEYS:
             value = item.value.strip()
-            try:
-                int(value)
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=400, detail=f"Invalid integer setting: {item.key}"
-                ) from exc
+            _parse_integer_setting(item.key, value)
             normalized_items.append(SettingItem(key=item.key, value=value))
             continue
         if item.key in FLOAT_SETTING_KEYS:
             value = item.value.strip()
-            try:
-                float(value)
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=400, detail=f"Invalid numeric setting: {item.key}"
-                ) from exc
+            _parse_float_setting(item.key, value)
             normalized_items.append(SettingItem(key=item.key, value=value))
             continue
         normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
@@ -1282,34 +1355,19 @@ async def list_gateway_api_keys(
 async def create_gateway_api_key(
     payload: GatewayApiKeyCreate, _: Any = Depends(get_current_admin)
 ) -> GatewayApiKey:
-    try:
-        return await app_state.domain_store.create_gateway_api_key(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.domain_store.create_gateway_api_key(payload)
 
 
 async def update_gateway_api_key(
     key_id: str, payload: GatewayApiKeyUpdate, _: Any = Depends(get_current_admin)
 ) -> GatewayApiKey:
-    try:
-        return await app_state.domain_store.update_gateway_api_key(key_id, payload)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Gateway API key not found: {key_id}"
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await app_state.domain_store.update_gateway_api_key(key_id, payload)
 
 
 async def delete_gateway_api_key(
     key_id: str, _: Any = Depends(get_current_admin)
 ) -> Response:
-    try:
-        await app_state.domain_store.delete_gateway_api_key(key_id)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Gateway API key not found: {key_id}"
-        ) from exc
+    await app_state.domain_store.delete_gateway_api_key(key_id)
     return Response(status_code=204)
 
 
@@ -1338,23 +1396,40 @@ async def export_settings_bundle(
 async def import_settings_bundle(
     file: UploadFile = File(...), _: Any = Depends(get_current_admin)
 ) -> ConfigImportResult:
-    try:
-        payload = await file.read()
-    finally:
-        await file.close()
-
-    try:
-        dump = ConfigBackupDump.model_validate_json(payload)
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid backup file") from exc
-
-    try:
-        result = await app_state.backup_store.import_dump(dump)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = await _read_upload_file(file)
+    dump = _parse_config_backup_dump(payload)
+    result = await app_state.backup_store.import_dump(dump)
 
     app_state.domain_store.invalidate_settings_cache()
     return result
+
+
+def _parse_integer_setting(key: str, value: str) -> int:
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer setting: {key}") from exc
+
+
+def _parse_float_setting(key: str, value: str) -> float:
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid numeric setting: {key}") from exc
+
+
+async def _read_upload_file(file: UploadFile) -> bytes:
+    try:
+        return await file.read()
+    finally:
+        await file.close()
+
+
+def _parse_config_backup_dump(payload: bytes) -> ConfigBackupDump:
+    try:
+        return ConfigBackupDump.model_validate_json(payload)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("Invalid backup file") from exc
 
 
 async def proxy_openai_chat(
@@ -1717,49 +1792,18 @@ async def _proxy_protocol(
         attempts=[],
     )
     try:
-        try:
-            plan = await _resolve_routing_plan(protocol, requested_model)
-            selection = app_state.router.select(
-                channels,
-                protocol,
-                plan.resolved_group_name,
-                strategy=plan.strategy,
-                route_targets=plan.route_targets,
-                use_model_matching=plan.use_model_matching,
-                cursor_key=plan.cursor_key,
-            )
-            await log_ctx.update(
-                requested_group_name=plan.requested_group_name,
-                resolved_group_name=plan.resolved_group_name,
-                upstream_model_name=None,
-                channel=None,
-                user_agent=upstream_user_agent,
-                lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
-                status_code=None,
-                success=False,
-                is_stream=is_stream_body,
-            )
-        except LookupError as exc:
-            await log_ctx.update(
-                requested_group_name=(
-                    plan.requested_group_name if plan else requested_model
-                ),
-                resolved_group_name=plan.resolved_group_name if plan else None,
-                upstream_model_name=None,
-                channel=None,
-                user_agent=upstream_user_agent,
-                lifecycle_status=RequestLogLifecycleStatus.FAILED,
-                status_code=503,
-                success=False,
-                is_stream=is_stream_body,
-                error_message=str(exc),
-            )
-            return JSONResponse(
-                status_code=503,
-                content=ErrorResponse(
-                    error={"type": "routing_error", "message": str(exc)}
-                ).model_dump(mode="json"),
-            )
+        plan, selection, routing_error = await _resolve_proxy_route(
+            channels=channels,
+            protocol=protocol,
+            requested_model=requested_model,
+            log_ctx=log_ctx,
+            upstream_user_agent=upstream_user_agent,
+            is_stream_body=is_stream_body,
+        )
+        if routing_error is not None:
+            return routing_error
+        if plan is None or selection is None:
+            raise RuntimeError("Routing plan was not resolved")
 
         errors: list[str] = []
         for target in [selection.primary, *selection.fallbacks]:
@@ -1804,6 +1848,83 @@ async def _proxy_protocol(
             error_message=f"Unexpected proxy error: {type(exc).__name__}: {exc}",
         )
         raise
+
+
+async def _resolve_proxy_route(
+    *,
+    channels: list[ChannelConfig],
+    protocol: ProtocolKind,
+    requested_model: str,
+    log_ctx: _RequestLogger,
+    upstream_user_agent: str,
+    is_stream_body: bool,
+) -> tuple[RoutingPlan | None, RouteSelection | None, JSONResponse | None]:
+    plan: RoutingPlan | None = None
+    try:
+        plan = await _resolve_routing_plan(protocol, requested_model)
+        selection = app_state.router.select(
+            channels,
+            protocol,
+            plan.resolved_group_name,
+            strategy=plan.strategy,
+            route_targets=plan.route_targets,
+            use_model_matching=plan.use_model_matching,
+            cursor_key=plan.cursor_key,
+        )
+        await log_ctx.update(
+            requested_group_name=plan.requested_group_name,
+            resolved_group_name=plan.resolved_group_name,
+            upstream_model_name=None,
+            channel=None,
+            user_agent=upstream_user_agent,
+            lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+            status_code=None,
+            success=False,
+            is_stream=is_stream_body,
+        )
+        return plan, selection, None
+    except LookupError as exc:
+        return (
+            plan,
+            None,
+            await _routing_error_response(
+                plan=plan,
+                requested_model=requested_model,
+                log_ctx=log_ctx,
+                upstream_user_agent=upstream_user_agent,
+                is_stream_body=is_stream_body,
+                exc=exc,
+            ),
+        )
+
+
+async def _routing_error_response(
+    *,
+    plan: RoutingPlan | None,
+    requested_model: str,
+    log_ctx: _RequestLogger,
+    upstream_user_agent: str,
+    is_stream_body: bool,
+    exc: LookupError,
+) -> JSONResponse:
+    await log_ctx.update(
+        requested_group_name=plan.requested_group_name if plan else requested_model,
+        resolved_group_name=plan.resolved_group_name if plan else None,
+        upstream_model_name=None,
+        channel=None,
+        user_agent=upstream_user_agent,
+        lifecycle_status=RequestLogLifecycleStatus.FAILED,
+        status_code=503,
+        success=False,
+        is_stream=is_stream_body,
+        error_message=str(exc),
+    )
+    return JSONResponse(
+        status_code=503,
+        content=ErrorResponse(
+            error={"type": "routing_error", "message": str(exc)}
+        ).model_dump(mode="json"),
+    )
 
 
 async def _try_target(
@@ -2363,6 +2484,29 @@ async def _call_model_test_channel(
 
     started_at = perf_counter()
     try:
+        return await _run_model_test_request(
+            client=client,
+            upstream=upstream,
+            channel=channel,
+            model_name=model_name,
+            credential_id=credential_id,
+            started_at=started_at,
+        )
+    finally:
+        if close_client:
+            await client.aclose()
+
+
+async def _run_model_test_request(
+    *,
+    client: httpx.AsyncClient,
+    upstream: UpstreamRequest,
+    channel: ChannelConfig,
+    model_name: str,
+    credential_id: str,
+    started_at: float,
+) -> SiteModelTestResult:
+    try:
         response = await client.request(
             upstream.method,
             upstream.url,
@@ -2384,87 +2528,7 @@ async def _call_model_test_channel(
                 error_message=detail,
             )
         raw_payload = response.json()
-        output_text = ""
-        if channel.protocol == ProtocolKind.OPENAI_CHAT:
-            choices = raw_payload.get("choices")
-            if isinstance(choices, list):
-                for choice in choices:
-                    if not isinstance(choice, dict):
-                        continue
-                    message = choice.get("message")
-                    if not isinstance(message, dict):
-                        continue
-                    text = _stringify_text_content(message.get("content")).strip()
-                    if text:
-                        output_text = text
-                        break
-        elif channel.protocol == ProtocolKind.OPENAI_RESPONSES:
-            output_text_raw = raw_payload.get("output_text")
-            if isinstance(output_text_raw, str) and output_text_raw.strip():
-                output_text = output_text_raw.strip()
-            else:
-                output = raw_payload.get("output")
-                if isinstance(output, list):
-                    parts: list[str] = []
-                    for item in output:
-                        if not isinstance(item, dict):
-                            continue
-                        content = item.get("content")
-                        if not isinstance(content, list):
-                            continue
-                        for part in content:
-                            if (
-                                isinstance(part, dict)
-                                and part.get("type") == "output_text"
-                            ):
-                                text = part.get("text")
-                                if isinstance(text, str) and text.strip():
-                                    parts.append(text.strip())
-                    output_text = "\n".join(parts)
-        elif channel.protocol == ProtocolKind.OPENAI_EMBEDDING:
-            data = raw_payload.get("data")
-            if isinstance(data, list):
-                for item in data:
-                    if not isinstance(item, dict):
-                        continue
-                    vector = item.get("embedding")
-                    if isinstance(vector, list):
-                        output_text = f"<vector dim={len(vector)}>"
-                        break
-                    if isinstance(vector, str) and vector:
-                        output_text = f"<vector base64 len={len(vector)}>"
-                        break
-        elif channel.protocol == ProtocolKind.ANTHROPIC:
-            content = raw_payload.get("content")
-            if isinstance(content, list):
-                parts = [
-                    str(item.get("text")).strip()
-                    for item in content
-                    if isinstance(item, dict)
-                    and item.get("type") == "text"
-                    and item.get("text")
-                ]
-                output_text = "\n".join(parts)
-        elif channel.protocol == ProtocolKind.GEMINI:
-            candidates = raw_payload.get("candidates")
-            if isinstance(candidates, list):
-                for candidate in candidates:
-                    if not isinstance(candidate, dict):
-                        continue
-                    content = candidate.get("content")
-                    if not isinstance(content, dict):
-                        continue
-                    parts_list = content.get("parts")
-                    if not isinstance(parts_list, list):
-                        continue
-                    parts = [
-                        str(part.get("text")).strip()
-                        for part in parts_list
-                        if isinstance(part, dict) and part.get("text")
-                    ]
-                    if parts:
-                        output_text = "\n".join(parts)
-                        break
+        output_text = _model_test_output_text(channel.protocol, raw_payload)
         return SiteModelTestResult(
             success=True,
             status_code=response.status_code,
@@ -2491,9 +2555,146 @@ async def _call_model_test_channel(
             credential_id=credential_id,
             error_message=f"Invalid upstream response: {exc}",
         )
-    finally:
-        if close_client:
-            await client.aclose()
+
+
+def _model_test_output_text(protocol: ProtocolKind, raw_payload: Any) -> str:
+    output_text = ""
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        choices = raw_payload.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                message = choice.get("message")
+                if not isinstance(message, dict):
+                    continue
+                text = _stringify_text_content(message.get("content")).strip()
+                if text:
+                    output_text = text
+                    break
+    elif protocol == ProtocolKind.OPENAI_RESPONSES:
+        output_text_raw = raw_payload.get("output_text")
+        if isinstance(output_text_raw, str) and output_text_raw.strip():
+            output_text = output_text_raw.strip()
+        else:
+            output = raw_payload.get("output")
+            if isinstance(output, list):
+                parts: list[str] = []
+                for item in output:
+                    if not isinstance(item, dict):
+                        continue
+                    content = item.get("content")
+                    if not isinstance(content, list):
+                        continue
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "output_text":
+                            text = part.get("text")
+                            if isinstance(text, str) and text.strip():
+                                parts.append(text.strip())
+                output_text = "\n".join(parts)
+    elif protocol == ProtocolKind.OPENAI_EMBEDDING:
+        data = raw_payload.get("data")
+        if isinstance(data, list):
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                vector = item.get("embedding")
+                if isinstance(vector, list):
+                    output_text = f"<vector dim={len(vector)}>"
+                    break
+                if isinstance(vector, str) and vector:
+                    output_text = f"<vector base64 len={len(vector)}>"
+                    break
+    elif protocol == ProtocolKind.ANTHROPIC:
+        content = raw_payload.get("content")
+        if isinstance(content, list):
+            parts = [
+                str(item.get("text")).strip()
+                for item in content
+                if isinstance(item, dict)
+                and item.get("type") == "text"
+                and item.get("text")
+            ]
+            output_text = "\n".join(parts)
+    elif protocol == ProtocolKind.GEMINI:
+        candidates = raw_payload.get("candidates")
+        if isinstance(candidates, list):
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                content = candidate.get("content")
+                if not isinstance(content, dict):
+                    continue
+                parts_list = content.get("parts")
+                if not isinstance(parts_list, list):
+                    continue
+                parts = [
+                    str(part.get("text")).strip()
+                    for part in parts_list
+                    if isinstance(part, dict) and part.get("text")
+                ]
+                if parts:
+                    output_text = "\n".join(parts)
+                    break
+    return output_text
+
+
+def _model_test_body(payload: SiteModelTestRequest) -> dict[str, Any]:
+    text = payload.prompt.strip()
+    if payload.protocol == ProtocolKind.OPENAI_CHAT:
+        return {
+            "model": payload.model_name,
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": 64,
+            "stream": False,
+        }
+    if payload.protocol == ProtocolKind.OPENAI_RESPONSES:
+        return {
+            "model": payload.model_name,
+            "input": text,
+            "max_output_tokens": 64,
+            "stream": False,
+        }
+    if payload.protocol == ProtocolKind.OPENAI_EMBEDDING:
+        return {
+            "model": payload.model_name,
+            "input": text,
+        }
+    if payload.protocol == ProtocolKind.ANTHROPIC:
+        return {
+            "model": payload.model_name,
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": 64,
+            "stream": False,
+        }
+    if payload.protocol == ProtocolKind.GEMINI:
+        return {
+            "model": payload.model_name,
+            "contents": [{"role": "user", "parts": [{"text": text}]}],
+            "generationConfig": {"maxOutputTokens": 64},
+            "stream": False,
+        }
+    raise HTTPException(
+        status_code=500, detail=f"Unsupported protocol={payload.protocol.value}"
+    )
+
+
+def _apply_model_test_param_override(
+    channel: ChannelConfig, body: dict[str, Any], payload: SiteModelTestRequest
+) -> dict[str, Any] | SiteModelTestResult:
+    try:
+        prepared_body = _apply_param_override(channel, body)
+    except UpstreamRequestError as exc:
+        return SiteModelTestResult(
+            success=False,
+            status_code=exc.status_code,
+            latency_ms=0,
+            model_name=payload.model_name,
+            credential_id=payload.credential.id,
+            error_message=_format_channel_error(exc.detail),
+        )
+    prepared_body["stream"] = False
+    return prepared_body
 
 
 def _stringify_text_content(value: Any) -> str:
