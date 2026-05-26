@@ -15,7 +15,6 @@ class UpstreamRequest:
     url: str
     headers: dict[str, str]
     json_body: dict[str, Any]
-    proxy_url: str | None = None
 
 
 _OPENAI_LIKE_PATH = {
@@ -35,7 +34,6 @@ def build_upstream_request(
     forwarded_headers: Mapping[str, str] | None = None,
 ) -> UpstreamRequest:
     api_key = resolve_channel_api_key(channel, credential_id=credential_id)
-    proxy_url = channel.channel_proxy.strip() or None
 
     if channel.protocol == ProtocolKind.GEMINI:
         model_name = body.get("model")
@@ -60,7 +58,6 @@ def build_upstream_request(
                 user_agent=user_agent,
             ),
             json_body=payload,
-            proxy_url=proxy_url,
         )
 
     suffix = _OPENAI_LIKE_PATH.get(channel.protocol)
@@ -90,7 +87,6 @@ def build_upstream_request(
             default_headers, channel.headers, user_agent=user_agent
         ),
         json_body=dict(body),
-        proxy_url=proxy_url,
     )
 
 

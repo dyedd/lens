@@ -680,6 +680,9 @@ class RoundRobinRouter:
         ]
         available_key_count = sum(1 for item in key_health if item.available)
         cooled_key_count = sum(1 for item in key_health if not item.available)
+        available = state.opened_until <= now and (
+            not channel.keys or available_key_count > 0
+        )
         return ChannelHealth(
             channel_id=channel.id,
             consecutive_failures=state.consecutive_failures,
@@ -693,7 +696,7 @@ class RoundRobinRouter:
             ),
             last_cooldown_seconds=int(state.last_cooldown),
             score=self._score(channel.id),
-            available=state.opened_until <= now,
+            available=available,
             available_key_count=available_key_count,
             cooled_key_count=cooled_key_count,
             key_health=key_health,
