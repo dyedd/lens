@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.staticfiles import StaticFiles
 
 RESERVED_PREFIXES = ("api", "v1", "v1beta", "healthz", "docs", "redoc", "openapi.json")
@@ -30,31 +31,8 @@ def register(app: FastAPI, service_module) -> None:
             "/brand-icons", StaticFiles(directory=brand_icons_dir), name="brand-icons"
         )
 
-    def ui_entry(path: str = "") -> FileResponse:
-        normalized = path.strip("/")
-        first_segment = normalized.split("/", 1)[0] if normalized else ""
-        if first_segment in RESERVED_PREFIXES:
-            raise HTTPException(status_code=404, detail="Not Found")
-
-        if normalized:
-            for candidate in _next_rsc_candidates(static_dir, normalized):
-                if candidate.is_file() and candidate.resolve().is_relative_to(
-                    static_root
-                ):
-                    return FileResponse(candidate)
-            html_candidates = [
-                static_dir / normalized / "index.html",
-                static_dir / f"{normalized}.html",
-            ]
-        else:
-            html_candidates = [static_dir / "index.html"]
-
-        for candidate in html_candidates:
-            if candidate.is_file() and candidate.resolve().is_relative_to(
-                static_root
-            ):
-                return FileResponse(candidate)
-        raise HTTPException(status_code=404, detail="Not Found")
+    async def ui_entry(path: str = "") -> FileResponse:
+        return await run_in_threadpool(_resolve_ui_entry, static_dir, static_root, path)
 
     app.add_api_route("/", ui_entry, methods=["GET", "HEAD"], include_in_schema=False)
     app.add_api_route(
@@ -66,12 +44,35 @@ def _add_file_route(app: FastAPI, path: str, file_path: Path) -> None:
     if not file_path.is_file():
         return
 
-    def serve_file() -> FileResponse:
-        return FileResponse(file_path)
+    async def serve_file() -> FileResponse:
+        return await run_in_threadpool(FileResponse, file_path)
 
     app.add_api_route(
         path, serve_file, methods=["GET", "HEAD"], include_in_schema=False
     )
+
+
+def _resolve_ui_entry(static_dir: Path, static_root: Path, path: str) -> FileResponse:
+    normalized = path.strip("/")
+    first_segment = normalized.split("/", 1)[0] if normalized else ""
+    if first_segment in RESERVED_PREFIXES:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    if normalized:
+        for candidate in _next_rsc_candidates(static_dir, normalized):
+            if candidate.is_file() and candidate.resolve().is_relative_to(static_root):
+                return FileResponse(candidate)
+        html_candidates = [
+            static_dir / normalized / "index.html",
+            static_dir / f"{normalized}.html",
+        ]
+    else:
+        html_candidates = [static_dir / "index.html"]
+
+    for candidate in html_candidates:
+        if candidate.is_file() and candidate.resolve().is_relative_to(static_root):
+            return FileResponse(candidate)
+    raise HTTPException(status_code=404, detail="Not Found")
 
 
 def _next_rsc_candidates(static_dir: Path, normalized_path: str) -> list[Path]:
