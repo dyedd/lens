@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n";
@@ -31,7 +32,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <I18nProvider>
         <ThemeProvider>
           <TooltipProvider>
-            {children}
+            <ErrorBoundary>{children}</ErrorBoundary>
             <SonnerToaster />
           </TooltipProvider>
         </ThemeProvider>
