@@ -1,3 +1,5 @@
+from types import ModuleType
+
 from fastapi import FastAPI
 
 from . import (
@@ -19,7 +21,7 @@ from . import (
 )
 
 
-def include_routes(app: FastAPI, service_module) -> None:
+def include_routes(app: FastAPI, service_module: ModuleType) -> None:
     for module in (
         public,
         admin_auth,

@@ -7,7 +7,7 @@ import re
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
 from http import HTTPStatus
@@ -111,7 +111,6 @@ from ..persistence.domain_store import (
     SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_LATEST_VERSION,
     SETTING_LATEST_VERSION_URL,
-    SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
     SETTING_RELAY_LOG_KEEP_PERIOD,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
@@ -120,6 +119,7 @@ from ..persistence.domain_store import (
     DomainStore,
 )
 from ..persistence.cronjob_store import CronjobSpec, CronjobStore
+from ..persistence.entities import AdminUserEntity
 from .converters import (
     convert_request,
     convert_response,
@@ -426,7 +426,7 @@ def _overview_window_minutes(
 
 
 @asynccontextmanager
-async def _managed_lifespan(state: AppState):
+async def _managed_lifespan(state: AppState) -> AsyncIterator[None]:
     await _startup_app_state(state)
     await state.cronjob_runner.start()
     try:
@@ -440,7 +440,7 @@ async def _managed_lifespan(state: AppState):
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     async with _managed_lifespan(app_state):
         yield
 
@@ -684,7 +684,9 @@ async def handle_operational_error(_: Request, exc: OperationalError) -> JSONRes
     return _database_error_response(exc)
 
 
-async def dynamic_cors_middleware(request: Request, call_next):
+async def dynamic_cors_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     response = await call_next(request)
     try:
         runtime = await app_state.domain_store.get_runtime_settings()
@@ -726,7 +728,7 @@ async def cors_preflight(path: str, request: Request) -> Response:
 
 async def get_current_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(auth_scheme),
-):
+) -> AdminUserEntity:
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
@@ -897,12 +899,15 @@ async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
     return AuthTokenResponse(access_token=access_token, expires_in=expires_in)
 
 
-async def current_admin(admin=Depends(get_current_admin)) -> AdminProfile:
+async def current_admin(
+    admin: AdminUserEntity = Depends(get_current_admin),
+) -> AdminProfile:
     return AdminProfile(id=admin.id, username=admin.username)
 
 
 async def update_profile(
-    payload: AdminProfileUpdateRequest, admin=Depends(get_current_admin)
+    payload: AdminProfileUpdateRequest,
+    admin: AdminUserEntity = Depends(get_current_admin),
 ) -> AdminProfileUpdateResponse:
     normalized_username = payload.username.strip()
     if not normalized_username:
@@ -926,7 +931,8 @@ async def update_profile(
 
 
 async def change_password(
-    payload: AdminPasswordChangeRequest, admin=Depends(get_current_admin)
+    payload: AdminPasswordChangeRequest,
+    admin: AdminUserEntity = Depends(get_current_admin),
 ) -> Response:
     await app_state.admin_store.update_password(
         admin.username, payload.current_password, payload.new_password
@@ -1434,7 +1440,7 @@ def _parse_config_backup_dump(payload: bytes) -> ConfigBackupDump:
 
 async def proxy_openai_chat(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
-):
+) -> Response:
     body = await request.json()
     return await _proxy_protocol(
         ProtocolKind.OPENAI_CHAT,
@@ -1446,7 +1452,7 @@ async def proxy_openai_chat(
 
 async def proxy_openai_responses(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
-):
+) -> Response:
     body = await request.json()
     return await _proxy_protocol(
         ProtocolKind.OPENAI_RESPONSES,
@@ -1458,7 +1464,7 @@ async def proxy_openai_responses(
 
 async def proxy_anthropic_messages(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
-):
+) -> Response:
     body = await request.json()
     return await _proxy_protocol(
         ProtocolKind.ANTHROPIC,
@@ -1471,7 +1477,7 @@ async def proxy_anthropic_messages(
 
 async def proxy_openai_embeddings(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
-):
+) -> Response:
     body = await request.json()
     if not isinstance(body, dict):
         raise HTTPException(
@@ -1602,7 +1608,7 @@ async def proxy_gemini_generate_content(
     model_name: str,
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
-):
+) -> Response:
     body = await request.json()
     body = {**body, "model": model_name, "stream": False}
     return await _proxy_protocol(
@@ -1617,7 +1623,7 @@ async def proxy_gemini_stream_generate_content(
     model_name: str,
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
-):
+) -> Response:
     body = await request.json()
     body = {**body, "model": model_name, "stream": True}
     return await _proxy_protocol(
@@ -3108,14 +3114,16 @@ async def _record_stream_request_log(
     cache_write_input_tokens = parsed["cache_write_input_tokens"]
     output_tokens = parsed["output_tokens"]
     total_tokens = parsed["total_tokens"]
-    input_cost_usd, output_cost_usd, total_cost_usd = (
-        await app_state.domain_store.estimate_model_cost(
-            resolved_group_name,
-            input_tokens,
-            output_tokens,
-            cache_read_input_tokens,
-            cache_write_input_tokens,
-        )
+    (
+        input_cost_usd,
+        output_cost_usd,
+        total_cost_usd,
+    ) = await app_state.domain_store.estimate_model_cost(
+        resolved_group_name,
+        input_tokens,
+        output_tokens,
+        cache_read_input_tokens,
+        cache_write_input_tokens,
     )
     await _update_request_log(
         request_log_id,

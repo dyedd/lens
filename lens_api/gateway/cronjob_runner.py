@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import OperationalError
 
 from ..models import CronjobItem
-from ..persistence.cronjob_store import CronjobSpec, CronjobStore
+from ..persistence.cronjob_store import CronjobRecord, CronjobSpec, CronjobStore
 
 TaskHandler = Callable[[], Awaitable[None]]
 TimeZoneProvider = Callable[[], Awaitable[ZoneInfo]]
@@ -160,7 +160,7 @@ class CronjobRunner:
             return self._store.to_item(spec, record)
         return self._store.to_item(spec, finished_record)
 
-    async def _get_or_ensure_record(self, task_id: str):
+    async def _get_or_ensure_record(self, task_id: str) -> CronjobRecord:
         record = await self._store.get_record(task_id)
         if record is None:
             await self._store.ensure_cronjobs(self._specs)
