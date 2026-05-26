@@ -110,6 +110,7 @@ async def chat_stream_to_responses_stream(
     input_tokens = 0
     output_tokens = 0
     text_started = False
+    text_output_index: int | None = None
     tool_calls_by_idx: dict[int, int] = {}
     next_output_index = 0
     finish_reason: str | None = None
@@ -148,7 +149,8 @@ async def chat_stream_to_responses_stream(
             if text_delta:
                 if not text_started:
                     text_started = True
-                    oi = next_output_index
+                    text_output_index = next_output_index
+                    oi = text_output_index
                     next_output_index += 1
                     yield format_sse_event(
                         "response.output_item.added",
@@ -181,7 +183,7 @@ async def chat_stream_to_responses_stream(
                     "response.output_text.delta",
                     {
                         "type": "response.output_text.delta",
-                        "output_index": 0,
+                        "output_index": text_output_index,
                         "content_index": 0,
                         "delta": text_delta,
                     },

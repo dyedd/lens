@@ -810,7 +810,7 @@ class DomainStore:
             )
             session.add(entity)
             await session.flush()
-            await self._replace_group_items(session, entity.id, payload.items)
+            self._replace_group_items(session, entity.id, payload.items)
             await session.commit()
             await session.refresh(entity)
             hydrated = await self._hydrate_groups(session, [entity])
@@ -906,7 +906,7 @@ class DomainStore:
                         ModelGroupItemEntity.group_id == group_id
                     )
                 )
-                await self._replace_group_items(session, group_id, next_items)
+                self._replace_group_items(session, group_id, next_items)
 
             await session.commit()
             await session.refresh(entity)
@@ -1149,7 +1149,7 @@ class DomainStore:
             )
         return items_by_group
 
-    async def _replace_group_items(
+    def _replace_group_items(
         self,
         session: AsyncSession,
         group_id: str,
@@ -2263,10 +2263,18 @@ class DomainStore:
             total_groups = int(
                 await session.scalar(select(func.count()).select_from(ModelGroupEntity))
             )
-
-        gateway_keys = await self.list_gateway_api_keys()
-        enabled_gateway_keys = sum(1 for key in gateway_keys if key.enabled)
-        total_gateway_keys = len(gateway_keys)
+            total_gateway_keys = int(
+                await session.scalar(
+                    select(func.count()).select_from(GatewayApiKeyEntity)
+                )
+            )
+            enabled_gateway_keys = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(GatewayApiKeyEntity)
+                    .where(GatewayApiKeyEntity.enabled == 1)
+                )
+            )
 
         return OverviewMetrics(
             total_requests=total_value,

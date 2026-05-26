@@ -2352,22 +2352,9 @@ async def _call_model_test_channel(
         credential_id=credential_id,
         user_agent=_default_lens_user_agent(),
     )
-    client = app_state.http
-    close_client = False
     runtime = await app_state.domain_store.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
-
-    if proxy_url:
-        client = httpx.AsyncClient(
-            proxy=proxy_url,
-            timeout=app_state.http.timeout,
-            limits=httpx.Limits(
-                max_connections=settings.max_connections,
-                max_keepalive_connections=settings.max_keepalive_connections,
-            ),
-            trust_env=False,
-        )
-        close_client = True
+    client, close_client = _resolve_http_client(proxy_url)
 
     started_at = perf_counter()
     try:
@@ -2591,22 +2578,9 @@ def _forward_anthropic_headers(headers: Mapping[str, str]) -> dict[str, str]:
 
 
 async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
-    client = app_state.http
-    close_client = False
     runtime = await app_state.domain_store.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
-
-    if proxy_url:
-        client = httpx.AsyncClient(
-            proxy=proxy_url,
-            timeout=app_state.http.timeout,
-            limits=httpx.Limits(
-                max_connections=settings.max_connections,
-                max_keepalive_connections=settings.max_keepalive_connections,
-            ),
-            trust_env=False,
-        )
-        close_client = True
+    client, close_client = _resolve_http_client(proxy_url)
 
     try:
         response = await client.request(**_model_list_request(channel))
