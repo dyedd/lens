@@ -32,6 +32,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from packaging import version
 from sqlalchemy.exc import OperationalError
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from ..api import create_app
 from ..core.auth import create_access_token, decode_access_token
@@ -517,7 +518,9 @@ async def get_current_admin(
         )
 
     try:
-        payload = decode_access_token(credentials.credentials, settings)
+        payload = await run_in_threadpool(
+            decode_access_token, credentials.credentials, settings
+        )
         username = payload.get("sub")
     except jwt.InvalidTokenError as exc:
         raise HTTPException(
@@ -679,7 +682,9 @@ async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
             detail="Incorrect username or password",
         )
 
-    access_token, expires_in = create_access_token(user.username, settings)
+    access_token, expires_in = await run_in_threadpool(
+        create_access_token, user.username, settings
+    )
     return AuthTokenResponse(access_token=access_token, expires_in=expires_in)
 
 
@@ -706,7 +711,9 @@ async def update_profile(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    access_token, expires_in = create_access_token(updated_admin.username, settings)
+    access_token, expires_in = await run_in_threadpool(
+        create_access_token, updated_admin.username, settings
+    )
     return AdminProfileUpdateResponse(
         access_token=access_token,
         expires_in=expires_in,
@@ -892,9 +899,7 @@ async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetri
     protocols = [protocol for site in sites for protocol in site.protocols]
     return metrics.model_copy(
         update={
-            "enabled_channels": sum(
-                1 for protocol in protocols if protocol.enabled
-            ),
+            "enabled_channels": sum(1 for protocol in protocols if protocol.enabled),
             "total_channels": len(protocols),
         }
     )
