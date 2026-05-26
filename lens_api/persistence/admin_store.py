@@ -1,5 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from starlette.concurrency import run_in_threadpool
 
 from ..core.auth import hash_password, verify_password
 from .entities import AdminUserEntity
@@ -19,7 +20,7 @@ class AdminStore:
             session.add(
                 AdminUserEntity(
                     username=username,
-                    password_hash=hash_password(password),
+                    password_hash=await run_in_threadpool(hash_password, password),
                     is_active=1,
                 )
             )
@@ -38,7 +39,9 @@ class AdminStore:
             user = result.scalar_one_or_none()
             if user is None or user.is_active != 1:
                 return None
-            if not verify_password(password, user.password_hash):
+            if not await run_in_threadpool(
+                verify_password, password, user.password_hash
+            ):
                 return None
             return user
 
@@ -63,9 +66,11 @@ class AdminStore:
             user = result.scalar_one_or_none()
             if user is None or user.is_active != 1:
                 raise KeyError(username)
-            if not verify_password(current_password, user.password_hash):
+            if not await run_in_threadpool(
+                verify_password, current_password, user.password_hash
+            ):
                 raise ValueError("Current password is incorrect")
-            user.password_hash = hash_password(new_password)
+            user.password_hash = await run_in_threadpool(hash_password, new_password)
             await session.commit()
 
     async def update_profile(
@@ -104,9 +109,13 @@ class AdminStore:
             if normalized_new_password:
                 if not current_password:
                     raise ValueError("Current password is required")
-                if not verify_password(current_password, user.password_hash):
+                if not await run_in_threadpool(
+                    verify_password, current_password, user.password_hash
+                ):
                     raise ValueError("Current password is incorrect")
-                user.password_hash = hash_password(normalized_new_password)
+                user.password_hash = await run_in_threadpool(
+                    hash_password, normalized_new_password
+                )
 
             await session.commit()
             await session.refresh(user)
