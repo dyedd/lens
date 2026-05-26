@@ -97,6 +97,16 @@ REQUEST_LOG_TERMINAL_STATUSES = (
     RequestLogLifecycleStatus.SUCCEEDED.value,
     RequestLogLifecycleStatus.FAILED.value,
 )
+REQUEST_LOG_MODEL_FAMILY_PREFIXES: dict[str, tuple[str, ...]] = {
+    "openai": ("gpt-", "o1", "o3", "o4", "chatgpt", "openai", "text-embedding"),
+    "claude": ("claude", "anthropic"),
+    "gemini": ("gemini", "gemma", "google"),
+    "deepseek": ("deepseek",),
+    "qwen": ("qwen", "qwq", "alibaba"),
+    "kimi": ("moonshot", "kimi"),
+    "glm": ("glm", "chatglm", "zhipu", "z-ai", "zai-org"),
+    "minimax": ("minimax", "abab", "minmax"),
+}
 
 
 class DomainStore:
@@ -3281,15 +3291,23 @@ class DomainStore:
         normalized = cls._normalize_request_log_keyword(model_prefix)
         if normalized is None:
             return stmt
-        pattern = f"{cls._escape_like_pattern(normalized)}%"
-        conditions = [
-            func.lower(func.coalesce(column, "")).like(pattern, escape="\\")
-            for column in (
-                RequestLogEntity.resolved_group_name,
-                RequestLogEntity.requested_group_name,
-                RequestLogEntity.upstream_model_name,
-            )
-        ]
+        prefixes = REQUEST_LOG_MODEL_FAMILY_PREFIXES.get(normalized, (normalized,))
+        columns = (
+            RequestLogEntity.resolved_group_name,
+            RequestLogEntity.requested_group_name,
+            RequestLogEntity.upstream_model_name,
+        )
+        conditions = []
+        for prefix in prefixes:
+            escaped_prefix = cls._escape_like_pattern(prefix)
+            for column in columns:
+                normalized_column = func.lower(func.coalesce(column, ""))
+                conditions.append(
+                    normalized_column.like(f"{escaped_prefix}%", escape="\\")
+                )
+                conditions.append(
+                    normalized_column.like(f"%/{escaped_prefix}%", escape="\\")
+                )
         return stmt.where(or_(*conditions))
 
     @classmethod

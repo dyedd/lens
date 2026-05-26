@@ -8,7 +8,11 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import JsonView from "@uiw/react-json-view";
 import { toast } from "sonner";
 import {
@@ -46,7 +50,11 @@ import { formatLogDateTime } from "@/lib/datetime";
 import { useAppTimeZone } from "@/hooks/use-app-time-zone";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { ModelAvatar } from "@/lib/model-icons";
+import {
+  getModelFamilyKey,
+  getModelFamilyLabel,
+  ModelAvatar,
+} from "@/lib/model-icons";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -170,7 +178,9 @@ function formatGatewayKeyLabel(
   );
 }
 
-function formatGatewayKeyOptionLabel(item: Pick<GatewayApiKey, "id" | "remark">) {
+function formatGatewayKeyOptionLabel(
+  item: Pick<GatewayApiKey, "id" | "remark">,
+) {
   return item.remark.trim() || shortenGatewayKeyId(item.id);
 }
 
@@ -265,16 +275,6 @@ function getSecondaryModelName(
   return null;
 }
 
-function getModelPrefix(value: string) {
-  const normalized = value.trim().toLowerCase();
-  const match = /^[a-z0-9]+/.exec(normalized);
-  return match?.[0] || normalized;
-}
-
-function formatModelPrefixLabel(value: string) {
-  return value ? value[0].toUpperCase() + value.slice(1) : value;
-}
-
 function buildPaginationItems(currentPage: number, totalPages: number) {
   if (totalPages <= 1) return [1];
   if (totalPages <= 5) {
@@ -286,13 +286,7 @@ function buildPaginationItems(currentPage: number, totalPages: number) {
   }
 
   if (currentPage >= totalPages - 2) {
-    return [
-      1,
-      "ellipsis",
-      totalPages - 2,
-      totalPages - 1,
-      totalPages,
-    ] as const;
+    return [1, "ellipsis", totalPages - 2, totalPages - 1, totalPages] as const;
   }
 
   return [
@@ -357,7 +351,10 @@ function RequestOutcomeBadge({
       <TooltipTrigger asChild>
         <span className="inline-flex">{content}</span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-sm whitespace-pre-wrap break-words" side="bottom">
+      <TooltipContent
+        className="max-w-sm whitespace-pre-wrap break-words"
+        side="bottom"
+      >
         {errorMessage}
       </TooltipContent>
     </Tooltip>
@@ -810,7 +807,10 @@ function AttemptChain({
                     {attempt.channel_name}
                   </span>
                   {attempt.credential_name || attempt.credential_id ? (
-                    <Badge variant="secondary" className="max-w-[160px] truncate">
+                    <Badge
+                      variant="secondary"
+                      className="max-w-[160px] truncate"
+                    >
                       {attempt.credential_name || attempt.credential_id}
                     </Badge>
                   ) : null}
@@ -862,13 +862,19 @@ function RequestCard({
   const primaryModelName = getResolvedGroupName(item);
   const modelChain = getModelChain(item);
   const secondaryModelName = getSecondaryModelName(item);
-  const attemptCount = Number.isFinite(item.attempt_count) ? item.attempt_count : 0;
+  const attemptCount = Number.isFinite(item.attempt_count)
+    ? item.attempt_count
+    : 0;
   const errorDisplay = formatErrorDisplay(item.error_message);
   const running =
     item.lifecycle_status === "connecting" ||
     item.lifecycle_status === "streaming";
   const elapsedMs = running
-    ? Math.max(now - new Date(item.created_at).getTime(), item.latency_ms || 0, 0)
+    ? Math.max(
+        now - new Date(item.created_at).getTime(),
+        item.latency_ms || 0,
+        0,
+      )
     : item.latency_ms;
 
   return (
@@ -1019,8 +1025,9 @@ export function RequestsScreen() {
   const [selectedModelPrefix, setSelectedModelPrefix] =
     useState<SelectedModelPrefix>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [protocolFilter, setProtocolFilter] =
-    useState<"all" | ProtocolKind>("all");
+  const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
+    "all",
+  );
   const [channelFilter, setChannelFilter] = useState("all");
   const [selectedGatewayKeyId, setSelectedGatewayKeyId] = useState("all");
   const [sortMode, setSortMode] = useState<SortMode>("latest");
@@ -1032,8 +1039,7 @@ export function RequestsScreen() {
   const effectiveGatewayKeyId =
     selectedGatewayKeyId === "all" ? null : selectedGatewayKeyId;
   const statusQueryValue = statusFilter === "all" ? null : statusFilter;
-  const protocolQueryValue =
-    protocolFilter === "all" ? null : protocolFilter;
+  const protocolQueryValue = protocolFilter === "all" ? null : protocolFilter;
   const channelQueryValue = channelFilter === "all" ? null : channelFilter;
   const keywordQueryValue = deferredKeyword || null;
 
@@ -1128,11 +1134,11 @@ export function RequestsScreen() {
   const modelPrefixOptions = useMemo(() => {
     const optionsByPrefix = new Map<string, ModelPrefixOption>();
     for (const model of data?.model_names ?? []) {
-      const prefix = getModelPrefix(model);
+      const prefix = getModelFamilyKey(model);
       if (prefix && !optionsByPrefix.has(prefix)) {
         optionsByPrefix.set(prefix, {
           key: prefix,
-          label: formatModelPrefixLabel(prefix),
+          label: getModelFamilyLabel(model),
           sampleModel: model,
         });
       }
@@ -1245,7 +1251,11 @@ export function RequestsScreen() {
 
   async function clearRequestLogs() {
     const confirmed = window.confirm(
-      titleForLocale(locale, "确认删除全部请求日志？", "Delete all request logs?"),
+      titleForLocale(
+        locale,
+        "确认删除全部请求日志？",
+        "Delete all request logs?",
+      ),
     );
     if (!confirmed) return;
 
@@ -1265,7 +1275,9 @@ export function RequestsScreen() {
         queryClient.invalidateQueries({ queryKey: ["overview-logs"] }),
         queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] }),
       ]);
-      toast.success(titleForLocale(locale, "请求日志已清空", "Request logs cleared"));
+      toast.success(
+        titleForLocale(locale, "请求日志已清空", "Request logs cleared"),
+      );
     } catch (requestError) {
       toast.error(
         requestError instanceof ApiError
@@ -1423,7 +1435,11 @@ export function RequestsScreen() {
                         "当前筛选条件下没有请求日志。",
                         "No request logs match the current filters.",
                       )
-                    : titleForLocale(locale, "暂无请求日志。", "No request logs yet.")}
+                    : titleForLocale(
+                        locale,
+                        "暂无请求日志。",
+                        "No request logs yet.",
+                      )}
                 </div>
               ) : null}
 
@@ -1524,7 +1540,9 @@ export function RequestsScreen() {
                             key={option.key}
                             type="button"
                             variant={
-                              statusFilter === option.key ? "default" : "outline"
+                              statusFilter === option.key
+                                ? "default"
+                                : "outline"
                             }
                             size="sm"
                             onClick={() => handleStatusChange(option.key)}
@@ -1578,7 +1596,9 @@ export function RequestsScreen() {
                         id="request-log-channel"
                         className="w-full"
                         value={channelFilter}
-                        onChange={(event) => handleChannelChange(event.target.value)}
+                        onChange={(event) =>
+                          handleChannelChange(event.target.value)
+                        }
                       >
                         <NativeSelectOption value="all">
                           {titleForLocale(locale, "全部渠道", "All channels")}
@@ -1604,7 +1624,11 @@ export function RequestsScreen() {
                         }
                       >
                         <NativeSelectOption value="all">
-                          {titleForLocale(locale, "全部 API Key", "All API keys")}
+                          {titleForLocale(
+                            locale,
+                            "全部 API Key",
+                            "All API keys",
+                          )}
                         </NativeSelectOption>
                         {gatewayKeyOptions.map((item) => (
                           <NativeSelectOption key={item.id} value={item.id}>
@@ -1633,7 +1657,11 @@ export function RequestsScreen() {
                           {titleForLocale(locale, "费用优先", "Highest cost")}
                         </NativeSelectOption>
                         <NativeSelectOption value="latency">
-                          {titleForLocale(locale, "耗时优先", "Longest latency")}
+                          {titleForLocale(
+                            locale,
+                            "耗时优先",
+                            "Longest latency",
+                          )}
                         </NativeSelectOption>
                         <NativeSelectOption value="tokens">
                           {titleForLocale(locale, "Token 优先", "Most tokens")}
