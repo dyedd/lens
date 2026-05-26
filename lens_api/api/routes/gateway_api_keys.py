@@ -1,7 +1,9 @@
+from types import ModuleType
+
 from fastapi import FastAPI
 
 
-def register(app: FastAPI, service_module) -> None:
+def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route(
         "/api/admin/gateway-api-keys",
         service_module.list_gateway_api_keys,

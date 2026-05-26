@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import ModuleType
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -8,7 +9,7 @@ from starlette.staticfiles import StaticFiles
 RESERVED_PREFIXES = ("api", "v1", "v1beta", "healthz", "docs", "redoc", "openapi.json")
 
 
-def register(app: FastAPI, service_module) -> None:
+def register(app: FastAPI, service_module: ModuleType) -> None:
     static_dir_value = service_module.settings.ui_static_dir.strip()
     if not static_dir_value:
         return

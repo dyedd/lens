@@ -996,7 +996,7 @@ class DomainStore:
             if channel_id not in existing_channel_ids
         ]
         if missing_channel_ids:
-            raise ValueError(f'Channels not found: {", ".join(missing_channel_ids)}')
+            raise ValueError(f"Channels not found: {', '.join(missing_channel_ids)}")
 
         invalid_channel_ids = [
             channel.id
@@ -1007,7 +1007,7 @@ class DomainStore:
         ]
         if invalid_channel_ids:
             raise ValueError(
-                f'Channels cannot reach protocol={protocol}: {", ".join(invalid_channel_ids)}'
+                f"Channels cannot reach protocol={protocol}: {', '.join(invalid_channel_ids)}"
             )
 
         model_rows = (
@@ -1216,9 +1216,8 @@ class DomainStore:
         )
         credential_names_by_channel: dict[str, dict[str, str]] = {}
         for channel_id, credential_id, credential_name in rows.all():
-            credential_names_by_channel.setdefault(channel_id, {})[credential_id] = (
-                credential_name
-            )
+            channel_credentials = credential_names_by_channel.setdefault(channel_id, {})
+            channel_credentials[credential_id] = credential_name
         return credential_names_by_channel
 
     async def _load_credential_numbers_by_channel(
@@ -2832,7 +2831,9 @@ class DomainStore:
         if end_at is not None:
             stmt = stmt.where(OverviewModelDailyStatsEntity.date < end_at)
         rows = (
-            await session.execute(stmt.order_by(OverviewModelDailyStatsEntity.date.asc()))
+            await session.execute(
+                stmt.order_by(OverviewModelDailyStatsEntity.date.asc())
+            )
         ).all()
         return [
             (

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import FrameType
 
 from alembic import command
 from alembic.config import Config
@@ -133,7 +134,7 @@ def dev(_args: argparse.Namespace) -> None:
             if process.poll() is None:
                 process.kill()
 
-    def handle_signal(signum, _frame) -> None:
+    def handle_signal(signum: int, _frame: FrameType | None) -> None:
         stop_processes()
         raise SystemExit(128 + signum)
 
