@@ -2729,7 +2729,10 @@ def _apply_model_test_param_override(
             credential_id=payload.credential.id,
             error_message=_format_channel_error(exc.detail),
         )
-    prepared_body["stream"] = False
+    if payload.protocol == ProtocolKind.RERANK:
+        prepared_body.pop("stream", None)
+    else:
+        prepared_body["stream"] = False
     return prepared_body
 
 
