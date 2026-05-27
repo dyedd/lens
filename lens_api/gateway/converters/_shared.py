@@ -62,6 +62,8 @@ def _assemble_content_parts(
 
 def anthropic_content_to_chat_messages(
     messages: list[dict[str, Any]],
+    *,
+    preserve_thinking: bool = False,
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for msg in messages:
@@ -73,14 +75,22 @@ def anthropic_content_to_chat_messages(
             continue
 
         text_parts: list[str] = []
+        thinking_parts: list[str] = []
+        has_thinking = False
         image_parts: list[dict[str, Any]] = []
         tool_calls: list[dict[str, Any]] = []
         tool_results: list[dict[str, Any]] = []
 
         for block in content:
+            if not isinstance(block, dict):
+                continue
             bt = block.get("type")
             if bt == "text":
                 text_parts.append(block.get("text", ""))
+            elif bt == "thinking":
+                has_thinking = True
+                thinking = block.get("thinking")
+                thinking_parts.append(thinking if isinstance(thinking, str) else "")
             elif bt == "image":
                 source = block.get("source", {})
                 if source.get("type") == "base64":
@@ -119,13 +129,24 @@ def anthropic_content_to_chat_messages(
             msg_out: dict[str, Any] = {"role": "assistant", "content": None}
             if text_parts:
                 msg_out["content"] = "\n".join(text_parts)
+            if preserve_thinking and has_thinking:
+                msg_out["reasoning_content"] = "\n".join(thinking_parts)
             msg_out["tool_calls"] = tool_calls
             result.append(msg_out)
         elif image_parts or text_parts:
+            msg_out = {
+                "role": role,
+                "content": _assemble_content_parts(text_parts, image_parts),
+            }
+            if role == "assistant" and preserve_thinking and has_thinking:
+                msg_out["reasoning_content"] = "\n".join(thinking_parts)
+            result.append(msg_out)
+        elif role == "assistant" and preserve_thinking and has_thinking:
             result.append(
                 {
-                    "role": role,
-                    "content": _assemble_content_parts(text_parts, image_parts),
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning_content": "\n".join(thinking_parts),
                 }
             )
 

@@ -13,6 +13,7 @@ from functools import lru_cache
 from http import HTTPStatus
 from time import perf_counter
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -1975,7 +1976,13 @@ async def _try_target(
     if needs_conversion(protocol, channel.protocol):
         try:
             upstream_body = convert_request(
-                protocol, channel.protocol, body, target.model_name
+                protocol,
+                channel.protocol,
+                body,
+                target.model_name,
+                preserve_reasoning=_is_deepseek_thinking_target(
+                    channel, target.model_name
+                ),
             )
         except ValueError as exc:
             return await _record_target_failure(
@@ -1998,6 +2005,7 @@ async def _try_target(
         upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
     try:
         upstream_body = _apply_param_override(channel, upstream_body)
+        upstream_body = _apply_deepseek_thinking_compat(channel, upstream_body)
     except UpstreamRequestError as exc:
         return await _record_target_failure(
             target=target,
@@ -3044,6 +3052,91 @@ def _prepare_upstream_body(
     return payload
 
 
+def _apply_deepseek_thinking_compat(
+    channel: ChannelConfig, body: dict[str, Any]
+) -> dict[str, Any]:
+    if not _is_deepseek_thinking_target(channel, body.get("model")):
+        return body
+    if _is_thinking_disabled(body):
+        return body
+    if channel.protocol == ProtocolKind.ANTHROPIC:
+        return _apply_deepseek_anthropic_thinking_compat(body)
+    if channel.protocol == ProtocolKind.OPENAI_CHAT:
+        return _apply_deepseek_chat_reasoning_compat(body)
+    return body
+
+
+def _is_deepseek_thinking_target(channel: ChannelConfig, model_name: Any) -> bool:
+    return _is_deepseek_base_url(str(channel.base_url)) or _is_deepseek_model_name(
+        model_name
+    )
+
+
+def _is_deepseek_base_url(base_url: str) -> bool:
+    host = (urlsplit(base_url).hostname or "").lower()
+    return host == "api.deepseek.com"
+
+
+def _is_deepseek_model_name(model_name: Any) -> bool:
+    if not isinstance(model_name, str):
+        return False
+    normalized = model_name.lower()
+    return "deepseek-v4" in normalized or "deepseek-reasoner" in normalized
+
+
+def _is_thinking_disabled(body: dict[str, Any]) -> bool:
+    thinking = body.get("thinking")
+    if not isinstance(thinking, dict):
+        return False
+    return str(thinking.get("type") or "").lower() == "disabled"
+
+
+def _apply_deepseek_anthropic_thinking_compat(body: dict[str, Any]) -> dict[str, Any]:
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return body
+
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        if not _anthropic_content_has_tool_use(content):
+            continue
+        if _anthropic_content_has_thinking(content):
+            continue
+        content.insert(0, {"type": "thinking", "thinking": ""})
+    return body
+
+
+def _anthropic_content_has_tool_use(content: list[Any]) -> bool:
+    return any(
+        isinstance(block, dict) and block.get("type") == "tool_use" for block in content
+    )
+
+
+def _anthropic_content_has_thinking(content: list[Any]) -> bool:
+    return any(
+        isinstance(block, dict) and block.get("type") == "thinking" for block in content
+    )
+
+
+def _apply_deepseek_chat_reasoning_compat(body: dict[str, Any]) -> dict[str, Any]:
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return body
+
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        if not message.get("tool_calls"):
+            continue
+        if message.get("reasoning_content") is None:
+            message["reasoning_content"] = ""
+    return body
+
+
 def _apply_param_override(
     channel: ChannelConfig, body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -3481,6 +3574,14 @@ def _restore_anthropic_stream_message(
             delta_type = str(delta.get("type") or "")
             if delta_type == "text_delta":
                 block["text"] = f"{block.get('text') or ''}{delta.get('text') or ''}"
+            elif delta_type == "thinking_delta":
+                block["thinking"] = (
+                    f"{block.get('thinking') or ''}{delta.get('thinking') or ''}"
+                )
+            elif delta_type == "signature_delta":
+                block["signature"] = (
+                    f"{block.get('signature') or ''}{delta.get('signature') or ''}"
+                )
             elif delta_type == "input_json_delta":
                 input_buffers[index] = (
                     f"{input_buffers.get(index, '')}{delta.get('partial_json') or ''}"
