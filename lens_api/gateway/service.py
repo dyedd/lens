@@ -3074,6 +3074,8 @@ async def _record_stream_request_log(
         if capture is not None
         else result.response_content
     )
+    if capture is not None:
+        capture.response_content_chunks.clear()
     response_protocol = channel.protocol
     response_raw_content = raw_content
     client_response_content = (
@@ -3081,6 +3083,8 @@ async def _record_stream_request_log(
         if capture is not None
         else None
     )
+    if capture is not None:
+        capture.client_response_content_chunks.clear()
     if (
         capture is not None
         and needs_conversion(protocol, channel.protocol)
