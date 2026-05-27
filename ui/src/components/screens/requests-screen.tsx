@@ -89,6 +89,7 @@ import {
 import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
 
 const PAGE_SIZE = 20;
+const REQUEST_LOG_DETAIL_GC_TIME = 60_000;
 
 type ModelPrefixOption = {
   key: string;
@@ -1115,6 +1116,7 @@ export function RequestsScreen() {
       apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
     enabled: detailId !== null,
     staleTime: 60_000,
+    gcTime: REQUEST_LOG_DETAIL_GC_TIME,
   });
 
   const {
@@ -1129,6 +1131,7 @@ export function RequestsScreen() {
       apiRequest<RequestLogDetail>(`/admin/request-logs/${attemptDetailId}`),
     enabled: attemptDetailId !== null,
     staleTime: 60_000,
+    gcTime: REQUEST_LOG_DETAIL_GC_TIME,
   });
 
   const modelPrefixOptions = useMemo(() => {
