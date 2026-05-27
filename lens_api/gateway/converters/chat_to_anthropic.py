@@ -12,7 +12,9 @@ from ._shared import (
 )
 
 
-def anthropic_request_to_chat(body: dict[str, Any]) -> dict[str, Any]:
+def anthropic_request_to_chat(
+    body: dict[str, Any], *, preserve_thinking: bool = False
+) -> dict[str, Any]:
     chat: dict[str, Any] = {}
 
     messages: list[dict[str, Any]] = []
@@ -26,7 +28,11 @@ def anthropic_request_to_chat(body: dict[str, Any]) -> dict[str, Any]:
                 messages.append({"role": "system", "content": text})
 
     src_messages = body.get("messages", [])
-    messages.extend(anthropic_content_to_chat_messages(src_messages))
+    messages.extend(
+        anthropic_content_to_chat_messages(
+            src_messages, preserve_thinking=preserve_thinking
+        )
+    )
     chat["messages"] = messages
 
     if "max_tokens" in body:
@@ -56,6 +62,9 @@ def chat_response_to_anthropic(
     stop_reason = FINISH_REASON_CHAT_TO_ANTHROPIC.get(finish_reason, "end_turn")
 
     content: list[dict[str, Any]] = []
+    has_reasoning, reasoning = _chat_message_reasoning_content(message)
+    if has_reasoning:
+        content.append({"type": "thinking", "thinking": reasoning})
     text = message.get("content")
     if text:
         content.append({"type": "text", "text": text})
@@ -86,6 +95,7 @@ async def chat_stream_to_anthropic_stream(
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
     output_tokens = 0
     text_started = False
+    thinking_index: int | None = None
     tool_index: dict[str, int] = {}
     next_block_index = 0
     finish_reason: str | None = None
@@ -116,8 +126,34 @@ async def chat_stream_to_anthropic_stream(
         for choice in payload.get("choices", []):
             finish_reason = choice.get("finish_reason") or finish_reason
             delta = choice.get("delta", {})
+            reasoning_delta = _chat_delta_reasoning_content(delta)
             text_delta = delta.get("content")
             tc_deltas = delta.get("tool_calls")
+
+            if reasoning_delta is not None:
+                if thinking_index is None:
+                    thinking_index = next_block_index
+                    next_block_index += 1
+                    yield format_sse_event(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": thinking_index,
+                            "content_block": {"type": "thinking", "thinking": ""},
+                        },
+                    )
+                if reasoning_delta:
+                    yield format_sse_event(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": thinking_index,
+                            "delta": {
+                                "type": "thinking_delta",
+                                "thinking": reasoning_delta,
+                            },
+                        },
+                    )
 
             if text_delta:
                 if not text_started:
@@ -195,3 +231,23 @@ async def chat_stream_to_anthropic_stream(
         },
     )
     yield format_sse_event("message_stop", {"type": "message_stop"})
+
+
+def _chat_message_reasoning_content(message: dict[str, Any]) -> tuple[bool, str]:
+    for key in ("reasoning_content", "reasoning"):
+        if key not in message:
+            continue
+        value = message.get(key)
+        if isinstance(value, str):
+            return True, value
+    return False, ""
+
+
+def _chat_delta_reasoning_content(delta: dict[str, Any]) -> str | None:
+    for key in ("reasoning_content", "reasoning"):
+        if key not in delta:
+            continue
+        value = delta.get(key)
+        if isinstance(value, str):
+            return value
+    return None

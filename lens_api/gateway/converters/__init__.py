@@ -38,12 +38,13 @@ def convert_request(
     channel_protocol: ProtocolKind,
     body: dict[str, Any],
     target_model: str | None = None,
+    preserve_reasoning: bool = False,
 ) -> dict[str, Any]:
     if (
         client_protocol == ProtocolKind.ANTHROPIC
         and channel_protocol == ProtocolKind.OPENAI_CHAT
     ):
-        result = anthropic_request_to_chat(body)
+        result = anthropic_request_to_chat(body, preserve_thinking=preserve_reasoning)
     elif (
         client_protocol == ProtocolKind.OPENAI_RESPONSES
         and channel_protocol == ProtocolKind.OPENAI_CHAT
