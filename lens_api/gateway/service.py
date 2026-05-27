@@ -973,46 +973,54 @@ async def fetch_site_models(
 ) -> list[SiteModelFetchItem]:
     previews = await app_state.store.fetch_models_preview(payload)
     items: list[SiteModelFetchItem] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()  # (protocol, credential_id, model_name)
+
+    protocols = payload.compatible_protocols or []
+
     for preview in previews:
         credential = next(
-            item
-            for item in payload.credentials
-            if (item.id or "") == preview["credential_id"]
+            (item for item in payload.credentials
+             if (item.id or "") == preview["credential_id"]),
+            None,
         )
-        channel = ChannelConfig(
-            id="preview",
-            name=preview["credential_name"] or "preview",
-            protocol=payload.protocol,
-            base_url=payload.base_url,
-            api_key=credential.api_key,
-            headers=payload.headers,
-            model_patterns=[],
-            keys=[
-                {
-                    "id": preview["credential_id"],
-                    "key": credential.api_key,
-                    "remark": preview["credential_name"],
-                    "enabled": True,
-                }
-            ],
-            models=[],
-            channel_proxy=payload.channel_proxy,
-            param_override="",
-            match_regex=payload.match_regex,
-        )
-        for model_name in await _fetch_upstream_models(channel):
-            key = (preview["credential_id"], model_name)
-            if key in seen:
-                continue
-            seen.add(key)
-            items.append(
-                SiteModelFetchItem(
-                    credential_id=preview["credential_id"],
-                    credential_name=preview["credential_name"],
-                    model_name=model_name,
-                )
+        if credential is None:
+            continue
+
+        for protocol in protocols:
+            channel = ChannelConfig(
+                id="preview",
+                name=preview["credential_name"] or "preview",
+                protocol=protocol,
+                base_url=payload.base_url,
+                api_key=credential.api_key,
+                headers=payload.headers,
+                model_patterns=[],
+                keys=[
+                    {
+                        "id": preview["credential_id"],
+                        "key": credential.api_key,
+                        "remark": preview["credential_name"],
+                        "enabled": True,
+                    }
+                ],
+                models=[],
+                channel_proxy=payload.channel_proxy,
+                param_override="",
+                match_regex=payload.match_regex,
             )
+            for model_name in await _fetch_upstream_models(channel):
+                key = (protocol.value, preview["credential_id"], model_name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append(
+                    SiteModelFetchItem(
+                        protocol=protocol,
+                        credential_id=preview["credential_id"],
+                        credential_name=preview["credential_name"],
+                        model_name=model_name,
+                    )
+                )
     return items
 
 
@@ -1434,7 +1442,7 @@ async def _read_upload_file(file: UploadFile) -> bytes:
 
 def _parse_config_backup_dump(payload: bytes) -> ConfigBackupDump:
     try:
-        return ConfigBackupDump.model_validate_json(payload)
+        return BackupStore.parse_dump(payload)
     except (ValueError, json.JSONDecodeError) as exc:
         raise ValueError("Invalid backup file") from exc
 

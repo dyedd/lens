@@ -67,6 +67,18 @@ from .entities import (
     SiteProtocolConfigEntity,
 )
 
+def _parse_composite_channel_id(channel_id: str) -> "tuple[str, ProtocolKind] | None":
+    """从复合 channel ID 中提取 (combo_id, protocol)。
+    复合 ID 格式：{combo_id}_{protocol_value}
+    """
+    for protocol in ProtocolKind:
+        suffix = f"_{protocol.value}"
+        if channel_id.endswith(suffix):
+            combo_id = channel_id[: -len(suffix)]
+            return combo_id, protocol
+    return None
+
+
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
 SETTING_PROXY_URL = "proxy_url"
 SETTING_STATS_TIME_ZONE = "stats_time_zone"
@@ -557,153 +569,48 @@ class DomainStore:
     async def list_group_candidates(
         self, payload: ModelGroupCandidatesRequest
     ) -> ModelGroupCandidatesResponse:
-        async with self._session_factory() as session:
-            query = select(SiteProtocolConfigEntity).order_by(
-                SiteProtocolConfigEntity.protocol.asc(),
-                SiteProtocolConfigEntity.id.asc(),
-            )
-            channels = (await session.execute(query)).scalars().all()
-            if payload.protocol is not None:
-                channels = [
-                    channel
-                    for channel in channels
-                    if can_reach_protocol(
-                        ProtocolKind(channel.protocol), payload.protocol
-                    )
-                ]
-            channel_ids = [item.id for item in channels]
-            discovered_models = []
-            if channel_ids:
-                discovered_models = (
-                    (
-                        await session.execute(
-                            select(SiteDiscoveredModelEntity)
-                            .where(
-                                SiteDiscoveredModelEntity.protocol_config_id.in_(
-                                    channel_ids
-                                )
-                            )
-                            .where(SiteDiscoveredModelEntity.enabled == 1)
-                            .order_by(
-                                SiteDiscoveredModelEntity.protocol_config_id.asc(),
-                                SiteDiscoveredModelEntity.sort_order.asc(),
-                                SiteDiscoveredModelEntity.id.asc(),
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            channel_rows = []
-            if channel_ids:
-                channel_rows = (
-                    await session.execute(
-                        select(
-                            SiteProtocolConfigEntity.id,
-                            SiteProtocolConfigEntity.protocol,
-                            SiteProtocolConfigEntity.base_url_id,
-                            SiteEntity.name,
-                            SiteEntity.id.label("site_id"),
-                        )
-                        .join(
-                            SiteEntity,
-                            SiteEntity.id == SiteProtocolConfigEntity.site_id,
-                        )
-                        .where(SiteProtocolConfigEntity.id.in_(channel_ids))
-                    )
-                ).all()
-                site_ids_for_urls = sorted({row.site_id for row in channel_rows})
-                base_url_rows = (
-                    (
-                        await session.execute(
-                            select(SiteBaseUrlEntity)
-                            .where(SiteBaseUrlEntity.site_id.in_(site_ids_for_urls))
-                            .order_by(
-                                SiteBaseUrlEntity.site_id.asc(),
-                                SiteBaseUrlEntity.sort_order.asc(),
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                    if site_ids_for_urls
-                    else []
-                )
-                url_by_id: dict[str, str] = {}
-                for row in base_url_rows:
-                    url_by_id[row.id] = row.url
+        from .channel_store import ChannelStore
+        channel_store = ChannelStore(self._session_factory)
+        all_channels = await channel_store.list()
 
-        candidates: list[ModelGroupCandidateItem] = []
-        seen: set[tuple[str, str, str]] = set()
+        if payload.protocol is not None:
+            channels = [
+                ch for ch in all_channels
+                if can_reach_protocol(ch.protocol, payload.protocol)
+            ]
+        else:
+            channels = all_channels
+
         excluded = {
             (item.channel_id, item.credential_id, item.model_name)
             for item in payload.exclude_items
         }
-        credential_rows = []
-        site_ids = sorted({row.site_id for row in channel_rows})
-        if site_ids:
-            async with self._session_factory() as session:
-                credential_rows = (
-                    (
-                        await session.execute(
-                            select(SiteCredentialEntity)
-                            .where(SiteCredentialEntity.site_id.in_(site_ids))
-                            .order_by(
-                                SiteCredentialEntity.site_id.asc(),
-                                SiteCredentialEntity.sort_order.asc(),
-                                SiteCredentialEntity.id.asc(),
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-        credential_names = {item.id: item.name for item in credential_rows}
-        credential_numbers: dict[str, int] = {}
-        credential_counts_by_site: dict[str, int] = {}
-        for item in credential_rows:
-            credential_counts_by_site[item.site_id] = (
-                credential_counts_by_site.get(item.site_id, 0) + 1
-            )
-            credential_numbers[item.id] = credential_counts_by_site[item.site_id]
 
-        models_by_channel: dict[str, list[tuple[str, str]]] = {}
-        for item in discovered_models:
-            models_by_channel.setdefault(item.protocol_config_id, []).append(
-                (item.credential_id, item.model_name)
-            )
-
-        channel_meta_by_id = {
-            channel_id: {
-                "site_id": site_id,
-                "name": site_name,
-                "protocol": protocol,
-                "base_url": url_by_id.get(base_url_id, ""),
-            }
-            for channel_id, protocol, base_url_id, site_name, site_id in channel_rows
-        }
+        candidates: list[ModelGroupCandidateItem] = []
+        seen: set[tuple[str, str, str]] = set()
 
         for channel in channels:
-            channel_items = list(dict.fromkeys(models_by_channel.get(channel.id, [])))
-            for credential_id, model_name in channel_items:
-                candidate_key = (channel.id, credential_id, model_name)
+            if channel.status.value != "enabled":
+                continue
+            for model in channel.models:
+                if not model.enabled:
+                    continue
+                candidate_key = (channel.id, model.credential_id, model.model_name)
                 if candidate_key in seen or candidate_key in excluded:
                     continue
                 seen.add(candidate_key)
-                meta = channel_meta_by_id.get(channel.id, {})
+
                 candidates.append(
                     ModelGroupCandidateItem(
-                        site_id=str(meta.get("site_id") or ""),
+                        site_id="",
                         channel_id=channel.id,
-                        channel_name=str(meta.get("name") or channel.protocol),
-                        protocol=ProtocolKind(
-                            str(meta.get("protocol") or channel.protocol)
-                        ),
-                        credential_id=credential_id,
-                        credential_name=credential_names.get(credential_id, ""),
-                        credential_number=credential_numbers.get(credential_id, 0),
-                        base_url=str(meta.get("base_url") or ""),
-                        model_name=model_name,
+                        channel_name=channel.name,
+                        protocol=channel.protocol,
+                        credential_id=model.credential_id,
+                        credential_name=model.credential_name,
+                        credential_number=0,
+                        base_url=str(channel.base_url),
+                        model_name=model.model_name,
                     )
                 )
 
@@ -992,52 +899,34 @@ class DomainStore:
         if not items:
             return route_group
 
+        from .channel_store import ChannelStore
+        channel_store = ChannelStore(self._session_factory)
+        all_channels = await channel_store.list()
+        channel_by_id = {ch.id: ch for ch in all_channels}
+
         channel_ids = list(dict.fromkeys(item.channel_id for item in items))
-        channel_result = await session.execute(
-            select(SiteProtocolConfigEntity).where(
-                SiteProtocolConfigEntity.id.in_(channel_ids)
-            )
-        )
-        channel_rows = channel_result.scalars().all()
-        existing_channel_ids = {row.id for row in channel_rows}
-        missing_channel_ids = [
-            channel_id
-            for channel_id in channel_ids
-            if channel_id not in existing_channel_ids
-        ]
+        missing_channel_ids = [cid for cid in channel_ids if cid not in channel_by_id]
         if missing_channel_ids:
             raise ValueError(f"Channels not found: {', '.join(missing_channel_ids)}")
 
         invalid_channel_ids = [
-            channel.id
-            for channel in channel_rows
-            if not can_reach_protocol(
-                ProtocolKind(channel.protocol), ProtocolKind(protocol)
-            )
+            cid for cid in channel_ids
+            if not can_reach_protocol(channel_by_id[cid].protocol, ProtocolKind(protocol))
         ]
         if invalid_channel_ids:
             raise ValueError(
                 f"Channels cannot reach protocol={protocol}: {', '.join(invalid_channel_ids)}"
             )
 
-        model_rows = (
-            (
-                await session.execute(
-                    select(SiteDiscoveredModelEntity)
-                    .where(
-                        SiteDiscoveredModelEntity.protocol_config_id.in_(channel_ids)
-                    )
-                    .where(SiteDiscoveredModelEntity.enabled == 1)
-                )
-            )
-            .scalars()
-            .all()
-        )
         model_names_by_channel: dict[str, set[tuple[str, str]]] = {}
-        for row in model_rows:
-            model_names_by_channel.setdefault(row.protocol_config_id, set()).add(
-                (row.credential_id, row.model_name)
-            )
+        for cid in channel_ids:
+            ch = channel_by_id.get(cid)
+            if ch:
+                model_names_by_channel[cid] = {
+                    (m.credential_id, m.model_name)
+                    for m in ch.models
+                    if m.enabled
+                }
 
         for item in items:
             channel_models = model_names_by_channel.get(item.channel_id, set())
@@ -1182,36 +1071,51 @@ class DomainStore:
     ) -> dict[str, str]:
         if not channel_ids:
             return {}
+        combo_to_channels: dict[str, list[str]] = {}
+        for cid in channel_ids:
+            parsed = _parse_composite_channel_id(cid)
+            if parsed:
+                combo_id = parsed[0]
+                combo_to_channels.setdefault(combo_id, []).append(cid)
+            else:
+                combo_to_channels.setdefault(cid, []).append(cid)
+        combo_ids = list(combo_to_channels.keys())
         rows = (
             await session.execute(
                 select(SiteProtocolConfigEntity.id, SiteEntity.name)
                 .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
-                .where(SiteProtocolConfigEntity.id.in_(channel_ids))
+                .where(SiteProtocolConfigEntity.id.in_(combo_ids))
             )
         ).all()
-        return {channel_id: site_name for channel_id, site_name in rows}
+        combo_site_names: dict[str, str] = {combo_id: site_name for combo_id, site_name in rows}
+        result: dict[str, str] = {}
+        for combo_id, cids in combo_to_channels.items():
+            site_name = combo_site_names.get(combo_id, "")
+            for cid in cids:
+                result[cid] = site_name
+        return result
 
     async def _load_channel_protocols(
         self, session: AsyncSession, channel_ids: list[str]
     ) -> dict[str, ProtocolKind]:
-        if not channel_ids:
-            return {}
-        rows = (
-            await session.execute(
-                select(
-                    SiteProtocolConfigEntity.id, SiteProtocolConfigEntity.protocol
-                ).where(SiteProtocolConfigEntity.id.in_(channel_ids))
-            )
-        ).all()
-        return {
-            channel_id: ProtocolKind(str(protocol)) for channel_id, protocol in rows
-        }
+        result: dict[str, ProtocolKind] = {}
+        for channel_id in channel_ids:
+            parsed = _parse_composite_channel_id(channel_id)
+            if parsed is not None:
+                result[channel_id] = parsed[1]
+        return result
 
     async def _load_credential_names_by_channel(
         self, session: AsyncSession, channel_ids: list[str]
     ) -> dict[str, dict[str, str]]:
         if not channel_ids:
             return {}
+        combo_to_channels: dict[str, list[str]] = {}
+        for cid in channel_ids:
+            parsed = _parse_composite_channel_id(cid)
+            combo_id = parsed[0] if parsed else cid
+            combo_to_channels.setdefault(combo_id, []).append(cid)
+        combo_ids = list(combo_to_channels.keys())
         rows = await session.execute(
             select(
                 SiteProtocolConfigEntity.id,
@@ -1222,19 +1126,29 @@ class DomainStore:
                 SiteCredentialEntity,
                 SiteCredentialEntity.site_id == SiteProtocolConfigEntity.site_id,
             )
-            .where(SiteProtocolConfigEntity.id.in_(channel_ids))
+            .where(SiteProtocolConfigEntity.id.in_(combo_ids))
         )
-        credential_names_by_channel: dict[str, dict[str, str]] = {}
-        for channel_id, credential_id, credential_name in rows.all():
-            channel_credentials = credential_names_by_channel.setdefault(channel_id, {})
-            channel_credentials[credential_id] = credential_name
-        return credential_names_by_channel
+        credential_names_by_combo: dict[str, dict[str, str]] = {}
+        for combo_id, credential_id, credential_name in rows.all():
+            credential_names_by_combo.setdefault(combo_id, {})[credential_id] = credential_name
+        result: dict[str, dict[str, str]] = {}
+        for combo_id, cids in combo_to_channels.items():
+            cred_names = credential_names_by_combo.get(combo_id, {})
+            for cid in cids:
+                result[cid] = cred_names
+        return result
 
     async def _load_credential_numbers_by_channel(
         self, session: AsyncSession, channel_ids: list[str]
     ) -> dict[str, dict[str, int]]:
         if not channel_ids:
             return {}
+        combo_to_channels: dict[str, list[str]] = {}
+        for cid in channel_ids:
+            parsed = _parse_composite_channel_id(cid)
+            combo_id = parsed[0] if parsed else cid
+            combo_to_channels.setdefault(combo_id, []).append(cid)
+        combo_ids = list(combo_to_channels.keys())
         rows = await session.execute(
             select(
                 SiteProtocolConfigEntity.id,
@@ -1245,21 +1159,24 @@ class DomainStore:
                 SiteCredentialEntity,
                 SiteCredentialEntity.site_id == SiteProtocolConfigEntity.site_id,
             )
-            .where(SiteProtocolConfigEntity.id.in_(channel_ids))
+            .where(SiteProtocolConfigEntity.id.in_(combo_ids))
             .order_by(
                 SiteProtocolConfigEntity.id.asc(),
                 SiteCredentialEntity.sort_order.asc(),
                 SiteCredentialEntity.id.asc(),
             )
         )
-        numbers_by_channel: dict[str, dict[str, int]] = {}
-        counts_by_channel: dict[str, int] = {}
-        for channel_id, credential_id, _sort_order in rows.all():
-            counts_by_channel[channel_id] = counts_by_channel.get(channel_id, 0) + 1
-            numbers_by_channel.setdefault(channel_id, {})[credential_id] = (
-                counts_by_channel[channel_id]
-            )
-        return numbers_by_channel
+        numbers_by_combo: dict[str, dict[str, int]] = {}
+        counts_by_combo: dict[str, int] = {}
+        for combo_id, credential_id, _sort_order in rows.all():
+            counts_by_combo[combo_id] = counts_by_combo.get(combo_id, 0) + 1
+            numbers_by_combo.setdefault(combo_id, {})[credential_id] = counts_by_combo[combo_id]
+        result: dict[str, dict[str, int]] = {}
+        for combo_id, cids in combo_to_channels.items():
+            cred_numbers = numbers_by_combo.get(combo_id, {})
+            for cid in cids:
+                result[cid] = cred_numbers
+        return result
 
     async def list_gateway_api_keys(self) -> list[GatewayApiKey]:
         async with self._session_factory() as session:
@@ -1988,7 +1905,6 @@ class DomainStore:
                     SiteProtocolConfigEntity.id.label("channel_id"),
                 ).order_by(
                     SiteProtocolConfigEntity.site_id.asc(),
-                    SiteProtocolConfigEntity.protocol.asc(),
                 )
             )
             channel_ids_by_site: dict[str, list[str]] = {
@@ -2019,7 +1935,9 @@ class DomainStore:
                 .select_from(recent_request_logs)
                 .join(
                     SiteProtocolConfigEntity,
-                    SiteProtocolConfigEntity.id == recent_request_logs.c.channel_id,
+                    recent_request_logs.c.channel_id.like(
+                        func.concat(SiteProtocolConfigEntity.id, "_%")
+                    ),
                 )
                 .group_by(SiteProtocolConfigEntity.site_id)
             )
@@ -2049,7 +1967,9 @@ class DomainStore:
                 )
                 .join(
                     SiteProtocolConfigEntity,
-                    SiteProtocolConfigEntity.id == RequestLogEntity.channel_id,
+                    RequestLogEntity.channel_id.like(
+                        func.concat(SiteProtocolConfigEntity.id, "_%")
+                    ),
                 )
                 .where(
                     RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)

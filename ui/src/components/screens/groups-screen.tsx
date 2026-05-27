@@ -780,13 +780,28 @@ export function GroupsScreen() {
   const channelMap = useMemo(() => {
     const map = new Map<string, ProtocolMeta>();
     for (const site of sites ?? []) {
-      for (const protocol of site.protocols) {
-        map.set(protocol.id, {
-          id: protocol.id,
-          name: site.name,
-          base_url: protocolBaseUrl(site, protocol.base_url_id),
-          protocol: "openai_chat" as ProtocolKind,
-        });
+      for (const combo of site.protocols) {
+        const baseUrl = site.base_urls.find((b) => b.id === combo.base_url_id);
+        const baseUrlStr = baseUrl?.url ?? protocolBaseUrl(site, combo.base_url_id);
+        const protocols = baseUrl?.compatible_protocols ?? [];
+        for (const p of protocols) {
+          const compositeId = `${combo.id}_${p}`;
+          map.set(compositeId, {
+            id: compositeId,
+            name: site.name,
+            base_url: baseUrlStr,
+            protocol: p,
+          });
+        }
+        // 保留 combo.id 作为 fallback key，兼容未迁移数据
+        if (!map.has(combo.id) && protocols.length > 0) {
+          map.set(combo.id, {
+            id: combo.id,
+            name: site.name,
+            base_url: baseUrlStr,
+            protocol: protocols[0],
+          });
+        }
       }
     }
     return map;

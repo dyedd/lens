@@ -164,6 +164,7 @@ class SiteBaseUrl(StrictBaseModel):
     name: str = ""
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
+    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
 
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
@@ -173,6 +174,7 @@ class SiteBaseUrlInput(StrictBaseModel):
     url: HttpUrl
     name: str = ""
     enabled: bool = True
+    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
 
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
@@ -199,6 +201,7 @@ class SiteModel(StrictBaseModel):
     model_name: str
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
+    protocol: ProtocolKind | None = None
 
 
 class SiteModelInput(StrictBaseModel):
@@ -206,11 +209,11 @@ class SiteModelInput(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     enabled: bool = True
+    protocol: ProtocolKind | None = None
 
 
 class SiteProtocolConfig(StrictBaseModel):
     id: str
-    protocol: ProtocolKind
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
     channel_proxy: str = ""
@@ -223,7 +226,7 @@ class SiteProtocolConfig(StrictBaseModel):
 
 class SiteProtocolConfigInput(StrictBaseModel):
     id: str | None = None
-    protocol: ProtocolKind
+    protocol: ProtocolKind | None = None
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
     channel_proxy: str = ""
@@ -287,9 +290,9 @@ class SiteUpdate(StrictBaseModel):
 
 
 class SiteModelFetchRequest(StrictBaseModel):
-    protocol: ProtocolKind
     base_url: HttpUrl
     headers: dict[str, str] = Field(default_factory=dict)
+    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
     channel_proxy: str = ""
     match_regex: str = ""
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
@@ -304,6 +307,7 @@ class SiteModelFetchRequest(StrictBaseModel):
 
 
 class SiteModelFetchItem(StrictBaseModel):
+    protocol: ProtocolKind
     credential_id: str
     credential_name: str = ""
     model_name: str

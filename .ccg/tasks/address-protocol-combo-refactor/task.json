@@ -1,0 +1,12 @@
+{
+  "id": "address-protocol-combo-refactor",
+  "title": "地址多协议声明 + 组合概念重构（协议配置 → 组合 = 地址+密钥绑定）",
+  "status": "in_progress",
+  "strategy": "full-collaborate",
+  "currentPhase": "6-final",
+  "nextAction": "所有 Critical 已修复，进入最终验收",
+  "gate": null,
+  "branch": "feat/地址多协议声明与组合概念重构",
+  "scope": "address-protocol-combo-refactor",
+  "createdAt": "2026-05-27T00:00:00Z"
+}

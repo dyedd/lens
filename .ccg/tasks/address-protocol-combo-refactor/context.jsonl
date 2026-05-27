@@ -1,0 +1,12 @@
+{"_example": "Fill with {\"file\": \"path\", \"reason\": \"why\"}. Seed rows are skipped."}
+{"file": "lens_api/models.py", "reason": "SiteBaseUrl、SiteBaseUrlInput 新增 compatible_protocols；SiteProtocolConfig/Input 去掉 protocol 字段"}
+{"file": "lens_api/persistence/entities.py", "reason": "SiteBaseUrlEntity 新增 compatible_protocols_json 列；SiteProtocolConfigEntity 去掉 protocol 列"}
+{"file": "lens_api/persistence/channel_store.py", "reason": "_flatten_site 改为按地址协议展开 combo；fetch_models_preview 改为多协议展开"}
+{"file": "lens_api/gateway/router.py", "reason": "路由逻辑依赖 ChannelConfig.protocol，需确认兼容性"}
+{"file": "ui/src/components/screens/channels-screen.tsx", "reason": "FormProtocol 去掉 protocol 字段变成 combo；UI labels 改名；模型聚合视图新增"}
+{"file": "ui/src/lib/api.ts", "reason": "SiteProtocolConfig 类型定义变更，SiteBaseUrl 新增 compatible_protocols"}
+{"file": "migrations/versions/", "reason": "新增 Alembic migration：site_base_urls 加列，site_protocol_configs 去列，site_discovered_models 加 protocol 列，channel_id 列扩至 String(160)"}
+{"file": "lens_api/persistence/domain_store.py", "reason": "list_group_candidates() 和 _validate_group_payload() 等从实体 ID 查询改为基于展开 channels，can_reach_protocol() 保留"}
+{"file": "lens_api/gateway/service.py", "reason": "路由执行计划通过 channel_map 构造，需确认复合 ID 下兼容"}
+{"file": "lens_api/persistence/backup_store.py", "reason": "备份格式包含地址协议列表、发现模型协议字段；恢复时接受复合 channel ID"}
+{"file": ".ccg/tasks/address-protocol-combo-refactor/analysis.md", "reason": "双模型分析综合结果，包含迁移SQL、类型变更、风险清单"}

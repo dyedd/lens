@@ -18,6 +18,7 @@ from ..models import (
     ConfigImportResult,
     ModelGroup,
     ModelPriceItem,
+    ProtocolKind,
     RequestLogAttempt,
     RequestLogLifecycleStatus,
     SettingItem,
@@ -67,6 +68,46 @@ from .cronjob_store import (
 BACKUP_DUMP_VERSION = 2
 SETTING_STATS_LAST_PERSIST_AT = "stats_last_persist_at"
 
+
+def _extract_combo_id(channel_id: str, known_combo_ids: set[str]) -> str:
+    """从 channel_id 中提取 combo_id。
+
+    新版备份直接使用 combo_id；旧版备份使用复合格式 {combo_id}_{protocol}。
+    优先直接匹配，若未匹配则尝试去掉后缀。
+    """
+    if channel_id in known_combo_ids:
+        return channel_id
+    # 尝试去掉 _{protocol_value} 后缀（旧版复合 ID 格式 {combo_id}_{protocol}）
+    for protocol in ProtocolKind:
+        suffix = f"_{protocol.value}"
+        if channel_id.endswith(suffix):
+            candidate = channel_id[: -len(suffix)]
+            if candidate in known_combo_ids:
+                return candidate
+    return channel_id
+
+
+def _upgrade_backup_format(data: dict) -> dict:
+    """将旧版备份 JSON 升级为新版格式，在 Pydantic 解析前执行。
+
+    处理：旧版 SiteProtocolConfig 含 protocol 字段，新版改为 SiteBaseUrl.compatible_protocols。
+    """
+    for site in data.get("sites", []):
+        url_protocols: dict[str, list[str]] = {}
+        for protocol_config in site.get("protocols", []):
+            if old_protocol := protocol_config.pop("protocol", None):
+                base_url_id = protocol_config.get("base_url_id", "")
+                if base_url_id:
+                    if base_url_id not in url_protocols:
+                        url_protocols[base_url_id] = []
+                    if old_protocol not in url_protocols[base_url_id]:
+                        url_protocols[base_url_id].append(old_protocol)
+        for base_url in site.get("base_urls", []):
+            buid = base_url.get("id", "")
+            if not base_url.get("compatible_protocols") and buid in url_protocols:
+                base_url["compatible_protocols"] = sorted(url_protocols[buid])
+    return data
+
 EXPORTABLE_SETTING_KEYS = (
     SETTING_PROXY_URL,
     SETTING_CORS_ALLOW_ORIGINS,
@@ -88,6 +129,16 @@ EXPORTABLE_SETTING_KEYS = (
 class BackupStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+
+    @staticmethod
+    def parse_dump(payload: bytes) -> "ConfigBackupDump":
+        """解析备份文件字节，在 Pydantic 验证前升级旧版格式。"""
+        try:
+            data = json.loads(payload)
+            data = _upgrade_backup_format(data)
+            return ConfigBackupDump.model_validate(data)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("Invalid backup file") from exc
 
     async def export_dump(
         self,
@@ -209,6 +260,20 @@ class BackupStore:
     async def _replace_sites(
         self, session: AsyncSession, sites: list[SiteConfig]
     ) -> tuple[set[str], set[tuple[str, str, str]]]:
+        # 旧备份兼容：若地址没有 compatible_protocols 但协议配置有 protocol，则反推
+        for site in sites:
+            url_protocols: dict[str, set] = {}
+            for protocol_config in site.protocols:
+                if protocol_config.protocol is not None:
+                    url_protocols.setdefault(protocol_config.base_url_id, set()).add(
+                        protocol_config.protocol
+                    )
+            for base_url in site.base_urls:
+                if not base_url.compatible_protocols and base_url.id in url_protocols:
+                    base_url.compatible_protocols = sorted(
+                        url_protocols[base_url.id], key=lambda p: p.value
+                    )
+
         await session.execute(delete(SiteDiscoveredModelEntity))
         await session.execute(delete(SiteProtocolConfigEntity))
         await session.execute(delete(SiteCredentialEntity))
@@ -248,6 +313,10 @@ class BackupStore:
                         name=base_url.name,
                         enabled=1 if base_url.enabled else 0,
                         sort_order=base_url.sort_order,
+                        compatible_protocols_json=json.dumps(
+                            [p.value for p in (base_url.compatible_protocols or [])],
+                            ensure_ascii=True,
+                        ),
                     )
                 )
 
@@ -288,7 +357,6 @@ class BackupStore:
                     SiteProtocolConfigEntity(
                         id=protocol.id,
                         site_id=site.id,
-                        protocol=protocol.protocol.value,
                         enabled=1 if protocol.enabled else 0,
                         headers_json=json.dumps(protocol.headers, ensure_ascii=True),
                         channel_proxy=protocol.channel_proxy,
@@ -328,6 +396,7 @@ class BackupStore:
                             model_name=model.model_name,
                             enabled=1 if model.enabled else 0,
                             sort_order=model.sort_order,
+                            protocol=(model.protocol.value if model.protocol else None),
                         )
                     )
 
@@ -376,11 +445,13 @@ class BackupStore:
             )
 
             for index, item in enumerate(group.items):
-                if item.channel_id not in available_channel_ids:
+                # 支持复合 ID 格式 {combo_id}_{protocol}，从中提取 combo_id 做校验
+                combo_id = _extract_combo_id(item.channel_id, available_channel_ids)
+                if combo_id not in available_channel_ids:
                     raise ValueError(
                         f"Model group channel not found in backup sites: {item.channel_id}"
                     )
-                target = (item.channel_id, item.credential_id, item.model_name)
+                target = (combo_id, item.credential_id, item.model_name)
                 if target not in available_model_keys:
                     raise ValueError(
                         f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
@@ -388,7 +459,7 @@ class BackupStore:
                 session.add(
                     ModelGroupItemEntity(
                         group_id=group.id,
-                        channel_id=item.channel_id,
+                        channel_id=combo_id,
                         credential_id=item.credential_id,
                         model_name=item.model_name,
                         enabled=1 if item.enabled else 0,
@@ -721,7 +792,6 @@ class BackupStore:
                     .where(SiteProtocolConfigEntity.site_id.in_(site_ids))
                     .order_by(
                         SiteProtocolConfigEntity.site_id.asc(),
-                        SiteProtocolConfigEntity.protocol.asc(),
                         SiteProtocolConfigEntity.id.asc(),
                     )
                 )
