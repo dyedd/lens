@@ -1495,7 +1495,7 @@ async def proxy_openai_embeddings(
 
 async def proxy_rerank(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
-):
+) -> Response:
     body = await request.json()
     if not isinstance(body, dict):
         raise HTTPException(
@@ -2421,7 +2421,9 @@ async def _build_json_result(
         response.content if hasattr(response, "content") else await response.aread()
     )
     try:
-        parsed = _extract_response_usage(channel.protocol, response)
+        parsed = _extract_response_usage(
+            channel.protocol, response, fallback_model=body.get("model")
+        )
     except ValueError as exc:
         raise UpstreamRequestError(
             status_code=502,
@@ -4020,18 +4022,12 @@ def _extract_usage_from_payload(
 
 
 def _extract_response_usage(
-    protocol: ProtocolKind, response: httpx.Response
+    protocol: ProtocolKind, response: httpx.Response, fallback_model: Any = None
 ) -> dict[str, int | str | None]:
     if protocol == ProtocolKind.RERANK:
-        try:
-            payload = response.json()
-        except ValueError:
-            payload = None
         empty = dict(_EMPTY_USAGE)
-        if isinstance(payload, dict):
-            model_value = payload.get("model")
-            if isinstance(model_value, str) and model_value.strip():
-                empty["resolved_model"] = model_value
+        if isinstance(fallback_model, str) and fallback_model.strip():
+            empty["resolved_model"] = fallback_model.strip()
         return empty
     payload = response.json()
     if not isinstance(payload, dict):
