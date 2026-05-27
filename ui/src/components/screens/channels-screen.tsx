@@ -141,9 +141,20 @@ type FormState = {
 };
 
 type PickerModelItem = {
+  protocol: ProtocolKind;
   credential_id: string;
   model_name: string;
 };
+
+function genericModelKey(
+  model: Pick<PickerModelItem, "credential_id" | "model_name">,
+) {
+  return `${model.credential_id}:${model.model_name}`;
+}
+
+function pickerModelKey(model: PickerModelItem) {
+  return `${model.protocol}:${genericModelKey(model)}`;
+}
 
 type ModelTestTarget = {
   protocolIndex: number;
@@ -767,6 +778,7 @@ function toForm(site: Site): FormState {
       credential_id: item.credential_id,
       models: item.models.map((model) => ({
         id: model.id,
+        protocol: model.protocol,
         credential_id: model.credential_id,
         model_name: model.model_name,
         enabled: model.enabled,
@@ -822,6 +834,7 @@ function toPayload(form: FormState): SitePayload {
         models: item.models
           .map((model) => ({
             id: model.id,
+            protocol: model.protocol,
             credential_id: model.credential_id,
             model_name: model.model_name.trim(),
             enabled: model.enabled,
@@ -1362,6 +1375,17 @@ function ComboConfigItem({
                       <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                         {model.model_name}
                       </span>
+                      {model.protocol ? (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "max-w-[140px] truncate",
+                            protocolBadgeClassName(model.protocol),
+                          )}
+                        >
+                          {compactProtocolLabel(model.protocol)}
+                        </Badge>
+                      ) : null}
                       <Badge variant="secondary" className="max-w-[140px] truncate">
                         {credentialLabelsById.get(model.credential_id) ||
                           model.credential_id}
@@ -1801,7 +1825,7 @@ function ModelPickerDialog({
               <div className="flex flex-wrap gap-2.5">
                 {availableModels.length ? (
                   availableModels.map((model) => {
-                    const key = `${model.credential_id}:${model.model_name}`;
+                    const key = pickerModelKey(model);
                     const checked = pickerSelectedModelKeys.includes(key);
                     return (
                       <Button
@@ -1819,6 +1843,15 @@ function ModelPickerDialog({
                         <span className="max-w-[180px] truncate sm:max-w-[220px]">
                           {model.model_name}
                         </span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-xs",
+                            protocolBadgeClassName(model.protocol),
+                          )}
+                        >
+                          {compactProtocolLabel(model.protocol)}
+                        </Badge>
                         <span className="text-xs">{checked ? "✓" : "+"}</span>
                       </Button>
                     );
@@ -1880,7 +1913,10 @@ function useAggregatedModels(
         if (!aggregate[model.model_name]) {
           aggregate[model.model_name] = { protocols: new Set(), sources: new Set() };
         }
-        baseUrl.compatible_protocols.forEach((p) =>
+        const modelProtocols = model.protocol
+          ? [model.protocol]
+          : baseUrl.compatible_protocols;
+        modelProtocols.forEach((p) =>
           aggregate[model.model_name].protocols.add(p),
         );
         aggregate[model.model_name].sources.add(comboName);
@@ -2317,6 +2353,7 @@ export function ChannelsScreen() {
             credential_id: item.credential_id,
             models: item.models.map((model) => ({
               id: model.id,
+              protocol: model.protocol,
               credential_id: model.credential_id,
               model_name: model.model_name,
               enabled: model.enabled,
@@ -2545,24 +2582,36 @@ export function ChannelsScreen() {
   function applyModelSelection(selectedKeys: string[]) {
     if (modelPickerProtocolIndex === null) return;
     const selectedModels = availableModels.filter((item) =>
-      selectedKeys.includes(`${item.credential_id}:${item.model_name}`),
+      selectedKeys.includes(pickerModelKey(item)),
     );
     setForm((current) => ({
       ...current,
       combos: current.combos.map((item, itemIndex) => {
         if (itemIndex !== modelPickerProtocolIndex) return item;
         const merged = [...item.models];
-        const existing = new Set(
-          item.models.map(
-            (model) => `${model.credential_id}:${model.model_name}`,
-          ),
+        const genericModels = new Set(
+          item.models
+            .filter((model) => !model.protocol)
+            .map((model) => genericModelKey(model)),
+        );
+        const existingProtocolModels = new Set(
+          item.models
+            .filter((model) => model.protocol)
+            .map(
+              (model) =>
+                `${model.protocol}:${genericModelKey(model)}`,
+            ),
         );
         for (const model of selectedModels) {
-          const key = `${model.credential_id}:${model.model_name}`;
-          if (existing.has(key)) continue;
-          existing.add(key);
+          const genericKey = genericModelKey(model);
+          const key = pickerModelKey(model);
+          if (genericModels.has(genericKey) || existingProtocolModels.has(key)) {
+            continue;
+          }
+          existingProtocolModels.add(key);
           merged.push({
             id: null,
+            protocol: model.protocol,
             credential_id: model.credential_id,
             model_name: model.model_name,
             enabled: true,
@@ -2621,6 +2670,7 @@ export function ChannelsScreen() {
         },
       );
       const nextAvailableModels = models.map((item) => ({
+        protocol: item.protocol,
         credential_id: item.credential_id,
         model_name: item.model_name,
       }));
@@ -2676,7 +2726,7 @@ export function ChannelsScreen() {
     const baseUrlProtocols =
       form.base_urls.find((b) => b.id === protocol.base_url_id)?.compatible_protocols ?? [];
     const payload: SiteModelTestPayload = {
-      protocol: baseUrlProtocols[0] ?? "openai_chat",
+      protocol: model.protocol ?? baseUrlProtocols[0] ?? "openai_chat",
       base_url: activeBaseUrl,
       headers: formHeaders(protocol),
       channel_proxy: protocol.channel_proxy.trim(),
@@ -3340,9 +3390,7 @@ export function ChannelsScreen() {
           onConfirm={() => applyModelSelection(pickerSelectedModelKeys)}
           onConfirmAll={() =>
             applyModelSelection(
-              availableModels.map(
-                (item) => `${item.credential_id}:${item.model_name}`,
-              ),
+              availableModels.map((item) => pickerModelKey(item)),
             )
           }
           onCancel={closeModelPicker}

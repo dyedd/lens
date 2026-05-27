@@ -669,7 +669,7 @@ class ChannelStore:
                 SiteDiscoveredModelEntity.protocol_config_id == protocol_id
             )
         )
-        seen_models: set[tuple[str, str]] = set()
+        seen_models: set[tuple[str, str, str | None]] = set()
         for model_index, model in enumerate(protocol.models):
             model_name = model.model_name.strip()
             if not model_name:
@@ -680,7 +680,11 @@ class ChannelStore:
                 raise ValueError(
                     f"Model credential not found in combo {protocol_id}: {model.credential_id}"
                 )
-            model_key = (model.credential_id, model_name)
+            model_key = (
+                model.credential_id,
+                model_name,
+                model.protocol.value if model.protocol else None,
+            )
             if model_key in seen_models:
                 raise ValueError(
                     f"Duplicate model in combo {protocol_id}: {model_name}"
