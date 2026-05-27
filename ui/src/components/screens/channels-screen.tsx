@@ -819,8 +819,7 @@ function toPayload(form: FormState): SitePayload {
             enabled: model.enabled,
           }))
           .filter(
-            (model) =>
-              model.credential_id === credentialId && model.model_name,
+            (model) => model.credential_id === credentialId && model.model_name,
           ),
       };
     }),
@@ -836,25 +835,28 @@ function effectiveProtocolCredentialId(
     .map((item) => item.id);
   return credentialIds.includes(protocol.credential_id)
     ? protocol.credential_id
-    : "";
+    : (credentialIds[0] ?? "");
 }
 
 function protocolCredentialKeys(
   protocol: FormProtocol,
   baseUrlIds: Set<string>,
+  credentials: Array<Pick<FormCredential, "id" | "api_key">>,
 ) {
   if (!baseUrlIds.has(protocol.base_url_id)) return [];
-  return [[protocol.protocol, protocol.base_url_id, protocol.credential_id].join(":")];
+  const credentialId = effectiveProtocolCredentialId(protocol, credentials);
+  return [[protocol.protocol, protocol.base_url_id, credentialId].join(":")];
 }
 
 function duplicateProtocolCredentialKeys(
   protocols: FormProtocol[],
   baseUrls: Array<{ id: string }>,
+  credentials: Array<Pick<FormCredential, "id" | "api_key">>,
 ) {
   const baseUrlIds = new Set(baseUrls.map((item) => item.id));
   const counts = new Map<string, number>();
   for (const item of protocols) {
-    for (const key of protocolCredentialKeys(item, baseUrlIds)) {
+    for (const key of protocolCredentialKeys(item, baseUrlIds, credentials)) {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
@@ -864,8 +866,11 @@ function duplicateProtocolCredentialKeys(
 }
 
 function invalidProtocolBaseUrlCount(form: FormState) {
-  const baseUrlIds = new Set(formBaseUrlsForPayload(form).map((item) => item.id));
-  return form.protocols.filter((item) => !baseUrlIds.has(item.base_url_id)).length;
+  const baseUrlIds = new Set(
+    formBaseUrlsForPayload(form).map((item) => item.id),
+  );
+  return form.protocols.filter((item) => !baseUrlIds.has(item.base_url_id))
+    .length;
 }
 
 function SwitchButton({
@@ -1076,6 +1081,7 @@ function ProtocolConfigItem({
   const protocolBaseUrlDuplicated = protocolCredentialKeys(
     protocol,
     submittedBaseUrlIds,
+    form.credentials,
   ).some((key) => duplicatedProtocolCredentialKeys.has(key));
   const activeCredentialIds = new Set(
     form.credentials
@@ -1088,11 +1094,12 @@ function ProtocolConfigItem({
       display_name: credentialLabel(item, index, locale),
     }))
     .filter((item) => item.api_key.trim());
-  const selectedCredentialId = protocol.credential_id;
-  const selectedCredentialActive = activeCredentialIds.has(selectedCredentialId);
-  const selectedCredentialKnown = credentialOptions.some(
-    (item) => item.id === selectedCredentialId,
+  const selectedCredentialId = effectiveProtocolCredentialId(
+    protocol,
+    form.credentials,
   );
+  const selectedCredentialActive =
+    activeCredentialIds.has(selectedCredentialId);
   const credentialLabelsById = new Map(
     credentialOptions.map((item) => [item.id, item.display_name] as const),
   );
@@ -1146,9 +1153,7 @@ function ProtocolConfigItem({
             </NativeSelect>
           </Field>
           <Field>
-            <FieldLabel>
-              {locale === "zh-CN" ? "密钥" : "Key"}
-            </FieldLabel>
+            <FieldLabel>{locale === "zh-CN" ? "密钥" : "Key"}</FieldLabel>
             <NativeSelect
               className={selectClassName()}
               value={selectedCredentialId}
@@ -1162,23 +1167,18 @@ function ProtocolConfigItem({
                 });
               }}
             >
-              <NativeSelectOption value="">
-                {locale === "zh-CN" ? "未绑定" : "Unbound"}
-              </NativeSelectOption>
-              {selectedCredentialId && !selectedCredentialKnown ? (
-                <NativeSelectOption value={selectedCredentialId} disabled>
-                  {locale === "zh-CN"
-                    ? `无效密钥：${selectedCredentialId}`
-                    : `Invalid key: ${selectedCredentialId}`}
+              {!credentialOptions.length ? (
+                <NativeSelectOption value="">
+                  {locale === "zh-CN" ? "未绑定" : "Unbound"}
                 </NativeSelectOption>
               ) : null}
-              {credentialOptions.length ? (
-                credentialOptions.map((item) => (
-                  <NativeSelectOption key={item.id} value={item.id}>
-                    {item.display_name}
-                  </NativeSelectOption>
-                ))
-              ) : null}
+              {credentialOptions.length
+                ? credentialOptions.map((item) => (
+                    <NativeSelectOption key={item.id} value={item.id}>
+                      {item.display_name}
+                    </NativeSelectOption>
+                  ))
+                : null}
             </NativeSelect>
           </Field>
           <div className="flex h-8 w-8 items-center justify-center xl:self-end">
@@ -1372,7 +1372,10 @@ function ProtocolConfigItem({
                       <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                         {model.model_name}
                       </span>
-                      <Badge variant="secondary" className="max-w-[140px] truncate">
+                      <Badge
+                        variant="secondary"
+                        className="max-w-[140px] truncate"
+                      >
                         {credentialLabelsById.get(model.credential_id) ||
                           model.credential_id}
                       </Badge>
@@ -1917,25 +1920,19 @@ export function ChannelsScreen() {
     queryFn: () => apiRequest<Site[]>("/admin/sites"),
     staleTime: 2 * 60_000,
   });
-  const {
-    data: siteRuntimeSummaries,
-  } = useQuery({
+  const { data: siteRuntimeSummaries } = useQuery({
     queryKey: ["site-runtime-summaries"],
     queryFn: () => apiRequest<SiteRuntimeSummary[]>("/admin/sites/runtime"),
     staleTime: 5_000,
     refetchInterval: 5000,
   });
-  const {
-    data: routerSnapshot,
-  } = useQuery({
+  const { data: routerSnapshot } = useQuery({
     queryKey: ["router-snapshot"],
     queryFn: () => apiRequest<RouteSnapshot>("/admin/routes"),
     staleTime: 5_000,
     refetchInterval: 5000,
   });
-  const {
-    data: settings,
-  } = useQuery({
+  const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
     staleTime: 5 * 60_000,
@@ -2039,17 +2036,15 @@ export function ChannelsScreen() {
     statusFilter !== "all",
     protocolFilter !== "all",
   ].filter(Boolean).length;
-  const submittedBaseUrls = useMemo(
-    () => formBaseUrlsForPayload(form),
-    [form],
-  );
+  const submittedBaseUrls = useMemo(() => formBaseUrlsForPayload(form), [form]);
   const duplicatedProtocolCredentialKeys = useMemo(
     () =>
       duplicateProtocolCredentialKeys(
         form.protocols,
         submittedBaseUrls,
+        form.credentials,
       ),
-    [form.protocols, submittedBaseUrls],
+    [form.credentials, form.protocols, submittedBaseUrls],
   );
   const currentSnapshot = useMemo(
     () => JSON.stringify(toPayload(form)),
@@ -2519,7 +2514,9 @@ export function ChannelsScreen() {
       form.credentials,
     );
     if (!selectedCredentialId) {
-      toast.error(locale === "zh-CN" ? "协议密钥无效" : "Protocol key is invalid");
+      toast.error(
+        locale === "zh-CN" ? "协议密钥无效" : "Protocol key is invalid",
+      );
       return;
     }
     setFetchingProtocolIndex(protocolIndex);
@@ -3069,7 +3066,9 @@ export function ChannelsScreen() {
                           protocols: [
                             ...current.protocols,
                             {
-                              ...emptyProtocol(defaultBaseUrlId(current.base_urls)),
+                              ...emptyProtocol(
+                                defaultBaseUrlId(current.base_urls),
+                              ),
                             },
                           ],
                         }))
