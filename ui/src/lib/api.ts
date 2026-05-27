@@ -74,6 +74,7 @@ export type SiteBaseUrl = {
   name: string;
   enabled: boolean;
   sort_order: number;
+  compatible_protocols: ProtocolKind[];
 };
 
 export type SiteBaseUrlInput = {
@@ -81,6 +82,7 @@ export type SiteBaseUrlInput = {
   url: string;
   name: string;
   enabled: boolean;
+  compatible_protocols: ProtocolKind[];
 };
 
 export type SiteCredential = {
@@ -100,6 +102,7 @@ export type SiteCredentialInput = {
 
 export type SiteModel = {
   id: string;
+  protocol?: ProtocolKind | null;
   credential_id: string;
   credential_name: string;
   model_name: string;
@@ -109,6 +112,7 @@ export type SiteModel = {
 
 export type SiteModelInput = {
   id?: string | null;
+  protocol?: ProtocolKind | null;
   credential_id: string;
   model_name: string;
   enabled: boolean;
@@ -116,7 +120,6 @@ export type SiteModelInput = {
 
 export type SiteProtocolConfig = {
   id: string;
-  protocol: ProtocolKind;
   enabled: boolean;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -129,7 +132,7 @@ export type SiteProtocolConfig = {
 
 export type SiteProtocolConfigInput = {
   id?: string | null;
-  protocol: ProtocolKind;
+  protocol?: ProtocolKind | null;
   enabled: boolean;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -181,7 +184,7 @@ export type SitePayload = {
 };
 
 export type SiteModelFetchPayload = {
-  protocol: ProtocolKind;
+  compatible_protocols: ProtocolKind[];
   base_url: string;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -191,6 +194,7 @@ export type SiteModelFetchPayload = {
 };
 
 export type SiteModelFetchItem = {
+  protocol: ProtocolKind;
   credential_id: string;
   credential_name: string;
   model_name: string;

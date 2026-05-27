@@ -34,6 +34,10 @@ import {
   SettingItem,
   apiRequest,
 } from "@/lib/api";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
 import { useI18n } from "@/lib/i18n";
 import {
   MODEL_TEST_PROMPTS_SETTING_KEY,
@@ -90,7 +94,10 @@ const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
 
 type HeaderItem = { key: string; value: string };
 type FormCredential = Omit<SiteCredentialInput, "id"> & { id: string };
-type FormBaseUrl = Omit<SiteBaseUrlInput, "id"> & { id: string };
+type FormBaseUrl = Omit<SiteBaseUrlInput, "id"> & {
+  id: string;
+  compatible_protocols: ProtocolKind[];
+};
 type ChannelHealthRow = RouteSnapshot["health"][number];
 type ChannelRuntimeSummary = SiteRuntimeSummary["channel_summaries"][number];
 type ChannelHealthBucket = ChannelRuntimeSummary["health_buckets"][number];
@@ -112,9 +119,8 @@ function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-type FormProtocol = {
+type FormCombo = {
   id?: string | null;
-  protocol: ProtocolKind;
   enabled: boolean;
   headers: HeaderItem[];
   channel_proxy: string;
@@ -131,7 +137,7 @@ type FormState = {
   name: string;
   base_urls: FormBaseUrl[];
   credentials: FormCredential[];
-  protocols: FormProtocol[];
+  combos: FormCombo[];
 };
 
 type PickerModelItem = {
@@ -160,9 +166,8 @@ type ChannelSort =
   | "models-desc"
   | "protocols-desc";
 
-const emptyProtocol = (baseUrlId = ""): FormProtocol => ({
+const emptyCombo = (baseUrlId = ""): FormCombo => ({
   id: null,
-  protocol: "openai_chat",
   enabled: true,
   headers: [{ key: "", value: "" }],
   channel_proxy: "",
@@ -179,11 +184,11 @@ const emptyForm = (): FormState => {
   const baseUrlId = createLocalId("baseurl");
   return {
     name: "",
-    base_urls: [{ id: baseUrlId, url: "", name: "", enabled: true }],
+    base_urls: [{ id: baseUrlId, url: "", name: "", enabled: true, compatible_protocols: [] }],
     credentials: [
       { id: createLocalId("credential"), name: "", api_key: "", enabled: true },
     ],
-    protocols: [emptyProtocol(baseUrlId)],
+    combos: [emptyCombo(baseUrlId)],
   };
 };
 
@@ -264,7 +269,7 @@ function resolveBaseUrlId(
 
 function activeBaseUrlValue(
   form: FormState,
-  protocol: Pick<FormProtocol, "base_url_id">,
+  protocol: Pick<FormCombo, "base_url_id">,
 ) {
   const boundBaseUrl = protocol.base_url_id
     ? form.base_urls.find((item) => item.id === protocol.base_url_id)
@@ -277,7 +282,7 @@ function activeBaseUrlValue(
   return form.base_urls[0]?.url || "";
 }
 
-function formHeaders(protocol: Pick<FormProtocol, "headers">) {
+function formHeaders(protocol: Pick<FormCombo, "headers">) {
   return Object.fromEntries(
     protocol.headers
       .map((entry) => [entry.key.trim(), entry.value] as const)
@@ -331,7 +336,10 @@ function selectClassName() {
 }
 
 function siteSubtitle(site: Site) {
-  return site.protocols.map((item) => protocolLabel(item.protocol)).join(" / ");
+  const protocols = Array.from(
+    new Set(site.base_urls.flatMap((b) => b.compatible_protocols)),
+  );
+  return protocols.map(protocolLabel).join(" / ");
 }
 
 function siteEndpointSummary(site: Site, locale: string = "zh-CN") {
@@ -638,13 +646,13 @@ function SiteHealthPreview({
           >
             {multiProtocol ? (
               <span className="w-20 min-w-0 shrink-0 truncate text-[11px] font-medium text-muted-foreground">
-                {compactProtocolLabel(protocol.protocol)}
+                {protocol.id.slice(0, 8)}
               </span>
             ) : null}
 
             <div
               className="flex min-w-0 flex-1 items-end gap-1"
-              aria-label={`${protocolLabel(protocol.protocol)} ${locale === "zh-CN" ? "健康状态" : "health history"}`}
+              aria-label={locale === "zh-CN" ? "健康状态" : "health history"}
             >
               {segments.map((segment) => {
                 if (!segment.bucket) {
@@ -733,8 +741,9 @@ function toForm(site: Site): FormState {
         url: item.url,
         name: item.name,
         enabled: item.enabled,
+        compatible_protocols: item.compatible_protocols ?? [],
       }))
-    : [{ id: createLocalId("baseurl"), url: "", name: "", enabled: true }];
+    : [{ id: createLocalId("baseurl"), url: "", name: "", enabled: true, compatible_protocols: [] as ProtocolKind[] }];
   return {
     name: site.name,
     base_urls: baseUrls,
@@ -744,9 +753,8 @@ function toForm(site: Site): FormState {
       api_key: item.api_key,
       enabled: item.enabled,
     })),
-    protocols: site.protocols.map((item) => ({
+    combos: site.protocols.map((item) => ({
       id: item.id,
-      protocol: item.protocol,
       enabled: item.enabled,
       headers: Object.entries(item.headers).length
         ? Object.entries(item.headers).map(([key, value]) => ({ key, value }))
@@ -775,6 +783,7 @@ function formBaseUrlsForPayload(form: FormState) {
       url: item.url.trim(),
       name: item.name.trim(),
       enabled: item.enabled,
+      compatible_protocols: item.compatible_protocols,
     }))
     .filter((item) => item.url);
 }
@@ -792,14 +801,13 @@ function toPayload(form: FormState): SitePayload {
         enabled: item.enabled,
       }))
       .filter((item) => item.api_key),
-    protocols: form.protocols.map((item) => {
+    protocols: form.combos.map((item) => {
       const credentialId = effectiveProtocolCredentialId(
         item,
         form.credentials,
       );
       return {
         id: item.id,
-        protocol: item.protocol,
         enabled: item.enabled,
         headers: Object.fromEntries(
           item.headers
@@ -828,7 +836,7 @@ function toPayload(form: FormState): SitePayload {
 }
 
 function effectiveProtocolCredentialId(
-  protocol: Pick<FormProtocol, "credential_id">,
+  protocol: Pick<FormCombo, "credential_id">,
   credentials: Array<Pick<FormCredential, "id" | "api_key">>,
 ) {
   const credentialIds = credentials
@@ -839,22 +847,22 @@ function effectiveProtocolCredentialId(
     : "";
 }
 
-function protocolCredentialKeys(
-  protocol: FormProtocol,
+function comboCredentialKeys(
+  combo: FormCombo,
   baseUrlIds: Set<string>,
 ) {
-  if (!baseUrlIds.has(protocol.base_url_id)) return [];
-  return [[protocol.protocol, protocol.base_url_id, protocol.credential_id].join(":")];
+  if (!baseUrlIds.has(combo.base_url_id)) return [];
+  return [[combo.base_url_id, combo.credential_id].join(":")];
 }
 
-function duplicateProtocolCredentialKeys(
-  protocols: FormProtocol[],
+function duplicateComboKeys(
+  combos: FormCombo[],
   baseUrls: Array<{ id: string }>,
 ) {
   const baseUrlIds = new Set(baseUrls.map((item) => item.id));
   const counts = new Map<string, number>();
-  for (const item of protocols) {
-    for (const key of protocolCredentialKeys(item, baseUrlIds)) {
+  for (const item of combos) {
+    for (const key of comboCredentialKeys(item, baseUrlIds)) {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
@@ -865,7 +873,7 @@ function duplicateProtocolCredentialKeys(
 
 function invalidProtocolBaseUrlCount(form: FormState) {
   const baseUrlIds = new Set(formBaseUrlsForPayload(form).map((item) => item.id));
-  return form.protocols.filter((item) => !baseUrlIds.has(item.base_url_id)).length;
+  return form.combos.filter((item) => !baseUrlIds.has(item.base_url_id)).length;
 }
 
 function SwitchButton({
@@ -1044,39 +1052,39 @@ function ChannelFiltersPanel({
   );
 }
 
-function ProtocolConfigItem({
+function ComboConfigItem({
   form,
-  protocol,
-  protocolIndex,
+  combo,
+  comboIndex,
   locale,
   fetchingProtocolIndex,
-  duplicatedProtocolCredentialKeys,
-  onUpdateProtocol,
-  onRemoveProtocol,
+  duplicatedComboKeys,
+  onUpdateCombo,
+  onRemoveCombo,
   onAddManualModel,
   onFetchModels,
   onOpenAdvanced,
   onOpenModelTest,
 }: {
   form: FormState;
-  protocol: FormProtocol;
-  protocolIndex: number;
+  combo: FormCombo;
+  comboIndex: number;
   locale: Locale;
   fetchingProtocolIndex: number | null;
-  duplicatedProtocolCredentialKeys: Set<string>;
-  onUpdateProtocol: (index: number, patch: Partial<FormProtocol>) => void;
-  onRemoveProtocol: (index: number) => void;
+  duplicatedComboKeys: Set<string>;
+  onUpdateCombo: (index: number, patch: Partial<FormCombo>) => void;
+  onRemoveCombo: (index: number) => void;
   onAddManualModel: (index: number, credentialId: string) => void;
   onFetchModels: (index: number) => void;
   onOpenAdvanced: (index: number) => void;
-  onOpenModelTest: (protocolIndex: number, modelIndex: number) => void;
+  onOpenModelTest: (comboIndex: number, modelIndex: number) => void;
 }) {
   const submittedBaseUrls = formBaseUrlsForPayload(form);
   const submittedBaseUrlIds = new Set(submittedBaseUrls.map((item) => item.id));
-  const protocolBaseUrlDuplicated = protocolCredentialKeys(
-    protocol,
+  const comboDuplicated = comboCredentialKeys(
+    combo,
     submittedBaseUrlIds,
-  ).some((key) => duplicatedProtocolCredentialKeys.has(key));
+  ).some((key) => duplicatedComboKeys.has(key));
   const activeCredentialIds = new Set(
     form.credentials
       .filter((item) => item.enabled && item.api_key.trim())
@@ -1088,7 +1096,7 @@ function ProtocolConfigItem({
       display_name: credentialLabel(item, index, locale),
     }))
     .filter((item) => item.api_key.trim());
-  const selectedCredentialId = protocol.credential_id;
+  const selectedCredentialId = combo.credential_id;
   const selectedCredentialActive = activeCredentialIds.has(selectedCredentialId);
   const selectedCredentialKnown = credentialOptions.some(
     (item) => item.id === selectedCredentialId,
@@ -1096,7 +1104,7 @@ function ProtocolConfigItem({
   const credentialLabelsById = new Map(
     credentialOptions.map((item) => [item.id, item.display_name] as const),
   );
-  const visibleModels = protocol.models
+  const visibleModels = combo.models
     .map((model, modelIndex) => ({ model, modelIndex }))
     .filter(
       ({ model }) =>
@@ -1106,34 +1114,16 @@ function ProtocolConfigItem({
   return (
     <div className="grid gap-3 border-b pb-4 last:border-b-0 last:pb-0">
       <div className="flex flex-col gap-3">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px_auto] xl:items-end">
-          <Field>
-            <FieldLabel>{locale === "zh-CN" ? "协议" : "Protocol"}</FieldLabel>
-            <NativeSelect
-              className={selectClassName()}
-              value={protocol.protocol}
-              onChange={(event) =>
-                onUpdateProtocol(protocolIndex, {
-                  protocol: event.target.value as ProtocolKind,
-                })
-              }
-            >
-              {protocolOptions.map((option) => (
-                <NativeSelectOption key={option.value} value={option.value}>
-                  {option.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Field>
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px_auto] xl:items-end">
           <Field>
             <FieldLabel>
               {locale === "zh-CN" ? "地址来源" : "Base URL"}
             </FieldLabel>
             <NativeSelect
               className={selectClassName()}
-              value={resolveBaseUrlId(form.base_urls, protocol.base_url_id)}
+              value={resolveBaseUrlId(form.base_urls, combo.base_url_id)}
               onChange={(event) =>
-                onUpdateProtocol(protocolIndex, {
+                onUpdateCombo(comboIndex, {
                   base_url_id: event.target.value,
                 })
               }
@@ -1154,9 +1144,9 @@ function ProtocolConfigItem({
               value={selectedCredentialId}
               onChange={(event) => {
                 const credentialId = event.target.value;
-                onUpdateProtocol(protocolIndex, {
+                onUpdateCombo(comboIndex, {
                   credential_id: credentialId,
-                  models: protocol.models.filter(
+                  models: combo.models.filter(
                     (model) => model.credential_id === credentialId,
                   ),
                 });
@@ -1183,19 +1173,19 @@ function ProtocolConfigItem({
           </Field>
           <div className="flex h-8 w-8 items-center justify-center xl:self-end">
             <SwitchButton
-              checked={protocol.enabled}
+              checked={combo.enabled}
               onChange={(checked) =>
-                onUpdateProtocol(protocolIndex, { enabled: checked })
+                onUpdateCombo(comboIndex, { enabled: checked })
               }
             />
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 xl:col-start-5 xl:row-start-1 xl:self-end">
+          <div className="flex flex-wrap items-center justify-end gap-2 xl:col-start-4 xl:row-start-1 xl:self-end">
             <Button
               type="button"
               variant="outline"
               size="icon"
               className="text-muted-foreground"
-              onClick={() => onOpenAdvanced(protocolIndex)}
+              onClick={() => onOpenAdvanced(comboIndex)}
             >
               <Ellipsis size={16} />
             </Button>
@@ -1204,7 +1194,7 @@ function ProtocolConfigItem({
               variant="outline"
               size="icon"
               className="text-destructive hover:text-destructive"
-              onClick={() => onRemoveProtocol(protocolIndex)}
+              onClick={() => onRemoveCombo(comboIndex)}
             >
               <X size={16} />
             </Button>
@@ -1214,8 +1204,8 @@ function ProtocolConfigItem({
               size="default"
               className="text-muted-foreground hover:text-foreground"
               onClick={() =>
-                onUpdateProtocol(protocolIndex, {
-                  expanded: !protocol.expanded,
+                onUpdateCombo(comboIndex, {
+                  expanded: !combo.expanded,
                 })
               }
             >
@@ -1224,22 +1214,22 @@ function ProtocolConfigItem({
                 size={16}
                 className={cn(
                   "transition-transform",
-                  protocol.expanded ? "rotate-180" : "",
+                  combo.expanded ? "rotate-180" : "",
                 )}
               />
             </Button>
           </div>
         </div>
 
-        {protocolBaseUrlDuplicated ? (
+        {comboDuplicated ? (
           <div className="text-sm text-destructive">
             {locale === "zh-CN"
-              ? "协议、地址来源和密钥重复"
-              : "Duplicate protocol, Base URL, and key"}
+              ? "地址来源和密钥重复"
+              : "Duplicate Base URL and key"}
           </div>
         ) : null}
 
-        {protocol.expanded ? (
+        {combo.expanded ? (
           <div className="grid gap-3 pt-1">
             <Separator />
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -1254,16 +1244,16 @@ function ProtocolConfigItem({
                     </FieldLabel>
                     <Input
                       className="w-full min-w-0"
-                      value={protocol.manual_model_name}
+                      value={combo.manual_model_name}
                       onChange={(event) =>
-                        onUpdateProtocol(protocolIndex, {
+                        onUpdateCombo(comboIndex, {
                           manual_model_name: event.target.value,
                         })
                       }
                       onKeyDown={(event) => {
                         if (event.key !== "Enter") return;
                         event.preventDefault();
-                        onAddManualModel(protocolIndex, selectedCredentialId);
+                        onAddManualModel(comboIndex, selectedCredentialId);
                       }}
                       placeholder={
                         locale === "zh-CN" ? "完整模型名" : "Exact model name"
@@ -1274,11 +1264,11 @@ function ProtocolConfigItem({
                     type="button"
                     variant="outline"
                     onClick={() =>
-                      onAddManualModel(protocolIndex, selectedCredentialId)
+                      onAddManualModel(comboIndex, selectedCredentialId)
                     }
                     disabled={
                       !selectedCredentialId ||
-                      !protocol.manual_model_name.trim()
+                      !combo.manual_model_name.trim()
                     }
                   >
                     <Plus data-icon="inline-start" />
@@ -1299,9 +1289,9 @@ function ProtocolConfigItem({
                     </FieldLabel>
                     <Input
                       className="w-full min-w-0"
-                      value={protocol.match_regex}
+                      value={combo.match_regex}
                       onChange={(event) =>
-                        onUpdateProtocol(protocolIndex, {
+                        onUpdateCombo(comboIndex, {
                           match_regex: event.target.value,
                         })
                       }
@@ -1314,9 +1304,9 @@ function ProtocolConfigItem({
                   </Field>
                   <Button
                     type="button"
-                    onClick={() => onFetchModels(protocolIndex)}
+                    onClick={() => onFetchModels(comboIndex)}
                     disabled={
-                      fetchingProtocolIndex === protocolIndex ||
+                      fetchingProtocolIndex === comboIndex ||
                       !form.base_urls.some(
                         (item) => item.enabled && item.url.trim(),
                       ) ||
@@ -1326,7 +1316,7 @@ function ProtocolConfigItem({
                     <RefreshCcw
                       data-icon="inline-start"
                       className={
-                        fetchingProtocolIndex === protocolIndex
+                        fetchingProtocolIndex === comboIndex
                           ? "animate-spin"
                           : ""
                       }
@@ -1345,7 +1335,7 @@ function ProtocolConfigItem({
                 type="button"
                 variant="destructive"
                 size="sm"
-                onClick={() => onUpdateProtocol(protocolIndex, { models: [] })}
+                onClick={() => onUpdateCombo(comboIndex, { models: [] })}
                 disabled={!visibleModels.length}
               >
                 <Trash2 data-icon="inline-start" />
@@ -1382,11 +1372,11 @@ function ProtocolConfigItem({
                         size="sm"
                         className="h-7 px-2 text-muted-foreground hover:text-foreground"
                         onClick={() =>
-                          onOpenModelTest(protocolIndex, modelIndex)
+                          onOpenModelTest(comboIndex, modelIndex)
                         }
                         disabled={
                           !model.model_name.trim() ||
-                          !activeBaseUrlValue(form, protocol).trim() ||
+                          !activeBaseUrlValue(form, combo).trim() ||
                           !form.credentials.some(
                             (item) =>
                               item.id === model.credential_id &&
@@ -1402,8 +1392,8 @@ function ProtocolConfigItem({
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         onClick={() =>
-                          onUpdateProtocol(protocolIndex, {
-                            models: protocol.models.filter(
+                          onUpdateCombo(comboIndex, {
+                            models: combo.models.filter(
                               (_, currentIndex) => currentIndex !== modelIndex,
                             ),
                           })
@@ -1437,11 +1427,11 @@ function AdvancedProtocolDialog({
   onUpdateProtocolHeader,
 }: {
   open: boolean;
-  protocol: FormProtocol | undefined;
+  protocol: FormCombo | undefined;
   protocolIndex: number | null;
   locale: Locale;
   onOpenChange: (open: boolean) => void;
-  onUpdateProtocol: (index: number, patch: Partial<FormProtocol>) => void;
+  onUpdateProtocol: (index: number, patch: Partial<FormCombo>) => void;
   onUpdateProtocolHeader: (
     protocolIndex: number,
     headerIndex: number,
@@ -1614,7 +1604,7 @@ function ModelTestDialog({
     >
       {target !== null
         ? (() => {
-            const protocol = form.protocols[target.protocolIndex];
+            const protocol = form.combos[target.protocolIndex];
             const model = protocol?.models[target.modelIndex];
             const credentialIndex = model
               ? form.credentials.findIndex(
@@ -1636,7 +1626,6 @@ function ModelTestDialog({
               modelTestPrompt.trim(),
             );
             const sourceText = [
-              protocol ? protocolLabel(protocol.protocol) : "",
               model?.model_name || "",
               credential
                 ? credentialLabel(credential, credentialIndex, locale)
@@ -1691,7 +1680,7 @@ function ModelTestDialog({
                         value={modelTestPrompt}
                         onChange={(event) => onPromptChange(event.target.value)}
                       />
-                      {protocol?.protocol === "rerank" ? (
+                      {false ? (
                         <p className="mt-1 text-xs text-muted-foreground">
                           {locale === "zh-CN"
                             ? "Rerank 测试：首行为查询，其余行作为候选文档（每行一个）。"
@@ -1870,6 +1859,86 @@ function ModelPickerDialog({
   );
 }
 
+type AggregatedModel = {
+  modelName: string;
+  protocols: ProtocolKind[];
+  sources: string[];
+};
+
+function useAggregatedModels(
+  combos: FormCombo[],
+  baseUrls: FormBaseUrl[],
+): AggregatedModel[] {
+  return useMemo(() => {
+    const aggregate: Record<string, { protocols: Set<ProtocolKind>; sources: Set<string> }> = {};
+    combos.forEach((combo, index) => {
+      if (!combo.enabled) return;
+      const baseUrl = baseUrls.find((b) => b.id === combo.base_url_id);
+      if (!baseUrl || !baseUrl.compatible_protocols.length) return;
+      const comboName = `组合 ${index + 1}`;
+      combo.models.forEach((model) => {
+        if (!aggregate[model.model_name]) {
+          aggregate[model.model_name] = { protocols: new Set(), sources: new Set() };
+        }
+        baseUrl.compatible_protocols.forEach((p) =>
+          aggregate[model.model_name].protocols.add(p),
+        );
+        aggregate[model.model_name].sources.add(comboName);
+      });
+    });
+    return Object.entries(aggregate).map(([modelName, { protocols, sources }]) => ({
+      modelName,
+      protocols: Array.from(protocols),
+      sources: Array.from(sources),
+    }));
+  }, [combos, baseUrls]);
+}
+
+function SiteModelAggregateView({
+  combos,
+  baseUrls,
+  locale,
+}: {
+  combos: FormCombo[];
+  baseUrls: FormBaseUrl[];
+  locale: Locale;
+}) {
+  const models = useAggregatedModels(combos, baseUrls);
+  if (!models.length) {
+    return (
+      <div className="py-4 text-sm text-muted-foreground">
+        {locale === "zh-CN"
+          ? "暂无模型，请先配置地址协议并获取模型"
+          : "No models yet. Configure address protocols and fetch models first."}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {models.map(({ modelName, protocols, sources }) => (
+        <div
+          key={modelName}
+          className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2"
+        >
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{modelName}</span>
+          <div className="flex flex-wrap gap-1">
+            {protocols.map((p) => (
+              <Badge
+                key={p}
+                variant="outline"
+                className={cn("text-xs", protocolBadgeClassName(p))}
+              >
+                {compactProtocolLabel(p)}
+              </Badge>
+            ))}
+          </div>
+          <span className="text-xs text-muted-foreground">{sources.join(", ")}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ChannelsScreen() {
   const queryClient = useQueryClient();
   const { locale } = useI18n();
@@ -1984,7 +2053,7 @@ export function ChannelsScreen() {
       if (statusFilter === "disabled" && isSiteEnabled(site)) return false;
       if (
         protocolFilter !== "all" &&
-        !site.protocols.some((item) => item.protocol === protocolFilter)
+        !site.base_urls.some((b) => b.compatible_protocols.includes(protocolFilter))
       )
         return false;
       if (!keyword) return true;
@@ -2043,13 +2112,13 @@ export function ChannelsScreen() {
     () => formBaseUrlsForPayload(form),
     [form],
   );
-  const duplicatedProtocolCredentialKeys = useMemo(
+  const duplicatedComboKeys = useMemo(
     () =>
-      duplicateProtocolCredentialKeys(
-        form.protocols,
+      duplicateComboKeys(
+        form.combos,
         submittedBaseUrls,
       ),
-    [form.protocols, submittedBaseUrls],
+    [form.combos, submittedBaseUrls],
   );
   const currentSnapshot = useMemo(
     () => JSON.stringify(toPayload(form)),
@@ -2143,11 +2212,11 @@ export function ChannelsScreen() {
       );
       return;
     }
-    if (duplicatedProtocolCredentialKeys.size) {
+    if (duplicatedComboKeys.size) {
       const message =
         locale === "zh-CN"
-          ? "同一个渠道内不允许重复协议、地址来源和密钥"
-          : "Duplicate protocol, Base URL, and key triples are not allowed in one channel";
+          ? "同一个渠道内不允许重复地址来源和密钥"
+          : "Duplicate Base URL and key pairs are not allowed in one channel";
       toast.error(message);
       return;
     }
@@ -2229,6 +2298,7 @@ export function ChannelsScreen() {
             url: item.url,
             name: item.name,
             enabled: item.enabled,
+            compatible_protocols: item.compatible_protocols ?? [],
           })),
           credentials: site.credentials.map((item) => ({
             id: item.id,
@@ -2238,7 +2308,6 @@ export function ChannelsScreen() {
           })),
           protocols: site.protocols.map((item) => ({
             id: item.id,
-            protocol: item.protocol,
             enabled,
             headers: item.headers,
             channel_proxy: item.channel_proxy,
@@ -2307,13 +2376,13 @@ export function ChannelsScreen() {
       return {
         ...current,
         credentials: nextCredentials,
-        protocols: current.protocols.map((protocol) => {
+        combos: current.combos.map((combo) => {
           const credentialId =
-            protocol.credential_id === target.id ? "" : protocol.credential_id;
+            combo.credential_id === target.id ? "" : combo.credential_id;
           return {
-            ...protocol,
+            ...combo,
             credential_id: credentialId,
-            models: protocol.models.filter(
+            models: combo.models.filter(
               (model) => model.credential_id !== target.id,
             ),
           };
@@ -2322,10 +2391,10 @@ export function ChannelsScreen() {
     });
   }
 
-  function updateProtocol(index: number, patch: Partial<FormProtocol>) {
+  function updateCombo(index: number, patch: Partial<FormCombo>) {
     setForm((current) => ({
       ...current,
-      protocols: current.protocols.map((item, itemIndex) =>
+      combos: current.combos.map((item, itemIndex) =>
         itemIndex === index ? { ...item, ...patch } : item,
       ),
     }));
@@ -2337,6 +2406,7 @@ export function ChannelsScreen() {
       url: "",
       name: "",
       enabled: true,
+      compatible_protocols: [] as ProtocolKind[],
     };
     setForm((current) => ({
       ...current,
@@ -2368,9 +2438,9 @@ export function ChannelsScreen() {
       return {
         ...current,
         base_urls: baseUrls,
-        protocols: current.protocols.map((protocol) => ({
-          ...protocol,
-          base_url_id: resolveBaseUrlId(baseUrls, protocol.base_url_id),
+        combos: current.combos.map((combo) => ({
+          ...combo,
+          base_url_id: resolveBaseUrlId(baseUrls, combo.base_url_id),
         })),
       };
     });
@@ -2383,7 +2453,7 @@ export function ChannelsScreen() {
   ) {
     setForm((current) => ({
       ...current,
-      protocols: current.protocols.map((item, itemIndex) =>
+      combos: current.combos.map((item, itemIndex) =>
         itemIndex !== protocolIndex
           ? item
           : {
@@ -2399,7 +2469,7 @@ export function ChannelsScreen() {
   }
 
   function addManualProtocolModel(protocolIndex: number, credentialId: string) {
-    const protocol = form.protocols[protocolIndex];
+    const protocol = form.combos[protocolIndex];
     const modelName = protocol?.manual_model_name.trim() ?? "";
     if (!protocol || !credentialId || !modelName) return;
     if (
@@ -2414,7 +2484,7 @@ export function ChannelsScreen() {
     }
     setForm((current) => ({
       ...current,
-      protocols: current.protocols.map((item, itemIndex) => {
+      combos: current.combos.map((item, itemIndex) => {
         if (itemIndex !== protocolIndex) return item;
         return {
           ...item,
@@ -2479,7 +2549,7 @@ export function ChannelsScreen() {
     );
     setForm((current) => ({
       ...current,
-      protocols: current.protocols.map((item, itemIndex) => {
+      combos: current.combos.map((item, itemIndex) => {
         if (itemIndex !== modelPickerProtocolIndex) return item;
         const merged = [...item.models];
         const existing = new Set(
@@ -2512,25 +2582,27 @@ export function ChannelsScreen() {
   }
 
   async function fetchProtocolModels(protocolIndex: number) {
-    const protocol = form.protocols[protocolIndex];
-    if (!protocol) return;
+    const combo = form.combos[protocolIndex];
+    if (!combo) return;
     const selectedCredentialId = effectiveProtocolCredentialId(
-      protocol,
+      combo,
       form.credentials,
     );
     if (!selectedCredentialId) {
-      toast.error(locale === "zh-CN" ? "协议密钥无效" : "Protocol key is invalid");
+      toast.error(locale === "zh-CN" ? "组合密钥无效" : "Combo key is invalid");
       return;
     }
     setFetchingProtocolIndex(protocolIndex);
     try {
-      const activeBaseUrl = activeBaseUrlValue(form, protocol);
+      const activeBaseUrl = activeBaseUrlValue(form, combo);
+      const compatibleProtocols =
+        form.base_urls.find((b) => b.id === combo.base_url_id)?.compatible_protocols ?? [];
       const payload: SiteModelFetchPayload = {
-        protocol: protocol.protocol,
+        compatible_protocols: compatibleProtocols,
         base_url: safeText(activeBaseUrl).trim(),
-        headers: formHeaders(protocol),
-        channel_proxy: protocol.channel_proxy.trim(),
-        match_regex: safeText(protocol.match_regex).trim(),
+        headers: formHeaders(combo),
+        channel_proxy: combo.channel_proxy.trim(),
+        match_regex: safeText(combo.match_regex).trim(),
         credentials: form.credentials
           .map((item, index) => ({
             id: item.id,
@@ -2575,7 +2647,7 @@ export function ChannelsScreen() {
 
   async function runModelTest() {
     if (!modelTestTarget) return;
-    const protocol = form.protocols[modelTestTarget.protocolIndex];
+    const protocol = form.combos[modelTestTarget.protocolIndex];
     const model = protocol?.models[modelTestTarget.modelIndex];
     const credentialIndex = model
       ? form.credentials.findIndex((item) => item.id === model.credential_id)
@@ -2601,8 +2673,10 @@ export function ChannelsScreen() {
       );
       return;
     }
+    const baseUrlProtocols =
+      form.base_urls.find((b) => b.id === protocol.base_url_id)?.compatible_protocols ?? [];
     const payload: SiteModelTestPayload = {
-      protocol: protocol.protocol,
+      protocol: baseUrlProtocols[0] ?? "openai_chat",
       base_url: activeBaseUrl,
       headers: formHeaders(protocol),
       channel_proxy: protocol.channel_proxy.trim(),
@@ -2717,16 +2791,18 @@ export function ChannelsScreen() {
                               <ItemTitle className="truncate text-base">
                                 {site.name}
                               </ItemTitle>
-                              {site.protocols.map((protocol) => (
+                              {Array.from(
+                                new Set(site.base_urls.flatMap((b) => b.compatible_protocols)),
+                              ).map((p) => (
                                 <Badge
-                                  key={protocol.id}
+                                  key={p}
                                   variant="outline"
                                   className={cn(
                                     "px-2.5 py-0.5",
-                                    protocolBadgeClassName(protocol.protocol),
+                                    protocolBadgeClassName(p),
                                   )}
                                 >
-                                  {protocolLabel(protocol.protocol)}
+                                  {protocolLabel(p)}
                                 </Badge>
                               ))}
                             </div>
@@ -2898,60 +2974,85 @@ export function ChannelsScreen() {
                           {form.base_urls.map((baseUrl, index) => (
                             <div
                               key={baseUrl.id}
-                              className="grid min-w-0 gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end"
+                              className="grid min-w-0 gap-3 border-b pb-3 last:border-b-0 last:pb-0"
                             >
-                              <FieldGroup className="min-w-0 gap-3 md:contents">
-                                <Field>
-                                  <FieldLabel>
-                                    {baseUrlIndexLabel(index, locale)}
-                                  </FieldLabel>
-                                  <Input
-                                    className="w-full min-w-0"
-                                    value={baseUrl.url}
-                                    onChange={(event) =>
-                                      updateBaseUrl(index, {
-                                        url: event.target.value,
-                                      })
-                                    }
-                                    placeholder="https://api.example.com"
-                                  />
-                                </Field>
-                                <Field>
-                                  <FieldLabel>
-                                    {locale === "zh-CN" ? "备注" : "Remark"}
-                                  </FieldLabel>
-                                  <Input
-                                    className="w-full min-w-0"
-                                    value={baseUrl.name}
-                                    onChange={(event) =>
-                                      updateBaseUrl(index, {
-                                        name: event.target.value,
-                                      })
-                                    }
-                                    placeholder={
-                                      locale === "zh-CN" ? "备注" : "Remark"
-                                    }
-                                  />
-                                </Field>
-                                <div className="flex h-8 w-8 items-center justify-center">
-                                  <SwitchButton
-                                    checked={baseUrl.enabled}
-                                    onChange={(checked) =>
-                                      updateBaseUrl(index, { enabled: checked })
-                                    }
-                                  />
+                              <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
+                                <FieldGroup className="min-w-0 gap-3 md:contents">
+                                  <Field>
+                                    <FieldLabel>
+                                      {baseUrlIndexLabel(index, locale)}
+                                    </FieldLabel>
+                                    <Input
+                                      className="w-full min-w-0"
+                                      value={baseUrl.url}
+                                      onChange={(event) =>
+                                        updateBaseUrl(index, {
+                                          url: event.target.value,
+                                        })
+                                      }
+                                      placeholder="https://api.example.com"
+                                    />
+                                  </Field>
+                                  <Field>
+                                    <FieldLabel>
+                                      {locale === "zh-CN" ? "备注" : "Remark"}
+                                    </FieldLabel>
+                                    <Input
+                                      className="w-full min-w-0"
+                                      value={baseUrl.name}
+                                      onChange={(event) =>
+                                        updateBaseUrl(index, {
+                                          name: event.target.value,
+                                        })
+                                      }
+                                      placeholder={
+                                        locale === "zh-CN" ? "备注" : "Remark"
+                                      }
+                                    />
+                                  </Field>
+                                  <div className="flex h-8 w-8 items-center justify-center">
+                                    <SwitchButton
+                                      checked={baseUrl.enabled}
+                                      onChange={(checked) =>
+                                        updateBaseUrl(index, { enabled: checked })
+                                      }
+                                    />
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="text-muted-foreground"
+                                    onClick={() => removeBaseUrl(index)}
+                                    disabled={form.base_urls.length <= 1}
+                                  >
+                                    <X size={16} />
+                                  </Button>
+                                </FieldGroup>
+                              </div>
+                              <div>
+                                <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                                  {locale === "zh-CN" ? "兼容协议" : "Compatible Protocols"}
                                 </div>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="icon"
-                                  className="text-muted-foreground"
-                                  onClick={() => removeBaseUrl(index)}
-                                  disabled={form.base_urls.length <= 1}
+                                <ToggleGroup
+                                  type="multiple"
+                                  value={baseUrl.compatible_protocols}
+                                  onValueChange={(vals) =>
+                                    updateBaseUrl(index, { compatible_protocols: vals as ProtocolKind[] })
+                                  }
+                                  className="flex flex-wrap justify-start gap-1"
                                 >
-                                  <X size={16} />
-                                </Button>
-                              </FieldGroup>
+                                  {protocolOptions.map((opt) => (
+                                    <ToggleGroupItem
+                                      key={opt.value}
+                                      value={opt.value}
+                                      className="h-7 px-3 text-xs rounded-full border data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                                    >
+                                      {compactProtocolLabel(opt.value)}
+                                    </ToggleGroupItem>
+                                  ))}
+                                </ToggleGroup>
+                              </div>
                             </div>
                           ))}
                         </FieldGroup>
@@ -3057,7 +3158,7 @@ export function ChannelsScreen() {
                 <section className="grid gap-4">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div className="text-base font-semibold text-foreground">
-                      {locale === "zh-CN" ? "协议列表" : "Protocol configs"}
+                      {locale === "zh-CN" ? "组合" : "Combos"}
                     </div>
                     <Button
                       type="button"
@@ -3066,10 +3167,10 @@ export function ChannelsScreen() {
                       onClick={() =>
                         setForm((current) => ({
                           ...current,
-                          protocols: [
-                            ...current.protocols,
+                          combos: [
+                            ...current.combos,
                             {
-                              ...emptyProtocol(defaultBaseUrlId(current.base_urls)),
+                              ...emptyCombo(defaultBaseUrlId(current.base_urls)),
                             },
                           ],
                         }))
@@ -3077,32 +3178,30 @@ export function ChannelsScreen() {
                     >
                       <Plus data-icon="inline-start" />
                       {locale === "zh-CN"
-                        ? "增加一个协议"
-                        : "Add protocol config"}
+                        ? "增加一个组合"
+                        : "Add combo"}
                     </Button>
                   </div>
                   <div className="flex flex-col gap-3">
-                    {form.protocols.map((protocol, protocolIndex) => (
-                      <ProtocolConfigItem
-                        key={protocol.id || protocolIndex}
+                    {form.combos.map((combo, comboIndex) => (
+                      <ComboConfigItem
+                        key={combo.id || comboIndex}
                         form={form}
-                        protocol={protocol}
-                        protocolIndex={protocolIndex}
+                        combo={combo}
+                        comboIndex={comboIndex}
                         locale={locale}
                         fetchingProtocolIndex={fetchingProtocolIndex}
-                        duplicatedProtocolCredentialKeys={
-                          duplicatedProtocolCredentialKeys
-                        }
-                        onUpdateProtocol={updateProtocol}
-                        onRemoveProtocol={(index) =>
+                        duplicatedComboKeys={duplicatedComboKeys}
+                        onUpdateCombo={updateCombo}
+                        onRemoveCombo={(index) =>
                           setForm((current) => ({
                             ...current,
-                            protocols:
-                              current.protocols.length > 1
-                                ? current.protocols.filter(
+                            combos:
+                              current.combos.length > 1
+                                ? current.combos.filter(
                                     (_, currentIndex) => currentIndex !== index,
                                   )
-                                : current.protocols,
+                                : current.combos,
                           }))
                         }
                         onAddManualModel={addManualProtocolModel}
@@ -3111,6 +3210,16 @@ export function ChannelsScreen() {
                         onOpenModelTest={openModelTest}
                       />
                     ))}
+                  </div>
+                  <div className="mt-4">
+                    <div className="mb-2 text-sm font-medium text-foreground">
+                      {locale === "zh-CN" ? "模型总览" : "Model Overview"}
+                    </div>
+                    <SiteModelAggregateView
+                      combos={form.combos}
+                      baseUrls={form.base_urls}
+                      locale={locale}
+                    />
                   </div>
                 </section>
               </div>
@@ -3136,7 +3245,7 @@ export function ChannelsScreen() {
           open={advancedProtocolIndex !== null}
           protocol={
             advancedProtocolIndex !== null
-              ? form.protocols[advancedProtocolIndex]
+              ? form.combos[advancedProtocolIndex]
               : undefined
           }
           protocolIndex={advancedProtocolIndex}
@@ -3144,7 +3253,7 @@ export function ChannelsScreen() {
           onOpenChange={(open) => {
             if (!open) setAdvancedProtocolIndex(null);
           }}
-          onUpdateProtocol={updateProtocol}
+          onUpdateProtocol={updateCombo}
           onUpdateProtocolHeader={updateProtocolHeader}
         />
 

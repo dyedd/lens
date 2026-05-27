@@ -785,7 +785,7 @@ export function GroupsScreen() {
           id: protocol.id,
           name: site.name,
           base_url: protocolBaseUrl(site, protocol.base_url_id),
-          protocol: protocol.protocol,
+          protocol: "openai_chat" as ProtocolKind,
         });
       }
     }
