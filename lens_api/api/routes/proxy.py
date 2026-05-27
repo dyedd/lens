@@ -13,6 +13,7 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route(
         "/v1/embeddings", service_module.proxy_openai_embeddings, methods=["POST"]
     )
+    app.add_api_route("/v1/rerank", service_module.proxy_rerank, methods=["POST"])
     app.add_api_route(
         "/v1/messages", service_module.proxy_anthropic_messages, methods=["POST"]
     )
