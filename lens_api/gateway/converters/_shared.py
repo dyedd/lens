@@ -81,10 +81,6 @@ def anthropic_content_to_chat_messages(
             bt = block.get("type")
             if bt == "text":
                 text_parts.append(block.get("text", ""))
-            elif bt in ("thinking", "redacted_thinking"):
-                raise ValueError(
-                    "Anthropic thinking blocks cannot be converted to OpenAI Chat"
-                )
             elif bt == "image":
                 source = block.get("source", {})
                 if source.get("type") == "base64":

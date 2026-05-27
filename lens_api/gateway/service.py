@@ -3485,14 +3485,6 @@ def _restore_anthropic_stream_message(
                 input_buffers[index] = (
                     f"{input_buffers.get(index, '')}{delta.get('partial_json') or ''}"
                 )
-            elif delta_type == "thinking_delta":
-                block["thinking"] = (
-                    f"{block.get('thinking') or ''}{delta.get('thinking') or ''}"
-                )
-            elif delta_type == "signature_delta":
-                block["signature"] = delta.get("signature") or block.get(
-                    "signature", ""
-                )
             continue
 
         if payload_type == "content_block_stop":
