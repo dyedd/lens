@@ -2562,8 +2562,13 @@ async def _run_model_test_request(
                 credential_id=credential_id,
                 error_message=detail,
             )
-        raw_payload = response.json()
-        output_text = _model_test_output_text(channel.protocol, raw_payload)
+        content_type = (response.headers.get("content-type") or "").lower()
+        if "text/event-stream" in content_type:
+            raw_content = _decode_content_bytes(response.content) or ""
+            output_text = _model_test_stream_output_text(channel.protocol, raw_content)
+        else:
+            raw_payload = response.json()
+            output_text = _model_test_output_text(channel.protocol, raw_payload)
         return SiteModelTestResult(
             success=True,
             status_code=response.status_code,
@@ -2674,6 +2679,27 @@ def _model_test_output_text(protocol: ProtocolKind, raw_payload: Any) -> str:
                     output_text = "\n".join(parts)
                     break
     return output_text
+
+
+def _model_test_stream_output_text(protocol: ProtocolKind, raw_content: str) -> str:
+    if protocol != ProtocolKind.OPENAI_CHAT:
+        return ""
+
+    parts: list[str] = []
+    for payload in _parse_sse_payloads(raw_content):
+        choices = payload.get("choices")
+        if not isinstance(choices, list):
+            continue
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta")
+            if not isinstance(delta, dict):
+                continue
+            text = _stringify_text_content(delta.get("content"))
+            if text:
+                parts.append(text)
+    return "".join(parts).strip()
 
 
 def _model_test_body(payload: SiteModelTestRequest) -> dict[str, Any]:
