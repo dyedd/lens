@@ -357,6 +357,7 @@ class BackupStore:
                     SiteProtocolConfigEntity(
                         id=protocol.id,
                         site_id=site.id,
+                        name=protocol.name,
                         enabled=1 if protocol.enabled else 0,
                         headers_json=json.dumps(protocol.headers, ensure_ascii=True),
                         channel_proxy=protocol.channel_proxy,
@@ -873,6 +874,7 @@ class BackupStore:
             protocols_by_site.setdefault(row.site_id, []).append(
                 {
                     "id": row.id,
+                    "name": row.name,
                     "protocol": row.protocol,
                     "enabled": bool(row.enabled),
                     "headers": headers,

@@ -364,7 +364,7 @@ class ChannelStore:
                 items.append(
                     ChannelConfig(
                         id=f"{combo.id}_{protocol.value}",
-                        name=site.name,
+                        name=combo.name or site.name,
                         protocol=protocol,
                         base_url=bound_base_url.url,
                         api_key=active_key.key,
@@ -587,6 +587,7 @@ class ChannelStore:
             result[row.site_id].append(
                 SiteProtocolConfig(
                     id=row.id,
+                    name=row.name,
                     enabled=bool(row.enabled),
                     headers=json.loads(row.headers_json),
                     channel_proxy=row.channel_proxy,
@@ -671,6 +672,7 @@ class ChannelStore:
                 existing_protocol = SiteProtocolConfigEntity(id=protocol_id)
                 session.add(existing_protocol)
             existing_protocol.site_id = site_id
+            existing_protocol.name = protocol.name.strip()
             existing_protocol.enabled = int(protocol.enabled)
             existing_protocol.headers_json = json.dumps(
                 protocol.headers, ensure_ascii=True

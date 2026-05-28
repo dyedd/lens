@@ -214,6 +214,7 @@ class SiteModelInput(StrictBaseModel):
 
 class SiteProtocolConfig(StrictBaseModel):
     id: str
+    name: str = ""
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
     channel_proxy: str = ""
@@ -226,6 +227,7 @@ class SiteProtocolConfig(StrictBaseModel):
 
 class SiteProtocolConfigInput(StrictBaseModel):
     id: str | None = None
+    name: str = ""
     protocol: ProtocolKind | None = None
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)

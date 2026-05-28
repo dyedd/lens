@@ -121,6 +121,7 @@ function createLocalId(prefix: string) {
 
 type FormCombo = {
   id?: string | null;
+  name: string;
   enabled: boolean;
   headers: HeaderItem[];
   channel_proxy: string;
@@ -223,8 +224,9 @@ type ChannelSort =
   | "models-desc"
   | "protocols-desc";
 
-const emptyCombo = (baseUrlId = ""): FormCombo => ({
+const emptyCombo = (baseUrlId = "", name = ""): FormCombo => ({
   id: null,
+  name,
   enabled: true,
   headers: [{ key: "", value: "" }],
   channel_proxy: "",
@@ -237,7 +239,7 @@ const emptyCombo = (baseUrlId = ""): FormCombo => ({
   expanded: true,
 });
 
-const emptyForm = (): FormState => {
+const emptyForm = (locale: Locale = "zh-CN"): FormState => {
   const baseUrlId = createLocalId("baseurl");
   return {
     name: "",
@@ -245,7 +247,7 @@ const emptyForm = (): FormState => {
     credentials: [
       { id: createLocalId("credential"), name: "", api_key: "", enabled: true },
     ],
-    combos: [emptyCombo(baseUrlId)],
+    combos: [emptyCombo(baseUrlId, defaultComboName(0, locale))],
   };
 };
 
@@ -309,6 +311,37 @@ function baseUrlLabel(item: { name: string }, index: number, locale: string) {
   const name = item.name.trim();
   if (name) return name;
   return baseUrlIndexLabel(index, locale);
+}
+
+function defaultComboName(index: number, locale: string) {
+  return locale === "zh-CN" ? `组合 ${index + 1}` : `Combo ${index + 1}`;
+}
+
+function comboDisplayName(
+  item: { name?: string | null },
+  index: number,
+  locale: string,
+) {
+  const name = safeText(item.name).trim();
+  return name || defaultComboName(index, locale);
+}
+
+function nextComboName(
+  combos: Array<{ name?: string | null }>,
+  locale: string,
+) {
+  const usedNames = new Set(
+    combos
+      .map((item, index) => comboDisplayName(item, index, locale).toLowerCase())
+      .filter(Boolean),
+  );
+  for (let index = combos.length; index < combos.length + 1000; index += 1) {
+    const candidate = defaultComboName(index, locale);
+    if (!usedNames.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+  return defaultComboName(combos.length, locale);
 }
 
 function defaultBaseUrlId(items: Array<{ id: string; enabled: boolean }>) {
@@ -674,6 +707,10 @@ function SiteHealthPreview({
         {locale === "zh-CN" ? "健康状态" : "Health"}
       </div>
       {enabledProtocols.map((protocol) => {
+        const protocolIndex = Math.max(
+          site.protocols.findIndex((item) => item.id === protocol.id),
+          0,
+        );
         const health = healthByChannelId.get(protocol.id);
         const channelSummary = summaryByChannelId.get(protocol.id);
         const buckets = (channelSummary?.health_buckets ?? []).slice(
@@ -702,8 +739,8 @@ function SiteHealthPreview({
             className="flex min-w-0 flex-wrap items-center gap-3 py-0.5"
           >
             {multiProtocol ? (
-              <span className="w-20 min-w-0 shrink-0 truncate text-[11px] font-medium text-muted-foreground">
-                {protocol.id.slice(0, 8)}
+              <span className="w-28 min-w-0 shrink-0 truncate text-[11px] font-medium text-muted-foreground">
+                {comboDisplayName(protocol, protocolIndex, locale)}
               </span>
             ) : null}
 
@@ -791,7 +828,7 @@ function SiteHealthPreview({
   );
 }
 
-function toForm(site: Site): FormState {
+function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
   const baseUrls = site.base_urls.length
     ? site.base_urls.map((item) => ({
         id: item.id,
@@ -810,8 +847,9 @@ function toForm(site: Site): FormState {
       api_key: item.api_key,
       enabled: item.enabled,
     })),
-    combos: site.protocols.map((item) => ({
+    combos: site.protocols.map((item, itemIndex) => ({
       id: item.id,
+      name: comboDisplayName(item, itemIndex, locale),
       enabled: item.enabled,
       headers: Object.entries(item.headers).length
         ? Object.entries(item.headers).map(([key, value]) => ({ key, value }))
@@ -866,6 +904,7 @@ function toPayload(form: FormState): SitePayload {
       );
       return {
         id: item.id,
+        name: item.name.trim(),
         enabled: item.enabled,
         headers: Object.fromEntries(
           item.headers
@@ -1173,7 +1212,22 @@ function ComboConfigItem({
   return (
     <div className="grid gap-3 border-b pb-4 last:border-b-0 last:pb-0">
       <div className="flex flex-col gap-3">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px_auto] xl:items-end">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_32px_auto] xl:items-end">
+          <Field>
+            <FieldLabel>
+              {locale === "zh-CN" ? "组合名称" : "Combo name"}
+            </FieldLabel>
+            <Input
+              className="w-full min-w-0"
+              value={combo.name}
+              onChange={(event) =>
+                onUpdateCombo(comboIndex, {
+                  name: event.target.value,
+                })
+              }
+              placeholder={defaultComboName(comboIndex, locale)}
+            />
+          </Field>
           <Field>
             <FieldLabel>
               {locale === "zh-CN" ? "地址来源" : "Base URL"}
@@ -1238,7 +1292,7 @@ function ComboConfigItem({
               }
             />
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 xl:col-start-4 xl:row-start-1 xl:self-end">
+          <div className="flex flex-wrap items-center justify-end gap-2 xl:col-start-5 xl:row-start-1 xl:self-end">
             <Button
               type="button"
               variant="outline"
@@ -1955,6 +2009,7 @@ type AggregatedModel = {
 function useAggregatedModels(
   combos: FormCombo[],
   baseUrls: FormBaseUrl[],
+  locale: Locale,
 ): AggregatedModel[] {
   return useMemo(() => {
     const aggregate: Record<string, { protocols: Set<ProtocolKind>; sources: Set<string> }> = {};
@@ -1962,7 +2017,7 @@ function useAggregatedModels(
       if (!combo.enabled) return;
       const baseUrl = baseUrls.find((b) => b.id === combo.base_url_id);
       if (!baseUrl || !baseUrl.compatible_protocols.length) return;
-      const comboName = `组合 ${index + 1}`;
+      const comboName = comboDisplayName(combo, index, locale);
       combo.models.forEach((model) => {
         if (!aggregate[model.model_name]) {
           aggregate[model.model_name] = { protocols: new Set(), sources: new Set() };
@@ -1981,7 +2036,7 @@ function useAggregatedModels(
       protocols: Array.from(protocols),
       sources: Array.from(sources),
     }));
-  }, [combos, baseUrls]);
+  }, [baseUrls, combos, locale]);
 }
 
 function SiteModelAggregateView({
@@ -1993,7 +2048,7 @@ function SiteModelAggregateView({
   baseUrls: FormBaseUrl[];
   locale: Locale;
 }) {
-  const models = useAggregatedModels(combos, baseUrls);
+  const models = useAggregatedModels(combos, baseUrls, locale);
   if (!models.length) {
     return (
       <div className="py-4 text-sm text-muted-foreground">
@@ -2042,7 +2097,9 @@ export function ChannelsScreen() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [form, setForm] = useState<FormState>(() => emptyForm(locale));
+  const [newComboName, setNewComboName] = useState("");
+  const [comboNameDialogOpen, setComboNameDialogOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fetchingProtocolIndex, setFetchingProtocolIndex] = useState<
     number | null
@@ -2268,14 +2325,14 @@ export function ChannelsScreen() {
   function openCreate() {
     if (!confirmDiscardChanges()) return;
     setEditingSiteId(null);
-    applyPreparedForm(emptyForm());
+    applyPreparedForm(emptyForm(locale));
     setDialogOpen(true);
   }
 
   function openEdit(site: Site) {
     if (!confirmDiscardChanges()) return;
     setEditingSiteId(site.id);
-    applyPreparedForm(toForm(site));
+    applyPreparedForm(toForm(site, locale));
     setDialogOpen(true);
   }
 
@@ -2325,7 +2382,7 @@ export function ChannelsScreen() {
           ? rows.map((site) => (site.id === savedSite.id ? savedSite : site))
           : [savedSite, ...rows];
       });
-      applyPreparedForm(toForm(savedSite));
+      applyPreparedForm(toForm(savedSite, locale));
       setDialogOpen(false);
       setEditingSiteId(null);
       toast.success(
@@ -2398,6 +2455,7 @@ export function ChannelsScreen() {
           })),
           protocols: site.protocols.map((item) => ({
             id: item.id,
+            name: item.name,
             enabled,
             headers: item.headers,
             channel_proxy: item.channel_proxy,
@@ -2489,6 +2547,43 @@ export function ChannelsScreen() {
         itemIndex === index ? { ...item, ...patch } : item,
       ),
     }));
+  }
+
+  function openAddComboDialog() {
+    setNewComboName(nextComboName(form.combos, locale));
+    setComboNameDialogOpen(true);
+  }
+
+  function addComboWithName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newComboName.trim();
+    if (!name) {
+      toast.error(locale === "zh-CN" ? "请输入组合名称" : "Enter a combo name");
+      return;
+    }
+    const exists = form.combos.some(
+      (combo, index) =>
+        comboDisplayName(combo, index, locale).toLowerCase() === name.toLowerCase(),
+    );
+    if (exists) {
+      toast.error(
+        locale === "zh-CN"
+          ? "组合名称已存在"
+          : "Combo name already exists",
+      );
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      combos: [
+        ...current.combos,
+        {
+          ...emptyCombo(defaultBaseUrlId(current.base_urls), name),
+        },
+      ],
+    }));
+    setComboNameDialogOpen(false);
+    setNewComboName("");
   }
 
   function addBaseUrl() {
@@ -3268,17 +3363,7 @@ export function ChannelsScreen() {
                       type="button"
                       variant="outline"
                       className="justify-start border-dashed"
-                      onClick={() =>
-                        setForm((current) => ({
-                          ...current,
-                          combos: [
-                            ...current.combos,
-                            {
-                              ...emptyCombo(defaultBaseUrlId(current.base_urls)),
-                            },
-                          ],
-                        }))
-                      }
+                      onClick={openAddComboDialog}
                     >
                       <Plus data-icon="inline-start" />
                       {locale === "zh-CN"
@@ -3339,6 +3424,38 @@ export function ChannelsScreen() {
                     : locale === "zh-CN"
                       ? "创建渠道"
                       : "Create channel"}
+                </Button>
+              </div>
+            </form>
+          </AppDialogContent>
+        </Dialog>
+        <Dialog open={comboNameDialogOpen} onOpenChange={setComboNameDialogOpen}>
+          <AppDialogContent
+            className="max-w-md"
+            title={locale === "zh-CN" ? "命名组合" : "Name combo"}
+          >
+            <form className="grid gap-4" onSubmit={addComboWithName}>
+              <Field>
+                <FieldLabel htmlFor="new-combo-name">
+                  {locale === "zh-CN" ? "组合名称" : "Combo name"}
+                </FieldLabel>
+                <Input
+                  id="new-combo-name"
+                  value={newComboName}
+                  autoFocus
+                  onChange={(event) => setNewComboName(event.target.value)}
+                />
+              </Field>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setComboNameDialogOpen(false)}
+                >
+                  {locale === "zh-CN" ? "取消" : "Cancel"}
+                </Button>
+                <Button type="submit">
+                  {locale === "zh-CN" ? "创建组合" : "Create combo"}
                 </Button>
               </div>
             </form>

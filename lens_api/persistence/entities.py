@@ -74,6 +74,7 @@ class SiteProtocolConfigEntity(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     enabled: Mapped[int] = enabled_column()
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")

@@ -1082,12 +1082,19 @@ class DomainStore:
         combo_ids = list(combo_to_channels.keys())
         rows = (
             await session.execute(
-                select(SiteProtocolConfigEntity.id, SiteEntity.name)
+                select(
+                    SiteProtocolConfigEntity.id,
+                    SiteProtocolConfigEntity.name,
+                    SiteEntity.name,
+                )
                 .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
                 .where(SiteProtocolConfigEntity.id.in_(combo_ids))
             )
         ).all()
-        combo_site_names: dict[str, str] = {combo_id: site_name for combo_id, site_name in rows}
+        combo_site_names: dict[str, str] = {
+            combo_id: combo_name or site_name
+            for combo_id, combo_name, site_name in rows
+        }
         result: dict[str, str] = {}
         for combo_id, cids in combo_to_channels.items():
             site_name = combo_site_names.get(combo_id, "")

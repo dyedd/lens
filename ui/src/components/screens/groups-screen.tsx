@@ -338,6 +338,19 @@ function channelEndpoint(channel?: ProtocolMeta) {
   return channel.base_url || "";
 }
 
+function defaultComboName(index: number, locale: "zh-CN" | "en-US") {
+  return locale === "zh-CN" ? `组合 ${index + 1}` : `Combo ${index + 1}`;
+}
+
+function comboDisplayName(
+  combo: { name?: string | null },
+  index: number,
+  locale: "zh-CN" | "en-US",
+) {
+  const name = combo.name?.trim();
+  return name || defaultComboName(index, locale);
+}
+
 function protocolBaseUrl(site: Site, baseUrlId: string) {
   const bound = site.base_urls.find((item) => item.id === baseUrlId);
   return bound?.url || "";
@@ -780,15 +793,16 @@ export function GroupsScreen() {
   const channelMap = useMemo(() => {
     const map = new Map<string, ProtocolMeta>();
     for (const site of sites ?? []) {
-      for (const combo of site.protocols) {
+      for (const [comboIndex, combo] of site.protocols.entries()) {
         const baseUrl = site.base_urls.find((b) => b.id === combo.base_url_id);
         const baseUrlStr = baseUrl?.url ?? protocolBaseUrl(site, combo.base_url_id);
         const protocols = baseUrl?.compatible_protocols ?? [];
+        const comboName = comboDisplayName(combo, comboIndex, locale);
         for (const p of protocols) {
           const compositeId = `${combo.id}_${p}`;
           map.set(compositeId, {
             id: compositeId,
-            name: site.name,
+            name: comboName,
             base_url: baseUrlStr,
             protocol: p,
           });
@@ -797,7 +811,7 @@ export function GroupsScreen() {
         if (!map.has(combo.id) && protocols.length > 0) {
           map.set(combo.id, {
             id: combo.id,
-            name: site.name,
+            name: comboName,
             base_url: baseUrlStr,
             protocol: protocols[0],
           });
@@ -805,7 +819,7 @@ export function GroupsScreen() {
       }
     }
     return map;
-  }, [sites]);
+  }, [locale, sites]);
 
   const groupRows = useMemo<GroupRow[]>(
     () =>

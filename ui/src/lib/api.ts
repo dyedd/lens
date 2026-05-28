@@ -120,6 +120,7 @@ export type SiteModelInput = {
 
 export type SiteProtocolConfig = {
   id: string;
+  name: string;
   enabled: boolean;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -132,6 +133,7 @@ export type SiteProtocolConfig = {
 
 export type SiteProtocolConfigInput = {
   id?: string | null;
+  name: string;
   protocol?: ProtocolKind | null;
   enabled: boolean;
   headers: Record<string, string>;
