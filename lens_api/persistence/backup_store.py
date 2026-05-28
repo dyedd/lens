@@ -106,6 +106,16 @@ def _upgrade_backup_format(data: dict) -> dict:
             buid = base_url.get("id", "")
             if not base_url.get("compatible_protocols") and buid in url_protocols:
                 base_url["compatible_protocols"] = sorted(url_protocols[buid])
+    for group in data.get("groups", []):
+        if not isinstance(group, dict):
+            continue
+        old_protocol = group.pop("protocol", None)
+        if "protocols" not in group and old_protocol is not None:
+            group["protocols"] = [old_protocol]
+        if not group.get("protocols"):
+            raise ValueError(
+                f"Backup model group missing protocols: {group.get('name', '')}"
+            )
     return data
 
 EXPORTABLE_SETTING_KEYS = (
@@ -136,8 +146,11 @@ class BackupStore:
         try:
             data = json.loads(payload)
             data = _upgrade_backup_format(data)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid backup file") from exc
+        try:
             return ConfigBackupDump.model_validate(data)
-        except (ValueError, json.JSONDecodeError) as exc:
+        except ValueError as exc:
             raise ValueError("Invalid backup file") from exc
 
     async def export_dump(
@@ -415,7 +428,7 @@ class BackupStore:
         await session.execute(delete(ModelGroupEntity))
 
         group_ids = {group.id for group in groups}
-        seen_protocol_name: set[tuple[str, str]] = set()
+        seen_group_names: set[str] = set()
         seen_group_ids: set[str] = set()
 
         for group in groups:
@@ -423,10 +436,12 @@ class BackupStore:
                 raise ValueError(f"Duplicate group id in backup: {group.id}")
             seen_group_ids.add(group.id)
 
-            protocol_name_key = (group.protocol.value, group.name)
-            if protocol_name_key in seen_protocol_name:
+            if group.name in seen_group_names:
                 raise ValueError(f"Duplicate model group name in backup: {group.name}")
-            seen_protocol_name.add(protocol_name_key)
+            seen_group_names.add(group.name)
+
+            if not group.protocols:
+                raise ValueError(f"Backup model group missing protocols: {group.name}")
 
             if group.route_group_id and group.route_group_id not in group_ids:
                 raise ValueError(
@@ -437,7 +452,10 @@ class BackupStore:
                 ModelGroupEntity(
                     id=group.id,
                     name=group.name,
-                    protocol=group.protocol.value,
+                    protocols_json=json.dumps(
+                        [protocol.value for protocol in group.protocols],
+                        ensure_ascii=True,
+                    ),
                     strategy=group.strategy.value,
                     route_group_id=group.route_group_id,
                     sync_filter_mode=group.sync_filter_mode.value,
@@ -991,7 +1009,7 @@ class BackupStore:
                     {
                         "id": row.id,
                         "name": row.name,
-                        "protocol": row.protocol,
+                        "protocols": json.loads(row.protocols_json),
                         "strategy": row.strategy,
                         "route_group_id": row.route_group_id,
                         "route_group_name": route_group_names.get(
