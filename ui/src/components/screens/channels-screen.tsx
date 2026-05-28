@@ -1210,7 +1210,7 @@ function ComboConfigItem({
     );
 
   return (
-    <div className="grid gap-3 border-b pb-4 last:border-b-0 last:pb-0">
+    <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-4 shadow-sm">
       <div className="flex flex-col gap-3">
         <div className="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_32px_auto] xl:items-end">
           <Field>
@@ -3371,7 +3371,7 @@ export function ChannelsScreen() {
                         : "Add combo"}
                     </Button>
                   </div>
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-4">
                     {form.combos.map((combo, comboIndex) => (
                       <ComboConfigItem
                         key={combo.id || comboIndex}
