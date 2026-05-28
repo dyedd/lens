@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
+from ..gateway.converters import can_reach_protocol
 from ..models import (
     ConfigBackupDump,
     ConfigBackupGatewayApiKey,
@@ -70,20 +71,50 @@ SETTING_STATS_LAST_PERSIST_AT = "stats_last_persist_at"
 
 
 def _extract_combo_id(channel_id: str, known_combo_ids: set[str]) -> str:
-    """从 channel_id 中提取 combo_id。
-
-    新版备份直接使用 combo_id；旧版备份使用复合格式 {combo_id}_{protocol}。
-    优先直接匹配，若未匹配则尝试去掉后缀。
-    """
     if channel_id in known_combo_ids:
         return channel_id
-    # 尝试去掉 _{protocol_value} 后缀（旧版复合 ID 格式 {combo_id}_{protocol}）
     for protocol in ProtocolKind:
         suffix = f"_{protocol.value}"
         if channel_id.endswith(suffix):
             candidate = channel_id[: -len(suffix)]
             if candidate in known_combo_ids:
                 return candidate
+    return channel_id
+
+
+def _parse_channel_protocol(channel_id: str) -> ProtocolKind | None:
+    for protocol in ProtocolKind:
+        if channel_id.endswith(f"_{protocol.value}"):
+            return protocol
+    return None
+
+
+def _composite_channel_id(combo_id: str, protocol: ProtocolKind) -> str:
+    return f"{combo_id}_{protocol.value}"
+
+
+def _resolve_group_item_channel_id(
+    channel_id: str,
+    group_protocols: list[ProtocolKind],
+    *,
+    known_combo_ids: set[str],
+    combo_protocols: dict[str, list[ProtocolKind]],
+) -> str:
+    combo_id = _extract_combo_id(channel_id, known_combo_ids)
+    if combo_id not in known_combo_ids:
+        return channel_id
+
+    parsed_protocol = _parse_channel_protocol(channel_id)
+    available_protocols = combo_protocols.get(combo_id, [])
+    if parsed_protocol in available_protocols:
+        return _composite_channel_id(combo_id, parsed_protocol)
+
+    for protocol in group_protocols:
+        if protocol in available_protocols:
+            return _composite_channel_id(combo_id, protocol)
+
+    if available_protocols:
+        return _composite_channel_id(combo_id, available_protocols[0])
     return channel_id
 
 
@@ -211,8 +242,8 @@ class BackupStore:
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 
-            channel_ids, available_model_keys = await self._replace_sites(
-                session, dump.sites
+            channel_ids, channel_protocols, available_model_keys = (
+                await self._replace_sites(session, dump.sites)
             )
             rows_affected["sites"] = len(dump.sites)
             rows_affected["site_base_urls"] = sum(
@@ -234,6 +265,7 @@ class BackupStore:
                 session,
                 dump.groups,
                 available_channel_ids=channel_ids,
+                available_channel_protocols=channel_protocols,
                 available_model_keys=available_model_keys,
             )
             rows_affected["model_groups"] = len(dump.groups)
@@ -272,14 +304,15 @@ class BackupStore:
 
     async def _replace_sites(
         self, session: AsyncSession, sites: list[SiteConfig]
-    ) -> tuple[set[str], set[tuple[str, str, str]]]:
+    ) -> tuple[set[str], dict[str, list[ProtocolKind]], set[tuple[str, str, str]]]:
         # 旧备份兼容：若地址没有 compatible_protocols 但协议配置有 protocol，则反推
         for site in sites:
             url_protocols: dict[str, set] = {}
             for protocol_config in site.protocols:
-                if protocol_config.protocol is not None:
+                protocol_value = getattr(protocol_config, "protocol", None)
+                if protocol_value is not None:
                     url_protocols.setdefault(protocol_config.base_url_id, set()).add(
-                        protocol_config.protocol
+                        protocol_value
                     )
             for base_url in site.base_urls:
                 if not base_url.compatible_protocols and base_url.id in url_protocols:
@@ -296,6 +329,7 @@ class BackupStore:
         site_ids: set[str] = set()
         site_names: set[str] = set()
         channel_ids: set[str] = set()
+        channel_protocols: dict[str, list[ProtocolKind]] = {}
         credential_ids: set[str] = set()
         available_model_keys: set[tuple[str, str, str]] = set()
         base_url_ids: set[str] = set()
@@ -381,6 +415,16 @@ class BackupStore:
                     )
                 )
 
+                base_url_protocols = next(
+                    (
+                        base_url.compatible_protocols
+                        for base_url in site.base_urls
+                        if base_url.id == protocol.base_url_id
+                    ),
+                    [],
+                )
+                channel_protocols[protocol.id] = list(base_url_protocols)
+
                 for model in protocol.models:
                     if model.id in model_ids:
                         raise ValueError(
@@ -395,13 +439,17 @@ class BackupStore:
                             f"Discovered model credential not found in backup site {site.name}: {model.credential_id}"
                         )
                     if model.enabled:
-                        available_model_keys.add(
-                            (
-                                protocol.id,
-                                model.credential_id,
-                                model.model_name,
-                            )
-                        )
+                        for protocol_kind in channel_protocols[protocol.id]:
+                            if model.protocol is None or model.protocol == protocol_kind:
+                                available_model_keys.add(
+                                    (
+                                        _composite_channel_id(
+                                            protocol.id, protocol_kind
+                                        ),
+                                        model.credential_id,
+                                        model.model_name,
+                                    )
+                                )
                     session.add(
                         SiteDiscoveredModelEntity(
                             id=model.id,
@@ -414,7 +462,7 @@ class BackupStore:
                         )
                     )
 
-        return channel_ids, available_model_keys
+        return channel_ids, channel_protocols, available_model_keys
 
     async def _replace_groups(
         self,
@@ -422,6 +470,7 @@ class BackupStore:
         groups: list[ModelGroup],
         *,
         available_channel_ids: set[str],
+        available_channel_protocols: dict[str, list[ProtocolKind]],
         available_model_keys: set[tuple[str, str, str]],
     ) -> None:
         await session.execute(delete(ModelGroupItemEntity))
@@ -431,6 +480,7 @@ class BackupStore:
         seen_group_names: set[str] = set()
         seen_group_ids: set[str] = set()
 
+        groups_by_id = {group.id: group for group in groups}
         for group in groups:
             if group.id in seen_group_ids:
                 raise ValueError(f"Duplicate group id in backup: {group.id}")
@@ -447,6 +497,63 @@ class BackupStore:
                 raise ValueError(
                     f"Referenced route group not found: {group.route_group_id}"
                 )
+            if group.route_group_id:
+                route_group = groups_by_id[group.route_group_id]
+                route_protocols = set(route_group.protocols)
+                missing_protocols = [
+                    protocol
+                    for protocol in group.protocols
+                    if protocol not in route_protocols
+                ]
+                if missing_protocols:
+                    missing = ", ".join(
+                        protocol.value for protocol in missing_protocols
+                    )
+                    raise ValueError(
+                        f"Route target protocols must cover source protocols: {missing}"
+                    )
+                if route_group.route_group_id:
+                    raise ValueError(
+                        f"Route target must be an execution group: {route_group.name}"
+                    )
+
+            resolved_items: list[tuple[int, object, str, ProtocolKind]] = []
+
+            for index, item in enumerate(group.items):
+                combo_id = _extract_combo_id(item.channel_id, available_channel_ids)
+                if combo_id not in available_channel_ids:
+                    raise ValueError(
+                        f"Model group channel not found in backup sites: {item.channel_id}"
+                    )
+                resolved_channel_id = _resolve_group_item_channel_id(
+                    item.channel_id,
+                    group.protocols,
+                    known_combo_ids=available_channel_ids,
+                    combo_protocols=available_channel_protocols,
+                )
+                resolved_protocol = _parse_channel_protocol(resolved_channel_id)
+                if resolved_protocol is None:
+                    raise ValueError(
+                        f"Model group channel not found in backup sites: {item.channel_id}"
+                    )
+                target = (resolved_channel_id, item.credential_id, item.model_name)
+                if target not in available_model_keys:
+                    raise ValueError(
+                        f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
+                    )
+                resolved_items.append(
+                    (index, item, resolved_channel_id, resolved_protocol)
+                )
+
+            if group.items and not group.route_group_id:
+                for protocol in group.protocols:
+                    if not any(
+                        can_reach_protocol(item_protocol, protocol)
+                        for _, _, _, item_protocol in resolved_items
+                    ):
+                        raise ValueError(
+                            f"Protocol {protocol.value} has no reachable channel in group items"
+                        )
 
             session.add(
                 ModelGroupEntity(
@@ -463,22 +570,11 @@ class BackupStore:
                 )
             )
 
-            for index, item in enumerate(group.items):
-                # 支持复合 ID 格式 {combo_id}_{protocol}，从中提取 combo_id 做校验
-                combo_id = _extract_combo_id(item.channel_id, available_channel_ids)
-                if combo_id not in available_channel_ids:
-                    raise ValueError(
-                        f"Model group channel not found in backup sites: {item.channel_id}"
-                    )
-                target = (combo_id, item.credential_id, item.model_name)
-                if target not in available_model_keys:
-                    raise ValueError(
-                        f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
-                    )
+            for index, item, resolved_channel_id, _ in resolved_items:
                 session.add(
                     ModelGroupItemEntity(
                         group_id=group.id,
-                        channel_id=combo_id,
+                        channel_id=resolved_channel_id,
                         credential_id=item.credential_id,
                         model_name=item.model_name,
                         enabled=1 if item.enabled else 0,

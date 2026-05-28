@@ -1014,6 +1014,18 @@ class DomainStore:
                 + ", ".join(invalid_channel_ids)
             )
 
+        item_protocols = [
+            channel_by_id[item.channel_id].protocol for item in normalized_items
+        ]
+        for protocol in normalized_protocols:
+            if not any(
+                can_reach_protocol(item_protocol, protocol)
+                for item_protocol in item_protocols
+            ):
+                raise ValueError(
+                    f"Protocol {protocol.value} has no reachable channel in group items"
+                )
+
         model_names_by_channel: dict[str, set[tuple[str, str]]] = {}
         for cid in channel_ids:
             ch = channel_by_id.get(cid)

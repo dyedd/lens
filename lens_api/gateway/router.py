@@ -455,7 +455,7 @@ class RoundRobinRouter:
     def _expand_target_credentials(self, target: RouteTarget) -> list[RouteTarget]:
         if target.credential_id:
             key = self._find_key(target.channel, target.credential_id)
-            if key is None:
+            if key is None or not key.enabled:
                 return []
             return [
                 RouteTarget(

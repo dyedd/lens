@@ -202,6 +202,34 @@ async def test_group_item_must_reach_at_least_one_group_protocol(
 
 
 @pytest.mark.asyncio
+async def test_group_items_must_cover_every_declared_protocol(session_factory) -> None:
+    channel_id, credential_id = await _seed_channel(
+        session_factory,
+        combo_id="chat-only",
+        protocols=[ProtocolKind.OPENAI_CHAT],
+        model_name="gpt-5-mini",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Protocol openai_embedding has no reachable channel in group items",
+    ):
+        await DomainStore(session_factory).create_group(
+            ModelGroupCreate(
+                name="Mixed Group",
+                protocols=[ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_EMBEDDING],
+                items=[
+                    ModelGroupItemInput(
+                        channel_id=channel_id,
+                        credential_id=credential_id,
+                        model_name="gpt-5-mini",
+                    )
+                ],
+            )
+        )
+
+
+@pytest.mark.asyncio
 async def test_route_group_target_must_cover_all_protocols(session_factory) -> None:
     store = DomainStore(session_factory)
     target = await store.create_group(

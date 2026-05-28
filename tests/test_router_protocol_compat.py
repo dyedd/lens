@@ -1,7 +1,7 @@
 import pytest
 
 from lens_api.gateway.router import RoundRobinRouter, RouteTarget
-from lens_api.models import ChannelConfig, ChannelStatus, ProtocolKind
+from lens_api.models import ChannelConfig, ChannelKeyItem, ChannelStatus, ProtocolKind
 
 
 def _channel(
@@ -9,6 +9,7 @@ def _channel(
     protocol: ProtocolKind,
     *,
     status: ChannelStatus = ChannelStatus.ENABLED,
+    keys: list[ChannelKeyItem] | None = None,
 ) -> ChannelConfig:
     return ChannelConfig(
         id=channel_id,
@@ -17,6 +18,7 @@ def _channel(
         base_url="https://api.example.com",
         api_key="sk-test",
         status=status,
+        keys=keys or [],
     )
 
 
@@ -66,3 +68,35 @@ def test_router_raises_when_all_route_targets_incompatible() -> None:
                 )
             ],
         )
+
+
+def test_route_target_with_disabled_credential_is_skipped() -> None:
+    router = RoundRobinRouter()
+    channel = _channel(
+        "chat",
+        ProtocolKind.OPENAI_CHAT,
+        keys=[
+            ChannelKeyItem(id="disabled-key", key="sk-disabled", enabled=False),
+            ChannelKeyItem(id="enabled-key", key="sk-enabled", enabled=True),
+        ],
+    )
+
+    selection = router.select(
+        [],
+        ProtocolKind.OPENAI_CHAT,
+        route_targets=[
+            RouteTarget(
+                channel=channel,
+                model_name="gpt-5-mini",
+                credential_id="disabled-key",
+            ),
+            RouteTarget(
+                channel=channel,
+                model_name="gpt-5-mini",
+                credential_id="enabled-key",
+            ),
+        ],
+    )
+
+    assert selection.primary.credential_id == "enabled-key"
+    assert selection.fallbacks == []

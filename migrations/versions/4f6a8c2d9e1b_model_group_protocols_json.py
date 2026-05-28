@@ -31,8 +31,9 @@ def _index_exists(table_name: str, index_name: str) -> bool:
 
 def upgrade() -> None:
     conn = op.get_bind()
+    dialect = conn.dialect.name
     dup = conn.execute(sa.text(
-        "SELECT name, COUNT(*) AS c FROM model_groups GROUP BY name HAVING c > 1"
+        "SELECT name, COUNT(*) AS c FROM model_groups GROUP BY name HAVING COUNT(*) > 1"
     )).fetchall()
     if dup:
         raise RuntimeError(
@@ -49,7 +50,15 @@ def upgrade() -> None:
             )
         )
 
-    op.execute("""UPDATE model_groups SET protocols_json = '["' || protocol || '"]'""")
+    if dialect == "sqlite":
+        op.execute("""UPDATE model_groups SET protocols_json = '["' || protocol || '"]'""")
+    elif dialect == "postgresql":
+        op.execute(
+            "UPDATE model_groups "
+            "SET protocols_json = json_build_array(protocol)::text"
+        )
+    else:
+        raise RuntimeError(f"Unsupported dialect for upgrade: {dialect}")
 
     with op.batch_alter_table("model_groups") as batch_op:
         if _index_exists("model_groups", "ix_model_groups_protocol"):
@@ -63,6 +72,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    dialect = op.get_bind().dialect.name
     with op.batch_alter_table("model_groups") as batch_op:
         batch_op.add_column(
             sa.Column(
@@ -73,10 +83,18 @@ def downgrade() -> None:
             )
         )
 
-    op.execute("""
-        UPDATE model_groups
-        SET protocol = COALESCE(json_extract(protocols_json, '$[0]'), 'openai_chat')
-    """)
+    if dialect == "sqlite":
+        op.execute("""
+            UPDATE model_groups
+            SET protocol = COALESCE(json_extract(protocols_json, '$[0]'), 'openai_chat')
+        """)
+    elif dialect == "postgresql":
+        op.execute(
+            "UPDATE model_groups "
+            "SET protocol = COALESCE((protocols_json::jsonb -> 0) #>> '{}', 'openai_chat')"
+        )
+    else:
+        raise RuntimeError(f"Unsupported dialect for downgrade: {dialect}")
 
     with op.batch_alter_table("model_groups") as batch_op:
         if _index_exists("model_groups", "ix_model_groups_name"):
