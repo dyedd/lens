@@ -2118,10 +2118,7 @@ export function GroupsScreen() {
                         }));
                       }}
                       locale={locale}
-                      className={cn(
-                        "rounded-md border p-2",
-                        form.protocols.length === 0 && "border-destructive",
-                      )}
+                      invalid={form.protocols.length === 0}
                     />
                     {form.protocols.length === 0 ? (
                       <p className="text-sm text-destructive">

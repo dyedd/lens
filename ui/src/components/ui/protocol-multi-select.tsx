@@ -1,13 +1,17 @@
 "use client";
 
 import { type JSX } from "react";
+import { ChevronDown } from "lucide-react";
 
 import { type ProtocolKind } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 export interface ProtocolMultiSelectProps {
   value: ProtocolKind[];
@@ -16,6 +20,7 @@ export interface ProtocolMultiSelectProps {
   className?: string;
   allowedProtocols?: ProtocolKind[];
   disabled?: boolean;
+  invalid?: boolean;
 }
 
 const CHAT_PROTOCOLS: ProtocolKind[] = [
@@ -31,6 +36,15 @@ const SPECIAL_PROTOCOLS: ProtocolKind[] = [
 ];
 
 const ALL_PROTOCOLS: ProtocolKind[] = [...CHAT_PROTOCOLS, ...SPECIAL_PROTOCOLS];
+
+const PROTOCOL_DOT_CLASS: Record<ProtocolKind, string> = {
+  openai_chat: "bg-sky-500",
+  openai_responses: "bg-indigo-500",
+  anthropic: "bg-amber-500",
+  gemini: "bg-emerald-500",
+  openai_embedding: "bg-muted-foreground/60",
+  rerank: "bg-muted-foreground/60",
+};
 
 function protocolLabel(protocol: ProtocolKind): string {
   switch (protocol) {
@@ -51,93 +65,70 @@ function protocolLabel(protocol: ProtocolKind): string {
   }
 }
 
-function chatToggleClassName(protocol: ProtocolKind): string {
-  switch (protocol) {
-    case "openai_chat":
-      return "data-[state=on]:border-sky-500/40 data-[state=on]:bg-sky-500/10 data-[state=on]:text-sky-700";
-    case "openai_responses":
-      return "data-[state=on]:border-indigo-500/40 data-[state=on]:bg-indigo-500/10 data-[state=on]:text-indigo-700";
-    case "anthropic":
-      return "data-[state=on]:border-amber-500/40 data-[state=on]:bg-amber-500/10 data-[state=on]:text-amber-700";
-    case "gemini":
-      return "data-[state=on]:border-emerald-500/40 data-[state=on]:bg-emerald-500/10 data-[state=on]:text-emerald-700";
-    default:
-      return "";
-  }
-}
-
-const SPECIAL_TOGGLE_CLASS =
-  "data-[state=on]:border-muted-foreground/30 data-[state=on]:bg-muted data-[state=on]:text-foreground";
-
 const COPY = {
   "zh-CN": {
-    ariaLabel: "选择协议",
+    placeholder: "选择协议",
     chat: "聊天协议",
     special: "特殊协议",
+    summarySuffix: (n: number) => `共 ${n} 项`,
   },
   "en-US": {
-    ariaLabel: "Select protocols",
+    placeholder: "Select protocols",
     chat: "Chat",
     special: "Special",
+    summarySuffix: (n: number) => `${n} selected`,
   },
 } as const;
 
-interface ProtocolRowProps {
+interface ProtocolGroupProps {
   label: string;
   protocols: ProtocolKind[];
   value: ProtocolKind[];
-  onChange: (next: ProtocolKind[]) => void;
-  ariaLabel: string;
+  onToggle: (protocol: ProtocolKind) => void;
   disabled: boolean;
-  toggleClassName: (protocol: ProtocolKind) => string;
-  size?: "default" | "compact";
 }
 
-function ProtocolRow({
+function ProtocolGroup({
   label,
   protocols,
   value,
-  onChange,
-  ariaLabel,
+  onToggle,
   disabled,
-  toggleClassName,
-  size = "default",
-}: ProtocolRowProps): JSX.Element | null {
+}: ProtocolGroupProps): JSX.Element | null {
   if (protocols.length === 0) return null;
 
-  const selectedInRow = value.filter((v) => protocols.includes(v));
-
   return (
-    <div className="flex items-center gap-2.5 min-w-0">
-      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+    <div className="flex flex-col gap-1">
+      <div className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
-      </span>
-      <ToggleGroup
-        type="multiple"
-        value={selectedInRow}
-        onValueChange={(next) => {
-          const others = value.filter((v) => !protocols.includes(v));
-          onChange([...others, ...(next as ProtocolKind[])]);
-        }}
-        disabled={disabled}
-        aria-label={ariaLabel}
-        className="flex flex-wrap justify-start gap-1"
-      >
-        {protocols.map((protocol) => (
-          <ToggleGroupItem
-            key={protocol}
-            value={protocol}
-            disabled={disabled}
-            className={cn(
-              "rounded-full border px-3 text-xs transition-colors",
-              size === "compact" ? "h-6" : "h-7",
-              toggleClassName(protocol),
-            )}
-          >
-            {protocolLabel(protocol)}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      </div>
+      <div className="grid grid-cols-2 gap-0.5">
+        {protocols.map((protocol) => {
+          const checked = value.includes(protocol);
+          return (
+            <label
+              key={protocol}
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
+                disabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
+              )}
+            >
+              <Checkbox
+                checked={checked}
+                onCheckedChange={() => !disabled && onToggle(protocol)}
+                disabled={disabled}
+              />
+              <span
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  PROTOCOL_DOT_CLASS[protocol],
+                )}
+              />
+              <span className="truncate">{protocolLabel(protocol)}</span>
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -149,33 +140,97 @@ export function ProtocolMultiSelect({
   className,
   allowedProtocols,
   disabled = false,
+  invalid = false,
 }: ProtocolMultiSelectProps): JSX.Element {
   const allowed = allowedProtocols ?? ALL_PROTOCOLS;
   const chatProtocols = CHAT_PROTOCOLS.filter((p) => allowed.includes(p));
   const specialProtocols = SPECIAL_PROTOCOLS.filter((p) => allowed.includes(p));
   const copy = COPY[locale];
 
+  const toggle = (protocol: ProtocolKind) => {
+    onChange(
+      value.includes(protocol)
+        ? value.filter((p) => p !== protocol)
+        : [...value, protocol],
+    );
+  };
+
+  const selectedInOrder = ALL_PROTOCOLS.filter((p) => value.includes(p));
+
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      <ProtocolRow
-        label={copy.chat}
-        protocols={chatProtocols}
-        value={value}
-        onChange={onChange}
-        ariaLabel={copy.ariaLabel}
-        disabled={disabled}
-        toggleClassName={chatToggleClassName}
-      />
-      <ProtocolRow
-        label={copy.special}
-        protocols={specialProtocols}
-        value={value}
-        onChange={onChange}
-        ariaLabel={copy.ariaLabel}
-        disabled={disabled}
-        toggleClassName={() => SPECIAL_TOGGLE_CLASS}
-        size="compact"
-      />
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          disabled={disabled}
+          aria-invalid={invalid || undefined}
+          className={cn(
+            "w-full justify-between px-3 font-normal",
+            selectedInOrder.length === 0 && "text-muted-foreground",
+            className,
+          )}
+        >
+          {selectedInOrder.length === 0 ? (
+            <span className="truncate">{copy.placeholder}</span>
+          ) : (
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+              {selectedInOrder.slice(0, 3).map((protocol) => (
+                <span
+                  key={protocol}
+                  className="flex shrink-0 items-center gap-1 text-xs text-foreground"
+                >
+                  <span
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      PROTOCOL_DOT_CLASS[protocol],
+                    )}
+                  />
+                  {protocolLabel(protocol)}
+                </span>
+              ))}
+              {selectedInOrder.length > 3 ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  +{selectedInOrder.length - 3}
+                </span>
+              ) : null}
+            </span>
+          )}
+          <ChevronDown className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 gap-3 p-3">
+        <ProtocolGroup
+          label={copy.chat}
+          protocols={chatProtocols}
+          value={value}
+          onToggle={toggle}
+          disabled={disabled}
+        />
+        {chatProtocols.length > 0 && specialProtocols.length > 0 ? (
+          <div className="h-px bg-border" />
+        ) : null}
+        <ProtocolGroup
+          label={copy.special}
+          protocols={specialProtocols}
+          value={value}
+          onToggle={toggle}
+          disabled={disabled}
+        />
+        {value.length > 0 ? (
+          <div className="flex items-center justify-between border-t pt-2 text-xs text-muted-foreground">
+            <span>{copy.summarySuffix(value.length)}</span>
+            <button
+              type="button"
+              className="text-foreground hover:underline"
+              onClick={() => onChange([])}
+            >
+              {locale === "zh-CN" ? "清空" : "Clear"}
+            </button>
+          </div>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   );
 }
