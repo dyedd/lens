@@ -1,12 +1,13 @@
 {
   "id": "model-group-multi-protocol",
   "title": "模型组多协议声明 + 协议兼容/转换路径（groups 侧对称扩展）",
-  "status": "in_progress",
+  "status": "archived",
   "strategy": "full-collaborate",
-  "currentPhase": "4-implementation",
-  "nextAction": "Phase 4: Codex Parallel Builder 模式 — Layer 1 并行启动",
+  "currentPhase": "6-final",
+  "nextAction": "已完成并归档",
   "gate": null,
   "branch": "feat/地址多协议声明与组合概念重构",
   "scope": "model-group-multi-protocol",
-  "createdAt": "2026-05-28T00:00:00Z"
+  "createdAt": "2026-05-28T00:00:00Z",
+  "closedAt": "2026-05-29T00:00:00Z"
 }

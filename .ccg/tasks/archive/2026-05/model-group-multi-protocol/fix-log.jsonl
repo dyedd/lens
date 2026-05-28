@@ -1,0 +1,2 @@
+{"round": 1, "critical": 2, "warning": 4, "info": 2, "ts": "2026-05-29T00:00:00Z"}
+{"round": 1, "fixed_critical": 2, "fixed_warning": 4, "pytest": "34 passed", "alembic": "up/down OK", "verify-security": "PASS", "verify-quality": "no new issues", "verify-change": "PASS", "ts": "2026-05-29T00:30:00Z"}
