@@ -5,6 +5,7 @@ import re
 from threading import Lock
 from time import monotonic
 
+from .converters import can_reach_protocol
 from ..models import (
     ChannelConfig,
     ChannelHealth,
@@ -422,6 +423,8 @@ class RoundRobinRouter:
             active: list[RouteTarget] = []
             for target in route_targets:
                 if target.channel.status != ChannelStatus.ENABLED:
+                    continue
+                if not can_reach_protocol(target.channel.protocol, protocol):
                     continue
                 if (
                     allowed_channel_ids is not None

@@ -122,6 +122,7 @@ from ..persistence.domain_store import (
 from ..persistence.cronjob_store import CronjobSpec, CronjobStore
 from ..persistence.entities import AdminUserEntity
 from .converters import (
+    can_reach_protocol,
     convert_request,
     convert_response,
     convert_stream_iterator,
@@ -1541,7 +1542,7 @@ def _filtered_group_names(
             group.name.strip()
             for group in groups
             if group.name.strip()
-            and group.protocol in protocols
+            and set(group.protocols) & protocols
             and _gateway_key_allows_model(gateway_key, group.name)
         }
     )
@@ -3007,7 +3008,7 @@ async def _resolve_routing_plan(
     matched_group = await app_state.domain_store.find_group_by_name(
         protocol.value, requested_model
     )
-    if matched_group is not None:
+    if matched_group is not None and protocol in matched_group.protocols:
         resolved_group = matched_group
         if matched_group.route_group_id.strip():
             try:
@@ -3022,6 +3023,8 @@ async def _resolve_routing_plan(
                 raise LookupError(
                     f"Route target must be an execution group: {resolved_group.name}"
                 )
+            if protocol not in resolved_group.protocols:
+                raise LookupError(f"No model group matched {requested_model}")
         channels = await app_state.store.list()
         channel_map = {channel.id: channel for channel in channels}
         route_targets = [
@@ -3032,7 +3035,9 @@ async def _resolve_routing_plan(
                 credential_name=item.credential_name or None,
             )
             for item in resolved_group.items
-            if item.enabled and item.channel_id in channel_map
+            if item.enabled
+            and item.channel_id in channel_map
+            and can_reach_protocol(channel_map[item.channel_id].protocol, protocol)
         ]
         return RoutingPlan(
             requested_group_name=matched_group.name,
