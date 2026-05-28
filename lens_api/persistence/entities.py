@@ -108,8 +108,10 @@ class ModelGroupEntity(Base):
     )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
-    protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(
+        String(120), nullable=False, unique=True, index=True
+    )
+    protocols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     strategy: Mapped[str] = mapped_column(
         String(32), nullable=False, default="round_robin"
     )

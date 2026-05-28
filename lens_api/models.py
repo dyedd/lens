@@ -478,7 +478,7 @@ class VersionCheckResult(StrictBaseModel):
 class ModelGroup(StrictBaseModel):
     id: str
     name: str
-    protocol: ProtocolKind
+    protocols: list[ProtocolKind] = Field(min_length=1)
     strategy: RoutingStrategy
     route_group_id: str = ""
     route_group_name: str = ""
@@ -523,7 +523,7 @@ class ModelGroupItemInput(StrictBaseModel):
 
 class ModelGroupCreate(StrictBaseModel):
     name: str
-    protocol: ProtocolKind
+    protocols: list[ProtocolKind] = Field(min_length=1)
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
     route_group_id: str = ""
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
@@ -544,7 +544,7 @@ class ModelGroupCreate(StrictBaseModel):
 
 class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
-    protocol: ProtocolKind | None = None
+    protocols: list[ProtocolKind] | None = Field(default=None, min_length=1)
     strategy: RoutingStrategy | None = None
     route_group_id: str | None = None
     sync_filter_mode: ModelGroupSyncFilterMode | None = None
@@ -616,7 +616,7 @@ class ModelGroupCandidateItem(StrictBaseModel):
 
 
 class ModelGroupCandidatesRequest(StrictBaseModel):
-    protocol: ProtocolKind | None = None
+    protocols: list[ProtocolKind] = Field(default_factory=list)
     exclude_items: list[ModelGroupItemInput] = Field(default_factory=list)
 
 
