@@ -2096,7 +2096,7 @@ export function GroupsScreen() {
                 <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <Field>
                     <FieldLabel>
-                      {locale === "zh-CN" ? "对外协议" : "External Protocols"}
+                      {locale === "zh-CN" ? "协议" : "External Protocols"}
                     </FieldLabel>
                     <ProtocolMultiSelect
                       value={form.protocols}
