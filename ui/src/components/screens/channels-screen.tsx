@@ -34,10 +34,6 @@ import {
   SettingItem,
   apiRequest,
 } from "@/lib/api";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
 import { useI18n } from "@/lib/i18n";
 import {
   MODEL_TEST_PROMPTS_SETTING_KEY,
@@ -49,6 +45,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
 import {
   Field,
   FieldDescription,
@@ -3315,24 +3312,13 @@ export function ChannelsScreen() {
                                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">
                                   {locale === "zh-CN" ? "兼容协议" : "Compatible Protocols"}
                                 </div>
-                                <ToggleGroup
-                                  type="multiple"
+                                <ProtocolMultiSelect
                                   value={baseUrl.compatible_protocols}
-                                  onValueChange={(vals) =>
-                                    updateBaseUrl(index, { compatible_protocols: vals as ProtocolKind[] })
+                                  onChange={(next) =>
+                                    updateBaseUrl(index, { compatible_protocols: next })
                                   }
-                                  className="flex flex-wrap justify-start gap-1"
-                                >
-                                  {protocolOptions.map((opt) => (
-                                    <ToggleGroupItem
-                                      key={opt.value}
-                                      value={opt.value}
-                                      className="h-7 px-3 text-xs rounded-full border data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                                    >
-                                      {compactProtocolLabel(opt.value)}
-                                    </ToggleGroupItem>
-                                  ))}
-                                </ToggleGroup>
+                                  locale={locale}
+                                />
                               </div>
                             </div>
                           ))}
