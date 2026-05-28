@@ -20,6 +20,7 @@ from ..models import (
     SiteCredential,
     SiteCredentialInput,
     SiteModel,
+    SiteModelInput,
     SiteModelFetchRequest,
     SiteProtocolConfig,
     SiteProtocolConfigInput,
@@ -33,6 +34,37 @@ from .entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
+
+
+def _combo_model_key(model: SiteModelInput) -> tuple[str, str]:
+    return (model.credential_id, model.model_name.strip())
+
+
+def _deduplicate_combo_models(models: list[SiteModelInput]) -> list[SiteModelInput]:
+    deduplicated: list[SiteModelInput] = []
+    indexes: dict[tuple[str, str], int] = {}
+    for model in models:
+        key = _combo_model_key(model)
+        existing_index = indexes.get(key)
+        if existing_index is None:
+            indexes[key] = len(deduplicated)
+            deduplicated.append(model)
+            continue
+
+        existing = deduplicated[existing_index]
+        next_protocol = (
+            existing.protocol
+            if existing.protocol is not None and existing.protocol == model.protocol
+            else None
+        )
+        deduplicated[existing_index] = existing.model_copy(
+            update={
+                "id": existing.id or model.id,
+                "enabled": existing.enabled or model.enabled,
+                "protocol": next_protocol,
+            }
+        )
+    return deduplicated
 
 
 class ChannelStore:
@@ -669,8 +701,10 @@ class ChannelStore:
                 SiteDiscoveredModelEntity.protocol_config_id == protocol_id
             )
         )
-        seen_models: set[tuple[str, str, str | None]] = set()
-        for model_index, model in enumerate(protocol.models):
+        seen_models: set[tuple[str, str]] = set()
+        for model_index, model in enumerate(
+            _deduplicate_combo_models(protocol.models)
+        ):
             model_name = model.model_name.strip()
             if not model_name:
                 raise ValueError(
@@ -680,11 +714,7 @@ class ChannelStore:
                 raise ValueError(
                     f"Model credential not found in combo {protocol_id}: {model.credential_id}"
                 )
-            model_key = (
-                model.credential_id,
-                model_name,
-                model.protocol.value if model.protocol else None,
-            )
+            model_key = (model.credential_id, model_name)
             if model_key in seen_models:
                 raise ValueError(
                     f"Duplicate model in combo {protocol_id}: {model_name}"

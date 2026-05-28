@@ -146,14 +146,60 @@ type PickerModelItem = {
   model_name: string;
 };
 
+type PickerModelGroup = {
+  credential_id: string;
+  model_name: string;
+  protocols: ProtocolKind[];
+};
+
 function genericModelKey(
   model: Pick<PickerModelItem, "credential_id" | "model_name">,
 ) {
   return `${model.credential_id}:${model.model_name}`;
 }
 
-function pickerModelKey(model: PickerModelItem) {
-  return `${model.protocol}:${genericModelKey(model)}`;
+function pickerModelKey(
+  model: Pick<PickerModelItem, "credential_id" | "model_name">,
+) {
+  return genericModelKey(model);
+}
+
+function groupPickerModels(models: PickerModelItem[]) {
+  const groups = new Map<string, PickerModelGroup>();
+  for (const model of models) {
+    const key = genericModelKey(model);
+    const group = groups.get(key);
+    if (group) {
+      if (!group.protocols.includes(model.protocol)) {
+        group.protocols.push(model.protocol);
+      }
+      continue;
+    }
+    groups.set(key, {
+      credential_id: model.credential_id,
+      model_name: model.model_name,
+      protocols: [model.protocol],
+    });
+  }
+  return Array.from(groups.values());
+}
+
+function pickerModelKeys(models: PickerModelItem[]) {
+  return Array.from(new Set(models.map((item) => pickerModelKey(item))));
+}
+
+function mergedModelProtocol(
+  currentProtocol: ProtocolKind | null | undefined,
+  incomingProtocols: ProtocolKind[],
+) {
+  if (
+    currentProtocol &&
+    incomingProtocols.length === 1 &&
+    incomingProtocols[0] === currentProtocol
+  ) {
+    return currentProtocol;
+  }
+  return undefined;
 }
 
 type ModelTestTarget = {
@@ -1813,6 +1859,11 @@ function ModelPickerDialog({
   onConfirmAll: () => void;
   onCancel: () => void;
 }) {
+  const modelGroups = useMemo(
+    () => groupPickerModels(availableModels),
+    [availableModels],
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
@@ -1823,8 +1874,8 @@ function ModelPickerDialog({
           <div className="grid gap-4">
             <div className="max-h-[58dvh] overflow-y-auto p-1 sm:max-h-[420px]">
               <div className="flex flex-wrap gap-2.5">
-                {availableModels.length ? (
-                  availableModels.map((model) => {
+                {modelGroups.length ? (
+                  modelGroups.map((model) => {
                     const key = pickerModelKey(model);
                     const checked = pickerSelectedModelKeys.includes(key);
                     return (
@@ -1843,15 +1894,18 @@ function ModelPickerDialog({
                         <span className="max-w-[180px] truncate sm:max-w-[220px]">
                           {model.model_name}
                         </span>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "text-xs",
-                            protocolBadgeClassName(model.protocol),
-                          )}
-                        >
-                          {compactProtocolLabel(model.protocol)}
-                        </Badge>
+                        {model.protocols.map((protocol) => (
+                          <Badge
+                            key={protocol}
+                            variant="outline"
+                            className={cn(
+                              "text-xs",
+                              protocolBadgeClassName(protocol),
+                            )}
+                          >
+                            {compactProtocolLabel(protocol)}
+                          </Badge>
+                        ))}
                         <span className="text-xs">{checked ? "✓" : "+"}</span>
                       </Button>
                     );
@@ -1873,7 +1927,7 @@ function ModelPickerDialog({
                 type="button"
                 variant="outline"
                 onClick={onConfirmAll}
-                disabled={!availableModels.length}
+                disabled={!modelGroups.length}
               >
                 {locale === "zh-CN" ? "加入全部模型" : "Add all models"}
               </Button>
@@ -2584,34 +2638,34 @@ export function ChannelsScreen() {
     const selectedModels = availableModels.filter((item) =>
       selectedKeys.includes(pickerModelKey(item)),
     );
+    const selectedModelGroups = groupPickerModels(selectedModels);
     setForm((current) => ({
       ...current,
       combos: current.combos.map((item, itemIndex) => {
         if (itemIndex !== modelPickerProtocolIndex) return item;
         const merged = [...item.models];
-        const genericModels = new Set(
-          item.models
-            .filter((model) => !model.protocol)
-            .map((model) => genericModelKey(model)),
+        const existingModels = new Map(
+          merged.map((model, index) => [genericModelKey(model), index]),
         );
-        const existingProtocolModels = new Set(
-          item.models
-            .filter((model) => model.protocol)
-            .map(
-              (model) =>
-                `${model.protocol}:${genericModelKey(model)}`,
-            ),
-        );
-        for (const model of selectedModels) {
+        for (const model of selectedModelGroups) {
           const genericKey = genericModelKey(model);
-          const key = pickerModelKey(model);
-          if (genericModels.has(genericKey) || existingProtocolModels.has(key)) {
+          const existingIndex = existingModels.get(genericKey);
+          if (existingIndex !== undefined) {
+            const existing = merged[existingIndex];
+            merged[existingIndex] = {
+              ...existing,
+              protocol: mergedModelProtocol(
+                existing.protocol,
+                model.protocols,
+              ),
+            };
             continue;
           }
-          existingProtocolModels.add(key);
+          existingModels.set(genericKey, merged.length);
           merged.push({
             id: null,
-            protocol: model.protocol,
+            protocol:
+              model.protocols.length === 1 ? model.protocols[0] : undefined,
             credential_id: model.credential_id,
             model_name: model.model_name,
             enabled: true,
@@ -2621,11 +2675,11 @@ export function ChannelsScreen() {
       }),
     }));
     closeModelPicker();
-    if (selectedModels.length) {
+    if (selectedModelGroups.length) {
       toast.success(
         locale === "zh-CN"
-          ? `已加入 ${selectedModels.length} 个模型`
-          : `Added ${selectedModels.length} models`,
+          ? `已加入 ${selectedModelGroups.length} 个模型`
+          : `Added ${selectedModelGroups.length} models`,
       );
     }
   }
@@ -3389,9 +3443,7 @@ export function ChannelsScreen() {
           onToggleModel={togglePickerModel}
           onConfirm={() => applyModelSelection(pickerSelectedModelKeys)}
           onConfirmAll={() =>
-            applyModelSelection(
-              availableModels.map((item) => pickerModelKey(item)),
-            )
+            applyModelSelection(pickerModelKeys(availableModels))
           }
           onCancel={closeModelPicker}
         />
