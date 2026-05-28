@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -67,6 +68,9 @@ from .entities import (
     SiteProtocolConfigEntity,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
+
 def _parse_composite_channel_id(channel_id: str) -> "tuple[str, ProtocolKind] | None":
     """从复合 channel ID 中提取 (combo_id, protocol)。
     复合 ID 格式：{combo_id}_{protocol_value}
@@ -77,6 +81,62 @@ def _parse_composite_channel_id(channel_id: str) -> "tuple[str, ProtocolKind] | 
             combo_id = channel_id[: -len(suffix)]
             return combo_id, protocol
     return None
+
+
+def _parse_group_protocols(
+    entity_or_json: str | ModelGroupEntity,
+) -> list[ProtocolKind]:
+    protocols_json = (
+        entity_or_json.protocols_json
+        if isinstance(entity_or_json, ModelGroupEntity)
+        else entity_or_json
+    )
+    try:
+        raw_protocols = json.loads(protocols_json or "[]")
+        if not isinstance(raw_protocols, list):
+            raise ValueError("protocols_json must be a list")
+        return [ProtocolKind(str(protocol)) for protocol in raw_protocols]
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        _LOGGER.warning("Invalid model group protocols_json: %s", exc)
+        return []
+
+
+def _dump_group_protocols(protocols: list[ProtocolKind]) -> str:
+    return json.dumps([protocol.value for protocol in protocols], ensure_ascii=True)
+
+
+def _normalize_group_protocols(protocols: list[ProtocolKind]) -> list[ProtocolKind]:
+    normalized: list[ProtocolKind] = []
+    seen: set[ProtocolKind] = set()
+    for protocol in protocols:
+        protocol_kind = (
+            protocol if isinstance(protocol, ProtocolKind) else ProtocolKind(protocol)
+        )
+        if protocol_kind in seen:
+            continue
+        seen.add(protocol_kind)
+        normalized.append(protocol_kind)
+    if not normalized:
+        raise ValueError("At least one protocol is required")
+    return normalized
+
+
+def _group_supports_protocol(
+    entity: ModelGroupEntity | ModelGroup,
+    protocol: ProtocolKind | str,
+) -> bool:
+    try:
+        protocol_kind = (
+            protocol if isinstance(protocol, ProtocolKind) else ProtocolKind(protocol)
+        )
+    except ValueError:
+        return False
+    protocols = (
+        entity.protocols
+        if isinstance(entity, ModelGroup)
+        else _parse_group_protocols(entity)
+    )
+    return protocol_kind in protocols
 
 
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
@@ -380,7 +440,7 @@ class DomainStore:
             )
             group_rows = (
                 await session.execute(
-                    select(ModelGroupEntity.name, ModelGroupEntity.protocol)
+                    select(ModelGroupEntity.name, ModelGroupEntity.protocols_json)
                     .where(ModelGroupEntity.route_group_id == "")
                     .order_by(ModelGroupEntity.name.asc())
                 )
@@ -392,11 +452,13 @@ class DomainStore:
         prices_by_key = {item.model_key: item for item in price_rows}
         protocols_by_key: dict[str, set[ProtocolKind]] = {}
         display_names_by_key: dict[str, str] = {}
-        for name, protocol in group_rows:
+        for name, protocols_json in group_rows:
             key = normalize_model_key(str(name))
             if not key:
                 continue
-            protocols_by_key.setdefault(key, set()).add(ProtocolKind(str(protocol)))
+            protocols_by_key.setdefault(key, set()).update(
+                _parse_group_protocols(str(protocols_json or "[]"))
+            )
             display_names_by_key.setdefault(key, str(name))
 
         for key, price_entity in prices_by_key.items():
@@ -455,14 +517,18 @@ class DomainStore:
         async with self._session_factory() as session:
             group_rows = (
                 await session.execute(
-                    select(ModelGroupEntity.name, ModelGroupEntity.protocol).where(
-                        ModelGroupEntity.route_group_id == ""
-                    )
+                    select(
+                        ModelGroupEntity.name,
+                        ModelGroupEntity.protocols_json,
+                    ).where(ModelGroupEntity.route_group_id == "")
                 )
             ).all()
             matched_groups = [
-                (str(name), ProtocolKind(str(protocol)))
-                for name, protocol in group_rows
+                (
+                    str(name),
+                    _parse_group_protocols(str(protocols_json or "[]")),
+                )
+                for name, protocols_json in group_rows
                 if normalize_model_key(str(name)) == model_key
             ]
             if not matched_groups:
@@ -502,7 +568,12 @@ class DomainStore:
             await session.commit()
 
         protocols = sorted(
-            {protocol for _, protocol in matched_groups}, key=lambda value: value.value
+            {
+                protocol
+                for _, group_protocols in matched_groups
+                for protocol in group_protocols
+            },
+            key=lambda value: value.value,
         )
 
         return ModelPriceItem(
@@ -550,18 +621,18 @@ class DomainStore:
     async def find_group_by_name(
         self, protocol: str, name: str | None
     ) -> ModelGroup | None:
-        if not name:
+        normalized_name = (name or "").strip()
+        if not normalized_name:
             return None
 
         async with self._session_factory() as session:
             result = await session.execute(
                 select(ModelGroupEntity)
-                .where(ModelGroupEntity.protocol == protocol)
-                .where(ModelGroupEntity.name == name)
+                .where(ModelGroupEntity.name == normalized_name)
                 .limit(1)
             )
             entity = result.scalar_one_or_none()
-            if entity is None:
+            if entity is None or not _group_supports_protocol(entity, protocol):
                 return None
             hydrated = await self._hydrate_groups(session, [entity])
             return hydrated[0]
@@ -573,10 +644,15 @@ class DomainStore:
         channel_store = ChannelStore(self._session_factory)
         all_channels = await channel_store.list()
 
-        if payload.protocol is not None:
+        protocols = list(dict.fromkeys(payload.protocols))
+        if protocols:
             channels = [
-                ch for ch in all_channels
-                if can_reach_protocol(ch.protocol, payload.protocol)
+                ch
+                for ch in all_channels
+                if any(
+                    can_reach_protocol(ch.protocol, protocol)
+                    for protocol in protocols
+                )
             ]
         else:
             channels = all_channels
@@ -709,17 +785,18 @@ class DomainStore:
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:
+            protocols = _normalize_group_protocols(payload.protocols)
             route_group = await self._validate_group_payload(
                 session,
-                payload.protocol.value,
                 payload.name,
-                payload.items,
+                protocols,
                 payload.route_group_id,
+                payload.items,
             )
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
-                protocol=payload.protocol.value,
+                protocols_json=_dump_group_protocols(protocols),
                 strategy=payload.strategy.value,
                 route_group_id=route_group.id if route_group is not None else "",
                 sync_filter_mode=payload.sync_filter_mode.value,
@@ -741,10 +818,11 @@ class DomainStore:
             if entity is None:
                 raise KeyError(group_id)
 
-            next_protocol = (
-                payload.protocol.value
-                if payload.protocol is not None
-                else entity.protocol
+            current_protocols = _normalize_group_protocols(
+                _parse_group_protocols(entity)
+            )
+            next_protocols = _normalize_group_protocols(
+                payload.protocols or current_protocols
             )
             next_name = payload.name if payload.name is not None else entity.name
             next_route_group_id = (
@@ -761,9 +839,13 @@ class DomainStore:
             has_inbound_route_group = (
                 inbound_route_group_result.scalar_one_or_none() is not None
             )
-            if next_protocol != entity.protocol and has_inbound_route_group:
+            if (
+                payload.protocols is not None
+                and has_inbound_route_group
+                and set(current_protocols) - set(next_protocols)
+            ):
                 raise ValueError(
-                    "Execution groups referenced by route groups cannot change protocol"
+                    "Execution groups referenced by route groups cannot remove protocols"
                 )
             if next_route_group_id and has_inbound_route_group:
                 raise ValueError(
@@ -785,22 +867,23 @@ class DomainStore:
             )
             route_group = await self._validate_group_payload(
                 session,
-                next_protocol,
                 next_name,
-                next_items,
+                next_protocols,
                 next_route_group_id,
+                next_items,
                 exclude_group_id=group_id,
             )
 
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
-                if key == "protocol" and value is not None:
-                    entity.protocol = value.value
+                if key == "protocols":
+                    if value is not None:
+                        entity.protocols_json = _dump_group_protocols(next_protocols)
                 elif key == "strategy" and value is not None:
                     entity.strategy = value.value
                 elif key == "sync_filter_mode" and value is not None:
                     entity.sync_filter_mode = value.value
-                elif key == "items" and value is not None:
+                elif key == "items":
                     continue
                 elif key == "route_group_id":
                     entity.route_group_id = (
@@ -817,7 +900,7 @@ class DomainStore:
                 entity.sync_filter_mode = ""
                 entity.sync_filter_query = ""
 
-            if payload.items is not None or payload.protocol is not None:
+            if payload.items is not None or payload.protocols is not None:
                 await session.execute(
                     delete(ModelGroupItemEntity).where(
                         ModelGroupItemEntity.group_id == group_id
@@ -854,27 +937,25 @@ class DomainStore:
     async def _validate_group_payload(
         self,
         session: AsyncSession,
-        protocol: str,
         name: str,
-        items: list[ModelGroupItemInput],
+        protocols: list[ProtocolKind],
         route_group_id: str = "",
+        items: list[ModelGroupItemInput] | None = None,
         exclude_group_id: str | None = None,
     ) -> ModelGroupEntity | None:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError("Model group name is required")
+        normalized_protocols = _normalize_group_protocols(protocols)
 
         result = await session.execute(
             select(ModelGroupEntity.id)
-            .where(ModelGroupEntity.protocol == protocol)
             .where(ModelGroupEntity.name == normalized_name)
             .limit(1)
         )
         existing_id = result.scalar_one_or_none()
         if existing_id is not None and existing_id != exclude_group_id:
-            raise ValueError(
-                f"Model group already exists for protocol={protocol}: {normalized_name}"
-            )
+            raise ValueError(f"Model group already exists: {normalized_name}")
 
         normalized_route_group_id = route_group_id.strip()
         route_group: ModelGroupEntity | None = None
@@ -889,14 +970,24 @@ class DomainStore:
                 raise ValueError(
                     f"Route target model group not found: {normalized_route_group_id}"
                 )
-            if route_group.protocol != protocol:
-                raise ValueError(f"Route target protocol mismatch: {route_group.name}")
+            route_group_protocols = set(_parse_group_protocols(route_group))
+            missing_protocols = [
+                protocol
+                for protocol in normalized_protocols
+                if protocol not in route_group_protocols
+            ]
+            if missing_protocols:
+                missing = ", ".join(protocol.value for protocol in missing_protocols)
+                raise ValueError(
+                    f"Route target protocols must cover source protocols: {missing}"
+                )
             if route_group.route_group_id.strip():
                 raise ValueError(
                     f"Route target must be an execution group: {route_group.name}"
                 )
 
-        if not items:
+        normalized_items = items or []
+        if not normalized_items:
             return route_group
 
         from .channel_store import ChannelStore
@@ -904,18 +995,23 @@ class DomainStore:
         all_channels = await channel_store.list()
         channel_by_id = {ch.id: ch for ch in all_channels}
 
-        channel_ids = list(dict.fromkeys(item.channel_id for item in items))
+        channel_ids = list(dict.fromkeys(item.channel_id for item in normalized_items))
         missing_channel_ids = [cid for cid in channel_ids if cid not in channel_by_id]
         if missing_channel_ids:
             raise ValueError(f"Channels not found: {', '.join(missing_channel_ids)}")
 
         invalid_channel_ids = [
-            cid for cid in channel_ids
-            if not can_reach_protocol(channel_by_id[cid].protocol, ProtocolKind(protocol))
+            cid
+            for cid in channel_ids
+            if not any(
+                can_reach_protocol(channel_by_id[cid].protocol, protocol)
+                for protocol in normalized_protocols
+            )
         ]
         if invalid_channel_ids:
             raise ValueError(
-                f"Channels cannot reach protocol={protocol}: {', '.join(invalid_channel_ids)}"
+                "Channels cannot reach any selected protocol: "
+                + ", ".join(invalid_channel_ids)
             )
 
         model_names_by_channel: dict[str, set[tuple[str, str]]] = {}
@@ -928,7 +1024,7 @@ class DomainStore:
                     if m.enabled
                 }
 
-        for item in items:
+        for item in normalized_items:
             channel_models = model_names_by_channel.get(item.channel_id, set())
             target = (item.credential_id, item.model_name)
             if target not in channel_models:
@@ -3531,7 +3627,7 @@ class DomainStore:
         return ModelGroup(
             id=entity.id,
             name=entity.name,
-            protocol=entity.protocol,
+            protocols=_parse_group_protocols(entity),
             strategy=entity.strategy,
             route_group_id=entity.route_group_id,
             route_group_name=route_group_name,
