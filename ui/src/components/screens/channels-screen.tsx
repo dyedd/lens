@@ -153,6 +153,8 @@ type PickerModelGroup = {
   protocols: ProtocolKind[];
 };
 
+const DEFAULT_MODEL_TEST_PROTOCOL: ProtocolKind = "openai_chat";
+
 function genericModelKey(
   model: Pick<PickerModelItem, "credential_id" | "model_name">,
 ) {
@@ -201,6 +203,30 @@ function mergedModelProtocol(
     return currentProtocol;
   }
   return undefined;
+}
+
+function modelSupportedProtocols(
+  form: FormState,
+  combo: Pick<FormCombo, "base_url_id"> | null | undefined,
+  model: Pick<SiteModelInput, "protocol"> | null | undefined,
+) {
+  if (model?.protocol) return [model.protocol];
+  const baseUrlProtocols = combo
+    ? form.base_urls.find((item) => item.id === combo.base_url_id)
+        ?.compatible_protocols ?? []
+    : [];
+  return baseUrlProtocols.length
+    ? Array.from(new Set(baseUrlProtocols))
+    : [DEFAULT_MODEL_TEST_PROTOCOL];
+}
+
+function selectedModelTestProtocol(
+  protocols: ProtocolKind[],
+  selectedProtocol: ProtocolKind,
+) {
+  return protocols.includes(selectedProtocol)
+    ? selectedProtocol
+    : protocols[0] || DEFAULT_MODEL_TEST_PROTOCOL;
 }
 
 type ModelTestTarget = {
@@ -1475,17 +1501,18 @@ function ComboConfigItem({
                       <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                         {model.model_name}
                       </span>
-                      {model.protocol ? (
+                      {modelSupportedProtocols(form, combo, model).map((item) => (
                         <Badge
+                          key={item}
                           variant="outline"
                           className={cn(
                             "max-w-[140px] truncate",
-                            protocolBadgeClassName(model.protocol),
+                            protocolBadgeClassName(item),
                           )}
                         >
-                          {compactProtocolLabel(model.protocol)}
+                          {compactProtocolLabel(item)}
                         </Badge>
-                      ) : null}
+                      ))}
                       <Badge variant="secondary" className="max-w-[140px] truncate">
                         {credentialLabelsById.get(model.credential_id) ||
                           model.credential_id}
@@ -1699,11 +1726,13 @@ function ModelTestDialog({
   modelTestPrompts,
   modelTestPromptMode,
   modelTestPrompt,
+  modelTestProtocol,
   modelTestResult,
   testingModel,
   onClose,
   onPromptModeChange,
   onPromptChange,
+  onProtocolChange,
   onRun,
 }: {
   target: ModelTestTarget | null;
@@ -1712,11 +1741,13 @@ function ModelTestDialog({
   modelTestPrompts: string[];
   modelTestPromptMode: string;
   modelTestPrompt: string;
+  modelTestProtocol: ProtocolKind;
   modelTestResult: SiteModelTestResult | null;
   testingModel: boolean;
   onClose: () => void;
   onPromptModeChange: (value: string) => void;
   onPromptChange: (value: string) => void;
+  onProtocolChange: (value: ProtocolKind) => void;
   onRun: () => void;
 }) {
   return (
@@ -1742,6 +1773,15 @@ function ModelTestDialog({
             const activeBaseUrl = protocol
               ? activeBaseUrlValue(form, protocol).trim()
               : "";
+            const supportedProtocols = modelSupportedProtocols(
+              form,
+              protocol,
+              model,
+            );
+            const selectedProtocol = selectedModelTestProtocol(
+              supportedProtocols,
+              modelTestProtocol,
+            );
             const canTest = Boolean(
               protocol &&
               model?.model_name.trim() &&
@@ -1765,13 +1805,46 @@ function ModelTestDialog({
               >
                 <div className="grid gap-4">
                   <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                    <div className="truncate text-foreground">
-                      {model?.model_name || "-"}
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-foreground">
+                        {model?.model_name || "-"}
+                      </span>
+                      {supportedProtocols.map((item) => (
+                        <Badge
+                          key={item}
+                          variant="outline"
+                          className={cn(
+                            "max-w-[140px] truncate text-xs",
+                            protocolBadgeClassName(item),
+                          )}
+                        >
+                          {compactProtocolLabel(item)}
+                        </Badge>
+                      ))}
                     </div>
                     <div className="mt-1 break-all text-xs">{sourceText}</div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                  <div className="grid gap-3 sm:grid-cols-[170px_170px_minmax(0,1fr)]">
+                    <Field>
+                      <FieldLabel>
+                        {locale === "zh-CN" ? "测试协议" : "Test protocol"}
+                      </FieldLabel>
+                      <NativeSelect
+                        className={selectClassName()}
+                        value={selectedProtocol}
+                        onChange={(event) =>
+                          onProtocolChange(event.target.value as ProtocolKind)
+                        }
+                        disabled={testingModel || supportedProtocols.length <= 1}
+                      >
+                        {supportedProtocols.map((item) => (
+                          <NativeSelectOption key={item} value={item}>
+                            {protocolLabel(item)}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
+                    </Field>
                     <Field>
                       <FieldLabel>
                         {locale === "zh-CN" ? "问题" : "Prompt"}
@@ -2118,6 +2191,9 @@ export function ChannelsScreen() {
     useState<ModelTestTarget | null>(null);
   const [modelTestPromptMode, setModelTestPromptMode] = useState("0");
   const [modelTestPrompt, setModelTestPrompt] = useState("");
+  const [modelTestProtocol, setModelTestProtocol] = useState<ProtocolKind>(
+    DEFAULT_MODEL_TEST_PROTOCOL,
+  );
   const [modelTestResult, setModelTestResult] =
     useState<SiteModelTestResult | null>(null);
   const [testingModel, setTestingModel] = useState(false);
@@ -2705,7 +2781,10 @@ export function ChannelsScreen() {
   }
 
   function openModelTest(protocolIndex: number, modelIndex: number) {
+    const combo = form.combos[protocolIndex];
+    const model = combo?.models[modelIndex];
     setModelTestTarget({ protocolIndex, modelIndex });
+    setModelTestProtocol(modelSupportedProtocols(form, combo, model)[0]);
     setModelTestPromptMode("0");
     setModelTestPrompt(modelTestPrompts[0] || "");
     setModelTestResult(null);
@@ -2872,10 +2951,13 @@ export function ChannelsScreen() {
       );
       return;
     }
-    const baseUrlProtocols =
-      form.base_urls.find((b) => b.id === protocol.base_url_id)?.compatible_protocols ?? [];
+    const testProtocols = modelSupportedProtocols(form, protocol, model);
+    const testProtocol = selectedModelTestProtocol(
+      testProtocols,
+      modelTestProtocol,
+    );
     const payload: SiteModelTestPayload = {
-      protocol: model.protocol ?? baseUrlProtocols[0] ?? "openai_chat",
+      protocol: testProtocol,
       base_url: activeBaseUrl,
       headers: formHeaders(protocol),
       channel_proxy: protocol.channel_proxy.trim(),
@@ -3536,6 +3618,7 @@ export function ChannelsScreen() {
           modelTestPrompts={modelTestPrompts}
           modelTestPromptMode={modelTestPromptMode}
           modelTestPrompt={modelTestPrompt}
+          modelTestProtocol={modelTestProtocol}
           modelTestResult={modelTestResult}
           testingModel={testingModel}
           onClose={closeModelTest}
@@ -3546,6 +3629,7 @@ export function ChannelsScreen() {
               setModelTestPromptMode("custom");
             }
           }}
+          onProtocolChange={setModelTestProtocol}
           onRun={() => void runModelTest()}
         />
 
