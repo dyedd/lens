@@ -28,6 +28,8 @@ import {
   RoutingStrategy,
   Site,
   apiRequest,
+  getConvertibleProtocols,
+  isItemValidForProtocols,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -64,6 +66,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -87,7 +90,7 @@ type FormItem = {
 
 type FormState = {
   name: string;
-  protocol: ProtocolKind;
+  protocols: ProtocolKind[];
   strategy: RoutingStrategy;
   route_group_id: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
@@ -131,7 +134,7 @@ type SelectedModelPrefix = "all" | string;
 
 const emptyForm: FormState = {
   name: "",
-  protocol: "openai_chat",
+  protocols: ["openai_chat"],
   strategy: "round_robin",
   route_group_id: "",
   sync_filter_mode: "",
@@ -351,7 +354,7 @@ function protocolBaseUrl(site: Site, baseUrlId: string) {
 function toForm(group: ModelGroup): FormState {
   return {
     name: group.name,
-    protocol: group.protocol,
+    protocols: group.protocols,
     strategy: group.strategy,
     route_group_id: group.route_group_id ?? "",
     sync_filter_mode: group.sync_filter_mode,
@@ -379,7 +382,7 @@ function toForm(group: ModelGroup): FormState {
 function toPayload(form: FormState): ModelGroupPayload {
   return {
     name: form.name.trim(),
-    protocol: form.protocol,
+    protocols: form.protocols,
     strategy: form.strategy,
     route_group_id: form.route_group_id.trim(),
     sync_filter_mode:
@@ -539,15 +542,24 @@ function StrategyToggle({
 function CandidateRow({
   item,
   active,
+  selectedProtocols,
   locale,
   onClick,
 }: {
   item: ModelGroupCandidateItem;
   active: boolean;
+  selectedProtocols: ProtocolKind[];
   locale: "zh-CN" | "en-US";
   onClick: () => void;
 }) {
   const credentialLabel = credentialDisplayLabel(item, locale);
+  const convertibleProtocols = getConvertibleProtocols(
+    item.protocol,
+    selectedProtocols,
+  );
+  const convertibleLabel = convertibleProtocols
+    .map((protocol) => protocolLabel(protocol, locale))
+    .join(" / ");
   return (
     <Button
       type="button"
@@ -565,6 +577,24 @@ function CandidateRow({
         </div>
       </div>
       <div className="flex min-w-0 shrink-0 items-center gap-2">
+        {convertibleProtocols.length ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className="gap-1 border-dashed bg-background/70 px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
+              >
+                <Sparkles size={10} />
+                {locale === "zh-CN" ? "转换" : "Converts"}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              {locale === "zh-CN"
+                ? `✨ 转换兼容: ${convertibleLabel}`
+                : `✨ Converts to: ${convertibleLabel}`}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
         <span className="max-w-28 truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           {credentialLabel}
         </span>
@@ -590,6 +620,7 @@ function SelectedMemberRow({
   onDragStart,
   onDragEnter,
   onDragEnd,
+  selectedProtocols,
   locale,
 }: {
   item: FormItem;
@@ -601,8 +632,11 @@ function SelectedMemberRow({
   onDragStart: () => void;
   onDragEnter: () => void;
   onDragEnd: () => void;
+  selectedProtocols: ProtocolKind[];
   locale: "zh-CN" | "en-US";
 }) {
+  const invalid =
+    !item.protocol || !isItemValidForProtocols(item.protocol, selectedProtocols);
   const sourceParts = [
     item.channel_name,
     item.protocol ? protocolLabel(item.protocol, locale) : "",
@@ -619,6 +653,7 @@ function SelectedMemberRow({
         "flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0",
         dragging && "opacity-60 shadow-sm",
         !item.enabled && "opacity-55",
+        invalid && "border border-destructive bg-destructive/10",
       )}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
@@ -643,6 +678,20 @@ function SelectedMemberRow({
           onCheckedChange={onToggle}
         />
       </div>
+      {invalid ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="grid h-8 w-8 shrink-0 place-items-center text-destructive">
+              <AlertCircle size={15} />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {locale === "zh-CN"
+              ? "不兼容当前所选的对外协议"
+              : "Incompatible with current protocols"}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
       <Button
         type="button"
         variant="ghost"
@@ -753,7 +802,7 @@ export function GroupsScreen() {
   });
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(
     () => ({
-      protocol: form.protocol,
+      protocols: form.protocols,
       exclude_items: form.items.map((item) => ({
         channel_id: item.channel_id,
         credential_id: item.credential_id,
@@ -761,7 +810,7 @@ export function GroupsScreen() {
         enabled: item.enabled,
       })),
     }),
-    [form.items, form.protocol],
+    [form.items, form.protocols],
   );
   const {
     data: candidateResponse,
@@ -779,7 +828,7 @@ export function GroupsScreen() {
           body: JSON.stringify(candidatePayload),
         },
       ),
-    enabled: dialogOpen && !form.route_group_id,
+    enabled: dialogOpen && !form.route_group_id && form.protocols.length > 0,
   });
 
   const channelMap = useMemo(() => {
@@ -855,12 +904,14 @@ export function GroupsScreen() {
       (groups ?? [])
         .filter(
           (group) =>
-            group.protocol === form.protocol &&
+            form.protocols.every((protocol) =>
+              group.protocols.includes(protocol),
+            ) &&
             !group.route_group_id &&
             group.id !== editingId,
         )
         .sort((left, right) => left.name.localeCompare(right.name, locale)),
-    [editingId, form.protocol, groups, locale],
+    [editingId, form.protocols, groups, locale],
   );
 
   const modelPrefixOptions = useMemo(() => {
@@ -908,7 +959,7 @@ export function GroupsScreen() {
         getModelFamilyKey(group.name) !== effectiveSelectedModelPrefix
       )
         return false;
-      if (protocolFilter !== "all" && group.protocol !== protocolFilter)
+      if (protocolFilter !== "all" && !group.protocols.includes(protocolFilter))
         return false;
       if (strategyFilter !== "all" && group.strategy !== strategyFilter)
         return false;
@@ -1021,6 +1072,15 @@ export function GroupsScreen() {
       item.enabled ? [{ item, index }] : [],
     );
   }, [form.items, showEnabledOnly]);
+  const invalidSelectedMemberCount = useMemo(
+    () =>
+      form.items.filter(
+        (item) =>
+          !item.protocol ||
+          !isItemValidForProtocols(item.protocol, form.protocols),
+      ).length,
+    [form.items, form.protocols],
+  );
 
   useEffect(() => {
     if (!dialogOpen) {
@@ -1179,6 +1239,14 @@ export function GroupsScreen() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!form.protocols.length) {
+      toast.error(
+        locale === "zh-CN"
+          ? "至少需要选择一项协议。"
+          : "At least one protocol is required.",
+      );
+      return;
+    }
     try {
       const savedGroup = await saveGroup(form, editingId);
       if (!savedGroup.route_group_id) {
@@ -1415,7 +1483,7 @@ export function GroupsScreen() {
         {
           method: "POST",
           body: JSON.stringify({
-            protocol: form.protocol,
+            protocols: form.protocols,
             exclude_items: [],
           } satisfies ModelGroupCandidatesPayload),
         },
@@ -1501,24 +1569,16 @@ export function GroupsScreen() {
     setCandidateSearchUsesGroupName(false);
   }
 
-  function changeProtocol(protocol: ProtocolKind) {
+  function toggleProtocol(protocol: ProtocolKind) {
     setForm((current) => {
-      if (current.protocol === protocol) {
-        return current;
-      }
+      const protocols = current.protocols.includes(protocol)
+        ? current.protocols.filter((item) => item !== protocol)
+        : [...current.protocols, protocol];
       return {
         ...current,
-        protocol,
-        route_group_id: "",
-        sync_filter_mode: "",
-        sync_filter_query: "",
-        items: [],
+        protocols,
       };
     });
-    setCandidateSearch("");
-    setCandidateSearchMode("contains");
-    setCandidateSearchUsesGroupName(true);
-    setExpandedChannels([]);
   }
 
   function changeRouteTarget(routeGroupId: string) {
@@ -1535,6 +1595,17 @@ export function GroupsScreen() {
     setForm((current) => ({
       ...current,
       items: current.items.map((item) => ({ ...item, enabled })),
+    }));
+  }
+
+  function removeInvalidItems() {
+    setForm((current) => ({
+      ...current,
+      items: current.items.filter(
+        (item) =>
+          item.protocol &&
+          isItemValidForProtocols(item.protocol, current.protocols),
+      ),
     }));
   }
 
@@ -1662,15 +1733,20 @@ export function GroupsScreen() {
                               <ItemTitle className="truncate text-base">
                                 {group.name}
                               </ItemTitle>
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "px-2.5 py-0.5",
-                                  protocolBadgeClassName(group.protocol),
-                                )}
-                              >
-                                {protocolLabel(group.protocol, locale)}
-                              </Badge>
+                              <div className="flex flex-wrap gap-1.5">
+                                {group.protocols.map((protocol) => (
+                                  <Badge
+                                    key={protocol}
+                                    variant="outline"
+                                    className={cn(
+                                      "px-2.5 py-0.5",
+                                      protocolBadgeClassName(protocol),
+                                    )}
+                                  >
+                                    {protocolLabel(protocol, locale)}
+                                  </Badge>
+                                ))}
+                              </div>
                               {group.is_route_group ? (
                                 <Badge
                                   variant="outline"
@@ -2019,26 +2095,41 @@ export function GroupsScreen() {
                 </div>
                 <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <Field>
-                    <FieldLabel htmlFor="group-protocol">
-                      {locale === "zh-CN" ? "协议" : "Protocol"}
+                    <FieldLabel>
+                      {locale === "zh-CN" ? "对外协议" : "External Protocols"}
                     </FieldLabel>
-                    <NativeSelect
-                      id="group-protocol"
-                      className={selectClassName}
-                      value={form.protocol}
-                      onChange={(e) =>
-                        changeProtocol(e.target.value as ProtocolKind)
-                      }
-                    >
-                      {protocolOptions(locale).map((option) => (
-                        <NativeSelectOption
-                          key={option.value}
-                          value={option.value}
-                        >
-                          {option.label}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
+                    <ProtocolMultiSelect
+                      value={form.protocols}
+                      onChange={(next) => {
+                        const changedProtocols = protocolOptions(locale)
+                          .map((option) => option.value)
+                          .filter(
+                            (protocol) =>
+                              form.protocols.includes(protocol) !==
+                              next.includes(protocol),
+                          );
+                        if (changedProtocols.length === 1) {
+                          toggleProtocol(changedProtocols[0]);
+                          return;
+                        }
+                        setForm((current) => ({
+                          ...current,
+                          protocols: next,
+                        }));
+                      }}
+                      locale={locale}
+                      className={cn(
+                        "rounded-md border p-2",
+                        form.protocols.length === 0 && "border-destructive",
+                      )}
+                    />
+                    {form.protocols.length === 0 ? (
+                      <p className="text-sm text-destructive">
+                        {locale === "zh-CN"
+                          ? "至少需要选择一项协议。"
+                          : "At least one protocol is required."}
+                      </p>
+                    ) : null}
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="group-name">
@@ -2201,6 +2292,7 @@ export function GroupsScreen() {
                             variant="outline"
                             onClick={addMatchedItems}
                             disabled={
+                              form.protocols.length === 0 ||
                               candidateRegexInvalid ||
                               (!filteredCandidates.length &&
                                 !candidateSearch.trim())
@@ -2219,7 +2311,10 @@ export function GroupsScreen() {
                             type="button"
                             variant="outline"
                             onClick={() => void refetchCandidates()}
-                            disabled={isFetchingCandidates}
+                            disabled={
+                              isFetchingCandidates ||
+                              form.protocols.length === 0
+                            }
                           >
                             <RefreshCcw size={13} />
                             {locale === "zh-CN" ? "刷新列表" : "Refresh"}
@@ -2364,6 +2459,7 @@ export function GroupsScreen() {
                                                 itemKey(member) ===
                                                 itemKey(item),
                                             )}
+                                            selectedProtocols={form.protocols}
                                             locale={locale}
                                             onClick={() => addItem(item)}
                                           />
@@ -2397,9 +2493,13 @@ export function GroupsScreen() {
                             </Alert>
                           ) : !groupedCandidates.length ? (
                             <p className="px-1 py-6 text-center text-sm text-muted-foreground">
-                              {locale === "zh-CN"
-                                ? "暂无可选模型"
-                                : "No candidates found"}
+                              {form.protocols.length === 0
+                                ? locale === "zh-CN"
+                                  ? "请先在上方选择对外协议以加载候选节点。"
+                                  : "Select external protocols above to load candidates."
+                                : locale === "zh-CN"
+                                  ? "暂无可选模型"
+                                  : "No candidates found"}
                             </p>
                           ) : null}
                         </div>
@@ -2412,6 +2512,19 @@ export function GroupsScreen() {
                           {locale === "zh-CN" ? "已选模型" : "Selected models"}
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-2">
+                          {invalidSelectedMemberCount > 0 ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="text-destructive"
+                              onClick={removeInvalidItems}
+                            >
+                              <AlertCircle size={13} />
+                              {locale === "zh-CN"
+                                ? "一键移除失效节点"
+                                : "Remove invalid items"}
+                            </Button>
+                          ) : null}
                           <Button
                             type="button"
                             variant="outline"
@@ -2481,6 +2594,7 @@ export function GroupsScreen() {
                                   setDraggingIndex(index);
                                 }}
                                 onDragEnd={() => setDraggingIndex(null)}
+                                selectedProtocols={form.protocols}
                                 locale={locale}
                               />
                             ))
@@ -2508,7 +2622,7 @@ export function GroupsScreen() {
                 >
                   {locale === "zh-CN" ? "取消" : "Cancel"}
                 </Button>
-                <Button type="submit">
+                <Button type="submit" disabled={form.protocols.length === 0}>
                   {editingId
                     ? locale === "zh-CN"
                       ? "保存模型组"
