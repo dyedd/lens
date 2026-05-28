@@ -18,16 +18,21 @@ export interface ProtocolMultiSelectProps {
   disabled?: boolean;
 }
 
-const protocolOptions: ProtocolKind[] = [
+const CHAT_PROTOCOLS: ProtocolKind[] = [
   "openai_chat",
   "openai_responses",
-  "openai_embedding",
-  "rerank",
   "anthropic",
   "gemini",
 ];
 
-function compactProtocolLabel(protocol: ProtocolKind) {
+const SPECIAL_PROTOCOLS: ProtocolKind[] = [
+  "openai_embedding",
+  "rerank",
+];
+
+const ALL_PROTOCOLS: ProtocolKind[] = [...CHAT_PROTOCOLS, ...SPECIAL_PROTOCOLS];
+
+function protocolLabel(protocol: ProtocolKind): string {
   switch (protocol) {
     case "openai_chat":
       return "chat";
@@ -46,23 +51,95 @@ function compactProtocolLabel(protocol: ProtocolKind) {
   }
 }
 
-function protocolToggleClassName(protocol: ProtocolKind) {
+function chatToggleClassName(protocol: ProtocolKind): string {
   switch (protocol) {
     case "openai_chat":
-      return "data-[state=on]:border-transparent data-[state=on]:bg-sky-500/10 data-[state=on]:text-sky-700";
+      return "data-[state=on]:border-sky-500/40 data-[state=on]:bg-sky-500/10 data-[state=on]:text-sky-700";
     case "openai_responses":
-      return "data-[state=on]:border-transparent data-[state=on]:bg-indigo-500/10 data-[state=on]:text-indigo-700";
-    case "openai_embedding":
-      return "data-[state=on]:border-transparent data-[state=on]:bg-cyan-500/10 data-[state=on]:text-cyan-700";
-    case "rerank":
-      return "data-[state=on]:border-transparent data-[state=on]:bg-violet-500/10 data-[state=on]:text-violet-700";
+      return "data-[state=on]:border-indigo-500/40 data-[state=on]:bg-indigo-500/10 data-[state=on]:text-indigo-700";
     case "anthropic":
-      return "data-[state=on]:border-transparent data-[state=on]:bg-amber-500/10 data-[state=on]:text-amber-700";
+      return "data-[state=on]:border-amber-500/40 data-[state=on]:bg-amber-500/10 data-[state=on]:text-amber-700";
     case "gemini":
-      return "data-[state=on]:border-transparent data-[state=on]:bg-emerald-500/10 data-[state=on]:text-emerald-700";
+      return "data-[state=on]:border-emerald-500/40 data-[state=on]:bg-emerald-500/10 data-[state=on]:text-emerald-700";
     default:
-      return "data-[state=on]:border-transparent data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground";
+      return "";
   }
+}
+
+const SPECIAL_TOGGLE_CLASS =
+  "data-[state=on]:border-muted-foreground/30 data-[state=on]:bg-muted data-[state=on]:text-foreground";
+
+const COPY = {
+  "zh-CN": {
+    ariaLabel: "选择协议",
+    chat: "聊天协议",
+    special: "特殊协议",
+  },
+  "en-US": {
+    ariaLabel: "Select protocols",
+    chat: "Chat",
+    special: "Special",
+  },
+} as const;
+
+interface ProtocolRowProps {
+  label: string;
+  protocols: ProtocolKind[];
+  value: ProtocolKind[];
+  onChange: (next: ProtocolKind[]) => void;
+  ariaLabel: string;
+  disabled: boolean;
+  toggleClassName: (protocol: ProtocolKind) => string;
+  size?: "default" | "compact";
+}
+
+function ProtocolRow({
+  label,
+  protocols,
+  value,
+  onChange,
+  ariaLabel,
+  disabled,
+  toggleClassName,
+  size = "default",
+}: ProtocolRowProps): JSX.Element | null {
+  if (protocols.length === 0) return null;
+
+  const selectedInRow = value.filter((v) => protocols.includes(v));
+
+  return (
+    <div className="flex items-center gap-2.5 min-w-0">
+      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+        {label}
+      </span>
+      <ToggleGroup
+        type="multiple"
+        value={selectedInRow}
+        onValueChange={(next) => {
+          const others = value.filter((v) => !protocols.includes(v));
+          onChange([...others, ...(next as ProtocolKind[])]);
+        }}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className="flex flex-wrap justify-start gap-1"
+      >
+        {protocols.map((protocol) => (
+          <ToggleGroupItem
+            key={protocol}
+            value={protocol}
+            disabled={disabled}
+            className={cn(
+              "rounded-full border px-3 text-xs transition-colors",
+              size === "compact" ? "h-6" : "h-7",
+              toggleClassName(protocol),
+            )}
+          >
+            {protocolLabel(protocol)}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+    </div>
+  );
 }
 
 export function ProtocolMultiSelect({
@@ -73,30 +150,32 @@ export function ProtocolMultiSelect({
   allowedProtocols,
   disabled = false,
 }: ProtocolMultiSelectProps): JSX.Element {
-  const protocols = allowedProtocols ?? protocolOptions;
+  const allowed = allowedProtocols ?? ALL_PROTOCOLS;
+  const chatProtocols = CHAT_PROTOCOLS.filter((p) => allowed.includes(p));
+  const specialProtocols = SPECIAL_PROTOCOLS.filter((p) => allowed.includes(p));
+  const copy = COPY[locale];
 
   return (
-    <ToggleGroup
-      type="multiple"
-      value={value}
-      onValueChange={(next) => onChange(next as ProtocolKind[])}
-      disabled={disabled}
-      aria-label={locale === "zh-CN" ? "选择协议" : "Select protocols"}
-      className={cn("flex flex-wrap justify-start gap-1", className)}
-    >
-      {protocols.map((protocol) => (
-        <ToggleGroupItem
-          key={protocol}
-          value={protocol}
-          disabled={disabled}
-          className={cn(
-            "h-7 rounded-full border px-3 text-xs",
-            protocolToggleClassName(protocol),
-          )}
-        >
-          {compactProtocolLabel(protocol)}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+    <div className={cn("flex flex-col gap-1.5", className)}>
+      <ProtocolRow
+        label={copy.chat}
+        protocols={chatProtocols}
+        value={value}
+        onChange={onChange}
+        ariaLabel={copy.ariaLabel}
+        disabled={disabled}
+        toggleClassName={chatToggleClassName}
+      />
+      <ProtocolRow
+        label={copy.special}
+        protocols={specialProtocols}
+        value={value}
+        onChange={onChange}
+        ariaLabel={copy.ariaLabel}
+        disabled={disabled}
+        toggleClassName={() => SPECIAL_TOGGLE_CLASS}
+        size="compact"
+      />
+    </div>
   );
 }
