@@ -364,7 +364,7 @@ class ChannelStore:
                 items.append(
                     ChannelConfig(
                         id=f"{combo.id}_{protocol.value}",
-                        name=combo.name or site.name,
+                        name=site.name,
                         protocol=protocol,
                         base_url=bound_base_url.url,
                         api_key=active_key.key,

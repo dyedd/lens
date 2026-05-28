@@ -181,10 +181,14 @@ function matchesCandidateSearch(
   return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
 }
 
-function candidateToFormItem(item: ModelGroupCandidateItem): FormItem {
+function candidateToFormItem(
+  item: ModelGroupCandidateItem,
+  channelMap?: Map<string, ProtocolMeta>,
+): FormItem {
+  const channelName = channelMap?.get(item.channel_id)?.name || item.channel_name;
   return {
     channel_id: item.channel_id,
-    channel_name: item.channel_name,
+    channel_name: channelName,
     protocol: item.protocol,
     credential_id: item.credential_id,
     credential_name: item.credential_name,
@@ -328,6 +332,7 @@ function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
 
 type ProtocolMeta = {
   id: string;
+  site_id: string;
   name: string;
   base_url: string;
   protocol: ProtocolKind;
@@ -336,19 +341,6 @@ type ProtocolMeta = {
 function channelEndpoint(channel?: ProtocolMeta) {
   if (!channel) return "";
   return channel.base_url || "";
-}
-
-function defaultComboName(index: number, locale: "zh-CN" | "en-US") {
-  return locale === "zh-CN" ? `组合 ${index + 1}` : `Combo ${index + 1}`;
-}
-
-function comboDisplayName(
-  combo: { name?: string | null },
-  index: number,
-  locale: "zh-CN" | "en-US",
-) {
-  const name = combo.name?.trim();
-  return name || defaultComboName(index, locale);
 }
 
 function protocolBaseUrl(site: Site, baseUrlId: string) {
@@ -793,16 +785,16 @@ export function GroupsScreen() {
   const channelMap = useMemo(() => {
     const map = new Map<string, ProtocolMeta>();
     for (const site of sites ?? []) {
-      for (const [comboIndex, combo] of site.protocols.entries()) {
+      for (const combo of site.protocols) {
         const baseUrl = site.base_urls.find((b) => b.id === combo.base_url_id);
         const baseUrlStr = baseUrl?.url ?? protocolBaseUrl(site, combo.base_url_id);
         const protocols = baseUrl?.compatible_protocols ?? [];
-        const comboName = comboDisplayName(combo, comboIndex, locale);
         for (const p of protocols) {
           const compositeId = `${combo.id}_${p}`;
           map.set(compositeId, {
             id: compositeId,
-            name: comboName,
+            site_id: site.id,
+            name: site.name,
             base_url: baseUrlStr,
             protocol: p,
           });
@@ -811,7 +803,8 @@ export function GroupsScreen() {
         if (!map.has(combo.id) && protocols.length > 0) {
           map.set(combo.id, {
             id: combo.id,
-            name: comboName,
+            site_id: site.id,
+            name: site.name,
             base_url: baseUrlStr,
             protocol: protocols[0],
           });
@@ -819,7 +812,7 @@ export function GroupsScreen() {
       }
     }
     return map;
-  }, [locale, sites]);
+  }, [sites]);
 
   const groupRows = useMemo<GroupRow[]>(
     () =>
@@ -835,8 +828,8 @@ export function GroupsScreen() {
                 items
                   .map(
                     (item) =>
-                      item.channel_name ||
                       channelMap.get(item.channel_id)?.name ||
+                      item.channel_name ||
                       item.channel_id,
                   )
                   .filter(Boolean),
@@ -988,11 +981,11 @@ export function GroupsScreen() {
     for (const item of filteredCandidates) {
       const channel = channelMap.get(item.channel_id);
       const channelName = channel?.name || item.channel_name;
-      const channelKey = item.site_id || item.channel_id;
+      const channelKey = channel?.site_id || item.site_id || item.channel_id;
       let existing = groupsByChannel.get(channelKey);
       if (!existing) {
         existing = {
-          site_id: item.site_id,
+          site_id: channel?.site_id || item.site_id,
           channel_id: item.channel_id,
           channel_name: channelName,
           protocols: [],
@@ -1265,7 +1258,7 @@ export function GroupsScreen() {
       }
       return {
         ...current,
-        items: [...current.items, candidateToFormItem(item)],
+        items: [...current.items, candidateToFormItem(item, channelMap)],
       };
     });
   }
@@ -1390,7 +1383,7 @@ export function GroupsScreen() {
       const existing = new Set(current.items.map((item) => itemKey(item)));
       const additions = filteredCandidates
         .filter((item) => !existing.has(itemKey(item)))
-        .map(candidateToFormItem);
+        .map((item) => candidateToFormItem(item, channelMap));
       return {
         ...current,
         sync_filter_mode: candidateSearch.trim() ? candidateSearchMode : "",
@@ -1448,7 +1441,7 @@ export function GroupsScreen() {
         matchedByKey.set(
           key,
           (() => {
-            const nextItem = candidateToFormItem(item);
+            const nextItem = candidateToFormItem(item, channelMap);
             const oldItem = previous.get(itemKey(nextItem));
             return oldItem
               ? { ...nextItem, enabled: oldItem.enabled }
@@ -1739,8 +1732,8 @@ export function GroupsScreen() {
                             ) : group.items.length ? (
                               group.items.map((item, index) => {
                                 const channelName =
-                                  item.channel_name ||
                                   channelMap.get(item.channel_id)?.name ||
+                                  item.channel_name ||
                                   item.channel_id;
                                 return (
                                   <div

@@ -1,5 +1,13 @@
-from lens_api.models import ProtocolKind, SiteModelInput
-from lens_api.persistence.channel_store import _deduplicate_combo_models
+from lens_api.models import (
+    ProtocolKind,
+    SiteBaseUrl,
+    SiteConfig,
+    SiteCredential,
+    SiteModel,
+    SiteModelInput,
+    SiteProtocolConfig,
+)
+from lens_api.persistence.channel_store import ChannelStore, _deduplicate_combo_models
 
 
 def _model(
@@ -51,3 +59,42 @@ def test_deduplicate_combo_models_merges_exact_duplicates_without_widening_proto
     assert len(models) == 1
     assert models[0].protocol == ProtocolKind.OPENAI_CHAT
     assert models[0].enabled is True
+
+
+def test_flatten_site_uses_site_name_for_channel_display() -> None:
+    site = SiteConfig(
+        id="site-1",
+        name="Actual Channel",
+        base_urls=[
+            SiteBaseUrl(
+                id="base-1",
+                url="https://api.example.com",
+                compatible_protocols=[ProtocolKind.OPENAI_CHAT],
+            )
+        ],
+        credentials=[
+            SiteCredential(id="key-1", name="Primary", api_key="sk-test")
+        ],
+        protocols=[
+            SiteProtocolConfig(
+                id="combo-1",
+                name="组合 1",
+                base_url_id="base-1",
+                credential_id="key-1",
+                models=[
+                    SiteModel(
+                        id="model-1",
+                        credential_id="key-1",
+                        credential_name="Primary",
+                        model_name="gpt-5-mini",
+                        protocol=ProtocolKind.OPENAI_CHAT,
+                    )
+                ],
+            )
+        ],
+    )
+
+    channels = ChannelStore(None)._flatten_site(site)  # type: ignore[arg-type]
+
+    assert len(channels) == 1
+    assert channels[0].name == "Actual Channel"
