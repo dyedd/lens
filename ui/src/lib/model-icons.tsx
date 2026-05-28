@@ -41,6 +41,14 @@ const BRAND_ICONS: BrandIconDefinition[] = [
     imageClassName: "scale-[0.94]",
   },
   {
+    key: "grok",
+    label: "Grok",
+    prefixes: ["grok", "xai", "x-ai"],
+    src: "/brand-icons/grok.svg",
+    imageClassName: "scale-[0.9]",
+    invertInDark: true,
+  },
+  {
     key: "deepseek",
     label: "DeepSeek",
     prefixes: ["deepseek"],
@@ -63,6 +71,13 @@ const BRAND_ICONS: BrandIconDefinition[] = [
     invertInDark: true,
   },
   {
+    key: "longcat",
+    label: "LongCat",
+    prefixes: ["longcat"],
+    src: "/brand-icons/longcat.svg",
+    imageClassName: "scale-[0.94]",
+  },
+  {
     key: "glm",
     label: "GLM",
     prefixes: ["glm", "chatglm", "zhipu", "z-ai", "zai-org"],
@@ -76,6 +91,14 @@ const BRAND_ICONS: BrandIconDefinition[] = [
     prefixes: ["minimax", "abab", "minmax"],
     src: "/brand-icons/minmax.svg",
     imageClassName: "scale-[0.92]",
+  },
+  {
+    key: "mimo",
+    label: "MiMo",
+    prefixes: ["mimo", "mi-mo", "xiaomi"],
+    src: "/brand-icons/mimo.svg",
+    imageClassName: "scale-[0.92]",
+    invertInDark: true,
   },
 ];
 
