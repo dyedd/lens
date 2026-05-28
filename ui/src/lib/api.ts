@@ -8,6 +8,40 @@ export type ProtocolKind =
   | "anthropic"
   | "gemini";
 
+// 镜像后端 lens_api/gateway/converters/__init__.py 的 _SUPPORTED_CONVERSIONS
+// 后端新增转换路径时必须同步更新此处
+const FRONTEND_SUPPORTED_CONVERSIONS: Partial<
+  Record<ProtocolKind, ProtocolKind[]>
+> = {
+  openai_chat: ["anthropic", "openai_responses"],
+};
+
+export function canReachProtocol(
+  channelProtocol: ProtocolKind,
+  groupProtocol: ProtocolKind,
+): boolean {
+  if (channelProtocol === groupProtocol) return true;
+  return (
+    FRONTEND_SUPPORTED_CONVERSIONS[channelProtocol]?.includes(groupProtocol) ??
+    false
+  );
+}
+
+export function isItemValidForProtocols(
+  itemProtocol: ProtocolKind,
+  selectedProtocols: ProtocolKind[],
+): boolean {
+  return selectedProtocols.some((p) => canReachProtocol(itemProtocol, p));
+}
+
+export function getConvertibleProtocols(
+  channelProtocol: ProtocolKind,
+  selectedProtocols: ProtocolKind[],
+): ProtocolKind[] {
+  const targets = FRONTEND_SUPPORTED_CONVERSIONS[channelProtocol] ?? [];
+  return targets.filter((p) => selectedProtocols.includes(p));
+}
+
 export type RoutingStrategy = "round_robin" | "failover";
 export type ModelGroupSyncFilterMode = "" | "contains" | "regex";
 
@@ -26,7 +60,7 @@ export type ModelGroupItem = {
 export type ModelGroup = {
   id: string;
   name: string;
-  protocol: ProtocolKind;
+  protocols: ProtocolKind[];
   strategy: RoutingStrategy;
   route_group_id?: string;
   route_group_name?: string;
@@ -48,7 +82,7 @@ export type ModelGroupItemPayload = {
 
 export type ModelGroupPayload = {
   name: string;
-  protocol: ProtocolKind;
+  protocols: ProtocolKind[];
   strategy: RoutingStrategy;
   route_group_id?: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
@@ -228,7 +262,7 @@ export type SiteModelTestResult = {
 };
 
 export type ModelGroupCandidatesPayload = {
-  protocol?: ProtocolKind;
+  protocols?: ProtocolKind[];
   exclude_items: ModelGroupItemPayload[];
 };
 
