@@ -123,6 +123,17 @@ type FoldedMember = {
   invalid: boolean; // 所有子项均不兼容当前组协议
 };
 
+type GroupDisplayMember = {
+  key: string;
+  model_name: string;
+  credential_name: string;
+  credential_number: number;
+  channel_names: string[];
+  protocols: ProtocolKind[];
+  items: ModelGroup["items"];
+  enabled: boolean;
+};
+
 type GroupSort = "members-desc" | "enabled-desc" | "name-asc" | "name-desc";
 type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, "">;
 
@@ -131,6 +142,7 @@ type GroupRow = ModelGroup & {
   enabled_member_count: number;
   channel_summary: string;
   channel_names: string[];
+  display_members: GroupDisplayMember[];
   is_route_group: boolean;
 };
 
@@ -262,6 +274,50 @@ function modelFoldKey(
   model_name: string,
 ): string {
   return `${combo_id}::${credential_id}::${model_name}`;
+}
+
+function buildGroupDisplayMembers(
+  items: ModelGroup["items"],
+  channelMap: Map<string, ProtocolMeta>,
+): GroupDisplayMember[] {
+  const orderMap = new Map<string, number>();
+  const memberMap = new Map<string, GroupDisplayMember>();
+
+  for (const item of items) {
+    const comboId = comboIdFromChannelId(item.channel_id);
+    const key = modelFoldKey(comboId, item.credential_id, item.model_name);
+    const channel = channelMap.get(item.channel_id);
+    const channelName = channel?.name || item.channel_name || item.channel_id;
+    const protocol = item.protocol || channel?.protocol;
+
+    if (!memberMap.has(key)) {
+      orderMap.set(key, orderMap.size);
+      memberMap.set(key, {
+        key,
+        model_name: item.model_name,
+        credential_name: item.credential_name,
+        credential_number: item.credential_number,
+        channel_names: [],
+        protocols: [],
+        items: [],
+        enabled: false,
+      });
+    }
+
+    const member = memberMap.get(key)!;
+    member.items.push(item);
+    if (item.enabled) member.enabled = true;
+    if (channelName && !member.channel_names.includes(channelName)) {
+      member.channel_names.push(channelName);
+    }
+    if (protocol && !member.protocols.includes(protocol)) {
+      member.protocols.push(protocol);
+    }
+  }
+
+  return Array.from(orderMap.entries())
+    .sort((a, b) => a[1] - b[1])
+    .map(([key]) => memberMap.get(key)!);
 }
 
 const strategyOptions: Array<{
@@ -946,6 +1002,9 @@ export function GroupsScreen() {
         const items = group.items
           .slice()
           .sort((a, b) => a.sort_order - b.sort_order);
+        const displayMembers = isRouteGroup
+          ? []
+          : buildGroupDisplayMembers(items, channelMap);
         const channelNames = isRouteGroup
           ? [group.route_group_name || group.route_group_id || ""]
           : [
@@ -963,12 +1022,13 @@ export function GroupsScreen() {
         return {
           ...group,
           items,
-          member_count: isRouteGroup ? 1 : items.length,
+          member_count: isRouteGroup ? 1 : displayMembers.length,
           enabled_member_count: isRouteGroup
             ? 1
-            : items.filter((item) => item.enabled).length,
+            : displayMembers.filter((member) => member.enabled).length,
           channel_summary: channelNames.slice(0, 2).join(" · "),
           channel_names: channelNames,
+          display_members: displayMembers,
           is_route_group: isRouteGroup,
         };
       }),
@@ -1531,7 +1591,7 @@ export function GroupsScreen() {
     }
   }
 
-  async function reorderGroupItems(
+  async function reorderGroupMembers(
     group: GroupRow,
     fromIndex: number,
     toIndex: number,
@@ -1539,10 +1599,22 @@ export function GroupsScreen() {
     if (group.is_route_group || fromIndex === toIndex || busyId === group.id) {
       return;
     }
-    const nextItems = moveItems(toForm(group).items, fromIndex, toIndex);
-    if (nextItems === toForm(group).items) {
+    const nextMembers = moveItems(group.display_members, fromIndex, toIndex);
+    if (nextMembers === group.display_members) {
       return;
     }
+    const nextItems = nextMembers.flatMap((member) =>
+      member.items.map((item) => ({
+        channel_id: item.channel_id,
+        channel_name: item.channel_name,
+        protocol: item.protocol,
+        credential_id: item.credential_id,
+        credential_name: item.credential_name,
+        credential_number: item.credential_number,
+        model_name: item.model_name,
+        enabled: item.enabled,
+      })),
+    );
     await updateGroupPartial(group, { items: nextItems });
   }
 
@@ -1584,12 +1656,17 @@ export function GroupsScreen() {
     }
   }
 
-  async function removeGroupItem(group: GroupRow, index: number) {
+  async function removeGroupMember(group: GroupRow, memberKey: string) {
     if (group.is_route_group || busyId === group.id) {
       return;
     }
+    const member = group.display_members.find((item) => item.key === memberKey);
+    if (!member) {
+      return;
+    }
+    const removedKeys = new Set(member.items.map((item) => itemKey(item)));
     const nextItems = toForm(group).items.filter(
-      (_, itemIndex) => itemIndex !== index,
+      (item) => !removedKeys.has(itemKey(item)),
     );
     const updated = await updateGroupPartial(group, { items: nextItems });
     if (updated) {
@@ -2003,23 +2080,22 @@ export function GroupsScreen() {
                                   group.route_group_id ||
                                   "n/a"}
                               </Badge>
-                            ) : group.items.length ? (
-                              group.items.map((item, index) => {
+                            ) : group.display_members.length ? (
+                              group.display_members.map((member, index) => {
                                 const channelName =
-                                  channelMap.get(item.channel_id)?.name ||
-                                  item.channel_name ||
-                                  item.channel_id;
+                                  member.channel_names.slice(0, 2).join(" · ") ||
+                                  "n/a";
                                 return (
                                   <div
-                                    key={`${itemKey(item)}::${index}`}
+                                    key={`${member.key}::${index}`}
                                     className={cn(
                                       "flex min-w-0 max-w-full items-center rounded-full border bg-background",
-                                      !item.enabled && "opacity-55",
+                                      !member.enabled && "opacity-55",
                                       cardDragging?.groupId === group.id &&
                                         cardDragging.index === index &&
                                         "opacity-60",
                                     )}
-                                    title={`${channelName} · ${item.model_name}`}
+                                    title={`${channelName} · ${member.model_name}`}
                                   >
                                     <Button
                                       type="button"
@@ -2042,7 +2118,7 @@ export function GroupsScreen() {
                                           cardDragging.groupId !== group.id
                                         )
                                           return;
-                                        void reorderGroupItems(
+                                        void reorderGroupMembers(
                                           group,
                                           cardDragging.index,
                                           index,
@@ -2052,11 +2128,23 @@ export function GroupsScreen() {
                                     >
                                       <GripVertical data-icon="inline-start" />
                                       <span className="min-w-0 truncate">
-                                        {item.model_name}
+                                        {member.model_name}
                                       </span>
                                       <span className="min-w-0 truncate text-muted-foreground">
                                         · {channelName}
                                       </span>
+                                      {member.protocols.map((protocol) => (
+                                        <Badge
+                                          key={protocol}
+                                          variant="outline"
+                                          className={cn(
+                                            "px-1.5 py-0 text-[10px] font-normal",
+                                            protocolBadgeClassName(protocol),
+                                          )}
+                                        >
+                                          {protocolLabel(protocol, locale)}
+                                        </Badge>
+                                      ))}
                                     </Button>
                                     <Button
                                       type="button"
@@ -2065,7 +2153,7 @@ export function GroupsScreen() {
                                       className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
                                       disabled={busyId === group.id}
                                       onClick={() =>
-                                        void removeGroupItem(group, index)
+                                        void removeGroupMember(group, member.key)
                                       }
                                     >
                                       <X />
