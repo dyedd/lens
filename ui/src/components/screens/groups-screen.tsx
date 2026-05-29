@@ -193,6 +193,24 @@ function matchesCandidateSearch(
   return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
 }
 
+function candidatePayloadItemProtocol(
+  candidate: ModelGroupCandidateItem,
+  channelId: string,
+  channelMap?: Map<string, ProtocolMeta>,
+): ProtocolKind | undefined {
+  const channelProtocol = channelMap?.get(channelId)?.protocol;
+  if (channelProtocol) {
+    return channelProtocol;
+  }
+  const protocolEntry = Object.entries(candidate.protocol_channels).find(
+    ([, candidateChannelId]) => candidateChannelId === channelId,
+  );
+  if (protocolEntry) {
+    return protocolEntry[0] as ProtocolKind;
+  }
+  return channelId === candidate.channel_id ? candidate.protocol : undefined;
+}
+
 // 根据 candidate.items（后端算好的推荐展开项）批量转换为 FormItem
 function candidatePayloadToFormItems(
   candidate: ModelGroupCandidateItem,
@@ -204,7 +222,11 @@ function candidatePayloadToFormItems(
     return {
       channel_id: payloadItem.channel_id,
       channel_name: channelName,
-      protocol: undefined,
+      protocol: candidatePayloadItemProtocol(
+        candidate,
+        payloadItem.channel_id,
+        channelMap,
+      ),
       credential_id: payloadItem.credential_id,
       credential_name: candidate.credential_name,
       credential_number: candidate.credential_number,
