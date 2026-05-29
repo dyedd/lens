@@ -102,16 +102,25 @@ type FormState = {
   items: FormItem[];
 };
 
-type CandidateChannel = {
+// 候选区：按渠道（站点）分组，每组含多个模型行
+type CandidateChannelGroup = {
   site_id: string;
-  channel_id: string;
   channel_name: string;
-  protocols: Array<{
-    channel_id: string;
-    protocol: ProtocolKind;
-    base_url: string;
-    items: ModelGroupCandidateItem[];
-  }>;
+  candidates: ModelGroupCandidateItem[];
+};
+
+// 选中区：按模型身份折叠后的成员
+type FoldedMember = {
+  key: string; // combo_id::credential_id::model_name
+  combo_id: string;
+  model_name: string;
+  credential_id: string;
+  credential_name: string;
+  credential_number: number;
+  protocols: ProtocolKind[]; // 子项 protocol 的并集
+  subItems: FormItem[];
+  enabled: boolean; // 任一子项启用即 true
+  invalid: boolean; // 所有子项均不兼容当前组协议
 };
 
 type GroupSort = "members-desc" | "enabled-desc" | "name-asc" | "name-desc";
@@ -184,21 +193,53 @@ function matchesCandidateSearch(
   return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
 }
 
-function candidateToFormItem(
-  item: ModelGroupCandidateItem,
+// 根据 candidate.items（后端算好的推荐展开项）批量转换为 FormItem
+function candidatePayloadToFormItems(
+  candidate: ModelGroupCandidateItem,
   channelMap?: Map<string, ProtocolMeta>,
-): FormItem {
-  const channelName = channelMap?.get(item.channel_id)?.name || item.channel_name;
-  return {
-    channel_id: item.channel_id,
-    channel_name: channelName,
-    protocol: item.protocol,
-    credential_id: item.credential_id,
-    credential_name: item.credential_name,
-    credential_number: item.credential_number,
-    model_name: item.model_name,
-    enabled: true,
-  };
+): FormItem[] {
+  return candidate.items.map((payloadItem) => {
+    const channelName =
+      channelMap?.get(payloadItem.channel_id)?.name || candidate.channel_name;
+    return {
+      channel_id: payloadItem.channel_id,
+      channel_name: channelName,
+      protocol: undefined,
+      credential_id: payloadItem.credential_id,
+      credential_name: candidate.credential_name,
+      credential_number: candidate.credential_number,
+      model_name: payloadItem.model_name,
+      enabled: true,
+    };
+  });
+}
+
+// 从复合 channel_id 剥离出 combo_id（格式：{combo_id}_{protocol} 或 {combo_id}）
+const PROTOCOL_SUFFIXES: ProtocolKind[] = [
+  "openai_chat",
+  "openai_responses",
+  "openai_embedding",
+  "rerank",
+  "anthropic",
+  "gemini",
+];
+
+function comboIdFromChannelId(channelId: string): string {
+  for (const suffix of PROTOCOL_SUFFIXES) {
+    if (channelId.endsWith(`_${suffix}`)) {
+      return channelId.slice(0, channelId.length - suffix.length - 1);
+    }
+  }
+  return channelId;
+}
+
+// 模型身份 key（用于折叠）
+function modelFoldKey(
+  combo_id: string,
+  credential_id: string,
+  model_name: string,
+): string {
+  return `${combo_id}::${credential_id}::${model_name}`;
 }
 
 const strategyOptions: Array<{
@@ -540,32 +581,43 @@ function StrategyToggle({
 }
 
 function CandidateRow({
-  item,
+  candidate,
   active,
   selectedProtocols,
   locale,
   onClick,
 }: {
-  item: ModelGroupCandidateItem;
+  candidate: ModelGroupCandidateItem;
   active: boolean;
   selectedProtocols: ProtocolKind[];
   locale: "zh-CN" | "en-US";
   onClick: () => void;
 }) {
-  const credentialLabel = credentialDisplayLabel(item, locale);
-  const convertibleProtocols = getConvertibleProtocols(
-    item.protocol,
-    selectedProtocols,
-  );
-  const convertibleLabel = convertibleProtocols
-    .map((protocol) => protocolLabel(protocol, locale))
+  const credentialLabel = credentialDisplayLabel(candidate, locale);
+
+  // 原生协议标签（候选本身支持的协议）
+  const nativeProtocols = candidate.protocols;
+
+  // 仅可转换到当前组协议、但非原生的协议（取各 native protocol 的可转换目标并集，减去原生集合）
+  const nativeSet = new Set(nativeProtocols);
+  const convertibleOnly = Array.from(
+    new Set(
+      nativeProtocols.flatMap((p) =>
+        getConvertibleProtocols(p, selectedProtocols),
+      ),
+    ),
+  ).filter((p) => !nativeSet.has(p));
+
+  const convertibleLabel = convertibleOnly
+    .map((p) => protocolLabel(p, locale))
     .join(" / ");
+
   return (
     <Button
       type="button"
       variant="ghost"
       className={cn(
-        "h-8 w-full justify-between rounded-md px-3 text-left",
+        "h-auto min-h-8 w-full justify-between rounded-md px-3 py-1.5 text-left",
         active ? "cursor-not-allowed opacity-60" : "hover:bg-muted",
       )}
       onClick={onClick}
@@ -573,11 +625,30 @@ function CandidateRow({
     >
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">
-          {item.model_name}
+          {candidate.model_name}
         </div>
       </div>
-      <div className="flex min-w-0 shrink-0 items-center gap-2">
-        {convertibleProtocols.length ? (
+      <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {/* 原生协议标签（实色） */}
+        {nativeProtocols.map((p) => {
+          const needed = selectedProtocols.includes(p);
+          return (
+            <Badge
+              key={p}
+              variant="outline"
+              className={cn(
+                "px-1.5 py-0 text-[10px] font-normal",
+                needed
+                  ? protocolBadgeClassName(p)
+                  : "border-transparent bg-muted/50 text-muted-foreground/50",
+              )}
+            >
+              {protocolLabel(p, locale)}
+            </Badge>
+          );
+        })}
+        {/* 仅可转换标签（虚线 + Sparkles） */}
+        {convertibleOnly.length ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <Badge
@@ -610,8 +681,8 @@ function CandidateRow({
   );
 }
 
-function SelectedMemberRow({
-  item,
+function FoldedMemberRow({
+  member,
   index,
   dragging,
   busy,
@@ -620,10 +691,9 @@ function SelectedMemberRow({
   onDragStart,
   onDragEnter,
   onDragEnd,
-  selectedProtocols,
   locale,
 }: {
-  item: FormItem;
+  member: FoldedMember;
   index: number;
   dragging: boolean;
   busy: boolean;
@@ -632,16 +702,15 @@ function SelectedMemberRow({
   onDragStart: () => void;
   onDragEnter: () => void;
   onDragEnd: () => void;
-  selectedProtocols: ProtocolKind[];
   locale: "zh-CN" | "en-US";
 }) {
-  const invalid =
-    !item.protocol || !isItemValidForProtocols(item.protocol, selectedProtocols);
-  const sourceParts = [
-    item.channel_name,
-    item.protocol ? protocolLabel(item.protocol, locale) : "",
-    credentialDisplayLabel(item, locale),
-  ].filter(Boolean);
+  const credLabel = credentialDisplayLabel(
+    {
+      credential_name: member.credential_name,
+      credential_number: member.credential_number,
+    },
+    locale,
+  );
   return (
     <div
       draggable
@@ -652,8 +721,8 @@ function SelectedMemberRow({
       className={cn(
         "flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0",
         dragging && "opacity-60 shadow-sm",
-        !item.enabled && "opacity-55",
-        invalid && "border border-destructive bg-destructive/10",
+        !member.enabled && "opacity-55",
+        member.invalid && "border border-destructive bg-destructive/10",
       )}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
@@ -663,22 +732,40 @@ function SelectedMemberRow({
         <GripVertical size={14} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">
-          {item.model_name}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="truncate text-sm font-medium text-foreground">
+            {member.model_name}
+          </span>
+          {member.protocols.map((p) => (
+            <Badge
+              key={p}
+              variant="outline"
+              className={cn(
+                "px-1.5 py-0 text-[10px] font-normal",
+                protocolBadgeClassName(p),
+              )}
+            >
+              {protocolLabel(p, locale)}
+            </Badge>
+          ))}
         </div>
         <div className="truncate text-xs text-muted-foreground">
-          {sourceParts.join(" · ")}
-          {!item.enabled ? " · 已关闭" : ""}
+          {credLabel}
+          {!member.enabled
+            ? locale === "zh-CN"
+              ? " · 已关闭"
+              : " · disabled"
+            : ""}
         </div>
       </div>
       <div className="flex h-8 w-8 items-center justify-center">
         <Switch
-          checked={item.enabled}
+          checked={member.enabled}
           disabled={busy}
           onCheckedChange={onToggle}
         />
       </div>
-      {invalid ? (
+      {member.invalid ? (
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="grid h-8 w-8 shrink-0 place-items-center text-destructive">
@@ -1026,60 +1113,104 @@ export function GroupsScreen() {
     locale,
   ]);
 
+  // 候选区：一个模型一行，按站点分组
   const groupedCandidates = useMemo(() => {
-    const groupsByChannel = new Map<string, CandidateChannel>();
+    const groupsBySite = new Map<string, CandidateChannelGroup>();
 
-    for (const item of filteredCandidates) {
-      const channel = channelMap.get(item.channel_id);
-      const channelName = channel?.name || item.channel_name;
-      const channelKey = channel?.site_id || item.site_id || item.channel_id;
-      let existing = groupsByChannel.get(channelKey);
+    for (const candidate of filteredCandidates) {
+      const channel = channelMap.get(candidate.channel_id);
+      const channelName = channel?.name || candidate.channel_name;
+      const siteKey = candidate.combo_id || channel?.site_id || candidate.site_id || candidate.channel_id;
+      let existing = groupsBySite.get(siteKey);
       if (!existing) {
         existing = {
-          site_id: channel?.site_id || item.site_id,
-          channel_id: item.channel_id,
+          site_id: channel?.site_id || candidate.site_id,
           channel_name: channelName,
-          protocols: [],
+          candidates: [],
         };
-        groupsByChannel.set(channelKey, existing);
+        groupsBySite.set(siteKey, existing);
       }
-      const protocolGroup = existing.protocols.find(
-        (protocol) => protocol.channel_id === item.channel_id,
-      );
-      if (protocolGroup) {
-        protocolGroup.items.push(item);
-      } else {
-        existing.protocols.push({
-          channel_id: item.channel_id,
-          protocol: item.protocol,
-          base_url: item.base_url || channelEndpoint(channel),
-          items: [item],
-        });
-      }
+      existing.candidates.push(candidate);
     }
 
-    return Array.from(groupsByChannel.values()).sort((a, b) =>
+    return Array.from(groupsBySite.values()).sort((a, b) =>
       a.channel_name.localeCompare(b.channel_name, locale),
     );
   }, [channelMap, filteredCandidates, locale]);
+
+  // 候选元数据索引（modelFoldKey → candidate），用于协议变更时重算 items
+  const candidateMetaByKey = useMemo(() => {
+    const map = new Map<string, ModelGroupCandidateItem>();
+    for (const candidate of candidateResponse?.candidates ?? []) {
+      const key = modelFoldKey(
+        candidate.combo_id,
+        candidate.credential_id,
+        candidate.model_name,
+      );
+      map.set(key, candidate);
+    }
+    return map;
+  }, [candidateResponse]);
+
   const candidateListError = candidateIsError ? candidateError : sitesError;
 
-  const visibleSelectedMembers = useMemo(() => {
-    if (!showEnabledOnly) {
-      return form.items.map((item, index) => ({ item, index }));
+  // 选中区折叠：把 form.items 按 (combo_id, credential_id, model_name) 折叠
+  const foldedMembers = useMemo<FoldedMember[]>(() => {
+    const orderMap = new Map<string, number>(); // key → 首次出现位置
+    const memberMap = new Map<string, FoldedMember>();
+
+    for (const item of form.items) {
+      const comboId = comboIdFromChannelId(item.channel_id);
+      const key = modelFoldKey(comboId, item.credential_id, item.model_name);
+      if (!memberMap.has(key)) {
+        orderMap.set(key, orderMap.size);
+        memberMap.set(key, {
+          key,
+          combo_id: comboId,
+          model_name: item.model_name,
+          credential_id: item.credential_id,
+          credential_name: item.credential_name,
+          credential_number: item.credential_number,
+          protocols: [],
+          subItems: [],
+          enabled: false,
+          invalid: false,
+        });
+      }
+      const member = memberMap.get(key)!;
+      member.subItems.push(item);
+      if (item.enabled) member.enabled = true;
+      if (item.protocol && !member.protocols.includes(item.protocol)) {
+        member.protocols.push(item.protocol);
+      }
     }
-    return form.items.flatMap((item, index) =>
-      item.enabled ? [{ item, index }] : [],
+
+    // 计算 invalid：所有子项均不兼容当前组协议
+    for (const member of memberMap.values()) {
+      member.invalid = member.subItems.every(
+        (sub) =>
+          !sub.protocol ||
+          !isItemValidForProtocols(sub.protocol, form.protocols),
+      );
+    }
+
+    return Array.from(orderMap.entries())
+      .sort((a, b) => a[1] - b[1])
+      .map(([key]) => memberMap.get(key)!);
+  }, [form.items, form.protocols]);
+
+  const visibleFoldedMembers = useMemo(() => {
+    if (!showEnabledOnly) {
+      return foldedMembers.map((member, index) => ({ member, index }));
+    }
+    return foldedMembers.flatMap((member, index) =>
+      member.enabled ? [{ member, index }] : [],
     );
-  }, [form.items, showEnabledOnly]);
+  }, [foldedMembers, showEnabledOnly]);
+
   const invalidSelectedMemberCount = useMemo(
-    () =>
-      form.items.filter(
-        (item) =>
-          !item.protocol ||
-          !isItemValidForProtocols(item.protocol, form.protocols),
-      ).length,
-    [form.items, form.protocols],
+    () => foldedMembers.filter((m) => m.invalid).length,
+    [foldedMembers],
   );
 
   useEffect(() => {
@@ -1115,13 +1246,13 @@ export function GroupsScreen() {
     }
     setExpandedChannels((current) => {
       const available = new Set(
-        groupedCandidates.map((item) => item.site_id || item.channel_id),
+        groupedCandidates.map((item) => item.site_id || item.channel_name),
       );
       const filtered = current.filter((item) => available.has(item));
       if (filtered.length) {
         return filtered;
       }
-      return [groupedCandidates[0].site_id || groupedCandidates[0].channel_id];
+      return [groupedCandidates[0].site_id || groupedCandidates[0].channel_name];
     });
   }, [groupedCandidates]);
 
@@ -1318,32 +1449,69 @@ export function GroupsScreen() {
     }
   }
 
-  function addItem(item: ModelGroupCandidateItem) {
-    const key = itemKey(item);
+  // 点选候选一次性加入（用后端 items，去重）
+  function addCandidate(candidate: ModelGroupCandidateItem) {
+    const newFormItems = candidatePayloadToFormItems(candidate, channelMap);
     setForm((current) => {
-      if (current.items.some((member) => itemKey(member) === key)) {
-        return current;
+      const existingKeys = new Set(current.items.map((m) => itemKey(m)));
+      const toAdd = newFormItems.filter((fi) => !existingKeys.has(itemKey(fi)));
+      if (!toAdd.length) return current;
+      return { ...current, items: [...current.items, ...toAdd] };
+    });
+  }
+
+  // 按折叠 key 删除该折叠成员的所有子项
+  function removeFoldedMember(foldKey: string) {
+    setForm((current) => {
+      const toRemove = new Set<string>();
+      for (const item of current.items) {
+        const comboId = comboIdFromChannelId(item.channel_id);
+        if (modelFoldKey(comboId, item.credential_id, item.model_name) === foldKey) {
+          toRemove.add(itemKey(item));
+        }
       }
       return {
         ...current,
-        items: [...current.items, candidateToFormItem(item, channelMap)],
+        items: current.items.filter((item) => !toRemove.has(itemKey(item))),
       };
     });
   }
 
-  function removeItem(index: number) {
+  // 按折叠 key 切换该折叠成员所有子项的 enabled
+  function toggleFoldedMember(foldKey: string, enabled: boolean) {
     setForm((current) => ({
       ...current,
-      items: current.items.filter((_, itemIndex) => itemIndex !== index),
+      items: current.items.map((item) => {
+        const comboId = comboIdFromChannelId(item.channel_id);
+        if (modelFoldKey(comboId, item.credential_id, item.model_name) === foldKey) {
+          return { ...item, enabled };
+        }
+        return item;
+      }),
     }));
   }
 
-  function moveItem(fromIndex: number, toIndex: number) {
+  // 拖拽折叠成员排序：重排折叠数组后展平，保证同组子项连续
+  function moveFoldedMember(fromIndex: number, toIndex: number) {
     setForm((current) => {
-      const nextItems = moveItems(current.items, fromIndex, toIndex);
-      if (nextItems === current.items) {
-        return current;
+      // 重建当前折叠序列
+      const orderMap = new Map<string, number>();
+      const memberMap = new Map<string, FormItem[]>();
+      for (const item of current.items) {
+        const comboId = comboIdFromChannelId(item.channel_id);
+        const key = modelFoldKey(comboId, item.credential_id, item.model_name);
+        if (!memberMap.has(key)) {
+          orderMap.set(key, orderMap.size);
+          memberMap.set(key, []);
+        }
+        memberMap.get(key)!.push(item);
       }
+      const orderedKeys = Array.from(orderMap.entries())
+        .sort((a, b) => a[1] - b[1])
+        .map(([k]) => k);
+      const nextKeys = moveItems(orderedKeys, fromIndex, toIndex);
+      if (nextKeys === orderedKeys) return current;
+      const nextItems = nextKeys.flatMap((k) => memberMap.get(k) ?? []);
       return { ...current, items: nextItems };
     });
   }
@@ -1449,9 +1617,11 @@ export function GroupsScreen() {
     }
     setForm((current) => {
       const existing = new Set(current.items.map((item) => itemKey(item)));
-      const additions = filteredCandidates
-        .filter((item) => !existing.has(itemKey(item)))
-        .map((item) => candidateToFormItem(item, channelMap));
+      const additions = filteredCandidates.flatMap((candidate) =>
+        candidatePayloadToFormItems(candidate, channelMap).filter(
+          (fi) => !existing.has(itemKey(fi)),
+        ),
+      );
       return {
         ...current,
         sync_filter_mode: candidateSearch.trim() ? candidateSearchMode : "",
@@ -1489,46 +1659,38 @@ export function GroupsScreen() {
         },
       );
       const previous = new Map(form.items.map((item) => [itemKey(item), item]));
-      const matchedByKey = new Map<string, FormItem>();
-      const matchedKeys: string[] = [];
-      for (const item of response.candidates) {
+      // 收集所有匹配候选的展平 FormItems，保留旧 enabled 状态
+      const matchedFormItems: FormItem[] = [];
+      const seenKeys = new Set<string>();
+      for (const candidate of response.candidates) {
         if (
           !matchesCandidateSearch(
-            buildCandidateHaystack(item, channelMap, locale),
+            buildCandidateHaystack(candidate, channelMap, locale),
             form.sync_filter_mode as CandidateSearchMode,
             form.sync_filter_query,
           )
         ) {
           continue;
         }
-        const key = itemKey(item);
-        if (matchedByKey.has(key)) {
-          continue;
+        const expanded = candidatePayloadToFormItems(candidate, channelMap);
+        for (const fi of expanded) {
+          const k = itemKey(fi);
+          if (seenKeys.has(k)) continue;
+          seenKeys.add(k);
+          const old = previous.get(k);
+          matchedFormItems.push(old ? { ...fi, enabled: old.enabled } : fi);
         }
-        matchedKeys.push(key);
-        matchedByKey.set(
-          key,
-          (() => {
-            const nextItem = candidateToFormItem(item, channelMap);
-            const oldItem = previous.get(itemKey(nextItem));
-            return oldItem
-              ? { ...nextItem, enabled: oldItem.enabled }
-              : nextItem;
-          })(),
-        );
       }
-      const existingItems = form.items.flatMap((item) => {
-        const matched = matchedByKey.get(itemKey(item));
-        return matched ? [matched] : [];
-      });
-      const existingKeys = new Set(existingItems.map((item) => itemKey(item)));
-      const newItems = matchedKeys.flatMap((key) => {
-        if (existingKeys.has(key)) {
-          return [];
-        }
-        const matched = matchedByKey.get(key);
-        return matched ? [matched] : [];
-      });
+      // 已在 form.items 中的，保留其在匹配集中的更新；新增附加到末尾
+      const existingKeys = new Set(
+        form.items.map((item) => itemKey(item)).filter((k) => seenKeys.has(k)),
+      );
+      const existingItems = matchedFormItems.filter((fi) =>
+        existingKeys.has(itemKey(fi)),
+      );
+      const newItems = matchedFormItems.filter(
+        (fi) => !existingKeys.has(itemKey(fi)),
+      );
       const nextItems = [...existingItems, ...newItems];
       setForm((current) => ({ ...current, items: nextItems }));
       toast.success(
@@ -1574,10 +1736,48 @@ export function GroupsScreen() {
       const protocols = current.protocols.includes(protocol)
         ? current.protocols.filter((item) => item !== protocol)
         : [...current.protocols, protocol];
-      return {
-        ...current,
-        protocols,
-      };
+
+      // 组协议变更时：用候选元数据重算已选成员的 items，保留 enabled 和顺序
+      // 无法覆盖任何新组协议的成员保留并标红（不删）
+      const recalcedItems: FormItem[] = [];
+      const seen = new Map<string, boolean>(); // itemKey → enabled
+
+      // 先记录旧 enabled 状态
+      for (const item of current.items) {
+        seen.set(itemKey(item), item.enabled);
+      }
+
+      // 按折叠 key 去重重建，保留顺序
+      const processedFolds = new Set<string>();
+      for (const item of current.items) {
+        const comboId = comboIdFromChannelId(item.channel_id);
+        const fk = modelFoldKey(comboId, item.credential_id, item.model_name);
+        if (processedFolds.has(fk)) continue;
+        processedFolds.add(fk);
+
+        const candidateMeta = candidateMetaByKey.get(fk);
+        if (candidateMeta && candidateMeta.items.length > 0) {
+          // 用后端最新 items 重算，保留旧 enabled
+          const expanded = candidatePayloadToFormItems(candidateMeta, channelMap);
+          for (const fi of expanded) {
+            const k = itemKey(fi);
+            recalcedItems.push({
+              ...fi,
+              enabled: seen.get(k) ?? fi.enabled,
+            });
+          }
+        } else {
+          // 候选中已无此模型，保留旧子项（会被标红 invalid）
+          for (const oldItem of current.items) {
+            const oldComboId = comboIdFromChannelId(oldItem.channel_id);
+            if (modelFoldKey(oldComboId, oldItem.credential_id, oldItem.model_name) === fk) {
+              recalcedItems.push(oldItem);
+            }
+          }
+        }
+      }
+
+      return { ...current, protocols, items: recalcedItems };
     });
   }
 
@@ -1599,13 +1799,17 @@ export function GroupsScreen() {
   }
 
   function removeInvalidItems() {
+    // 删除所有折叠成员中整组 invalid 的成员的子项
+    const invalidKeys = new Set(
+      foldedMembers.filter((m) => m.invalid).map((m) => m.key),
+    );
     setForm((current) => ({
       ...current,
-      items: current.items.filter(
-        (item) =>
-          item.protocol &&
-          isItemValidForProtocols(item.protocol, current.protocols),
-      ),
+      items: current.items.filter((item) => {
+        const comboId = comboIdFromChannelId(item.channel_id);
+        const key = modelFoldKey(comboId, item.credential_id, item.model_name);
+        return !invalidKeys.has(key);
+      }),
     }));
   }
 
@@ -2376,24 +2580,11 @@ export function GroupsScreen() {
 
                       <div className="px-2 pb-2">
                         <div className="flex flex-col">
-                          {groupedCandidates.map((channel) => {
+                          {groupedCandidates.map((channelGroup) => {
                             const channelKey =
-                              channel.site_id || channel.channel_id;
+                              channelGroup.site_id || channelGroup.channel_name;
                             const isOpen =
                               expandedChannels.includes(channelKey);
-                            const protocolSummary =
-                              channel.protocols.length > 1
-                                ? channel.protocols
-                                    .map((protocol) =>
-                                      protocolLabel(protocol.protocol, locale),
-                                    )
-                                    .join(" / ")
-                                : "";
-                            const modelCount = channel.protocols.reduce(
-                              (total, protocol) =>
-                                total + protocol.items.length,
-                              0,
-                            );
                             return (
                               <div
                                 key={channelKey}
@@ -2407,16 +2598,11 @@ export function GroupsScreen() {
                                 >
                                   <div className="min-w-0 flex-1">
                                     <div className="truncate text-sm font-medium text-foreground">
-                                      {channel.channel_name}
+                                      {channelGroup.channel_name}
                                     </div>
-                                    {protocolSummary ? (
-                                      <div className="mt-1 truncate text-xs text-muted-foreground">
-                                        {protocolSummary}
-                                      </div>
-                                    ) : null}
                                   </div>
                                   <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                                    {modelCount}
+                                    {channelGroup.candidates.length}
                                   </span>
                                   <ChevronDown
                                     size={15}
@@ -2427,42 +2613,28 @@ export function GroupsScreen() {
                                   />
                                 </Button>
                                 {isOpen ? (
-                                  <div className="flex flex-col gap-1.5 px-3 pb-2 pt-1">
-                                    <Separator />
-                                    {channel.protocols.map((protocol) => (
-                                      <div
-                                        key={`${channelKey}-${protocol.channel_id}`}
-                                        className="flex flex-col gap-1 py-1"
-                                      >
-                                        <div className="flex min-w-0 items-center justify-between gap-3 px-1 text-xs text-muted-foreground">
-                                          <span className="shrink-0 font-medium text-foreground">
-                                            {protocolLabel(
-                                              protocol.protocol,
-                                              locale,
-                                            )}
-                                          </span>
-                                          {protocol.base_url ? (
-                                            <span className="min-w-0 truncate text-right">
-                                              {protocol.base_url}
-                                            </span>
-                                          ) : null}
-                                        </div>
-                                        {protocol.items.map((item) => (
-                                          <CandidateRow
-                                            key={`${item.channel_id}-${item.credential_id}-${item.model_name}`}
-                                            item={item}
-                                            active={form.items.some(
-                                              (member) =>
-                                                itemKey(member) ===
-                                                itemKey(item),
-                                            )}
-                                            selectedProtocols={form.protocols}
-                                            locale={locale}
-                                            onClick={() => addItem(item)}
-                                          />
-                                        ))}
-                                      </div>
-                                    ))}
+                                  <div className="flex flex-col gap-0.5 px-3 pb-2 pt-1">
+                                    <Separator className="mb-1" />
+                                    {channelGroup.candidates.map((candidate) => {
+                                      const fk = modelFoldKey(
+                                        candidate.combo_id,
+                                        candidate.credential_id,
+                                        candidate.model_name,
+                                      );
+                                      const isActive = foldedMembers.some(
+                                        (m) => m.key === fk,
+                                      );
+                                      return (
+                                        <CandidateRow
+                                          key={`${candidate.combo_id}-${candidate.credential_id}-${candidate.model_name}`}
+                                          candidate={candidate}
+                                          active={isActive}
+                                          selectedProtocols={form.protocols}
+                                          locale={locale}
+                                          onClick={() => addCandidate(candidate)}
+                                        />
+                                      );
+                                    })}
                                   </div>
                                 ) : null}
                               </div>
@@ -2551,35 +2723,24 @@ export function GroupsScreen() {
                             {locale === "zh-CN" ? "仅看启用" : "Enabled only"}
                           </Button>
                           <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                            {visibleSelectedMembers.length}/{form.items.length}
+                            {visibleFoldedMembers.length}/{foldedMembers.length}
                           </span>
                         </div>
                       </div>
                       <div className="px-2 pb-2 pt-1">
                         <div className="flex flex-col gap-1.5">
-                          {visibleSelectedMembers.length ? (
-                            visibleSelectedMembers.map(({ item, index }) => (
-                              <SelectedMemberRow
-                                key={`${itemKey(item)}::${index}`}
-                                item={item}
+                          {visibleFoldedMembers.length ? (
+                            visibleFoldedMembers.map(({ member, index }) => (
+                              <FoldedMemberRow
+                                key={member.key}
+                                member={member}
                                 index={index}
                                 dragging={draggingIndex === index}
                                 busy={false}
                                 onToggle={() =>
-                                  setForm((current) => ({
-                                    ...current,
-                                    items: current.items.map(
-                                      (member, memberIndex) =>
-                                        memberIndex === index
-                                          ? {
-                                              ...member,
-                                              enabled: !member.enabled,
-                                            }
-                                          : member,
-                                    ),
-                                  }))
+                                  toggleFoldedMember(member.key, !member.enabled)
                                 }
-                                onRemove={() => removeItem(index)}
+                                onRemove={() => removeFoldedMember(member.key)}
                                 onDragStart={() => setDraggingIndex(index)}
                                 onDragEnter={() => {
                                   if (
@@ -2587,11 +2748,10 @@ export function GroupsScreen() {
                                     draggingIndex === index
                                   )
                                     return;
-                                  moveItem(draggingIndex, index);
+                                  moveFoldedMember(draggingIndex, index);
                                   setDraggingIndex(index);
                                 }}
                                 onDragEnd={() => setDraggingIndex(null)}
-                                selectedProtocols={form.protocols}
                                 locale={locale}
                               />
                             ))

@@ -644,51 +644,163 @@ class DomainStore:
         channel_store = ChannelStore(self._session_factory)
         all_channels = await channel_store.list()
 
-        protocols = list(dict.fromkeys(payload.protocols))
-        if protocols:
-            channels = [
-                ch
-                for ch in all_channels
-                if any(
-                    can_reach_protocol(ch.protocol, protocol)
-                    for protocol in protocols
+        # G：组协议集（去重、保序）
+        protocols_filter: list[ProtocolKind] = list(dict.fromkeys(payload.protocols))
+
+        # exclude_items 反解出已选模型身份集：(combo_id, credential_id, model_name)
+        excluded_model_ids: set[tuple[str, str, str]] = set()
+        for item in payload.exclude_items:
+            parsed = _parse_composite_channel_id(item.channel_id)
+            if parsed is not None:
+                excluded_combo_id, _ = parsed
+                excluded_model_ids.add(
+                    (excluded_combo_id, item.credential_id, item.model_name)
                 )
-            ]
-        else:
-            channels = all_channels
 
-        excluded = {
-            (item.channel_id, item.credential_id, item.model_name)
-            for item in payload.exclude_items
-        }
+        # 聚合键：(combo_id, credential_id, model_name)
+        # 每个聚合槽记录：native_protocols, protocol_channels, 代表性 channel 信息
+        from dataclasses import dataclass, field as dc_field
 
-        candidates: list[ModelGroupCandidateItem] = []
-        seen: set[tuple[str, str, str]] = set()
+        @dataclass
+        class _AggSlot:
+            native_protocols: list[ProtocolKind] = dc_field(default_factory=list)
+            protocol_channels: dict[ProtocolKind, str] = dc_field(default_factory=dict)
+            channel_name: str = ""
+            credential_name: str = ""
+            base_url: str = ""
+            model_name: str = ""
+            credential_id: str = ""
+            combo_id: str = ""
 
-        for channel in channels:
+        agg: dict[tuple[str, str, str], _AggSlot] = {}
+
+        for channel in all_channels:
             if channel.status.value != "enabled":
                 continue
+            # 反解 combo_id 与 native protocol
+            parsed = _parse_composite_channel_id(channel.id)
+            if parsed is None:
+                continue
+            combo_id, native_protocol = parsed
+
+            # 确认 channel 上的 enabled key（credential）集合
+            enabled_credential_ids: set[str] = {
+                key.id for key in channel.keys if key.enabled
+            }
+
             for model in channel.models:
                 if not model.enabled:
                     continue
-                candidate_key = (channel.id, model.credential_id, model.model_name)
-                if candidate_key in seen or candidate_key in excluded:
+                if model.credential_id not in enabled_credential_ids:
                     continue
-                seen.add(candidate_key)
 
-                candidates.append(
-                    ModelGroupCandidateItem(
-                        site_id="",
-                        channel_id=channel.id,
-                        channel_name=channel.name,
-                        protocol=channel.protocol,
+                agg_key = (combo_id, model.credential_id, model.model_name)
+                if agg_key not in agg:
+                    agg[agg_key] = _AggSlot(
+                        combo_id=combo_id,
                         credential_id=model.credential_id,
                         credential_name=model.credential_name,
-                        credential_number=0,
-                        base_url=str(channel.base_url),
                         model_name=model.model_name,
+                        channel_name=channel.name,
+                        base_url=str(channel.base_url),
                     )
+                slot = agg[agg_key]
+                # 累积 native_protocols（去重、保序）
+                if native_protocol not in slot.native_protocols:
+                    slot.native_protocols.append(native_protocol)
+                # 记录协议 → 复合 channel_id 映射（首次记录）
+                if native_protocol not in slot.protocol_channels:
+                    slot.protocol_channels[native_protocol] = channel.id
+
+        candidates: list[ModelGroupCandidateItem] = []
+
+        for agg_key, slot in agg.items():
+            combo_id, credential_id, model_name = agg_key
+
+            # 覆盖判定：G 非空时，∀ p∈G ∃ q∈native_protocols 满足 can_reach_protocol(q, p)
+            if protocols_filter:
+                if not all(
+                    any(
+                        can_reach_protocol(q, p)
+                        for q in slot.native_protocols
+                    )
+                    for p in protocols_filter
+                ):
+                    continue
+
+            # exclude_items 过滤
+            if agg_key in excluded_model_ids:
+                continue
+
+            # 选取代表性原生渠道（兼容旧字段 channel_id + protocol）
+            # 优先选 G 中存在的原生协议，否则取 native 第一个
+            rep_protocol: ProtocolKind = slot.native_protocols[0]
+            if protocols_filter:
+                for p in protocols_filter:
+                    if p in slot.protocol_channels:
+                        rep_protocol = p
+                        break
+            rep_channel_id = slot.protocol_channels.get(
+                rep_protocol, next(iter(slot.protocol_channels.values()))
+            )
+
+            # 推荐 items（G 非空时：原生优先 + 转换兜底 + 去重）
+            recommended_items: list[ModelGroupItemInput] = []
+            if protocols_filter:
+                chosen: dict[str, ModelGroupItemInput] = {}
+                uncovered: list[ProtocolKind] = []
+                # 原生优先
+                for p in protocols_filter:
+                    if p in slot.protocol_channels:
+                        cid = slot.protocol_channels[p]
+                        if cid not in chosen:
+                            chosen[cid] = ModelGroupItemInput(
+                                channel_id=cid,
+                                credential_id=credential_id,
+                                model_name=model_name,
+                                enabled=True,
+                            )
+                    else:
+                        uncovered.append(p)
+                # 转换兜底：找任一 native 满足 can_reach_protocol(native, p)
+                for p in uncovered:
+                    fallback_native = next(
+                        (q for q in slot.native_protocols if can_reach_protocol(q, p)),
+                        None,
+                    )
+                    if fallback_native is not None:
+                        cid = slot.protocol_channels[fallback_native]
+                        chosen.setdefault(
+                            cid,
+                            ModelGroupItemInput(
+                                channel_id=cid,
+                                credential_id=credential_id,
+                                model_name=model_name,
+                                enabled=True,
+                            ),
+                        )
+                recommended_items = list(chosen.values())
+
+            candidates.append(
+                ModelGroupCandidateItem(
+                    site_id="",
+                    channel_id=rep_channel_id,
+                    channel_name=slot.channel_name,
+                    protocol=rep_protocol,
+                    credential_id=credential_id,
+                    credential_name=slot.credential_name,
+                    credential_number=0,
+                    base_url=slot.base_url,
+                    model_name=model_name,
+                    combo_id=combo_id,
+                    protocols=sorted(slot.native_protocols, key=lambda p: p.value),
+                    protocol_channels=slot.protocol_channels,
+                    items=recommended_items,
                 )
+            )
+
+        # 稳定排序：按 channel_name + model_name
+        candidates.sort(key=lambda c: (c.channel_name, c.model_name))
 
         return ModelGroupCandidatesResponse(candidates=candidates)
 
@@ -999,6 +1111,27 @@ class DomainStore:
         missing_channel_ids = [cid for cid in channel_ids if cid not in channel_by_id]
         if missing_channel_ids:
             raise ValueError(f"Channels not found: {', '.join(missing_channel_ids)}")
+
+        # 拒绝 disabled channel
+        disabled_channel_ids = [
+            cid
+            for cid in channel_ids
+            if channel_by_id[cid].status.value != "enabled"
+        ]
+        if disabled_channel_ids:
+            raise ValueError(
+                "Channels are disabled: " + ", ".join(disabled_channel_ids)
+            )
+
+        # 拒绝 disabled credential
+        for item in normalized_items:
+            ch = channel_by_id[item.channel_id]
+            enabled_credential_ids = {key.id for key in ch.keys if key.enabled}
+            if item.credential_id not in enabled_credential_ids:
+                raise ValueError(
+                    f"Credential is disabled or not found in channel {item.channel_id}: "
+                    f"{item.credential_id}"
+                )
 
         invalid_channel_ids = [
             cid

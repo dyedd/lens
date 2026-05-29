@@ -100,6 +100,10 @@ export type ModelGroupCandidateItem = {
   credential_number: number;
   base_url: string;
   model_name: string;
+  combo_id: string;
+  protocols: ProtocolKind[];
+  protocol_channels: Partial<Record<ProtocolKind, string>>;
+  items: ModelGroupItemPayload[];
 };
 
 export type SiteBaseUrl = {
