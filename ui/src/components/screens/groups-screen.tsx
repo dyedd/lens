@@ -103,6 +103,7 @@ type FormState = {
 
 // 候选区：按渠道（站点）分组，每组含多个模型行
 type CandidateChannelGroup = {
+  key: string;
   site_id: string;
   channel_name: string;
   candidates: ModelGroupCandidateItem[];
@@ -1079,22 +1080,27 @@ export function GroupsScreen() {
     locale,
   ]);
 
-  // 候选区：一个模型一行，按站点分组
+  // 候选区：一个模型一行，按候选来源分组
   const groupedCandidates = useMemo(() => {
     const groupsBySite = new Map<string, CandidateChannelGroup>();
 
     for (const candidate of filteredCandidates) {
       const channel = channelMap.get(candidate.channel_id);
       const channelName = channel?.name || candidate.channel_name;
-      const siteKey = candidate.combo_id || channel?.site_id || candidate.site_id || candidate.channel_id;
-      let existing = groupsBySite.get(siteKey);
+      const groupKey =
+        candidate.combo_id ||
+        channel?.site_id ||
+        candidate.site_id ||
+        candidate.channel_id;
+      let existing = groupsBySite.get(groupKey);
       if (!existing) {
         existing = {
+          key: groupKey,
           site_id: channel?.site_id || candidate.site_id,
           channel_name: channelName,
           candidates: [],
         };
-        groupsBySite.set(siteKey, existing);
+        groupsBySite.set(groupKey, existing);
       }
       existing.candidates.push(candidate);
     }
@@ -1212,13 +1218,13 @@ export function GroupsScreen() {
     }
     setExpandedChannels((current) => {
       const available = new Set(
-        groupedCandidates.map((item) => item.site_id || item.channel_name),
+        groupedCandidates.map((item) => item.key),
       );
       const filtered = current.filter((item) => available.has(item));
       if (filtered.length) {
         return filtered;
       }
-      return [groupedCandidates[0].site_id || groupedCandidates[0].channel_name];
+      return [groupedCandidates[0].key];
     });
   }, [groupedCandidates]);
 
@@ -2547,8 +2553,7 @@ export function GroupsScreen() {
                       <div className="px-2 pb-2">
                         <div className="flex flex-col">
                           {groupedCandidates.map((channelGroup) => {
-                            const channelKey =
-                              channelGroup.site_id || channelGroup.channel_name;
+                            const channelKey = channelGroup.key;
                             const isOpen =
                               expandedChannels.includes(channelKey);
                             return (
