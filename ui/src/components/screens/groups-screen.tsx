@@ -28,7 +28,6 @@ import {
   RoutingStrategy,
   Site,
   apiRequest,
-  getConvertibleProtocols,
   isItemValidForProtocols,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -598,20 +597,6 @@ function CandidateRow({
   // 原生协议标签（候选本身支持的协议）
   const nativeProtocols = candidate.protocols;
 
-  // 仅可转换到当前组协议、但非原生的协议（取各 native protocol 的可转换目标并集，减去原生集合）
-  const nativeSet = new Set(nativeProtocols);
-  const convertibleOnly = Array.from(
-    new Set(
-      nativeProtocols.flatMap((p) =>
-        getConvertibleProtocols(p, selectedProtocols),
-      ),
-    ),
-  ).filter((p) => !nativeSet.has(p));
-
-  const convertibleLabel = convertibleOnly
-    .map((p) => protocolLabel(p, locale))
-    .join(" / ");
-
   return (
     <Button
       type="button"
@@ -647,25 +632,6 @@ function CandidateRow({
             </Badge>
           );
         })}
-        {/* 仅可转换标签（虚线 + Sparkles） */}
-        {convertibleOnly.length ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge
-                variant="outline"
-                className="gap-1 border-dashed bg-background/70 px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
-              >
-                <Sparkles size={10} />
-                {locale === "zh-CN" ? "转换" : "Converts"}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              {locale === "zh-CN"
-                ? `✨ 转换兼容: ${convertibleLabel}`
-                : `✨ Converts to: ${convertibleLabel}`}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
         <span className="max-w-28 truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           {credentialLabel}
         </span>
