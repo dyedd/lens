@@ -1222,9 +1222,6 @@ function ComboConfigItem({
   const selectedCredentialKnown = credentialOptions.some(
     (item) => item.id === selectedCredentialId,
   );
-  const credentialLabelsById = new Map(
-    credentialOptions.map((item) => [item.id, item.display_name] as const),
-  );
   const visibleModels = combo.models
     .map((model, modelIndex) => ({ model, modelIndex }))
     .filter(
@@ -1510,10 +1507,6 @@ function ComboConfigItem({
                           {compactProtocolLabel(item)}
                         </Badge>
                       ))}
-                      <Badge variant="secondary" className="max-w-[140px] truncate">
-                        {credentialLabelsById.get(model.credential_id) ||
-                          model.credential_id}
-                      </Badge>
                       <Button
                         type="button"
                         variant="ghost"
