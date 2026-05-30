@@ -671,8 +671,6 @@ function CandidateRow({
   locale: "zh-CN" | "en-US";
   onClick: () => void;
 }) {
-  const credentialLabel = credentialDisplayLabel(candidate, locale);
-
   // 原生协议标签（候选本身支持的协议）
   const nativeProtocols = candidate.protocols;
 
@@ -711,9 +709,6 @@ function CandidateRow({
             </Badge>
           );
         })}
-        <span className="max-w-28 truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          {credentialLabel}
-        </span>
         <span className="text-muted-foreground">
           {active ? (
             <Check size={15} className="text-primary" />
@@ -749,13 +744,6 @@ function FoldedMemberRow({
   onDragEnd: () => void;
   locale: "zh-CN" | "en-US";
 }) {
-  const credLabel = credentialDisplayLabel(
-    {
-      credential_name: member.credential_name,
-      credential_number: member.credential_number,
-    },
-    locale,
-  );
   return (
     <div
       draggable
@@ -794,14 +782,11 @@ function FoldedMemberRow({
             </Badge>
           ))}
         </div>
-        <div className="truncate text-xs text-muted-foreground">
-          {credLabel}
-          {!member.enabled
-            ? locale === "zh-CN"
-              ? " · 已关闭"
-              : " · disabled"
-            : ""}
-        </div>
+        {!member.enabled ? (
+          <div className="truncate text-xs text-muted-foreground">
+            {locale === "zh-CN" ? "已关闭" : "Disabled"}
+          </div>
+        ) : null}
       </div>
       <div className="flex h-8 w-8 items-center justify-center">
         <Switch
