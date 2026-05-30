@@ -72,6 +72,7 @@ SETTING_PROXY_URL = "proxy_url"
 SETTING_STATS_TIME_ZONE = "stats_time_zone"
 SETTING_TIME_ZONE = "time_zone"
 SETTING_CORS_ALLOW_ORIGINS = "cors_allow_origins"
+SETTING_RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled"
 SETTING_RELAY_LOG_KEEP_ENABLED = "relay_log_keep_enabled"
 SETTING_RELAY_LOG_KEEP_PERIOD = "relay_log_keep_period"
 SETTING_CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"
@@ -1372,6 +1373,9 @@ class DomainStore:
             "proxy_url": mapping.get(SETTING_PROXY_URL, "").strip(),
             "time_zone": time_zone,
             "cors_allow_origins": cors_allow_origins or ["*"],
+            "relay_log_body_enabled": self._parse_bool(
+                mapping.get(SETTING_RELAY_LOG_BODY_ENABLED), default=False
+            ),
             "relay_log_keep_enabled": self._parse_bool(
                 mapping.get(SETTING_RELAY_LOG_KEEP_ENABLED), default=True
             ),

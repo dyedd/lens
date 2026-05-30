@@ -65,6 +65,7 @@ const CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown";
 const HEALTH_WINDOW_SECONDS = "health_window_seconds";
 const HEALTH_PENALTY_WEIGHT = "health_penalty_weight";
 const HEALTH_MIN_SAMPLES = "health_min_samples";
+const RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled";
 const MODEL_LIST_COMPAT_MODE_ENABLED = "model_list_compat_mode_enabled";
 const SITE_NAME = "site_name";
 const SITE_LOGO_URL = "site_logo_url";
@@ -87,6 +88,7 @@ type DraftState = {
   healthWindowSeconds: string;
   healthPenaltyWeight: string;
   healthMinSamples: string;
+  relayLogBodyEnabled: boolean;
   modelListCompatModeEnabled: boolean;
   siteName: string;
   siteLogoUrl: string;
@@ -103,6 +105,7 @@ const EMPTY_DRAFT: DraftState = {
   healthWindowSeconds: "300",
   healthPenaltyWeight: "0.5",
   healthMinSamples: "10",
+  relayLogBodyEnabled: false,
   modelListCompatModeEnabled: false,
   siteName: "Lens",
   siteLogoUrl: "",
@@ -126,6 +129,9 @@ function parseSettings(items: SettingItem[] | undefined) {
     healthWindowSeconds: mapping.get(HEALTH_WINDOW_SECONDS) ?? "300",
     healthPenaltyWeight: mapping.get(HEALTH_PENALTY_WEIGHT) ?? "0.5",
     healthMinSamples: mapping.get(HEALTH_MIN_SAMPLES) ?? "10",
+    relayLogBodyEnabled:
+      (mapping.get(RELAY_LOG_BODY_ENABLED) ?? "false").trim().toLowerCase() ===
+      "true",
     modelListCompatModeEnabled:
       (mapping.get(MODEL_LIST_COMPAT_MODE_ENABLED) ?? "false")
         .trim()
@@ -296,6 +302,10 @@ export function SettingsScreen() {
         {
           key: HEALTH_MIN_SAMPLES,
           value: draft.healthMinSamples.trim() || "10",
+        },
+        {
+          key: RELAY_LOG_BODY_ENABLED,
+          value: draft.relayLogBodyEnabled ? "true" : "false",
         },
         {
           key: MODEL_LIST_COMPAT_MODE_ENABLED,
@@ -667,7 +677,7 @@ export function SettingsScreen() {
               </Field>
               <Field
                 orientation="horizontal"
-                className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
+                className="items-center justify-between gap-4"
               >
                 <FieldContent>
                   <FieldLabel className="w-auto">
@@ -689,6 +699,22 @@ export function SettingsScreen() {
                   checked={draft.modelListCompatModeEnabled}
                   onCheckedChange={(checked) =>
                     setDraftValue("modelListCompatModeEnabled", checked)
+                  }
+                />
+              </Field>
+              <Field
+                orientation="horizontal"
+                className="items-center justify-between gap-4"
+              >
+                <FieldContent>
+                  <FieldLabel className="w-auto">
+                    {titleForLocale(locale, "记录日志正文", "Record log body")}
+                  </FieldLabel>
+                </FieldContent>
+                <Switch
+                  checked={draft.relayLogBodyEnabled}
+                  onCheckedChange={(checked) =>
+                    setDraftValue("relayLogBodyEnabled", checked)
                   }
                 />
               </Field>
