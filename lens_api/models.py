@@ -286,6 +286,78 @@ class SiteUpdate(StrictBaseModel):
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
 
 
+class SiteImportBaseUrlInput(StrictBaseModel):
+    ref: str = ""
+    url: HttpUrl
+    name: str = ""
+    enabled: bool = True
+
+    _normalize_url = field_validator("url", mode="before")(normalize_base_url)
+
+
+class SiteImportCredentialInput(StrictBaseModel):
+    ref: str = ""
+    name: str = ""
+    api_key: str = Field(min_length=1)
+    enabled: bool = True
+
+
+class SiteImportModelInput(StrictBaseModel):
+    model_name: str = Field(min_length=1)
+    credential_ref: str = ""
+    enabled: bool = True
+
+
+class SiteImportProtocolInput(StrictBaseModel):
+    protocol: ProtocolKind
+    enabled: bool = True
+    headers: dict[str, str] = Field(default_factory=dict)
+    channel_proxy: str = ""
+    param_override: str = ""
+    match_regex: str = ""
+    base_url_ref: str = ""
+    credential_ref: str = ""
+    models: list[SiteImportModelInput] = Field(default_factory=list)
+
+    @field_validator("match_regex")
+    @classmethod
+    def validate_match_regex(cls, pattern: str) -> str:
+        return _validate_regex_pattern(pattern)
+
+
+class SiteImportItem(StrictBaseModel):
+    name: str
+    base_urls: list[SiteImportBaseUrlInput] = Field(default_factory=list)
+    credentials: list[SiteImportCredentialInput] = Field(default_factory=list)
+    protocols: list[SiteImportProtocolInput] = Field(default_factory=list)
+
+
+class SiteBatchImportRequest(StrictBaseModel):
+    sites: list[SiteImportItem] = Field(default_factory=list)
+
+
+class SiteBatchImportSkipped(StrictBaseModel):
+    index: int = Field(ge=0)
+    name: str
+    reason: str
+
+
+class SiteBatchImportError(StrictBaseModel):
+    index: int = Field(ge=0)
+    field: str
+    message: str
+
+
+class SiteBatchImportResult(StrictBaseModel):
+    committed: bool = False
+    created_count: int = 0
+    skipped_count: int = 0
+    error_count: int = 0
+    created: list[SiteConfig] = Field(default_factory=list)
+    skipped: list[SiteBatchImportSkipped] = Field(default_factory=list)
+    errors: list[SiteBatchImportError] = Field(default_factory=list)
+
+
 class SiteModelFetchRequest(StrictBaseModel):
     protocol: ProtocolKind
     base_url: HttpUrl

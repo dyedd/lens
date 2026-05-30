@@ -180,6 +180,71 @@ export type SitePayload = {
   protocols: SiteProtocolConfigInput[];
 };
 
+export type SiteBatchImportBaseUrlInput = {
+  ref?: string;
+  url: string;
+  name?: string;
+  enabled?: boolean;
+};
+
+export type SiteBatchImportCredentialInput = {
+  ref?: string;
+  name?: string;
+  api_key: string;
+  enabled?: boolean;
+};
+
+export type SiteBatchImportModelInput = {
+  model_name: string;
+  credential_ref?: string;
+  enabled?: boolean;
+};
+
+export type SiteBatchImportProtocolInput = {
+  protocol: ProtocolKind;
+  enabled?: boolean;
+  headers?: Record<string, string>;
+  channel_proxy?: string;
+  param_override?: string;
+  match_regex?: string;
+  base_url_ref?: string;
+  credential_ref?: string;
+  models?: SiteBatchImportModelInput[];
+};
+
+export type SiteBatchImportItem = {
+  name: string;
+  base_urls: SiteBatchImportBaseUrlInput[];
+  credentials: SiteBatchImportCredentialInput[];
+  protocols: SiteBatchImportProtocolInput[];
+};
+
+export type SiteBatchImportPayload = {
+  sites: SiteBatchImportItem[];
+};
+
+export type SiteBatchImportSkipped = {
+  index: number;
+  name: string;
+  reason: string;
+};
+
+export type SiteBatchImportError = {
+  index: number;
+  field: string;
+  message: string;
+};
+
+export type SiteBatchImportResult = {
+  committed: boolean;
+  created_count: number;
+  skipped_count: number;
+  error_count: number;
+  created: Site[];
+  skipped: SiteBatchImportSkipped[];
+  errors: SiteBatchImportError[];
+};
+
 export type SiteModelFetchPayload = {
   protocol: ProtocolKind;
   base_url: string;
