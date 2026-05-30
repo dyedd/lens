@@ -2133,18 +2133,6 @@ export function GroupsScreen() {
                                       <span className="min-w-0 truncate text-muted-foreground">
                                         · {channelName}
                                       </span>
-                                      {member.protocols.map((protocol) => (
-                                        <Badge
-                                          key={protocol}
-                                          variant="outline"
-                                          className={cn(
-                                            "px-1.5 py-0 text-[10px] font-normal",
-                                            protocolBadgeClassName(protocol),
-                                          )}
-                                        >
-                                          {protocolLabel(protocol, locale)}
-                                        </Badge>
-                                      ))}
                                     </Button>
                                     <Button
                                       type="button"
