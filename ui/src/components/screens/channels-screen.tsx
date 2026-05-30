@@ -1,11 +1,20 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ChevronDown,
+  Download,
   Ellipsis,
+  FileInput,
   Filter,
   Globe2,
   KeyRound,
@@ -13,6 +22,7 @@ import {
   RefreshCcw,
   Server,
   Trash2,
+  Upload,
   Waypoints,
   X,
 } from "lucide-react";
@@ -22,6 +32,8 @@ import {
   ProtocolKind,
   RouteSnapshot,
   Site,
+  SiteBatchImportPayload,
+  SiteBatchImportResult,
   SiteBaseUrlInput,
   SiteCredentialInput,
   SiteModelFetchItem,
@@ -44,6 +56,12 @@ import { useAppTimeZone } from "@/hooks/use-app-time-zone";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Field,
@@ -70,6 +88,14 @@ import {
 } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
@@ -159,6 +185,150 @@ type ChannelSort =
   | "name-desc"
   | "models-desc"
   | "protocols-desc";
+
+type ImportResultRow = {
+  key: string;
+  index: number;
+  name: string;
+  status: "created" | "skipped" | "error";
+  reason: string;
+};
+
+const batchImportTemplate: SiteBatchImportPayload = {
+  sites: [
+    {
+      name: "OpenAI",
+      base_urls: [
+        {
+          ref: "main",
+          url: "https://api.openai.com/v1",
+          name: "",
+          enabled: true,
+        },
+      ],
+      credentials: [
+        {
+          ref: "key1",
+          name: "Key 1",
+          api_key: "sk-...",
+          enabled: true,
+        },
+      ],
+      protocols: [
+        {
+          protocol: "openai_chat",
+          enabled: true,
+          base_url_ref: "main",
+          credential_ref: "key1",
+          headers: {},
+          channel_proxy: "",
+          param_override: "",
+          match_regex: "",
+          models: [
+            {
+              model_name: "gpt-4.1",
+              credential_ref: "key1",
+              enabled: true,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+function batchImportTemplateText(): string {
+  return JSON.stringify(batchImportTemplate, null, 2);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseBatchImportPayload(
+  text: string,
+  locale: Locale,
+): SiteBatchImportPayload {
+  const content = text.trim();
+  if (!content) {
+    throw new Error(locale === "zh-CN" ? "JSON 内容为空" : "JSON is empty");
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(content);
+  } catch {
+    throw new Error(
+      locale === "zh-CN" ? "JSON 格式无效" : "Invalid JSON format",
+    );
+  }
+
+  if (!isRecord(value) || !Array.isArray(value.sites)) {
+    throw new Error(
+      locale === "zh-CN"
+        ? "JSON 必须包含 sites 数组"
+        : "JSON must include a sites array",
+    );
+  }
+
+  return value as SiteBatchImportPayload;
+}
+
+function importReasonLabel(reason: string, locale: Locale): string {
+  if (reason === "duplicate_name") {
+    return locale === "zh-CN" ? "同名渠道已存在" : "Channel already exists";
+  }
+  if (reason === "duplicate_in_file") {
+    return locale === "zh-CN" ? "文件内重名" : "Duplicate in file";
+  }
+  return reason;
+}
+
+function importStatusLabel(
+  status: ImportResultRow["status"],
+  locale: Locale,
+): string {
+  if (status === "created") return locale === "zh-CN" ? "已创建" : "Created";
+  if (status === "skipped") return locale === "zh-CN" ? "已跳过" : "Skipped";
+  return locale === "zh-CN" ? "错误" : "Error";
+}
+
+function importStatusVariant(
+  status: ImportResultRow["status"],
+): "default" | "secondary" | "destructive" {
+  if (status === "created") return "default";
+  if (status === "skipped") return "secondary";
+  return "destructive";
+}
+
+function importResultRows(
+  result: SiteBatchImportResult,
+  locale: Locale,
+): ImportResultRow[] {
+  return [
+    ...result.created.map((site, index) => ({
+      key: `created-${site.id}`,
+      index,
+      name: site.name,
+      status: "created" as const,
+      reason: "",
+    })),
+    ...result.skipped.map((item) => ({
+      key: `skipped-${item.index}-${item.name}`,
+      index: item.index,
+      name: item.name,
+      status: "skipped" as const,
+      reason: importReasonLabel(item.reason, locale),
+    })),
+    ...result.errors.map((item) => ({
+      key: `error-${item.index}-${item.field}-${item.message}`,
+      index: item.index,
+      name: item.field,
+      status: "error" as const,
+      reason: item.message,
+    })),
+  ];
+}
 
 const emptyProtocol = (baseUrlId = ""): FormProtocol => ({
   id: null,
@@ -1873,6 +2043,205 @@ function ModelPickerDialog({
   );
 }
 
+function BatchImportDialog({
+  open,
+  onOpenChange,
+  locale,
+  importText,
+  importError,
+  importResult,
+  importing,
+  onTextChange,
+  onFileChange,
+  onDownloadTemplate,
+  onImport,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  locale: Locale;
+  importText: string;
+  importError: string;
+  importResult: SiteBatchImportResult | null;
+  importing: boolean;
+  onTextChange: (value: string) => void;
+  onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onDownloadTemplate: () => void;
+  onImport: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const resultRows = useMemo(
+    () => (importResult ? importResultRows(importResult, locale) : []),
+    [importResult, locale],
+  );
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (importing) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      {open ? (
+        <AppDialogContent
+          className="max-w-3xl"
+          title={locale === "zh-CN" ? "批量导入渠道" : "Import channels"}
+        >
+          <div className="grid gap-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={onFileChange}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+              >
+                <Upload data-icon="inline-start" />
+                {locale === "zh-CN" ? "选择 JSON" : "Choose JSON"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onDownloadTemplate}
+                disabled={importing}
+              >
+                <Download data-icon="inline-start" />
+                {locale === "zh-CN" ? "下载模板" : "Template"}
+              </Button>
+            </div>
+
+            <FieldGroup>
+              <Field data-invalid={Boolean(importError)}>
+                <FieldLabel htmlFor="channels-batch-import-json">
+                  {locale === "zh-CN" ? "JSON 内容" : "JSON"}
+                </FieldLabel>
+                <Textarea
+                  id="channels-batch-import-json"
+                  value={importText}
+                  onChange={(event) => onTextChange(event.target.value)}
+                  className="min-h-[260px] font-mono text-xs"
+                  spellCheck={false}
+                  aria-invalid={Boolean(importError)}
+                  disabled={importing}
+                />
+                {importError ? (
+                  <FieldDescription className="text-destructive">
+                    {importError}
+                  </FieldDescription>
+                ) : null}
+              </Field>
+            </FieldGroup>
+
+            {importResult ? (
+              <div className="grid gap-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <ImportSummaryMetric
+                    label={locale === "zh-CN" ? "创建" : "Created"}
+                    value={importResult.created_count}
+                  />
+                  <ImportSummaryMetric
+                    label={locale === "zh-CN" ? "跳过" : "Skipped"}
+                    value={importResult.skipped_count}
+                  />
+                  <ImportSummaryMetric
+                    label={locale === "zh-CN" ? "错误" : "Errors"}
+                    value={importResult.error_count}
+                  />
+                </div>
+
+                {resultRows.length ? (
+                  <div className="max-h-56 overflow-y-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-16">
+                            {locale === "zh-CN" ? "序号" : "Index"}
+                          </TableHead>
+                          <TableHead>
+                            {locale === "zh-CN" ? "渠道" : "Channel"}
+                          </TableHead>
+                          <TableHead className="w-24">
+                            {locale === "zh-CN" ? "状态" : "Status"}
+                          </TableHead>
+                          <TableHead>
+                            {locale === "zh-CN" ? "原因" : "Reason"}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {resultRows.map((row) => (
+                          <TableRow key={row.key}>
+                            <TableCell>{row.index + 1}</TableCell>
+                            <TableCell className="max-w-[180px] truncate">
+                              {row.name}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={importStatusVariant(row.status)}>
+                                {importStatusLabel(row.status, locale)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell
+                              className="max-w-[260px] truncate"
+                              title={row.reason}
+                            >
+                              {row.reason || "-"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={importing}
+              >
+                {locale === "zh-CN" ? "取消" : "Cancel"}
+              </Button>
+              <Button type="button" onClick={onImport} disabled={importing}>
+                {importing
+                  ? locale === "zh-CN"
+                    ? "导入中..."
+                    : "Importing..."
+                  : locale === "zh-CN"
+                    ? "导入"
+                    : "Import"}
+              </Button>
+            </div>
+          </div>
+        </AppDialogContent>
+      ) : null}
+    </Dialog>
+  );
+}
+
+function ImportSummaryMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-md border bg-muted/30 px-3 py-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-base font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
 export function ChannelsScreen() {
   const queryClient = useQueryClient();
   const { locale } = useI18n();
@@ -1884,6 +2253,12 @@ export function ChannelsScreen() {
   );
   const [sortBy, setSortBy] = useState<ChannelSort>("requests-desc");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [batchImportOpen, setBatchImportOpen] = useState(false);
+  const [batchImportText, setBatchImportText] = useState("");
+  const [batchImportError, setBatchImportError] = useState("");
+  const [batchImportResult, setBatchImportResult] =
+    useState<SiteBatchImportResult | null>(null);
+  const [batchImporting, setBatchImporting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -2119,6 +2494,131 @@ export function ChannelsScreen() {
     if (!confirmDiscardChanges()) return;
     setDialogOpen(false);
     setEditingSiteId(null);
+  }
+
+  function openBatchImport() {
+    setBatchImportText("");
+    setBatchImportError("");
+    setBatchImportResult(null);
+    setBatchImportOpen(true);
+  }
+
+  function updateBatchImportText(value: string) {
+    setBatchImportText(value);
+    setBatchImportError("");
+    setBatchImportResult(null);
+  }
+
+  async function handleBatchImportFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      updateBatchImportText(text);
+    } catch (e) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : locale === "zh-CN"
+            ? "读取文件失败"
+            : "Failed to read file";
+      setBatchImportError(message);
+      setBatchImportResult(null);
+    }
+  }
+
+  function downloadBatchImportTemplate() {
+    const blob = new Blob([batchImportTemplateText()], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "lens-channels-import-template.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importBatchSites() {
+    let payload: SiteBatchImportPayload;
+    try {
+      payload = parseBatchImportPayload(batchImportText, locale);
+    } catch (e) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : locale === "zh-CN"
+            ? "JSON 格式无效"
+            : "Invalid JSON format";
+      setBatchImportError(message);
+      setBatchImportResult(null);
+      return;
+    }
+
+    setBatchImporting(true);
+    setBatchImportError("");
+    try {
+      const result = await apiRequest<SiteBatchImportResult>(
+        "/admin/sites/import",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
+      setBatchImportResult(result);
+
+      if (result.error_count) {
+        toast.error(
+          locale === "zh-CN"
+            ? "导入校验失败"
+            : "Channel import validation failed",
+        );
+        return;
+      }
+
+      if (result.created.length) {
+        queryClient.setQueryData<Site[]>(["sites"], (current) => {
+          const rows = current ?? [];
+          const existingIds = new Set(rows.map((site) => site.id));
+          return [
+            ...result.created.filter((site) => !existingIds.has(site.id)),
+            ...rows,
+          ];
+        });
+        await invalidateChannelData();
+        toast.success(
+          locale === "zh-CN"
+            ? `已导入 ${result.created_count} 个渠道`
+            : `Imported ${result.created_count} channels`,
+        );
+        if (!result.skipped_count) {
+          setBatchImportOpen(false);
+        }
+        return;
+      }
+
+      toast.info(
+        locale === "zh-CN"
+          ? "没有新的渠道被导入"
+          : "No new channels were imported",
+      );
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : locale === "zh-CN"
+            ? "导入渠道失败"
+            : "Failed to import channels";
+      setBatchImportError(message);
+      setBatchImportResult(null);
+      toast.error(message);
+    } finally {
+      setBatchImporting(false);
+    }
   }
 
   function resetFilters() {
@@ -2659,15 +3159,29 @@ export function ChannelsScreen() {
           <h1 className="text-xl font-semibold text-foreground">
             {locale === "zh-CN" ? "渠道" : "Channels"}
           </h1>
-          <Button
-            type="button"
-            onClick={openCreate}
-            className="rounded-full"
-            size="icon-sm"
-            title={locale === "zh-CN" ? "新建渠道" : "New channel"}
-          >
-            <Plus size={18} />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                className="rounded-full"
+                size="icon-sm"
+                title={locale === "zh-CN" ? "新增渠道" : "Add channels"}
+                aria-label={locale === "zh-CN" ? "新增渠道" : "Add channels"}
+              >
+                <Plus />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={openCreate}>
+                <Plus />
+                {locale === "zh-CN" ? "新建渠道" : "New channel"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={openBatchImport}>
+                <FileInput />
+                {locale === "zh-CN" ? "批量导入" : "Import channels"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
@@ -3130,6 +3644,20 @@ export function ChannelsScreen() {
             </form>
           </AppDialogContent>
         </Dialog>
+
+        <BatchImportDialog
+          open={batchImportOpen}
+          onOpenChange={setBatchImportOpen}
+          locale={locale}
+          importText={batchImportText}
+          importError={batchImportError}
+          importResult={batchImportResult}
+          importing={batchImporting}
+          onTextChange={updateBatchImportText}
+          onFileChange={(event) => void handleBatchImportFile(event)}
+          onDownloadTemplate={downloadBatchImportTemplate}
+          onImport={() => void importBatchSites()}
+        />
 
         <AdvancedProtocolDialog
           open={advancedProtocolIndex !== null}
