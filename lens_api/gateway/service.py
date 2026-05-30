@@ -90,6 +90,8 @@ from ..models import (
     CronjobUpdate,
     SettingItem,
     SettingsUpdate,
+    SiteBatchImportRequest,
+    SiteBatchImportResult,
     SiteConfig,
     SiteCreate,
     SiteModelFetchItem,
@@ -958,6 +960,12 @@ async def create_site(
     payload: SiteCreate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
     return await app_state.store.create_site(payload)
+
+
+async def import_sites(
+    payload: SiteBatchImportRequest, _: Any = Depends(get_current_admin)
+) -> SiteBatchImportResult:
+    return await app_state.store.import_sites(payload)
 
 
 async def update_site(

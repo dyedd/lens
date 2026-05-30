@@ -18,6 +18,12 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         status_code=201,
     )
     app.add_api_route(
+        "/api/admin/sites/import",
+        service_module.import_sites,
+        methods=["POST"],
+        response_model=service_module.SiteBatchImportResult,
+    )
+    app.add_api_route(
         "/api/admin/sites/{site_id}", service_module.update_site, methods=["PUT"]
     )
     app.add_api_route(
