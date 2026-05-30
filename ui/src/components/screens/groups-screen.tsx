@@ -366,6 +366,25 @@ function credentialDisplayLabel(
   return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
 }
 
+function credentialNumberLabel(
+  item: Pick<FormItem | ModelGroupCandidateItem, "credential_number">,
+  locale: "zh-CN" | "en-US",
+) {
+  const number = item.credential_number > 0 ? item.credential_number : 1;
+  return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
+}
+
+function foldedMemberSourceLabel(
+  member: FoldedMember,
+  locale: "zh-CN" | "en-US",
+) {
+  const channelNames = Array.from(
+    new Set(member.subItems.map((item) => item.channel_name).filter(Boolean)),
+  );
+  const credentialLabel = credentialNumberLabel(member, locale);
+  return [...channelNames, credentialLabel].join(" · ");
+}
+
 function protocolBadgeClassName(protocol: ProtocolKind) {
   switch (protocol) {
     case "openai_chat":
@@ -744,6 +763,8 @@ function FoldedMemberRow({
   onDragEnd: () => void;
   locale: "zh-CN" | "en-US";
 }) {
+  const sourceLabel = foldedMemberSourceLabel(member, locale);
+
   return (
     <div
       draggable
@@ -765,28 +786,15 @@ function FoldedMemberRow({
         <GripVertical size={14} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="truncate text-sm font-medium text-foreground">
-            {member.model_name}
-          </span>
-          {member.protocols.map((p) => (
-            <Badge
-              key={p}
-              variant="outline"
-              className={cn(
-                "px-1.5 py-0 text-[10px] font-normal",
-                protocolBadgeClassName(p),
-              )}
-            >
-              {protocolLabel(p, locale)}
-            </Badge>
-          ))}
+        <div className="truncate text-sm font-medium text-foreground">
+          {member.model_name}
         </div>
-        {!member.enabled ? (
-          <div className="truncate text-xs text-muted-foreground">
-            {locale === "zh-CN" ? "已关闭" : "Disabled"}
-          </div>
-        ) : null}
+        <div className="truncate text-xs text-muted-foreground">
+          {sourceLabel}
+          {!member.enabled
+            ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
+            : ""}
+        </div>
       </div>
       <div className="flex h-8 w-8 items-center justify-center">
         <Switch
@@ -2070,6 +2078,7 @@ export function GroupsScreen() {
                                 const channelName =
                                   member.channel_names.slice(0, 2).join(" · ") ||
                                   "n/a";
+                                const sourceLabel = `${channelName} · ${credentialNumberLabel(member, locale)}`;
                                 return (
                                   <div
                                     key={`${member.key}::${index}`}
@@ -2080,7 +2089,7 @@ export function GroupsScreen() {
                                         cardDragging.index === index &&
                                         "opacity-60",
                                     )}
-                                    title={`${channelName} · ${member.model_name}`}
+                                    title={`${sourceLabel} · ${member.model_name}`}
                                   >
                                     <Button
                                       type="button"
@@ -2116,7 +2125,7 @@ export function GroupsScreen() {
                                         {member.model_name}
                                       </span>
                                       <span className="min-w-0 truncate text-muted-foreground">
-                                        · {channelName}
+                                        · {sourceLabel}
                                       </span>
                                     </Button>
                                     <Button
