@@ -695,14 +695,14 @@ function CandidateRow({
       <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5">
         {/* 原生协议标签（实色） */}
         {nativeProtocols.map((p) => {
-          const needed = selectedProtocols.includes(p);
+          const usable = isItemValidForProtocols(p, selectedProtocols);
           return (
             <Badge
               key={p}
               variant="outline"
               className={cn(
                 "px-1.5 py-0 text-[10px] font-normal",
-                needed
+                usable
                   ? protocolBadgeClassName(p)
                   : "border-transparent bg-muted/50 text-muted-foreground/50",
               )}
