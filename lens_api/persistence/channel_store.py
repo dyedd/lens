@@ -40,6 +40,18 @@ def _combo_model_key(model: SiteModelInput) -> tuple[str, str]:
     return (model.credential_id, model.model_name.strip())
 
 
+def _composite_id_like(column, combo_id: str):
+    """构造匹配复合 channel_id（{combo_id}_{protocol}）的 LIKE 条件。
+
+    combo_id 可能来自客户端输入，其中的 LIKE 元字符（_ / %）必须转义，
+    否则 'a_b' 这样的 id 会把 '_' 当通配符误匹配无关条目。分隔符与尾部
+    通配符（\\_%）保持字面/通配语义，用显式 ESCAPE 区分。
+    """
+    escaped = combo_id.replace("\\", "\\\\").replace("_", "\\_").replace("%", "\\%")
+    return column.like(f"{escaped}\\_%", escape="\\")
+
+
+
 def _deduplicate_combo_models(models: list[SiteModelInput]) -> list[SiteModelInput]:
     deduplicated: list[SiteModelInput] = []
     indexes: dict[tuple[str, str, ProtocolKind | None], int] = {}
@@ -171,7 +183,9 @@ class ChannelStore:
                     delete(ModelGroupItemEntity).where(
                         or_(
                             *[
-                                ModelGroupItemEntity.channel_id.like(f"{pid}_%")
+                                _composite_id_like(
+                                    ModelGroupItemEntity.channel_id, pid
+                                )
                                 for pid in protocol_ids
                             ]
                         )
@@ -788,7 +802,7 @@ class ChannelStore:
             delete(ModelGroupItemEntity).where(
                 or_(
                     *[
-                        ModelGroupItemEntity.channel_id.like(f"{pid}_%")
+                        _composite_id_like(ModelGroupItemEntity.channel_id, pid)
                         for pid in protocol_ids
                     ]
                 )
@@ -821,11 +835,24 @@ class ChannelStore:
     ) -> None:
         if not protocol_ids:
             return
+        # 复合 channel_id 形如 {protocol_config_id}_{protocol}。一个 group item 有效，
+        # 要求存在一个 enabled 模型行，且该行服务于 channel_id 所声明的具体协议：
+        #   - model.protocol 为具体值 → channel_id 必须精确等于 {pid}_{model.protocol}
+        #   - model.protocol 为 NULL（继承地址全部协议）→ channel_id 以 {pid}_ 开头即可
+        # 仅判断 {pid}_% 而忽略协议，会让模型从 chat 移到 responses 后残留旧的
+        # {pid}_openai_chat 条目。
         matching_model = (
             select(SiteDiscoveredModelEntity.id)
             .where(
-                ModelGroupItemEntity.channel_id.like(
-                    SiteDiscoveredModelEntity.protocol_config_id.concat("_%")
+                or_(
+                    ModelGroupItemEntity.channel_id
+                    == SiteDiscoveredModelEntity.protocol_config_id.concat("_").concat(
+                        SiteDiscoveredModelEntity.protocol
+                    ),
+                    SiteDiscoveredModelEntity.protocol.is_(None)
+                    & ModelGroupItemEntity.channel_id.like(
+                        SiteDiscoveredModelEntity.protocol_config_id.concat("_%")
+                    ),
                 )
             )
             .where(
@@ -843,7 +870,7 @@ class ChannelStore:
             .where(
                 or_(
                     *[
-                        ModelGroupItemEntity.channel_id.like(f"{pid}_%")
+                        _composite_id_like(ModelGroupItemEntity.channel_id, pid)
                         for pid in protocol_ids
                     ]
                 )

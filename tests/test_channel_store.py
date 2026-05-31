@@ -15,9 +15,10 @@ from lens_api.models import (
     SiteModelInput,
     SiteProtocolConfig,
     SiteProtocolConfigInput,
+    SiteUpdate,
 )
 from lens_api.persistence.channel_store import ChannelStore, _deduplicate_combo_models
-from lens_api.persistence.entities import SiteDiscoveredModelEntity
+from lens_api.persistence.entities import ModelGroupItemEntity, SiteDiscoveredModelEntity
 
 
 def _model(
@@ -318,3 +319,179 @@ async def test_flatten_excludes_unselected_protocol_channel(
         c for c in channels if c.protocol == ProtocolKind.OPENAI_CHAT
     ]
     assert any("gpt-5.5" in c.model_patterns for c in chat_channels)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_removes_stale_item_when_model_moves_protocol(
+    session_factory,
+) -> None:
+    """模型从 openai_chat 移到 openai_responses 后，指向旧 combo_openai_chat 的
+    group item 必须被清理（回归：旧实现只按 combo 前缀匹配，忽略协议后缀，
+    会让失效条目残留）。"""
+    store = ChannelStore(session_factory)
+    await store.create_site(
+        SiteCreate(
+            name="Site",
+            base_urls=[
+                SiteBaseUrlInput(
+                    id="base-1",
+                    url="https://api.example.com",
+                    compatible_protocols=[
+                        ProtocolKind.OPENAI_CHAT,
+                        ProtocolKind.OPENAI_RESPONSES,
+                    ],
+                )
+            ],
+            credentials=[
+                SiteCredentialInput(id="key-1", name="Primary", api_key="sk-test")
+            ],
+            protocols=[
+                SiteProtocolConfigInput(
+                    id="combo-1",
+                    name="Combo",
+                    base_url_id="base-1",
+                    credential_id="key-1",
+                    models=[_model("gpt-5.5", ProtocolKind.OPENAI_CHAT)],
+                )
+            ],
+        )
+    )
+
+    # 手动放入一个指向 combo-1_openai_chat 的 group item
+    async with session_factory() as session:
+        session.add(
+            ModelGroupItemEntity(
+                group_id="group-1",
+                channel_id="combo-1_openai_chat",
+                credential_id="key-1",
+                model_name="gpt-5.5",
+                sort_order=0,
+            )
+        )
+        await session.commit()
+
+    # 更新站点：该模型改为只服务 openai_responses
+    site_id = (await store.list_sites())[0].id
+    await store.update_site(
+        site_id,
+        SiteUpdate(
+            name="Site",
+            base_urls=[
+                SiteBaseUrlInput(
+                    id="base-1",
+                    url="https://api.example.com",
+                    compatible_protocols=[
+                        ProtocolKind.OPENAI_CHAT,
+                        ProtocolKind.OPENAI_RESPONSES,
+                    ],
+                )
+            ],
+            credentials=[
+                SiteCredentialInput(id="key-1", name="Primary", api_key="sk-test")
+            ],
+            protocols=[
+                SiteProtocolConfigInput(
+                    id="combo-1",
+                    name="Combo",
+                    base_url_id="base-1",
+                    credential_id="key-1",
+                    models=[_model("gpt-5.5", ProtocolKind.OPENAI_RESPONSES)],
+                )
+            ],
+        ),
+    )
+
+    async with session_factory() as session:
+        remaining = (
+            (await session.execute(select(ModelGroupItemEntity.channel_id)))
+            .scalars()
+            .all()
+        )
+    # 指向 combo-1_openai_chat 的失效条目应被清理
+    assert "combo-1_openai_chat" not in remaining
+
+
+@pytest.mark.asyncio
+async def test_cleanup_keeps_item_when_model_inherits_all_protocols(
+    session_factory,
+) -> None:
+    """模型 protocol=None（继承地址全部协议）时，combo 各协议的 group item 都有效，
+    不应被误删。"""
+    store = ChannelStore(session_factory)
+    await store.create_site(
+        SiteCreate(
+            name="Site",
+            base_urls=[
+                SiteBaseUrlInput(
+                    id="base-1",
+                    url="https://api.example.com",
+                    compatible_protocols=[
+                        ProtocolKind.OPENAI_CHAT,
+                        ProtocolKind.OPENAI_RESPONSES,
+                    ],
+                )
+            ],
+            credentials=[
+                SiteCredentialInput(id="key-1", name="Primary", api_key="sk-test")
+            ],
+            protocols=[
+                SiteProtocolConfigInput(
+                    id="combo-1",
+                    name="Combo",
+                    base_url_id="base-1",
+                    credential_id="key-1",
+                    models=[_model("gpt-5.5", None)],
+                )
+            ],
+        )
+    )
+
+    async with session_factory() as session:
+        session.add(
+            ModelGroupItemEntity(
+                group_id="group-1",
+                channel_id="combo-1_openai_responses",
+                credential_id="key-1",
+                model_name="gpt-5.5",
+                sort_order=0,
+            )
+        )
+        await session.commit()
+
+    site_id = (await store.list_sites())[0].id
+    await store.update_site(
+        site_id,
+        SiteUpdate(
+            name="Site",
+            base_urls=[
+                SiteBaseUrlInput(
+                    id="base-1",
+                    url="https://api.example.com",
+                    compatible_protocols=[
+                        ProtocolKind.OPENAI_CHAT,
+                        ProtocolKind.OPENAI_RESPONSES,
+                    ],
+                )
+            ],
+            credentials=[
+                SiteCredentialInput(id="key-1", name="Primary", api_key="sk-test")
+            ],
+            protocols=[
+                SiteProtocolConfigInput(
+                    id="combo-1",
+                    name="Combo",
+                    base_url_id="base-1",
+                    credential_id="key-1",
+                    models=[_model("gpt-5.5", None)],
+                )
+            ],
+        ),
+    )
+
+    async with session_factory() as session:
+        remaining = (
+            (await session.execute(select(ModelGroupItemEntity.channel_id)))
+            .scalars()
+            .all()
+        )
+    assert "combo-1_openai_responses" in remaining
