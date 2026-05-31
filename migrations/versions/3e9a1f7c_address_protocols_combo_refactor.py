@@ -29,18 +29,38 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("protocol", sa.String(40), nullable=True))
 
     # Step 3: Back-fill site_base_urls.compatible_protocols_json
-    op.execute("""
-        UPDATE site_base_urls
-        SET compatible_protocols_json = COALESCE(
-            (SELECT json_group_array(protocol) FROM (
-                SELECT DISTINCT p.protocol
-                FROM site_protocol_configs p
-                WHERE p.site_id = site_base_urls.site_id
-                  AND p.base_url_id = site_base_urls.id
-                ORDER BY p.protocol
-            )), '[]'
+    # 跨方言：SQLite 用 json_group_array，PostgreSQL 用 json_agg(...)::text
+    dialect = op.get_bind().dialect.name
+    if dialect == "sqlite":
+        op.execute("""
+            UPDATE site_base_urls
+            SET compatible_protocols_json = COALESCE(
+                (SELECT json_group_array(protocol) FROM (
+                    SELECT DISTINCT p.protocol
+                    FROM site_protocol_configs p
+                    WHERE p.site_id = site_base_urls.site_id
+                      AND p.base_url_id = site_base_urls.id
+                    ORDER BY p.protocol
+                )), '[]'
+            )
+        """)
+    elif dialect == "postgresql":
+        op.execute("""
+            UPDATE site_base_urls
+            SET compatible_protocols_json = COALESCE(
+                (SELECT json_agg(sub.protocol ORDER BY sub.protocol)::text FROM (
+                    SELECT DISTINCT p.protocol
+                    FROM site_protocol_configs p
+                    WHERE p.site_id = site_base_urls.site_id
+                      AND p.base_url_id = site_base_urls.id
+                ) AS sub),
+                '[]'
+            )
+        """)
+    else:
+        raise RuntimeError(
+            f"Unsupported dialect for migration 3e9a1f7c: {dialect}"
         )
-    """)
 
     # Step 4: Back-fill site_discovered_models.protocol
     op.execute("""

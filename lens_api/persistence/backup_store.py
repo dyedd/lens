@@ -937,6 +937,7 @@ class BackupStore:
                 .all()
             )
 
+        valid_protocol_values = {pk.value for pk in ProtocolKind}
         base_urls_by_site: dict[str, list[dict[str, object]]] = {}
         for row in base_url_rows:
             base_urls_by_site.setdefault(row.site_id, []).append(
@@ -946,6 +947,11 @@ class BackupStore:
                     "name": row.name,
                     "enabled": bool(row.enabled),
                     "sort_order": row.sort_order,
+                    "compatible_protocols": [
+                        p
+                        for p in json.loads(row.compatible_protocols_json or "[]")
+                        if p in valid_protocol_values
+                    ],
                 }
             )
 
@@ -975,6 +981,11 @@ class BackupStore:
                     "model_name": row.model_name,
                     "enabled": bool(row.enabled),
                     "sort_order": row.sort_order,
+                    "protocol": (
+                        row.protocol
+                        if row.protocol in valid_protocol_values
+                        else None
+                    ),
                 }
             )
 
@@ -989,7 +1000,6 @@ class BackupStore:
                 {
                     "id": row.id,
                     "name": row.name,
-                    "protocol": row.protocol,
                     "enabled": bool(row.enabled),
                     "headers": headers,
                     "channel_proxy": row.channel_proxy,

@@ -177,6 +177,86 @@ def test_import_new_protocols_field(tmp_path: Path) -> None:
     ]
 
 
+def test_export_roundtrips_site_protocols(tmp_path: Path) -> None:
+    """导出含真实站点配置的备份：base_url.compatible_protocols 与 model.protocol
+    必须对称导出，且不得读取已删除的 SiteProtocolConfig.protocol 字段。
+
+    回归：旧实现在导出 site_protocol_configs 时读 row.protocol（该列已不存在），
+    任何含站点数据的库导出都会抛 AttributeError。
+    """
+
+    async def run() -> None:
+        engine, session_factory, store = await _create_store(tmp_path)
+        try:
+            # 先导入一个含 base_url 多协议 + 模型级协议子集的站点
+            await store.import_dump(
+                _parse_groups(
+                    [],
+                    [
+                        _site(
+                            combo_id="combo-1",
+                            protocols=["openai_chat", "anthropic"],
+                            model_protocol="anthropic",
+                            model_name="claude-3-5-sonnet",
+                        )
+                    ],
+                )
+            )
+
+            # 再导出——这一步会真正读取 SiteProtocolConfigEntity 行
+            dump = await store.export_dump(
+                lens_version="test",
+                include_request_logs=False,
+                include_gateway_api_keys=False,
+            )
+            site = dump.model_dump(mode="json")["sites"][0]
+
+            # base_url 的 compatible_protocols 对称导出
+            assert site["base_urls"][0]["compatible_protocols"] == [
+                "openai_chat",
+                "anthropic",
+            ]
+            # 协议配置不再含已删除的 protocol 字段
+            assert "protocol" not in site["protocols"][0]
+            # 模型级 protocol 子集对称导出
+            assert site["protocols"][0]["models"][0]["protocol"] == "anthropic"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_export_roundtrips_inherited_model_protocol(tmp_path: Path) -> None:
+    """模型 protocol=None（继承地址全部协议）必须原样导出为 null，不被强制具体化。"""
+
+    async def run() -> None:
+        engine, session_factory, store = await _create_store(tmp_path)
+        try:
+            await store.import_dump(
+                _parse_groups(
+                    [],
+                    [
+                        _site(
+                            combo_id="combo-2",
+                            protocols=["openai_chat", "openai_responses"],
+                            model_protocol=None,
+                        )
+                    ],
+                )
+            )
+            dump = await store.export_dump(
+                lens_version="test",
+                include_request_logs=False,
+                include_gateway_api_keys=False,
+            )
+            site = dump.model_dump(mode="json")["sites"][0]
+            assert site["protocols"][0]["models"][0]["protocol"] is None
+        finally:
+            await engine.dispose()
+
+    asyncio.run(run())
+
+
 def test_import_rejects_duplicate_group_names(tmp_path: Path) -> None:
     async def run() -> None:
         engine, _, store = await _create_store(tmp_path)
