@@ -2150,7 +2150,6 @@ async def _try_target(
             gateway_key=log_ctx.gateway_key,
             user_agent=effective_user_agent,
             started_at=log_ctx.started_at,
-            upstream_body=upstream_body,
             result=result,
             attempts=[item.__dict__ for item in log_ctx.attempts],
         )
@@ -3314,7 +3313,6 @@ async def _record_stream_request_log(
     gateway_key: GatewayApiKey,
     user_agent: str,
     started_at: float,
-    upstream_body: dict[str, Any],
     result: UpstreamResult,
     attempts: list[dict[str, Any]],
 ) -> None:
@@ -3413,7 +3411,7 @@ async def _record_stream_request_log(
         input_cost_usd=input_cost_usd,
         output_cost_usd=output_cost_usd,
         total_cost_usd=total_cost_usd,
-        request_content=result.request_content or _dump_json(upstream_body),
+        request_content=result.request_content,
         response_content=distilled_content,
         attempts=attempts,
         error_message=capture_issue,
