@@ -116,6 +116,11 @@ function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+type FormModel = Omit<SiteModelInput, "protocol"> & {
+  protocols: ProtocolKind[]; // 空数组 = 继承地址全部协议
+  protocolIds?: Record<string, string>; // 协议→后端行 id 映射；继承行用 "_default" 键
+};
+
 type FormCombo = {
   id?: string | null;
   name: string;
@@ -127,7 +132,7 @@ type FormCombo = {
   manual_model_name: string;
   base_url_id: string;
   credential_id: string;
-  models: SiteModelInput[];
+  models: FormModel[];
   expanded: boolean;
 };
 
@@ -188,26 +193,14 @@ function pickerModelKeys(models: PickerModelItem[]) {
   return Array.from(new Set(models.map((item) => pickerModelKey(item))));
 }
 
-function mergedModelProtocol(
-  currentProtocol: ProtocolKind | null | undefined,
-  incomingProtocols: ProtocolKind[],
-) {
-  if (
-    currentProtocol &&
-    incomingProtocols.length === 1 &&
-    incomingProtocols[0] === currentProtocol
-  ) {
-    return currentProtocol;
-  }
-  return undefined;
-}
-
 function modelSupportedProtocols(
   form: FormState,
   combo: Pick<FormCombo, "base_url_id"> | null | undefined,
-  model: Pick<SiteModelInput, "protocol"> | null | undefined,
+  model: Pick<FormModel, "protocols"> | null | undefined,
 ) {
-  if (model?.protocol) return [model.protocol];
+  if (model?.protocols && model.protocols.length > 0) {
+    return model.protocols;
+  }
   const baseUrlProtocols = combo
     ? form.base_urls.find((item) => item.id === combo.base_url_id)
         ?.compatible_protocols ?? []
@@ -870,28 +863,51 @@ function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
       api_key: item.api_key,
       enabled: item.enabled,
     })),
-    combos: site.protocols.map((item, itemIndex) => ({
-      id: item.id,
-      name: comboDisplayName(item, itemIndex, locale),
-      enabled: item.enabled,
-      headers: Object.entries(item.headers).length
-        ? Object.entries(item.headers).map(([key, value]) => ({ key, value }))
-        : [{ key: "", value: "" }],
-      channel_proxy: item.channel_proxy,
-      param_override: item.param_override,
-      match_regex: safeText(item.match_regex),
-      manual_model_name: "",
-      base_url_id: resolveBaseUrlId(baseUrls, item.base_url_id),
-      credential_id: item.credential_id,
-      models: item.models.map((model) => ({
-        id: model.id,
-        protocol: model.protocol,
-        credential_id: model.credential_id,
-        model_name: model.model_name,
-        enabled: model.enabled,
-      })),
-      expanded: true,
-    })),
+    combos: site.protocols.map((item, itemIndex) => {
+      const modelGroups = new Map<string, FormModel>();
+      for (const m of item.models) {
+        const key = `${m.credential_id}:${m.model_name}`;
+        const existing = modelGroups.get(key);
+        if (existing) {
+          if (m.protocol && !existing.protocols.includes(m.protocol)) {
+            existing.protocols.push(m.protocol);
+          }
+          if (m.id) {
+            existing.protocolIds = {
+              ...existing.protocolIds,
+              [m.protocol ?? "_default"]: m.id,
+            };
+          }
+          existing.enabled = existing.enabled || m.enabled;
+          if (!existing.id && m.id) existing.id = m.id;
+        } else {
+          modelGroups.set(key, {
+            id: m.id ?? null,
+            protocols: m.protocol ? [m.protocol] : [],
+            protocolIds: m.id ? { [m.protocol ?? "_default"]: m.id } : {},
+            credential_id: m.credential_id,
+            model_name: m.model_name,
+            enabled: m.enabled,
+          });
+        }
+      }
+      return {
+        id: item.id,
+        name: comboDisplayName(item, itemIndex, locale),
+        enabled: item.enabled,
+        headers: Object.entries(item.headers).length
+          ? Object.entries(item.headers).map(([key, value]) => ({ key, value }))
+          : [{ key: "", value: "" }],
+        channel_proxy: item.channel_proxy,
+        param_override: item.param_override,
+        match_regex: safeText(item.match_regex),
+        manual_model_name: "",
+        base_url_id: resolveBaseUrlId(baseUrls, item.base_url_id),
+        credential_id: item.credential_id,
+        models: Array.from(modelGroups.values()),
+        expanded: true,
+      };
+    }),
   };
 }
 
@@ -940,13 +956,59 @@ function toPayload(form: FormState): SitePayload {
         base_url_id: item.base_url_id,
         credential_id: credentialId,
         models: item.models
-          .map((model) => ({
-            id: model.id,
-            protocol: model.protocol,
-            credential_id: model.credential_id,
-            model_name: model.model_name.trim(),
-            enabled: model.enabled,
-          }))
+          .flatMap((model) => {
+            const baseUrl = form.base_urls.find(
+              (b) => b.id === item.base_url_id,
+            );
+            const allowed = baseUrl?.compatible_protocols ?? [];
+            // 继承全部：protocols 为空 → 单条 null
+            if (model.protocols.length === 0) {
+              const defaultId =
+                model.protocolIds?.["_default"] ?? model.id ?? null;
+              return [
+                {
+                  id: defaultId,
+                  protocol: null as ProtocolKind | null,
+                  credential_id: model.credential_id,
+                  model_name: model.model_name.trim(),
+                  enabled: model.enabled,
+                },
+              ];
+            }
+            // 与该 combo 地址兼容协议求交集
+            const effectiveProtocols = model.protocols.filter((p) =>
+              allowed.includes(p),
+            );
+            // 选满该 combo 全部 allowed → 退化为单条 null
+            const isAllSelected =
+              allowed.length > 0 &&
+              allowed.every((p) => model.protocols.includes(p));
+            if (isAllSelected) {
+              const defaultId =
+                model.protocolIds?.["_default"] ?? model.id ?? null;
+              return [
+                {
+                  id: defaultId,
+                  protocol: null as ProtocolKind | null,
+                  credential_id: model.credential_id,
+                  model_name: model.model_name.trim(),
+                  enabled: model.enabled,
+                },
+              ];
+            }
+            // 此 combo 一个选中协议都不支持 → 不产生行
+            if (effectiveProtocols.length === 0) {
+              return [];
+            }
+            // 子集：每个有效协议一条
+            return effectiveProtocols.map((proto) => ({
+              id: model.protocolIds?.[proto] ?? null,
+              protocol: proto,
+              credential_id: model.credential_id,
+              model_name: model.model_name.trim(),
+              enabled: model.enabled,
+            }));
+          })
           .filter(
             (model) =>
               model.credential_id === credentialId && model.model_name,
@@ -2085,9 +2147,10 @@ function useAggregatedModels(
         if (!aggregate[model.model_name]) {
           aggregate[model.model_name] = { protocols: new Set(), sources: new Set() };
         }
-        const modelProtocols = model.protocol
-          ? [model.protocol]
-          : baseUrl.compatible_protocols;
+        const modelProtocols =
+          model.protocols && model.protocols.length > 0
+            ? model.protocols
+            : baseUrl.compatible_protocols;
         modelProtocols.forEach((p) =>
           aggregate[model.model_name].protocols.add(p),
         );
@@ -2106,12 +2169,31 @@ function SiteModelAggregateView({
   combos,
   baseUrls,
   locale,
+  onChangeModelProtocols,
 }: {
   combos: FormCombo[];
   baseUrls: FormBaseUrl[];
   locale: Locale;
+  onChangeModelProtocols?: (
+    modelName: string,
+    nextProtocols: ProtocolKind[],
+  ) => void;
 }) {
   const models = useAggregatedModels(combos, baseUrls, locale);
+  const allowedProtocolsMap = useMemo(() => {
+    const map: Record<string, Set<ProtocolKind>> = {};
+    combos.forEach((combo) => {
+      if (!combo.enabled) return;
+      const baseUrl = baseUrls.find((b) => b.id === combo.base_url_id);
+      const compatible = baseUrl?.compatible_protocols ?? [];
+      if (!compatible.length) return;
+      combo.models.forEach((model) => {
+        if (!map[model.model_name]) map[model.model_name] = new Set();
+        compatible.forEach((p) => map[model.model_name].add(p));
+      });
+    });
+    return map;
+  }, [combos, baseUrls]);
   if (!models.length) {
     return (
       <div className="py-4 text-sm text-muted-foreground">
@@ -2123,26 +2205,30 @@ function SiteModelAggregateView({
   }
   return (
     <div className="flex flex-col gap-2">
-      {models.map(({ modelName, protocols, sources }) => (
-        <div
-          key={modelName}
-          className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2"
-        >
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{modelName}</span>
-          <div className="flex flex-wrap gap-1">
-            {protocols.map((p) => (
-              <Badge
-                key={p}
-                variant="outline"
-                className={cn("text-xs", protocolBadgeClassName(p))}
-              >
-                {compactProtocolLabel(p)}
-              </Badge>
-            ))}
+      {models.map(({ modelName, protocols, sources }) => {
+        const allowed = Array.from(allowedProtocolsMap[modelName] ?? []);
+        return (
+          <div
+            key={modelName}
+            className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border bg-background px-3 py-2"
+          >
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              {modelName}
+            </span>
+            <ProtocolMultiSelect
+              value={protocols}
+              allowedProtocols={allowed}
+              onChange={(next) => onChangeModelProtocols?.(modelName, next)}
+              locale={locale}
+              className="w-auto min-w-[180px]"
+              requireAtLeastOne
+            />
+            <span className="text-xs text-muted-foreground">
+              {sources.join(", ")}
+            </span>
           </div>
-          <span className="text-xs text-muted-foreground">{sources.join(", ")}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -2615,6 +2701,34 @@ export function ChannelsScreen() {
     }));
   }
 
+  function updateModelProtocols(
+    modelName: string,
+    nextProtocols: ProtocolKind[],
+  ) {
+    if (nextProtocols.length === 0) {
+      toast.error(
+        locale === "zh-CN"
+          ? "每个模型必须保留至少一个协议"
+          : "Each model must retain at least one protocol",
+      );
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      combos: current.combos.map((combo) => {
+        if (!combo.models.some((m) => m.model_name === modelName)) return combo;
+        return {
+          ...combo,
+          models: combo.models.map((m) =>
+            m.model_name === modelName
+              ? { ...m, protocols: nextProtocols }
+              : m,
+          ),
+        };
+      }),
+    }));
+  }
+
   function openAddComboDialog() {
     setNewComboName(nextComboName(form.combos, locale));
     setComboNameDialogOpen(true);
@@ -2746,6 +2860,8 @@ export function ChannelsScreen() {
             ...item.models,
             {
               id: null,
+              protocols: [],
+              protocolIds: {},
               credential_id: credentialId,
               model_name: modelName,
               enabled: true,
@@ -2816,20 +2932,20 @@ export function ChannelsScreen() {
           const existingIndex = existingModels.get(genericKey);
           if (existingIndex !== undefined) {
             const existing = merged[existingIndex];
-            merged[existingIndex] = {
-              ...existing,
-              protocol: mergedModelProtocol(
-                existing.protocol,
-                model.protocols,
-              ),
-            };
+            const nextProtocols =
+              existing.protocols.length === 0
+                ? []
+                : Array.from(
+                    new Set([...existing.protocols, ...model.protocols]),
+                  );
+            merged[existingIndex] = { ...existing, protocols: nextProtocols };
             continue;
           }
           existingModels.set(genericKey, merged.length);
           merged.push({
             id: null,
-            protocol:
-              model.protocols.length === 1 ? model.protocols[0] : undefined,
+            protocols: model.protocols,
+            protocolIds: {},
             credential_id: model.credential_id,
             model_name: model.model_name,
             enabled: true,
@@ -3469,6 +3585,7 @@ export function ChannelsScreen() {
                       combos={form.combos}
                       baseUrls={form.base_urls}
                       locale={locale}
+                      onChangeModelProtocols={updateModelProtocols}
                     />
                   </div>
                 </section>

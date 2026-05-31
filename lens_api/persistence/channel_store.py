@@ -42,29 +42,64 @@ def _combo_model_key(model: SiteModelInput) -> tuple[str, str]:
 
 def _deduplicate_combo_models(models: list[SiteModelInput]) -> list[SiteModelInput]:
     deduplicated: list[SiteModelInput] = []
-    indexes: dict[tuple[str, str], int] = {}
+    indexes: dict[tuple[str, str, ProtocolKind | None], int] = {}
+    none_indexes: dict[tuple[str, str], int] = {}
+    model_keys_with_specific_protocols: set[tuple[str, str]] = set()
+    discarded_indexes: set[int] = set()
+
     for model in models:
-        key = _combo_model_key(model)
-        existing_index = indexes.get(key)
+        model_key = _combo_model_key(model)
+        protocol = model.protocol
+
+        if protocol is None:
+            if model_key in model_keys_with_specific_protocols:
+                continue
+
+            row_key = (*model_key, None)
+            existing_index = indexes.get(row_key)
+            if existing_index is None:
+                indexes[row_key] = len(deduplicated)
+                none_indexes[model_key] = len(deduplicated)
+                deduplicated.append(model)
+                continue
+
+            existing = deduplicated[existing_index]
+            deduplicated[existing_index] = existing.model_copy(
+                update={
+                    "id": existing.id or model.id,
+                    "enabled": existing.enabled or model.enabled,
+                    "protocol": None,
+                }
+            )
+            continue
+
+        model_keys_with_specific_protocols.add(model_key)
+        none_index = none_indexes.pop(model_key, None)
+        if none_index is not None:
+            discarded_indexes.add(none_index)
+            indexes.pop((*model_key, None), None)
+
+        row_key = (*model_key, protocol)
+        existing_index = indexes.get(row_key)
         if existing_index is None:
-            indexes[key] = len(deduplicated)
+            indexes[row_key] = len(deduplicated)
             deduplicated.append(model)
             continue
 
         existing = deduplicated[existing_index]
-        next_protocol = (
-            existing.protocol
-            if existing.protocol is not None and existing.protocol == model.protocol
-            else None
-        )
         deduplicated[existing_index] = existing.model_copy(
             update={
                 "id": existing.id or model.id,
                 "enabled": existing.enabled or model.enabled,
-                "protocol": next_protocol,
+                "protocol": protocol,
             }
         )
-    return deduplicated
+
+    return [
+        model
+        for index, model in enumerate(deduplicated)
+        if index not in discarded_indexes
+    ]
 
 
 class ChannelStore:
@@ -703,7 +738,9 @@ class ChannelStore:
                 SiteDiscoveredModelEntity.protocol_config_id == protocol_id
             )
         )
-        seen_models: set[tuple[str, str]] = set()
+        seen_models: set[tuple[str, str, str | None]] = set()
+        seen_row_ids: set[str] = set()
+
         for model_index, model in enumerate(
             _deduplicate_combo_models(protocol.models)
         ):
@@ -716,21 +753,29 @@ class ChannelStore:
                 raise ValueError(
                     f"Model credential not found in combo {protocol_id}: {model.credential_id}"
                 )
-            model_key = (model.credential_id, model_name)
+
+            protocol_value = model.protocol.value if model.protocol else None
+            model_key = (model.credential_id, model_name, protocol_value)
             if model_key in seen_models:
                 raise ValueError(
                     f"Duplicate model in combo {protocol_id}: {model_name}"
                 )
             seen_models.add(model_key)
+
+            model_id = model.id
+            if not model_id or model_id in seen_row_ids:
+                model_id = str(uuid.uuid4())
+            seen_row_ids.add(model_id)
+
             session.add(
                 SiteDiscoveredModelEntity(
-                    id=model.id or str(uuid.uuid4()),
+                    id=model_id,
                     protocol_config_id=protocol_id,
                     credential_id=model.credential_id,
                     model_name=model_name,
                     enabled=int(model.enabled),
                     sort_order=model_index,
-                    protocol=(model.protocol.value if model.protocol else None),
+                    protocol=protocol_value,
                 )
             )
 

@@ -21,6 +21,7 @@ export interface ProtocolMultiSelectProps {
   allowedProtocols?: ProtocolKind[];
   disabled?: boolean;
   invalid?: boolean;
+  requireAtLeastOne?: boolean;
 }
 
 const CHAT_PROTOCOLS: ProtocolKind[] = [
@@ -105,15 +106,17 @@ function ProtocolGroup({
       <div className="grid grid-cols-2 gap-0.5">
         {protocols.map((protocol) => {
           const checked = value.includes(protocol);
+          const checkboxId = `protocol-opt-${protocol}`;
           return (
-            <label
+            <div
               key={protocol}
               className={cn(
-                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
                 disabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
               )}
             >
               <Checkbox
+                id={checkboxId}
                 checked={checked}
                 onCheckedChange={() => !disabled && onToggle(protocol)}
                 disabled={disabled}
@@ -124,8 +127,16 @@ function ProtocolGroup({
                   PROTOCOL_DOT_CLASS[protocol],
                 )}
               />
-              <span className="truncate">{protocolLabel(protocol)}</span>
-            </label>
+              <label
+                htmlFor={checkboxId}
+                className={cn(
+                  "truncate cursor-pointer",
+                  disabled && "cursor-not-allowed",
+                )}
+              >
+                {protocolLabel(protocol)}
+              </label>
+            </div>
           );
         })}
       </div>
@@ -141,6 +152,7 @@ export function ProtocolMultiSelect({
   allowedProtocols,
   disabled = false,
   invalid = false,
+  requireAtLeastOne = false,
 }: ProtocolMultiSelectProps): JSX.Element {
   const allowed = allowedProtocols ?? ALL_PROTOCOLS;
   const chatProtocols = CHAT_PROTOCOLS.filter((p) => allowed.includes(p));
@@ -156,6 +168,7 @@ export function ProtocolMultiSelect({
   };
 
   const selectedInOrder = ALL_PROTOCOLS.filter((p) => value.includes(p));
+  const clearDisabled = requireAtLeastOne && value.length <= 1;
 
   return (
     <Popover>
@@ -223,8 +236,16 @@ export function ProtocolMultiSelect({
             <span>{copy.summarySuffix(value.length)}</span>
             <button
               type="button"
-              className="text-foreground hover:underline"
-              onClick={() => onChange([])}
+              disabled={clearDisabled}
+              className={cn(
+                "text-foreground hover:underline",
+                clearDisabled &&
+                  "cursor-not-allowed opacity-50 hover:no-underline",
+              )}
+              onClick={() => {
+                if (clearDisabled) return;
+                onChange([]);
+              }}
             >
               {locale === "zh-CN" ? "清空" : "Clear"}
             </button>
