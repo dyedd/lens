@@ -15,13 +15,20 @@ from ..models import (
     ProtocolKind,
     SiteBaseUrl,
     SiteBaseUrlInput,
+    SiteBatchImportError,
+    SiteBatchImportRequest,
+    SiteBatchImportResult,
+    SiteBatchImportSkipped,
     SiteConfig,
     SiteCreate,
     SiteCredential,
     SiteCredentialInput,
+    SiteImportItem,
+    SiteImportModelInput,
     SiteModel,
     SiteModelInput,
     SiteModelFetchRequest,
+    SiteModelInput,
     SiteProtocolConfig,
     SiteProtocolConfigInput,
     SiteUpdate,
@@ -169,6 +176,106 @@ class ChannelStore:
             )
             await session.commit()
         return await self.get_site(site_id)
+
+    async def import_sites(
+        self, payload: SiteBatchImportRequest
+    ) -> SiteBatchImportResult:
+        skipped: list[SiteBatchImportSkipped] = []
+        errors: list[SiteBatchImportError] = []
+        prepared: list[SiteCreate] = []
+
+        if not payload.sites:
+            errors.append(
+                SiteBatchImportError(
+                    index=0,
+                    field="sites",
+                    message="At least one site is required",
+                )
+            )
+            return self._batch_import_result(
+                committed=False,
+                created=[],
+                skipped=skipped,
+                errors=errors,
+            )
+
+        async with self._session_factory() as session:
+            existing_names = await self._site_name_keys(session)
+            seen_names: set[str] = set()
+
+            for index, item in enumerate(payload.sites):
+                name = item.name.strip()
+                if not name:
+                    errors.append(
+                        SiteBatchImportError(
+                            index=index,
+                            field="name",
+                            message="Site name is required",
+                        )
+                    )
+                    continue
+
+                name_key = name.lower()
+                if name_key in existing_names:
+                    skipped.append(
+                        SiteBatchImportSkipped(
+                            index=index,
+                            name=name,
+                            reason="duplicate_name",
+                        )
+                    )
+                    continue
+                if name_key in seen_names:
+                    skipped.append(
+                        SiteBatchImportSkipped(
+                            index=index,
+                            name=name,
+                            reason="duplicate_in_file",
+                        )
+                    )
+                    continue
+
+                site_payload, site_errors = self._import_item_to_site_create(
+                    index, item
+                )
+                if site_errors:
+                    errors.extend(site_errors)
+                    continue
+
+                if site_payload is not None:
+                    prepared.append(site_payload)
+                    seen_names.add(name_key)
+
+            if errors or not prepared:
+                return self._batch_import_result(
+                    committed=False,
+                    created=[],
+                    skipped=skipped,
+                    errors=errors,
+                )
+
+            site_ids: list[str] = []
+            for site_payload in prepared:
+                site_id = str(uuid.uuid4())
+                await self._upsert_site_payload(
+                    session,
+                    site_id,
+                    site_payload.name,
+                    site_payload.base_urls,
+                    site_payload.credentials,
+                    site_payload.protocols,
+                )
+                site_ids.append(site_id)
+
+            await session.commit()
+
+        created = await self._load_sites_by_ids(site_ids)
+        return self._batch_import_result(
+            committed=bool(created),
+            created=created,
+            skipped=skipped,
+            errors=errors,
+        )
 
     async def delete_site(self, site_id: str) -> None:
         async with self._session_factory() as session:
@@ -339,6 +446,353 @@ class ChannelStore:
             )
             for row in site_rows
         ]
+
+    async def _load_sites_by_ids(self, site_ids: list[str]) -> list[SiteConfig]:
+        if not site_ids:
+            return []
+        async with self._session_factory() as session:
+            sites = await self._load_sites(session, site_ids=site_ids)
+        order = {site_id: index for index, site_id in enumerate(site_ids)}
+        return sorted(sites, key=lambda item: order.get(item.id, len(order)))
+
+    async def _site_name_keys(self, session: AsyncSession) -> set[str]:
+        rows = (await session.execute(select(SiteEntity.name))).scalars().all()
+        return {row.strip().lower() for row in rows if row.strip()}
+
+    def _batch_import_result(
+        self,
+        *,
+        committed: bool,
+        created: list[SiteConfig],
+        skipped: list[SiteBatchImportSkipped],
+        errors: list[SiteBatchImportError],
+    ) -> SiteBatchImportResult:
+        return SiteBatchImportResult(
+            committed=committed,
+            created_count=len(created),
+            skipped_count=len(skipped),
+            error_count=len(errors),
+            created=created,
+            skipped=skipped,
+            errors=errors,
+        )
+
+    def _import_item_to_site_create(
+        self, index: int, item: SiteImportItem
+    ) -> tuple[SiteCreate | None, list[SiteBatchImportError]]:
+        errors: list[SiteBatchImportError] = []
+
+        base_urls, base_url_refs = self._import_base_urls(index, item, errors)
+        credentials, credential_refs = self._import_credentials(index, item, errors)
+        protocols = self._import_protocols(
+            index,
+            item,
+            base_url_refs,
+            credential_refs,
+            errors,
+        )
+
+        if errors:
+            return None, errors
+
+        return (
+            SiteCreate(
+                name=item.name.strip(),
+                base_urls=base_urls,
+                credentials=credentials,
+                protocols=protocols,
+            ),
+            [],
+        )
+
+    def _import_base_urls(
+        self,
+        index: int,
+        item: SiteImportItem,
+        errors: list[SiteBatchImportError],
+    ) -> tuple[list[SiteBaseUrlInput], dict[str, str]]:
+        base_urls: list[SiteBaseUrlInput] = []
+        refs: dict[str, str] = {}
+        if not item.base_urls:
+            errors.append(
+                SiteBatchImportError(
+                    index=index,
+                    field="base_urls",
+                    message="At least one base URL is required",
+                )
+            )
+            return base_urls, refs
+
+        for base_url_index, base_url in enumerate(item.base_urls):
+            ref = self._import_ref(base_url.ref, "base_url", base_url_index)
+            if ref in refs:
+                errors.append(
+                    SiteBatchImportError(
+                        index=index,
+                        field=f"base_urls.{base_url_index}.ref",
+                        message=f"Duplicate base URL ref: {ref}",
+                    )
+                )
+                continue
+            base_url_id = str(uuid.uuid4())
+            refs[ref] = base_url_id
+            base_urls.append(
+                SiteBaseUrlInput(
+                    id=base_url_id,
+                    url=base_url.url,
+                    name=base_url.name.strip(),
+                    enabled=base_url.enabled,
+                )
+            )
+        return base_urls, refs
+
+    def _import_credentials(
+        self,
+        index: int,
+        item: SiteImportItem,
+        errors: list[SiteBatchImportError],
+    ) -> tuple[list[SiteCredentialInput], dict[str, str]]:
+        credentials: list[SiteCredentialInput] = []
+        refs: dict[str, str] = {}
+        names: set[str] = set()
+        if not item.credentials:
+            errors.append(
+                SiteBatchImportError(
+                    index=index,
+                    field="credentials",
+                    message="At least one credential is required",
+                )
+            )
+            return credentials, refs
+
+        for credential_index, credential in enumerate(item.credentials):
+            ref = self._import_ref(credential.ref, "credential", credential_index)
+            if ref in refs:
+                errors.append(
+                    SiteBatchImportError(
+                        index=index,
+                        field=f"credentials.{credential_index}.ref",
+                        message=f"Duplicate credential ref: {ref}",
+                    )
+                )
+                continue
+
+            api_key = credential.api_key.strip()
+            if not api_key:
+                errors.append(
+                    SiteBatchImportError(
+                        index=index,
+                        field=f"credentials.{credential_index}.api_key",
+                        message="Credential API key is required",
+                    )
+                )
+                continue
+
+            name = credential.name.strip() or f"Key {credential_index + 1}"
+            name_key = name.lower()
+            if name_key in names:
+                errors.append(
+                    SiteBatchImportError(
+                        index=index,
+                        field=f"credentials.{credential_index}.name",
+                        message=f"Duplicate credential name: {name}",
+                    )
+                )
+                continue
+            names.add(name_key)
+
+            credential_id = str(uuid.uuid4())
+            refs[ref] = credential_id
+            credentials.append(
+                SiteCredentialInput(
+                    id=credential_id,
+                    name=name,
+                    api_key=api_key,
+                    enabled=credential.enabled,
+                )
+            )
+        return credentials, refs
+
+    def _import_protocols(
+        self,
+        index: int,
+        item: SiteImportItem,
+        base_url_refs: dict[str, str],
+        credential_refs: dict[str, str],
+        errors: list[SiteBatchImportError],
+    ) -> list[SiteProtocolConfigInput]:
+        protocols: list[SiteProtocolConfigInput] = []
+        protocol_keys: set[tuple[str, str, str]] = set()
+        if not item.protocols:
+            errors.append(
+                SiteBatchImportError(
+                    index=index,
+                    field="protocols",
+                    message="At least one protocol config is required",
+                )
+            )
+            return protocols
+
+        for protocol_index, protocol in enumerate(item.protocols):
+            base_url_id = self._resolve_import_ref(
+                index,
+                f"protocols.{protocol_index}.base_url_ref",
+                protocol.base_url_ref,
+                base_url_refs,
+                "Base URL",
+                errors,
+            )
+            credential_id = self._resolve_import_ref(
+                index,
+                f"protocols.{protocol_index}.credential_ref",
+                protocol.credential_ref,
+                credential_refs,
+                "Credential",
+                errors,
+            )
+            if not base_url_id or not credential_id:
+                continue
+
+            protocol_key = (protocol.protocol.value, base_url_id, credential_id)
+            if protocol_key in protocol_keys:
+                errors.append(
+                    SiteBatchImportError(
+                        index=index,
+                        field=f"protocols.{protocol_index}",
+                        message=(
+                            "Duplicate protocol config for protocol="
+                            f"{protocol.protocol.value}"
+                        ),
+                    )
+                )
+                continue
+            protocol_keys.add(protocol_key)
+
+            protocols.append(
+                SiteProtocolConfigInput(
+                    id=str(uuid.uuid4()),
+                    protocol=protocol.protocol,
+                    enabled=protocol.enabled,
+                    headers={
+                        key.strip(): value
+                        for key, value in protocol.headers.items()
+                        if key.strip()
+                    },
+                    channel_proxy=protocol.channel_proxy.strip(),
+                    param_override=protocol.param_override.strip(),
+                    match_regex=protocol.match_regex.strip(),
+                    base_url_id=base_url_id,
+                    credential_id=credential_id,
+                    models=self._import_protocol_models(
+                        index,
+                        protocol_index,
+                        protocol.models,
+                        credential_id,
+                        credential_refs,
+                        errors,
+                    ),
+                )
+            )
+        return protocols
+
+    def _import_protocol_models(
+        self,
+        index: int,
+        protocol_index: int,
+        models: list[SiteImportModelInput],
+        protocol_credential_id: str,
+        credential_refs: dict[str, str],
+        errors: list[SiteBatchImportError],
+    ) -> list[SiteModelInput]:
+        model_inputs: list[SiteModelInput] = []
+        seen_models: set[tuple[str, str]] = set()
+        for model_index, model in enumerate(models):
+            model_name = model.model_name.strip()
+            if not model_name:
+                errors.append(
+                    SiteBatchImportError(
+                        index=index,
+                        field=f"protocols.{protocol_index}.models.{model_index}",
+                        message="Model name is required",
+                    )
+                )
+                continue
+
+            credential_id = protocol_credential_id
+            if model.credential_ref.strip():
+                credential_id = self._resolve_import_ref(
+                    index,
+                    (
+                        f"protocols.{protocol_index}.models."
+                        f"{model_index}.credential_ref"
+                    ),
+                    model.credential_ref,
+                    credential_refs,
+                    "Credential",
+                    errors,
+                )
+            if not credential_id:
+                continue
+
+            model_key = (credential_id, model_name)
+            if model_key in seen_models:
+                errors.append(
+                    SiteBatchImportError(
+                        index=index,
+                        field=f"protocols.{protocol_index}.models.{model_index}",
+                        message=f"Duplicate model in protocol config: {model_name}",
+                    )
+                )
+                continue
+            seen_models.add(model_key)
+            model_inputs.append(
+                SiteModelInput(
+                    id=str(uuid.uuid4()),
+                    credential_id=credential_id,
+                    model_name=model_name,
+                    enabled=model.enabled,
+                )
+            )
+        return model_inputs
+
+    def _resolve_import_ref(
+        self,
+        index: int,
+        field: str,
+        ref: str,
+        refs: dict[str, str],
+        label: str,
+        errors: list[SiteBatchImportError],
+    ) -> str:
+        normalized_ref = ref.strip()
+        if normalized_ref:
+            value = refs.get(normalized_ref)
+            if value:
+                return value
+            errors.append(
+                SiteBatchImportError(
+                    index=index,
+                    field=field,
+                    message=f"{label} ref not found: {normalized_ref}",
+                )
+            )
+            return ""
+
+        if len(refs) == 1:
+            return next(iter(refs.values()))
+
+        errors.append(
+            SiteBatchImportError(
+                index=index,
+                field=field,
+                message=f"{label} ref is required",
+            )
+        )
+        return ""
+
+    @staticmethod
+    def _import_ref(value: str, prefix: str, index: int) -> str:
+        return value.strip() or f"{prefix}:{index}"
 
     async def _upsert_site_payload(
         self,

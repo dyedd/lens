@@ -44,6 +44,7 @@ import {
   RequestLogDetail,
   RequestLogItem,
   RequestLogPage,
+  SettingItem,
   apiRequest,
 } from "@/lib/api";
 import { formatLogDateTime } from "@/lib/datetime";
@@ -90,6 +91,7 @@ import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
 
 const PAGE_SIZE = 20;
 const REQUEST_LOG_DETAIL_GC_TIME = 60_000;
+const RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled";
 
 type ModelPrefixOption = {
   key: string;
@@ -111,6 +113,13 @@ const HIDDEN_USER_AGENT_PRODUCTS = new Set(["vscode"]);
 
 function titleForLocale(locale: "zh-CN" | "en-US", zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
+}
+
+function parseRelayLogBodyEnabled(settings: SettingItem[] | undefined) {
+  const item = settings?.find(
+    (setting) => setting.key === RELAY_LOG_BODY_ENABLED,
+  );
+  return item?.value.trim().toLowerCase() === "true";
 }
 
 function formatMs(value: number | null | undefined) {
@@ -851,6 +860,7 @@ function RequestCard({
   locale,
   timeZone,
   now,
+  canOpenDetail,
   onOpenDetail,
   onOpenAttempts,
 }: {
@@ -858,6 +868,7 @@ function RequestCard({
   locale: "zh-CN" | "en-US";
   timeZone?: string;
   now: number;
+  canOpenDetail: boolean;
   onOpenDetail: () => void;
   onOpenAttempts: () => void;
 }) {
@@ -882,23 +893,30 @@ function RequestCard({
   return (
     <Card
       className={cn(
-        "rounded-2xl py-0 transition-colors hover:bg-muted/20",
+        "rounded-2xl py-0 transition-colors",
+        canOpenDetail ? "hover:bg-muted/20" : "",
         item.lifecycle_status === "failed"
           ? "border-destructive/25 bg-destructive/[0.015]"
           : "",
       )}
     >
       <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpenDetail}
+        role={canOpenDetail ? "button" : undefined}
+        tabIndex={canOpenDetail ? 0 : undefined}
+        onClick={canOpenDetail ? onOpenDetail : undefined}
         onKeyDown={(event) => {
+          if (!canOpenDetail) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             onOpenDetail();
           }
         }}
-        className="grid w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)] items-start gap-x-3.5 gap-y-3 px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:grid-cols-[56px_minmax(0,1fr)]"
+        className={cn(
+          "grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-x-3.5 gap-y-3 px-4 py-4 sm:grid-cols-[56px_minmax(0,1fr)]",
+          canOpenDetail
+            ? "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            : "cursor-default",
+        )}
       >
         <div className="hidden size-12 items-center justify-center self-start rounded-2xl border bg-muted/40 sm:flex">
           <ModelAvatar name={primaryModelName} size={28} />
@@ -1104,6 +1122,12 @@ export function RequestsScreen() {
     queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
     staleTime: 60_000,
   });
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
+    staleTime: 60_000,
+  });
+  const relayLogBodyEnabled = parseRelayLogBodyEnabled(settings);
 
   const {
     data: detail,
@@ -1115,7 +1139,7 @@ export function RequestsScreen() {
     queryKey: ["request-log-detail", detailId],
     queryFn: () =>
       apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
-    enabled: detailId !== null,
+    enabled: relayLogBodyEnabled && detailId !== null,
     staleTime: 60_000,
     gcTime: REQUEST_LOG_DETAIL_GC_TIME,
   });
@@ -1212,6 +1236,12 @@ export function RequestsScreen() {
   }, []);
 
   useEffect(() => {
+    if (!relayLogBodyEnabled && detailId !== null) {
+      setDetailId(null);
+    }
+  }, [detailId, relayLogBodyEnabled]);
+
+  useEffect(() => {
     if (selectedModelPrefix !== effectiveSelectedModelPrefix) {
       setSelectedModelPrefix(effectiveSelectedModelPrefix);
     }
@@ -1248,7 +1278,9 @@ export function RequestsScreen() {
   async function refreshLogs() {
     await Promise.all([
       refetchRequestLogs(),
-      detailId !== null ? refetchDetail() : Promise.resolve(),
+      relayLogBodyEnabled && detailId !== null
+        ? refetchDetail()
+        : Promise.resolve(),
       attemptDetailId !== null ? refetchAttemptDetail() : Promise.resolve(),
     ]);
   }
@@ -1456,6 +1488,7 @@ export function RequestsScreen() {
                       locale={locale}
                       timeZone={timeZone}
                       now={now}
+                      canOpenDetail={relayLogBodyEnabled}
                       onOpenDetail={() => setDetailId(item.id)}
                       onOpenAttempts={() => setAttemptDetailId(item.id)}
                     />
@@ -1755,7 +1788,7 @@ export function RequestsScreen() {
         ) : null}
 
         <Dialog
-          open={detailId !== null}
+          open={relayLogBodyEnabled && detailId !== null}
           onOpenChange={(open) => {
             if (!open) setDetailId(null);
           }}

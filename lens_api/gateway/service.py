@@ -91,6 +91,8 @@ from ..models import (
     CronjobUpdate,
     SettingItem,
     SettingsUpdate,
+    SiteBatchImportRequest,
+    SiteBatchImportResult,
     SiteConfig,
     SiteCreate,
     SiteModelFetchItem,
@@ -113,6 +115,7 @@ from ..persistence.domain_store import (
     SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_LATEST_VERSION,
     SETTING_LATEST_VERSION_URL,
+    SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_PERIOD,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
@@ -212,6 +215,7 @@ INTEGER_SETTING_KEYS = {
     SETTING_HEALTH_MIN_SAMPLES,
 }
 FLOAT_SETTING_KEYS = {SETTING_HEALTH_PENALTY_WEIGHT}
+BOOLEAN_SETTING_KEYS = {SETTING_RELAY_LOG_BODY_ENABLED}
 
 
 @lru_cache(maxsize=1)
@@ -369,6 +373,7 @@ class UpstreamRequestError(HTTPException):
 
 @dataclass
 class StreamCapture:
+    capture_body: bool
     saw_first_chunk: bool = False
     first_token_latency_ms: int = 0
     response_content_chunks: list[str] = field(default_factory=list)
@@ -960,6 +965,12 @@ async def create_site(
     return await app_state.store.create_site(payload)
 
 
+async def import_sites(
+    payload: SiteBatchImportRequest, _: Any = Depends(get_current_admin)
+) -> SiteBatchImportResult:
+    return await app_state.store.import_sites(payload)
+
+
 async def update_site(
     site_id: str, payload: SiteUpdate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
@@ -1355,6 +1366,18 @@ async def update_settings(
             _parse_float_setting(item.key, value)
             normalized_items.append(SettingItem(key=item.key, value=value))
             continue
+        if item.key in BOOLEAN_SETTING_KEYS:
+            normalized_items.append(
+                SettingItem(
+                    key=item.key,
+                    value=(
+                        "true"
+                        if _parse_boolean_setting(item.key, item.value)
+                        else "false"
+                    ),
+                )
+            )
+            continue
         normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
     stored_items = await app_state.domain_store.upsert_settings(normalized_items)
     if next_time_zone is not None and next_time_zone != current_time_zone:
@@ -1434,6 +1457,15 @@ def _parse_float_setting(key: str, value: str) -> float:
         return float(value)
     except ValueError as exc:
         raise ValueError(f"Invalid numeric setting: {key}") from exc
+
+
+def _parse_boolean_setting(key: str, value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean setting: {key}")
 
 
 async def _read_upload_file(file: UploadFile) -> bytes:
@@ -1744,7 +1776,8 @@ async def _proxy_protocol(
     )
     _apply_router_runtime_settings(runtime)
     started_at = perf_counter()
-    request_content = _dump_json(body)
+    log_body_enabled = bool(runtime["relay_log_body_enabled"])
+    request_content = _dump_json(body) if log_body_enabled else None
     inbound_ua = _normalize_user_agent(inbound_user_agent)
     upstream_user_agent = (
         inbound_ua
@@ -2033,7 +2066,8 @@ async def _try_target(
     if protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
         upstream_body.pop("stream", None)
 
-    upstream_request_content = _dump_json(upstream_body)
+    log_body_enabled = bool(runtime["relay_log_body_enabled"])
+    upstream_request_content = _dump_json(upstream_body) if log_body_enabled else None
     await log_ctx.update(
         requested_group_name=plan.requested_group_name,
         resolved_group_name=plan.resolved_group_name,
@@ -2055,6 +2089,7 @@ async def _try_target(
             credential_id=target.credential_id,
             user_agent=upstream_user_agent,
             forwarded_headers=inbound_headers,
+            log_body_enabled=log_body_enabled,
         )
     except UpstreamRequestError as exc:
         return await _record_target_failure(
@@ -2126,7 +2161,6 @@ async def _try_target(
             gateway_key=log_ctx.gateway_key,
             user_agent=effective_user_agent,
             started_at=log_ctx.started_at,
-            upstream_body=upstream_body,
             result=result,
             attempts=[item.__dict__ for item in log_ctx.attempts],
         )
@@ -2163,6 +2197,7 @@ async def _record_target_failure(
     exc: UpstreamRequestError,
 ) -> None:
     message = _format_channel_error(exc.detail)
+    log_body_enabled = bool(runtime["relay_log_body_enabled"])
     app_state.router.record_failure(
         channel.id,
         message,
@@ -2197,7 +2232,7 @@ async def _record_target_failure(
         status_code=exc.status_code,
         success=False,
         is_stream=bool(upstream_body.get("stream")),
-        request_content=_dump_json(upstream_body),
+        request_content=_dump_json(upstream_body) if log_body_enabled else None,
         error_message=message,
     )
     return None
@@ -2211,6 +2246,7 @@ async def _call_channel(
     credential_id: str | None = None,
     user_agent: str | None = None,
     forwarded_headers: Mapping[str, str] | None = None,
+    log_body_enabled: bool = False,
 ) -> UpstreamResult:
     upstream = build_upstream_request(
         channel,
@@ -2220,7 +2256,7 @@ async def _call_channel(
         user_agent=user_agent,
         forwarded_headers=forwarded_headers,
     )
-    request_content = _dump_json(upstream.json_body)
+    request_content = _dump_json(upstream.json_body) if log_body_enabled else None
     runtime = await app_state.domain_store.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client, close_client = _resolve_http_client(proxy_url)
@@ -2240,7 +2276,11 @@ async def _call_channel(
             and channel.protocol == ProtocolKind.ANTHROPIC
         ):
             result = await _build_anthropic_sse_to_json_result(
-                response, channel, pricing_group_name, request_content
+                response,
+                channel,
+                pricing_group_name,
+                request_content,
+                log_body_enabled,
             )
         elif is_event_stream:
             result = _build_stream_result(
@@ -2250,6 +2290,7 @@ async def _call_channel(
                 body,
                 request_content,
                 stream_started_at,
+                log_body_enabled,
             )
         else:
             result = await _build_json_result(
@@ -2259,6 +2300,7 @@ async def _call_channel(
                 body,
                 pricing_group_name,
                 request_content,
+                log_body_enabled,
             )
         app_state.router.record_success(channel.id, credential_id=credential_id)
         return result
@@ -2317,6 +2359,7 @@ async def _build_anthropic_sse_to_json_result(
     channel: ChannelConfig,
     pricing_group_name: str | None,
     request_content: str | None,
+    log_body_enabled: bool,
 ) -> UpstreamResult:
     content = (
         response.content if hasattr(response, "content") else await response.aread()
@@ -2376,7 +2419,7 @@ async def _build_anthropic_sse_to_json_result(
         output_cost_usd=cost[1],
         total_cost_usd=cost[2],
         request_content=request_content,
-        response_content=response_content,
+        response_content=response_content if log_body_enabled else None,
     )
 
 
@@ -2387,8 +2430,9 @@ def _build_stream_result(
     body: dict[str, Any],
     request_content: str | None,
     stream_started_at: float,
+    log_body_enabled: bool,
 ) -> UpstreamResult:
-    capture = StreamCapture()
+    capture = StreamCapture(capture_body=log_body_enabled)
     chunk_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
     capture.drain_task = asyncio.create_task(
         _pump_stream_response(
@@ -2435,6 +2479,7 @@ async def _build_json_result(
     body: dict[str, Any],
     pricing_group_name: str | None,
     request_content: str | None,
+    log_body_enabled: bool,
 ) -> UpstreamResult:
     content = (
         response.content if hasattr(response, "content") else await response.aread()
@@ -2482,7 +2527,7 @@ async def _build_json_result(
         output_cost_usd=cost[1],
         total_cost_usd=cost[2],
         request_content=request_content,
-        response_content=_decode_content_bytes(content),
+        response_content=_decode_content_bytes(content) if log_body_enabled else None,
     )
 
 
@@ -2573,8 +2618,13 @@ async def _run_model_test_request(
                 credential_id=credential_id,
                 error_message=detail,
             )
-        raw_payload = response.json()
-        output_text = _model_test_output_text(channel.protocol, raw_payload)
+        content_type = (response.headers.get("content-type") or "").lower()
+        if "text/event-stream" in content_type:
+            raw_content = _decode_content_bytes(response.content) or ""
+            output_text = _model_test_stream_output_text(channel.protocol, raw_content)
+        else:
+            raw_payload = response.json()
+            output_text = _model_test_output_text(channel.protocol, raw_payload)
         return SiteModelTestResult(
             success=True,
             status_code=response.status_code,
@@ -2685,6 +2735,27 @@ def _model_test_output_text(protocol: ProtocolKind, raw_payload: Any) -> str:
                     output_text = "\n".join(parts)
                     break
     return output_text
+
+
+def _model_test_stream_output_text(protocol: ProtocolKind, raw_content: str) -> str:
+    if protocol != ProtocolKind.OPENAI_CHAT:
+        return ""
+
+    parts: list[str] = []
+    for payload in _parse_sse_payloads(raw_content):
+        choices = payload.get("choices")
+        if not isinstance(choices, list):
+            continue
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta")
+            if not isinstance(delta, dict):
+                continue
+            text = _stringify_text_content(delta.get("content"))
+            if text:
+                parts.append(text)
+    return "".join(parts).strip()
 
 
 def _model_test_body(payload: SiteModelTestRequest) -> dict[str, Any]:
@@ -3257,7 +3328,6 @@ async def _record_stream_request_log(
     gateway_key: GatewayApiKey,
     user_agent: str,
     started_at: float,
-    upstream_body: dict[str, Any],
     result: UpstreamResult,
     attempts: list[dict[str, Any]],
 ) -> None:
@@ -3266,7 +3336,7 @@ async def _record_stream_request_log(
         await capture.drain_task
     raw_content = (
         _join_stream_chunks(capture.response_content_chunks)
-        if capture is not None
+        if capture is not None and capture.capture_body
         else result.response_content
     )
     if capture is not None:
@@ -3275,7 +3345,7 @@ async def _record_stream_request_log(
     response_raw_content = raw_content
     client_response_content = (
         _join_stream_chunks(capture.client_response_content_chunks)
-        if capture is not None
+        if capture is not None and capture.capture_body
         else None
     )
     if capture is not None:
@@ -3356,7 +3426,7 @@ async def _record_stream_request_log(
         input_cost_usd=input_cost_usd,
         output_cost_usd=output_cost_usd,
         total_cost_usd=total_cost_usd,
-        request_content=result.request_content or _dump_json(upstream_body),
+        request_content=result.request_content,
         response_content=distilled_content,
         attempts=attempts,
         error_message=capture_issue,
@@ -3467,7 +3537,7 @@ async def _pump_stream_response(
                         ),
                     )
             text = chunk.decode("utf-8", errors="replace")
-            if text:
+            if text and capture.capture_body:
                 capture.response_content_chunks.append(text)
             if not capture.client_disconnected:
                 chunk_queue.put_nowait(chunk)
@@ -3502,10 +3572,11 @@ async def _capture_converted_stream_iterator(
     try:
         async for chunk in raw_iterator:
             text = chunk.decode("utf-8", errors="replace")
-            if text:
+            if text and capture.capture_body:
                 capture.client_response_content_chunks.append(text)
             yield chunk
     except ValueError as exc:
+        capture.client_disconnected = True
         capture.errors.append(str(exc))
 
 
@@ -4081,15 +4152,16 @@ def _describe_stream_capture_issue(
         issues.extend(error for error in capture.errors if error)
         issues.extend(error for error in capture.parse_errors if error)
 
-    if not raw_content:
-        issues.append("no stream content captured")
-    elif protocol == ProtocolKind.OPENAI_RESPONSES:
-        payloads = _parse_sse_payloads(raw_content)
-        has_completed = any(
-            payload.get("type") == "response.completed" for payload in payloads
-        )
-        if not has_completed:
-            issues.append("stream ended before response.completed")
+    if capture is None or capture.capture_body:
+        if not raw_content:
+            issues.append("no stream content captured")
+        elif protocol == ProtocolKind.OPENAI_RESPONSES:
+            payloads = _parse_sse_payloads(raw_content)
+            has_completed = any(
+                payload.get("type") == "response.completed" for payload in payloads
+            )
+            if not has_completed:
+                issues.append("stream ended before response.completed")
 
     if capture is not None and not capture.completed:
         issues.append("stream did not drain to completion")
