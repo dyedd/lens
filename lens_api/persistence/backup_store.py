@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
-from ..gateway.converters import can_reach_protocol
+from ..core.protocol_compat import can_reach_protocol
 from ..models import (
     ConfigBackupDump,
     ConfigBackupGatewayApiKey,

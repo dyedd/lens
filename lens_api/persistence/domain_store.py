@@ -49,7 +49,7 @@ from ..models import (
     SiteChannelRuntimeSummary,
     SiteRuntimeSummary,
 )
-from ..gateway.converters import can_reach_protocol
+from ..core.protocol_compat import can_reach_protocol
 from .entities import (
     GatewayApiKeyEntity,
     ImportedStatsDailyEntity,

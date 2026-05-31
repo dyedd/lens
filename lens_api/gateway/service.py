@@ -44,6 +44,7 @@ from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
 from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
+from ..core.protocol_compat import conversion_matrix
 from ..core.time_zone import resolve_time_zone
 from ..models import (
     AdminLoginRequest,
@@ -863,6 +864,7 @@ async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
         site_name=str(runtime["site_name"]),
         logo_url=str(runtime["site_logo_url"]),
         time_zone=str(runtime["time_zone"]),
+        protocol_conversions=conversion_matrix(),
     )
 
 

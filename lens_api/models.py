@@ -465,6 +465,9 @@ class AppInfo(StrictBaseModel):
     site_name: str
     logo_url: str = ""
     time_zone: str
+    # 渠道原生协议 → 可服务的请求协议列表（含自身）。前端据此判断兼容性，
+    # 无需硬编码后端转换表。
+    protocol_conversions: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class VersionCheckResult(StrictBaseModel):

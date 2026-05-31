@@ -8,13 +8,34 @@ export type ProtocolKind =
   | "anthropic"
   | "gemini";
 
-// 镜像后端 lens_api/gateway/converters/__init__.py 的 _SUPPORTED_CONVERSIONS
-// 后端新增转换路径时必须同步更新此处
-const FRONTEND_SUPPORTED_CONVERSIONS: Partial<
-  Record<ProtocolKind, ProtocolKind[]>
-> = {
+// 协议转换表的来源是后端 lens_api/core/protocol_compat.py。
+// 默认值仅作为后端 app-info 尚未加载时的回退；hydrateProtocolConversions
+// 会在 app-info 返回后用后端权威数据覆盖，前端不再手工同步。
+const DEFAULT_SUPPORTED_CONVERSIONS: Partial<Record<ProtocolKind, ProtocolKind[]>> = {
   openai_chat: ["anthropic", "openai_responses"],
 };
+
+let supportedConversions: Partial<Record<ProtocolKind, ProtocolKind[]>> = {
+  ...DEFAULT_SUPPORTED_CONVERSIONS,
+};
+
+// 用后端 conversion_matrix（含自反项）覆盖前端表；剥掉自反项以匹配
+// 「仅非原生可达」的内部语义（canReachProtocol 已单独处理原生相等）。
+export function hydrateProtocolConversions(
+  matrix: Record<string, string[]> | undefined,
+): void {
+  if (!matrix) return;
+  const next: Partial<Record<ProtocolKind, ProtocolKind[]>> = {};
+  for (const [channel, targets] of Object.entries(matrix)) {
+    const reachable = targets.filter(
+      (t): t is ProtocolKind => t !== channel,
+    ) as ProtocolKind[];
+    if (reachable.length > 0) {
+      next[channel as ProtocolKind] = reachable;
+    }
+  }
+  supportedConversions = next;
+}
 
 export function canReachProtocol(
   channelProtocol: ProtocolKind,
@@ -22,8 +43,7 @@ export function canReachProtocol(
 ): boolean {
   if (channelProtocol === groupProtocol) return true;
   return (
-    FRONTEND_SUPPORTED_CONVERSIONS[channelProtocol]?.includes(groupProtocol) ??
-    false
+    supportedConversions[channelProtocol]?.includes(groupProtocol) ?? false
   );
 }
 
@@ -38,7 +58,7 @@ export function getConvertibleProtocols(
   channelProtocol: ProtocolKind,
   selectedProtocols: ProtocolKind[],
 ): ProtocolKind[] {
-  const targets = FRONTEND_SUPPORTED_CONVERSIONS[channelProtocol] ?? [];
+  const targets = supportedConversions[channelProtocol] ?? [];
   return targets.filter((p) => selectedProtocols.includes(p));
 }
 
@@ -456,6 +476,7 @@ export type AppInfo = {
   site_name: string;
   logo_url: string;
   time_zone: string;
+  protocol_conversions?: Record<string, string[]>;
 };
 
 export type VersionCheckResult = {

@@ -1185,20 +1185,6 @@ export function GroupsScreen() {
     );
   }, [channelMap, filteredCandidates, locale]);
 
-  // 候选元数据索引（modelFoldKey → candidate），用于协议变更时重算 items
-  const candidateMetaByKey = useMemo(() => {
-    const map = new Map<string, ModelGroupCandidateItem>();
-    for (const candidate of candidateResponse?.candidates ?? []) {
-      const key = modelFoldKey(
-        candidate.combo_id,
-        candidate.credential_id,
-        candidate.model_name,
-      );
-      map.set(key, candidate);
-    }
-    return map;
-  }, [candidateResponse]);
-
   const candidateListError = candidateIsError ? candidateError : sitesError;
 
   // 选中区折叠：把 form.items 按 (combo_id, credential_id, model_name) 折叠
@@ -1422,6 +1408,14 @@ export function GroupsScreen() {
         locale === "zh-CN"
           ? "至少需要选择一项协议。"
           : "At least one protocol is required.",
+      );
+      return;
+    }
+    if (!form.route_group_id && invalidSelectedMemberCount > 0) {
+      toast.error(
+        locale === "zh-CN"
+          ? "请先移除与所选协议不兼容的失效节点"
+          : "Please remove invalid nodes incompatible with the selected protocols",
       );
       return;
     }
@@ -1796,53 +1790,15 @@ export function GroupsScreen() {
   }
 
   function toggleProtocol(protocol: ProtocolKind) {
-    setForm((current) => {
-      const protocols = current.protocols.includes(protocol)
+    // 仅切换组协议；已选成员（items）原样保留，其 invalid 标记由 foldedMembers
+    // 基于 form.protocols 响应式重算。无需用候选元数据重建——候选查询已排除
+    // 已选项（exclude_items），故对已选成员的重算分支恒不命中。
+    setForm((current) => ({
+      ...current,
+      protocols: current.protocols.includes(protocol)
         ? current.protocols.filter((item) => item !== protocol)
-        : [...current.protocols, protocol];
-
-      // 组协议变更时：用候选元数据重算已选成员的 items，保留 enabled 和顺序
-      // 无法覆盖任何新组协议的成员保留并标红（不删）
-      const recalcedItems: FormItem[] = [];
-      const seen = new Map<string, boolean>(); // itemKey → enabled
-
-      // 先记录旧 enabled 状态
-      for (const item of current.items) {
-        seen.set(itemKey(item), item.enabled);
-      }
-
-      // 按折叠 key 去重重建，保留顺序
-      const processedFolds = new Set<string>();
-      for (const item of current.items) {
-        const comboId = comboIdFromChannelId(item.channel_id);
-        const fk = modelFoldKey(comboId, item.credential_id, item.model_name);
-        if (processedFolds.has(fk)) continue;
-        processedFolds.add(fk);
-
-        const candidateMeta = candidateMetaByKey.get(fk);
-        if (candidateMeta && candidateMeta.items.length > 0) {
-          // 用后端最新 items 重算，保留旧 enabled
-          const expanded = candidatePayloadToFormItems(candidateMeta, channelMap);
-          for (const fi of expanded) {
-            const k = itemKey(fi);
-            recalcedItems.push({
-              ...fi,
-              enabled: seen.get(k) ?? fi.enabled,
-            });
-          }
-        } else {
-          // 候选中已无此模型，保留旧子项（会被标红 invalid）
-          for (const oldItem of current.items) {
-            const oldComboId = comboIdFromChannelId(oldItem.channel_id);
-            if (modelFoldKey(oldComboId, oldItem.credential_id, oldItem.model_name) === fk) {
-              recalcedItems.push(oldItem);
-            }
-          }
-        }
-      }
-
-      return { ...current, protocols, items: recalcedItems };
-    });
+        : [...current.protocols, protocol],
+    }));
   }
 
   function changeRouteTarget(routeGroupId: string) {

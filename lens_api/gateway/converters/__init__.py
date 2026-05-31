@@ -1,6 +1,7 @@
 import json
 from typing import Any, AsyncIterator
 
+from ...core.protocol_compat import can_reach_protocol, needs_conversion
 from ...models import ProtocolKind
 from .chat_to_anthropic import (
     anthropic_request_to_chat,
@@ -13,24 +14,13 @@ from .chat_to_responses import (
     responses_request_to_chat,
 )
 
-_SUPPORTED_CONVERSIONS: set[tuple[str, str]] = {
-    (ProtocolKind.OPENAI_CHAT.value, ProtocolKind.ANTHROPIC.value),
-    (ProtocolKind.OPENAI_CHAT.value, ProtocolKind.OPENAI_RESPONSES.value),
-}
-
-
-def can_reach_protocol(
-    channel_protocol: ProtocolKind, group_protocol: ProtocolKind
-) -> bool:
-    if channel_protocol == group_protocol:
-        return True
-    return (channel_protocol.value, group_protocol.value) in _SUPPORTED_CONVERSIONS
-
-
-def needs_conversion(
-    client_protocol: ProtocolKind, channel_protocol: ProtocolKind
-) -> bool:
-    return (channel_protocol.value, client_protocol.value) in _SUPPORTED_CONVERSIONS
+__all__ = [
+    "can_reach_protocol",
+    "needs_conversion",
+    "convert_request",
+    "convert_response",
+    "convert_stream_iterator",
+]
 
 
 def convert_request(
