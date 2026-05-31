@@ -979,23 +979,6 @@ function toPayload(form: FormState): SitePayload {
             const effectiveProtocols = model.protocols.filter((p) =>
               allowed.includes(p),
             );
-            // 选满该 combo 全部 allowed → 退化为单条 null
-            const isAllSelected =
-              allowed.length > 0 &&
-              allowed.every((p) => model.protocols.includes(p));
-            if (isAllSelected) {
-              const defaultId =
-                model.protocolIds?.["_default"] ?? model.id ?? null;
-              return [
-                {
-                  id: defaultId,
-                  protocol: null as ProtocolKind | null,
-                  credential_id: model.credential_id,
-                  model_name: model.model_name.trim(),
-                  enabled: model.enabled,
-                },
-              ];
-            }
             // 此 combo 一个选中协议都不支持 → 不产生行
             if (effectiveProtocols.length === 0) {
               return [];
@@ -2126,6 +2109,7 @@ function ModelPickerDialog({
 }
 
 type AggregatedModel = {
+  credentialId: string;
   modelName: string;
   protocols: ProtocolKind[];
   sources: string[];
@@ -2144,24 +2128,29 @@ function useAggregatedModels(
       if (!baseUrl || !baseUrl.compatible_protocols.length) return;
       const comboName = comboDisplayName(combo, index, locale);
       combo.models.forEach((model) => {
-        if (!aggregate[model.model_name]) {
-          aggregate[model.model_name] = { protocols: new Set(), sources: new Set() };
+        const key = genericModelKey(model);
+        if (!aggregate[key]) {
+          aggregate[key] = { protocols: new Set(), sources: new Set() };
         }
         const modelProtocols =
           model.protocols && model.protocols.length > 0
             ? model.protocols
             : baseUrl.compatible_protocols;
         modelProtocols.forEach((p) =>
-          aggregate[model.model_name].protocols.add(p),
+          aggregate[key].protocols.add(p),
         );
-        aggregate[model.model_name].sources.add(comboName);
+        aggregate[key].sources.add(comboName);
       });
     });
-    return Object.entries(aggregate).map(([modelName, { protocols, sources }]) => ({
-      modelName,
-      protocols: Array.from(protocols),
-      sources: Array.from(sources),
-    }));
+    return Object.entries(aggregate).map(([key, { protocols, sources }]) => {
+      const separatorIndex = key.indexOf(":");
+      return {
+        credentialId: key.slice(0, separatorIndex),
+        modelName: key.slice(separatorIndex + 1),
+        protocols: Array.from(protocols),
+        sources: Array.from(sources),
+      };
+    });
   }, [baseUrls, combos, locale]);
 }
 
@@ -2175,6 +2164,7 @@ function SiteModelAggregateView({
   baseUrls: FormBaseUrl[];
   locale: Locale;
   onChangeModelProtocols?: (
+    credentialId: string,
     modelName: string,
     nextProtocols: ProtocolKind[],
   ) => void;
@@ -2188,8 +2178,9 @@ function SiteModelAggregateView({
       const compatible = baseUrl?.compatible_protocols ?? [];
       if (!compatible.length) return;
       combo.models.forEach((model) => {
-        if (!map[model.model_name]) map[model.model_name] = new Set();
-        compatible.forEach((p) => map[model.model_name].add(p));
+        const key = genericModelKey(model);
+        if (!map[key]) map[key] = new Set();
+        compatible.forEach((p) => map[key].add(p));
       });
     });
     return map;
@@ -2205,11 +2196,15 @@ function SiteModelAggregateView({
   }
   return (
     <div className="flex flex-col gap-2">
-      {models.map(({ modelName, protocols, sources }) => {
-        const allowed = Array.from(allowedProtocolsMap[modelName] ?? []);
+      {models.map(({ credentialId, modelName, protocols, sources }) => {
+        const modelKey = genericModelKey({
+          credential_id: credentialId,
+          model_name: modelName,
+        });
+        const allowed = Array.from(allowedProtocolsMap[modelKey] ?? []);
         return (
           <div
-            key={modelName}
+            key={modelKey}
             className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border bg-background px-3 py-2"
           >
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -2218,7 +2213,9 @@ function SiteModelAggregateView({
             <ProtocolMultiSelect
               value={protocols}
               allowedProtocols={allowed}
-              onChange={(next) => onChangeModelProtocols?.(modelName, next)}
+              onChange={(next) =>
+                onChangeModelProtocols?.(credentialId, modelName, next)
+              }
               locale={locale}
               className="w-auto min-w-[180px]"
               requireAtLeastOne
@@ -2702,6 +2699,7 @@ export function ChannelsScreen() {
   }
 
   function updateModelProtocols(
+    credentialId: string,
     modelName: string,
     nextProtocols: ProtocolKind[],
   ) {
@@ -2716,11 +2714,15 @@ export function ChannelsScreen() {
     setForm((current) => ({
       ...current,
       combos: current.combos.map((combo) => {
-        if (!combo.models.some((m) => m.model_name === modelName)) return combo;
+        if (
+          !combo.models.some(
+            (m) => m.credential_id === credentialId && m.model_name === modelName,
+          )
+        ) return combo;
         return {
           ...combo,
           models: combo.models.map((m) =>
-            m.model_name === modelName
+            m.credential_id === credentialId && m.model_name === modelName
               ? { ...m, protocols: nextProtocols }
               : m,
           ),
