@@ -109,7 +109,27 @@ type JsonLike =
   | JsonLike[]
   | { [key: string]: JsonLike };
 
-const HIDDEN_USER_AGENT_PRODUCTS = new Set(["vscode"]);
+const HIDDEN_USER_AGENT_PRODUCTS = new Set([
+  "applewebkit",
+  "mozilla",
+  "vscode",
+]);
+const PREFERRED_USER_AGENT_PRODUCTS = [
+  "codex-tui",
+  "claude-cli",
+  "edg",
+  "chrome",
+  "firefox",
+  "safari",
+] as const;
+const USER_AGENT_PRODUCT_PATTERN = /\b([A-Za-z][A-Za-z0-9._-]*)\/([^\s;)]+)/g;
+const USER_AGENT_PLATFORM_PATTERN =
+  /\b(Windows(?:\s+NT)?|Macintosh|Mac OS(?:\s+X)?|macOS|Ubuntu|Linux|Android|iPhone|iPad|iPod)\b/i;
+
+type UserAgentProduct = {
+  name: string;
+  version: string;
+};
 
 function titleForLocale(locale: "zh-CN" | "en-US", zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
@@ -146,27 +166,65 @@ function formatMaybeCount(value: number, pending: boolean) {
   return formatCount(value);
 }
 
+function formatUserAgentProductName(value: string) {
+  if (value.toLowerCase() === "edg") return "Edge";
+  return value;
+}
+
+function parseUserAgentProducts(raw: string) {
+  return Array.from(raw.matchAll(USER_AGENT_PRODUCT_PATTERN))
+    .map<UserAgentProduct>((match) => ({
+      name: match[1],
+      version: match[2],
+    }))
+    .filter(
+      (product) => !HIDDEN_USER_AGENT_PRODUCTS.has(product.name.toLowerCase()),
+    );
+}
+
+function selectUserAgentProduct(products: UserAgentProduct[]) {
+  for (const preferredName of PREFERRED_USER_AGENT_PRODUCTS) {
+    const matchedProduct = products.find(
+      (product) => product.name.toLowerCase() === preferredName,
+    );
+    if (matchedProduct) return matchedProduct;
+  }
+  return products[0] ?? null;
+}
+
+function formatUserAgentPlatform(raw: string) {
+  const match = raw.match(USER_AGENT_PLATFORM_PATTERN);
+  const platform = match?.[1]?.toLowerCase();
+
+  if (!platform) return null;
+  if (platform.startsWith("windows")) return "Windows";
+  if (
+    platform === "macintosh" ||
+    platform.startsWith("mac os") ||
+    platform === "macos"
+  ) {
+    return "macOS";
+  }
+  if (platform === "ubuntu") return "Ubuntu";
+  if (platform === "linux") return "Linux";
+  if (["iphone", "ipad", "ipod"].includes(platform)) return "iOS";
+  if (platform === "android") return "Android";
+  return null;
+}
+
 function formatUserAgentDisplay(value: string, locale: "zh-CN" | "en-US") {
   const raw = value.trim();
   const parts: string[] = [];
-  const products = raw.matchAll(/\b([A-Za-z][A-Za-z0-9._-]*)\/([^\s;)]+)/g);
-  const client = Array.from(products).find(
-    (match) => !HIDDEN_USER_AGENT_PRODUCTS.has(match[1].toLowerCase()),
-  );
+  const client = selectUserAgentProduct(parseUserAgentProducts(raw));
+  const platform = formatUserAgentPlatform(raw);
 
   if (client) {
-    parts.push(`${client[1]}/${client[2]}`);
+    parts.push(`${formatUserAgentProductName(client.name)}/${client.version}`);
   } else {
     parts.push(titleForLocale(locale, "未知客户端", "Unknown client"));
   }
 
-  if (/\bWindows\b/i.test(raw)) {
-    parts.push("Windows");
-  } else if (/\bMac OS X\b|\bmacOS\b|\bMacintosh\b/i.test(raw)) {
-    parts.push("macOS");
-  } else if (/\bLinux\b/i.test(raw)) {
-    parts.push("Linux");
-  }
+  if (platform) parts.push(platform);
 
   return parts.join(" · ");
 }
