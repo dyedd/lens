@@ -56,6 +56,14 @@ const BRAND_ICONS: BrandIconDefinition[] = [
     imageClassName: "scale-[0.94]",
   },
   {
+    key: "agnes",
+    label: "Agnes",
+    prefixes: ["agnes"],
+    src: "/brand-icons/agnes.svg",
+    imageClassName: "scale-[0.94]",
+    invertInDark: true,
+  },
+  {
     key: "qwen",
     label: "Qwen",
     prefixes: ["qwen", "qwq", "alibaba"],
