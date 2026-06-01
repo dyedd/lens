@@ -49,7 +49,7 @@ from ..models import (
     SiteChannelRuntimeSummary,
     SiteRuntimeSummary,
 )
-from ..core.protocol_compat import can_reach_protocol
+from ..core.protocol_reachability import can_reach_protocol
 from .entities import (
     GatewayApiKeyEntity,
     ImportedStatsDailyEntity,
@@ -72,9 +72,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _parse_composite_channel_id(channel_id: str) -> "tuple[str, ProtocolKind] | None":
-    """从复合 channel ID 中提取 (combo_id, protocol)。
-    复合 ID 格式：{combo_id}_{protocol_value}
-    """
     for protocol in ProtocolKind:
         suffix = f"_{protocol.value}"
         if channel_id.endswith(suffix):
@@ -646,10 +643,8 @@ class DomainStore:
         channel_store = ChannelStore(self._session_factory)
         all_channels = await channel_store.list()
 
-        # G：组协议集（去重、保序）
         protocols_filter: list[ProtocolKind] = list(dict.fromkeys(payload.protocols))
 
-        # exclude_items 反解出已选模型身份集：(combo_id, credential_id, model_name)
         excluded_model_ids: set[tuple[str, str, str]] = set()
         for item in payload.exclude_items:
             parsed = _parse_composite_channel_id(item.channel_id)
@@ -659,8 +654,6 @@ class DomainStore:
                     (excluded_combo_id, item.credential_id, item.model_name)
                 )
 
-        # 聚合键：(combo_id, credential_id, model_name)
-        # 每个聚合槽记录：native_protocols, protocol_channels, 代表性 channel 信息
         from dataclasses import dataclass, field as dc_field
 
         @dataclass
@@ -679,13 +672,11 @@ class DomainStore:
         for channel in all_channels:
             if channel.status.value != "enabled":
                 continue
-            # 反解 combo_id 与 native protocol
             parsed = _parse_composite_channel_id(channel.id)
             if parsed is None:
                 continue
             combo_id, native_protocol = parsed
 
-            # 确认 channel 上的 enabled key（credential）集合
             enabled_credential_ids: set[str] = {
                 key.id for key in channel.keys if key.enabled
             }
@@ -707,10 +698,8 @@ class DomainStore:
                         base_url=str(channel.base_url),
                     )
                 slot = agg[agg_key]
-                # 累积 native_protocols（去重、保序）
                 if native_protocol not in slot.native_protocols:
                     slot.native_protocols.append(native_protocol)
-                # 记录协议 → 复合 channel_id 映射（首次记录）
                 if native_protocol not in slot.protocol_channels:
                     slot.protocol_channels[native_protocol] = channel.id
 
@@ -719,7 +708,6 @@ class DomainStore:
         for agg_key, slot in agg.items():
             combo_id, credential_id, model_name = agg_key
 
-            # 覆盖判定：G 非空时，∀ p∈G ∃ q∈native_protocols 满足 can_reach_protocol(q, p)
             if protocols_filter:
                 if not all(
                     any(can_reach_protocol(q, p) for q in slot.native_protocols)
@@ -727,12 +715,9 @@ class DomainStore:
                 ):
                     continue
 
-            # exclude_items 过滤
             if agg_key in excluded_model_ids:
                 continue
 
-            # 选取代表性原生渠道（兼容旧字段 channel_id + protocol）
-            # 优先选 G 中存在的原生协议，否则取 native 第一个
             rep_protocol: ProtocolKind = slot.native_protocols[0]
             if protocols_filter:
                 for p in protocols_filter:
@@ -743,12 +728,10 @@ class DomainStore:
                 rep_protocol, next(iter(slot.protocol_channels.values()))
             )
 
-            # 推荐 items（G 非空时：原生优先 + 转换兜底 + 去重）
             recommended_items: list[ModelGroupItemInput] = []
             if protocols_filter:
                 chosen: dict[str, ModelGroupItemInput] = {}
                 uncovered: list[ProtocolKind] = []
-                # 原生优先
                 for p in protocols_filter:
                     if p in slot.protocol_channels:
                         cid = slot.protocol_channels[p]
@@ -761,7 +744,6 @@ class DomainStore:
                             )
                     else:
                         uncovered.append(p)
-                # 转换兜底：找任一 native 满足 can_reach_protocol(native, p)
                 for p in uncovered:
                     fallback_native = next(
                         (q for q in slot.native_protocols if can_reach_protocol(q, p)),
@@ -798,7 +780,6 @@ class DomainStore:
                 )
             )
 
-        # 稳定排序：按 channel_name + model_name
         candidates.sort(key=lambda c: (c.channel_name, c.model_name))
 
         return ModelGroupCandidatesResponse(candidates=candidates)
@@ -1112,8 +1093,6 @@ class DomainStore:
         if missing_channel_ids:
             raise ValueError(f"Channels not found: {', '.join(missing_channel_ids)}")
 
-        # disabled channel/credential 允许选中：支持先配组、稍后再启用通道。
-        # 仅校验 credential 在该通道存在，不论其启用状态。
         for item in normalized_items:
             ch = channel_by_id[item.channel_id]
             credential_ids_in_channel = {key.id for key in ch.keys}

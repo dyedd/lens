@@ -48,15 +48,8 @@ def _combo_model_key(model: SiteModelInput) -> tuple[str, str]:
 
 
 def _composite_id_like(column, combo_id: str):
-    """构造匹配复合 channel_id（{combo_id}_{protocol}）的 LIKE 条件。
-
-    combo_id 可能来自客户端输入，其中的 LIKE 元字符（_ / %）必须转义，
-    否则 'a_b' 这样的 id 会把 '_' 当通配符误匹配无关条目。分隔符与尾部
-    通配符（\\_%）保持字面/通配语义，用显式 ESCAPE 区分。
-    """
     escaped = combo_id.replace("\\", "\\\\").replace("_", "\\_").replace("%", "\\%")
     return column.like(f"{escaped}\\_%", escape="\\")
-
 
 
 def _deduplicate_combo_models(models: list[SiteModelInput]) -> list[SiteModelInput]:
@@ -290,9 +283,7 @@ class ChannelStore:
                     delete(ModelGroupItemEntity).where(
                         or_(
                             *[
-                                _composite_id_like(
-                                    ModelGroupItemEntity.channel_id, pid
-                                )
+                                _composite_id_like(ModelGroupItemEntity.channel_id, pid)
                                 for pid in protocol_ids
                             ]
                         )
@@ -852,7 +843,7 @@ class ChannelStore:
                 raise ValueError(
                     f"Base URL not found for combo {combo.id}: {combo.base_url_id}"
                 )
-            protocols = bound_base_url.compatible_protocols
+            protocols = bound_base_url.supported_protocols
             if not protocols:
                 continue
             keys = self._build_channel_keys(combo, credentials_by_id)
@@ -861,7 +852,8 @@ class ChannelStore:
             active_key = next((k for k in keys if k.enabled), keys[0])
             for protocol in protocols:
                 protocol_models = [
-                    m for m in combo.models
+                    m
+                    for m in combo.models
                     if m.protocol == protocol or m.protocol is None
                 ]
                 items.append(
@@ -881,7 +873,9 @@ class ChannelStore:
                             m.model_name for m in protocol_models if m.enabled
                         ],
                         keys=keys,
-                        models=self._build_channel_models(combo, credentials_by_id, protocol),
+                        models=self._build_channel_models(
+                            combo, credentials_by_id, protocol
+                        ),
                         channel_proxy=combo.channel_proxy,
                         param_override=combo.param_override,
                         match_regex=combo.match_regex,
@@ -969,7 +963,7 @@ class ChannelStore:
                     name=item.name.strip(),
                     enabled=item.enabled,
                     sort_order=index,
-                    compatible_protocols=list(dict.fromkeys(item.compatible_protocols)),
+                    supported_protocols=list(dict.fromkeys(item.supported_protocols)),
                 )
             )
         return normalized
@@ -1028,9 +1022,9 @@ class ChannelStore:
                     name=row.name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
-                    compatible_protocols=[
+                    supported_protocols=[
                         ProtocolKind(p)
-                        for p in json.loads(row.compatible_protocols_json or "[]")
+                        for p in json.loads(row.supported_protocols_json or "[]")
                         if p in valid_protocol_values
                     ],
                 )
@@ -1118,8 +1112,8 @@ class ChannelStore:
                     name=item.name,
                     enabled=int(item.enabled),
                     sort_order=index,
-                    compatible_protocols_json=json.dumps(
-                        [p.value for p in item.compatible_protocols], ensure_ascii=True
+                    supported_protocols_json=json.dumps(
+                        [p.value for p in item.supported_protocols], ensure_ascii=True
                     ),
                 )
             )
@@ -1209,14 +1203,10 @@ class ChannelStore:
         seen_models: set[tuple[str, str, str | None]] = set()
         seen_row_ids: set[str] = set()
 
-        for model_index, model in enumerate(
-            _deduplicate_combo_models(protocol.models)
-        ):
+        for model_index, model in enumerate(_deduplicate_combo_models(protocol.models)):
             model_name = model.model_name.strip()
             if not model_name:
-                raise ValueError(
-                    f"Model name is required in combo {protocol_id}"
-                )
+                raise ValueError(f"Model name is required in combo {protocol_id}")
             if model.credential_id not in credential_ids:
                 raise ValueError(
                     f"Model credential not found in combo {protocol_id}: {model.credential_id}"
@@ -1289,12 +1279,6 @@ class ChannelStore:
     ) -> None:
         if not protocol_ids:
             return
-        # 复合 channel_id 形如 {protocol_config_id}_{protocol}。一个 group item 有效，
-        # 要求存在一个 enabled 模型行，且该行服务于 channel_id 所声明的具体协议：
-        #   - model.protocol 为具体值 → channel_id 必须精确等于 {pid}_{model.protocol}
-        #   - model.protocol 为 NULL（继承地址全部协议）→ channel_id 以 {pid}_ 开头即可
-        # 仅判断 {pid}_% 而忽略协议，会让模型从 chat 移到 responses 后残留旧的
-        # {pid}_openai_chat 条目。
         matching_model = (
             select(SiteDiscoveredModelEntity.id)
             .where(

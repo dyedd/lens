@@ -164,7 +164,7 @@ class SiteBaseUrl(StrictBaseModel):
     name: str = ""
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
-    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
+    supported_protocols: list[ProtocolKind] = Field(default_factory=list)
 
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
@@ -174,7 +174,7 @@ class SiteBaseUrlInput(StrictBaseModel):
     url: HttpUrl
     name: str = ""
     enabled: bool = True
-    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
+    supported_protocols: list[ProtocolKind] = Field(default_factory=list)
 
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
@@ -366,7 +366,7 @@ class SiteBatchImportResult(StrictBaseModel):
 class SiteModelFetchRequest(StrictBaseModel):
     base_url: HttpUrl
     headers: dict[str, str] = Field(default_factory=dict)
-    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
+    supported_protocols: list[ProtocolKind] = Field(default_factory=list)
     channel_proxy: str = ""
     match_regex: str = ""
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
@@ -537,8 +537,6 @@ class AppInfo(StrictBaseModel):
     site_name: str
     logo_url: str = ""
     time_zone: str
-    # 渠道原生协议 → 可服务的请求协议列表（含自身）。前端据此判断兼容性，
-    # 无需硬编码后端转换表。
     protocol_conversions: dict[str, list[str]] = Field(default_factory=dict)
 
 
@@ -679,7 +677,6 @@ class ModelGroupStats(StrictBaseModel):
 
 
 class ModelGroupCandidateItem(StrictBaseModel):
-    # --- 兼容字段：代表性原生渠道 ---
     site_id: str = ""
     channel_id: str
     channel_name: str
@@ -689,14 +686,9 @@ class ModelGroupCandidateItem(StrictBaseModel):
     credential_number: int = Field(default=0, ge=0)
     base_url: str
     model_name: str
-    # --- 聚合字段：每模型一行展示所需 ---
-    # 复合 channel_id 反解出的 combo 部分（如 "gpt-4o__openai_chat"）
     combo_id: str = ""
-    # 该模型支持的原生协议标签（去重，按发现顺序保留）
     protocols: list[ProtocolKind] = Field(default_factory=list)
-    # 协议 → 对应的复合 channel_id 映射
     protocol_channels: dict[ProtocolKind, str] = Field(default_factory=dict)
-    # 针对本次 group protocols 计算出的推荐展开 items（原生优先 + 转换兜底 + 去重）
     items: list[ModelGroupItemInput] = Field(default_factory=list)
 
 
