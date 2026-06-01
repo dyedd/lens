@@ -21,12 +21,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    rows = bind.execute(
-        sa.text("""
+    rows = bind.execute(sa.text("""
             SELECT id, site_id, base_url_id
             FROM site_protocol_configs
-            """)
-    ).mappings().all()
+            """)).mappings().all()
     for row in rows:
         base_url = bind.execute(
             sa.text("""

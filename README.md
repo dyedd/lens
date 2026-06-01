@@ -188,6 +188,7 @@ lens dev
 ```
 
 本地开发默认端口：
+
 - Next.js dev server：`http://127.0.0.1:3000`
 - FastAPI 后端：`http://127.0.0.1:18080`
 
@@ -208,12 +209,12 @@ pnpm dev
 
 常见 Base URL：
 
-| 上游类型            | Base URL 示例                         | 协议选择         |
-| ------------------- | ------------------------------------- | ---------------- |
-| OpenAI              | `https://api.openai.com`              | OpenAI Chat / Responses / Embeddings |
-| Anthropic           | `https://api.anthropic.com`           | Anthropic        |
-| Gemini              | `https://generativelanguage.googleapis.com` | Gemini |
-| NewAPI / Rerank     | `https://newapi.example.com`          | Rerank（透传到 `POST /v1/rerank`） |
+| 上游类型        | Base URL 示例                               | 协议选择                             |
+| --------------- | ------------------------------------------- | ------------------------------------ |
+| OpenAI          | `https://api.openai.com`                    | OpenAI Chat / Responses / Embeddings |
+| Anthropic       | `https://api.anthropic.com`                 | Anthropic                            |
+| Gemini          | `https://generativelanguage.googleapis.com` | Gemini                               |
+| NewAPI / Rerank | `https://newapi.example.com`                | Rerank（透传到 `POST /v1/rerank`）   |
 
 ### 2. 创建模型组
 
@@ -234,22 +235,22 @@ pnpm dev
 
 ## 技术栈
 
-| 层     | 技术                                                           |
-| ------ | -------------------------------------------------------------- |
-| 后端   | Python 3.11+、FastAPI、SQLAlchemy、Alembic、SQLite / PostgreSQL |
-| 前端   | Next.js 16、React 19、TypeScript、TanStack Query、shadcn/ui    |
+| 层   | 技术                                                            |
+| ---- | --------------------------------------------------------------- |
+| 后端 | Python 3.11+、FastAPI、SQLAlchemy、Alembic、SQLite / PostgreSQL |
+| 前端 | Next.js 16、React 19、TypeScript、TanStack Query、shadcn/ui     |
 
 ## 环境变量
 
 核心变量：
 
-| 变量                             | 默认值                                | 说明                                            |
-| -------------------------------- | ------------------------------------- | ----------------------------------------------- |
-| `LENS_HOST`                      | `127.0.0.1`                           | 后端监听地址；Docker 中设为 `0.0.0.0`           |
-| `LENS_PORT`                      | `18080`                               | 后端监听端口；Docker 中设为 `3000`              |
-| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | 数据库连接；默认 SQLite，也可指向外部 PostgreSQL |
-| `LENS_AUTH_SECRET_KEY`           | 必填                                  | JWT 签名密钥                                 |
-| `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | 上游请求超时                                     |
+| 变量                           | 默认值                               | 说明                                             |
+| ------------------------------ | ------------------------------------ | ------------------------------------------------ |
+| `LENS_HOST`                    | `127.0.0.1`                          | 后端监听地址；Docker 中设为 `0.0.0.0`            |
+| `LENS_PORT`                    | `18080`                              | 后端监听端口；Docker 中设为 `3000`               |
+| `LENS_DATABASE_URL`            | `sqlite+aiosqlite:///./data/data.db` | 数据库连接；默认 SQLite，也可指向外部 PostgreSQL |
+| `LENS_AUTH_SECRET_KEY`         | 必填                                 | JWT 签名密钥                                     |
+| `LENS_REQUEST_TIMEOUT_SECONDS` | `180`                                | 上游请求超时                                     |
 
 ### PostgreSQL 配置
 
@@ -306,6 +307,7 @@ completion = client.chat.completions.create(
 )
 print(completion.choices[0].message.content)
 ```
+
 </details>
 
 <details>
@@ -326,6 +328,7 @@ message = client.messages.create(
 )
 print(message.content[0].text)
 ```
+
 </details>
 
 <details>
@@ -340,6 +343,7 @@ curl http://127.0.0.1:3000/v1/chat/completions \
     "messages": [{"role": "user", "content": "hello"}]
   }'
 ```
+
 </details>
 
 <details>
@@ -355,6 +359,7 @@ curl http://127.0.0.1:3000/v1/messages \
     "messages": [{"role": "user", "content": "hello"}]
   }'
 ```
+
 </details>
 
 <details>
@@ -369,6 +374,7 @@ curl http://127.0.0.1:3000/v1/responses \
     "input": "hello"
   }'
 ```
+
 </details>
 
 <details>
@@ -383,6 +389,7 @@ curl http://127.0.0.1:3000/v1/embeddings \
     "input": "hello world"
   }'
 ```
+
 </details>
 
 <details>
@@ -406,6 +413,7 @@ curl http://127.0.0.1:3000/v1/rerank \
 ```
 
 请求体透传到上游 `/v1/rerank`（如 NewAPI、Jina、Cohere 等兼容服务）。响应原样返回，包含 `results[*].relevance_score / index / document`。
+
 </details>
 
 <details>
@@ -424,6 +432,7 @@ curl "http://127.0.0.1:3000/v1beta/models/your-gemini-model:generateContent" \
     ]
   }'
 ```
+
 </details>
 
 <details>
@@ -435,6 +444,7 @@ ANTHROPIC_AUTH_TOKEN=sk-lens-...
 ANTHROPIC_MODEL=your-anthropic-group
 ANTHROPIC_SMALL_FAST_MODEL=your-anthropic-group
 ```
+
 </details>
 
 <details>
@@ -458,6 +468,7 @@ base_url = "http://127.0.0.1:3000/v1"
   "OPENAI_API_KEY": "sk-lens-..."
 }
 ```
+
 </details>
 
 ## 致谢

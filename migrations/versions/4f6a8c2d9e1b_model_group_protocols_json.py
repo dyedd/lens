@@ -35,9 +35,9 @@ def upgrade() -> None:
 
     # Step 0: 合并同名 model group 的 items 到 canonical 行（MIN(id)）
     # 旧模型按 name+protocol 区分，新模型 name 唯一。
-    dup = conn.execute(sa.text(
-        "SELECT name FROM model_groups GROUP BY name HAVING COUNT(*) > 1"
-    )).fetchall()
+    dup = conn.execute(
+        sa.text("SELECT name FROM model_groups GROUP BY name HAVING COUNT(*) > 1")
+    ).fetchall()
     if dup:
         if dialect == "sqlite":
             op.execute("""
@@ -153,7 +153,9 @@ def downgrade() -> None:
             batch_op.drop_index("ix_model_groups_name")
         batch_op.create_index("ix_model_groups_name", ["name"], unique=False)
         if not _index_exists("model_groups", "ix_model_groups_protocol"):
-            batch_op.create_index("ix_model_groups_protocol", ["protocol"], unique=False)
+            batch_op.create_index(
+                "ix_model_groups_protocol", ["protocol"], unique=False
+            )
 
     with op.batch_alter_table("model_groups") as batch_op:
         batch_op.drop_column("protocols_json")
