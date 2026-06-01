@@ -10,6 +10,3 @@ build/
 data/
 *.tsbuildinfo
 .ccg/
-AGENTS.md
-CLAUDE.md
-GEMINI.md
