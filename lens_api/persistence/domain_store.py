@@ -80,6 +80,29 @@ def _parse_composite_channel_id(channel_id: str) -> "tuple[str, ProtocolKind] | 
     return None
 
 
+def _composite_channel_id(combo_id: str, protocol: ProtocolKind) -> str:
+    return f"{combo_id}_{protocol.value}"
+
+
+def _parse_supported_protocols_json(raw: str | None) -> list[ProtocolKind]:
+    try:
+        values = json.loads(raw or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(values, list):
+        return []
+
+    protocols: list[ProtocolKind] = []
+    for value in values:
+        try:
+            protocol = ProtocolKind(str(value))
+        except ValueError:
+            continue
+        if protocol not in protocols:
+            protocols.append(protocol)
+    return protocols
+
+
 def _parse_group_protocols(
     entity_or_json: str | ModelGroupEntity,
 ) -> list[ProtocolKind]:
@@ -2129,9 +2152,18 @@ class DomainStore:
             channel_rows = await session.execute(
                 select(
                     SiteProtocolConfigEntity.site_id.label("site_id"),
-                    SiteProtocolConfigEntity.id.label("channel_id"),
-                ).order_by(
+                    SiteProtocolConfigEntity.id.label("combo_id"),
+                    SiteBaseUrlEntity.supported_protocols_json.label(
+                        "supported_protocols_json"
+                    ),
+                )
+                .join(
+                    SiteBaseUrlEntity,
+                    SiteBaseUrlEntity.id == SiteProtocolConfigEntity.base_url_id,
+                )
+                .order_by(
                     SiteProtocolConfigEntity.site_id.asc(),
+                    SiteProtocolConfigEntity.id.asc(),
                 )
             )
             channel_ids_by_site: dict[str, list[str]] = {
@@ -2139,8 +2171,13 @@ class DomainStore:
             }
             for row in channel_rows.all():
                 site_id = str(row.site_id)
-                channel_id = str(row.channel_id)
-                channel_ids_by_site.setdefault(site_id, []).append(channel_id)
+                combo_id = str(row.combo_id)
+                for protocol in _parse_supported_protocols_json(
+                    row.supported_protocols_json
+                ):
+                    channel_ids_by_site.setdefault(site_id, []).append(
+                        _composite_channel_id(combo_id, protocol)
+                    )
 
             recent_request_logs = (
                 select(RequestLogEntity.channel_id.label("channel_id"))
@@ -2163,7 +2200,7 @@ class DomainStore:
                 .join(
                     SiteProtocolConfigEntity,
                     recent_request_logs.c.channel_id.like(
-                        func.concat(SiteProtocolConfigEntity.id, "_%")
+                        SiteProtocolConfigEntity.id + literal("_%")
                     ),
                 )
                 .group_by(SiteProtocolConfigEntity.site_id)
@@ -2195,7 +2232,7 @@ class DomainStore:
                 .join(
                     SiteProtocolConfigEntity,
                     RequestLogEntity.channel_id.like(
-                        func.concat(SiteProtocolConfigEntity.id, "_%")
+                        SiteProtocolConfigEntity.id + literal("_%")
                     ),
                 )
                 .where(
