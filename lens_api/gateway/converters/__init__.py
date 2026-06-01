@@ -1,7 +1,7 @@
 import json
 from typing import Any, AsyncIterator
 
-from ...core.protocol_compat import can_reach_protocol, needs_conversion
+from ...core.protocol_reachability import can_reach_protocol, needs_conversion
 from ...models import ProtocolKind
 from .chat_to_anthropic import (
     anthropic_request_to_chat,

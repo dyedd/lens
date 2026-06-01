@@ -8,10 +8,9 @@ export type ProtocolKind =
   | "anthropic"
   | "gemini";
 
-// 协议转换表的来源是后端 lens_api/core/protocol_compat.py。
-// 默认值仅作为后端 app-info 尚未加载时的回退；hydrateProtocolConversions
-// 会在 app-info 返回后用后端权威数据覆盖，前端不再手工同步。
-const DEFAULT_SUPPORTED_CONVERSIONS: Partial<Record<ProtocolKind, ProtocolKind[]>> = {
+const DEFAULT_SUPPORTED_CONVERSIONS: Partial<
+  Record<ProtocolKind, ProtocolKind[]>
+> = {
   openai_chat: ["anthropic", "openai_responses"],
 };
 
@@ -19,8 +18,6 @@ let supportedConversions: Partial<Record<ProtocolKind, ProtocolKind[]>> = {
   ...DEFAULT_SUPPORTED_CONVERSIONS,
 };
 
-// 用后端 conversion_matrix（含自反项）覆盖前端表；剥掉自反项以匹配
-// 「仅非原生可达」的内部语义（canReachProtocol 已单独处理原生相等）。
 export function hydrateProtocolConversions(
   matrix: Record<string, string[]> | undefined,
 ): void {
@@ -132,7 +129,7 @@ export type SiteBaseUrl = {
   name: string;
   enabled: boolean;
   sort_order: number;
-  compatible_protocols: ProtocolKind[];
+  supported_protocols: ProtocolKind[];
 };
 
 export type SiteBaseUrlInput = {
@@ -140,7 +137,7 @@ export type SiteBaseUrlInput = {
   url: string;
   name: string;
   enabled: boolean;
-  compatible_protocols: ProtocolKind[];
+  supported_protocols: ProtocolKind[];
 };
 
 export type SiteCredential = {
@@ -309,7 +306,7 @@ export type SiteBatchImportResult = {
 };
 
 export type SiteModelFetchPayload = {
-  compatible_protocols: ProtocolKind[];
+  supported_protocols: ProtocolKind[];
   base_url: string;
   headers: Record<string, string>;
   channel_proxy: string;
