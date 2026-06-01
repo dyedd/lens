@@ -60,7 +60,14 @@ def upgrade() -> None:
 
     # Step 1: site_base_urls 新增 compatible_protocols_json
     with op.batch_alter_table("site_base_urls") as batch_op:
-        batch_op.add_column(sa.Column("compatible_protocols_json", sa.Text(), nullable=False, server_default="[]"))
+        batch_op.add_column(
+            sa.Column(
+                "compatible_protocols_json",
+                sa.Text(),
+                nullable=False,
+                server_default="[]",
+            )
+        )
 
     # Step 2: site_discovered_models 新增 protocol（nullable）
     with op.batch_alter_table("site_discovered_models") as batch_op:
@@ -96,9 +103,7 @@ def upgrade() -> None:
             )
         """)
     else:
-        raise RuntimeError(
-            f"Unsupported dialect for migration 3e9a1f7c: {dialect}"
-        )
+        raise RuntimeError(f"Unsupported dialect for migration 3e9a1f7c: {dialect}")
 
     # Step 4: Back-fill site_discovered_models.protocol
     op.execute("""

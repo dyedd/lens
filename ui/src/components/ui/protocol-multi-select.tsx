@@ -31,10 +31,7 @@ const CHAT_PROTOCOLS: ProtocolKind[] = [
   "gemini",
 ];
 
-const SPECIAL_PROTOCOLS: ProtocolKind[] = [
-  "openai_embedding",
-  "rerank",
-];
+const SPECIAL_PROTOCOLS: ProtocolKind[] = ["openai_embedding", "rerank"];
 
 const ALL_PROTOCOLS: ProtocolKind[] = [...CHAT_PROTOCOLS, ...SPECIAL_PROTOCOLS];
 
@@ -112,7 +109,8 @@ function ProtocolGroup({
               key={protocol}
               className={cn(
                 "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
-                disabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
+                disabled &&
+                  "cursor-not-allowed opacity-50 hover:bg-transparent",
               )}
             >
               <Checkbox

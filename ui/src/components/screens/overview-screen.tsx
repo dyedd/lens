@@ -218,10 +218,7 @@ export function OverviewScreen() {
     placeholderData: keepPreviousData,
   });
 
-  const {
-    data: overviewMetrics,
-    error: overviewMetricsError,
-  } = useQuery({
+  const { data: overviewMetrics, error: overviewMetricsError } = useQuery({
     queryKey: ["overview-metrics"],
     queryFn: () => apiRequest<OverviewMetrics>("/admin/overview"),
     staleTime: 30_000,

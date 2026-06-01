@@ -188,6 +188,7 @@ lens dev
 ```
 
 Default local development ports:
+
 - Next.js dev server: `http://127.0.0.1:3000`
 - FastAPI backend: `http://127.0.0.1:18080`
 
@@ -208,12 +209,12 @@ Open `/channels`, create a site, fill in Base URL and API Key, discover or manua
 
 Common Base URLs:
 
-| Upstream type             | Base URL example                      | Protocol         |
-| ------------------------- | ------------------------------------- | ---------------- |
-| OpenAI                    | `https://api.openai.com`              | OpenAI Chat / Responses / Embeddings |
-| Anthropic                 | `https://api.anthropic.com`           | Anthropic        |
-| Gemini                    | `https://generativelanguage.googleapis.com` | Gemini |
-| NewAPI / Rerank           | `https://newapi.example.com`          | Rerank (forwards to `POST /v1/rerank`) |
+| Upstream type   | Base URL example                            | Protocol                               |
+| --------------- | ------------------------------------------- | -------------------------------------- |
+| OpenAI          | `https://api.openai.com`                    | OpenAI Chat / Responses / Embeddings   |
+| Anthropic       | `https://api.anthropic.com`                 | Anthropic                              |
+| Gemini          | `https://generativelanguage.googleapis.com` | Gemini                                 |
+| NewAPI / Rerank | `https://newapi.example.com`                | Rerank (forwards to `POST /v1/rerank`) |
 
 ### 2. Create Model Groups
 
@@ -234,22 +235,22 @@ Clients only need: Lens Base URL + Gateway API Key + Model group name.
 
 ## Tech Stack
 
-| Layer    | Technologies                                                   |
-| -------- | -------------------------------------------------------------- |
+| Layer    | Technologies                                                    |
+| -------- | --------------------------------------------------------------- |
 | Backend  | Python 3.11+, FastAPI, SQLAlchemy, Alembic, SQLite / PostgreSQL |
-| Frontend | Next.js 16, React 19, TypeScript, TanStack Query, shadcn/ui    |
+| Frontend | Next.js 16, React 19, TypeScript, TanStack Query, shadcn/ui     |
 
 ## Environment Variables
 
 Core variables:
 
-| Variable                         | Default                               | Description                                      |
-| -------------------------------- | ------------------------------------- | ------------------------------------------------ |
-| `LENS_HOST`                      | `127.0.0.1`                           | Backend listen host; Docker sets it to `0.0.0.0` |
-| `LENS_PORT`                      | `18080`                               | Backend listen port; Docker sets it to `3000`    |
-| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db`  | Database URL; defaults to SQLite, can point to external PostgreSQL |
-| `LENS_AUTH_SECRET_KEY`           | Required                              | JWT signing key                                |
-| `LENS_REQUEST_TIMEOUT_SECONDS`   | `180`                                 | Upstream request timeout                         |
+| Variable                       | Default                              | Description                                                        |
+| ------------------------------ | ------------------------------------ | ------------------------------------------------------------------ |
+| `LENS_HOST`                    | `127.0.0.1`                          | Backend listen host; Docker sets it to `0.0.0.0`                   |
+| `LENS_PORT`                    | `18080`                              | Backend listen port; Docker sets it to `3000`                      |
+| `LENS_DATABASE_URL`            | `sqlite+aiosqlite:///./data/data.db` | Database URL; defaults to SQLite, can point to external PostgreSQL |
+| `LENS_AUTH_SECRET_KEY`         | Required                             | JWT signing key                                                    |
+| `LENS_REQUEST_TIMEOUT_SECONDS` | `180`                                | Upstream request timeout                                           |
 
 ### PostgreSQL Configuration
 
@@ -306,6 +307,7 @@ completion = client.chat.completions.create(
 )
 print(completion.choices[0].message.content)
 ```
+
 </details>
 
 <details>
@@ -326,6 +328,7 @@ message = client.messages.create(
 )
 print(message.content[0].text)
 ```
+
 </details>
 
 <details>
@@ -340,6 +343,7 @@ curl http://127.0.0.1:3000/v1/chat/completions \
     "messages": [{"role": "user", "content": "hello"}]
   }'
 ```
+
 </details>
 
 <details>
@@ -355,6 +359,7 @@ curl http://127.0.0.1:3000/v1/messages \
     "messages": [{"role": "user", "content": "hello"}]
   }'
 ```
+
 </details>
 
 <details>
@@ -369,6 +374,7 @@ curl http://127.0.0.1:3000/v1/responses \
     "input": "hello"
   }'
 ```
+
 </details>
 
 <details>
@@ -383,6 +389,7 @@ curl http://127.0.0.1:3000/v1/embeddings \
     "input": "hello world"
   }'
 ```
+
 </details>
 
 <details>
@@ -406,6 +413,7 @@ curl http://127.0.0.1:3000/v1/rerank \
 ```
 
 The request body is forwarded as-is to the upstream `/v1/rerank` endpoint (e.g. NewAPI, Jina, Cohere-compatible services). Responses are returned unmodified, including `results[*].relevance_score / index / document`.
+
 </details>
 
 <details>
@@ -424,6 +432,7 @@ curl "http://127.0.0.1:3000/v1beta/models/your-gemini-model:generateContent" \
     ]
   }'
 ```
+
 </details>
 
 <details>
@@ -435,6 +444,7 @@ ANTHROPIC_AUTH_TOKEN=sk-lens-...
 ANTHROPIC_MODEL=your-anthropic-group
 ANTHROPIC_SMALL_FAST_MODEL=your-anthropic-group
 ```
+
 </details>
 
 <details>
@@ -458,6 +468,7 @@ base_url = "http://127.0.0.1:3000/v1"
   "OPENAI_API_KEY": "sk-lens-..."
 }
 ```
+
 </details>
 
 ## Acknowledgments
