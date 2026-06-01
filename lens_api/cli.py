@@ -18,6 +18,21 @@ SOURCE_PROJECT_DIR = Path(__file__).resolve().parent.parent
 APP_IMPORT_PATH = "lens_api.gateway.service:app"
 
 
+def _configure_asyncio_event_loop_policy() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def _selector_event_loop_factory() -> asyncio.AbstractEventLoop:
+    return asyncio.SelectorEventLoop()
+
+
+def _uvicorn_loop_factory_path() -> str:
+    if sys.platform == "win32":
+        return "lens_api.cli:_selector_event_loop_factory"
+    return "auto"
+
+
 def _project_dir() -> Path:
     env_project_dir = os.environ.get("LENS_PROJECT_DIR", "").strip()
     if env_project_dir:
@@ -67,7 +82,12 @@ def db_stamp(args: argparse.Namespace) -> None:
 def serve(args: argparse.Namespace) -> None:
     import uvicorn
 
-    uvicorn.run(APP_IMPORT_PATH, host=settings.host, port=settings.port)
+    uvicorn.run(
+        APP_IMPORT_PATH,
+        host=settings.host,
+        port=settings.port,
+        loop=_uvicorn_loop_factory_path(),
+    )
 
 
 def dev(_args: argparse.Namespace) -> None:
@@ -93,12 +113,8 @@ def dev(_args: argparse.Namespace) -> None:
         [
             sys.executable,
             "-m",
-            "uvicorn",
-            APP_IMPORT_PATH,
-            "--host",
-            backend_host,
-            "--port",
-            backend_port,
+            "lens_api.cli",
+            "serve",
         ],
         cwd=project_dir,
         env=backend_env,
@@ -170,6 +186,8 @@ def seed_admin(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    _configure_asyncio_event_loop_policy()
+
     parser = argparse.ArgumentParser(prog="lens", description="Lens CLI")
     sub = parser.add_subparsers(dest="group")
 
