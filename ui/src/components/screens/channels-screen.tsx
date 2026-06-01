@@ -257,6 +257,12 @@ type SiteRow = Site & {
   model_count: number;
   endpoint_summary: string;
 };
+type HealthPreviewChannel = {
+  channelId: string;
+  combo: SiteRow["protocols"][number];
+  comboIndex: number;
+  protocol: ProtocolKind;
+};
 
 type ChannelStatusFilter = "all" | "enabled" | "disabled";
 type ChannelSort =
@@ -825,6 +831,36 @@ function resolveCoolingBadge(
   return null;
 }
 
+function runtimeChannelId(comboId: string, protocol: ProtocolKind) {
+  return `${comboId}_${protocol}`;
+}
+
+function siteHealthPreviewChannels(site: SiteRow): HealthPreviewChannel[] {
+  const baseUrlById = new Map(
+    site.base_urls.map((item) => [item.id, item] as const),
+  );
+  return site.protocols.flatMap((combo, comboIndex) => {
+    if (!combo.enabled) {
+      return [];
+    }
+    const protocols =
+      baseUrlById.get(combo.base_url_id)?.supported_protocols ?? [];
+    return protocols.map((protocol) => ({
+      channelId: runtimeChannelId(combo.id, protocol),
+      combo,
+      comboIndex,
+      protocol,
+    }));
+  });
+}
+
+function healthPreviewChannelLabel(
+  channel: HealthPreviewChannel,
+  locale: Locale,
+) {
+  return `${comboDisplayName(channel.combo, channel.comboIndex, locale)} / ${compactProtocolLabel(channel.protocol)}`;
+}
+
 function normalizedBucketCounts(bucket: ChannelHealthBucket) {
   const total = Math.max(0, bucket.total_count);
   return {
@@ -878,16 +914,16 @@ function SiteHealthPreview({
   locale: Locale;
   timeZone?: string;
 }) {
-  const enabledProtocols = site.protocols.filter((item) => item.enabled);
+  const channels = siteHealthPreviewChannels(site);
   const summaryByChannelId = new Map(
     (summary?.channel_summaries ?? []).map(
       (item) => [item.channel_id, item] as const,
     ),
   );
-  const multiProtocol = enabledProtocols.length > 1;
+  const multiChannel = channels.length > 1;
   const bucketTimeFormatter = createHealthBucketTimeFormatter(locale, timeZone);
 
-  if (!enabledProtocols.length) {
+  if (!channels.length) {
     return (
       <div className="mt-3 text-xs text-muted-foreground">
         {locale === "zh-CN" ? "暂无健康数据" : "No health data"}
@@ -900,13 +936,9 @@ function SiteHealthPreview({
       <div className="text-xs font-medium text-muted-foreground">
         {locale === "zh-CN" ? "健康状态" : "Health"}
       </div>
-      {enabledProtocols.map((protocol) => {
-        const protocolIndex = Math.max(
-          site.protocols.findIndex((item) => item.id === protocol.id),
-          0,
-        );
-        const health = healthByChannelId.get(protocol.id);
-        const channelSummary = summaryByChannelId.get(protocol.id);
+      {channels.map((channel) => {
+        const health = healthByChannelId.get(channel.channelId);
+        const channelSummary = summaryByChannelId.get(channel.channelId);
         const buckets = (channelSummary?.health_buckets ?? []).slice(
           -CHANNEL_HEALTH_BUCKET_COUNT,
         );
@@ -917,24 +949,24 @@ function SiteHealthPreview({
               length: Math.max(CHANNEL_HEALTH_BUCKET_COUNT - buckets.length, 0),
             },
             (_, index) => ({
-              key: `${protocol.id}-placeholder-${index}`,
+              key: `${channel.channelId}-placeholder-${index}`,
               bucket: null,
             }),
           ),
           ...buckets.map((bucket, index) => ({
-            key: `${protocol.id}-bucket-${bucket.started_at}-${index}`,
+            key: `${channel.channelId}-bucket-${bucket.started_at}-${index}`,
             bucket,
           })),
         ];
 
         return (
           <div
-            key={protocol.id}
+            key={channel.channelId}
             className="flex min-w-0 flex-wrap items-center gap-3 py-0.5"
           >
-            {multiProtocol ? (
+            {multiChannel ? (
               <span className="w-28 min-w-0 shrink-0 truncate text-[11px] font-medium text-muted-foreground">
-                {comboDisplayName(protocol, protocolIndex, locale)}
+                {healthPreviewChannelLabel(channel, locale)}
               </span>
             ) : null}
 
