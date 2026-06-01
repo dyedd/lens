@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
-from ..core.protocol_compat import can_reach_protocol
+from ..core.protocol_reachability import can_reach_protocol
 from ..models import (
     ConfigBackupDump,
     ConfigBackupGatewayApiKey,
@@ -118,37 +118,6 @@ def _resolve_group_item_channel_id(
     return channel_id
 
 
-def _upgrade_backup_format(data: dict) -> dict:
-    """将旧版备份 JSON 升级为新版格式，在 Pydantic 解析前执行。
-
-    处理：旧版 SiteProtocolConfig 含 protocol 字段，新版改为 SiteBaseUrl.compatible_protocols。
-    """
-    for site in data.get("sites", []):
-        url_protocols: dict[str, list[str]] = {}
-        for protocol_config in site.get("protocols", []):
-            if old_protocol := protocol_config.pop("protocol", None):
-                base_url_id = protocol_config.get("base_url_id", "")
-                if base_url_id:
-                    if base_url_id not in url_protocols:
-                        url_protocols[base_url_id] = []
-                    if old_protocol not in url_protocols[base_url_id]:
-                        url_protocols[base_url_id].append(old_protocol)
-        for base_url in site.get("base_urls", []):
-            buid = base_url.get("id", "")
-            if not base_url.get("compatible_protocols") and buid in url_protocols:
-                base_url["compatible_protocols"] = sorted(url_protocols[buid])
-    for group in data.get("groups", []):
-        if not isinstance(group, dict):
-            continue
-        old_protocol = group.pop("protocol", None)
-        if "protocols" not in group and old_protocol is not None:
-            group["protocols"] = [old_protocol]
-        if not group.get("protocols"):
-            raise ValueError(
-                f"Backup model group missing protocols: {group.get('name', '')}"
-            )
-    return data
-
 EXPORTABLE_SETTING_KEYS = (
     SETTING_PROXY_URL,
     SETTING_CORS_ALLOW_ORIGINS,
@@ -173,10 +142,8 @@ class BackupStore:
 
     @staticmethod
     def parse_dump(payload: bytes) -> "ConfigBackupDump":
-        """解析备份文件字节，在 Pydantic 验证前升级旧版格式。"""
         try:
             data = json.loads(payload)
-            data = _upgrade_backup_format(data)
         except json.JSONDecodeError as exc:
             raise ValueError("Invalid backup file") from exc
         try:
@@ -305,21 +272,6 @@ class BackupStore:
     async def _replace_sites(
         self, session: AsyncSession, sites: list[SiteConfig]
     ) -> tuple[set[str], dict[str, list[ProtocolKind]], set[tuple[str, str, str]]]:
-        # 旧备份兼容：若地址没有 compatible_protocols 但协议配置有 protocol，则反推
-        for site in sites:
-            url_protocols: dict[str, set] = {}
-            for protocol_config in site.protocols:
-                protocol_value = getattr(protocol_config, "protocol", None)
-                if protocol_value is not None:
-                    url_protocols.setdefault(protocol_config.base_url_id, set()).add(
-                        protocol_value
-                    )
-            for base_url in site.base_urls:
-                if not base_url.compatible_protocols and base_url.id in url_protocols:
-                    base_url.compatible_protocols = sorted(
-                        url_protocols[base_url.id], key=lambda p: p.value
-                    )
-
         await session.execute(delete(SiteDiscoveredModelEntity))
         await session.execute(delete(SiteProtocolConfigEntity))
         await session.execute(delete(SiteCredentialEntity))
@@ -360,8 +312,8 @@ class BackupStore:
                         name=base_url.name,
                         enabled=1 if base_url.enabled else 0,
                         sort_order=base_url.sort_order,
-                        compatible_protocols_json=json.dumps(
-                            [p.value for p in (base_url.compatible_protocols or [])],
+                        supported_protocols_json=json.dumps(
+                            [p.value for p in (base_url.supported_protocols or [])],
                             ensure_ascii=True,
                         ),
                     )
@@ -417,7 +369,7 @@ class BackupStore:
 
                 base_url_protocols = next(
                     (
-                        base_url.compatible_protocols
+                        base_url.supported_protocols
                         for base_url in site.base_urls
                         if base_url.id == protocol.base_url_id
                     ),
@@ -440,7 +392,10 @@ class BackupStore:
                         )
                     if model.enabled:
                         for protocol_kind in channel_protocols[protocol.id]:
-                            if model.protocol is None or model.protocol == protocol_kind:
+                            if (
+                                model.protocol is None
+                                or model.protocol == protocol_kind
+                            ):
                                 available_model_keys.add(
                                     (
                                         _composite_channel_id(
@@ -947,9 +902,9 @@ class BackupStore:
                     "name": row.name,
                     "enabled": bool(row.enabled),
                     "sort_order": row.sort_order,
-                    "compatible_protocols": [
+                    "supported_protocols": [
                         p
-                        for p in json.loads(row.compatible_protocols_json or "[]")
+                        for p in json.loads(row.supported_protocols_json or "[]")
                         if p in valid_protocol_values
                     ],
                 }
@@ -982,9 +937,7 @@ class BackupStore:
                     "enabled": bool(row.enabled),
                     "sort_order": row.sort_order,
                     "protocol": (
-                        row.protocol
-                        if row.protocol in valid_protocol_values
-                        else None
+                        row.protocol if row.protocol in valid_protocol_values else None
                     ),
                 }
             )

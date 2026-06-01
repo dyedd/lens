@@ -44,7 +44,7 @@ from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
 from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
-from ..core.protocol_compat import conversion_matrix
+from ..core.protocol_reachability import conversion_matrix
 from ..core.time_zone import resolve_time_zone
 from ..models import (
     AdminLoginRequest,
@@ -987,14 +987,17 @@ async def fetch_site_models(
 ) -> list[SiteModelFetchItem]:
     previews = await app_state.store.fetch_models_preview(payload)
     items: list[SiteModelFetchItem] = []
-    seen: set[tuple[str, str, str]] = set()  # (protocol, credential_id, model_name)
+    seen: set[tuple[str, str, str]] = set()
 
-    protocols = payload.compatible_protocols or []
+    protocols = payload.supported_protocols or []
 
     for preview in previews:
         credential = next(
-            (item for item in payload.credentials
-             if (item.id or "") == preview["credential_id"]),
+            (
+                item
+                for item in payload.credentials
+                if (item.id or "") == preview["credential_id"]
+            ),
             None,
         )
         if credential is None:

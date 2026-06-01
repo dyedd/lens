@@ -55,7 +55,9 @@ class SiteBaseUrlEntity(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
-    compatible_protocols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]", server_default="[]")
+    supported_protocols_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
 
 
 class SiteCredentialEntity(Base):
@@ -111,7 +113,9 @@ class ModelGroupEntity(Base):
     name: Mapped[str] = mapped_column(
         String(120), nullable=False, unique=True, index=True
     )
-    protocols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]", server_default="[]")
+    protocols_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
     strategy: Mapped[str] = mapped_column(
         String(32), nullable=False, default="round_robin"
     )

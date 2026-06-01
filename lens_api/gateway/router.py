@@ -405,7 +405,6 @@ class RoundRobinRouter:
                 for target in active
                 if self._target_is_available(target, now=now)
             ]
-            # 原生优先去重：过滤后，若同一模型身份同时存在原生目标和转换目标，保留原生
             active = self._prefer_native_targets(active, protocol)
             if len(active) > 1:
                 active.sort(key=lambda t: self._score(t.channel.id), reverse=True)
@@ -414,9 +413,6 @@ class RoundRobinRouter:
 
     @staticmethod
     def _combo_id_from_channel_id(channel_id: str) -> str:
-        """从复合 channel ID 中提取 combo_id（地址+密钥组合部分）。
-        复合 ID 格式：{combo_id}_{protocol_value}。若无匹配后缀则原样返回。
-        """
         for protocol in ProtocolKind:
             suffix = f"_{protocol.value}"
             if channel_id.endswith(suffix):
@@ -426,12 +422,6 @@ class RoundRobinRouter:
     def _prefer_native_targets(
         self, targets: list[RouteTarget], protocol: ProtocolKind
     ) -> list[RouteTarget]:
-        """原生优先去重：同一模型身份（combo_id, credential_id, model_name）若存在
-        原生目标（channel.protocol == protocol），则丢弃该组的转换目标；
-        若原生不可用（已被冷却过滤移除），则保留转换目标兜底。
-        保持组间相对次序稳定。
-        """
-        # 按标识分组，记录各组中是否有原生目标
         group_has_native: dict[tuple[str, str | None, str | None], bool] = {}
         for target in targets:
             combo_id = self._combo_id_from_channel_id(target.channel.id)
@@ -446,7 +436,6 @@ class RoundRobinRouter:
             combo_id = self._combo_id_from_channel_id(target.channel.id)
             key = (combo_id, target.credential_id, target.model_name)
             is_native = target.channel.protocol == protocol
-            # 该组有原生目标时，只保留原生；无原生时全部保留（转换兜底）
             if group_has_native.get(key, False) and not is_native:
                 continue
             result.append(target)
