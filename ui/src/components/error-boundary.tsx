@@ -4,11 +4,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangleIcon, RefreshCwIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
 
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 type ErrorBoundaryState = {
@@ -65,7 +61,5 @@ class RenderErrorBoundary extends Component<
 export function ErrorBoundary({ children }: ErrorBoundaryProps) {
   const pathname = usePathname();
 
-  return (
-    <RenderErrorBoundary key={pathname}>{children}</RenderErrorBoundary>
-  );
+  return <RenderErrorBoundary key={pathname}>{children}</RenderErrorBoundary>;
 }

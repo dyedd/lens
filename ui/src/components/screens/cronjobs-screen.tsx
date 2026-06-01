@@ -601,7 +601,11 @@ export function CronjobsScreen() {
   const savingTaskId = updateTask.isPending
     ? updateTask.variables?.id
     : undefined;
-  const pageError = tasksIsError ? tasksError : settingsIsError ? settingsError : null;
+  const pageError = tasksIsError
+    ? tasksError
+    : settingsIsError
+      ? settingsError
+      : null;
   const hasTasks = tasks.length > 0;
 
   useEffect(() => {
@@ -619,7 +623,11 @@ export function CronjobsScreen() {
         description:
           pageError instanceof Error
             ? pageError.message
-            : titleForLocale(locale, "无法读取定时任务", "Unable to read cron jobs"),
+            : titleForLocale(
+                locale,
+                "无法读取定时任务",
+                "Unable to read cron jobs",
+              ),
       },
     );
   }, [locale, pageError, tasksIsError]);

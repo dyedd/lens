@@ -33,8 +33,7 @@ def upgrade() -> None:
             )
         )
 
-    bind.execute(
-        sa.text("""
+    bind.execute(sa.text("""
             UPDATE site_protocol_configs
             SET credential_id = (
                 SELECT credential_id
@@ -48,8 +47,7 @@ def upgrade() -> None:
                 FROM site_protocol_credential_bindings
                 WHERE protocol_config_id = site_protocol_configs.id
             )
-            """)
-    )
+            """))
 
     with op.batch_alter_table("site_protocol_configs") as batch_op:
         batch_op.alter_column("credential_id", server_default=None)
@@ -166,8 +164,7 @@ def upgrade() -> None:
                 )
 
     index_names = {
-        index["name"]
-        for index in inspector.get_indexes("overview_model_daily_stats")
+        index["name"] for index in inspector.get_indexes("overview_model_daily_stats")
     }
     if "ix_overview_model_daily_stats_model" in index_names:
         op.drop_index(
