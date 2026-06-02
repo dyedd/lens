@@ -29,7 +29,12 @@ import {
   getDashboardViewFromPathname,
   type DashboardView,
 } from "@/components/shell/dashboard-routes";
-import { apiRequest, type AppInfo, type VersionCheckResult } from "@/lib/api";
+import {
+  apiRequest,
+  hydrateProtocolConversions,
+  type AppInfo,
+  type VersionCheckResult,
+} from "@/lib/api";
 import { clearStoredToken } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -138,6 +143,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     queryFn: () => apiRequest<AppInfo>("/admin/app-info"),
     staleTime: 5 * 60_000,
   });
+  useEffect(() => {
+    hydrateProtocolConversions(appInfo?.protocol_conversions);
+  }, [appInfo?.protocol_conversions]);
   const { data: versionCheck } = useQuery({
     queryKey: ["version-check"],
     queryFn: () => apiRequest<VersionCheckResult>("/admin/version-check"),

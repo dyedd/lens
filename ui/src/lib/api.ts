@@ -8,6 +8,60 @@ export type ProtocolKind =
   | "anthropic"
   | "gemini";
 
+// 协议转换表的来源是后端 lens_api/core/protocol_compat.py。
+// 默认值仅作为后端 app-info 尚未加载时的回退；hydrateProtocolConversions
+// 会在 app-info 返回后用后端权威数据覆盖，前端不再手工同步。
+const DEFAULT_SUPPORTED_CONVERSIONS: Partial<Record<ProtocolKind, ProtocolKind[]>> = {
+  openai_chat: ["anthropic", "openai_responses"],
+};
+
+let supportedConversions: Partial<Record<ProtocolKind, ProtocolKind[]>> = {
+  ...DEFAULT_SUPPORTED_CONVERSIONS,
+};
+
+// 用后端 conversion_matrix（含自反项）覆盖前端表；剥掉自反项以匹配
+// 「仅非原生可达」的内部语义（canReachProtocol 已单独处理原生相等）。
+export function hydrateProtocolConversions(
+  matrix: Record<string, string[]> | undefined,
+): void {
+  if (!matrix) return;
+  const next: Partial<Record<ProtocolKind, ProtocolKind[]>> = {};
+  for (const [channel, targets] of Object.entries(matrix)) {
+    const reachable = targets.filter(
+      (t): t is ProtocolKind => t !== channel,
+    ) as ProtocolKind[];
+    if (reachable.length > 0) {
+      next[channel as ProtocolKind] = reachable;
+    }
+  }
+  supportedConversions = next;
+}
+
+export function canReachProtocol(
+  channelProtocol: ProtocolKind,
+  groupProtocol: ProtocolKind,
+): boolean {
+  if (channelProtocol === groupProtocol) return true;
+  return (
+    supportedConversions[channelProtocol]?.includes(groupProtocol) ?? false
+  );
+}
+
+export function isItemValidForProtocols(
+  itemProtocol: ProtocolKind,
+  selectedProtocols: ProtocolKind[],
+): boolean {
+  return selectedProtocols.some((p) => canReachProtocol(itemProtocol, p));
+}
+
+export function getConvertibleProtocols(
+  channelProtocol: ProtocolKind,
+  selectedProtocols: ProtocolKind[],
+): ProtocolKind[] {
+  const targets = supportedConversions[channelProtocol] ?? [];
+  return targets.filter((p) => selectedProtocols.includes(p));
+}
+
 export type RoutingStrategy = "round_robin" | "failover";
 export type ModelGroupSyncFilterMode = "" | "contains" | "regex";
 
@@ -26,7 +80,7 @@ export type ModelGroupItem = {
 export type ModelGroup = {
   id: string;
   name: string;
-  protocol: ProtocolKind;
+  protocols: ProtocolKind[];
   strategy: RoutingStrategy;
   route_group_id?: string;
   route_group_name?: string;
@@ -48,7 +102,7 @@ export type ModelGroupItemPayload = {
 
 export type ModelGroupPayload = {
   name: string;
-  protocol: ProtocolKind;
+  protocols: ProtocolKind[];
   strategy: RoutingStrategy;
   route_group_id?: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
@@ -66,6 +120,10 @@ export type ModelGroupCandidateItem = {
   credential_number: number;
   base_url: string;
   model_name: string;
+  combo_id: string;
+  protocols: ProtocolKind[];
+  protocol_channels: Partial<Record<ProtocolKind, string>>;
+  items: ModelGroupItemPayload[];
 };
 
 export type SiteBaseUrl = {
@@ -74,6 +132,7 @@ export type SiteBaseUrl = {
   name: string;
   enabled: boolean;
   sort_order: number;
+  compatible_protocols: ProtocolKind[];
 };
 
 export type SiteBaseUrlInput = {
@@ -81,6 +140,7 @@ export type SiteBaseUrlInput = {
   url: string;
   name: string;
   enabled: boolean;
+  compatible_protocols: ProtocolKind[];
 };
 
 export type SiteCredential = {
@@ -100,6 +160,7 @@ export type SiteCredentialInput = {
 
 export type SiteModel = {
   id: string;
+  protocol?: ProtocolKind | null;
   credential_id: string;
   credential_name: string;
   model_name: string;
@@ -109,6 +170,7 @@ export type SiteModel = {
 
 export type SiteModelInput = {
   id?: string | null;
+  protocol?: ProtocolKind | null;
   credential_id: string;
   model_name: string;
   enabled: boolean;
@@ -116,7 +178,7 @@ export type SiteModelInput = {
 
 export type SiteProtocolConfig = {
   id: string;
-  protocol: ProtocolKind;
+  name: string;
   enabled: boolean;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -129,7 +191,8 @@ export type SiteProtocolConfig = {
 
 export type SiteProtocolConfigInput = {
   id?: string | null;
-  protocol: ProtocolKind;
+  name: string;
+  protocol?: ProtocolKind | null;
   enabled: boolean;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -246,7 +309,7 @@ export type SiteBatchImportResult = {
 };
 
 export type SiteModelFetchPayload = {
-  protocol: ProtocolKind;
+  compatible_protocols: ProtocolKind[];
   base_url: string;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -256,6 +319,7 @@ export type SiteModelFetchPayload = {
 };
 
 export type SiteModelFetchItem = {
+  protocol: ProtocolKind;
   credential_id: string;
   credential_name: string;
   model_name: string;
@@ -287,7 +351,7 @@ export type SiteModelTestResult = {
 };
 
 export type ModelGroupCandidatesPayload = {
-  protocol?: ProtocolKind;
+  protocols?: ProtocolKind[];
   exclude_items: ModelGroupItemPayload[];
 };
 
@@ -477,6 +541,7 @@ export type AppInfo = {
   site_name: string;
   logo_url: string;
   time_zone: string;
+  protocol_conversions?: Record<string, string[]>;
 };
 
 export type VersionCheckResult = {
