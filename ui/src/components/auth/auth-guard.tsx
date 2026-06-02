@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ApiError, AdminProfile, apiRequest } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
+import { AppLoadingScreen } from "@/components/ui/loading-state";
 
 const SESSION_CACHE_KEY = "lens_admin_profile_cache";
 const SESSION_CACHE_TTL_MS = 60_000;
@@ -92,11 +93,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   if (!state.ready) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <span className="h-8 w-8 rounded-full border-2 border-border border-t-primary animate-spin" />
-      </div>
-    );
+    return <AppLoadingScreen />;
   }
 
   return <>{children}</>;

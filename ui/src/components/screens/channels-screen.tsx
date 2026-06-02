@@ -3640,13 +3640,7 @@ export function ChannelsScreen() {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
           <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-12rem)]">
             <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
-              {isLoading ? (
-                <div className="px-2 py-6 text-sm text-muted-foreground">
-                  {locale === "zh-CN"
-                    ? "正在加载渠道..."
-                    : "Loading channels..."}
-                </div>
-              ) : sitesIsError ? null : visibleSites.length ? (
+              {isLoading || sitesIsError ? null : visibleSites.length ? (
                 <ItemGroup className="gap-3">
                   {visibleSites.map((site) => {
                     const runtimeSummary = siteRuntimeById.get(site.id);
