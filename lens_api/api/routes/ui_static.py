@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.staticfiles import StaticFiles
 
-RESERVED_PREFIXES = ("api", "v1", "v1beta", "healthz", "docs", "redoc", "openapi.json")
+RESERVED_PREFIXES = ("api", "v1", "v1beta", "docs", "redoc", "openapi.json")
 
 
 def register(app: FastAPI, service_module: ModuleType) -> None:
