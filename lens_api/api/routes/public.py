@@ -4,7 +4,6 @@ from fastapi import FastAPI
 
 
 def register(app: FastAPI, service_module: ModuleType) -> None:
-    app.add_api_route("/healthz", service_module.healthz, methods=["GET"])
     app.add_api_route(
         "/api/public/branding",
         service_module.public_branding,
