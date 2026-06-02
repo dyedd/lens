@@ -20,6 +20,32 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Step 0: 冲突检测（同一 base_url+credential 多条配置但参数不同）
+    # 必须在任何 DDL 之前：SQLite DDL 自动提交不可回滚，一旦先改表再 abort 会留下半升级脏状态。
+    conn = op.get_bind()
+    conflicts = conn.execute(sa.text("""
+        SELECT site_id, base_url_id, credential_id, COUNT(*) AS n,
+            COUNT(DISTINCT
+                CAST(enabled AS TEXT) || '|' || headers_json || '|' ||
+                channel_proxy || '|' || param_override || '|' || match_regex
+            ) AS variants
+        FROM site_protocol_configs
+        GROUP BY site_id, base_url_id, credential_id
+        HAVING COUNT(*) > 1 AND COUNT(DISTINCT
+            CAST(enabled AS TEXT) || '|' || headers_json || '|' ||
+            channel_proxy || '|' || param_override || '|' || match_regex
+        ) > 1
+    """)).fetchall()
+    if conflicts:
+        conflict_info = ", ".join(
+            f"site={r[0]} base_url={r[1]} credential={r[2]}"
+            for r in conflicts
+        )
+        raise RuntimeError(
+            f"Migration aborted: found {len(conflicts)} conflicting combo(s) that cannot be auto-merged. "
+            f"Please manually resolve these configs first: {conflict_info}"
+        )
+
     # Step 1: site_base_urls 新增 compatible_protocols_json
     with op.batch_alter_table("site_base_urls") as batch_op:
         batch_op.add_column(sa.Column("compatible_protocols_json", sa.Text(), nullable=False, server_default="[]"))
@@ -71,32 +97,7 @@ def upgrade() -> None:
         )
     """)
 
-    # Step 5: 冲突检测（同一 base_url+credential 多条配置但参数不同）
-    conn = op.get_bind()
-    conflicts = conn.execute(sa.text("""
-        SELECT site_id, base_url_id, credential_id, COUNT(*) AS n,
-            COUNT(DISTINCT
-                CAST(enabled AS TEXT) || '|' || headers_json || '|' ||
-                channel_proxy || '|' || param_override || '|' || match_regex
-            ) AS variants
-        FROM site_protocol_configs
-        GROUP BY site_id, base_url_id, credential_id
-        HAVING COUNT(*) > 1 AND COUNT(DISTINCT
-            CAST(enabled AS TEXT) || '|' || headers_json || '|' ||
-            channel_proxy || '|' || param_override || '|' || match_regex
-        ) > 1
-    """)).fetchall()
-    if conflicts:
-        conflict_info = ", ".join(
-            f"site={r[0]} base_url={r[1]} credential={r[2]}"
-            for r in conflicts
-        )
-        raise RuntimeError(
-            f"Migration aborted: found {len(conflicts)} conflicting combo(s) that cannot be auto-merged. "
-            f"Please manually resolve these configs first: {conflict_info}"
-        )
-
-    # Step 6: 迁移 model_group_items.channel_id → 复合 ID
+    # Step 5: 迁移 model_group_items.channel_id → 复合 ID
     op.execute("""
         UPDATE model_group_items
         SET channel_id = (
@@ -114,7 +115,7 @@ def upgrade() -> None:
         WHERE channel_id IN (SELECT id FROM site_protocol_configs)
     """)
 
-    # Step 7: 迁移 request_logs.channel_id → 复合 ID
+    # Step 6: 迁移 request_logs.channel_id → 复合 ID
     op.execute("""
         UPDATE request_logs
         SET channel_id = (
