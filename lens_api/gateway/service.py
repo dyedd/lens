@@ -1006,10 +1006,6 @@ def _has_version_update(latest_version: str, current_version: str) -> bool:
         return False
 
 
-async def healthz() -> dict[str, str]:
-    return {"status": "ok"}
-
-
 async def public_branding() -> PublicBranding:
     branding = await app_state.domain_store.get_branding_settings()
     return PublicBranding(

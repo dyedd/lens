@@ -14,15 +14,3 @@ services:
       - "3000:3000"
     volumes:
       - ./data:/app/data
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/healthz', timeout=5)",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
