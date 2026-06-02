@@ -378,9 +378,11 @@ class StreamCapture:
     first_token_latency_ms: int = 0
     response_content_chunks: list[str] = field(default_factory=list)
     client_response_content_chunks: list[str] = field(default_factory=list)
+    event_buffer: str = ""
+    event_format: str | None = None
     completed: bool = False
     client_disconnected: bool = False
-    drain_task: asyncio.Task[None] | None = None
+    first_token_update_task: asyncio.Task[None] | None = None
     parse_errors: list[str] = field(default_factory=list)
     input_tokens: int = 0
     cache_read_input_tokens: int = 0
@@ -391,7 +393,7 @@ class StreamCapture:
     errors: list[str] = field(default_factory=list)
     request_log_id: int | None = None
     stream_started_at: float = 0.0
-    last_persisted_first_token_latency_ms: int = 0
+    client_to_close: httpx.AsyncClient | None = None
 
 
 async def _startup_app_state(state: AppState) -> None:
@@ -400,7 +402,9 @@ async def _startup_app_state(state: AppState) -> None:
     resolve_time_zone(None)
     if state.http.is_closed:
         state.http = state._create_http_client()
-    await state.domain_store.fail_running_request_logs()
+    await state.domain_store.fail_running_request_logs(
+        interrupted_latency_cap_ms=_running_request_latency_cap_ms()
+    )
 
 
 async def _close_app_state(state: AppState) -> None:
@@ -410,6 +414,10 @@ async def _close_app_state(state: AppState) -> None:
 
 
 app_state = AppState()
+
+
+def _running_request_latency_cap_ms() -> int:
+    return int(max(settings.request_timeout_seconds, 0) * 1000)
 
 
 def _overview_window_minutes(
@@ -519,7 +527,17 @@ def _error_response(
     message: str,
     details: Any | None = None,
     headers: Mapping[str, str] | None = None,
+    request: Request | None = None,
 ) -> JSONResponse:
+    protocol = _request_error_protocol(request)
+    if protocol is not None:
+        return _protocol_error_response(
+            protocol=protocol,
+            status_code=status_code,
+            error_type=error_type,
+            message=message,
+            headers=headers,
+        )
     error: dict[str, Any] = {"type": error_type, "message": message}
     if details is not None:
         error["details"] = jsonable_encoder(details)
@@ -528,6 +546,117 @@ def _error_response(
         content=ErrorResponse(error=error).model_dump(mode="json"),
         headers=dict(headers) if headers else None,
     )
+
+
+def _request_error_protocol(request: Request | None) -> ProtocolKind | None:
+    if request is None:
+        return None
+    path = request.url.path.rstrip("/")
+    if path.startswith("/v1beta/"):
+        return ProtocolKind.GEMINI
+    if path == "/v1/messages":
+        return ProtocolKind.ANTHROPIC
+    if path == "/v1/models" and request.headers.get("anthropic-version"):
+        return ProtocolKind.ANTHROPIC
+    if path in {
+        "/v1/chat/completions",
+        "/v1/responses",
+        "/v1/embeddings",
+        "/v1/rerank",
+        "/v1/models",
+    }:
+        return ProtocolKind.OPENAI_CHAT
+    return None
+
+
+def _protocol_error_response(
+    *,
+    protocol: ProtocolKind,
+    status_code: int,
+    error_type: str,
+    message: str,
+    headers: Mapping[str, str] | None = None,
+) -> JSONResponse:
+    content = _protocol_error_payload(
+        protocol=protocol,
+        status_code=status_code,
+        error_type=error_type,
+        message=message,
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content=content,
+        headers=dict(headers) if headers else None,
+    )
+
+
+def _protocol_error_payload(
+    *,
+    protocol: ProtocolKind,
+    status_code: int,
+    error_type: str,
+    message: str,
+) -> dict[str, Any]:
+    if protocol == ProtocolKind.ANTHROPIC:
+        return {
+            "type": "error",
+            "error": {
+                "type": _anthropic_error_type(status_code, error_type),
+                "message": message,
+            },
+        }
+    if protocol == ProtocolKind.GEMINI:
+        return {
+            "error": {
+                "code": status_code,
+                "message": message,
+                "status": _gemini_error_status(status_code),
+            }
+        }
+    return {
+        "error": {
+            "message": message,
+            "type": error_type,
+            "param": None,
+            "code": None,
+        }
+    }
+
+
+def _anthropic_error_type(status_code: int, error_type: str) -> str:
+    if status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN):
+        return "authentication_error"
+    if status_code == status.HTTP_404_NOT_FOUND:
+        return "not_found_error"
+    if status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        return "rate_limit_error"
+    if status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+        return "invalid_request_error"
+    if status_code >= 500:
+        return "api_error"
+    if error_type in {"bad_request", "validation_error"}:
+        return "invalid_request_error"
+    return "api_error"
+
+
+def _gemini_error_status(status_code: int) -> str:
+    if status_code == status.HTTP_400_BAD_REQUEST:
+        return "INVALID_ARGUMENT"
+    if status_code == status.HTTP_401_UNAUTHORIZED:
+        return "UNAUTHENTICATED"
+    if status_code == status.HTTP_403_FORBIDDEN:
+        return "PERMISSION_DENIED"
+    if status_code == status.HTTP_404_NOT_FOUND:
+        return "NOT_FOUND"
+    if status_code == status.HTTP_409_CONFLICT:
+        return "ABORTED"
+    if status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        return "RESOURCE_EXHAUSTED"
+    if status_code == status.HTTP_504_GATEWAY_TIMEOUT:
+        return "DEADLINE_EXCEEDED"
+    if status_code >= 500:
+        return "INTERNAL"
+    return "UNKNOWN"
 
 
 def _status_error_type(status_code: int) -> str:
@@ -572,7 +701,9 @@ def _key_error_message(exc: KeyError) -> str:
     return f"Resource not found: {key}"
 
 
-def _database_error_response(exc: OperationalError) -> JSONResponse:
+def _database_error_response(
+    exc: OperationalError, request: Request | None = None
+) -> JSONResponse:
     message = str(exc.orig if hasattr(exc, "orig") else exc).lower()
     if "database is locked" in message:
         status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -584,11 +715,12 @@ def _database_error_response(exc: OperationalError) -> JSONResponse:
         status_code=status_code,
         error_type="database_error",
         message=detail,
+        request=request,
     )
 
 
 async def handle_http_exception(
-    _: Request, exc: StarletteHTTPException
+    request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
     status_code = int(exc.status_code)
     detail = getattr(exc, "detail", None)
@@ -601,32 +733,35 @@ async def handle_http_exception(
         message=_detail_message(detail, _status_message(status_code)),
         details=details,
         headers=getattr(exc, "headers", None),
+        request=request,
     )
 
 
 async def handle_validation_error(
-    _: Request, exc: RequestValidationError
+    request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     return _error_response(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         error_type="validation_error",
         message="Request validation failed",
         details=exc.errors(),
+        request=request,
     )
 
 
 async def handle_invalid_token_error(
-    _: Request, __: jwt.InvalidTokenError
+    request: Request, __: jwt.InvalidTokenError
 ) -> JSONResponse:
     return _error_response(
         status_code=status.HTTP_401_UNAUTHORIZED,
         error_type="unauthorized",
         message="Invalid token",
+        request=request,
     )
 
 
 async def handle_cronjob_already_running(
-    _: Request, exc: CronjobAlreadyRunningError
+    request: Request, exc: CronjobAlreadyRunningError
 ) -> JSONResponse:
     task_id = exc.args[0] if exc.args else ""
     message = f"Cron job is already running: {task_id}" if task_id else str(exc)
@@ -634,49 +769,55 @@ async def handle_cronjob_already_running(
         status_code=status.HTTP_409_CONFLICT,
         error_type="conflict",
         message=message,
+        request=request,
     )
 
 
-async def handle_key_error(_: Request, exc: KeyError) -> JSONResponse:
+async def handle_key_error(request: Request, exc: KeyError) -> JSONResponse:
     return _error_response(
         status_code=status.HTTP_404_NOT_FOUND,
         error_type="not_found",
         message=_key_error_message(exc),
+        request=request,
     )
 
 
-async def handle_lookup_error(_: Request, exc: LookupError) -> JSONResponse:
+async def handle_lookup_error(request: Request, exc: LookupError) -> JSONResponse:
     return _error_response(
         status_code=status.HTTP_404_NOT_FOUND,
         error_type="not_found",
         message=str(exc) or "Resource not found",
+        request=request,
     )
 
 
-async def handle_value_error(_: Request, exc: ValueError) -> JSONResponse:
+async def handle_value_error(request: Request, exc: ValueError) -> JSONResponse:
     return _error_response(
         status_code=status.HTTP_400_BAD_REQUEST,
         error_type="bad_request",
         message=str(exc) or "Invalid request",
+        request=request,
     )
 
 
 async def handle_json_decode_error(
-    _: Request, __: json.JSONDecodeError
+    request: Request, __: json.JSONDecodeError
 ) -> JSONResponse:
     return _error_response(
         status_code=status.HTTP_400_BAD_REQUEST,
         error_type="bad_request",
         message="Invalid JSON payload",
+        request=request,
     )
 
 
-async def handle_unexpected_error(_: Request, exc: Exception) -> JSONResponse:
+async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     logger.exception("Unhandled API error")
     return _error_response(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         error_type="server_error",
         message="Internal server error",
+        request=request,
     )
 
 
@@ -688,8 +829,10 @@ def _apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
     )
 
 
-async def handle_operational_error(_: Request, exc: OperationalError) -> JSONResponse:
-    return _database_error_response(exc)
+async def handle_operational_error(
+    request: Request, exc: OperationalError
+) -> JSONResponse:
+    return _database_error_response(exc, request)
 
 
 async def dynamic_cors_middleware(
@@ -700,7 +843,7 @@ async def dynamic_cors_middleware(
         runtime = await app_state.domain_store.get_runtime_settings()
         _apply_router_runtime_settings(runtime)
     except OperationalError as exc:
-        return _database_error_response(exc)
+        return _database_error_response(exc, request)
     allow_origins = runtime["cors_allow_origins"]
     origin = request.headers.get("origin", "")
     if allow_origins == ["*"]:
@@ -1822,25 +1965,19 @@ async def _proxy_protocol(
             attempts=[],
             error_message="Request model is required",
         )
-        return JSONResponse(
+        return _protocol_error_response(
+            protocol=protocol,
             status_code=400,
-            content=ErrorResponse(
-                error={
-                    "type": "missing_model",
-                    "message": "Request model is required",
-                }
-            ).model_dump(mode="json"),
+            error_type="missing_model",
+            message="Request model is required",
         )
     requested_model = requested_model.strip()
     if not _gateway_key_allows_model(gateway_key, requested_model):
-        return JSONResponse(
+        return _protocol_error_response(
+            protocol=protocol,
             status_code=403,
-            content=ErrorResponse(
-                error={
-                    "type": "forbidden_model",
-                    "message": "Gateway API key is not allowed to use this model",
-                }
-            ).model_dump(mode="json"),
+            error_type="forbidden_model",
+            message="Gateway API key is not allowed to use this model",
         )
     plan: RoutingPlan | None = None
     request_log = await app_state.domain_store.create_pending_request_log(
@@ -1879,6 +2016,7 @@ async def _proxy_protocol(
             raise RuntimeError("Routing plan was not resolved")
 
         errors: list[str] = []
+        failure_status_codes: list[int | None] = []
         for target in [selection.primary, *selection.fallbacks]:
             if not app_state.router.is_target_available(target):
                 continue
@@ -1892,19 +2030,22 @@ async def _proxy_protocol(
                 plan=plan,
                 log_ctx=log_ctx,
                 errors=errors,
+                failure_status_codes=failure_status_codes,
             )
             if response is not None:
                 return response
 
-        return JSONResponse(
-            status_code=502,
-            content=ErrorResponse(
-                error={
-                    "type": "upstream_error",
-                    "message": "All upstream channels failed",
-                    "details": errors,
-                }
-            ).model_dump(mode="json"),
+        failed_status_code = (
+            504
+            if failure_status_codes
+            and all(status_code == 504 for status_code in failure_status_codes)
+            else 502
+        )
+        return _protocol_error_response(
+            protocol=protocol,
+            status_code=failed_status_code,
+            error_type="upstream_error",
+            message="All upstream channels failed",
         )
     except Exception as exc:
         logger.exception("Proxy request failed unexpectedly")
@@ -1962,6 +2103,7 @@ async def _resolve_proxy_route(
             None,
             await _routing_error_response(
                 plan=plan,
+                protocol=protocol,
                 requested_model=requested_model,
                 log_ctx=log_ctx,
                 upstream_user_agent=upstream_user_agent,
@@ -1974,6 +2116,7 @@ async def _resolve_proxy_route(
 async def _routing_error_response(
     *,
     plan: RoutingPlan | None,
+    protocol: ProtocolKind,
     requested_model: str,
     log_ctx: _RequestLogger,
     upstream_user_agent: str,
@@ -1992,11 +2135,11 @@ async def _routing_error_response(
         is_stream=is_stream_body,
         error_message=str(exc),
     )
-    return JSONResponse(
+    return _protocol_error_response(
+        protocol=protocol,
         status_code=503,
-        content=ErrorResponse(
-            error={"type": "routing_error", "message": str(exc)}
-        ).model_dump(mode="json"),
+        error_type="routing_error",
+        message="Gateway routing failed",
     )
 
 
@@ -2011,6 +2154,7 @@ async def _try_target(
     plan: RoutingPlan,
     log_ctx: _RequestLogger,
     errors: list[str],
+    failure_status_codes: list[int | None],
 ) -> Response | None:
     channel = target.channel
     attempt_started_at = perf_counter()
@@ -2039,6 +2183,7 @@ async def _try_target(
                 log_ctx=log_ctx,
                 plan=plan,
                 errors=errors,
+                failure_status_codes=failure_status_codes,
                 attempt_started_at=attempt_started_at,
                 effective_user_agent=effective_user_agent,
                 upstream_body=body,
@@ -2061,6 +2206,7 @@ async def _try_target(
             log_ctx=log_ctx,
             plan=plan,
             errors=errors,
+            failure_status_codes=failure_status_codes,
             attempt_started_at=attempt_started_at,
             effective_user_agent=effective_user_agent,
             upstream_body=upstream_body,
@@ -2102,6 +2248,7 @@ async def _try_target(
             log_ctx=log_ctx,
             plan=plan,
             errors=errors,
+            failure_status_codes=failure_status_codes,
             attempt_started_at=attempt_started_at,
             effective_user_agent=effective_user_agent,
             upstream_body=upstream_body,
@@ -2115,6 +2262,7 @@ async def _try_target(
             log_ctx=log_ctx,
             plan=plan,
             errors=errors,
+            failure_status_codes=failure_status_codes,
             attempt_started_at=attempt_started_at,
             effective_user_agent=effective_user_agent,
             upstream_body=upstream_body,
@@ -2142,6 +2290,11 @@ async def _try_target(
         if result.stream_capture is not None:
             result.stream_capture.request_log_id = log_ctx.request_log_id
             result.stream_capture.stream_started_at = log_ctx.started_at
+        first_token_latency_ms = (
+            result.stream_capture.first_token_latency_ms
+            if result.stream_capture is not None
+            else result.first_token_latency_ms
+        )
         await log_ctx.update(
             requested_group_name=plan.requested_group_name,
             resolved_group_name=plan.resolved_group_name,
@@ -2152,6 +2305,7 @@ async def _try_target(
             status_code=result.status_code,
             success=False,
             is_stream=True,
+            first_token_latency_ms=first_token_latency_ms,
             request_content=merged_request_content,
         )
         result.response.background = BackgroundTask(
@@ -2194,6 +2348,7 @@ async def _record_target_failure(
     log_ctx: _RequestLogger,
     plan: RoutingPlan,
     errors: list[str],
+    failure_status_codes: list[int | None],
     attempt_started_at: float,
     effective_user_agent: str,
     upstream_body: dict[str, Any],
@@ -2212,6 +2367,7 @@ async def _record_target_failure(
         max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
     )
     errors.append(message)
+    failure_status_codes.append(exc.status_code)
     log_ctx.attempts.append(
         AttemptLog(
             channel_id=channel.id,
@@ -2286,7 +2442,7 @@ async def _call_channel(
                 log_body_enabled,
             )
         elif is_event_stream:
-            result = _build_stream_result(
+            result = await _build_stream_result(
                 response,
                 channel,
                 client_protocol,
@@ -2294,7 +2450,10 @@ async def _call_channel(
                 request_content,
                 stream_started_at,
                 log_body_enabled,
+                client_to_close=client if close_client else None,
             )
+            if close_client:
+                close_client = False
         else:
             result = await _build_json_result(
                 response,
@@ -2305,7 +2464,8 @@ async def _call_channel(
                 request_content,
                 log_body_enabled,
             )
-        app_state.router.record_success(channel.id, credential_id=credential_id)
+        if not result.is_stream:
+            app_state.router.record_success(channel.id, credential_id=credential_id)
         return result
     except httpx.HTTPStatusError as exc:
         await exc.response.aread()
@@ -2426,7 +2586,7 @@ async def _build_anthropic_sse_to_json_result(
     )
 
 
-def _build_stream_result(
+async def _build_stream_result(
     response: httpx.Response,
     channel: ChannelConfig,
     client_protocol: ProtocolKind | None,
@@ -2434,19 +2594,19 @@ def _build_stream_result(
     request_content: str | None,
     stream_started_at: float,
     log_body_enabled: bool,
+    *,
+    client_to_close: httpx.AsyncClient | None = None,
 ) -> UpstreamResult:
-    capture = StreamCapture(capture_body=log_body_enabled)
-    chunk_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-    capture.drain_task = asyncio.create_task(
-        _pump_stream_response(
-            response=response,
-            protocol=channel.protocol,
-            capture=capture,
-            chunk_queue=chunk_queue,
-            stream_started_at=stream_started_at,
-        )
+    capture = StreamCapture(
+        capture_body=log_body_enabled,
+        client_to_close=client_to_close,
     )
-    raw_iter = _consume_stream_queue(chunk_queue, capture)
+    raw_iter = _stream_upstream_iterator(
+        response,
+        channel.protocol,
+        capture,
+        stream_started_at,
+    )
 
     if client_protocol is not None and needs_conversion(
         client_protocol, channel.protocol
@@ -2460,6 +2620,8 @@ def _build_stream_result(
         converted_iter = raw_iter
         stream_media = response.headers.get("content-type")
 
+    converted_iter = _stream_client_iterator(converted_iter, capture)
+
     return UpstreamResult(
         response=StreamingResponse(
             converted_iter,
@@ -2469,10 +2631,197 @@ def _build_stream_result(
         ),
         is_stream=True,
         status_code=response.status_code,
+        first_token_latency_ms=capture.first_token_latency_ms,
         upstream_model_name=body.get("model"),
         request_content=request_content,
         stream_capture=capture,
     )
+
+
+def _stream_payload_has_output(protocol: ProtocolKind, payload: dict[str, Any]) -> bool:
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        return _chat_stream_payload_has_output(payload)
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        return _responses_stream_payload_has_output(payload)
+    if protocol == ProtocolKind.ANTHROPIC:
+        return _anthropic_stream_payload_has_output(payload)
+    if protocol == ProtocolKind.GEMINI:
+        return _gemini_stream_payload_has_output(payload)
+    return bool(payload)
+
+
+def _chat_stream_payload_has_output(payload: dict[str, Any]) -> bool:
+    choices = payload.get("choices")
+    if not isinstance(choices, list):
+        return False
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        delta = choice.get("delta")
+        if not isinstance(delta, dict):
+            continue
+        if _has_non_empty_stream_value(_stringify_text_content(delta.get("content"))):
+            return True
+        if _has_non_empty_stream_value(delta.get("reasoning_content")):
+            return True
+        if _has_non_empty_stream_value(delta.get("reasoning")):
+            return True
+        if _chat_function_delta_has_output(delta.get("function_call")):
+            return True
+        tool_calls = delta.get("tool_calls")
+        if isinstance(tool_calls, list) and any(
+            _chat_tool_call_delta_has_output(item) for item in tool_calls
+        ):
+            return True
+    return False
+
+
+def _chat_function_delta_has_output(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return _has_non_empty_stream_value(
+        value.get("name")
+    ) or _has_non_empty_stream_value(value.get("arguments"))
+
+
+def _chat_tool_call_delta_has_output(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if _has_non_empty_stream_value(value.get("id")):
+        return True
+    if _has_non_empty_stream_value(value.get("type")):
+        return True
+    return _chat_function_delta_has_output(value.get("function"))
+
+
+def _responses_stream_payload_has_output(payload: dict[str, Any]) -> bool:
+    payload_type = str(payload.get("type") or "")
+    if payload_type.endswith(".delta"):
+        return any(
+            _has_non_empty_stream_value(payload.get(key))
+            for key in ("delta", "text", "partial_json")
+        )
+    item = payload.get("item")
+    if payload_type == "response.output_item.added" and isinstance(item, dict):
+        return item.get("type") == "function_call" and (
+            _has_non_empty_stream_value(item.get("name"))
+            or _has_non_empty_stream_value(item.get("call_id"))
+        )
+    return False
+
+
+def _anthropic_stream_payload_has_output(payload: dict[str, Any]) -> bool:
+    payload_type = str(payload.get("type") or "")
+    if payload_type == "content_block_delta":
+        delta = payload.get("delta")
+        if not isinstance(delta, dict):
+            return False
+        return any(
+            _has_non_empty_stream_value(delta.get(key))
+            for key in ("text", "thinking", "partial_json")
+        )
+    if payload_type == "content_block_start":
+        block = payload.get("content_block")
+        return (
+            isinstance(block, dict)
+            and block.get("type") == "tool_use"
+            and (
+                _has_non_empty_stream_value(block.get("name"))
+                or _has_non_empty_stream_value(block.get("id"))
+            )
+        )
+    return False
+
+
+def _gemini_stream_payload_has_output(payload: dict[str, Any]) -> bool:
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return False
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content")
+        if not isinstance(content, dict):
+            continue
+        parts = content.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            if _has_non_empty_stream_value(part.get("text")):
+                return True
+            if isinstance(part.get("functionCall"), dict):
+                return True
+    return False
+
+
+def _has_non_empty_stream_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return value != ""
+    if isinstance(value, dict):
+        return any(_has_non_empty_stream_value(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_has_non_empty_stream_value(item) for item in value)
+    return value is not None
+
+
+def _mark_stream_first_chunk(capture: StreamCapture, stream_started_at: float) -> None:
+    if capture.saw_first_chunk:
+        return
+    capture.saw_first_chunk = True
+    capture.first_token_latency_ms = _elapsed_ms(stream_started_at)
+    request_log_id = capture.request_log_id
+    if request_log_id is None:
+        return
+    capture.first_token_update_task = asyncio.create_task(
+        _persist_stream_first_token_latency(
+            request_log_id=request_log_id,
+            first_token_latency_ms=capture.first_token_latency_ms,
+            latency_ms=_elapsed_ms(capture.stream_started_at or stream_started_at),
+        )
+    )
+
+
+async def _persist_stream_first_token_latency(
+    *,
+    request_log_id: int,
+    first_token_latency_ms: int,
+    latency_ms: int,
+) -> None:
+    try:
+        await app_state.domain_store.update_request_log_runtime(
+            request_log_id,
+            first_token_latency_ms=first_token_latency_ms,
+            latency_ms=latency_ms,
+        )
+    except Exception:
+        logger.warning("Failed to update stream first token latency", exc_info=True)
+
+
+async def _stream_client_iterator(
+    stream: AsyncIterator[bytes],
+    capture: StreamCapture,
+) -> AsyncIterator[bytes]:
+    finished = False
+    try:
+        async for chunk in stream:
+            yield chunk
+        finished = True
+    except asyncio.CancelledError:
+        await _cancel_stream_capture(capture, "client disconnected")
+        raise
+    finally:
+        if not finished and not capture.client_disconnected:
+            await _cancel_stream_capture(capture, "client disconnected")
+
+
+async def _cancel_stream_capture(
+    capture: StreamCapture, reason: str | None = None
+) -> None:
+    capture.client_disconnected = True
+    if reason and reason not in capture.errors:
+        capture.errors.append(reason)
 
 
 async def _build_json_result(
@@ -3335,8 +3684,8 @@ async def _record_stream_request_log(
     attempts: list[dict[str, Any]],
 ) -> None:
     capture = result.stream_capture
-    if capture is not None and capture.drain_task is not None:
-        await capture.drain_task
+    if capture is not None and capture.first_token_update_task is not None:
+        await capture.first_token_update_task
     raw_content = (
         _join_stream_chunks(capture.response_content_chunks)
         if capture is not None and capture.capture_body
@@ -3361,14 +3710,17 @@ async def _record_stream_request_log(
         response_protocol = protocol
         response_raw_content = client_response_content
     parse_errors = capture.parse_errors if capture is not None else None
-    try:
-        parsed = _extract_stream_usage(
-            channel.protocol, raw_content, parse_errors=parse_errors
-        )
-    except ValueError as exc:
-        if capture is not None:
-            capture.parse_errors.append(str(exc))
-        parsed = dict(_EMPTY_USAGE)
+    if raw_content:
+        try:
+            parsed = _extract_stream_usage(
+                channel.protocol, raw_content, parse_errors=parse_errors
+            )
+        except ValueError as exc:
+            if capture is not None:
+                capture.parse_errors.append(str(exc))
+            parsed = _stream_capture_usage(capture)
+    else:
+        parsed = _stream_capture_usage(capture)
     try:
         distilled_content = _distill_stream_response_content(
             response_protocol, response_raw_content
@@ -3386,6 +3738,26 @@ async def _record_stream_request_log(
     cache_write_input_tokens = parsed["cache_write_input_tokens"]
     output_tokens = parsed["output_tokens"]
     total_tokens = parsed["total_tokens"]
+    first_token_latency_ms = (
+        capture.first_token_latency_ms
+        if capture is not None
+        else result.first_token_latency_ms
+    )
+    latency_ms = _elapsed_ms(started_at)
+    attempt_logs = [dict(item) for item in attempts]
+    if attempt_logs and attempt_logs[-1].get("success"):
+        attempt_logs[-1]["duration_ms"] = (
+            latency_ms if capture_issue is not None else first_token_latency_ms
+        )
+        if capture_issue is not None:
+            attempt_logs[-1]["success"] = False
+            attempt_logs[-1]["error_message"] = capture_issue
+    await _record_stream_route_health(
+        channel=channel,
+        capture=capture,
+        capture_issue=capture_issue,
+        attempts=attempt_logs,
+    )
     (
         input_cost_usd,
         output_cost_usd,
@@ -3415,12 +3787,8 @@ async def _record_stream_request_log(
         status_code=result.status_code,
         success=capture_issue is None,
         is_stream=True,
-        first_token_latency_ms=(
-            capture.first_token_latency_ms
-            if capture is not None
-            else result.first_token_latency_ms
-        ),
-        latency_ms=_elapsed_ms(started_at),
+        first_token_latency_ms=first_token_latency_ms,
+        latency_ms=latency_ms,
         input_tokens=input_tokens,
         cache_read_input_tokens=cache_read_input_tokens,
         cache_write_input_tokens=cache_write_input_tokens,
@@ -3431,9 +3799,55 @@ async def _record_stream_request_log(
         total_cost_usd=total_cost_usd,
         request_content=result.request_content,
         response_content=distilled_content,
-        attempts=attempts,
+        attempts=attempt_logs,
         error_message=capture_issue,
     )
+
+
+async def _record_stream_route_health(
+    *,
+    channel: ChannelConfig,
+    capture: StreamCapture | None,
+    capture_issue: str | None,
+    attempts: list[dict[str, Any]],
+) -> None:
+    credential_id = _last_attempt_credential_id(attempts)
+    if capture_issue is None:
+        app_state.router.record_success(channel.id, credential_id=credential_id)
+        return
+    if _is_client_stream_disconnect(capture):
+        return
+
+    try:
+        runtime = await app_state.domain_store.get_runtime_settings()
+        app_state.router.record_failure(
+            channel.id,
+            _format_channel_error(capture_issue),
+            status_code=None,
+            credential_id=credential_id,
+            channel_keys=channel.keys,
+            threshold=int(runtime["circuit_breaker_threshold"]),
+            cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
+            max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+        )
+    except Exception:
+        logger.warning("Failed to update stream route health", exc_info=True)
+
+
+def _last_attempt_credential_id(attempts: list[dict[str, Any]]) -> str | None:
+    if not attempts:
+        return None
+    credential_id = attempts[-1].get("credential_id")
+    return credential_id if isinstance(credential_id, str) and credential_id else None
+
+
+def _is_client_stream_disconnect(capture: StreamCapture | None) -> bool:
+    if capture is None or not capture.client_disconnected:
+        return False
+    upstream_errors = [
+        error for error in capture.errors if error and error != "client disconnected"
+    ]
+    return not upstream_errors and not capture.parse_errors
 
 
 async def _update_request_log(
@@ -3513,60 +3927,33 @@ def _decode_content_bytes(content: bytes | None) -> str | None:
         return content.decode("utf-8", errors="replace")
 
 
-async def _pump_stream_response(
-    *,
+async def _stream_upstream_iterator(
     response: httpx.Response,
     protocol: ProtocolKind,
     capture: StreamCapture,
-    chunk_queue: asyncio.Queue[bytes | None],
     stream_started_at: float,
-) -> None:
+) -> AsyncIterator[bytes]:
     try:
         async for chunk in response.aiter_bytes():
             if not chunk:
                 continue
-            if not capture.saw_first_chunk:
-                capture.saw_first_chunk = True
-                capture.first_token_latency_ms = _elapsed_ms(stream_started_at)
-                if capture.request_log_id is not None:
-                    capture.last_persisted_first_token_latency_ms = (
-                        capture.first_token_latency_ms
-                    )
-                    await app_state.domain_store.update_request_log_runtime(
-                        capture.request_log_id,
-                        first_token_latency_ms=capture.first_token_latency_ms,
-                        latency_ms=_elapsed_ms(
-                            capture.stream_started_at or stream_started_at
-                        ),
-                    )
             text = chunk.decode("utf-8", errors="replace")
-            if text and capture.capture_body:
-                capture.response_content_chunks.append(text)
-            if not capture.client_disconnected:
-                chunk_queue.put_nowait(chunk)
+            if text:
+                _capture_stream_event_chunk(protocol, capture, text, stream_started_at)
+                if capture.capture_body:
+                    capture.response_content_chunks.append(text)
+            yield chunk
+        _flush_stream_event_buffer(protocol, capture, stream_started_at)
         capture.completed = True
     except asyncio.CancelledError:
-        capture.errors.append("stream pump cancelled")
-    except httpx.HTTPError as exc:
-        capture.errors.append(f"stream pump failed: {type(exc).__name__}: {exc}")
-    finally:
-        if not capture.client_disconnected:
-            chunk_queue.put_nowait(None)
-        await response.aclose()
-
-
-async def _consume_stream_queue(
-    chunk_queue: asyncio.Queue[bytes | None], capture: StreamCapture
-) -> AsyncIterator[bytes]:
-    try:
-        while True:
-            chunk = await chunk_queue.get()
-            if chunk is None:
-                break
-            yield chunk
-    except asyncio.CancelledError:
-        capture.client_disconnected = True
+        await _cancel_stream_capture(capture, "client disconnected")
         raise
+    except httpx.HTTPError as exc:
+        capture.errors.append(f"stream failed: {type(exc).__name__}: {exc}")
+    finally:
+        await response.aclose()
+        if capture.client_to_close is not None:
+            await capture.client_to_close.aclose()
 
 
 async def _capture_converted_stream_iterator(
@@ -3578,9 +3965,138 @@ async def _capture_converted_stream_iterator(
             if text and capture.capture_body:
                 capture.client_response_content_chunks.append(text)
             yield chunk
+    except asyncio.CancelledError:
+        await _cancel_stream_capture(capture, "client disconnected")
+        raise
     except ValueError as exc:
-        capture.client_disconnected = True
-        capture.errors.append(str(exc))
+        await _cancel_stream_capture(capture, str(exc))
+
+
+def _capture_stream_event_chunk(
+    protocol: ProtocolKind,
+    capture: StreamCapture,
+    text: str,
+    stream_started_at: float,
+) -> None:
+    if protocol in (ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK):
+        return
+    capture.event_buffer += text
+    stream_format = _stream_event_format(protocol, capture)
+    if stream_format == "ndjson":
+        _drain_ndjson_event_buffer(protocol, capture, stream_started_at, final=False)
+    else:
+        _drain_sse_event_buffer(protocol, capture, stream_started_at, final=False)
+
+
+def _flush_stream_event_buffer(
+    protocol: ProtocolKind, capture: StreamCapture, stream_started_at: float
+) -> None:
+    if not capture.event_buffer:
+        return
+    stream_format = _stream_event_format(protocol, capture)
+    if stream_format == "ndjson":
+        _drain_ndjson_event_buffer(protocol, capture, stream_started_at, final=True)
+    else:
+        _drain_sse_event_buffer(protocol, capture, stream_started_at, final=True)
+
+
+def _stream_event_format(protocol: ProtocolKind, capture: StreamCapture) -> str:
+    if protocol != ProtocolKind.GEMINI:
+        return "sse"
+    if capture.event_format is not None:
+        return capture.event_format
+    normalized = _normalize_event_stream_newlines(capture.event_buffer).lstrip()
+    capture.event_format = "ndjson" if normalized.startswith(("{", "[")) else "sse"
+    return capture.event_format
+
+
+def _drain_sse_event_buffer(
+    protocol: ProtocolKind,
+    capture: StreamCapture,
+    stream_started_at: float,
+    *,
+    final: bool,
+) -> None:
+    normalized = _normalize_event_stream_newlines(capture.event_buffer)
+    blocks = normalized.split("\n\n")
+    if final:
+        capture.event_buffer = ""
+    else:
+        capture.event_buffer = blocks.pop()
+    for block in blocks:
+        payloads = _parse_sse_payloads(f"{block}\n\n", errors=capture.parse_errors)
+        for payload in payloads:
+            _record_stream_event_payload(protocol, capture, payload, stream_started_at)
+
+
+def _drain_ndjson_event_buffer(
+    protocol: ProtocolKind,
+    capture: StreamCapture,
+    stream_started_at: float,
+    *,
+    final: bool,
+) -> None:
+    normalized = _normalize_event_stream_newlines(capture.event_buffer)
+    lines = normalized.split("\n")
+    if final:
+        capture.event_buffer = ""
+    else:
+        capture.event_buffer = lines.pop()
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            capture.parse_errors.append(f"invalid NDJSON: {exc.msg}")
+            continue
+        if isinstance(payload, dict):
+            _record_stream_event_payload(protocol, capture, payload, stream_started_at)
+
+
+def _record_stream_event_payload(
+    protocol: ProtocolKind,
+    capture: StreamCapture,
+    payload: dict[str, Any],
+    stream_started_at: float,
+) -> None:
+    if not capture.saw_first_chunk and _stream_payload_has_output(protocol, payload):
+        _mark_stream_first_chunk(capture, stream_started_at)
+    try:
+        parsed = _extract_usage_from_payload(protocol, payload)
+    except ValueError as exc:
+        capture.parse_errors.append(str(exc))
+        return
+    if parsed["resolved_model"]:
+        capture.resolved_model = str(parsed["resolved_model"])
+    for key in (
+        "input_tokens",
+        "cache_read_input_tokens",
+        "cache_write_input_tokens",
+        "output_tokens",
+        "total_tokens",
+    ):
+        value = parsed[key]
+        assert isinstance(value, int)
+        if value:
+            setattr(capture, key, max(getattr(capture, key), value))
+
+
+def _stream_capture_usage(capture: StreamCapture | None) -> dict[str, int | str | None]:
+    if capture is None:
+        return dict(_EMPTY_USAGE)
+    total_tokens = max(
+        capture.total_tokens, capture.input_tokens + capture.output_tokens
+    )
+    return {
+        "resolved_model": capture.resolved_model,
+        "input_tokens": capture.input_tokens,
+        "cache_read_input_tokens": capture.cache_read_input_tokens,
+        "cache_write_input_tokens": capture.cache_write_input_tokens,
+        "output_tokens": capture.output_tokens,
+        "total_tokens": total_tokens,
+    }
 
 
 def _join_stream_chunks(chunks: list[str]) -> str | None:
@@ -4092,8 +4608,10 @@ def _extract_stream_usage(
             assert isinstance(value, int)
             if value:
                 merged[key] = max(merged[key], value)
-    if not merged["total_tokens"]:
-        merged["total_tokens"] = merged["input_tokens"] + merged["output_tokens"]
+    merged["total_tokens"] = max(
+        int(merged["total_tokens"] or 0),
+        int(merged["input_tokens"] or 0) + int(merged["output_tokens"] or 0),
+    )
     return merged
 
 
@@ -4168,6 +4686,13 @@ def _describe_stream_capture_issue(
 
     if capture is not None and not capture.completed:
         issues.append("stream did not drain to completion")
+    if (
+        capture is not None
+        and capture.completed
+        and not capture.saw_first_chunk
+        and protocol not in (ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK)
+    ):
+        issues.append("stream ended before first token")
 
     if not issues:
         return None
