@@ -21,6 +21,7 @@ _OPENAI_LIKE_PATH = {
     ProtocolKind.OPENAI_CHAT: "chat/completions",
     ProtocolKind.OPENAI_RESPONSES: "responses",
     ProtocolKind.OPENAI_EMBEDDING: "embeddings",
+    ProtocolKind.RERANK: "rerank",
     ProtocolKind.ANTHROPIC: "messages",
 }
 
@@ -115,6 +116,7 @@ def _protocol_base_url(channel: ChannelConfig) -> str:
         ProtocolKind.OPENAI_CHAT,
         ProtocolKind.OPENAI_RESPONSES,
         ProtocolKind.OPENAI_EMBEDDING,
+        ProtocolKind.RERANK,
         ProtocolKind.ANTHROPIC,
     }:
         return _append_url_path(root, "v1")

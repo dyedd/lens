@@ -4,6 +4,7 @@ export type ProtocolKind =
   | "openai_chat"
   | "openai_responses"
   | "openai_embedding"
+  | "rerank"
   | "anthropic"
   | "gemini";
 

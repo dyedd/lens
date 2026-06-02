@@ -367,6 +367,7 @@ function ProtocolBadge({ protocol }: { protocol: RequestLogItem["protocol"] }) {
     openai_chat: "chat",
     openai_responses: "responses",
     openai_embedding: "embedding",
+    rerank: "rerank",
     anthropic: "anthropic",
     gemini: "gemini",
   } as const;
@@ -1581,6 +1582,9 @@ export function RequestsScreen() {
                         </NativeSelectOption>
                         <NativeSelectOption value="openai_embedding">
                           OpenAI Embedding
+                        </NativeSelectOption>
+                        <NativeSelectOption value="rerank">
+                          Rerank
                         </NativeSelectOption>
                         <NativeSelectOption value="anthropic">
                           Anthropic

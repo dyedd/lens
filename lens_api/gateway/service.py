@@ -1493,11 +1493,30 @@ async def proxy_openai_embeddings(
     )
 
 
+async def proxy_rerank(
+    request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
+):
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Rerank request body must be a JSON object",
+        )
+    body.pop("stream", None)
+    return await _proxy_protocol(
+        ProtocolKind.RERANK,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+    )
+
+
 _OPENAI_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
     {
         ProtocolKind.OPENAI_CHAT,
         ProtocolKind.OPENAI_RESPONSES,
         ProtocolKind.OPENAI_EMBEDDING,
+        ProtocolKind.RERANK,
     }
 )
 _ALL_MODEL_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(ProtocolKind)
@@ -1992,7 +2011,7 @@ async def _try_target(
             upstream_body=upstream_body,
             exc=exc,
         )
-    if protocol == ProtocolKind.OPENAI_EMBEDDING:
+    if protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
         upstream_body.pop("stream", None)
 
     upstream_request_content = _dump_json(upstream_body)
@@ -2611,6 +2630,8 @@ def _model_test_output_text(protocol: ProtocolKind, raw_payload: Any) -> str:
                 if isinstance(vector, str) and vector:
                     output_text = f"<vector base64 len={len(vector)}>"
                     break
+    elif protocol == ProtocolKind.RERANK:
+        output_text = _summarize_rerank_result(raw_payload)
     elif protocol == ProtocolKind.ANTHROPIC:
         content = raw_payload.get("content")
         if isinstance(content, list):
@@ -2666,6 +2687,15 @@ def _model_test_body(payload: SiteModelTestRequest) -> dict[str, Any]:
             "model": payload.model_name,
             "input": text,
         }
+    if payload.protocol == ProtocolKind.RERANK:
+        query, documents = _rerank_test_prompt(text)
+        return {
+            "model": payload.model_name,
+            "query": query,
+            "documents": documents,
+            "top_n": min(3, len(documents)),
+            "return_documents": True,
+        }
     if payload.protocol == ProtocolKind.ANTHROPIC:
         return {
             "model": payload.model_name,
@@ -2699,8 +2729,62 @@ def _apply_model_test_param_override(
             credential_id=payload.credential.id,
             error_message=_format_channel_error(exc.detail),
         )
-    prepared_body["stream"] = False
+    if payload.protocol == ProtocolKind.RERANK:
+        prepared_body.pop("stream", None)
+    else:
+        prepared_body["stream"] = False
     return prepared_body
+
+
+def _summarize_rerank_result(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    results = payload.get("results")
+    if not isinstance(results, list) or not results:
+        return ""
+    top = max(
+        (item for item in results if isinstance(item, dict)),
+        key=lambda item: _coerce_relevance_score(item.get("relevance_score")),
+        default=None,
+    )
+    if top is None:
+        return ""
+    score = _coerce_relevance_score(top.get("relevance_score"))
+    index = top.get("index")
+    document = top.get("document")
+    document_text = ""
+    if isinstance(document, dict):
+        text_value = document.get("text")
+        if isinstance(text_value, str):
+            document_text = text_value
+    elif isinstance(document, str):
+        document_text = document
+    snippet = document_text.strip().replace("\n", " ")
+    if len(snippet) > 120:
+        snippet = snippet[:117] + "..."
+    parts: list[str] = [f"top score={score:.4f}"]
+    if isinstance(index, int):
+        parts.append(f"index={index}")
+    if snippet:
+        parts.append(f"document={snippet}")
+    return "; ".join(parts)
+
+
+def _coerce_relevance_score(value: Any) -> float:
+    try:
+        if value is None:
+            return float("-inf")
+        return float(value)
+    except (TypeError, ValueError):
+        return float("-inf")
+
+
+def _rerank_test_prompt(text: str) -> tuple[str, list[str]]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) >= 2:
+        return lines[0], lines[1:]
+    query = lines[0] if lines else text.strip()
+    return query, [query]
 
 
 def _stringify_text_content(value: Any) -> str:
@@ -2820,6 +2904,7 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
         ProtocolKind.OPENAI_CHAT,
         ProtocolKind.OPENAI_RESPONSES,
         ProtocolKind.OPENAI_EMBEDDING,
+        ProtocolKind.RERANK,
     }:
         return {
             "method": "GET",
@@ -3792,7 +3877,11 @@ def _extract_stream_usage(
     raw_content: str | None,
     parse_errors: list[str] | None = None,
 ) -> dict[str, int | str | None]:
-    if protocol == ProtocolKind.OPENAI_EMBEDDING or not raw_content:
+    if (
+        protocol == ProtocolKind.OPENAI_EMBEDDING
+        or protocol == ProtocolKind.RERANK
+        or not raw_content
+    ):
         return dict(_EMPTY_USAGE)
 
     if protocol == ProtocolKind.GEMINI:
@@ -3933,6 +4022,17 @@ def _extract_usage_from_payload(
 def _extract_response_usage(
     protocol: ProtocolKind, response: httpx.Response
 ) -> dict[str, int | str | None]:
+    if protocol == ProtocolKind.RERANK:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        empty = dict(_EMPTY_USAGE)
+        if isinstance(payload, dict):
+            model_value = payload.get("model")
+            if isinstance(model_value, str) and model_value.strip():
+                empty["resolved_model"] = model_value
+        return empty
     payload = response.json()
     if not isinstance(payload, dict):
         raise ValueError("Upstream response JSON must be an object")
