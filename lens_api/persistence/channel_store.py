@@ -4,7 +4,7 @@ import json
 import uuid
 from collections import defaultdict
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..models import (
@@ -12,6 +12,7 @@ from ..models import (
     ChannelDiscoveredModel,
     ChannelKeyItem,
     ChannelStatus,
+    ProtocolKind,
     SiteBaseUrl,
     SiteBaseUrlInput,
     SiteBatchImportError,
@@ -25,6 +26,7 @@ from ..models import (
     SiteImportItem,
     SiteImportModelInput,
     SiteModel,
+    SiteModelInput,
     SiteModelFetchRequest,
     SiteModelInput,
     SiteProtocolConfig,
@@ -39,6 +41,84 @@ from .entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
+
+
+def _combo_model_key(model: SiteModelInput) -> tuple[str, str]:
+    return (model.credential_id, model.model_name.strip())
+
+
+def _composite_id_like(column, combo_id: str):
+    """构造匹配复合 channel_id（{combo_id}_{protocol}）的 LIKE 条件。
+
+    combo_id 可能来自客户端输入，其中的 LIKE 元字符（_ / %）必须转义，
+    否则 'a_b' 这样的 id 会把 '_' 当通配符误匹配无关条目。分隔符与尾部
+    通配符（\\_%）保持字面/通配语义，用显式 ESCAPE 区分。
+    """
+    escaped = combo_id.replace("\\", "\\\\").replace("_", "\\_").replace("%", "\\%")
+    return column.like(f"{escaped}\\_%", escape="\\")
+
+
+
+def _deduplicate_combo_models(models: list[SiteModelInput]) -> list[SiteModelInput]:
+    deduplicated: list[SiteModelInput] = []
+    indexes: dict[tuple[str, str, ProtocolKind | None], int] = {}
+    none_indexes: dict[tuple[str, str], int] = {}
+    model_keys_with_specific_protocols: set[tuple[str, str]] = set()
+    discarded_indexes: set[int] = set()
+
+    for model in models:
+        model_key = _combo_model_key(model)
+        protocol = model.protocol
+
+        if protocol is None:
+            if model_key in model_keys_with_specific_protocols:
+                continue
+
+            row_key = (*model_key, None)
+            existing_index = indexes.get(row_key)
+            if existing_index is None:
+                indexes[row_key] = len(deduplicated)
+                none_indexes[model_key] = len(deduplicated)
+                deduplicated.append(model)
+                continue
+
+            existing = deduplicated[existing_index]
+            deduplicated[existing_index] = existing.model_copy(
+                update={
+                    "id": existing.id or model.id,
+                    "enabled": existing.enabled or model.enabled,
+                    "protocol": None,
+                }
+            )
+            continue
+
+        model_keys_with_specific_protocols.add(model_key)
+        none_index = none_indexes.pop(model_key, None)
+        if none_index is not None:
+            discarded_indexes.add(none_index)
+            indexes.pop((*model_key, None), None)
+
+        row_key = (*model_key, protocol)
+        existing_index = indexes.get(row_key)
+        if existing_index is None:
+            indexes[row_key] = len(deduplicated)
+            deduplicated.append(model)
+            continue
+
+        existing = deduplicated[existing_index]
+        deduplicated[existing_index] = existing.model_copy(
+            update={
+                "id": existing.id or model.id,
+                "enabled": existing.enabled or model.enabled,
+                "protocol": protocol,
+            }
+        )
+
+    return [
+        model
+        for index, model in enumerate(deduplicated)
+        if index not in discarded_indexes
+    ]
 
 
 class ChannelStore:
@@ -208,7 +288,14 @@ class ChannelStore:
             if protocol_ids:
                 await session.execute(
                     delete(ModelGroupItemEntity).where(
-                        ModelGroupItemEntity.channel_id.in_(protocol_ids)
+                        or_(
+                            *[
+                                _composite_id_like(
+                                    ModelGroupItemEntity.channel_id, pid
+                                )
+                                for pid in protocol_ids
+                            ]
+                        )
                     )
                 )
                 await session.execute(
@@ -312,7 +399,6 @@ class ChannelStore:
                     .where(SiteProtocolConfigEntity.site_id.in_(ids))
                     .order_by(
                         SiteProtocolConfigEntity.site_id.asc(),
-                        SiteProtocolConfigEntity.protocol.asc(),
                         SiteProtocolConfigEntity.id.asc(),
                     )
                 )
@@ -722,8 +808,6 @@ class ChannelStore:
             raise ValueError("Site name is required")
         if not base_urls:
             raise ValueError("At least one base URL is required")
-        if not protocols:
-            raise ValueError("At least one protocol config is required")
 
         normalized_base_urls = self._normalize_base_urls(base_urls)
         normalized_credentials = self._normalize_credentials(credentials)
@@ -762,38 +846,47 @@ class ChannelStore:
         credentials_by_id = {item.id: item for item in site.credentials}
         base_urls_by_id = {item.id: item for item in site.base_urls}
         items: list[ChannelConfig] = []
-        for protocol in site.protocols:
-            bound_base_url = base_urls_by_id.get(protocol.base_url_id)
+        for combo in site.protocols:
+            bound_base_url = base_urls_by_id.get(combo.base_url_id)
             if bound_base_url is None:
                 raise ValueError(
-                    f"Base URL not found for protocol config {protocol.protocol.value}: {protocol.base_url_id}"
+                    f"Base URL not found for combo {combo.id}: {combo.base_url_id}"
                 )
-            keys = self._build_channel_keys(protocol, credentials_by_id)
+            protocols = bound_base_url.compatible_protocols
+            if not protocols:
+                continue
+            keys = self._build_channel_keys(combo, credentials_by_id)
             if not keys:
                 continue
-            models = self._build_channel_models(protocol, credentials_by_id)
-            active_key = next((item for item in keys if item.enabled), keys[0])
-            items.append(
-                ChannelConfig(
-                    id=protocol.id,
-                    name=site.name,
-                    protocol=protocol.protocol,
-                    base_url=bound_base_url.url,
-                    api_key=active_key.key,
-                    status=(
-                        ChannelStatus.ENABLED
-                        if protocol.enabled
-                        else ChannelStatus.DISABLED
-                    ),
-                    headers=protocol.headers,
-                    model_patterns=[item.model_name for item in models if item.enabled],
-                    keys=keys,
-                    models=models,
-                    channel_proxy=protocol.channel_proxy,
-                    param_override=protocol.param_override,
-                    match_regex=protocol.match_regex,
+            active_key = next((k for k in keys if k.enabled), keys[0])
+            for protocol in protocols:
+                protocol_models = [
+                    m for m in combo.models
+                    if m.protocol == protocol or m.protocol is None
+                ]
+                items.append(
+                    ChannelConfig(
+                        id=f"{combo.id}_{protocol.value}",
+                        name=site.name,
+                        protocol=protocol,
+                        base_url=bound_base_url.url,
+                        api_key=active_key.key,
+                        status=(
+                            ChannelStatus.ENABLED
+                            if combo.enabled
+                            else ChannelStatus.DISABLED
+                        ),
+                        headers=combo.headers,
+                        model_patterns=[
+                            m.model_name for m in protocol_models if m.enabled
+                        ],
+                        keys=keys,
+                        models=self._build_channel_models(combo, credentials_by_id, protocol),
+                        channel_proxy=combo.channel_proxy,
+                        param_override=combo.param_override,
+                        match_regex=combo.match_regex,
+                    )
                 )
-            )
         return items
 
     def _build_channel_keys(
@@ -820,8 +913,9 @@ class ChannelStore:
 
     def _build_channel_models(
         self,
-        protocol: SiteProtocolConfig,
+        combo: SiteProtocolConfig,
         credentials_by_id: dict[str, SiteCredential],
+        protocol: ProtocolKind,
     ) -> list[ChannelDiscoveredModel]:
         return [
             ChannelDiscoveredModel(
@@ -832,7 +926,8 @@ class ChannelStore:
                 enabled=item.enabled,
                 sort_order=item.sort_order,
             )
-            for item in protocol.models
+            for item in combo.models
+            if item.protocol == protocol or item.protocol is None
         ]
 
     def _normalize_credentials(
@@ -874,6 +969,7 @@ class ChannelStore:
                     name=item.name.strip(),
                     enabled=item.enabled,
                     sort_order=index,
+                    compatible_protocols=list(dict.fromkeys(item.compatible_protocols)),
                 )
             )
         return normalized
@@ -923,6 +1019,7 @@ class ChannelStore:
         self, rows: list[SiteBaseUrlEntity]
     ) -> dict[str, list[SiteBaseUrl]]:
         result: dict[str, list[SiteBaseUrl]] = defaultdict(list)
+        valid_protocol_values = {pk.value for pk in ProtocolKind}
         for row in rows:
             result[row.site_id].append(
                 SiteBaseUrl(
@@ -931,6 +1028,11 @@ class ChannelStore:
                     name=row.name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
+                    compatible_protocols=[
+                        ProtocolKind(p)
+                        for p in json.loads(row.compatible_protocols_json or "[]")
+                        if p in valid_protocol_values
+                    ],
                 )
             )
         return result
@@ -958,6 +1060,7 @@ class ChannelStore:
         credentials_by_id: dict[str, SiteCredential],
     ) -> dict[str, list[SiteModel]]:
         result: dict[str, list[SiteModel]] = defaultdict(list)
+        valid_protocol_values = {pk.value for pk in ProtocolKind}
         for row in rows:
             credential = credentials_by_id.get(row.credential_id)
             result[row.protocol_config_id].append(
@@ -968,6 +1071,11 @@ class ChannelStore:
                     model_name=row.model_name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
+                    protocol=(
+                        ProtocolKind(row.protocol)
+                        if row.protocol in valid_protocol_values
+                        else None
+                    ),
                 )
             )
         return result
@@ -982,7 +1090,7 @@ class ChannelStore:
             result[row.site_id].append(
                 SiteProtocolConfig(
                     id=row.id,
-                    protocol=row.protocol,
+                    name=row.name,
                     enabled=bool(row.enabled),
                     headers=json.loads(row.headers_json),
                     channel_proxy=row.channel_proxy,
@@ -1010,6 +1118,9 @@ class ChannelStore:
                     name=item.name,
                     enabled=int(item.enabled),
                     sort_order=index,
+                    compatible_protocols_json=json.dumps(
+                        [p.value for p in item.compatible_protocols], ensure_ascii=True
+                    ),
                 )
             )
 
@@ -1040,26 +1151,22 @@ class ChannelStore:
         base_url_ids: set[str],
     ) -> set[str]:
         protocol_ids: set[str] = set()
-        protocol_keys: set[tuple[str, str, str]] = set()
+        protocol_keys: set[tuple[str, str]] = set()
         for protocol in protocols:
             protocol_id = protocol.id or str(uuid.uuid4())
             protocol_ids.add(protocol_id)
             if protocol.base_url_id not in base_url_ids:
                 raise ValueError(
-                    f"Base URL not found for protocol config {protocol.protocol.value}: {protocol.base_url_id}"
+                    f"Base URL not found for combo {protocol_id}: {protocol.base_url_id}"
                 )
             if protocol.credential_id and protocol.credential_id not in credential_ids:
                 raise ValueError(
-                    f"Credential not found for protocol config {protocol.protocol.value}: {protocol.credential_id}"
+                    f"Credential not found for combo {protocol_id}: {protocol.credential_id}"
                 )
-            protocol_key = (
-                protocol.protocol.value,
-                protocol.base_url_id,
-                protocol.credential_id,
-            )
+            protocol_key = (protocol.base_url_id, protocol.credential_id)
             if protocol_key in protocol_keys:
                 raise ValueError(
-                    f"Duplicate protocol config for protocol={protocol.protocol.value} base_url_id={protocol.base_url_id} credential_id={protocol.credential_id}"
+                    f"Duplicate combo for base_url_id={protocol.base_url_id} credential_id={protocol.credential_id}"
                 )
             protocol_keys.add(protocol_key)
 
@@ -1068,7 +1175,7 @@ class ChannelStore:
                 existing_protocol = SiteProtocolConfigEntity(id=protocol_id)
                 session.add(existing_protocol)
             existing_protocol.site_id = site_id
-            existing_protocol.protocol = protocol.protocol.value
+            existing_protocol.name = protocol.name.strip()
             existing_protocol.enabled = int(protocol.enabled)
             existing_protocol.headers_json = json.dumps(
                 protocol.headers, ensure_ascii=True
@@ -1099,31 +1206,44 @@ class ChannelStore:
                 SiteDiscoveredModelEntity.protocol_config_id == protocol_id
             )
         )
-        seen_models: set[tuple[str, str]] = set()
-        for model_index, model in enumerate(protocol.models):
+        seen_models: set[tuple[str, str, str | None]] = set()
+        seen_row_ids: set[str] = set()
+
+        for model_index, model in enumerate(
+            _deduplicate_combo_models(protocol.models)
+        ):
             model_name = model.model_name.strip()
             if not model_name:
                 raise ValueError(
-                    f"Model name is required in protocol config {protocol.protocol.value}"
+                    f"Model name is required in combo {protocol_id}"
                 )
             if model.credential_id not in credential_ids:
                 raise ValueError(
-                    f"Model credential not found in protocol config {protocol.protocol.value}: {model.credential_id}"
+                    f"Model credential not found in combo {protocol_id}: {model.credential_id}"
                 )
-            model_key = (model.credential_id, model_name)
+
+            protocol_value = model.protocol.value if model.protocol else None
+            model_key = (model.credential_id, model_name, protocol_value)
             if model_key in seen_models:
                 raise ValueError(
-                    f"Duplicate model in protocol config {protocol.protocol.value}: {model_name}"
+                    f"Duplicate model in combo {protocol_id}: {model_name}"
                 )
             seen_models.add(model_key)
+
+            model_id = model.id
+            if not model_id or model_id in seen_row_ids:
+                model_id = str(uuid.uuid4())
+            seen_row_ids.add(model_id)
+
             session.add(
                 SiteDiscoveredModelEntity(
-                    id=model.id or str(uuid.uuid4()),
+                    id=model_id,
                     protocol_config_id=protocol_id,
                     credential_id=model.credential_id,
                     model_name=model_name,
                     enabled=int(model.enabled),
                     sort_order=model_index,
+                    protocol=protocol_value,
                 )
             )
 
@@ -1134,7 +1254,12 @@ class ChannelStore:
             return
         await session.execute(
             delete(ModelGroupItemEntity).where(
-                ModelGroupItemEntity.channel_id.in_(protocol_ids)
+                or_(
+                    *[
+                        _composite_id_like(ModelGroupItemEntity.channel_id, pid)
+                        for pid in protocol_ids
+                    ]
+                )
             )
         )
         await session.execute(
@@ -1164,11 +1289,25 @@ class ChannelStore:
     ) -> None:
         if not protocol_ids:
             return
+        # 复合 channel_id 形如 {protocol_config_id}_{protocol}。一个 group item 有效，
+        # 要求存在一个 enabled 模型行，且该行服务于 channel_id 所声明的具体协议：
+        #   - model.protocol 为具体值 → channel_id 必须精确等于 {pid}_{model.protocol}
+        #   - model.protocol 为 NULL（继承地址全部协议）→ channel_id 以 {pid}_ 开头即可
+        # 仅判断 {pid}_% 而忽略协议，会让模型从 chat 移到 responses 后残留旧的
+        # {pid}_openai_chat 条目。
         matching_model = (
             select(SiteDiscoveredModelEntity.id)
             .where(
-                SiteDiscoveredModelEntity.protocol_config_id
-                == ModelGroupItemEntity.channel_id
+                or_(
+                    ModelGroupItemEntity.channel_id
+                    == SiteDiscoveredModelEntity.protocol_config_id.concat("_").concat(
+                        SiteDiscoveredModelEntity.protocol
+                    ),
+                    SiteDiscoveredModelEntity.protocol.is_(None)
+                    & ModelGroupItemEntity.channel_id.like(
+                        SiteDiscoveredModelEntity.protocol_config_id.concat("_%")
+                    ),
+                )
             )
             .where(
                 SiteDiscoveredModelEntity.credential_id
@@ -1182,6 +1321,13 @@ class ChannelStore:
         )
         await session.execute(
             delete(ModelGroupItemEntity)
-            .where(ModelGroupItemEntity.channel_id.in_(protocol_ids))
+            .where(
+                or_(
+                    *[
+                        _composite_id_like(ModelGroupItemEntity.channel_id, pid)
+                        for pid in protocol_ids
+                    ]
+                )
+            )
             .where(~matching_model)
         )
