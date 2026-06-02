@@ -174,7 +174,6 @@ export function ProtocolMultiSelect({
         <Button
           type="button"
           variant="outline"
-          size="lg"
           disabled={disabled}
           aria-invalid={invalid || undefined}
           className={cn(
@@ -211,7 +210,7 @@ export function ProtocolMultiSelect({
           <ChevronDown className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 gap-3 p-3">
+      <PopoverContent align="start" className="w-[21rem] gap-3 p-3">
         <ProtocolGroup
           label={copy.chat}
           protocols={chatProtocols}

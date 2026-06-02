@@ -750,12 +750,18 @@ export type RequestLogDetail = RequestLogItem & {
   attempts: RequestLogAttempt[];
 };
 
+export type RequestLogFilterOption = {
+  id: string;
+  label: string;
+};
+
 export type RequestLogPage = {
   items: RequestLogItem[];
   total: number;
   limit: number;
   offset: number;
-  channels: string[];
+  channels: RequestLogFilterOption[];
+  gateway_keys: RequestLogFilterOption[];
   model_names: string[];
 };
 
