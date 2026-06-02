@@ -1016,12 +1016,18 @@ class RequestLogDetail(RequestLogItem):
     attempts: list[RequestLogAttempt] = Field(default_factory=list)
 
 
+class RequestLogFilterOption(StrictBaseModel):
+    id: str
+    label: str
+
+
 class RequestLogPage(StrictBaseModel):
     items: list[RequestLogItem] = Field(default_factory=list)
     total: int = 0
     limit: int = 0
     offset: int = 0
-    channels: list[str] = Field(default_factory=list)
+    channels: list[RequestLogFilterOption] = Field(default_factory=list)
+    gateway_keys: list[RequestLogFilterOption] = Field(default_factory=list)
     model_names: list[str] = Field(default_factory=list)
 
 

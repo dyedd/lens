@@ -10,20 +10,16 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   ChevronDown,
   Download,
   Ellipsis,
   FileInput,
   Filter,
   Globe2,
-  KeyRound,
   Plus,
   RefreshCcw,
-  Server,
   Trash2,
   Upload,
-  Waypoints,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -78,7 +74,6 @@ import {
   ItemActions,
   ItemContent,
   ItemDescription,
-  ItemFooter,
   ItemGroup,
   ItemMedia,
   ItemTitle,
@@ -253,7 +248,6 @@ type ModelTestTarget = {
 type SiteRow = Site & {
   subtitle: string;
   protocol_count: number;
-  credential_count: number;
   model_count: number;
   endpoint_summary: string;
 };
@@ -272,7 +266,11 @@ type ChannelSort =
   | "models-desc"
   | "protocols-desc";
 
-const emptyCombo = (baseUrlId = "", name = ""): FormCombo => ({
+const emptyCombo = (
+  baseUrlId = "",
+  name = "",
+  credentialId = "",
+): FormCombo => ({
   id: null,
   name,
   enabled: true,
@@ -282,7 +280,7 @@ const emptyCombo = (baseUrlId = "", name = ""): FormCombo => ({
   match_regex: "",
   manual_model_name: "",
   base_url_id: baseUrlId,
-  credential_id: "",
+  credential_id: credentialId,
   models: [],
   expanded: true,
 });
@@ -433,6 +431,7 @@ function importResultRows(
 
 const emptyForm = (locale: Locale = "zh-CN"): FormState => {
   const baseUrlId = createLocalId("baseurl");
+  const credentialId = createLocalId("credential");
   return {
     name: "",
     base_urls: [
@@ -444,10 +443,8 @@ const emptyForm = (locale: Locale = "zh-CN"): FormState => {
         supported_protocols: [],
       },
     ],
-    credentials: [
-      { id: createLocalId("credential"), name: "", api_key: "", enabled: true },
-    ],
-    combos: [emptyCombo(baseUrlId, defaultComboName(0, locale))],
+    credentials: [{ id: credentialId, name: "", api_key: "", enabled: true }],
+    combos: [emptyCombo(baseUrlId, defaultComboName(0, locale), credentialId)],
   };
 };
 
@@ -678,36 +675,6 @@ function protocolBadgeClassName(protocol: ProtocolKind) {
     default:
       return "border-transparent bg-secondary text-secondary-foreground";
   }
-}
-
-function ChannelMetric({
-  icon,
-  label,
-  value,
-  tone = "default",
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  tone?: "default" | "accent";
-}) {
-  return (
-    <div
-      className={cn(
-        "inline-flex min-h-8 min-w-0 max-w-full items-center gap-2 rounded-full border px-3 text-xs",
-        tone === "accent"
-          ? "border-primary/20 bg-primary/[0.07] text-primary"
-          : "border-border/70 bg-muted/25 text-muted-foreground",
-      )}
-    >
-      <span className="inline-flex size-4.5 shrink-0 items-center justify-center">
-        {icon}
-      </span>
-      <span className="min-w-0 truncate font-medium">
-        {label} {value}
-      </span>
-    </div>
-  );
 }
 
 function getSiteFaviconCandidates(url: string) {
@@ -1072,15 +1039,16 @@ function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           supported_protocols: [] as ProtocolKind[],
         },
       ];
+  const credentials = site.credentials.map((item) => ({
+    id: item.id,
+    name: isGeneratedCredentialName(item.name) ? "" : item.name,
+    api_key: item.api_key,
+    enabled: item.enabled,
+  }));
   return {
     name: site.name,
     base_urls: baseUrls,
-    credentials: site.credentials.map((item) => ({
-      id: item.id,
-      name: isGeneratedCredentialName(item.name) ? "" : item.name,
-      api_key: item.api_key,
-      enabled: item.enabled,
-    })),
+    credentials,
     combos: site.protocols.map((item, itemIndex) => {
       const modelGroups = new Map<string, FormModel>();
       for (const m of item.models) {
@@ -1155,10 +1123,7 @@ function toPayload(form: FormState): SitePayload {
       }))
       .filter((item) => item.api_key),
     protocols: form.combos.map((item) => {
-      const credentialId = effectiveProtocolCredentialId(
-        item,
-        form.credentials,
-      );
+      const credentialId = item.credential_id;
       return {
         id: item.id,
         name: item.name.trim(),
@@ -1212,18 +1177,6 @@ function toPayload(form: FormState): SitePayload {
       };
     }),
   };
-}
-
-function effectiveProtocolCredentialId(
-  protocol: Pick<FormCombo, "credential_id">,
-  credentials: Array<Pick<FormCredential, "id" | "api_key">>,
-) {
-  const credentialIds = credentials
-    .filter((item) => item.api_key.trim())
-    .map((item) => item.id);
-  return credentialIds.includes(protocol.credential_id)
-    ? protocol.credential_id
-    : (credentialIds[0] ?? "");
 }
 
 function comboCredentialKeys(combo: FormCombo, baseUrlIds: Set<string>) {
@@ -1467,12 +1420,10 @@ function ComboConfigItem({
       .filter((item) => item.enabled && item.api_key.trim())
       .map((item) => item.id),
   );
-  const credentialOptions = form.credentials
-    .map((item, index) => ({
-      ...item,
-      display_name: credentialLabel(item, index, locale),
-    }))
-    .filter((item) => item.api_key.trim());
+  const credentialOptions = form.credentials.map((item, index) => ({
+    ...item,
+    display_name: credentialLabel(item, index, locale),
+  }));
   const selectedCredentialId = combo.credential_id;
   const selectedCredentialActive =
     activeCredentialIds.has(selectedCredentialId);
@@ -1540,9 +1491,6 @@ function ComboConfigItem({
                 });
               }}
             >
-              <NativeSelectOption value="">
-                {locale === "zh-CN" ? "未绑定" : "Unbound"}
-              </NativeSelectOption>
               {selectedCredentialId && !selectedCredentialKnown ? (
                 <NativeSelectOption value={selectedCredentialId} disabled>
                   {locale === "zh-CN"
@@ -1550,13 +1498,17 @@ function ComboConfigItem({
                     : `Invalid key: ${selectedCredentialId}`}
                 </NativeSelectOption>
               ) : null}
-              {credentialOptions.length
-                ? credentialOptions.map((item) => (
-                    <NativeSelectOption key={item.id} value={item.id}>
-                      {item.display_name}
-                    </NativeSelectOption>
-                  ))
-                : null}
+              {credentialOptions.length ? (
+                credentialOptions.map((item) => (
+                  <NativeSelectOption key={item.id} value={item.id}>
+                    {item.display_name}
+                  </NativeSelectOption>
+                ))
+              ) : (
+                <NativeSelectOption value="" disabled>
+                  {locale === "zh-CN" ? "暂无可用密钥" : "No available key"}
+                </NativeSelectOption>
+              )}
             </NativeSelect>
           </Field>
           <div className="flex h-8 w-8 items-center justify-center xl:self-end">
@@ -2747,7 +2699,6 @@ export function ChannelsScreen() {
         ...site,
         subtitle: siteSubtitle(site),
         protocol_count: site.protocols.filter((p) => p.enabled).length,
-        credential_count: site.credentials.length,
         model_count: siteModelCount(site),
         endpoint_summary: siteEndpointSummary(site, locale),
       })),
@@ -3207,7 +3158,9 @@ export function ChannelsScreen() {
         credentials: nextCredentials,
         combos: current.combos.map((combo) => {
           const credentialId =
-            combo.credential_id === target.id ? "" : combo.credential_id;
+            combo.credential_id === target.id
+              ? (nextCredentials[0]?.id ?? "")
+              : combo.credential_id;
           return {
             ...combo,
             credential_id: credentialId,
@@ -3292,7 +3245,11 @@ export function ChannelsScreen() {
       combos: [
         ...current.combos,
         {
-          ...emptyCombo(defaultBaseUrlId(current.base_urls), name),
+          ...emptyCombo(
+            defaultBaseUrlId(current.base_urls),
+            name,
+            current.credentials[0]?.id ?? "",
+          ),
         },
       ],
     }));
@@ -3501,10 +3458,7 @@ export function ChannelsScreen() {
   async function fetchProtocolModels(protocolIndex: number) {
     const combo = form.combos[protocolIndex];
     if (!combo) return;
-    const selectedCredentialId = effectiveProtocolCredentialId(
-      combo,
-      form.credentials,
-    );
+    const selectedCredentialId = combo.credential_id;
     if (!selectedCredentialId) {
       toast.error(locale === "zh-CN" ? "组合密钥无效" : "Combo key is invalid");
       return;
@@ -3760,30 +3714,6 @@ export function ChannelsScreen() {
                               timeZone={timeZone}
                             />
                           </div>
-                          <ItemFooter className="mt-4 flex flex-wrap items-center gap-2.5">
-                            <ChannelMetric
-                              icon={<Activity size={14} />}
-                              label={locale === "zh-CN" ? "请求数" : "Requests"}
-                              value={String(
-                                runtimeSummary?.recent_request_count ?? 0,
-                              )}
-                            />
-                            <ChannelMetric
-                              icon={<Waypoints size={14} />}
-                              label={locale === "zh-CN" ? "协议" : "Protocols"}
-                              value={String(site.protocol_count)}
-                            />
-                            <ChannelMetric
-                              icon={<Server size={14} />}
-                              label={locale === "zh-CN" ? "模型" : "Models"}
-                              value={String(site.model_count)}
-                            />
-                            <ChannelMetric
-                              icon={<KeyRound size={14} />}
-                              label={locale === "zh-CN" ? "密钥" : "Keys"}
-                              value={String(site.credential_count)}
-                            />
-                          </ItemFooter>
                         </ItemContent>
                         <ItemActions
                           className="basis-full flex-wrap justify-end self-start sm:ml-auto sm:basis-auto sm:shrink-0"

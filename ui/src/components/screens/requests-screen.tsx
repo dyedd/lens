@@ -39,9 +39,9 @@ import {
 } from "lucide-react";
 import {
   ApiError,
-  GatewayApiKey,
   ProtocolKind,
   RequestLogDetail,
+  RequestLogFilterOption,
   RequestLogItem,
   RequestLogPage,
   SettingItem,
@@ -92,6 +92,7 @@ import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
 const PAGE_SIZE = 20;
 const REQUEST_LOG_DETAIL_GC_TIME = 60_000;
 const RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled";
+const EMPTY_FILTER_OPTION_ID = "n/a";
 
 type ModelPrefixOption = {
   key: string;
@@ -246,10 +247,30 @@ function formatGatewayKeyLabel(
   );
 }
 
-function formatGatewayKeyOptionLabel(
-  item: Pick<GatewayApiKey, "id" | "remark">,
+function filterOptionLabel(item: RequestLogFilterOption) {
+  return item.label.trim() || item.id;
+}
+
+function gatewayKeyFilterOptionLabel(
+  item: RequestLogFilterOption,
+  locale: "zh-CN" | "en-US",
 ) {
-  return item.remark.trim() || shortenGatewayKeyId(item.id);
+  if (item.id === EMPTY_FILTER_OPTION_ID) {
+    return titleForLocale(locale, "未绑定 API Key", "No API key");
+  }
+  const label = item.label.trim();
+  return label && label !== item.id ? label : shortenGatewayKeyId(item.id);
+}
+
+function filterOptionsWithSelected(
+  items: RequestLogFilterOption[] | undefined,
+  selectedId: string | null,
+) {
+  const options = items ?? [];
+  if (!selectedId || options.some((item) => item.id === selectedId)) {
+    return options;
+  }
+  return [{ id: selectedId, label: selectedId }, ...options];
 }
 
 function tryParseJsonValue(value: string) {
@@ -1175,11 +1196,6 @@ export function RequestsScreen() {
     refetchInterval: page === 0 ? 5000 : false,
   });
 
-  const { data: gatewayApiKeys } = useQuery({
-    queryKey: ["gateway-api-keys", "requests-screen"],
-    queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
-    staleTime: 60_000,
-  });
   const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
@@ -1251,29 +1267,12 @@ export function RequestsScreen() {
     : "all";
 
   const channelOptions = useMemo(() => {
-    const items = data?.channels ?? [];
-    if (channelQueryValue && !items.includes(channelQueryValue)) {
-      return [channelQueryValue, ...items];
-    }
-    return items;
+    return filterOptionsWithSelected(data?.channels, channelQueryValue);
   }, [channelQueryValue, data?.channels]);
 
   const gatewayKeyOptions = useMemo(() => {
-    const items = (gatewayApiKeys ?? []).map((item) => ({
-      id: item.id,
-      label: formatGatewayKeyOptionLabel(item),
-    }));
-    if (
-      effectiveGatewayKeyId &&
-      !items.some((item) => item.id === effectiveGatewayKeyId)
-    ) {
-      items.unshift({
-        id: effectiveGatewayKeyId,
-        label: shortenGatewayKeyId(effectiveGatewayKeyId),
-      });
-    }
-    return items;
-  }, [effectiveGatewayKeyId, gatewayApiKeys]);
+    return filterOptionsWithSelected(data?.gateway_keys, effectiveGatewayKeyId);
+  }, [data?.gateway_keys, effectiveGatewayKeyId]);
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
@@ -1702,8 +1701,11 @@ export function RequestsScreen() {
                           {titleForLocale(locale, "全部渠道", "All channels")}
                         </NativeSelectOption>
                         {channelOptions.map((channel) => (
-                          <NativeSelectOption key={channel} value={channel}>
-                            {channel}
+                          <NativeSelectOption
+                            key={channel.id}
+                            value={channel.id}
+                          >
+                            {filterOptionLabel(channel)}
                           </NativeSelectOption>
                         ))}
                       </NativeSelect>
@@ -1730,7 +1732,7 @@ export function RequestsScreen() {
                         </NativeSelectOption>
                         {gatewayKeyOptions.map((item) => (
                           <NativeSelectOption key={item.id} value={item.id}>
-                            {item.label}
+                            {gatewayKeyFilterOptionLabel(item, locale)}
                           </NativeSelectOption>
                         ))}
                       </NativeSelect>
