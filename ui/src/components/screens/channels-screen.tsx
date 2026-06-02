@@ -83,6 +83,7 @@ const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
   { value: "openai_chat", label: "OpenAI Chat" },
   { value: "openai_responses", label: "OpenAI Responses" },
   { value: "openai_embedding", label: "OpenAI Embedding" },
+  { value: "rerank", label: "Rerank" },
   { value: "anthropic", label: "Anthropic" },
   { value: "gemini", label: "Gemini" },
 ];
@@ -200,6 +201,8 @@ function compactProtocolLabel(protocol: ProtocolKind) {
       return "responses";
     case "openai_embedding":
       return "embeddings";
+    case "rerank":
+      return "rerank";
     case "anthropic":
       return "anthropic";
     case "gemini":
@@ -368,6 +371,8 @@ function protocolBadgeClassName(protocol: ProtocolKind) {
       return "border-transparent bg-indigo-500/10 text-indigo-700";
     case "openai_embedding":
       return "border-transparent bg-cyan-500/10 text-cyan-700";
+    case "rerank":
+      return "border-transparent bg-violet-500/10 text-violet-700";
     case "anthropic":
       return "border-transparent bg-amber-500/10 text-amber-700";
     case "gemini":
@@ -1686,6 +1691,13 @@ function ModelTestDialog({
                         value={modelTestPrompt}
                         onChange={(event) => onPromptChange(event.target.value)}
                       />
+                      {protocol?.protocol === "rerank" ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {locale === "zh-CN"
+                            ? "Rerank 测试：首行为查询，其余行作为候选文档（每行一个）。"
+                            : "Rerank test: first line is the query, remaining lines are candidate documents (one per line)."}
+                        </p>
+                      ) : null}
                     </Field>
                   </div>
 

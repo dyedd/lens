@@ -207,6 +207,7 @@ const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> = {
   openai_chat: { zh: "OpenAI Chat", en: "OpenAI Chat" },
   openai_responses: { zh: "OpenAI Responses", en: "OpenAI Responses" },
   openai_embedding: { zh: "OpenAI Embedding", en: "OpenAI Embedding" },
+  rerank: { zh: "Rerank", en: "Rerank" },
   anthropic: { zh: "Anthropic", en: "Anthropic" },
   gemini: { zh: "Gemini", en: "Gemini" },
 };
@@ -247,6 +248,8 @@ function protocolBadgeClassName(protocol: ProtocolKind) {
       return "border-transparent bg-indigo-500/10 text-indigo-700";
     case "openai_embedding":
       return "border-transparent bg-cyan-500/10 text-cyan-700";
+    case "rerank":
+      return "border-transparent bg-violet-500/10 text-violet-700";
     case "anthropic":
       return "border-transparent bg-amber-500/10 text-amber-700";
     case "gemini":
