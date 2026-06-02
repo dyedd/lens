@@ -54,7 +54,7 @@
   - **禁止** 使用 `.then()` 风格
 - 请求/响应模型继承 `StrictBaseModel(extra="forbid")`
 - 数据访问采用 Repository 模式，ORM 实体定义在 `persistence/entities.py`
-- 所有函数必须有类型注解，遵循 PEP 8，使用 `black` + `ruff` 格式化
+- 所有函数必须有类型注解，遵循 PEP 8，使用 `black` 格式化
 - 数据库变更只通过新增 Alembic 迁移实现，**禁止修改已存在的迁移文件**
 
 ## 四、AI 行为约束
