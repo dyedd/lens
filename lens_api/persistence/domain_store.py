@@ -642,6 +642,7 @@ class DomainStore:
         self, payload: ModelGroupCandidatesRequest
     ) -> ModelGroupCandidatesResponse:
         from .channel_store import ChannelStore
+
         channel_store = ChannelStore(self._session_factory)
         all_channels = await channel_store.list()
 
@@ -721,10 +722,7 @@ class DomainStore:
             # 覆盖判定：G 非空时，∀ p∈G ∃ q∈native_protocols 满足 can_reach_protocol(q, p)
             if protocols_filter:
                 if not all(
-                    any(
-                        can_reach_protocol(q, p)
-                        for q in slot.native_protocols
-                    )
+                    any(can_reach_protocol(q, p) for q in slot.native_protocols)
                     for p in protocols_filter
                 ):
                     continue
@@ -1104,6 +1102,7 @@ class DomainStore:
             return route_group
 
         from .channel_store import ChannelStore
+
         channel_store = ChannelStore(self._session_factory)
         all_channels = await channel_store.list()
         channel_by_id = {ch.id: ch for ch in all_channels}
@@ -1113,24 +1112,14 @@ class DomainStore:
         if missing_channel_ids:
             raise ValueError(f"Channels not found: {', '.join(missing_channel_ids)}")
 
-        # 拒绝 disabled channel
-        disabled_channel_ids = [
-            cid
-            for cid in channel_ids
-            if channel_by_id[cid].status.value != "enabled"
-        ]
-        if disabled_channel_ids:
-            raise ValueError(
-                "Channels are disabled: " + ", ".join(disabled_channel_ids)
-            )
-
-        # 拒绝 disabled credential
+        # disabled channel/credential 允许选中：支持先配组、稍后再启用通道。
+        # 仅校验 credential 在该通道存在，不论其启用状态。
         for item in normalized_items:
             ch = channel_by_id[item.channel_id]
-            enabled_credential_ids = {key.id for key in ch.keys if key.enabled}
-            if item.credential_id not in enabled_credential_ids:
+            credential_ids_in_channel = {key.id for key in ch.keys}
+            if item.credential_id not in credential_ids_in_channel:
                 raise ValueError(
-                    f"Credential is disabled or not found in channel {item.channel_id}: "
+                    f"Credential not found in channel {item.channel_id}: "
                     f"{item.credential_id}"
                 )
 
@@ -1165,9 +1154,7 @@ class DomainStore:
             ch = channel_by_id.get(cid)
             if ch:
                 model_names_by_channel[cid] = {
-                    (m.credential_id, m.model_name)
-                    for m in ch.models
-                    if m.enabled
+                    (m.credential_id, m.model_name) for m in ch.models
                 }
 
         for item in normalized_items:
@@ -1333,8 +1320,7 @@ class DomainStore:
             )
         ).all()
         combo_site_names: dict[str, str] = {
-            combo_id: site_name
-            for combo_id, site_name in rows
+            combo_id: site_name for combo_id, site_name in rows
         }
         result: dict[str, str] = {}
         for combo_id, cids in combo_to_channels.items():
@@ -1378,7 +1364,9 @@ class DomainStore:
         )
         credential_names_by_combo: dict[str, dict[str, str]] = {}
         for combo_id, credential_id, credential_name in rows.all():
-            credential_names_by_combo.setdefault(combo_id, {})[credential_id] = credential_name
+            credential_names_by_combo.setdefault(combo_id, {})[
+                credential_id
+            ] = credential_name
         result: dict[str, dict[str, str]] = {}
         for combo_id, cids in combo_to_channels.items():
             cred_names = credential_names_by_combo.get(combo_id, {})
@@ -1418,7 +1406,9 @@ class DomainStore:
         counts_by_combo: dict[str, int] = {}
         for combo_id, credential_id, _sort_order in rows.all():
             counts_by_combo[combo_id] = counts_by_combo.get(combo_id, 0) + 1
-            numbers_by_combo.setdefault(combo_id, {})[credential_id] = counts_by_combo[combo_id]
+            numbers_by_combo.setdefault(combo_id, {})[credential_id] = counts_by_combo[
+                combo_id
+            ]
         result: dict[str, dict[str, int]] = {}
         for combo_id, cids in combo_to_channels.items():
             cred_numbers = numbers_by_combo.get(combo_id, {})
