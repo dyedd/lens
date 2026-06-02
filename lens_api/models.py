@@ -977,8 +977,13 @@ class RequestLogItem(StrictBaseModel):
     upstream_model_name: str | None = None
     channel_id: str | None = None
     channel_name: str | None = None
+    credential_id: str | None = None
+    credential_name: str = ""
+    channel_has_multiple_credentials: bool = False
     gateway_key_id: str | None = None
     gateway_key_remark: str | None = None
+    gateway_has_multiple_keys: bool = False
+    reasoning_effort: str | None = None
     status_code: int | None = None
     success: bool
     lifecycle_status: RequestLogLifecycleStatus
@@ -1008,6 +1013,7 @@ class RequestLogAttempt(StrictBaseModel):
     success: bool
     duration_ms: int = 0
     error_message: str | None = None
+    reasoning_effort: str | None = None
 
 
 class RequestLogDetail(RequestLogItem):
@@ -1028,6 +1034,7 @@ class RequestLogPage(StrictBaseModel):
     offset: int = 0
     channels: list[RequestLogFilterOption] = Field(default_factory=list)
     gateway_keys: list[RequestLogFilterOption] = Field(default_factory=list)
+    gateway_has_multiple_keys: bool = False
     model_names: list[str] = Field(default_factory=list)
 
 

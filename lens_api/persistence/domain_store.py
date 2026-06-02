@@ -2150,6 +2150,7 @@ class DomainStore:
             gateway_key_remarks = await self._gateway_key_remarks_by_id(
                 session, gateway_key_ids
             )
+            gateway_has_multiple_keys = await self._gateway_has_multiple_keys(session)
             gateway_keys = [
                 RequestLogFilterOption(
                     id=key_id,
@@ -2182,12 +2183,17 @@ class DomainStore:
             model_names = sorted(model_name_values)
 
             return RequestLogPage(
-                items=await self._hydrate_request_logs(session, entities),
+                items=await self._hydrate_request_logs(
+                    session,
+                    entities,
+                    gateway_has_multiple_keys=gateway_has_multiple_keys,
+                ),
                 total=int(total),
                 limit=max(limit, 0),
                 offset=max(offset, 0),
                 channels=channels,
                 gateway_keys=gateway_keys,
+                gateway_has_multiple_keys=gateway_has_multiple_keys,
                 model_names=model_names,
             )
 
@@ -2451,9 +2457,17 @@ class DomainStore:
             remarks = await self._gateway_key_remarks_by_id(
                 session, [entity.gateway_key_id]
             )
+            gateway_has_multiple_keys = await self._gateway_has_multiple_keys(session)
+            credential_counts = await self._request_log_channel_credential_counts(
+                session, [entity.channel_id]
+            )
             return self._to_request_log_detail(
                 entity,
                 gateway_key_remark=remarks.get(entity.gateway_key_id or ""),
+                gateway_has_multiple_keys=gateway_has_multiple_keys,
+                channel_has_multiple_credentials=(
+                    credential_counts.get(entity.channel_id or "", 0) > 1
+                ),
             )
 
     async def clear_request_logs(self) -> None:
@@ -3893,24 +3907,202 @@ class DomainStore:
         }
 
     async def _hydrate_request_logs(
-        self, session: AsyncSession, entities: list[RequestLogEntity]
+        self,
+        session: AsyncSession,
+        entities: list[RequestLogEntity],
+        *,
+        gateway_has_multiple_keys: bool | None = None,
     ) -> list[RequestLogItem]:
         remarks = await self._gateway_key_remarks_by_id(
             session, [entity.gateway_key_id for entity in entities]
+        )
+        if gateway_has_multiple_keys is None:
+            gateway_has_multiple_keys = (
+                await self._gateway_has_multiple_keys(session) if entities else False
+            )
+        credential_counts = await self._request_log_channel_credential_counts(
+            session, [entity.channel_id for entity in entities]
         )
         return [
             self._to_request_log(
                 entity,
                 gateway_key_remark=remarks.get(entity.gateway_key_id or ""),
+                gateway_has_multiple_keys=gateway_has_multiple_keys,
+                channel_has_multiple_credentials=(
+                    credential_counts.get(entity.channel_id or "", 0) > 1
+                ),
             )
             for entity in entities
         ]
 
     @staticmethod
+    async def _gateway_has_multiple_keys(session: AsyncSession) -> bool:
+        rows = (await session.execute(select(GatewayApiKeyEntity.id).limit(2))).all()
+        return len(rows) > 1
+
+    async def _request_log_channel_credential_counts(
+        self, session: AsyncSession, channel_ids: list[str | None]
+    ) -> dict[str, int]:
+        combo_to_channels: dict[str, list[str]] = {}
+        protocols_by_channel: dict[str, str] = {}
+        for raw_channel_id in channel_ids:
+            channel_id = (
+                raw_channel_id.strip() if isinstance(raw_channel_id, str) else ""
+            )
+            if not channel_id:
+                continue
+            parsed = _parse_composite_channel_id(channel_id)
+            combo_id = parsed[0] if parsed else channel_id
+            if parsed is not None:
+                protocols_by_channel[channel_id] = parsed[1].value
+            combo_to_channels.setdefault(combo_id, []).append(channel_id)
+
+        if not combo_to_channels:
+            return {}
+
+        combo_ids = list(combo_to_channels.keys())
+        credentials_by_channel: dict[str, set[str]] = {
+            channel_id: set()
+            for channel_ids_for_combo in combo_to_channels.values()
+            for channel_id in channel_ids_for_combo
+        }
+
+        protocol_rows = (
+            await session.execute(
+                select(
+                    SiteProtocolConfigEntity.id,
+                    SiteProtocolConfigEntity.credential_id,
+                ).where(SiteProtocolConfigEntity.id.in_(combo_ids))
+            )
+        ).all()
+        for combo_id, credential_id in protocol_rows:
+            if not credential_id:
+                continue
+            for channel_id in combo_to_channels.get(str(combo_id), []):
+                credentials_by_channel[channel_id].add(str(credential_id))
+
+        model_rows = (
+            await session.execute(
+                select(
+                    SiteDiscoveredModelEntity.protocol_config_id,
+                    SiteDiscoveredModelEntity.credential_id,
+                    SiteDiscoveredModelEntity.protocol,
+                ).where(SiteDiscoveredModelEntity.protocol_config_id.in_(combo_ids))
+            )
+        ).all()
+        for combo_id, credential_id, model_protocol in model_rows:
+            if not credential_id:
+                continue
+            for channel_id in combo_to_channels.get(str(combo_id), []):
+                channel_protocol = protocols_by_channel.get(channel_id)
+                if (
+                    channel_protocol is not None
+                    and model_protocol is not None
+                    and str(model_protocol) != channel_protocol
+                ):
+                    continue
+                credentials_by_channel[channel_id].add(str(credential_id))
+
+        return {
+            channel_id: len(credential_ids)
+            for channel_id, credential_ids in credentials_by_channel.items()
+        }
+
+    @staticmethod
+    def _request_log_primary_attempt(
+        attempts: list[dict[str, Any]], channel_id: str | None
+    ) -> dict[str, Any]:
+        if channel_id:
+            for attempt in reversed(attempts):
+                if str(attempt.get("channel_id") or "") == channel_id:
+                    return attempt
+        return attempts[-1] if attempts else {}
+
+    @staticmethod
+    def _clean_reasoning_effort(value: Any) -> str | None:
+        if isinstance(value, int) and value > 0:
+            return str(value)
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip()
+        if not normalized or len(normalized) > 32:
+            return None
+        if any(char.isspace() for char in normalized):
+            return None
+        return normalized
+
+    @classmethod
+    def _extract_reasoning_effort(cls, request_content: str | None) -> str | None:
+        if not request_content:
+            return None
+        try:
+            payload = json.loads(request_content)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+
+        for key in (
+            "reasoning_effort",
+            "reasoningEffort",
+            "model_reasoning_effort",
+            "modelReasoningEffort",
+            "effort",
+            "effortLevel",
+        ):
+            effort = cls._clean_reasoning_effort(payload.get(key))
+            if effort:
+                return effort
+
+        reasoning = payload.get("reasoning")
+        if isinstance(reasoning, dict):
+            effort = cls._clean_reasoning_effort(reasoning.get("effort"))
+            if effort:
+                return effort
+        else:
+            effort = cls._clean_reasoning_effort(reasoning)
+            if effort:
+                return effort
+
+        thinking = payload.get("thinking")
+        if isinstance(thinking, dict):
+            for key in ("effort", "budget_tokens"):
+                effort = cls._clean_reasoning_effort(thinking.get(key))
+                if effort:
+                    return effort
+
+        output_config = payload.get("output_config")
+        if isinstance(output_config, dict):
+            effort = cls._clean_reasoning_effort(output_config.get("effort"))
+            if effort:
+                return effort
+
+        extra_body = payload.get("extra_body")
+        if isinstance(extra_body, dict):
+            effort = cls._extract_reasoning_effort(json.dumps(extra_body))
+            if effort:
+                return effort
+        return None
+
+    @staticmethod
     def _to_request_log(
-        entity: RequestLogEntity, *, gateway_key_remark: str | None = None
+        entity: RequestLogEntity,
+        *,
+        gateway_key_remark: str | None = None,
+        gateway_has_multiple_keys: bool = False,
+        channel_has_multiple_credentials: bool = False,
     ) -> RequestLogItem:
         attempts = DomainStore._parse_attempts_json(entity.attempts_json)
+        primary_attempt = DomainStore._request_log_primary_attempt(
+            attempts, entity.channel_id
+        )
+        credential_id = primary_attempt.get("credential_id")
+        credential_name = primary_attempt.get("credential_name")
+        reasoning_effort = DomainStore._extract_reasoning_effort(
+            entity.request_content
+        ) or DomainStore._clean_reasoning_effort(
+            primary_attempt.get("reasoning_effort")
+        )
         return RequestLogItem(
             id=entity.id,
             protocol=entity.protocol,
@@ -3920,8 +4112,17 @@ class DomainStore:
             upstream_model_name=entity.upstream_model_name,
             channel_id=entity.channel_id,
             channel_name=entity.channel_name,
+            credential_id=(
+                credential_id.strip() if isinstance(credential_id, str) else None
+            ),
+            credential_name=(
+                credential_name.strip() if isinstance(credential_name, str) else ""
+            ),
+            channel_has_multiple_credentials=channel_has_multiple_credentials,
             gateway_key_id=entity.gateway_key_id,
             gateway_key_remark=gateway_key_remark or None,
+            gateway_has_multiple_keys=gateway_has_multiple_keys,
+            reasoning_effort=reasoning_effort,
             status_code=entity.status_code,
             success=bool(entity.success),
             lifecycle_status=(
@@ -3952,11 +4153,18 @@ class DomainStore:
 
     @staticmethod
     def _to_request_log_detail(
-        entity: RequestLogEntity, *, gateway_key_remark: str | None = None
+        entity: RequestLogEntity,
+        *,
+        gateway_key_remark: str | None = None,
+        gateway_has_multiple_keys: bool = False,
+        channel_has_multiple_credentials: bool = False,
     ) -> RequestLogDetail:
         return RequestLogDetail(
             **DomainStore._to_request_log(
-                entity, gateway_key_remark=gateway_key_remark
+                entity,
+                gateway_key_remark=gateway_key_remark,
+                gateway_has_multiple_keys=gateway_has_multiple_keys,
+                channel_has_multiple_credentials=channel_has_multiple_credentials,
             ).model_dump(),
             request_content=entity.request_content,
             response_content=entity.response_content,
