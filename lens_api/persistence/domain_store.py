@@ -199,8 +199,15 @@ class DomainStore:
         self._settings_cache = None
         self._settings_cache_at = 0.0
 
-    async def fail_running_request_logs(self) -> None:
+    async def fail_running_request_logs(
+        self, *, interrupted_latency_cap_ms: int | None = None
+    ) -> None:
         now = datetime.now(UTC).replace(tzinfo=None)
+        latency_cap_ms = (
+            max(interrupted_latency_cap_ms, 0)
+            if interrupted_latency_cap_ms is not None
+            else None
+        )
         async with self._session_factory() as session:
             rows = (
                 (
@@ -219,13 +226,13 @@ class DomainStore:
                 created_at = entity.created_at
                 if created_at.tzinfo is not None:
                     created_at = created_at.astimezone(UTC).replace(tzinfo=None)
+                elapsed_ms = max(int((now - created_at).total_seconds() * 1000), 0)
+                if latency_cap_ms is not None:
+                    elapsed_ms = min(elapsed_ms, latency_cap_ms)
                 entity.lifecycle_status = RequestLogLifecycleStatus.FAILED.value
                 entity.success = 0
                 entity.status_code = None
-                entity.latency_ms = max(
-                    entity.latency_ms,
-                    max(int((now - created_at).total_seconds() * 1000), 0),
-                )
+                entity.latency_ms = max(entity.latency_ms, elapsed_ms)
                 if not (entity.error_message or "").strip():
                     entity.error_message = (
                         "Request interrupted while the service was not running"
