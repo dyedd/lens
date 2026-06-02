@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..core.model_prices import normalize_model_key
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
+from ..core.protocol_compat import can_reach_protocol
 from ..models import (
     ConfigBackupDump,
     ConfigBackupGatewayApiKey,
@@ -18,6 +19,7 @@ from ..models import (
     ConfigImportResult,
     ModelGroup,
     ModelPriceItem,
+    ProtocolKind,
     RequestLogAttempt,
     RequestLogLifecycleStatus,
     SettingItem,
@@ -67,6 +69,86 @@ from .cronjob_store import (
 BACKUP_DUMP_VERSION = 2
 SETTING_STATS_LAST_PERSIST_AT = "stats_last_persist_at"
 
+
+def _extract_combo_id(channel_id: str, known_combo_ids: set[str]) -> str:
+    if channel_id in known_combo_ids:
+        return channel_id
+    for protocol in ProtocolKind:
+        suffix = f"_{protocol.value}"
+        if channel_id.endswith(suffix):
+            candidate = channel_id[: -len(suffix)]
+            if candidate in known_combo_ids:
+                return candidate
+    return channel_id
+
+
+def _parse_channel_protocol(channel_id: str) -> ProtocolKind | None:
+    for protocol in ProtocolKind:
+        if channel_id.endswith(f"_{protocol.value}"):
+            return protocol
+    return None
+
+
+def _composite_channel_id(combo_id: str, protocol: ProtocolKind) -> str:
+    return f"{combo_id}_{protocol.value}"
+
+
+def _resolve_group_item_channel_id(
+    channel_id: str,
+    group_protocols: list[ProtocolKind],
+    *,
+    known_combo_ids: set[str],
+    combo_protocols: dict[str, list[ProtocolKind]],
+) -> str:
+    combo_id = _extract_combo_id(channel_id, known_combo_ids)
+    if combo_id not in known_combo_ids:
+        return channel_id
+
+    parsed_protocol = _parse_channel_protocol(channel_id)
+    available_protocols = combo_protocols.get(combo_id, [])
+    if parsed_protocol in available_protocols:
+        return _composite_channel_id(combo_id, parsed_protocol)
+
+    for protocol in group_protocols:
+        if protocol in available_protocols:
+            return _composite_channel_id(combo_id, protocol)
+
+    if available_protocols:
+        return _composite_channel_id(combo_id, available_protocols[0])
+    return channel_id
+
+
+def _upgrade_backup_format(data: dict) -> dict:
+    """将旧版备份 JSON 升级为新版格式，在 Pydantic 解析前执行。
+
+    处理：旧版 SiteProtocolConfig 含 protocol 字段，新版改为 SiteBaseUrl.compatible_protocols。
+    """
+    for site in data.get("sites", []):
+        url_protocols: dict[str, list[str]] = {}
+        for protocol_config in site.get("protocols", []):
+            if old_protocol := protocol_config.pop("protocol", None):
+                base_url_id = protocol_config.get("base_url_id", "")
+                if base_url_id:
+                    if base_url_id not in url_protocols:
+                        url_protocols[base_url_id] = []
+                    if old_protocol not in url_protocols[base_url_id]:
+                        url_protocols[base_url_id].append(old_protocol)
+        for base_url in site.get("base_urls", []):
+            buid = base_url.get("id", "")
+            if not base_url.get("compatible_protocols") and buid in url_protocols:
+                base_url["compatible_protocols"] = sorted(url_protocols[buid])
+    for group in data.get("groups", []):
+        if not isinstance(group, dict):
+            continue
+        old_protocol = group.pop("protocol", None)
+        if "protocols" not in group and old_protocol is not None:
+            group["protocols"] = [old_protocol]
+        if not group.get("protocols"):
+            raise ValueError(
+                f"Backup model group missing protocols: {group.get('name', '')}"
+            )
+    return data
+
 EXPORTABLE_SETTING_KEYS = (
     SETTING_PROXY_URL,
     SETTING_CORS_ALLOW_ORIGINS,
@@ -88,6 +170,19 @@ EXPORTABLE_SETTING_KEYS = (
 class BackupStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+
+    @staticmethod
+    def parse_dump(payload: bytes) -> "ConfigBackupDump":
+        """解析备份文件字节，在 Pydantic 验证前升级旧版格式。"""
+        try:
+            data = json.loads(payload)
+            data = _upgrade_backup_format(data)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid backup file") from exc
+        try:
+            return ConfigBackupDump.model_validate(data)
+        except ValueError as exc:
+            raise ValueError("Invalid backup file") from exc
 
     async def export_dump(
         self,
@@ -147,8 +242,8 @@ class BackupStore:
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 
-            channel_ids, available_model_keys = await self._replace_sites(
-                session, dump.sites
+            channel_ids, channel_protocols, available_model_keys = (
+                await self._replace_sites(session, dump.sites)
             )
             rows_affected["sites"] = len(dump.sites)
             rows_affected["site_base_urls"] = sum(
@@ -170,6 +265,7 @@ class BackupStore:
                 session,
                 dump.groups,
                 available_channel_ids=channel_ids,
+                available_channel_protocols=channel_protocols,
                 available_model_keys=available_model_keys,
             )
             rows_affected["model_groups"] = len(dump.groups)
@@ -208,7 +304,22 @@ class BackupStore:
 
     async def _replace_sites(
         self, session: AsyncSession, sites: list[SiteConfig]
-    ) -> tuple[set[str], set[tuple[str, str, str]]]:
+    ) -> tuple[set[str], dict[str, list[ProtocolKind]], set[tuple[str, str, str]]]:
+        # 旧备份兼容：若地址没有 compatible_protocols 但协议配置有 protocol，则反推
+        for site in sites:
+            url_protocols: dict[str, set] = {}
+            for protocol_config in site.protocols:
+                protocol_value = getattr(protocol_config, "protocol", None)
+                if protocol_value is not None:
+                    url_protocols.setdefault(protocol_config.base_url_id, set()).add(
+                        protocol_value
+                    )
+            for base_url in site.base_urls:
+                if not base_url.compatible_protocols and base_url.id in url_protocols:
+                    base_url.compatible_protocols = sorted(
+                        url_protocols[base_url.id], key=lambda p: p.value
+                    )
+
         await session.execute(delete(SiteDiscoveredModelEntity))
         await session.execute(delete(SiteProtocolConfigEntity))
         await session.execute(delete(SiteCredentialEntity))
@@ -218,6 +329,7 @@ class BackupStore:
         site_ids: set[str] = set()
         site_names: set[str] = set()
         channel_ids: set[str] = set()
+        channel_protocols: dict[str, list[ProtocolKind]] = {}
         credential_ids: set[str] = set()
         available_model_keys: set[tuple[str, str, str]] = set()
         base_url_ids: set[str] = set()
@@ -248,6 +360,10 @@ class BackupStore:
                         name=base_url.name,
                         enabled=1 if base_url.enabled else 0,
                         sort_order=base_url.sort_order,
+                        compatible_protocols_json=json.dumps(
+                            [p.value for p in (base_url.compatible_protocols or [])],
+                            ensure_ascii=True,
+                        ),
                     )
                 )
 
@@ -288,7 +404,7 @@ class BackupStore:
                     SiteProtocolConfigEntity(
                         id=protocol.id,
                         site_id=site.id,
-                        protocol=protocol.protocol.value,
+                        name=protocol.name,
                         enabled=1 if protocol.enabled else 0,
                         headers_json=json.dumps(protocol.headers, ensure_ascii=True),
                         channel_proxy=protocol.channel_proxy,
@@ -298,6 +414,16 @@ class BackupStore:
                         credential_id=protocol.credential_id,
                     )
                 )
+
+                base_url_protocols = next(
+                    (
+                        base_url.compatible_protocols
+                        for base_url in site.base_urls
+                        if base_url.id == protocol.base_url_id
+                    ),
+                    [],
+                )
+                channel_protocols[protocol.id] = list(base_url_protocols)
 
                 for model in protocol.models:
                     if model.id in model_ids:
@@ -313,13 +439,17 @@ class BackupStore:
                             f"Discovered model credential not found in backup site {site.name}: {model.credential_id}"
                         )
                     if model.enabled:
-                        available_model_keys.add(
-                            (
-                                protocol.id,
-                                model.credential_id,
-                                model.model_name,
-                            )
-                        )
+                        for protocol_kind in channel_protocols[protocol.id]:
+                            if model.protocol is None or model.protocol == protocol_kind:
+                                available_model_keys.add(
+                                    (
+                                        _composite_channel_id(
+                                            protocol.id, protocol_kind
+                                        ),
+                                        model.credential_id,
+                                        model.model_name,
+                                    )
+                                )
                     session.add(
                         SiteDiscoveredModelEntity(
                             id=model.id,
@@ -328,10 +458,11 @@ class BackupStore:
                             model_name=model.model_name,
                             enabled=1 if model.enabled else 0,
                             sort_order=model.sort_order,
+                            protocol=(model.protocol.value if model.protocol else None),
                         )
                     )
 
-        return channel_ids, available_model_keys
+        return channel_ids, channel_protocols, available_model_keys
 
     async def _replace_groups(
         self,
@@ -339,35 +470,99 @@ class BackupStore:
         groups: list[ModelGroup],
         *,
         available_channel_ids: set[str],
+        available_channel_protocols: dict[str, list[ProtocolKind]],
         available_model_keys: set[tuple[str, str, str]],
     ) -> None:
         await session.execute(delete(ModelGroupItemEntity))
         await session.execute(delete(ModelGroupEntity))
 
         group_ids = {group.id for group in groups}
-        seen_protocol_name: set[tuple[str, str]] = set()
+        seen_group_names: set[str] = set()
         seen_group_ids: set[str] = set()
 
+        groups_by_id = {group.id: group for group in groups}
         for group in groups:
             if group.id in seen_group_ids:
                 raise ValueError(f"Duplicate group id in backup: {group.id}")
             seen_group_ids.add(group.id)
 
-            protocol_name_key = (group.protocol.value, group.name)
-            if protocol_name_key in seen_protocol_name:
+            if group.name in seen_group_names:
                 raise ValueError(f"Duplicate model group name in backup: {group.name}")
-            seen_protocol_name.add(protocol_name_key)
+            seen_group_names.add(group.name)
+
+            if not group.protocols:
+                raise ValueError(f"Backup model group missing protocols: {group.name}")
 
             if group.route_group_id and group.route_group_id not in group_ids:
                 raise ValueError(
                     f"Referenced route group not found: {group.route_group_id}"
                 )
+            if group.route_group_id:
+                route_group = groups_by_id[group.route_group_id]
+                route_protocols = set(route_group.protocols)
+                missing_protocols = [
+                    protocol
+                    for protocol in group.protocols
+                    if protocol not in route_protocols
+                ]
+                if missing_protocols:
+                    missing = ", ".join(
+                        protocol.value for protocol in missing_protocols
+                    )
+                    raise ValueError(
+                        f"Route target protocols must cover source protocols: {missing}"
+                    )
+                if route_group.route_group_id:
+                    raise ValueError(
+                        f"Route target must be an execution group: {route_group.name}"
+                    )
+
+            resolved_items: list[tuple[int, object, str, ProtocolKind]] = []
+
+            for index, item in enumerate(group.items):
+                combo_id = _extract_combo_id(item.channel_id, available_channel_ids)
+                if combo_id not in available_channel_ids:
+                    raise ValueError(
+                        f"Model group channel not found in backup sites: {item.channel_id}"
+                    )
+                resolved_channel_id = _resolve_group_item_channel_id(
+                    item.channel_id,
+                    group.protocols,
+                    known_combo_ids=available_channel_ids,
+                    combo_protocols=available_channel_protocols,
+                )
+                resolved_protocol = _parse_channel_protocol(resolved_channel_id)
+                if resolved_protocol is None:
+                    raise ValueError(
+                        f"Model group channel not found in backup sites: {item.channel_id}"
+                    )
+                target = (resolved_channel_id, item.credential_id, item.model_name)
+                if target not in available_model_keys:
+                    raise ValueError(
+                        f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
+                    )
+                resolved_items.append(
+                    (index, item, resolved_channel_id, resolved_protocol)
+                )
+
+            if group.items and not group.route_group_id:
+                for protocol in group.protocols:
+                    if not any(
+                        can_reach_protocol(item_protocol, protocol)
+                        for _, _, _, item_protocol in resolved_items
+                    ):
+                        raise ValueError(
+                            f"Protocol {protocol.value} has no reachable channel in group items"
+                        )
 
             session.add(
                 ModelGroupEntity(
                     id=group.id,
                     name=group.name,
-                    protocol=group.protocol.value,
+                    protocols_json=json.dumps(
+                        [protocol.value for protocol in group.protocols],
+                        ensure_ascii=True,
+                    ),
                     strategy=group.strategy.value,
                     route_group_id=group.route_group_id,
                     sync_filter_mode=group.sync_filter_mode.value,
@@ -375,20 +570,11 @@ class BackupStore:
                 )
             )
 
-            for index, item in enumerate(group.items):
-                if item.channel_id not in available_channel_ids:
-                    raise ValueError(
-                        f"Model group channel not found in backup sites: {item.channel_id}"
-                    )
-                target = (item.channel_id, item.credential_id, item.model_name)
-                if target not in available_model_keys:
-                    raise ValueError(
-                        f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
-                    )
+            for index, item, resolved_channel_id, _ in resolved_items:
                 session.add(
                     ModelGroupItemEntity(
                         group_id=group.id,
-                        channel_id=item.channel_id,
+                        channel_id=resolved_channel_id,
                         credential_id=item.credential_id,
                         model_name=item.model_name,
                         enabled=1 if item.enabled else 0,
@@ -721,7 +907,6 @@ class BackupStore:
                     .where(SiteProtocolConfigEntity.site_id.in_(site_ids))
                     .order_by(
                         SiteProtocolConfigEntity.site_id.asc(),
-                        SiteProtocolConfigEntity.protocol.asc(),
                         SiteProtocolConfigEntity.id.asc(),
                     )
                 )
@@ -752,6 +937,7 @@ class BackupStore:
                 .all()
             )
 
+        valid_protocol_values = {pk.value for pk in ProtocolKind}
         base_urls_by_site: dict[str, list[dict[str, object]]] = {}
         for row in base_url_rows:
             base_urls_by_site.setdefault(row.site_id, []).append(
@@ -761,6 +947,11 @@ class BackupStore:
                     "name": row.name,
                     "enabled": bool(row.enabled),
                     "sort_order": row.sort_order,
+                    "compatible_protocols": [
+                        p
+                        for p in json.loads(row.compatible_protocols_json or "[]")
+                        if p in valid_protocol_values
+                    ],
                 }
             )
 
@@ -790,6 +981,11 @@ class BackupStore:
                     "model_name": row.model_name,
                     "enabled": bool(row.enabled),
                     "sort_order": row.sort_order,
+                    "protocol": (
+                        row.protocol
+                        if row.protocol in valid_protocol_values
+                        else None
+                    ),
                 }
             )
 
@@ -803,7 +999,7 @@ class BackupStore:
             protocols_by_site.setdefault(row.site_id, []).append(
                 {
                     "id": row.id,
-                    "protocol": row.protocol,
+                    "name": row.name,
                     "enabled": bool(row.enabled),
                     "headers": headers,
                     "channel_proxy": row.channel_proxy,
@@ -919,7 +1115,7 @@ class BackupStore:
                     {
                         "id": row.id,
                         "name": row.name,
-                        "protocol": row.protocol,
+                        "protocols": json.loads(row.protocols_json),
                         "strategy": row.strategy,
                         "route_group_id": row.route_group_id,
                         "route_group_name": route_group_names.get(

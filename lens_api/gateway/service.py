@@ -44,6 +44,7 @@ from ..core.auth import create_access_token, decode_access_token
 from ..core.config import settings
 from ..core.db import create_engine, create_session_factory
 from ..core.model_prices import build_group_price_payloads, build_models_dev_price_index
+from ..core.protocol_compat import conversion_matrix
 from ..core.time_zone import resolve_time_zone
 from ..models import (
     AdminLoginRequest,
@@ -125,6 +126,7 @@ from ..persistence.domain_store import (
 from ..persistence.cronjob_store import CronjobSpec, CronjobStore
 from ..persistence.entities import AdminUserEntity
 from .converters import (
+    can_reach_protocol,
     convert_request,
     convert_response,
     convert_stream_iterator,
@@ -867,6 +869,7 @@ async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
         site_name=str(runtime["site_name"]),
         logo_url=str(runtime["site_logo_url"]),
         time_zone=str(runtime["time_zone"]),
+        protocol_conversions=conversion_matrix(),
     )
 
 
@@ -984,46 +987,54 @@ async def fetch_site_models(
 ) -> list[SiteModelFetchItem]:
     previews = await app_state.store.fetch_models_preview(payload)
     items: list[SiteModelFetchItem] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()  # (protocol, credential_id, model_name)
+
+    protocols = payload.compatible_protocols or []
+
     for preview in previews:
         credential = next(
-            item
-            for item in payload.credentials
-            if (item.id or "") == preview["credential_id"]
+            (item for item in payload.credentials
+             if (item.id or "") == preview["credential_id"]),
+            None,
         )
-        channel = ChannelConfig(
-            id="preview",
-            name=preview["credential_name"] or "preview",
-            protocol=payload.protocol,
-            base_url=payload.base_url,
-            api_key=credential.api_key,
-            headers=payload.headers,
-            model_patterns=[],
-            keys=[
-                {
-                    "id": preview["credential_id"],
-                    "key": credential.api_key,
-                    "remark": preview["credential_name"],
-                    "enabled": True,
-                }
-            ],
-            models=[],
-            channel_proxy=payload.channel_proxy,
-            param_override="",
-            match_regex=payload.match_regex,
-        )
-        for model_name in await _fetch_upstream_models(channel):
-            key = (preview["credential_id"], model_name)
-            if key in seen:
-                continue
-            seen.add(key)
-            items.append(
-                SiteModelFetchItem(
-                    credential_id=preview["credential_id"],
-                    credential_name=preview["credential_name"],
-                    model_name=model_name,
-                )
+        if credential is None:
+            continue
+
+        for protocol in protocols:
+            channel = ChannelConfig(
+                id="preview",
+                name=preview["credential_name"] or "preview",
+                protocol=protocol,
+                base_url=payload.base_url,
+                api_key=credential.api_key,
+                headers=payload.headers,
+                model_patterns=[],
+                keys=[
+                    {
+                        "id": preview["credential_id"],
+                        "key": credential.api_key,
+                        "remark": preview["credential_name"],
+                        "enabled": True,
+                    }
+                ],
+                models=[],
+                channel_proxy=payload.channel_proxy,
+                param_override="",
+                match_regex=payload.match_regex,
             )
+            for model_name in await _fetch_upstream_models(channel):
+                key = (protocol.value, preview["credential_id"], model_name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append(
+                    SiteModelFetchItem(
+                        protocol=protocol,
+                        credential_id=preview["credential_id"],
+                        credential_name=preview["credential_name"],
+                        model_name=model_name,
+                    )
+                )
     return items
 
 
@@ -1466,7 +1477,7 @@ async def _read_upload_file(file: UploadFile) -> bytes:
 
 def _parse_config_backup_dump(payload: bytes) -> ConfigBackupDump:
     try:
-        return ConfigBackupDump.model_validate_json(payload)
+        return BackupStore.parse_dump(payload)
     except (ValueError, json.JSONDecodeError) as exc:
         raise ValueError("Invalid backup file") from exc
 
@@ -1565,7 +1576,7 @@ def _filtered_group_names(
             group.name.strip()
             for group in groups
             if group.name.strip()
-            and group.protocol in protocols
+            and set(group.protocols) & protocols
             and _gateway_key_allows_model(gateway_key, group.name)
         }
     )
@@ -3070,7 +3081,7 @@ async def _resolve_routing_plan(
     matched_group = await app_state.domain_store.find_group_by_name(
         protocol.value, requested_model
     )
-    if matched_group is not None:
+    if matched_group is not None and protocol in matched_group.protocols:
         resolved_group = matched_group
         if matched_group.route_group_id.strip():
             try:
@@ -3085,6 +3096,8 @@ async def _resolve_routing_plan(
                 raise LookupError(
                     f"Route target must be an execution group: {resolved_group.name}"
                 )
+            if protocol not in resolved_group.protocols:
+                raise LookupError(f"No model group matched {requested_model}")
         channels = await app_state.store.list()
         channel_map = {channel.id: channel for channel in channels}
         route_targets = [
@@ -3095,7 +3108,9 @@ async def _resolve_routing_plan(
                 credential_name=item.credential_name or None,
             )
             for item in resolved_group.items
-            if item.enabled and item.channel_id in channel_map
+            if item.enabled
+            and item.channel_id in channel_map
+            and can_reach_protocol(channel_map[item.channel_id].protocol, protocol)
         ]
         return RoutingPlan(
             requested_group_name=matched_group.name,

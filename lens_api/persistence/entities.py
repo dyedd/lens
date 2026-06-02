@@ -55,6 +55,7 @@ class SiteBaseUrlEntity(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
+    compatible_protocols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
 
 class SiteCredentialEntity(Base):
@@ -73,7 +74,7 @@ class SiteProtocolConfigEntity(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     enabled: Mapped[int] = enabled_column()
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
@@ -94,6 +95,7 @@ class SiteDiscoveredModelEntity(Base):
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
+    protocol: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class ModelGroupEntity(Base):
@@ -106,8 +108,10 @@ class ModelGroupEntity(Base):
     )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
-    protocol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(
+        String(120), nullable=False, unique=True, index=True
+    )
+    protocols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     strategy: Mapped[str] = mapped_column(
         String(32), nullable=False, default="round_robin"
     )
@@ -131,7 +135,7 @@ class ModelGroupItemEntity(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    channel_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    channel_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
     credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     enabled: Mapped[int] = enabled_column()
@@ -171,7 +175,7 @@ class RequestLogEntity(Base):
     )
     upstream_model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     channel_id: Mapped[str | None] = mapped_column(
-        String(80), nullable=True, index=True
+        String(160), nullable=True, index=True
     )
     channel_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     gateway_key_id: Mapped[str | None] = mapped_column(

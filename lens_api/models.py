@@ -164,6 +164,7 @@ class SiteBaseUrl(StrictBaseModel):
     name: str = ""
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
+    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
 
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
@@ -173,6 +174,7 @@ class SiteBaseUrlInput(StrictBaseModel):
     url: HttpUrl
     name: str = ""
     enabled: bool = True
+    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
 
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
@@ -199,6 +201,7 @@ class SiteModel(StrictBaseModel):
     model_name: str
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
+    protocol: ProtocolKind | None = None
 
 
 class SiteModelInput(StrictBaseModel):
@@ -206,11 +209,12 @@ class SiteModelInput(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     enabled: bool = True
+    protocol: ProtocolKind | None = None
 
 
 class SiteProtocolConfig(StrictBaseModel):
     id: str
-    protocol: ProtocolKind
+    name: str = ""
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
     channel_proxy: str = ""
@@ -223,7 +227,8 @@ class SiteProtocolConfig(StrictBaseModel):
 
 class SiteProtocolConfigInput(StrictBaseModel):
     id: str | None = None
-    protocol: ProtocolKind
+    name: str = ""
+    protocol: ProtocolKind | None = None
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
     channel_proxy: str = ""
@@ -359,9 +364,9 @@ class SiteBatchImportResult(StrictBaseModel):
 
 
 class SiteModelFetchRequest(StrictBaseModel):
-    protocol: ProtocolKind
     base_url: HttpUrl
     headers: dict[str, str] = Field(default_factory=dict)
+    compatible_protocols: list[ProtocolKind] = Field(default_factory=list)
     channel_proxy: str = ""
     match_regex: str = ""
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
@@ -376,6 +381,7 @@ class SiteModelFetchRequest(StrictBaseModel):
 
 
 class SiteModelFetchItem(StrictBaseModel):
+    protocol: ProtocolKind
     credential_id: str
     credential_name: str = ""
     model_name: str
@@ -531,6 +537,9 @@ class AppInfo(StrictBaseModel):
     site_name: str
     logo_url: str = ""
     time_zone: str
+    # 渠道原生协议 → 可服务的请求协议列表（含自身）。前端据此判断兼容性，
+    # 无需硬编码后端转换表。
+    protocol_conversions: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class VersionCheckResult(StrictBaseModel):
@@ -544,7 +553,7 @@ class VersionCheckResult(StrictBaseModel):
 class ModelGroup(StrictBaseModel):
     id: str
     name: str
-    protocol: ProtocolKind
+    protocols: list[ProtocolKind] = Field(min_length=1)
     strategy: RoutingStrategy
     route_group_id: str = ""
     route_group_name: str = ""
@@ -589,7 +598,7 @@ class ModelGroupItemInput(StrictBaseModel):
 
 class ModelGroupCreate(StrictBaseModel):
     name: str
-    protocol: ProtocolKind
+    protocols: list[ProtocolKind] = Field(min_length=1)
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
     route_group_id: str = ""
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
@@ -610,7 +619,7 @@ class ModelGroupCreate(StrictBaseModel):
 
 class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
-    protocol: ProtocolKind | None = None
+    protocols: list[ProtocolKind] | None = Field(default=None, min_length=1)
     strategy: RoutingStrategy | None = None
     route_group_id: str | None = None
     sync_filter_mode: ModelGroupSyncFilterMode | None = None
@@ -670,6 +679,7 @@ class ModelGroupStats(StrictBaseModel):
 
 
 class ModelGroupCandidateItem(StrictBaseModel):
+    # --- 兼容字段：代表性原生渠道 ---
     site_id: str = ""
     channel_id: str
     channel_name: str
@@ -679,10 +689,19 @@ class ModelGroupCandidateItem(StrictBaseModel):
     credential_number: int = Field(default=0, ge=0)
     base_url: str
     model_name: str
+    # --- 聚合字段：每模型一行展示所需 ---
+    # 复合 channel_id 反解出的 combo 部分（如 "gpt-4o__openai_chat"）
+    combo_id: str = ""
+    # 该模型支持的原生协议标签（去重，按发现顺序保留）
+    protocols: list[ProtocolKind] = Field(default_factory=list)
+    # 协议 → 对应的复合 channel_id 映射
+    protocol_channels: dict[ProtocolKind, str] = Field(default_factory=dict)
+    # 针对本次 group protocols 计算出的推荐展开 items（原生优先 + 转换兜底 + 去重）
+    items: list[ModelGroupItemInput] = Field(default_factory=list)
 
 
 class ModelGroupCandidatesRequest(StrictBaseModel):
-    protocol: ProtocolKind | None = None
+    protocols: list[ProtocolKind] = Field(default_factory=list)
     exclude_items: list[ModelGroupItemInput] = Field(default_factory=list)
 
 

@@ -346,8 +346,10 @@ function buildGatewayModelGroupOptions(groups: ModelGroup[]) {
         channelNames: [],
       } satisfies GatewayModelGroupOption);
 
-    if (!current.protocols.includes(group.protocol)) {
-      current.protocols = [...current.protocols, group.protocol];
+    for (const protocol of group.protocols) {
+      if (!current.protocols.includes(protocol)) {
+        current.protocols = [...current.protocols, protocol];
+      }
     }
     current.enabledItemCount += enabledItems.length;
     current.channelNames = Array.from(
