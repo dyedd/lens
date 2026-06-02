@@ -93,6 +93,7 @@ const PROTOCOL_LABELS: Record<ProtocolKind, [string, string]> = {
   openai_chat: ["OpenAI Chat", "OpenAI Chat"],
   openai_responses: ["OpenAI Responses", "OpenAI Responses"],
   openai_embedding: ["OpenAI Embedding", "OpenAI Embedding"],
+  rerank: ["Rerank", "Rerank"],
   anthropic: ["Anthropic", "Anthropic"],
   gemini: ["Gemini", "Gemini"],
 };

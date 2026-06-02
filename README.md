@@ -35,6 +35,7 @@
 │  /v1/messages                                                        │
 │  /v1/responses                                                       │
 │  /v1/embeddings                                                      │
+│  /v1/rerank                                                          │
 │  /v1beta/models/{model}:generateContent                              │
 │                                                                      │
 │  请求解析                                                            │
@@ -212,6 +213,7 @@ pnpm dev
 | OpenAI              | `https://api.openai.com`              | OpenAI Chat / Responses / Embeddings |
 | Anthropic           | `https://api.anthropic.com`           | Anthropic        |
 | Gemini              | `https://generativelanguage.googleapis.com` | Gemini |
+| NewAPI / Rerank     | `https://newapi.example.com`          | Rerank（透传到 `POST /v1/rerank`） |
 
 ### 2. 创建模型组
 
@@ -381,6 +383,29 @@ curl http://127.0.0.1:3000/v1/embeddings \
     "input": "hello world"
   }'
 ```
+</details>
+
+<details>
+<summary>Rerank (curl)</summary>
+
+```bash
+curl http://127.0.0.1:3000/v1/rerank \
+  -H "Authorization: Bearer sk-lens-..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "your-rerank-group",
+    "query": "What is the capital of France?",
+    "documents": [
+      "Paris is the capital of France.",
+      "Berlin is the capital of Germany.",
+      "Madrid is the capital of Spain."
+    ],
+    "top_n": 3,
+    "return_documents": true
+  }'
+```
+
+请求体透传到上游 `/v1/rerank`（如 NewAPI、Jina、Cohere 等兼容服务）。响应原样返回，包含 `results[*].relevance_score / index / document`。
 </details>
 
 <details>
