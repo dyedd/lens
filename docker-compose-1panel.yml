@@ -1,11 +1,10 @@
 services:
   app:
-    image: ghcr.io/dyedd/lens:latest
+    image: ghcr.io/dyedd/lens:dev
     container_name: lens
     restart: unless-stopped
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
       - LENS_HOST=0.0.0.0
       - LENS_PORT=3000
@@ -13,10 +12,16 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data:/app/data
+      - /opt/1panel/www/sites/lens/index:/app/data
+    networks:
+      - 1panel-network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/healthz', timeout=5)"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+
+networks:
+  1panel-network:
+    external: true
