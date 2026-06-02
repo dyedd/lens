@@ -7,6 +7,7 @@ import re
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -2469,7 +2470,7 @@ async def _call_channel(
         return result
     except httpx.HTTPStatusError as exc:
         await exc.response.aread()
-        detail = exc.response.text or f"HTTP {exc.response.status_code}"
+        detail = _format_http_response_error(exc.response)
         raise UpstreamRequestError(
             status_code=exc.response.status_code,
             detail=detail,
@@ -2961,7 +2962,7 @@ async def _run_model_test_request(
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             await exc.response.aread()
-            detail = exc.response.text or f"HTTP {exc.response.status_code}"
+            detail = _format_http_response_error(exc.response)
             return SiteModelTestResult(
                 success=False,
                 status_code=exc.response.status_code,
@@ -3264,7 +3265,74 @@ def _format_channel_error(detail: Any) -> str:
     detail_text = str(detail).strip() if detail is not None else ""
     if not detail_text:
         detail_text = "Unknown error"
-    return detail_text
+    return _summarize_html_error_detail(detail_text)
+
+
+class _HtmlTitleParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._in_title = False
+        self._title_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "title":
+            self._in_title = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self._in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title:
+            self._title_parts.append(data)
+
+    def title(self) -> str:
+        return re.sub(r"\s+", " ", "".join(self._title_parts)).strip()
+
+
+def _format_http_response_error(response: httpx.Response) -> str:
+    detail = response.text or f"HTTP {response.status_code}"
+    return _summarize_html_error_detail(
+        detail,
+        status_code=response.status_code,
+        content_type=response.headers.get("content-type"),
+    )
+
+
+def _summarize_html_error_detail(
+    detail: str,
+    *,
+    status_code: int | None = None,
+    content_type: str | None = None,
+) -> str:
+    detail_text = detail.strip()
+    if not detail_text:
+        return f"HTTP {status_code}" if status_code is not None else "Unknown error"
+    if not _looks_like_html(detail_text, content_type):
+        return detail_text
+
+    title = _extract_html_title(detail_text)
+    if title:
+        if status_code is not None:
+            return f"HTTP {status_code}: {title}"
+        return f"HTML error response: {title}"
+    if status_code is not None:
+        return f"HTTP {status_code}: HTML error response"
+    return "HTML error response"
+
+
+def _looks_like_html(detail: str, content_type: str | None = None) -> bool:
+    if content_type and "html" in content_type.lower():
+        return True
+    lowered = detail[:1000].lower()
+    return "<html" in lowered or "<!doctype html" in lowered or "<title" in lowered
+
+
+def _extract_html_title(detail: str) -> str:
+    parser = _HtmlTitleParser()
+    parser.feed(detail)
+    parser.close()
+    return parser.title()[:200]
 
 
 def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
@@ -3327,7 +3395,7 @@ async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
         response.raise_for_status()
         return _parse_model_list(channel.protocol, response.json(), channel.match_regex)
     except httpx.HTTPStatusError as exc:
-        detail = exc.response.text or f"HTTP {exc.response.status_code}"
+        detail = _format_http_response_error(exc.response)
         raise HTTPException(
             status_code=exc.response.status_code, detail=detail
         ) from exc
