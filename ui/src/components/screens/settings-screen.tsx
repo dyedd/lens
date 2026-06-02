@@ -24,13 +24,20 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ApiError,
@@ -58,6 +65,7 @@ const CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown";
 const HEALTH_WINDOW_SECONDS = "health_window_seconds";
 const HEALTH_PENALTY_WEIGHT = "health_penalty_weight";
 const HEALTH_MIN_SAMPLES = "health_min_samples";
+const MODEL_LIST_COMPAT_MODE_ENABLED = "model_list_compat_mode_enabled";
 const SITE_NAME = "site_name";
 const SITE_LOGO_URL = "site_logo_url";
 const TIME_ZONE = "time_zone";
@@ -79,6 +87,7 @@ type DraftState = {
   healthWindowSeconds: string;
   healthPenaltyWeight: string;
   healthMinSamples: string;
+  modelListCompatModeEnabled: boolean;
   siteName: string;
   siteLogoUrl: string;
   timeZone: string;
@@ -94,6 +103,7 @@ const EMPTY_DRAFT: DraftState = {
   healthWindowSeconds: "300",
   healthPenaltyWeight: "0.5",
   healthMinSamples: "10",
+  modelListCompatModeEnabled: false,
   siteName: "Lens",
   siteLogoUrl: "",
   timeZone: "Asia/Shanghai",
@@ -116,6 +126,10 @@ function parseSettings(items: SettingItem[] | undefined) {
     healthWindowSeconds: mapping.get(HEALTH_WINDOW_SECONDS) ?? "300",
     healthPenaltyWeight: mapping.get(HEALTH_PENALTY_WEIGHT) ?? "0.5",
     healthMinSamples: mapping.get(HEALTH_MIN_SAMPLES) ?? "10",
+    modelListCompatModeEnabled:
+      (mapping.get(MODEL_LIST_COMPAT_MODE_ENABLED) ?? "false")
+        .trim()
+        .toLowerCase() === "true",
     siteName: mapping.get(SITE_NAME) ?? "Lens",
     siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
     timeZone: mapping.get(TIME_ZONE) ?? "Asia/Shanghai",
@@ -282,6 +296,10 @@ export function SettingsScreen() {
         {
           key: HEALTH_MIN_SAMPLES,
           value: draft.healthMinSamples.trim() || "10",
+        },
+        {
+          key: MODEL_LIST_COMPAT_MODE_ENABLED,
+          value: draft.modelListCompatModeEnabled ? "true" : "false",
         },
         { key: SITE_NAME, value: draft.siteName.trim() || "Lens" },
         { key: SITE_LOGO_URL, value: draft.siteLogoUrl.trim() },
@@ -645,6 +663,33 @@ export function SettingsScreen() {
                     setDraftValue("corsAllowOrigins", event.target.value)
                   }
                   placeholder={"*\nhttp://localhost:3000"}
+                />
+              </Field>
+              <Field
+                orientation="horizontal"
+                className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
+              >
+                <FieldContent>
+                  <FieldLabel className="w-auto">
+                    {titleForLocale(
+                      locale,
+                      "模型列表兼容模式",
+                      "Model list compatibility mode",
+                    )}
+                  </FieldLabel>
+                  <FieldDescription>
+                    {titleForLocale(
+                      locale,
+                      "开启后 /v1/models 会以 OpenAI 格式列出全部协议模型；如果客户端不支持某协议，实际请求仍可能失败。",
+                      "When enabled, /v1/models lists all protocol models in OpenAI format; requests can still fail if the client cannot call a protocol.",
+                    )}
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  checked={draft.modelListCompatModeEnabled}
+                  onCheckedChange={(checked) =>
+                    setDraftValue("modelListCompatModeEnabled", checked)
+                  }
                 />
               </Field>
             </FieldGroup>

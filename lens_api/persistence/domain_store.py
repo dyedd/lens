@@ -80,6 +80,7 @@ SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown"
 SETTING_HEALTH_WINDOW_SECONDS = "health_window_seconds"
 SETTING_HEALTH_PENALTY_WEIGHT = "health_penalty_weight"
 SETTING_HEALTH_MIN_SAMPLES = "health_min_samples"
+SETTING_MODEL_LIST_COMPAT_MODE_ENABLED = "model_list_compat_mode_enabled"
 SETTING_SITE_NAME = "site_name"
 SETTING_SITE_LOGO_URL = "site_logo_url"
 SETTING_LATEST_VERSION = "latest_version"
@@ -1392,6 +1393,9 @@ class DomainStore:
             ),
             "health_min_samples": self._parse_int(
                 mapping.get(SETTING_HEALTH_MIN_SAMPLES), default=10
+            ),
+            "model_list_compat_mode_enabled": self._parse_bool(
+                mapping.get(SETTING_MODEL_LIST_COMPAT_MODE_ENABLED), default=False
             ),
             "site_name": mapping.get(SETTING_SITE_NAME, "Lens").strip() or "Lens",
             "site_logo_url": mapping.get(SETTING_SITE_LOGO_URL, "").strip(),
