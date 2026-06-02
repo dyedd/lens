@@ -247,6 +247,34 @@ function formatGatewayKeyLabel(
   );
 }
 
+function formatInternalCredentialLabel(
+  item: Pick<RequestLogItem, "credential_id" | "credential_name">,
+) {
+  return (
+    item.credential_name?.trim() || shortenGatewayKeyId(item.credential_id)
+  );
+}
+
+function formatChannelCredentialLabel(
+  item: Pick<
+    RequestLogItem,
+    | "channel_id"
+    | "channel_name"
+    | "credential_id"
+    | "credential_name"
+    | "channel_has_multiple_credentials"
+  >,
+) {
+  const channelLabel = item.channel_name || item.channel_id || "n/a";
+  if (!item.channel_has_multiple_credentials) {
+    return channelLabel;
+  }
+  const credentialLabel = formatInternalCredentialLabel(item);
+  return credentialLabel
+    ? `${channelLabel} | ${credentialLabel}`
+    : channelLabel;
+}
+
 function filterOptionLabel(item: RequestLogFilterOption) {
   return item.label.trim() || item.id;
 }
@@ -953,6 +981,9 @@ function RequestCard({
 }) {
   const primaryModelName = getResolvedGroupName(item);
   const modelChain = getModelChain(item);
+  const modelDisplayName = item.reasoning_effort
+    ? `${modelChain} ${item.reasoning_effort}`
+    : modelChain;
   const secondaryModelName = getSecondaryModelName(item);
   const attemptCount = Number.isFinite(item.attempt_count)
     ? item.attempt_count
@@ -1005,7 +1036,7 @@ function RequestCard({
           <div className="grid gap-2.5">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <div className="min-w-0 max-w-full truncate text-[15px] font-semibold leading-6 text-foreground">
-                {modelChain}
+                {modelDisplayName}
               </div>
               <ProtocolBadge protocol={item.protocol} />
               <RequestOutcomeBadge
@@ -1044,9 +1075,9 @@ function RequestCard({
               />
               <RequestMeta
                 icon={<Waypoints size={13} />}
-                value={item.channel_name || item.channel_id || "n/a"}
+                value={formatChannelCredentialLabel(item)}
               />
-              {item.gateway_key_id ? (
+              {item.gateway_key_id && item.gateway_has_multiple_keys ? (
                 <RequestMeta
                   icon={<KeyRound size={13} />}
                   value={formatGatewayKeyLabel(item, locale)}
@@ -1273,6 +1304,8 @@ export function RequestsScreen() {
   const gatewayKeyOptions = useMemo(() => {
     return filterOptionsWithSelected(data?.gateway_keys, effectiveGatewayKeyId);
   }, [data?.gateway_keys, effectiveGatewayKeyId]);
+  const showGatewayKeyFilter =
+    Boolean(data?.gateway_has_multiple_keys) || effectiveGatewayKeyId !== null;
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
@@ -1711,32 +1744,34 @@ export function RequestsScreen() {
                       </NativeSelect>
                     </Field>
 
-                    <Field>
-                      <FieldLabel htmlFor="request-log-gateway-key">
-                        API Key
-                      </FieldLabel>
-                      <NativeSelect
-                        id="request-log-gateway-key"
-                        className="w-full"
-                        value={selectedGatewayKeyId}
-                        onChange={(event) =>
-                          handleGatewayKeyChange(event.target.value)
-                        }
-                      >
-                        <NativeSelectOption value="all">
-                          {titleForLocale(
-                            locale,
-                            "全部 API Key",
-                            "All API keys",
-                          )}
-                        </NativeSelectOption>
-                        {gatewayKeyOptions.map((item) => (
-                          <NativeSelectOption key={item.id} value={item.id}>
-                            {gatewayKeyFilterOptionLabel(item, locale)}
+                    {showGatewayKeyFilter ? (
+                      <Field>
+                        <FieldLabel htmlFor="request-log-gateway-key">
+                          API Key
+                        </FieldLabel>
+                        <NativeSelect
+                          id="request-log-gateway-key"
+                          className="w-full"
+                          value={selectedGatewayKeyId}
+                          onChange={(event) =>
+                            handleGatewayKeyChange(event.target.value)
+                          }
+                        >
+                          <NativeSelectOption value="all">
+                            {titleForLocale(
+                              locale,
+                              "全部 API Key",
+                              "All API keys",
+                            )}
                           </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </Field>
+                          {gatewayKeyOptions.map((item) => (
+                            <NativeSelectOption key={item.id} value={item.id}>
+                              {gatewayKeyFilterOptionLabel(item, locale)}
+                            </NativeSelectOption>
+                          ))}
+                        </NativeSelect>
+                      </Field>
+                    ) : null}
 
                     <Field>
                       <FieldLabel htmlFor="request-log-sort">
