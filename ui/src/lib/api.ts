@@ -705,8 +705,13 @@ export type RequestLogItem = {
   upstream_model_name?: string | null;
   channel_id?: string | null;
   channel_name?: string | null;
+  credential_id?: string | null;
+  credential_name: string;
+  channel_has_multiple_credentials: boolean;
   gateway_key_id?: string | null;
   gateway_key_remark?: string | null;
+  gateway_has_multiple_keys: boolean;
+  reasoning_effort?: string | null;
   status_code?: number | null;
   success: boolean;
   lifecycle_status: RequestLogLifecycleStatus;
@@ -762,6 +767,7 @@ export type RequestLogPage = {
   offset: number;
   channels: RequestLogFilterOption[];
   gateway_keys: RequestLogFilterOption[];
+  gateway_has_multiple_keys: boolean;
   model_names: string[];
 };
 

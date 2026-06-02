@@ -358,6 +358,7 @@ class AttemptLog:
     success: bool
     duration_ms: int
     error_message: str | None = None
+    reasoning_effort: str | None = None
 
 
 class UpstreamRequestError(HTTPException):
@@ -370,6 +371,16 @@ class UpstreamRequestError(HTTPException):
     ) -> None:
         super().__init__(status_code=status_code, detail=detail)
         self.router_status_code = router_status_code
+
+
+def _attempt_logs_to_dicts(attempts: list[AttemptLog]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for attempt in attempts:
+        item = attempt.__dict__.copy()
+        if item.get("reasoning_effort") is None:
+            item.pop("reasoning_effort", None)
+        items.append(item)
+    return items
 
 
 @dataclass
@@ -1904,7 +1915,7 @@ class _RequestLogger:
                 request_content if request_content is not None else self.request_content
             ),
             response_content=response_content,
-            attempts=[item.__dict__ for item in self.attempts],
+            attempts=_attempt_logs_to_dicts(self.attempts),
             error_message=error_message,
             **kwargs,
         )
@@ -2218,6 +2229,7 @@ async def _try_target(
 
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
     upstream_request_content = _dump_json(upstream_body) if log_body_enabled else None
+    reasoning_effort = _extract_request_reasoning_effort(body, upstream_body)
     await log_ctx.update(
         requested_group_name=plan.requested_group_name,
         resolved_group_name=plan.resolved_group_name,
@@ -2284,6 +2296,7 @@ async def _try_target(
             status_code=result.status_code,
             success=True,
             duration_ms=_elapsed_ms(attempt_started_at),
+            reasoning_effort=reasoning_effort,
         )
     )
     merged_request_content = result.request_content or upstream_request_content
@@ -2320,7 +2333,7 @@ async def _try_target(
             user_agent=effective_user_agent,
             started_at=log_ctx.started_at,
             result=result,
-            attempts=[item.__dict__ for item in log_ctx.attempts],
+            attempts=_attempt_logs_to_dicts(log_ctx.attempts),
         )
         return result.response
     await log_ctx.update(
@@ -2380,6 +2393,9 @@ async def _record_target_failure(
             success=False,
             duration_ms=_elapsed_ms(attempt_started_at),
             error_message=message,
+            reasoning_effort=_extract_request_reasoning_effort(
+                log_ctx.body, upstream_body
+            ),
         )
     )
     await log_ctx.update(
@@ -3556,6 +3572,68 @@ def _prepare_upstream_body(
         return payload
     payload["model"] = target_model_name
     return payload
+
+
+def _clean_reasoning_effort(value: Any) -> str | None:
+    if isinstance(value, int) and value > 0:
+        return str(value)
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized or len(normalized) > 32:
+        return None
+    if any(char.isspace() for char in normalized):
+        return None
+    return normalized
+
+
+def _extract_request_reasoning_effort(*bodies: Mapping[str, Any] | None) -> str | None:
+    for body in bodies:
+        if not isinstance(body, Mapping):
+            continue
+
+        for key in (
+            "reasoning_effort",
+            "reasoningEffort",
+            "model_reasoning_effort",
+            "modelReasoningEffort",
+            "effort",
+            "effortLevel",
+        ):
+            effort = _clean_reasoning_effort(body.get(key))
+            if effort:
+                return effort
+
+        reasoning = body.get("reasoning")
+        if isinstance(reasoning, Mapping):
+            effort = _clean_reasoning_effort(reasoning.get("effort"))
+            if effort:
+                return effort
+        else:
+            effort = _clean_reasoning_effort(reasoning)
+            if effort:
+                return effort
+
+        thinking = body.get("thinking")
+        if isinstance(thinking, Mapping):
+            for key in ("effort", "budget_tokens"):
+                effort = _clean_reasoning_effort(thinking.get(key))
+                if effort:
+                    return effort
+
+        output_config = body.get("output_config")
+        if isinstance(output_config, Mapping):
+            effort = _clean_reasoning_effort(output_config.get("effort"))
+            if effort:
+                return effort
+
+        extra_body = body.get("extra_body")
+        if isinstance(extra_body, Mapping):
+            effort = _extract_request_reasoning_effort(extra_body)
+            if effort:
+                return effort
+
+    return None
 
 
 def _apply_deepseek_thinking_compat(
