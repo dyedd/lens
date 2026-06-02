@@ -1541,16 +1541,6 @@ export function RequestsScreen() {
             ) : null}
 
             <div className="rounded-2xl border bg-card p-3 sm:p-4">
-              {isLoading ? (
-                <p className="px-2 py-6 text-sm text-muted-foreground">
-                  {titleForLocale(
-                    locale,
-                    "正在加载请求日志...",
-                    "Loading request logs...",
-                  )}
-                </p>
-              ) : null}
-
               {!isError && !isLoading && visibleData.length === 0 ? (
                 <div className="rounded-xl border border-dashed bg-background px-6 py-14 text-center text-sm text-muted-foreground">
                   {activeFilterCount

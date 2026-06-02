@@ -1901,13 +1901,7 @@ export function GroupsScreen() {
 
           <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-18rem)]">
             <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
-              {isLoading ? (
-                <div className="px-2 py-6 text-sm text-muted-foreground">
-                  {locale === "zh-CN"
-                    ? "正在加载模型组..."
-                    : "Loading groups..."}
-                </div>
-              ) : groupsIsError ? null : visibleGroups.length ? (
+              {isLoading || groupsIsError ? null : visibleGroups.length ? (
                 <ItemGroup className="gap-3">
                   {visibleGroups.map((group) => {
                     const GroupAvatar = getModelGroupAvatar(group.name);
