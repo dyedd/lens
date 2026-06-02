@@ -32,14 +32,41 @@ def _index_exists(table_name: str, index_name: str) -> bool:
 def upgrade() -> None:
     conn = op.get_bind()
     dialect = conn.dialect.name
+
+    # Step 0: 合并同名 model group 的 items 到 canonical 行（MIN(id)）
+    # 旧模型按 name+protocol 区分，新模型 name 唯一。
     dup = conn.execute(sa.text(
-        "SELECT name, COUNT(*) AS c FROM model_groups GROUP BY name HAVING COUNT(*) > 1"
+        "SELECT name FROM model_groups GROUP BY name HAVING COUNT(*) > 1"
     )).fetchall()
     if dup:
-        raise RuntimeError(
-            f"Migration aborted: duplicate model group names found: {[r[0] for r in dup]}"
-        )
+        if dialect == "sqlite":
+            op.execute("""
+                UPDATE model_group_items
+                SET group_id = (
+                    SELECT m.cid FROM (
+                        SELECT name, MIN(id) AS cid FROM model_groups GROUP BY name
+                    ) m JOIN model_groups g ON g.name = m.name
+                    WHERE g.id = model_group_items.group_id
+                )
+                WHERE group_id IN (
+                    SELECT id FROM model_groups WHERE id NOT IN (
+                        SELECT MIN(id) FROM model_groups GROUP BY name
+                    )
+                )
+            """)
+        elif dialect == "postgresql":
+            op.execute("""
+                UPDATE model_group_items AS t
+                SET group_id = m.cid
+                FROM model_groups g
+                JOIN (SELECT name, MIN(id) AS cid FROM model_groups GROUP BY name) m
+                    ON g.name = m.name
+                WHERE t.group_id = g.id AND g.id <> m.cid
+            """)
+        else:
+            raise RuntimeError(f"Unsupported dialect: {dialect}")
 
+    # Step 1: 添加 protocols_json 列
     with op.batch_alter_table("model_groups") as batch_op:
         batch_op.add_column(
             sa.Column(
@@ -50,16 +77,41 @@ def upgrade() -> None:
             )
         )
 
+    # Step 2: 聚合填充 protocols_json（按 name 聚合所有同名行的 protocol，含即将被删的行）
     if dialect == "sqlite":
-        op.execute("""UPDATE model_groups SET protocols_json = '["' || protocol || '"]'""")
+        op.execute("""
+            UPDATE model_groups
+            SET protocols_json = COALESCE(
+                (SELECT json_group_array(sub.protocol) FROM (
+                    SELECT DISTINCT g2.protocol FROM model_groups g2
+                    WHERE g2.name = model_groups.name
+                    ORDER BY g2.protocol
+                ) sub),
+                '["' || protocol || '"]'
+            )
+        """)
     elif dialect == "postgresql":
-        op.execute(
-            "UPDATE model_groups "
-            "SET protocols_json = json_build_array(protocol)::text"
-        )
+        op.execute("""
+            UPDATE model_groups AS t
+            SET protocols_json = agg.protocols
+            FROM (
+                SELECT name, json_agg(DISTINCT protocol ORDER BY protocol)::text AS protocols
+                FROM model_groups
+                GROUP BY name
+            ) agg
+            WHERE t.name = agg.name
+        """)
     else:
         raise RuntimeError(f"Unsupported dialect for upgrade: {dialect}")
 
+    # Step 3: 删除非 canonical 行（保留每个 name 的 MIN(id)）
+    if dup:
+        op.execute("""
+            DELETE FROM model_groups
+            WHERE id NOT IN (SELECT MIN(id) FROM model_groups GROUP BY name)
+        """)
+
+    # Step 4: 删除 protocol 列 + 加 unique index
     with op.batch_alter_table("model_groups") as batch_op:
         if _index_exists("model_groups", "ix_model_groups_protocol"):
             batch_op.drop_index("ix_model_groups_protocol")

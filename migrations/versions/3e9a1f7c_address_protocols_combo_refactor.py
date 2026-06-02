@@ -20,31 +20,43 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Step 0: 冲突检测（同一 base_url+credential 多条配置但参数不同）
-    # 必须在任何 DDL 之前：SQLite DDL 自动提交不可回滚，一旦先改表再 abort 会留下半升级脏状态。
+    # Step 0: 归一化冲突 combo（同一 site+base_url+credential 多行配置不一致）
+    # 以每组 MIN(id) 行的共享配置覆盖同组其余行，与 Step 9 保留 MIN(id) 的逻辑一致，
+    # 使后续聚合无歧义、可平滑升级。必须在任何 DDL 之前执行。
     conn = op.get_bind()
-    conflicts = conn.execute(sa.text("""
-        SELECT site_id, base_url_id, credential_id, COUNT(*) AS n,
-            COUNT(DISTINCT
-                CAST(enabled AS TEXT) || '|' || headers_json || '|' ||
-                channel_proxy || '|' || param_override || '|' || match_regex
-            ) AS variants
-        FROM site_protocol_configs
-        GROUP BY site_id, base_url_id, credential_id
-        HAVING COUNT(*) > 1 AND COUNT(DISTINCT
-            CAST(enabled AS TEXT) || '|' || headers_json || '|' ||
-            channel_proxy || '|' || param_override || '|' || match_regex
-        ) > 1
-    """)).fetchall()
-    if conflicts:
-        conflict_info = ", ".join(
-            f"site={r[0]} base_url={r[1]} credential={r[2]}"
-            for r in conflicts
-        )
-        raise RuntimeError(
-            f"Migration aborted: found {len(conflicts)} conflicting combo(s) that cannot be auto-merged. "
-            f"Please manually resolve these configs first: {conflict_info}"
-        )
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        op.execute("""
+            UPDATE site_protocol_configs AS t
+            SET enabled = c.enabled, headers_json = c.headers_json,
+                channel_proxy = c.channel_proxy, param_override = c.param_override,
+                match_regex = c.match_regex
+            FROM (
+                SELECT s.* FROM site_protocol_configs s
+                JOIN (SELECT site_id, base_url_id, credential_id, MIN(id) AS cid
+                      FROM site_protocol_configs
+                      GROUP BY site_id, base_url_id, credential_id) m ON s.id = m.cid
+            ) AS c
+            WHERE t.site_id = c.site_id AND t.base_url_id = c.base_url_id
+              AND t.credential_id = c.credential_id AND t.id <> c.id
+        """)
+    elif dialect == "postgresql":
+        op.execute("""
+            UPDATE site_protocol_configs AS t
+            SET enabled = c.enabled, headers_json = c.headers_json,
+                channel_proxy = c.channel_proxy, param_override = c.param_override,
+                match_regex = c.match_regex
+            FROM (
+                SELECT s.* FROM site_protocol_configs s
+                JOIN (SELECT site_id, base_url_id, credential_id, MIN(id) AS cid
+                      FROM site_protocol_configs
+                      GROUP BY site_id, base_url_id, credential_id) m ON s.id = m.cid
+            ) AS c
+            WHERE t.site_id = c.site_id AND t.base_url_id = c.base_url_id
+              AND t.credential_id = c.credential_id AND t.id <> c.id
+        """)
+    else:
+        raise RuntimeError(f"Unsupported dialect for migration 3e9a1f7c: {dialect}")
 
     # Step 1: site_base_urls 新增 compatible_protocols_json
     with op.batch_alter_table("site_base_urls") as batch_op:
