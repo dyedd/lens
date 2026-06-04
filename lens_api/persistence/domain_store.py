@@ -2215,15 +2215,8 @@ class DomainStore:
                 select(
                     SiteProtocolConfigEntity.site_id.label("site_id"),
                     SiteProtocolConfigEntity.id.label("combo_id"),
-                    SiteBaseUrlEntity.supported_protocols_json.label(
-                        "supported_protocols_json"
-                    ),
-                )
-                .join(
-                    SiteBaseUrlEntity,
-                    SiteBaseUrlEntity.id == SiteProtocolConfigEntity.base_url_id,
-                )
-                .order_by(
+                    SiteProtocolConfigEntity.protocols_json.label("protocols_json"),
+                ).order_by(
                     SiteProtocolConfigEntity.site_id.asc(),
                     SiteProtocolConfigEntity.id.asc(),
                 )
@@ -2234,9 +2227,7 @@ class DomainStore:
             for row in channel_rows.all():
                 site_id = str(row.site_id)
                 combo_id = str(row.combo_id)
-                for protocol in _parse_supported_protocols_json(
-                    row.supported_protocols_json
-                ):
+                for protocol in _parse_supported_protocols_json(row.protocols_json):
                     channel_ids_by_site.setdefault(site_id, []).append(
                         _composite_channel_id(combo_id, protocol)
                     )
@@ -3995,9 +3986,10 @@ class DomainStore:
                 continue
             for channel_id in combo_to_channels.get(str(combo_id), []):
                 channel_protocol = protocols_by_channel.get(channel_id)
+                if model_protocol is None:
+                    continue
                 if (
                     channel_protocol is not None
-                    and model_protocol is not None
                     and str(model_protocol) != channel_protocol
                 ):
                     continue

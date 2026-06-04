@@ -43,6 +43,36 @@ from .entities import (
 )
 
 
+def _deduplicate_protocols(protocols: list[ProtocolKind]) -> list[ProtocolKind]:
+    return list(dict.fromkeys(protocols))
+
+
+def _parse_protocols_json(raw: str | None) -> list[ProtocolKind]:
+    valid_protocol_values = {pk.value for pk in ProtocolKind}
+    try:
+        values = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(values, list):
+        return []
+    return [
+        ProtocolKind(value)
+        for value in values
+        if isinstance(value, str) and value in valid_protocol_values
+    ]
+
+
+def _dump_protocols_json(protocols: list[ProtocolKind]) -> str:
+    return json.dumps(
+        [p.value for p in _deduplicate_protocols(protocols)],
+        ensure_ascii=True,
+    )
+
+
+def _input_protocols(protocol: SiteProtocolConfigInput) -> list[ProtocolKind]:
+    return _deduplicate_protocols(protocol.protocols)
+
+
 def _combo_model_key(model: SiteModelInput) -> tuple[str, str]:
     return (model.credential_id, model.model_name.strip())
 
@@ -55,43 +85,9 @@ def _composite_id_like(column, combo_id: str):
 def _deduplicate_combo_models(models: list[SiteModelInput]) -> list[SiteModelInput]:
     deduplicated: list[SiteModelInput] = []
     indexes: dict[tuple[str, str, ProtocolKind | None], int] = {}
-    none_indexes: dict[tuple[str, str], int] = {}
-    model_keys_with_specific_protocols: set[tuple[str, str]] = set()
-    discarded_indexes: set[int] = set()
 
     for model in models:
-        model_key = _combo_model_key(model)
-        protocol = model.protocol
-
-        if protocol is None:
-            if model_key in model_keys_with_specific_protocols:
-                continue
-
-            row_key = (*model_key, None)
-            existing_index = indexes.get(row_key)
-            if existing_index is None:
-                indexes[row_key] = len(deduplicated)
-                none_indexes[model_key] = len(deduplicated)
-                deduplicated.append(model)
-                continue
-
-            existing = deduplicated[existing_index]
-            deduplicated[existing_index] = existing.model_copy(
-                update={
-                    "id": existing.id or model.id,
-                    "enabled": existing.enabled or model.enabled,
-                    "protocol": None,
-                }
-            )
-            continue
-
-        model_keys_with_specific_protocols.add(model_key)
-        none_index = none_indexes.pop(model_key, None)
-        if none_index is not None:
-            discarded_indexes.add(none_index)
-            indexes.pop((*model_key, None), None)
-
-        row_key = (*model_key, protocol)
+        row_key = (*_combo_model_key(model), model.protocol)
         existing_index = indexes.get(row_key)
         if existing_index is None:
             indexes[row_key] = len(deduplicated)
@@ -103,15 +99,11 @@ def _deduplicate_combo_models(models: list[SiteModelInput]) -> list[SiteModelInp
             update={
                 "id": existing.id or model.id,
                 "enabled": existing.enabled or model.enabled,
-                "protocol": protocol,
+                "protocol": model.protocol,
             }
         )
 
-    return [
-        model
-        for index, model in enumerate(deduplicated)
-        if index not in discarded_indexes
-    ]
+    return deduplicated
 
 
 class ChannelStore:
@@ -662,7 +654,7 @@ class ChannelStore:
             protocols.append(
                 SiteProtocolConfigInput(
                     id=str(uuid.uuid4()),
-                    protocol=protocol.protocol,
+                    protocols=[protocol.protocol],
                     enabled=protocol.enabled,
                     headers={
                         key.strip(): value
@@ -843,7 +835,7 @@ class ChannelStore:
                 raise ValueError(
                     f"Base URL not found for combo {combo.id}: {combo.base_url_id}"
                 )
-            protocols = bound_base_url.supported_protocols
+            protocols = combo.protocols
             if not protocols:
                 continue
             keys = self._build_channel_keys(combo, credentials_by_id)
@@ -851,11 +843,7 @@ class ChannelStore:
                 continue
             active_key = next((k for k in keys if k.enabled), keys[0])
             for protocol in protocols:
-                protocol_models = [
-                    m
-                    for m in combo.models
-                    if m.protocol == protocol or m.protocol is None
-                ]
+                protocol_models = [m for m in combo.models if m.protocol == protocol]
                 items.append(
                     ChannelConfig(
                         id=f"{combo.id}_{protocol.value}",
@@ -921,7 +909,7 @@ class ChannelStore:
                 sort_order=item.sort_order,
             )
             for item in combo.models
-            if item.protocol == protocol or item.protocol is None
+            if item.protocol == protocol
         ]
 
     def _normalize_credentials(
@@ -1013,7 +1001,6 @@ class ChannelStore:
         self, rows: list[SiteBaseUrlEntity]
     ) -> dict[str, list[SiteBaseUrl]]:
         result: dict[str, list[SiteBaseUrl]] = defaultdict(list)
-        valid_protocol_values = {pk.value for pk in ProtocolKind}
         for row in rows:
             result[row.site_id].append(
                 SiteBaseUrl(
@@ -1022,11 +1009,9 @@ class ChannelStore:
                     name=row.name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
-                    supported_protocols=[
-                        ProtocolKind(p)
-                        for p in json.loads(row.supported_protocols_json or "[]")
-                        if p in valid_protocol_values
-                    ],
+                    supported_protocols=_parse_protocols_json(
+                        row.supported_protocols_json
+                    ),
                 )
             )
         return result
@@ -1085,6 +1070,7 @@ class ChannelStore:
                 SiteProtocolConfig(
                     id=row.id,
                     name=row.name,
+                    protocols=_parse_protocols_json(row.protocols_json),
                     enabled=bool(row.enabled),
                     headers=json.loads(row.headers_json),
                     channel_proxy=row.channel_proxy,
@@ -1112,8 +1098,8 @@ class ChannelStore:
                     name=item.name,
                     enabled=int(item.enabled),
                     sort_order=index,
-                    supported_protocols_json=json.dumps(
-                        [p.value for p in item.supported_protocols], ensure_ascii=True
+                    supported_protocols_json=_dump_protocols_json(
+                        item.supported_protocols
                     ),
                 )
             )
@@ -1157,6 +1143,11 @@ class ChannelStore:
                 raise ValueError(
                     f"Credential not found for combo {protocol_id}: {protocol.credential_id}"
                 )
+            input_protocols = _input_protocols(protocol)
+            if not input_protocols:
+                raise ValueError(
+                    f"At least one upstream protocol is required for combo {protocol_id}"
+                )
             protocol_key = (protocol.base_url_id, protocol.credential_id)
             if protocol_key in protocol_keys:
                 raise ValueError(
@@ -1170,6 +1161,7 @@ class ChannelStore:
                 session.add(existing_protocol)
             existing_protocol.site_id = site_id
             existing_protocol.name = protocol.name.strip()
+            existing_protocol.protocols_json = _dump_protocols_json(input_protocols)
             existing_protocol.enabled = int(protocol.enabled)
             existing_protocol.headers_json = json.dumps(
                 protocol.headers, ensure_ascii=True
@@ -1211,8 +1203,16 @@ class ChannelStore:
                 raise ValueError(
                     f"Model credential not found in combo {protocol_id}: {model.credential_id}"
                 )
+            if model.protocol is None:
+                raise ValueError(
+                    f"Model protocol is required in combo {protocol_id}: {model_name}"
+                )
+            if model.protocol not in protocol.protocols:
+                raise ValueError(
+                    f"Model protocol is not enabled in combo {protocol_id}: {model.protocol.value}"
+                )
 
-            protocol_value = model.protocol.value if model.protocol else None
+            protocol_value = model.protocol.value
             model_key = (model.credential_id, model_name, protocol_value)
             if model_key in seen_models:
                 raise ValueError(
@@ -1282,15 +1282,9 @@ class ChannelStore:
         matching_model = (
             select(SiteDiscoveredModelEntity.id)
             .where(
-                or_(
-                    ModelGroupItemEntity.channel_id
-                    == SiteDiscoveredModelEntity.protocol_config_id.concat("_").concat(
-                        SiteDiscoveredModelEntity.protocol
-                    ),
-                    SiteDiscoveredModelEntity.protocol.is_(None)
-                    & ModelGroupItemEntity.channel_id.like(
-                        SiteDiscoveredModelEntity.protocol_config_id.concat("_%")
-                    ),
+                ModelGroupItemEntity.channel_id
+                == SiteDiscoveredModelEntity.protocol_config_id.concat("_").concat(
+                    SiteDiscoveredModelEntity.protocol
                 )
             )
             .where(
