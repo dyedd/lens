@@ -956,8 +956,7 @@ export function GroupsScreen() {
         const baseUrl = site.base_urls.find((b) => b.id === combo.base_url_id);
         const baseUrlStr =
           baseUrl?.url ?? protocolBaseUrl(site, combo.base_url_id);
-        const protocols = baseUrl?.supported_protocols ?? [];
-        for (const p of protocols) {
+        for (const p of combo.protocols) {
           const compositeId = `${combo.id}_${p}`;
           map.set(compositeId, {
             id: compositeId,
@@ -967,13 +966,13 @@ export function GroupsScreen() {
             protocol: p,
           });
         }
-        if (!map.has(combo.id) && protocols.length > 0) {
+        if (!map.has(combo.id) && combo.protocols.length > 0) {
           map.set(combo.id, {
             id: combo.id,
             site_id: site.id,
             name: site.name,
             base_url: baseUrlStr,
-            protocol: protocols[0],
+            protocol: combo.protocols[0],
           });
         }
       }
