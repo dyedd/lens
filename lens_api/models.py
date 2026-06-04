@@ -209,12 +209,13 @@ class SiteModelInput(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     enabled: bool = True
-    protocol: ProtocolKind | None = None
+    protocol: ProtocolKind
 
 
 class SiteProtocolConfig(StrictBaseModel):
     id: str
     name: str = ""
+    protocols: list[ProtocolKind] = Field(default_factory=list)
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
     channel_proxy: str = ""
@@ -228,7 +229,7 @@ class SiteProtocolConfig(StrictBaseModel):
 class SiteProtocolConfigInput(StrictBaseModel):
     id: str | None = None
     name: str = ""
-    protocol: ProtocolKind | None = None
+    protocols: list[ProtocolKind] = Field(default_factory=list)
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
     channel_proxy: str = ""
@@ -366,7 +367,6 @@ class SiteBatchImportResult(StrictBaseModel):
 class SiteModelFetchRequest(StrictBaseModel):
     base_url: HttpUrl
     headers: dict[str, str] = Field(default_factory=dict)
-    supported_protocols: list[ProtocolKind] = Field(default_factory=list)
     channel_proxy: str = ""
     match_regex: str = ""
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
@@ -381,7 +381,6 @@ class SiteModelFetchRequest(StrictBaseModel):
 
 
 class SiteModelFetchItem(StrictBaseModel):
-    protocol: ProtocolKind
     credential_id: str
     credential_name: str = ""
     model_name: str

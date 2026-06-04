@@ -167,7 +167,7 @@ export type SiteModel = {
 
 export type SiteModelInput = {
   id?: string | null;
-  protocol?: ProtocolKind | null;
+  protocol: ProtocolKind;
   credential_id: string;
   model_name: string;
   enabled: boolean;
@@ -176,6 +176,7 @@ export type SiteModelInput = {
 export type SiteProtocolConfig = {
   id: string;
   name: string;
+  protocols: ProtocolKind[];
   enabled: boolean;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -189,7 +190,7 @@ export type SiteProtocolConfig = {
 export type SiteProtocolConfigInput = {
   id?: string | null;
   name: string;
-  protocol?: ProtocolKind | null;
+  protocols: ProtocolKind[];
   enabled: boolean;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -306,7 +307,6 @@ export type SiteBatchImportResult = {
 };
 
 export type SiteModelFetchPayload = {
-  supported_protocols: ProtocolKind[];
   base_url: string;
   headers: Record<string, string>;
   channel_proxy: string;
@@ -316,7 +316,6 @@ export type SiteModelFetchPayload = {
 };
 
 export type SiteModelFetchItem = {
-  protocol: ProtocolKind;
   credential_id: string;
   credential_name: string;
   model_name: string;

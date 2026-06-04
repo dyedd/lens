@@ -137,7 +137,6 @@ from .router import RoundRobinRouter, RouteSelection, RouteTarget
 from .cronjob_runner import CronjobAlreadyRunningError, CronjobRunner
 from .upstreams import (
     UpstreamRequest,
-    append_channel_url_path,
     build_upstream_headers,
     build_upstream_request,
     resolve_channel_api_key,
@@ -1138,9 +1137,8 @@ async def fetch_site_models(
 ) -> list[SiteModelFetchItem]:
     previews = await app_state.store.fetch_models_preview(payload)
     items: list[SiteModelFetchItem] = []
-    seen: set[tuple[str, str, str]] = set()
-
-    protocols = payload.supported_protocols or []
+    seen: set[tuple[str, str]] = set()
+    errors: list[str] = []
 
     for preview in previews:
         credential = next(
@@ -1154,41 +1152,50 @@ async def fetch_site_models(
         if credential is None:
             continue
 
-        for protocol in protocols:
-            channel = ChannelConfig(
-                id="preview",
-                name=preview["credential_name"] or "preview",
-                protocol=protocol,
-                base_url=payload.base_url,
-                api_key=credential.api_key,
-                headers=payload.headers,
-                model_patterns=[],
-                keys=[
-                    {
-                        "id": preview["credential_id"],
-                        "key": credential.api_key,
-                        "remark": preview["credential_name"],
-                        "enabled": True,
-                    }
-                ],
-                models=[],
-                channel_proxy=payload.channel_proxy,
-                param_override="",
-                match_regex=payload.match_regex,
-            )
-            for model_name in await _fetch_upstream_models(channel):
-                key = (protocol.value, preview["credential_id"], model_name)
-                if key in seen:
-                    continue
-                seen.add(key)
-                items.append(
-                    SiteModelFetchItem(
-                        protocol=protocol,
-                        credential_id=preview["credential_id"],
-                        credential_name=preview["credential_name"],
-                        model_name=model_name,
-                    )
+        channel = ChannelConfig(
+            id="preview",
+            name=preview["credential_name"] or "preview",
+            protocol=ProtocolKind.OPENAI_CHAT,
+            base_url=payload.base_url,
+            api_key=credential.api_key,
+            headers=payload.headers,
+            model_patterns=[],
+            keys=[
+                {
+                    "id": preview["credential_id"],
+                    "key": credential.api_key,
+                    "remark": preview["credential_name"],
+                    "enabled": True,
+                }
+            ],
+            models=[],
+            channel_proxy=payload.channel_proxy,
+            param_override="",
+            match_regex=payload.match_regex,
+        )
+        try:
+            model_names = await _fetch_upstream_models(channel)
+        except HTTPException as exc:
+            errors.append(_format_channel_error(exc.detail))
+            continue
+
+        for model_name in model_names:
+            key = (preview["credential_id"], model_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(
+                SiteModelFetchItem(
+                    credential_id=preview["credential_id"],
+                    credential_name=preview["credential_name"],
+                    model_name=model_name,
                 )
+            )
+    if not items and errors:
+        raise HTTPException(
+            status_code=502,
+            detail="Model discovery failed: " + "; ".join(errors),
+        )
     return items
 
 
@@ -3405,7 +3412,7 @@ async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
     try:
         response = await client.request(**_model_list_request(channel))
         response.raise_for_status()
-        return _parse_model_list(channel.protocol, response.json(), channel.match_regex)
+        return _parse_model_list(response.json(), channel.match_regex)
     except httpx.HTTPStatusError as exc:
         detail = _format_http_response_error(exc.response)
         raise HTTPException(
@@ -3424,58 +3431,18 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
     api_key = resolve_channel_api_key(channel)
     headers = dict(channel.headers)
 
-    if channel.protocol in {
-        ProtocolKind.OPENAI_CHAT,
-        ProtocolKind.OPENAI_RESPONSES,
-        ProtocolKind.OPENAI_EMBEDDING,
-        ProtocolKind.RERANK,
-    }:
-        return {
-            "method": "GET",
-            "url": resolve_channel_model_list_url(channel),
-            "headers": build_upstream_headers(
-                {"authorization": f"Bearer {api_key}"},
-                headers,
-                user_agent=_default_lens_user_agent(),
-            ),
-        }
-
-    if channel.protocol == ProtocolKind.ANTHROPIC:
-        return {
-            "method": "GET",
-            "url": append_channel_url_path(channel, "v1", "models"),
-            "headers": build_upstream_headers(
-                {
-                    "x-api-key": api_key,
-                    "anthropic-version": settings.anthropic_version,
-                },
-                headers,
-                user_agent=_default_lens_user_agent(),
-            ),
-        }
-
-    if channel.protocol == ProtocolKind.GEMINI:
-        return {
-            "method": "GET",
-            "url": append_channel_url_path(
-                channel,
-                "v1beta",
-                "models",
-                query_params={"key": api_key},
-            ),
-            "headers": build_upstream_headers(
-                {},
-                headers,
-                user_agent=_default_lens_user_agent(),
-            ),
-        }
-
-    raise ValueError(f"Unsupported protocol={channel.protocol.value}")
+    return {
+        "method": "GET",
+        "url": resolve_channel_model_list_url(channel),
+        "headers": build_upstream_headers(
+            {"authorization": f"Bearer {api_key}"},
+            headers,
+            user_agent=_default_lens_user_agent(),
+        ),
+    }
 
 
-def _parse_model_list(
-    protocol: ProtocolKind, payload: dict[str, Any], match_regex: str
-) -> list[str]:
+def _parse_model_list(payload: dict[str, Any], match_regex: str) -> list[str]:
     names: list[str] = []
     if "data" in payload:
         items = payload["data"]
@@ -3488,12 +3455,7 @@ def _parse_model_list(
     for item in items:
         if not isinstance(item, dict):
             raise ValueError("Model list item must be an object")
-        if protocol == ProtocolKind.GEMINI:
-            value = str(item.get("name") or "")
-            if value.startswith("models/"):
-                value = value[7:]
-        else:
-            value = str(item.get("id") or item.get("name") or "")
+        value = str(item.get("id") or item.get("name") or "")
         value = value.strip()
         if not value:
             raise ValueError("Model list item missing model name")

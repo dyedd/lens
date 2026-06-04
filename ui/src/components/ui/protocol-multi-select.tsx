@@ -22,6 +22,7 @@ export interface ProtocolMultiSelectProps {
   disabled?: boolean;
   invalid?: boolean;
   requireAtLeastOne?: boolean;
+  placeholder?: string;
 }
 
 const CHAT_PROTOCOLS: ProtocolKind[] = [
@@ -151,6 +152,7 @@ export function ProtocolMultiSelect({
   disabled = false,
   invalid = false,
   requireAtLeastOne = false,
+  placeholder,
 }: ProtocolMultiSelectProps): JSX.Element {
   const allowed = allowedProtocols ?? ALL_PROTOCOLS;
   const chatProtocols = CHAT_PROTOCOLS.filter((p) => allowed.includes(p));
@@ -183,7 +185,7 @@ export function ProtocolMultiSelect({
           )}
         >
           {selectedInOrder.length === 0 ? (
-            <span className="truncate">{copy.placeholder}</span>
+            <span className="truncate">{placeholder ?? copy.placeholder}</span>
           ) : (
             <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
               {selectedInOrder.slice(0, 3).map((protocol) => (

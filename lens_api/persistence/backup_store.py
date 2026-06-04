@@ -95,7 +95,6 @@ def _composite_channel_id(combo_id: str, protocol: ProtocolKind) -> str:
 
 def _resolve_group_item_channel_id(
     channel_id: str,
-    group_protocols: list[ProtocolKind],
     *,
     known_combo_ids: set[str],
     combo_protocols: dict[str, list[ProtocolKind]],
@@ -109,12 +108,6 @@ def _resolve_group_item_channel_id(
     if parsed_protocol in available_protocols:
         return _composite_channel_id(combo_id, parsed_protocol)
 
-    for protocol in group_protocols:
-        if protocol in available_protocols:
-            return _composite_channel_id(combo_id, protocol)
-
-    if available_protocols:
-        return _composite_channel_id(combo_id, available_protocols[0])
     return channel_id
 
 
@@ -352,11 +345,20 @@ class BackupStore:
                     raise ValueError(
                         f"Channel credential not found in backup site {site.name}: {protocol.credential_id}"
                     )
+                protocol_kinds = list(protocol.protocols)
+                if not protocol_kinds:
+                    raise ValueError(
+                        f"Channel protocols not found in backup site {site.name}: {protocol.id}"
+                    )
                 session.add(
                     SiteProtocolConfigEntity(
                         id=protocol.id,
                         site_id=site.id,
                         name=protocol.name,
+                        protocols_json=json.dumps(
+                            [p.value for p in protocol_kinds],
+                            ensure_ascii=True,
+                        ),
                         enabled=1 if protocol.enabled else 0,
                         headers_json=json.dumps(protocol.headers, ensure_ascii=True),
                         channel_proxy=protocol.channel_proxy,
@@ -367,15 +369,7 @@ class BackupStore:
                     )
                 )
 
-                base_url_protocols = next(
-                    (
-                        base_url.supported_protocols
-                        for base_url in site.base_urls
-                        if base_url.id == protocol.base_url_id
-                    ),
-                    [],
-                )
-                channel_protocols[protocol.id] = list(base_url_protocols)
+                channel_protocols[protocol.id] = protocol_kinds
 
                 for model in protocol.models:
                     if model.id in model_ids:
@@ -390,12 +384,17 @@ class BackupStore:
                         raise ValueError(
                             f"Discovered model credential not found in backup site {site.name}: {model.credential_id}"
                         )
+                    if model.protocol is None:
+                        raise ValueError(
+                            f"Discovered model protocol not found in backup site {site.name}: {model.model_name}"
+                        )
+                    if model.protocol not in channel_protocols[protocol.id]:
+                        raise ValueError(
+                            f"Discovered model protocol is not enabled in backup channel {protocol.id}: {model.protocol.value}"
+                        )
                     if model.enabled:
                         for protocol_kind in channel_protocols[protocol.id]:
-                            if (
-                                model.protocol is None
-                                or model.protocol == protocol_kind
-                            ):
+                            if model.protocol == protocol_kind:
                                 available_model_keys.add(
                                     (
                                         _composite_channel_id(
@@ -413,7 +412,7 @@ class BackupStore:
                             model_name=model.model_name,
                             enabled=1 if model.enabled else 0,
                             sort_order=model.sort_order,
-                            protocol=(model.protocol.value if model.protocol else None),
+                            protocol=model.protocol.value,
                         )
                     )
 
@@ -482,7 +481,6 @@ class BackupStore:
                     )
                 resolved_channel_id = _resolve_group_item_channel_id(
                     item.channel_id,
-                    group.protocols,
                     known_combo_ids=available_channel_ids,
                     combo_protocols=available_channel_protocols,
                 )
@@ -953,6 +951,11 @@ class BackupStore:
                 {
                     "id": row.id,
                     "name": row.name,
+                    "protocols": [
+                        p
+                        for p in json.loads(row.protocols_json or "[]")
+                        if p in valid_protocol_values
+                    ],
                     "enabled": bool(row.enabled),
                     "headers": headers,
                     "channel_proxy": row.channel_proxy,
