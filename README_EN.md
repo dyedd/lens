@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
 </p>
 
-Self-hosted LLM gateway for managing multiple model providers.
+Self-hosted multi-protocol LLM gateway that organizes providers by site, Base URL, credential, and protocol combo, then exposes one unified entry to clients.
 
 ## Architecture
 
@@ -30,7 +30,7 @@ Self-hosted LLM gateway for managing multiple model providers.
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Lens Gateway                                                         │
 │                                                                      │
-│  Entry protocols                                                     │
+│  Multi-protocol entry                                                │
 │  /v1/chat/completions                                                │
 │  /v1/messages                                                        │
 │  /v1/responses                                                       │
@@ -41,44 +41,51 @@ Self-hosted LLM gateway for managing multiple model providers.
 │  Request resolution                                                  │
 │  - Validate gateway key                                              │
 │  - Resolve client protocol and required model name                   │
-│  - Match model group by entry protocol and model name                │
+│  - Match model group; routed groups may point to execution groups    │
 │                                                                      │
 │  Routing plan                                                        │
-│  - Model group item: channel + key + upstream model                  │
+│  - Model group item: runtime channel + credential + upstream model   │
 │  - Strategy: round robin / failover                                  │
 │  - Protocol conversion: OpenAI Chat -> Anthropic / Responses         │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ Candidate expansion                                                  │
+│ Admin configuration                                                  │
 │                                                                      │
-│  Channel protocol config                                             │
-│  protocol + Base URL source + bound key                              │
+│  Site                                                                │
+│  ├─ Base URLs: each URL declares supported protocols                  │
+│  ├─ Credentials: one site can keep multiple API keys                  │
+│  └─ Protocol combos: Base URL + default credential + protocols       │
+│     plus headers, proxy, parameter overrides, and match rules         │
 │                                                                      │
-│  Runtime candidate                                                   │
-│  Runtime candidate = channel + key + upstream model                  │
+│  Discovered / manual models                                          │
+│  - Models belong to protocol combos and keep protocol, credential,    │
+│    and upstream model name                                            │
+│  - Model discovery prefers a single /v1/models request                │
 │                                                                      │
-│  Example                                                             │
-│  Model group member: stable pool / gpt-5.5                           │
-│      ├─ Channel A / URL 1 / promo key  / gpt-5.5                     │
-│      ├─ Channel A / URL 1 / stable key / gpt-5.5                     │
-│      └─ Channel B / backup key / gpt-5.5                             │
+│  Model groups                                                        │
+│  - Declare entry protocols, strategy, and optional execution group   │
+│  - Items bind to: runtime channel + credential + upstream model      │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ Load balancing and failover                                          │
+│ Candidate expansion and load balancing                               │
 │                                                                      │
-│  Round robin: smooth rotation across key-level candidates            │
-│  failover: try model group items in order, then switch key / channel │
+│  Runtime channel = protocol combo + one protocol                     │
+│  Route candidate = runtime channel + credential + upstream model     │
+│                                                                      │
+│  Round robin: smooth rotation across candidates                      │
+│  Failover: try model group items in order, then switch credential or │
+│  channel                                                             │
 │                                                                      │
 │  Cooldown scope                                                      │
-│  401 / 403 / 429: cool down one key, prefer another same-site target │
+│  401 / 403 / 429: cool down one credential, prefer same-site targets │
 │  5xx / timeout / network error: cool down the channel, switch target │
 │                                                                      │
 │  Request logs                                                        │
-│  Attempt chain records channel, key, upstream model, status, time    │
+│  Record lifecycle, tokens, cost, User-Agent, attempt chain, errors   │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
@@ -91,11 +98,12 @@ Self-hosted LLM gateway for managing multiple model providers.
 
 ## Features
 
-- Unified entry: One Base URL, one API Key, supports OpenAI / Anthropic / Gemini protocols
-- Load balancing: round robin or failover at the channel + key + upstream model level
+- Unified entry: One Base URL and one gateway key for OpenAI / Anthropic / Gemini / Rerank entry protocols
+- Site management: Configure multiple Base URLs, credentials, and protocol combos per site, with model discovery, manual models, and batch import
+- Model group routing: Build candidates from runtime channel + credential + upstream model, with round robin, failover, and reusable execution groups
 - Protocol conversion: Forward OpenAI Chat to Anthropic Messages or OpenAI Responses
-- Request logs: Track protocol, model, latency, tokens, cost
-- Config backup: Export/import sites, channels, model groups, pricing
+- Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt
+- Config backup: Export/import sites, model groups, settings, pricing, cron jobs, and stats; optionally include gateway keys and request logs
 
 ## Quick Start
 
@@ -205,7 +213,12 @@ pnpm dev
 
 ### 1. Add Upstream Sites
 
-Open `/channels`, create a site, fill in Base URL and API Key, discover or manually add models.
+Open `/channels`, create a site, configure Base URLs, credentials, and protocol combos, then discover or manually add models.
+
+- **Base URLs**: One site can maintain multiple upstream URLs and declare supported protocols for each URL.
+- **Credentials**: One site can maintain multiple API keys so routing can switch at credential granularity.
+- **Protocol combos**: Bind a Base URL, default credential, and protocol list, with headers, proxy, parameter overrides, and model match rules.
+- **Models**: Models belong to protocol combos and can bind to different credentials in the same site.
 
 Common Base URLs:
 
@@ -218,10 +231,11 @@ Common Base URLs:
 
 ### 2. Create Model Groups
 
-Open `/groups`, create a model group, select protocol, add upstream models, choose routing strategy:
+Open `/groups`, create a model group, select entry protocols, add upstream model candidates, and choose a routing strategy:
 
-- **Round robin**: Smoothly rotate across expanded key-level candidates
-- **Failover**: Prefer earlier members, then switch to the next key or channel after failures
+- **Round robin**: Smoothly rotate across model group candidates
+- **Failover**: Prefer earlier members, then switch to the next credential or channel after failures
+- **Execution group reuse**: A visible group can point to another execution model group and reuse its candidates and strategy
 
 **Protocol conversion**: Lens can currently put OpenAI Chat upstream models into Anthropic or OpenAI Responses model groups and convert at runtime.
 
