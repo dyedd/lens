@@ -229,6 +229,30 @@ type ModelTestTarget = {
   modelIndex: number;
 };
 
+type BatchModelTestStatus = "pending" | "running" | "success" | "failed";
+
+type BatchModelTestRow = {
+  key: string;
+  modelName: string;
+  credentialName: string;
+  protocol: ProtocolKind;
+  status: BatchModelTestStatus;
+  statusCode?: number | null;
+  latencyMs?: number;
+  message: string;
+};
+
+type BatchModelTestOption = {
+  key: string;
+  target: ModelTestTarget;
+  modelName: string;
+  credentialName: string;
+  protocols: ProtocolKind[];
+  selectedProtocol: ProtocolKind;
+};
+
+type TestableModelOption = Omit<BatchModelTestOption, "selectedProtocol">;
+
 type SiteRow = Site & {
   subtitle: string;
   protocol_count: number;
@@ -382,6 +406,22 @@ function importStatusVariant(
   if (status === "created") return "default";
   if (status === "skipped") return "secondary";
   return "destructive";
+}
+
+function batchTestStatusLabel(status: BatchModelTestStatus, locale: Locale) {
+  if (status === "pending") return locale === "zh-CN" ? "等待中" : "Pending";
+  if (status === "running") return locale === "zh-CN" ? "测试中" : "Running";
+  if (status === "success") return locale === "zh-CN" ? "成功" : "Success";
+  return locale === "zh-CN" ? "失败" : "Failed";
+}
+
+function batchTestStatusVariant(
+  status: BatchModelTestStatus,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "success") return "default";
+  if (status === "failed") return "destructive";
+  if (status === "running") return "secondary";
+  return "outline";
 }
 
 function importResultRows(
@@ -1395,7 +1435,6 @@ function ComboConfigItem({
   onAddManualModel,
   onFetchModels,
   onOpenAdvanced,
-  onOpenModelTest,
 }: {
   form: FormState;
   combo: FormCombo;
@@ -1408,7 +1447,6 @@ function ComboConfigItem({
   onAddManualModel: (index: number, credentialId: string) => void;
   onFetchModels: (index: number) => void;
   onOpenAdvanced: (index: number) => void;
-  onOpenModelTest: (comboIndex: number, modelIndex: number) => void;
 }) {
   const submittedBaseUrls = formBaseUrlsForPayload(form);
   const submittedBaseUrlIds = new Set(submittedBaseUrls.map((item) => item.id));
@@ -1721,24 +1759,6 @@ function ComboConfigItem({
                       <Button
                         type="button"
                         variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-muted-foreground hover:text-foreground"
-                        onClick={() => onOpenModelTest(comboIndex, modelIndex)}
-                        disabled={
-                          !model.model_name.trim() ||
-                          !activeBaseUrlValue(form, combo).trim() ||
-                          !form.credentials.some(
-                            (item) =>
-                              item.id === model.credential_id &&
-                              item.api_key.trim(),
-                          )
-                        }
-                      >
-                        {locale === "zh-CN" ? "测试" : "Test"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         onClick={() =>
@@ -2021,51 +2041,58 @@ function ModelTestDialog({
                     <div className="mt-1 break-all text-xs">{sourceText}</div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-[170px_170px_minmax(0,1fr)]">
-                    <Field>
-                      <FieldLabel>
-                        {locale === "zh-CN" ? "测试协议" : "Test protocol"}
-                      </FieldLabel>
-                      <NativeSelect
-                        className={selectClassName()}
-                        value={selectedProtocol ?? ""}
-                        onChange={(event) =>
-                          onProtocolChange(event.target.value as ProtocolKind)
-                        }
-                        disabled={
-                          testingModel || supportedProtocols.length <= 1
-                        }
-                      >
-                        {supportedProtocols.map((item) => (
-                          <NativeSelectOption key={item} value={item}>
-                            {protocolLabel(item)}
+                  <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
+                    <div className="grid gap-3">
+                      <Field>
+                        <FieldLabel>
+                          {locale === "zh-CN" ? "问题" : "Prompt"}
+                        </FieldLabel>
+                        <NativeSelect
+                          className={selectClassName()}
+                          value={modelTestPromptMode}
+                          onChange={(event) =>
+                            onPromptModeChange(event.target.value)
+                          }
+                        >
+                          {modelTestPrompts.map((_, index) => (
+                            <NativeSelectOption
+                              key={index}
+                              value={String(index)}
+                            >
+                              {locale === "zh-CN"
+                                ? `预设 ${index + 1}`
+                                : `Preset ${index + 1}`}
+                            </NativeSelectOption>
+                          ))}
+                          <NativeSelectOption value="custom">
+                            {locale === "zh-CN" ? "自定义" : "Custom"}
                           </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </Field>
-                    <Field>
-                      <FieldLabel>
-                        {locale === "zh-CN" ? "问题" : "Prompt"}
-                      </FieldLabel>
-                      <NativeSelect
-                        className={selectClassName()}
-                        value={modelTestPromptMode}
-                        onChange={(event) =>
-                          onPromptModeChange(event.target.value)
-                        }
-                      >
-                        {modelTestPrompts.map((_, index) => (
-                          <NativeSelectOption key={index} value={String(index)}>
-                            {locale === "zh-CN"
-                              ? `预设 ${index + 1}`
-                              : `Preset ${index + 1}`}
-                          </NativeSelectOption>
-                        ))}
-                        <NativeSelectOption value="custom">
-                          {locale === "zh-CN" ? "自定义" : "Custom"}
-                        </NativeSelectOption>
-                      </NativeSelect>
-                    </Field>
+                        </NativeSelect>
+                      </Field>
+                      {supportedProtocols.length > 1 ? (
+                        <Field>
+                          <FieldLabel>
+                            {locale === "zh-CN" ? "测试协议" : "Test protocol"}
+                          </FieldLabel>
+                          <NativeSelect
+                            className={selectClassName()}
+                            value={selectedProtocol ?? ""}
+                            onChange={(event) =>
+                              onProtocolChange(
+                                event.target.value as ProtocolKind,
+                              )
+                            }
+                            disabled={testingModel}
+                          >
+                            {supportedProtocols.map((item) => (
+                              <NativeSelectOption key={item} value={item}>
+                                {protocolLabel(item)}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                        </Field>
+                      ) : null}
+                    </div>
                     <Field>
                       <FieldLabel>
                         {locale === "zh-CN" ? "内容" : "Content"}
@@ -2159,6 +2186,272 @@ function ModelTestDialog({
             );
           })()
         : null}
+    </Dialog>
+  );
+}
+
+function BatchModelTestDialog({
+  open,
+  locale,
+  modelTestPrompts,
+  batchTestPromptMode,
+  batchTestPrompt,
+  batchTestConcurrency,
+  batchTestOptions,
+  batchTestRows,
+  batchTestingModels,
+  onOpenChange,
+  onPromptModeChange,
+  onPromptChange,
+  onConcurrencyChange,
+  onProtocolChange,
+  onRun,
+}: {
+  open: boolean;
+  locale: Locale;
+  modelTestPrompts: string[];
+  batchTestPromptMode: string;
+  batchTestPrompt: string;
+  batchTestConcurrency: string;
+  batchTestOptions: BatchModelTestOption[];
+  batchTestRows: BatchModelTestRow[];
+  batchTestingModels: boolean;
+  onOpenChange: (open: boolean) => void;
+  onPromptModeChange: (value: string) => void;
+  onPromptChange: (value: string) => void;
+  onConcurrencyChange: (value: string) => void;
+  onProtocolChange: (key: string, protocol: ProtocolKind) => void;
+  onRun: () => void;
+}) {
+  const multiProtocolOptions = batchTestOptions.filter(
+    (item) => item.protocols.length > 1,
+  );
+  const testableCount = batchTestOptions.length;
+  const canRun =
+    testableCount > 0 && Boolean(batchTestPrompt.trim()) && !batchTestingModels;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && batchTestingModels) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      {open ? (
+        <AppDialogContent
+          className="max-w-4xl"
+          title={locale === "zh-CN" ? "批量测试模型" : "Batch test models"}
+        >
+          <div className="grid gap-4">
+            <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              {locale === "zh-CN"
+                ? `将测试 ${testableCount} 个可用模型`
+                : `${testableCount} testable models`}
+            </div>
+
+            <FieldGroup>
+              <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
+                <div className="grid gap-3">
+                  <Field>
+                    <FieldLabel>
+                      {locale === "zh-CN" ? "测试问题" : "Prompt"}
+                    </FieldLabel>
+                    <NativeSelect
+                      className={selectClassName()}
+                      value={batchTestPromptMode}
+                      onChange={(event) =>
+                        onPromptModeChange(event.target.value)
+                      }
+                      disabled={batchTestingModels}
+                    >
+                      {modelTestPrompts.map((_, index) => (
+                        <NativeSelectOption key={index} value={String(index)}>
+                          {locale === "zh-CN"
+                            ? `预设 ${index + 1}`
+                            : `Preset ${index + 1}`}
+                        </NativeSelectOption>
+                      ))}
+                      <NativeSelectOption value="custom">
+                        {locale === "zh-CN" ? "自定义" : "Custom"}
+                      </NativeSelectOption>
+                    </NativeSelect>
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {locale === "zh-CN" ? "并发数" : "Concurrency"}
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={batchTestConcurrency}
+                      onChange={(event) =>
+                        onConcurrencyChange(event.target.value)
+                      }
+                      disabled={batchTestingModels}
+                    />
+                  </Field>
+                </div>
+                <Field>
+                  <FieldLabel>
+                    {locale === "zh-CN" ? "内容" : "Content"}
+                  </FieldLabel>
+                  <Textarea
+                    className="min-h-24"
+                    value={batchTestPrompt}
+                    onChange={(event) => onPromptChange(event.target.value)}
+                    disabled={batchTestingModels}
+                  />
+                </Field>
+              </div>
+            </FieldGroup>
+
+            {multiProtocolOptions.length ? (
+              <FieldSet>
+                <FieldLegend>
+                  {locale === "zh-CN" ? "测试协议" : "Test protocol"}
+                </FieldLegend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {multiProtocolOptions.map((item) => (
+                    <Field key={item.key}>
+                      <FieldLabel className="truncate">
+                        {item.modelName}
+                      </FieldLabel>
+                      <NativeSelect
+                        className={selectClassName()}
+                        value={item.selectedProtocol}
+                        onChange={(event) =>
+                          onProtocolChange(
+                            item.key,
+                            event.target.value as ProtocolKind,
+                          )
+                        }
+                        disabled={batchTestingModels}
+                      >
+                        {item.protocols.map((protocol) => (
+                          <NativeSelectOption key={protocol} value={protocol}>
+                            {protocolLabel(protocol)}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                  ))}
+                </div>
+              </FieldSet>
+            ) : null}
+
+            {batchTestRows.length ? (
+              <div className="overflow-hidden rounded-md border">
+                <div className="border-b px-3 py-2 text-sm font-medium">
+                  {locale === "zh-CN" ? "测试结果" : "Test results"}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          {locale === "zh-CN" ? "模型" : "Model"}
+                        </TableHead>
+                        <TableHead className="w-28">
+                          {locale === "zh-CN" ? "协议" : "Protocol"}
+                        </TableHead>
+                        <TableHead className="w-24">
+                          {locale === "zh-CN" ? "状态" : "Status"}
+                        </TableHead>
+                        <TableHead className="w-28">
+                          {locale === "zh-CN" ? "耗时" : "Latency"}
+                        </TableHead>
+                        <TableHead>
+                          {locale === "zh-CN" ? "结果" : "Result"}
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {batchTestRows.map((row) => {
+                        const displayMessage =
+                          row.message ||
+                          (row.status === "running"
+                            ? locale === "zh-CN"
+                              ? "测试中..."
+                              : "Running..."
+                            : "-");
+                        return (
+                          <TableRow key={row.key}>
+                            <TableCell className="min-w-[180px]">
+                              <div className="truncate font-medium">
+                                {row.modelName}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {row.credentialName}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "max-w-[120px] truncate text-xs",
+                                  protocolBadgeClassName(row.protocol),
+                                )}
+                              >
+                                {compactProtocolLabel(row.protocol)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={batchTestStatusVariant(row.status)}
+                              >
+                                {batchTestStatusLabel(row.status, locale)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              <div>HTTP {row.statusCode ?? "-"}</div>
+                              <div>
+                                {row.latencyMs === undefined
+                                  ? "-"
+                                  : `${row.latencyMs}ms`}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div
+                                className={cn(
+                                  "max-h-24 min-w-[220px] overflow-y-auto whitespace-pre-wrap break-words text-xs",
+                                  row.status === "failed"
+                                    ? "text-destructive"
+                                    : "text-foreground",
+                                )}
+                              >
+                                {displayMessage}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={batchTestingModels}
+              >
+                {locale === "zh-CN" ? "关闭" : "Close"}
+              </Button>
+              <Button type="button" onClick={onRun} disabled={!canRun}>
+                <RefreshCcw
+                  data-icon="inline-start"
+                  className={batchTestingModels ? "animate-spin" : undefined}
+                />
+                {locale === "zh-CN" ? "开始测试" : "Start test"}
+              </Button>
+            </div>
+          </div>
+        </AppDialogContent>
+      ) : null}
     </Dialog>
   );
 }
@@ -2301,10 +2594,15 @@ function useAggregatedModels(
 }
 
 function SiteModelAggregateView({
+  models,
   combos,
   locale,
   onChangeModelProtocols,
+  onOpenModelTest,
+  canTestModel,
+  testingDisabled,
 }: {
+  models: AggregatedModel[];
   combos: FormCombo[];
   locale: Locale;
   onChangeModelProtocols?: (
@@ -2312,8 +2610,10 @@ function SiteModelAggregateView({
     modelName: string,
     nextProtocols: ProtocolKind[],
   ) => void;
+  onOpenModelTest?: (credentialId: string, modelName: string) => void;
+  canTestModel?: (credentialId: string, modelName: string) => boolean;
+  testingDisabled?: boolean;
 }) {
-  const models = useAggregatedModels(combos, locale);
   const allowedProtocolsMap = useMemo(() => {
     const map: Record<string, Set<ProtocolKind>> = {};
     combos.forEach((combo) => {
@@ -2343,6 +2643,7 @@ function SiteModelAggregateView({
           model_name: modelName,
         });
         const allowed = Array.from(allowedProtocolsMap[modelKey] ?? []);
+        const testable = Boolean(canTestModel?.(credentialId, modelName));
         return (
           <div
             key={modelKey}
@@ -2365,6 +2666,16 @@ function SiteModelAggregateView({
             <span className="text-xs text-muted-foreground">
               {sources.join(", ")}
             </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => onOpenModelTest?.(credentialId, modelName)}
+              disabled={!testable || testingDisabled}
+            >
+              {locale === "zh-CN" ? "测试" : "Test"}
+            </Button>
           </div>
         );
       })}
@@ -2616,6 +2927,15 @@ export function ChannelsScreen() {
   const [modelTestResult, setModelTestResult] =
     useState<SiteModelTestResult | null>(null);
   const [testingModel, setTestingModel] = useState(false);
+  const [batchModelTestOpen, setBatchModelTestOpen] = useState(false);
+  const [batchTestingModels, setBatchTestingModels] = useState(false);
+  const [batchTestPromptMode, setBatchTestPromptMode] = useState("0");
+  const [batchTestConcurrency, setBatchTestConcurrency] = useState("1");
+  const [batchTestPrompt, setBatchTestPrompt] = useState("");
+  const [batchTestProtocolByKey, setBatchTestProtocolByKey] = useState<
+    Record<string, ProtocolKind>
+  >({});
+  const [batchTestRows, setBatchTestRows] = useState<BatchModelTestRow[]>([]);
   const [formSnapshot, setFormSnapshot] = useState("");
 
   const {
@@ -2670,6 +2990,53 @@ export function ChannelsScreen() {
     );
     return parseModelTestPrompts(mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY));
   }, [settings]);
+  const overviewModels = useAggregatedModels(form.combos, locale);
+  const modelTestOptionByKey = useMemo(() => {
+    const options = new Map<string, TestableModelOption>();
+    const credentialById = new Map(
+      form.credentials.map(
+        (credential, index) => [credential.id, { credential, index }] as const,
+      ),
+    );
+    for (const [protocolIndex, combo] of form.combos.entries()) {
+      if (!combo.enabled || !activeBaseUrlValue(form, combo).trim()) continue;
+      for (const [modelIndex, model] of combo.models.entries()) {
+        const key = genericModelKey(model);
+        if (options.has(key) || !model.model_name.trim()) continue;
+        const credentialEntry = credentialById.get(model.credential_id);
+        if (!credentialEntry?.credential.api_key.trim()) continue;
+        const protocols = modelSupportedProtocols(model);
+        if (!protocols.length) continue;
+        options.set(key, {
+          key,
+          target: { protocolIndex, modelIndex },
+          modelName: model.model_name.trim(),
+          credentialName: credentialLabel(
+            credentialEntry.credential,
+            credentialEntry.index,
+            locale,
+          ),
+          protocols,
+        });
+      }
+    }
+    return options;
+  }, [form, locale]);
+  const batchTestOptions = useMemo<BatchModelTestOption[]>(() => {
+    const options: BatchModelTestOption[] = [];
+    for (const option of modelTestOptionByKey.values()) {
+      const selectedProtocol = selectedModelTestProtocol(
+        option.protocols,
+        batchTestProtocolByKey[option.key] ?? null,
+      );
+      if (!selectedProtocol) continue;
+      options.push({
+        ...option,
+        selectedProtocol,
+      });
+    }
+    return options;
+  }, [batchTestProtocolByKey, modelTestOptionByKey]);
   const siteRows = useMemo<SiteRow[]>(
     () =>
       (sites ?? []).map((site) => ({
@@ -2809,9 +3176,48 @@ export function ChannelsScreen() {
     );
   }
 
+  function clearBatchModelTestResults() {
+    setBatchModelTestOpen(false);
+    setBatchTestPromptMode("0");
+    setBatchTestPrompt("");
+    setBatchTestProtocolByKey({});
+    setBatchTestRows([]);
+  }
+
+  function openBatchModelTestDialog() {
+    setBatchTestPromptMode("0");
+    setBatchTestPrompt(modelTestPrompts[0] || "");
+    setBatchTestProtocolByKey({});
+    setBatchTestRows([]);
+    setBatchModelTestOpen(true);
+  }
+
+  function changeBatchTestPromptMode(value: string) {
+    setBatchTestPromptMode(value);
+    setBatchTestRows([]);
+    if (value === "custom") {
+      return;
+    }
+    setBatchTestPrompt(modelTestPrompts[Number(value)] || "");
+  }
+
+  function changeBatchTestPrompt(value: string) {
+    if (batchTestPromptMode !== "custom") {
+      setBatchTestPromptMode("custom");
+    }
+    setBatchTestPrompt(value);
+    setBatchTestRows([]);
+  }
+
+  function changeBatchTestProtocol(key: string, protocol: ProtocolKind) {
+    setBatchTestProtocolByKey((current) => ({ ...current, [key]: protocol }));
+    setBatchTestRows([]);
+  }
+
   function openCreate() {
     if (!confirmDiscardChanges()) return;
     setEditingSiteId(null);
+    clearBatchModelTestResults();
     applyPreparedForm(emptyForm(locale));
     setDialogOpen(true);
   }
@@ -2819,6 +3225,7 @@ export function ChannelsScreen() {
   function openEdit(site: Site) {
     if (!confirmDiscardChanges()) return;
     setEditingSiteId(site.id);
+    clearBatchModelTestResults();
     applyPreparedForm(toForm(site, locale));
     setDialogOpen(true);
   }
@@ -3375,6 +3782,53 @@ export function ChannelsScreen() {
     setPickerSelectedModelKeys([]);
   }
 
+  function buildModelTestPayload(
+    target: ModelTestTarget,
+    selectedProtocol: ProtocolKind | null,
+    promptValue: string,
+  ): SiteModelTestPayload | null {
+    const protocol = form.combos[target.protocolIndex];
+    const model = protocol?.models[target.modelIndex];
+    const credentialIndex = model
+      ? form.credentials.findIndex((item) => item.id === model.credential_id)
+      : -1;
+    const credential =
+      credentialIndex >= 0 ? form.credentials[credentialIndex] : undefined;
+    const activeBaseUrl = protocol
+      ? activeBaseUrlValue(form, protocol).trim()
+      : "";
+    const prompt = promptValue.trim();
+    if (
+      !protocol ||
+      !model ||
+      !credential ||
+      !credential.api_key.trim() ||
+      !activeBaseUrl ||
+      !prompt
+    ) {
+      return null;
+    }
+    const testProtocol = selectedModelTestProtocol(
+      modelSupportedProtocols(model),
+      selectedProtocol,
+    );
+    if (!testProtocol) return null;
+    return {
+      protocol: testProtocol,
+      base_url: activeBaseUrl,
+      headers: formHeaders(protocol),
+      channel_proxy: protocol.channel_proxy.trim(),
+      param_override: protocol.param_override.trim(),
+      credential: {
+        id: credential.id,
+        name: credential.name.trim() || fallbackCredentialName(credentialIndex),
+        api_key: credential.api_key.trim(),
+      },
+      model_name: model.model_name.trim(),
+      prompt,
+    };
+  }
+
   function openModelTest(protocolIndex: number, modelIndex: number) {
     const combo = form.combos[protocolIndex];
     const model = combo?.models[modelIndex];
@@ -3392,6 +3846,25 @@ export function ChannelsScreen() {
     setModelTestPromptMode("0");
     setModelTestPrompt(modelTestPrompts[0] || "");
     setModelTestResult(null);
+  }
+
+  function openAggregateModelTest(credentialId: string, modelName: string) {
+    const option = modelTestOptionByKey.get(
+      genericModelKey({
+        credential_id: credentialId,
+        model_name: modelName,
+      }),
+    );
+    if (!option) {
+      toast.error(
+        locale === "zh-CN"
+          ? "测试参数不完整"
+          : "Test parameters are incomplete",
+      );
+      return;
+    }
+    const target = option.target;
+    openModelTest(target.protocolIndex, target.modelIndex);
   }
 
   function closeModelTest() {
@@ -3519,25 +3992,12 @@ export function ChannelsScreen() {
 
   async function runModelTest() {
     if (!modelTestTarget) return;
-    const protocol = form.combos[modelTestTarget.protocolIndex];
-    const model = protocol?.models[modelTestTarget.modelIndex];
-    const credentialIndex = model
-      ? form.credentials.findIndex((item) => item.id === model.credential_id)
-      : -1;
-    const credential =
-      credentialIndex >= 0 ? form.credentials[credentialIndex] : undefined;
-    const prompt = modelTestPrompt.trim();
-    const activeBaseUrl = protocol
-      ? activeBaseUrlValue(form, protocol).trim()
-      : "";
-    if (
-      !protocol ||
-      !model ||
-      !credential ||
-      !credential.api_key.trim() ||
-      !activeBaseUrl ||
-      !prompt
-    ) {
+    const payload = buildModelTestPayload(
+      modelTestTarget,
+      modelTestProtocol,
+      modelTestPrompt,
+    );
+    if (!payload) {
       toast.error(
         locale === "zh-CN"
           ? "测试参数不完整"
@@ -3545,41 +4005,6 @@ export function ChannelsScreen() {
       );
       return;
     }
-    const testProtocols = modelSupportedProtocols(model);
-    if (!testProtocols.length) {
-      toast.error(
-        locale === "zh-CN"
-          ? "请先为模型选择有效协议"
-          : "Select a valid protocol for the model first",
-      );
-      return;
-    }
-    const testProtocol = selectedModelTestProtocol(
-      testProtocols,
-      modelTestProtocol,
-    );
-    if (!testProtocol) {
-      toast.error(
-        locale === "zh-CN"
-          ? "请先为模型选择有效协议"
-          : "Select a valid protocol for the model first",
-      );
-      return;
-    }
-    const payload: SiteModelTestPayload = {
-      protocol: testProtocol,
-      base_url: activeBaseUrl,
-      headers: formHeaders(protocol),
-      channel_proxy: protocol.channel_proxy.trim(),
-      param_override: protocol.param_override.trim(),
-      credential: {
-        id: credential.id,
-        name: credential.name.trim() || fallbackCredentialName(credentialIndex),
-        api_key: credential.api_key.trim(),
-      },
-      model_name: model.model_name.trim(),
-      prompt,
-    };
     setTestingModel(true);
     setModelTestResult(null);
     try {
@@ -3617,6 +4042,135 @@ export function ChannelsScreen() {
       toast.error(message);
     } finally {
       setTestingModel(false);
+    }
+  }
+
+  function updateBatchTestRow(key: string, patch: Partial<BatchModelTestRow>) {
+    setBatchTestRows((current) =>
+      current.map((row) => (row.key === key ? { ...row, ...patch } : row)),
+    );
+  }
+
+  async function runBatchModelTests() {
+    const prompt = batchTestPrompt.trim();
+    if (!prompt) {
+      toast.error(locale === "zh-CN" ? "测试问题为空" : "Test prompt is empty");
+      return;
+    }
+    const entries: Array<{
+      key: string;
+      payload: SiteModelTestPayload;
+      row: BatchModelTestRow;
+    }> = [];
+    for (const option of batchTestOptions) {
+      const payload = buildModelTestPayload(
+        option.target,
+        option.selectedProtocol,
+        prompt,
+      );
+      if (!payload) continue;
+      const key = `${option.key}:${payload.protocol}`;
+      entries.push({
+        key,
+        payload,
+        row: {
+          key,
+          modelName: payload.model_name,
+          credentialName: payload.credential.name,
+          protocol: payload.protocol,
+          status: "pending",
+          statusCode: null,
+          latencyMs: undefined,
+          message: "",
+        },
+      });
+    }
+    if (!entries.length) {
+      toast.error(
+        locale === "zh-CN" ? "没有可测试的模型" : "No testable models",
+      );
+      return;
+    }
+    setBatchTestPrompt(prompt);
+    setBatchTestRows(entries.map((entry) => entry.row));
+    const parsedConcurrency = Number.parseInt(batchTestConcurrency, 10);
+    const concurrency = Math.max(
+      1,
+      Math.min(
+        Number.isFinite(parsedConcurrency) ? parsedConcurrency : 1,
+        20,
+        entries.length,
+      ),
+    );
+    let cursor = 0;
+    let succeeded = 0;
+    let failed = 0;
+    setBatchTestingModels(true);
+    try {
+      await Promise.all(
+        Array.from({ length: concurrency }, async () => {
+          while (cursor < entries.length) {
+            const entry = entries[cursor];
+            cursor += 1;
+            updateBatchTestRow(entry.key, {
+              status: "running",
+              message: "",
+            });
+            try {
+              const result = await apiRequest<SiteModelTestResult>(
+                "/admin/site-model-tests",
+                {
+                  method: "POST",
+                  body: JSON.stringify(entry.payload),
+                },
+              );
+              const success = result.success;
+              updateBatchTestRow(entry.key, {
+                status: success ? "success" : "failed",
+                statusCode: result.status_code ?? null,
+                latencyMs: result.latency_ms,
+                message: success
+                  ? result.output_text ||
+                    (locale === "zh-CN"
+                      ? "上游返回成功，但没有可展示文本"
+                      : "Upstream succeeded but returned no displayable text")
+                  : result.error_message ||
+                    (locale === "zh-CN" ? "测试失败" : "Test failed"),
+              });
+              if (result.success) {
+                succeeded += 1;
+              } else {
+                failed += 1;
+              }
+            } catch (error) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : locale === "zh-CN"
+                    ? "测试请求失败"
+                    : "Test request failed";
+              updateBatchTestRow(entry.key, {
+                status: "failed",
+                statusCode: null,
+                latencyMs: undefined,
+                message,
+              });
+              failed += 1;
+            }
+          }
+        }),
+      );
+      const message =
+        locale === "zh-CN"
+          ? `批量测试完成：成功 ${succeeded}，失败 ${failed}`
+          : `Batch test finished: ${succeeded} succeeded, ${failed} failed`;
+      if (failed) {
+        toast.error(message);
+      } else {
+        toast.success(message);
+      }
+    } finally {
+      setBatchTestingModels(false);
     }
   }
 
@@ -4047,18 +4601,51 @@ export function ChannelsScreen() {
                         onAddManualModel={addManualProtocolModel}
                         onFetchModels={fetchProtocolModels}
                         onOpenAdvanced={setAdvancedProtocolIndex}
-                        onOpenModelTest={openModelTest}
                       />
                     ))}
                   </div>
                   <div className="mt-4">
-                    <div className="mb-2 text-sm font-medium text-foreground">
-                      {locale === "zh-CN" ? "模型总览" : "Model Overview"}
+                    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="text-sm font-medium text-foreground">
+                        {locale === "zh-CN" ? "模型总览" : "Model Overview"}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={openBatchModelTestDialog}
+                          disabled={
+                            !batchTestOptions.length ||
+                            batchTestingModels ||
+                            testingModel
+                          }
+                        >
+                          <RefreshCcw
+                            data-icon="inline-start"
+                            className={
+                              batchTestingModels ? "animate-spin" : undefined
+                            }
+                          />
+                          {locale === "zh-CN" ? "批量测试" : "Batch test"}
+                        </Button>
+                      </div>
                     </div>
                     <SiteModelAggregateView
+                      models={overviewModels}
                       combos={form.combos}
                       locale={locale}
                       onChangeModelProtocols={updateModelProtocols}
+                      onOpenModelTest={openAggregateModelTest}
+                      canTestModel={(credentialId, modelName) =>
+                        modelTestOptionByKey.has(
+                          genericModelKey({
+                            credential_id: credentialId,
+                            model_name: modelName,
+                          }),
+                        )
+                      }
+                      testingDisabled={testingModel || batchTestingModels}
                     />
                   </div>
                 </section>
@@ -4128,6 +4715,24 @@ export function ChannelsScreen() {
           onFileChange={(event) => void handleBatchImportFile(event)}
           onDownloadTemplate={downloadBatchImportTemplate}
           onImport={() => void importBatchSites()}
+        />
+
+        <BatchModelTestDialog
+          open={batchModelTestOpen}
+          locale={locale}
+          modelTestPrompts={modelTestPrompts}
+          batchTestPromptMode={batchTestPromptMode}
+          batchTestPrompt={batchTestPrompt}
+          batchTestConcurrency={batchTestConcurrency}
+          batchTestOptions={batchTestOptions}
+          batchTestRows={batchTestRows}
+          batchTestingModels={batchTestingModels}
+          onOpenChange={setBatchModelTestOpen}
+          onPromptModeChange={changeBatchTestPromptMode}
+          onPromptChange={changeBatchTestPrompt}
+          onConcurrencyChange={setBatchTestConcurrency}
+          onProtocolChange={changeBatchTestProtocol}
+          onRun={() => void runBatchModelTests()}
         />
 
         <AdvancedProtocolDialog
