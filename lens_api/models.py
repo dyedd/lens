@@ -1107,4 +1107,3 @@ class OverviewDashboardData(StrictBaseModel):
     performance: OverviewPerformanceMetrics
     daily: list[OverviewDailyPoint] = Field(default_factory=list)
     models: OverviewModelAnalytics
-    logs: list[RequestLogItem] = Field(default_factory=list)
