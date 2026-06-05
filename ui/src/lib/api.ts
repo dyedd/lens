@@ -692,7 +692,6 @@ export type OverviewDashboardData = {
   performance: OverviewPerformanceMetrics;
   daily: OverviewDailyPoint[];
   models: OverviewModelAnalytics;
-  logs: RequestLogItem[];
 };
 
 export type RequestLogItem = {
