@@ -30,11 +30,9 @@ import {
   YAxis,
 } from "recharts";
 import { OverviewDashboardData, OverviewMetrics, apiRequest } from "@/lib/api";
-import { formatLogDateTime, getDateBucketPrefix } from "@/lib/datetime";
+import { getDateBucketPrefix } from "@/lib/datetime";
 import { useAppTimeZone } from "@/hooks/use-app-time-zone";
 import { useI18n } from "@/lib/i18n";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -51,14 +49,6 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 type TimeRange = "-1" | "7" | "30" | "0";
 type PieMetric = "cost" | "requests" | "tokens";
@@ -184,7 +174,6 @@ export function OverviewScreen() {
 
   const [timeRange, setTimeRange] = useState<TimeRange>("-1");
   const [pieMetric, setPieMetric] = useState<PieMetric>("cost");
-  const [logOffset, setLogOffset] = useState(0);
 
   const days = Number(timeRange);
   const pieMetricLabel = zh
@@ -202,18 +191,16 @@ export function OverviewScreen() {
   const dashboardQuery = useMemo(() => {
     const params = new URLSearchParams({
       days: String(days),
-      log_limit: "50",
-      log_offset: String(logOffset),
     });
     return `/admin/overview-dashboard?${params.toString()}`;
-  }, [days, logOffset]);
+  }, [days]);
 
   const {
     data: dashboardData,
     error: dashboardError,
     isError: dashboardIsError,
   } = useQuery({
-    queryKey: ["overview-dashboard", days, logOffset],
+    queryKey: ["overview-dashboard", days],
     queryFn: () => apiRequest<OverviewDashboardData>(dashboardQuery),
     placeholderData: keepPreviousData,
   });
@@ -229,7 +216,6 @@ export function OverviewScreen() {
   const performance = dashboardData?.performance;
   const daily = dashboardData?.daily;
   const models = dashboardData?.models;
-  const logs = dashboardData?.logs ?? [];
   const pageError = dashboardIsError ? dashboardError : overviewMetricsError;
 
   useEffect(() => {
@@ -375,10 +361,7 @@ export function OverviewScreen() {
         </h1>
         <SegmentedControl
           value={timeRange}
-          onValueChange={(value) => {
-            setTimeRange(value as TimeRange);
-            setLogOffset(0);
-          }}
+          onValueChange={(value) => setTimeRange(value as TimeRange)}
           options={[
             { value: "-1", label: zh ? "今天" : "Today" },
             { value: "7", label: zh ? "近7天" : "7 days" },
@@ -715,120 +698,6 @@ export function OverviewScreen() {
           )}
         </CardContent>
         <CardFooter className="hidden" />
-      </Card>
-
-      <Card size="sm" className="py-0">
-        <CardHeader className="px-4 pt-4 pb-0">
-          <CardTitle className="text-base">
-            {zh ? "消费日志" : "Consume log"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-3 py-3 sm:px-4 sm:py-4">
-          <div className="min-w-0 rounded-lg border bg-background">
-            {logs.length > 0 ? (
-              <Table className="min-w-[720px] text-xs">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="px-3 py-2.5 font-medium text-muted-foreground">
-                      {zh ? "时间" : "Time"}
-                    </TableHead>
-                    <TableHead className="px-3 py-2.5 font-medium text-muted-foreground">
-                      {zh ? "模型" : "Model"}
-                    </TableHead>
-                    <TableHead className="px-3 py-2.5 text-right font-medium text-muted-foreground">
-                      Token
-                    </TableHead>
-                    <TableHead className="px-3 py-2.5 text-right font-medium text-muted-foreground">
-                      {zh ? "费用" : "Cost"}
-                    </TableHead>
-                    <TableHead className="px-3 py-2.5 text-right font-medium text-muted-foreground">
-                      {zh ? "延迟" : "Latency"}
-                    </TableHead>
-                    <TableHead className="px-3 py-2.5 font-medium text-muted-foreground">
-                      {zh ? "状态" : "Status"}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {logs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="px-3 py-2.5 whitespace-nowrap text-foreground">
-                        {formatLogDateTime(log.created_at, locale, timeZone)}
-                      </TableCell>
-                      <TableCell className="max-w-[180px] truncate px-3 py-2.5 text-foreground">
-                        {log.resolved_group_name ||
-                          log.requested_group_name ||
-                          "-"}
-                      </TableCell>
-                      <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">
-                        <div>
-                          <span className="text-muted-foreground">
-                            {formatCompact(log.input_tokens)}
-                          </span>
-                          <span className="mx-0.5 text-border">/</span>
-                          <span>{formatCompact(log.output_tokens)}</span>
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-muted-foreground">
-                          {zh ? "缓存" : "Cache"}: {zh ? "读" : "R"}{" "}
-                          {formatCompact(log.cache_read_input_tokens)} /{" "}
-                          {zh ? "写" : "W"}{" "}
-                          {formatCompact(log.cache_write_input_tokens)}
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">
-                        {formatMoney(log.total_cost_usd)}
-                      </TableCell>
-                      <TableCell className="px-3 py-2.5 text-right whitespace-nowrap text-foreground">
-                        {formatDuration(log.latency_ms)}
-                      </TableCell>
-                      <TableCell className="px-3 py-2.5 whitespace-nowrap">
-                        <Badge
-                          variant={
-                            log.lifecycle_status === "failed"
-                              ? "destructive"
-                              : "secondary"
-                          }
-                          className="px-2 py-0.5"
-                        >
-                          {log.lifecycle_status === "connecting"
-                            ? zh
-                              ? "连接中"
-                              : "Connecting"
-                            : log.lifecycle_status === "streaming"
-                              ? zh
-                                ? "响应中"
-                                : "Streaming"
-                              : log.success
-                                ? zh
-                                  ? "成功"
-                                  : "OK"
-                                : (log.status_code ?? "-")}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : dashboardIsError ? null : (
-              <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-                {zh ? "暂无日志" : "No logs"}
-              </div>
-            )}
-          </div>
-
-          {logs.length >= 50 ? (
-            <div className="mt-3 flex justify-center">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setLogOffset((current) => current + 50)}
-              >
-                {zh ? "加载更多" : "Load more"}
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
       </Card>
     </section>
   );

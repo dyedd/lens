@@ -1396,7 +1396,6 @@ export function RequestsScreen() {
         queryClient.invalidateQueries({ queryKey: ["overview-summary"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-daily"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-models"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview-logs"] }),
         queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] }),
       ]);
       toast.success(

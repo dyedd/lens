@@ -1263,11 +1263,9 @@ async def overview_models(
 
 async def overview_dashboard(
     days: int = 7,
-    log_limit: int = 50,
-    log_offset: int = 0,
     _: Any = Depends(get_current_admin),
 ) -> OverviewDashboardData:
-    summary, daily, models, logs = await asyncio.gather(
+    summary, daily, models = await asyncio.gather(
         app_state.domain_store.get_overview_summary(
             days=days,
         ),
@@ -1276,11 +1274,6 @@ async def overview_dashboard(
         ),
         app_state.domain_store.get_model_analytics(
             days=days,
-        ),
-        app_state.domain_store.list_request_logs(
-            limit=log_limit,
-            days=days,
-            offset=log_offset,
         ),
     )
     runtime = await app_state.domain_store.get_runtime_settings()
@@ -1300,7 +1293,6 @@ async def overview_dashboard(
         performance=performance,
         daily=daily,
         models=models,
-        logs=logs,
     )
 
 
@@ -1339,19 +1331,6 @@ async def request_log_page(
         channel=channel,
         keyword=keyword,
         sort=sort,
-    )
-
-
-async def overview_logs(
-    days: int = 7,
-    limit: int = 50,
-    offset: int = 0,
-    _: Any = Depends(get_current_admin),
-) -> list[RequestLogItem]:
-    return await app_state.domain_store.list_request_logs(
-        limit=limit,
-        days=days,
-        offset=offset,
     )
 
 
