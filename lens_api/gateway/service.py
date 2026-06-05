@@ -360,6 +360,29 @@ class AttemptLog:
     reasoning_effort: str | None = None
 
 
+@dataclass(frozen=True)
+class _RequestDeadline:
+    started_at: float
+    timeout_seconds: float
+
+    def remaining_seconds(self) -> float | None:
+        if self.timeout_seconds <= 0:
+            return None
+        return max(self.timeout_seconds - (perf_counter() - self.started_at), 0.0)
+
+    def expired(self) -> bool:
+        remaining = self.remaining_seconds()
+        return remaining is not None and remaining <= 0
+
+    def message(self) -> str:
+        timeout_seconds = float(max(self.timeout_seconds, 0))
+        if timeout_seconds.is_integer():
+            timeout_label = str(int(timeout_seconds))
+        else:
+            timeout_label = f"{timeout_seconds:.3f}".rstrip("0").rstrip(".")
+        return f"Gateway request timed out after {timeout_label}s"
+
+
 class UpstreamRequestError(HTTPException):
     def __init__(
         self,
@@ -367,9 +390,17 @@ class UpstreamRequestError(HTTPException):
         detail: Any,
         *,
         router_status_code: int | None,
+        error_type: str = "upstream_error",
+        skip_route_failure: bool = False,
+        stop_fallback: bool = False,
+        request_content: str | None = None,
     ) -> None:
         super().__init__(status_code=status_code, detail=detail)
         self.router_status_code = router_status_code
+        self.error_type = error_type
+        self.skip_route_failure = skip_route_failure
+        self.stop_fallback = stop_fallback
+        self.request_content = request_content
 
 
 def _attempt_logs_to_dicts(attempts: list[AttemptLog]) -> list[dict[str, Any]]:
@@ -405,6 +436,8 @@ class StreamCapture:
     request_log_id: int | None = None
     stream_started_at: float = 0.0
     client_to_close: httpx.AsyncClient | None = None
+    deadline: _RequestDeadline | None = None
+    error_status_code: int | None = None
 
 
 async def _startup_app_state(state: AppState) -> None:
@@ -1910,12 +1943,13 @@ async def _proxy_protocol(
     inbound_user_agent: str | None = None,
     inbound_headers: Mapping[str, str] | None = None,
 ) -> Response:
+    started_at = perf_counter()
+    deadline = _RequestDeadline(started_at, settings.request_timeout_seconds)
     channels, runtime = await asyncio.gather(
         app_state.store.list(),
         app_state.domain_store.get_runtime_settings(),
     )
     _apply_router_runtime_settings(runtime)
-    started_at = perf_counter()
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
     request_content = _dump_json(body) if log_body_enabled else None
     inbound_ua = _normalize_user_agent(inbound_user_agent)
@@ -2012,6 +2046,26 @@ async def _proxy_protocol(
         errors: list[str] = []
         failure_status_codes: list[int | None] = []
         for target in [selection.primary, *selection.fallbacks]:
+            if deadline.expired():
+                timeout_message = deadline.message()
+                await log_ctx.update(
+                    requested_group_name=plan.requested_group_name,
+                    resolved_group_name=plan.resolved_group_name,
+                    upstream_model_name=None,
+                    channel=None,
+                    user_agent=upstream_user_agent,
+                    lifecycle_status=RequestLogLifecycleStatus.FAILED,
+                    status_code=504,
+                    success=False,
+                    is_stream=is_stream_body,
+                    error_message=timeout_message,
+                )
+                return _protocol_error_response(
+                    protocol=protocol,
+                    status_code=504,
+                    error_type="gateway_timeout",
+                    message=timeout_message,
+                )
             if not app_state.router.is_target_available(target):
                 continue
             response = await _try_target(
@@ -2025,21 +2079,19 @@ async def _proxy_protocol(
                 log_ctx=log_ctx,
                 errors=errors,
                 failure_status_codes=failure_status_codes,
+                deadline=deadline,
             )
             if response is not None:
                 return response
 
-        failed_status_code = (
-            504
-            if failure_status_codes
-            and all(status_code == 504 for status_code in failure_status_codes)
-            else 502
+        failed_status_code, failed_error_type, failed_message = _final_upstream_failure(
+            errors, failure_status_codes
         )
         return _protocol_error_response(
             protocol=protocol,
             status_code=failed_status_code,
-            error_type="upstream_error",
-            message="All upstream channels failed",
+            error_type=failed_error_type,
+            message=failed_message,
         )
     except Exception as exc:
         logger.exception("Proxy request failed unexpectedly")
@@ -2149,6 +2201,7 @@ async def _try_target(
     log_ctx: _RequestLogger,
     errors: list[str],
     failure_status_codes: list[int | None],
+    deadline: _RequestDeadline,
 ) -> Response | None:
     channel = target.channel
     attempt_started_at = perf_counter()
@@ -2234,6 +2287,7 @@ async def _try_target(
             user_agent=upstream_user_agent,
             forwarded_headers=inbound_headers,
             log_body_enabled=log_body_enabled,
+            deadline=deadline,
         )
     except UpstreamRequestError as exc:
         return await _record_target_failure(
@@ -2247,6 +2301,7 @@ async def _try_target(
             attempt_started_at=attempt_started_at,
             effective_user_agent=effective_user_agent,
             upstream_body=upstream_body,
+            request_content=upstream_request_content,
             exc=exc,
         )
     except HTTPException as exc:
@@ -2261,6 +2316,7 @@ async def _try_target(
             attempt_started_at=attempt_started_at,
             effective_user_agent=effective_user_agent,
             upstream_body=upstream_body,
+            request_content=upstream_request_content,
             exc=UpstreamRequestError(
                 status_code=exc.status_code,
                 detail=exc.detail,
@@ -2348,20 +2404,24 @@ async def _record_target_failure(
     attempt_started_at: float,
     effective_user_agent: str,
     upstream_body: dict[str, Any],
+    request_content: str | None = None,
     exc: UpstreamRequestError,
-) -> None:
+) -> Response | None:
     message = _format_channel_error(exc.detail)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
-    app_state.router.record_failure(
-        channel.id,
-        message,
-        status_code=exc.router_status_code,
-        credential_id=target.credential_id,
-        channel_keys=channel.keys,
-        threshold=int(runtime["circuit_breaker_threshold"]),
-        cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
-        max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
-    )
+    if not exc.skip_route_failure and not _is_request_too_large_error(
+        exc.status_code, message
+    ):
+        app_state.router.record_failure(
+            channel.id,
+            message,
+            status_code=exc.router_status_code,
+            credential_id=target.credential_id,
+            channel_keys=channel.keys,
+            threshold=int(runtime["circuit_breaker_threshold"]),
+            cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
+            max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+        )
     errors.append(message)
     failure_status_codes.append(exc.status_code)
     log_ctx.attempts.append(
@@ -2390,15 +2450,31 @@ async def _record_target_failure(
         status_code=exc.status_code,
         success=False,
         is_stream=bool(upstream_body.get("stream")),
-        request_content=_dump_json(upstream_body) if log_body_enabled else None,
+        request_content=(
+            exc.request_content
+            if exc.request_content is not None
+            else (
+                request_content
+                if request_content is not None
+                else (_dump_json(upstream_body) if log_body_enabled else None)
+            )
+        ),
         error_message=message,
     )
+    if exc.stop_fallback:
+        return _protocol_error_response(
+            protocol=log_ctx.protocol,
+            status_code=exc.status_code,
+            error_type=exc.error_type,
+            message=message,
+        )
     return None
 
 
 async def _call_channel(
     channel: ChannelConfig,
     body: dict[str, Any],
+    deadline: _RequestDeadline,
     pricing_group_name: str | None = None,
     client_protocol: ProtocolKind | None = None,
     credential_id: str | None = None,
@@ -2414,7 +2490,21 @@ async def _call_channel(
         user_agent=user_agent,
         forwarded_headers=forwarded_headers,
     )
-    request_content = _dump_json(upstream.json_body) if log_body_enabled else None
+    body_bytes = _json_body_bytes(upstream.json_body)
+    request_content = _decode_content_bytes(body_bytes) if log_body_enabled else None
+    too_large_message = _request_body_too_large_message(
+        len(body_bytes), settings.max_request_body_bytes
+    )
+    if too_large_message is not None:
+        raise UpstreamRequestError(
+            status_code=413,
+            detail=too_large_message,
+            router_status_code=None,
+            error_type="request_too_large",
+            skip_route_failure=True,
+            stop_fallback=True,
+            request_content=request_content,
+        )
     runtime = await app_state.domain_store.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client, close_client = _resolve_http_client(proxy_url)
@@ -2422,7 +2512,10 @@ async def _call_channel(
 
     try:
         stream_started_at = perf_counter()
-        response = await _send_upstream(client, upstream, stream=is_stream_request)
+        async with _deadline_scope(deadline):
+            response = await _send_upstream(
+                client, upstream, stream=is_stream_request, body_bytes=body_bytes
+            )
         response.raise_for_status()
 
         is_event_stream = (
@@ -2449,6 +2542,7 @@ async def _call_channel(
                 request_content,
                 stream_started_at,
                 log_body_enabled,
+                deadline=deadline,
                 client_to_close=client if close_client else None,
             )
             if close_client:
@@ -2480,6 +2574,13 @@ async def _call_channel(
             detail=_format_transport_error(exc, upstream.url),
             router_status_code=None,
         ) from exc
+    except TimeoutError as exc:
+        raise UpstreamRequestError(
+            status_code=504,
+            detail=deadline.message(),
+            router_status_code=None,
+            error_type="gateway_timeout",
+        ) from exc
     finally:
         if close_client:
             await client.aclose()
@@ -2501,18 +2602,21 @@ def _resolve_http_client(proxy_url: str | None) -> tuple[httpx.AsyncClient, bool
 
 
 async def _send_upstream(
-    client: httpx.AsyncClient, upstream: Any, *, stream: bool
+    client: httpx.AsyncClient, upstream: Any, *, stream: bool, body_bytes: bytes
 ) -> httpx.Response:
     if stream:
         request = client.build_request(
             upstream.method,
             upstream.url,
             headers=upstream.headers,
-            json=upstream.json_body,
+            content=body_bytes,
         )
         return await client.send(request, stream=True)
     return await client.request(
-        upstream.method, upstream.url, headers=upstream.headers, json=upstream.json_body
+        upstream.method,
+        upstream.url,
+        headers=upstream.headers,
+        content=body_bytes,
     )
 
 
@@ -2594,11 +2698,13 @@ async def _build_stream_result(
     stream_started_at: float,
     log_body_enabled: bool,
     *,
+    deadline: _RequestDeadline,
     client_to_close: httpx.AsyncClient | None = None,
 ) -> UpstreamResult:
     capture = StreamCapture(
         capture_body=log_body_enabled,
         client_to_close=client_to_close,
+        deadline=deadline,
     )
     raw_iter = _stream_upstream_iterator(
         response,
@@ -3753,6 +3859,60 @@ def _elapsed_ms(started_at: float) -> int:
     return max(int((perf_counter() - started_at) * 1000), 0)
 
 
+@asynccontextmanager
+async def _deadline_scope(
+    deadline: _RequestDeadline,
+) -> AsyncIterator[None]:
+    remaining = deadline.remaining_seconds()
+    if remaining is None:
+        yield
+        return
+    if remaining <= 0:
+        raise TimeoutError(deadline.message())
+    async with asyncio.timeout(remaining):
+        yield
+
+
+def _json_body_bytes(value: Any) -> bytes:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def _request_body_too_large_message(size: int, limit: int) -> str | None:
+    normalized_limit = max(int(limit), 0)
+    if normalized_limit <= 0 or size <= normalized_limit:
+        return None
+    return (
+        f"Request body is {size} bytes, exceeds Lens limit "
+        f"{normalized_limit} bytes. Split the context or increase "
+        "LENS_MAX_REQUEST_BODY_BYTES."
+    )
+
+
+def _final_upstream_failure(
+    errors: list[str], failure_status_codes: list[int | None]
+) -> tuple[int, str, str]:
+    for error, status_code in zip(errors, failure_status_codes, strict=False):
+        if _is_request_too_large_error(status_code, error):
+            return 413, "request_too_large", error
+    if failure_status_codes and all(
+        status_code == 504 for status_code in failure_status_codes
+    ):
+        return 504, "gateway_timeout", "All upstream channels timed out"
+    return 502, "upstream_error", "All upstream channels failed"
+
+
+def _is_request_too_large_error(status_code: int | None, message: str) -> bool:
+    if status_code != 413:
+        return False
+    normalized = message.lower()
+    return (
+        "request body exceeds" in normalized
+        or "request_too_large" in normalized
+        or "too large" in normalized
+        or "exceeds lens limit" in normalized
+    )
+
+
 async def _record_stream_request_log(
     *,
     request_log_id: int,
@@ -3827,6 +3987,7 @@ async def _record_stream_request_log(
         else result.first_token_latency_ms
     )
     latency_ms = _elapsed_ms(started_at)
+    status_code = _stream_log_status_code(result, capture, capture_issue)
     attempt_logs = [dict(item) for item in attempts]
     if attempt_logs and attempt_logs[-1].get("success"):
         attempt_logs[-1]["duration_ms"] = (
@@ -3835,6 +3996,8 @@ async def _record_stream_request_log(
         if capture_issue is not None:
             attempt_logs[-1]["success"] = False
             attempt_logs[-1]["error_message"] = capture_issue
+            if status_code != result.status_code:
+                attempt_logs[-1]["status_code"] = status_code
     await _record_stream_route_health(
         channel=channel,
         capture=capture,
@@ -3867,7 +4030,7 @@ async def _record_stream_request_log(
             if capture_issue is not None
             else RequestLogLifecycleStatus.SUCCEEDED
         ),
-        status_code=result.status_code,
+        status_code=status_code,
         success=capture_issue is None,
         is_stream=True,
         first_token_latency_ms=first_token_latency_ms,
@@ -3906,7 +4069,7 @@ async def _record_stream_route_health(
         app_state.router.record_failure(
             channel.id,
             _format_channel_error(capture_issue),
-            status_code=None,
+            status_code=capture.error_status_code if capture is not None else None,
             credential_id=credential_id,
             channel_keys=channel.keys,
             threshold=int(runtime["circuit_breaker_threshold"]),
@@ -3931,6 +4094,16 @@ def _is_client_stream_disconnect(capture: StreamCapture | None) -> bool:
         error for error in capture.errors if error and error != "client disconnected"
     ]
     return not upstream_errors and not capture.parse_errors
+
+
+def _stream_log_status_code(
+    result: UpstreamResult, capture: StreamCapture | None, capture_issue: str | None
+) -> int:
+    if capture_issue is None:
+        return result.status_code
+    if capture is not None and capture.error_status_code is not None:
+        return capture.error_status_code
+    return result.status_code
 
 
 async def _update_request_log(
@@ -3996,7 +4169,7 @@ async def _update_request_log(
 
 def _dump_json(value: Any) -> str | None:
     try:
-        return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+        return _json_body_bytes(value).decode("utf-8")
     except (TypeError, ValueError):
         return None
 
@@ -4016,8 +4189,15 @@ async def _stream_upstream_iterator(
     capture: StreamCapture,
     stream_started_at: float,
 ) -> AsyncIterator[bytes]:
+    deadline = capture.deadline
+    assert deadline is not None
     try:
-        async for chunk in response.aiter_bytes():
+        iterator = response.aiter_bytes().__aiter__()
+        while True:
+            try:
+                chunk = await _next_stream_chunk(iterator, deadline)
+            except StopAsyncIteration:
+                break
             if not chunk:
                 continue
             text = chunk.decode("utf-8", errors="replace")
@@ -4031,12 +4211,27 @@ async def _stream_upstream_iterator(
     except asyncio.CancelledError:
         await _cancel_stream_capture(capture, "client disconnected")
         raise
+    except TimeoutError:
+        capture.error_status_code = 504
+        capture.errors.append(deadline.message())
     except httpx.HTTPError as exc:
         capture.errors.append(f"stream failed: {type(exc).__name__}: {exc}")
     finally:
         await response.aclose()
         if capture.client_to_close is not None:
             await capture.client_to_close.aclose()
+
+
+async def _next_stream_chunk(
+    iterator: AsyncIterator[bytes], deadline: _RequestDeadline
+) -> bytes:
+    remaining = deadline.remaining_seconds()
+    if remaining is None:
+        return await iterator.__anext__()
+    if remaining <= 0:
+        raise TimeoutError(deadline.message())
+    async with asyncio.timeout(remaining):
+        return await iterator.__anext__()
 
 
 async def _capture_converted_stream_iterator(
