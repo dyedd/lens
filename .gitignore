@@ -10,3 +10,4 @@ build/
 data/
 *.tsbuildinfo
 .ccg/
+tests/
