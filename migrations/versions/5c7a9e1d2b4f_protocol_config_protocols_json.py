@@ -1,4 +1,4 @@
-"""combo protocols json
+"""protocol config protocols json
 
 Revision ID: 5c7a9e1d2b4f
 Revises: 6a8d0f1c2b3e

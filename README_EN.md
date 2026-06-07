@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
 </p>
 
-Self-hosted multi-protocol LLM gateway that organizes providers by site, Base URL, credential, and protocol combo, then exposes one unified entry to clients.
+Self-hosted multi-protocol LLM gateway that organizes providers by site, Base URL, credential, and protocol config, then exposes one unified entry to clients.
 
 ## Architecture
 
@@ -56,11 +56,11 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  Site                                                                │
 │  ├─ Base URLs: each URL declares supported protocols                  │
 │  ├─ Credentials: one site can keep multiple API keys                  │
-│  └─ Protocol combos: Base URL + default credential + protocols       │
+│  └─ Protocol configs: Base URL + default credential + protocols       │
 │     plus headers, proxy, parameter overrides, and match rules         │
 │                                                                      │
 │  Discovered / manual models                                          │
-│  - Models belong to protocol combos and keep protocol, credential,    │
+│  - Models belong to protocol configs and keep protocol, credential,    │
 │    and upstream model name                                            │
 │  - Model discovery prefers a single /v1/models request                │
 │                                                                      │
@@ -73,7 +73,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Candidate expansion and load balancing                               │
 │                                                                      │
-│  Runtime channel = protocol combo + one protocol                     │
+│  Runtime channel = protocol config + one protocol                     │
 │  Route candidate = runtime channel + credential + upstream model     │
 │                                                                      │
 │  Round robin: smooth rotation across candidates                      │
@@ -99,7 +99,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 ## Features
 
 - Unified entry: One Base URL and one gateway key for OpenAI / Anthropic / Gemini / Rerank entry protocols
-- Site management: Configure multiple Base URLs, credentials, and protocol combos per site, with model discovery, manual models, and batch import
+- Site management: Configure multiple Base URLs, credentials, and protocol configs per site, with model discovery, manual models, and batch import
 - Model group routing: Build candidates from runtime channel + credential + upstream model, with round robin, failover, and reusable execution groups
 - Protocol conversion: Forward OpenAI Chat to Anthropic Messages or OpenAI Responses
 - Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt
@@ -213,12 +213,12 @@ pnpm dev
 
 ### 1. Add Upstream Sites
 
-Open `/channels`, create a site, configure Base URLs, credentials, and protocol combos, then discover or manually add models.
+Open `/channels`, create a site, configure Base URLs, credentials, and protocol configs, then discover or manually add models.
 
 - **Base URLs**: One site can maintain multiple upstream URLs and declare supported protocols for each URL.
 - **Credentials**: One site can maintain multiple API keys so routing can switch at credential granularity.
-- **Protocol combos**: Bind a Base URL, default credential, and protocol list, with headers, proxy, parameter overrides, and model match rules.
-- **Models**: Models belong to protocol combos and can bind to different credentials in the same site.
+- **Protocol configs**: Bind a Base URL, default credential, and protocol list, with headers, proxy, parameter overrides, and model match rules.
+- **Models**: Models belong to protocol configs and can bind to different credentials in the same site.
 
 Common Base URLs:
 

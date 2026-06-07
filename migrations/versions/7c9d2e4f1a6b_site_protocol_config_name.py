@@ -1,4 +1,4 @@
-"""site protocol combo name
+"""site protocol config name
 
 Revision ID: 7c9d2e4f1a6b
 Revises: 3e9a1f7c

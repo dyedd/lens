@@ -113,6 +113,31 @@ class ChannelStatus(str, Enum):
     DISABLED = "disabled"
 
 
+class RoutingStrategy(str, Enum):
+    ROUND_ROBIN = "round_robin"
+    FAILOVER = "failover"
+
+
+class ModelGroupSyncFilterMode(str, Enum):
+    NONE = ""
+    CONTAINS = "contains"
+    REGEX = "regex"
+
+
+class CronjobStatus(str, Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    DISABLED = "disabled"
+
+
+class CronjobScheduleType(str, Enum):
+    INTERVAL = "interval"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+
+
 class ChannelKeyItem(StrictBaseModel):
     id: str = ""
     key: str = Field(min_length=1)
@@ -127,17 +152,6 @@ class ChannelDiscoveredModel(StrictBaseModel):
     model_name: str
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
-
-
-class RoutingStrategy(str, Enum):
-    ROUND_ROBIN = "round_robin"
-    FAILOVER = "failover"
-
-
-class ModelGroupSyncFilterMode(str, Enum):
-    NONE = ""
-    CONTAINS = "contains"
-    REGEX = "regex"
 
 
 class ChannelConfig(StrictBaseModel):
@@ -685,7 +699,7 @@ class ModelGroupCandidateItem(StrictBaseModel):
     credential_number: int = Field(default=0, ge=0)
     base_url: str
     model_name: str
-    combo_id: str = ""
+    protocol_config_id: str = ""
     protocols: list[ProtocolKind] = Field(default_factory=list)
     protocol_channels: dict[ProtocolKind, str] = Field(default_factory=dict)
     items: list[ModelGroupItemInput] = Field(default_factory=list)
@@ -722,20 +736,6 @@ class ModelPriceUpdate(StrictBaseModel):
 class ModelPriceListResponse(StrictBaseModel):
     items: list[ModelPriceItem] = Field(default_factory=list)
     last_synced_at: str | None = None
-
-
-class CronjobStatus(str, Enum):
-    IDLE = "idle"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    DISABLED = "disabled"
-
-
-class CronjobScheduleType(str, Enum):
-    INTERVAL = "interval"
-    DAILY = "daily"
-    WEEKLY = "weekly"
 
 
 class CronjobItem(StrictBaseModel):
@@ -824,6 +824,76 @@ class GatewayApiKey(GatewayApiKeyBase):
 
 class SettingsUpdate(StrictBaseModel):
     items: list[SettingItem]
+
+
+class RequestLogItem(StrictBaseModel):
+    id: int
+    protocol: ProtocolKind
+    user_agent: str = ""
+    requested_group_name: str | None = None
+    resolved_group_name: str | None = None
+    upstream_model_name: str | None = None
+    channel_id: str | None = None
+    channel_name: str | None = None
+    credential_id: str | None = None
+    credential_name: str = ""
+    channel_has_multiple_credentials: bool = False
+    gateway_key_id: str | None = None
+    gateway_key_remark: str | None = None
+    gateway_has_multiple_keys: bool = False
+    reasoning_effort: str | None = None
+    status_code: int | None = None
+    success: bool
+    lifecycle_status: RequestLogLifecycleStatus
+    is_stream: bool = False
+    first_token_latency_ms: int = 0
+    latency_ms: int
+    input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
+    attempt_count: int = 0
+    error_message: str | None = None
+    created_at: str
+
+
+class RequestLogAttempt(StrictBaseModel):
+    channel_id: str
+    channel_name: str
+    credential_id: str | None = None
+    credential_name: str = ""
+    model_name: str | None = None
+    status_code: int | None = None
+    success: bool
+    duration_ms: int = 0
+    error_message: str | None = None
+    reasoning_effort: str | None = None
+
+
+class RequestLogDetail(RequestLogItem):
+    request_content: str | None = None
+    response_content: str | None = None
+    attempts: list[RequestLogAttempt] = Field(default_factory=list)
+
+
+class RequestLogFilterOption(StrictBaseModel):
+    id: str
+    label: str
+
+
+class RequestLogPage(StrictBaseModel):
+    items: list[RequestLogItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 0
+    offset: int = 0
+    channels: list[RequestLogFilterOption] = Field(default_factory=list)
+    gateway_keys: list[RequestLogFilterOption] = Field(default_factory=list)
+    gateway_has_multiple_keys: bool = False
+    model_names: list[str] = Field(default_factory=list)
 
 
 class ConfigBackupImportedStatsTotal(StrictBaseModel):
@@ -967,76 +1037,6 @@ class ConfigImportResult(StrictBaseModel):
     rows_affected: dict[str, int] = Field(default_factory=dict)
 
 
-class RequestLogItem(StrictBaseModel):
-    id: int
-    protocol: ProtocolKind
-    user_agent: str = ""
-    requested_group_name: str | None = None
-    resolved_group_name: str | None = None
-    upstream_model_name: str | None = None
-    channel_id: str | None = None
-    channel_name: str | None = None
-    credential_id: str | None = None
-    credential_name: str = ""
-    channel_has_multiple_credentials: bool = False
-    gateway_key_id: str | None = None
-    gateway_key_remark: str | None = None
-    gateway_has_multiple_keys: bool = False
-    reasoning_effort: str | None = None
-    status_code: int | None = None
-    success: bool
-    lifecycle_status: RequestLogLifecycleStatus
-    is_stream: bool = False
-    first_token_latency_ms: int = 0
-    latency_ms: int
-    input_tokens: int = 0
-    cache_read_input_tokens: int = 0
-    cache_write_input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
-    input_cost_usd: float = 0.0
-    output_cost_usd: float = 0.0
-    total_cost_usd: float = 0.0
-    attempt_count: int = 0
-    error_message: str | None = None
-    created_at: str
-
-
-class RequestLogAttempt(StrictBaseModel):
-    channel_id: str
-    channel_name: str
-    credential_id: str | None = None
-    credential_name: str = ""
-    model_name: str | None = None
-    status_code: int | None = None
-    success: bool
-    duration_ms: int = 0
-    error_message: str | None = None
-    reasoning_effort: str | None = None
-
-
-class RequestLogDetail(RequestLogItem):
-    request_content: str | None = None
-    response_content: str | None = None
-    attempts: list[RequestLogAttempt] = Field(default_factory=list)
-
-
-class RequestLogFilterOption(StrictBaseModel):
-    id: str
-    label: str
-
-
-class RequestLogPage(StrictBaseModel):
-    items: list[RequestLogItem] = Field(default_factory=list)
-    total: int = 0
-    limit: int = 0
-    offset: int = 0
-    channels: list[RequestLogFilterOption] = Field(default_factory=list)
-    gateway_keys: list[RequestLogFilterOption] = Field(default_factory=list)
-    gateway_has_multiple_keys: bool = False
-    model_names: list[str] = Field(default_factory=list)
-
-
 class OverviewMetrics(StrictBaseModel):
     total_requests: int = 0
     successful_requests: int = 0
@@ -1107,3 +1107,112 @@ class OverviewDashboardData(StrictBaseModel):
     performance: OverviewPerformanceMetrics
     daily: list[OverviewDailyPoint] = Field(default_factory=list)
     models: OverviewModelAnalytics
+
+
+__all__ = [
+    "StrictBaseModel",
+    "normalize_base_url",
+    "ProtocolKind",
+    "RequestLogStatusFilter",
+    "RequestLogLifecycleStatus",
+    "RequestLogSortMode",
+    "ChannelStatus",
+    "RoutingStrategy",
+    "ModelGroupSyncFilterMode",
+    "CronjobStatus",
+    "CronjobScheduleType",
+    "ChannelKeyItem",
+    "ChannelDiscoveredModel",
+    "ChannelConfig",
+    "SiteBaseUrl",
+    "SiteBaseUrlInput",
+    "SiteCredential",
+    "SiteCredentialInput",
+    "SiteModel",
+    "SiteModelInput",
+    "SiteProtocolConfig",
+    "SiteProtocolConfigInput",
+    "SiteConfig",
+    "SiteRuntimeSummary",
+    "SiteChannelRuntimeSummary",
+    "SiteChannelHealthBucket",
+    "SiteCreate",
+    "SiteUpdate",
+    "SiteImportBaseUrlInput",
+    "SiteImportCredentialInput",
+    "SiteImportModelInput",
+    "SiteImportProtocolInput",
+    "SiteImportItem",
+    "SiteBatchImportRequest",
+    "SiteBatchImportSkipped",
+    "SiteBatchImportError",
+    "SiteBatchImportResult",
+    "SiteModelFetchRequest",
+    "SiteModelFetchItem",
+    "SiteModelTestCredential",
+    "SiteModelTestRequest",
+    "SiteModelTestResult",
+    "ChannelKeyHealth",
+    "ChannelHealth",
+    "RouteState",
+    "RoutePreview",
+    "RoutePreviewItem",
+    "RoutePreviewRequest",
+    "RouterSnapshot",
+    "ErrorResponse",
+    "AdminLoginRequest",
+    "AuthTokenResponse",
+    "AdminProfile",
+    "AdminPasswordChangeRequest",
+    "AdminProfileUpdateRequest",
+    "AdminProfileUpdateResponse",
+    "PublicBranding",
+    "AppInfo",
+    "VersionCheckResult",
+    "ModelGroup",
+    "ModelGroupItem",
+    "ModelGroupItemInput",
+    "ModelGroupCreate",
+    "ModelGroupUpdate",
+    "normalize_model_group_sync_filter",
+    "ModelGroupStats",
+    "ModelGroupCandidateItem",
+    "ModelGroupCandidatesRequest",
+    "ModelGroupCandidatesResponse",
+    "ModelPriceItem",
+    "ModelPriceUpdate",
+    "ModelPriceListResponse",
+    "CronjobItem",
+    "CronjobUpdate",
+    "CronjobRunResult",
+    "SettingItem",
+    "GatewayApiKeyBase",
+    "GatewayApiKeyCreate",
+    "GatewayApiKeyUpdate",
+    "GatewayApiKey",
+    "SettingsUpdate",
+    "ConfigBackupImportedStatsTotal",
+    "ConfigBackupImportedStatsDaily",
+    "ConfigBackupRequestLogDailyStat",
+    "ConfigBackupOverviewModelDailyStat",
+    "ConfigBackupStatsSnapshot",
+    "ConfigBackupGatewayApiKey",
+    "ConfigBackupCronjob",
+    "ConfigBackupRequestLog",
+    "ConfigBackupDump",
+    "ConfigImportResult",
+    "RequestLogItem",
+    "RequestLogAttempt",
+    "RequestLogDetail",
+    "RequestLogFilterOption",
+    "RequestLogPage",
+    "OverviewMetrics",
+    "OverviewPerformanceMetrics",
+    "OverviewSummaryMetric",
+    "OverviewSummary",
+    "OverviewDailyPoint",
+    "OverviewModelMetricPoint",
+    "OverviewModelTrendPoint",
+    "OverviewModelAnalytics",
+    "OverviewDashboardData",
+]

@@ -1,0 +1,479 @@
+import type {
+  ModelGroup,
+  ModelGroupCandidateItem,
+  ModelGroupPayload,
+  ModelGroupSyncFilterMode,
+  ProtocolKind,
+  RoutingStrategy,
+  Site,
+} from "@/lib/api";
+
+export type FormItem = {
+  channel_id: string;
+  channel_name: string;
+  protocol?: ProtocolKind | null;
+  credential_id: string;
+  credential_name: string;
+  credential_number: number;
+  model_name: string;
+  enabled: boolean;
+};
+
+export type FormState = {
+  name: string;
+  protocols: ProtocolKind[];
+  strategy: RoutingStrategy;
+  route_group_id: string;
+  sync_filter_mode: ModelGroupSyncFilterMode;
+  sync_filter_query: string;
+  input_price_per_million: string;
+  output_price_per_million: string;
+  cache_read_price_per_million: string;
+  cache_write_price_per_million: string;
+  items: FormItem[];
+};
+
+export type CandidateChannelGroup = {
+  key: string;
+  site_id: string;
+  channel_name: string;
+  candidates: ModelGroupCandidateItem[];
+};
+
+export type FoldedMember = {
+  key: string;
+  protocolConfigId: string;
+  model_name: string;
+  credential_id: string;
+  credential_name: string;
+  credential_number: number;
+  protocols: ProtocolKind[];
+  subItems: FormItem[];
+  enabled: boolean;
+  invalid: boolean;
+};
+
+export type GroupDisplayMember = {
+  key: string;
+  model_name: string;
+  credential_name: string;
+  credential_number: number;
+  channel_names: string[];
+  protocols: ProtocolKind[];
+  items: ModelGroup["items"];
+  enabled: boolean;
+};
+
+export type GroupSort =
+  | "members-desc"
+  | "enabled-desc"
+  | "name-asc"
+  | "name-desc";
+export type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, "">;
+
+export type GroupRow = ModelGroup & {
+  member_count: number;
+  enabled_member_count: number;
+  channel_summary: string;
+  channel_names: string[];
+  display_members: GroupDisplayMember[];
+  is_route_group: boolean;
+};
+
+export type ModelPrefixOption = {
+  key: string;
+  label: string;
+  sampleModel: string;
+};
+export type SelectedModelPrefix = "all" | string;
+
+export const emptyForm: FormState = {
+  name: "",
+  protocols: ["openai_chat"],
+  strategy: "round_robin",
+  route_group_id: "",
+  sync_filter_mode: "",
+  sync_filter_query: "",
+  input_price_per_million: "0",
+  output_price_per_million: "0",
+  cache_read_price_per_million: "0",
+  cache_write_price_per_million: "0",
+  items: [],
+};
+
+export function buildCandidateHaystack(
+  item: ModelGroupCandidateItem,
+  channelMap: Map<string, ProtocolMeta>,
+  locale: "zh-CN" | "en-US",
+) {
+  const channel = channelMap.get(item.channel_id);
+  const channelName = channel?.name || item.channel_name;
+  const endpoint = item.base_url || channelEndpoint(channel);
+  return `${item.model_name} ${channelName} ${protocolLabel(item.protocol, locale)} ${credentialDisplayLabel(item, locale)} ${item.credential_name} ${endpoint}`;
+}
+
+export function compileCandidateRegex(value: string) {
+  try {
+    return new RegExp(value.trim(), "i");
+  } catch {
+    return null;
+  }
+}
+
+export function matchesCandidateSearch(
+  haystack: string,
+  mode: CandidateSearchMode,
+  query: string,
+) {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) {
+    return true;
+  }
+  if (mode === "regex") {
+    const regex = compileCandidateRegex(normalizedQuery);
+    if (!regex) {
+      return false;
+    }
+    return regex.test(haystack);
+  }
+  return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
+}
+
+export function candidatePayloadItemProtocol(
+  candidate: ModelGroupCandidateItem,
+  channelId: string,
+  channelMap?: Map<string, ProtocolMeta>,
+): ProtocolKind | undefined {
+  const channelProtocol = channelMap?.get(channelId)?.protocol;
+  if (channelProtocol) {
+    return channelProtocol;
+  }
+  const protocolEntry = Object.entries(candidate.protocol_channels).find(
+    ([, candidateChannelId]) => candidateChannelId === channelId,
+  );
+  if (protocolEntry) {
+    return protocolEntry[0] as ProtocolKind;
+  }
+  return channelId === candidate.channel_id ? candidate.protocol : undefined;
+}
+
+export function candidatePayloadToFormItems(
+  candidate: ModelGroupCandidateItem,
+  channelMap?: Map<string, ProtocolMeta>,
+): FormItem[] {
+  return candidate.items.map((payloadItem) => {
+    const channelName =
+      channelMap?.get(payloadItem.channel_id)?.name || candidate.channel_name;
+    return {
+      channel_id: payloadItem.channel_id,
+      channel_name: channelName,
+      protocol: candidatePayloadItemProtocol(
+        candidate,
+        payloadItem.channel_id,
+        channelMap,
+      ),
+      credential_id: payloadItem.credential_id,
+      credential_name: candidate.credential_name,
+      credential_number: candidate.credential_number,
+      model_name: payloadItem.model_name,
+      enabled: true,
+    };
+  });
+}
+
+export const PROTOCOL_SUFFIXES: ProtocolKind[] = [
+  "openai_chat",
+  "openai_responses",
+  "openai_embedding",
+  "rerank",
+  "anthropic",
+  "gemini",
+];
+
+export function protocolConfigIdFromChannelId(channelId: string): string {
+  for (const suffix of PROTOCOL_SUFFIXES) {
+    if (channelId.endsWith(`_${suffix}`)) {
+      return channelId.slice(0, channelId.length - suffix.length - 1);
+    }
+  }
+  return channelId;
+}
+
+export function modelFoldKey(
+  protocolConfigId: string,
+  credentialId: string,
+  modelName: string,
+): string {
+  return `${protocolConfigId}::${credentialId}::${modelName}`;
+}
+
+export function buildGroupDisplayMembers(
+  items: ModelGroup["items"],
+  channelMap: Map<string, ProtocolMeta>,
+): GroupDisplayMember[] {
+  const orderMap = new Map<string, number>();
+  const memberMap = new Map<string, GroupDisplayMember>();
+
+  for (const item of items) {
+    const protocolConfigId = protocolConfigIdFromChannelId(item.channel_id);
+    const key = modelFoldKey(
+      protocolConfigId,
+      item.credential_id,
+      item.model_name,
+    );
+    const channel = channelMap.get(item.channel_id);
+    const channelName = channel?.name || item.channel_name || item.channel_id;
+    const protocol = item.protocol || channel?.protocol;
+
+    if (!memberMap.has(key)) {
+      orderMap.set(key, orderMap.size);
+      memberMap.set(key, {
+        key,
+        model_name: item.model_name,
+        credential_name: item.credential_name,
+        credential_number: item.credential_number,
+        channel_names: [],
+        protocols: [],
+        items: [],
+        enabled: false,
+      });
+    }
+
+    const member = memberMap.get(key)!;
+    member.items.push(item);
+    if (item.enabled) member.enabled = true;
+    if (channelName && !member.channel_names.includes(channelName)) {
+      member.channel_names.push(channelName);
+    }
+    if (protocol && !member.protocols.includes(protocol)) {
+      member.protocols.push(protocol);
+    }
+  }
+
+  return Array.from(orderMap.entries())
+    .sort((a, b) => a[1] - b[1])
+    .map(([key]) => memberMap.get(key)!);
+}
+
+export const strategyOptions: Array<{
+  value: RoutingStrategy;
+  zh: string;
+  en: string;
+}> = [
+  { value: "round_robin", zh: "轮询", en: "Round Robin" },
+  { value: "failover", zh: "故障转移", en: "Failover" },
+];
+
+export const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> =
+  {
+    openai_chat: { zh: "OpenAI Chat", en: "OpenAI Chat" },
+    openai_responses: { zh: "OpenAI Responses", en: "OpenAI Responses" },
+    openai_embedding: { zh: "OpenAI Embedding", en: "OpenAI Embedding" },
+    rerank: { zh: "Rerank", en: "Rerank" },
+    anthropic: { zh: "Anthropic", en: "Anthropic" },
+    gemini: { zh: "Gemini", en: "Gemini" },
+  };
+
+export function protocolLabel(
+  protocol: ProtocolKind,
+  locale: "zh-CN" | "en-US",
+) {
+  return protocolLabels[protocol][locale === "zh-CN" ? "zh" : "en"];
+}
+
+export function isGeneratedCredentialName(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === "默认密钥" ||
+    /^key\s*\d+$/.test(normalized) ||
+    /^密钥\s*\d+$/.test(value.trim())
+  );
+}
+
+export function credentialDisplayLabel(
+  item: Pick<
+    FormItem | ModelGroupCandidateItem,
+    "credential_name" | "credential_number"
+  >,
+  locale: "zh-CN" | "en-US",
+) {
+  const name = item.credential_name.trim();
+  if (name && !isGeneratedCredentialName(name)) {
+    return name;
+  }
+  const number = item.credential_number > 0 ? item.credential_number : 1;
+  return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
+}
+
+export function credentialNumberLabel(
+  item: Pick<FormItem | ModelGroupCandidateItem, "credential_number">,
+  locale: "zh-CN" | "en-US",
+) {
+  const number = item.credential_number > 0 ? item.credential_number : 1;
+  return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
+}
+
+export function foldedMemberSourceLabel(
+  member: FoldedMember,
+  locale: "zh-CN" | "en-US",
+) {
+  const channelNames = Array.from(
+    new Set(member.subItems.map((item) => item.channel_name).filter(Boolean)),
+  );
+  const credentialLabel = credentialNumberLabel(member, locale);
+  return [...channelNames, credentialLabel].join(" · ");
+}
+
+export function protocolBadgeClassName(protocol: ProtocolKind) {
+  switch (protocol) {
+    case "openai_chat":
+      return "border-transparent bg-sky-500/10 text-sky-700";
+    case "openai_responses":
+      return "border-transparent bg-indigo-500/10 text-indigo-700";
+    case "openai_embedding":
+      return "border-transparent bg-cyan-500/10 text-cyan-700";
+    case "rerank":
+      return "border-transparent bg-violet-500/10 text-violet-700";
+    case "anthropic":
+      return "border-transparent bg-amber-500/10 text-amber-700";
+    case "gemini":
+      return "border-transparent bg-emerald-500/10 text-emerald-700";
+    default:
+      return "border-transparent bg-secondary text-secondary-foreground";
+  }
+}
+
+export function protocolOptions(locale: "zh-CN" | "en-US") {
+  return (Object.keys(protocolLabels) as ProtocolKind[]).map((value) => ({
+    value,
+    label: protocolLabel(value, locale),
+  }));
+}
+
+export function formatMoney(value: number) {
+  if (value === 0) return "0";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: value >= 1 ? 2 : 0,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
+export function metricLabel(
+  key: "input" | "output" | "cache_read" | "cache_write",
+  locale: "zh-CN" | "en-US",
+) {
+  const labels: Record<
+    "input" | "output" | "cache_read" | "cache_write",
+    { zh: string; en: string }
+  > = {
+    input: { zh: "输入", en: "Input" },
+    output: { zh: "输出", en: "Output" },
+    cache_read: { zh: "缓存读取", en: "Cache Read" },
+    cache_write: { zh: "缓存写入", en: "Cache Write" },
+  };
+
+  return labels[key][locale === "zh-CN" ? "zh" : "en"];
+}
+
+export const selectClassName =
+  "w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground";
+
+export function apiErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+export function itemKey(
+  item: Pick<FormItem, "channel_id" | "credential_id" | "model_name">,
+) {
+  return `${item.channel_id}::${item.credential_id}::${item.model_name}`;
+}
+
+export function isGroupEnabled(
+  group: Pick<GroupRow, "enabled_member_count" | "is_route_group">,
+) {
+  return group.is_route_group || group.enabled_member_count > 0;
+}
+
+export function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= items.length ||
+    toIndex >= items.length
+  ) {
+    return items;
+  }
+  const nextItems = items.slice();
+  const [target] = nextItems.splice(fromIndex, 1);
+  nextItems.splice(toIndex, 0, target);
+  return nextItems;
+}
+
+export type ProtocolMeta = {
+  id: string;
+  site_id: string;
+  name: string;
+  base_url: string;
+  protocol: ProtocolKind;
+};
+
+export function channelEndpoint(channel?: ProtocolMeta) {
+  if (!channel) return "";
+  return channel.base_url || "";
+}
+
+export function protocolBaseUrl(site: Site, baseUrlId: string) {
+  const bound = site.base_urls.find((item) => item.id === baseUrlId);
+  return bound?.url || "";
+}
+
+export function toForm(group: ModelGroup): FormState {
+  return {
+    name: group.name,
+    protocols: group.protocols,
+    strategy: group.strategy,
+    route_group_id: group.route_group_id ?? "",
+    sync_filter_mode: group.sync_filter_mode,
+    sync_filter_query: group.sync_filter_query,
+    input_price_per_million: String(group.input_price_per_million),
+    output_price_per_million: String(group.output_price_per_million),
+    cache_read_price_per_million: String(group.cache_read_price_per_million),
+    cache_write_price_per_million: String(group.cache_write_price_per_million),
+    items: group.items
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((item) => ({
+        channel_id: item.channel_id,
+        channel_name: item.channel_name,
+        protocol: item.protocol,
+        credential_id: item.credential_id,
+        credential_name: item.credential_name,
+        credential_number: item.credential_number,
+        model_name: item.model_name,
+        enabled: item.enabled,
+      })),
+  };
+}
+
+export function toPayload(form: FormState): ModelGroupPayload {
+  return {
+    name: form.name.trim(),
+    protocols: form.protocols,
+    strategy: form.strategy,
+    route_group_id: form.route_group_id.trim(),
+    sync_filter_mode:
+      form.route_group_id.trim() || !form.sync_filter_query.trim()
+        ? ""
+        : form.sync_filter_mode,
+    sync_filter_query: form.route_group_id.trim()
+      ? ""
+      : form.sync_filter_query.trim(),
+    items: form.items.map((item) => ({
+      channel_id: item.channel_id,
+      credential_id: item.credential_id,
+      model_name: item.model_name,
+      enabled: item.enabled,
+    })),
+  };
+}
