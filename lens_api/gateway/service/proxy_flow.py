@@ -1,0 +1,505 @@
+from __future__ import annotations
+
+from .runtime_context import (
+    AttemptLog,
+    BackgroundTask,
+    HTTPException,
+    ProtocolKind,
+    RequestLogLifecycleStatus,
+    UpstreamRequestError,
+    _RequestDeadline,
+    _attempt_logs_to_dicts,
+    app_state,
+    asyncio,
+    convert_request,
+    logger,
+    needs_conversion,
+    perf_counter,
+    settings,
+)
+from .auth import _gateway_key_allows_model
+from .errors import (
+    _apply_router_runtime_settings,
+    _protocol_error_response,
+)
+from .upstream_http import (
+    _default_lens_user_agent,
+    _is_generic_user_agent,
+    _normalize_user_agent,
+)
+from .payload_serialization import _dump_json
+from .proxy_upstream import (
+    _call_channel,
+    _record_target_failure,
+)
+from .request_logger import _RequestLogger, _update_request_log
+from .routing_plan import (
+    _apply_deepseek_thinking_compat,
+    _apply_param_override,
+    _elapsed_ms,
+    _extract_request_reasoning_effort,
+    _final_upstream_failure,
+    _is_deepseek_thinking_target,
+    _prepare_upstream_body,
+    _resolve_routing_plan,
+)
+from .stream_logging import (
+    _record_stream_request_log,
+)
+
+
+async def _proxy_protocol(
+    protocol: ProtocolKind,
+    body: dict[str, Any],
+    gateway_key: GatewayApiKey,
+    inbound_user_agent: str | None = None,
+    inbound_headers: Mapping[str, str] | None = None,
+) -> Response:
+    started_at = perf_counter()
+    deadline = _RequestDeadline(started_at, settings.request_timeout_seconds)
+    channels, runtime = await asyncio.gather(
+        app_state.store.list(),
+        app_state.domain_store.get_runtime_settings(),
+    )
+    _apply_router_runtime_settings(runtime)
+    log_body_enabled = bool(runtime["relay_log_body_enabled"])
+    request_content = _dump_json(body) if log_body_enabled else None
+    inbound_ua = _normalize_user_agent(inbound_user_agent)
+    upstream_user_agent = (
+        inbound_ua
+        if inbound_ua and not _is_generic_user_agent(inbound_ua)
+        else _default_lens_user_agent()
+    )
+    is_stream_body = bool(body.get("stream"))
+    requested_model = body.get("model")
+    if not isinstance(requested_model, str) or not requested_model.strip():
+        request_log = await app_state.domain_store.create_pending_request_log(
+            protocol=protocol.value,
+            user_agent=upstream_user_agent,
+            requested_group_name=None,
+            resolved_group_name=None,
+            upstream_model_name=None,
+            channel_id=None,
+            channel_name=None,
+            gateway_key_id=gateway_key.id,
+            is_stream=is_stream_body,
+            request_content=request_content,
+        )
+        await _update_request_log(
+            request_log.id,
+            protocol=protocol,
+            requested_group_name=None,
+            resolved_group_name=None,
+            upstream_model_name=None,
+            channel_id=None,
+            channel_name=None,
+            gateway_key=gateway_key,
+            user_agent=upstream_user_agent,
+            lifecycle_status=RequestLogLifecycleStatus.FAILED,
+            status_code=400,
+            success=False,
+            is_stream=is_stream_body,
+            first_token_latency_ms=0,
+            latency_ms=_elapsed_ms(started_at),
+            request_content=request_content,
+            attempts=[],
+            error_message="Request model is required",
+        )
+        return _protocol_error_response(
+            protocol=protocol,
+            status_code=400,
+            error_type="missing_model",
+            message="Request model is required",
+        )
+    requested_model = requested_model.strip()
+    if not _gateway_key_allows_model(gateway_key, requested_model):
+        return _protocol_error_response(
+            protocol=protocol,
+            status_code=403,
+            error_type="forbidden_model",
+            message="Gateway API key is not allowed to use this model",
+        )
+    plan: RoutingPlan | None = None
+    request_log = await app_state.domain_store.create_pending_request_log(
+        protocol=protocol.value,
+        user_agent=upstream_user_agent,
+        requested_group_name=requested_model,
+        resolved_group_name=None,
+        upstream_model_name=None,
+        channel_id=None,
+        channel_name=None,
+        gateway_key_id=gateway_key.id,
+        is_stream=is_stream_body,
+        request_content=request_content,
+    )
+    log_ctx = _RequestLogger(
+        request_log_id=request_log.id,
+        protocol=protocol,
+        gateway_key=gateway_key,
+        started_at=started_at,
+        body=body,
+        request_content=request_content,
+        attempts=[],
+    )
+    try:
+        plan, selection, routing_error = await _resolve_proxy_route(
+            channels=channels,
+            protocol=protocol,
+            requested_model=requested_model,
+            log_ctx=log_ctx,
+            upstream_user_agent=upstream_user_agent,
+            is_stream_body=is_stream_body,
+        )
+        if routing_error is not None:
+            return routing_error
+        if plan is None or selection is None:
+            raise RuntimeError("Routing plan was not resolved")
+
+        errors: list[str] = []
+        failure_status_codes: list[int | None] = []
+        for target in [selection.primary, *selection.fallbacks]:
+            if deadline.expired():
+                timeout_message = deadline.message()
+                await log_ctx.update(
+                    requested_group_name=plan.requested_group_name,
+                    resolved_group_name=plan.resolved_group_name,
+                    upstream_model_name=None,
+                    channel=None,
+                    user_agent=upstream_user_agent,
+                    lifecycle_status=RequestLogLifecycleStatus.FAILED,
+                    status_code=504,
+                    success=False,
+                    is_stream=is_stream_body,
+                    error_message=timeout_message,
+                )
+                return _protocol_error_response(
+                    protocol=protocol,
+                    status_code=504,
+                    error_type="gateway_timeout",
+                    message=timeout_message,
+                )
+            if not app_state.router.is_target_available(target):
+                continue
+            response = await _try_target(
+                target=target,
+                protocol=protocol,
+                body=body,
+                runtime=runtime,
+                upstream_user_agent=upstream_user_agent,
+                inbound_headers=inbound_headers,
+                plan=plan,
+                log_ctx=log_ctx,
+                errors=errors,
+                failure_status_codes=failure_status_codes,
+                deadline=deadline,
+            )
+            if response is not None:
+                return response
+
+        failed_status_code, failed_error_type, failed_message = _final_upstream_failure(
+            errors, failure_status_codes
+        )
+        return _protocol_error_response(
+            protocol=protocol,
+            status_code=failed_status_code,
+            error_type=failed_error_type,
+            message=failed_message,
+        )
+    except Exception as exc:
+        logger.exception("Proxy request failed unexpectedly")
+        await log_ctx.update(
+            requested_group_name=plan.requested_group_name if plan else requested_model,
+            resolved_group_name=plan.resolved_group_name if plan else None,
+            upstream_model_name=None,
+            channel=None,
+            user_agent=upstream_user_agent,
+            lifecycle_status=RequestLogLifecycleStatus.FAILED,
+            status_code=500,
+            success=False,
+            is_stream=is_stream_body,
+            error_message=f"Unexpected proxy error: {type(exc).__name__}: {exc}",
+        )
+        raise
+
+
+async def _resolve_proxy_route(
+    *,
+    channels: list[ChannelConfig],
+    protocol: ProtocolKind,
+    requested_model: str,
+    log_ctx: _RequestLogger,
+    upstream_user_agent: str,
+    is_stream_body: bool,
+) -> tuple[RoutingPlan | None, RouteSelection | None, JSONResponse | None]:
+    plan: RoutingPlan | None = None
+    try:
+        plan = await _resolve_routing_plan(protocol, requested_model, channels)
+        selection = app_state.router.select(
+            channels,
+            protocol,
+            plan.resolved_group_name,
+            strategy=plan.strategy,
+            route_targets=plan.route_targets,
+            use_model_matching=plan.use_model_matching,
+            cursor_key=plan.cursor_key,
+        )
+        await log_ctx.update(
+            requested_group_name=plan.requested_group_name,
+            resolved_group_name=plan.resolved_group_name,
+            upstream_model_name=None,
+            channel=None,
+            user_agent=upstream_user_agent,
+            lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+            status_code=None,
+            success=False,
+            is_stream=is_stream_body,
+        )
+        return plan, selection, None
+    except LookupError as exc:
+        return (
+            plan,
+            None,
+            await _routing_error_response(
+                plan=plan,
+                protocol=protocol,
+                requested_model=requested_model,
+                log_ctx=log_ctx,
+                upstream_user_agent=upstream_user_agent,
+                is_stream_body=is_stream_body,
+                exc=exc,
+            ),
+        )
+
+
+async def _routing_error_response(
+    *,
+    plan: RoutingPlan | None,
+    protocol: ProtocolKind,
+    requested_model: str,
+    log_ctx: _RequestLogger,
+    upstream_user_agent: str,
+    is_stream_body: bool,
+    exc: LookupError,
+) -> JSONResponse:
+    await log_ctx.update(
+        requested_group_name=plan.requested_group_name if plan else requested_model,
+        resolved_group_name=plan.resolved_group_name if plan else None,
+        upstream_model_name=None,
+        channel=None,
+        user_agent=upstream_user_agent,
+        lifecycle_status=RequestLogLifecycleStatus.FAILED,
+        status_code=503,
+        success=False,
+        is_stream=is_stream_body,
+        error_message=str(exc),
+    )
+    return _protocol_error_response(
+        protocol=protocol,
+        status_code=503,
+        error_type="routing_error",
+        message="Gateway routing failed",
+    )
+
+
+async def _try_target(
+    *,
+    target: RouteTarget,
+    protocol: ProtocolKind,
+    body: dict[str, Any],
+    runtime: dict[str, Any],
+    upstream_user_agent: str,
+    inbound_headers: Mapping[str, str] | None,
+    plan: RoutingPlan,
+    log_ctx: _RequestLogger,
+    errors: list[str],
+    failure_status_codes: list[int | None],
+    deadline: _RequestDeadline,
+) -> Response | None:
+    channel = target.channel
+    attempt_started_at = perf_counter()
+    effective_user_agent = upstream_user_agent
+    for name, value in channel.headers.items():
+        if name.lower() == "user-agent":
+            effective_user_agent = _normalize_user_agent(value)
+            break
+
+    if needs_conversion(protocol, channel.protocol):
+        try:
+            upstream_body = convert_request(
+                protocol,
+                channel.protocol,
+                body,
+                target.model_name,
+                preserve_reasoning=_is_deepseek_thinking_target(
+                    channel, target.model_name
+                ),
+            )
+        except ValueError as exc:
+            return await _record_target_failure(
+                target=target,
+                channel=channel,
+                runtime=runtime,
+                log_ctx=log_ctx,
+                plan=plan,
+                errors=errors,
+                failure_status_codes=failure_status_codes,
+                attempt_started_at=attempt_started_at,
+                effective_user_agent=effective_user_agent,
+                upstream_body=body,
+                exc=UpstreamRequestError(
+                    status_code=400,
+                    detail=str(exc),
+                    router_status_code=None,
+                ),
+            )
+    else:
+        upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
+    try:
+        upstream_body = _apply_param_override(channel, upstream_body)
+        upstream_body = _apply_deepseek_thinking_compat(channel, upstream_body)
+    except UpstreamRequestError as exc:
+        return await _record_target_failure(
+            target=target,
+            channel=channel,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            failure_status_codes=failure_status_codes,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=effective_user_agent,
+            upstream_body=upstream_body,
+            exc=exc,
+        )
+    if protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
+        upstream_body.pop("stream", None)
+
+    log_body_enabled = bool(runtime["relay_log_body_enabled"])
+    upstream_request_content = _dump_json(upstream_body) if log_body_enabled else None
+    reasoning_effort = _extract_request_reasoning_effort(body, upstream_body)
+    await log_ctx.update(
+        requested_group_name=plan.requested_group_name,
+        resolved_group_name=plan.resolved_group_name,
+        upstream_model_name=target.model_name,
+        channel=channel,
+        user_agent=effective_user_agent,
+        lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+        status_code=None,
+        success=False,
+        is_stream=bool(upstream_body.get("stream")),
+        request_content=upstream_request_content,
+    )
+    try:
+        result = await _call_channel(
+            channel,
+            upstream_body,
+            pricing_group_name=plan.resolved_group_name,
+            client_protocol=protocol,
+            credential_id=target.credential_id,
+            user_agent=upstream_user_agent,
+            forwarded_headers=inbound_headers,
+            log_body_enabled=log_body_enabled,
+            deadline=deadline,
+            global_proxy_url=str(runtime["proxy_url"]),
+        )
+    except UpstreamRequestError as exc:
+        return await _record_target_failure(
+            target=target,
+            channel=channel,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            failure_status_codes=failure_status_codes,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=effective_user_agent,
+            upstream_body=upstream_body,
+            request_content=upstream_request_content,
+            exc=exc,
+        )
+    except HTTPException as exc:
+        return await _record_target_failure(
+            target=target,
+            channel=channel,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            failure_status_codes=failure_status_codes,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=effective_user_agent,
+            upstream_body=upstream_body,
+            request_content=upstream_request_content,
+            exc=UpstreamRequestError(
+                status_code=exc.status_code,
+                detail=exc.detail,
+                router_status_code=exc.status_code,
+            ),
+        )
+
+    log_ctx.attempts.append(
+        AttemptLog(
+            channel_id=channel.id,
+            channel_name=channel.name,
+            credential_id=target.credential_id,
+            credential_name=target.credential_name or "",
+            model_name=target.model_name,
+            status_code=result.status_code,
+            success=True,
+            duration_ms=_elapsed_ms(attempt_started_at),
+            reasoning_effort=reasoning_effort,
+        )
+    )
+    merged_request_content = result.request_content or upstream_request_content
+    if result.is_stream:
+        if result.stream_capture is not None:
+            result.stream_capture.request_log_id = log_ctx.request_log_id
+            result.stream_capture.stream_started_at = log_ctx.started_at
+        first_token_latency_ms = (
+            result.stream_capture.first_token_latency_ms
+            if result.stream_capture is not None
+            else result.first_token_latency_ms
+        )
+        await log_ctx.update(
+            requested_group_name=plan.requested_group_name,
+            resolved_group_name=plan.resolved_group_name,
+            upstream_model_name=result.upstream_model_name,
+            channel=channel,
+            user_agent=effective_user_agent,
+            lifecycle_status=RequestLogLifecycleStatus.STREAMING,
+            status_code=result.status_code,
+            success=False,
+            is_stream=True,
+            first_token_latency_ms=first_token_latency_ms,
+            request_content=merged_request_content,
+        )
+        result.response.background = BackgroundTask(
+            _record_stream_request_log,
+            request_log_id=log_ctx.request_log_id,
+            protocol=protocol,
+            requested_group_name=plan.requested_group_name,
+            resolved_group_name=plan.resolved_group_name,
+            channel=channel,
+            gateway_key=log_ctx.gateway_key,
+            user_agent=effective_user_agent,
+            started_at=log_ctx.started_at,
+            result=result,
+            attempts=_attempt_logs_to_dicts(log_ctx.attempts),
+        )
+        return result.response
+    await log_ctx.update(
+        requested_group_name=plan.requested_group_name,
+        resolved_group_name=plan.resolved_group_name,
+        upstream_model_name=result.upstream_model_name,
+        channel=channel,
+        user_agent=effective_user_agent,
+        lifecycle_status=RequestLogLifecycleStatus.SUCCEEDED,
+        status_code=result.status_code,
+        success=True,
+        is_stream=result.is_stream,
+        first_token_latency_ms=result.first_token_latency_ms,
+        request_content=merged_request_content,
+        response_content=result.response_content,
+        result=result,
+    )
+    return result.response
