@@ -22,20 +22,8 @@ const nextConfig: NextConfig = {
               destination: `${backendBaseUrl}/api/:path*`,
             },
             {
-              source: "/v1/chat/completions",
-              destination: `${backendBaseUrl}/v1/chat/completions`,
-            },
-            {
-              source: "/v1/responses",
-              destination: `${backendBaseUrl}/v1/responses`,
-            },
-            {
-              source: "/v1/messages",
-              destination: `${backendBaseUrl}/v1/messages`,
-            },
-            {
-              source: "/v1/models",
-              destination: `${backendBaseUrl}/v1/models`,
+              source: "/v1/:path*",
+              destination: `${backendBaseUrl}/v1/:path*`,
             },
             {
               source: "/v1beta/:path*",

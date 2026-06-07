@@ -1,4 +1,4 @@
-"""address protocols combo refactor
+"""address protocol config refactor
 
 Revision ID: 3e9a1f7c
 Revises: d1e2f3a4b5c6
@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Step 0: 归一化冲突 combo（同一 site+base_url+credential 多行配置不一致）
+    # Step 0: 归一化冲突协议配置（同一 site+base_url+credential 多行配置不一致）
     # 以每组 MIN(id) 行的共享配置覆盖同组其余行，与 Step 9 保留 MIN(id) 的逻辑一致，
     # 使后续聚合无歧义、可平滑升级。必须在任何 DDL 之前执行。
     conn = op.get_bind()
@@ -150,7 +150,7 @@ def upgrade() -> None:
         WHERE channel_id IN (SELECT id FROM site_protocol_configs)
     """)
 
-    # Step 8: 迁移 site_discovered_models.protocol_config_id → canonical combo_id
+    # Step 8: 迁移 site_discovered_models.protocol_config_id → canonical protocol_config_id
     op.execute("""
         UPDATE site_discovered_models
         SET protocol_config_id = (
@@ -168,7 +168,7 @@ def upgrade() -> None:
         WHERE protocol_config_id IN (SELECT id FROM site_protocol_configs)
     """)
 
-    # Step 9: 删除非 canonical combo 行（保留每组 MIN(id) 那行）
+    # Step 9: 删除非 canonical protocol config 行（保留每组 MIN(id) 那行）
     op.execute("""
         DELETE FROM site_protocol_configs
         WHERE id NOT IN (
@@ -191,6 +191,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     raise NotImplementedError(
-        "Downgrade not supported: protocol configs were merged into combos. "
+        "Downgrade not supported: protocol configs were merged into protocol configs. "
         "Restore from backup to revert."
     )

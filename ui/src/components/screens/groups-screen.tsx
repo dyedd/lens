@@ -2,28 +2,14 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  Check,
-  ChevronDown,
-  Filter,
-  GripVertical,
-  LayoutGrid,
-  Plus,
-  RefreshCcw,
-  Search,
-  Sparkles,
-  Trash2,
-  X,
-} from "lucide-react";
+import dynamic from "next/dynamic";
+import { Plus, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
 import {
   ModelGroup,
   ModelGroupCandidateItem,
   ModelGroupCandidatesPayload,
   ModelGroupCandidatesResponse,
-  ModelGroupPayload,
-  ModelGroupSyncFilterMode,
   ProtocolKind,
   RoutingStrategy,
   Site,
@@ -31,842 +17,43 @@ import {
   isItemValidForProtocols,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
-import {
-  getModelFamilyKey,
-  getModelFamilyLabel,
-  getModelGroupAvatar,
-  ModelAvatar,
-} from "@/lib/model-icons";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Dialog, AppDialogContent } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
+import { getModelFamilyKey, getModelFamilyLabel } from "@/lib/model-icons";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemFooter,
-  ItemGroup,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
-import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
+  apiErrorMessage,
+  buildCandidateHaystack,
+  buildGroupDisplayMembers,
+  candidatePayloadToFormItems,
+  compileCandidateRegex,
+  emptyForm,
+  isGroupEnabled,
+  itemKey,
+  matchesCandidateSearch,
+  modelFoldKey,
+  moveItems,
+  protocolBaseUrl,
+  protocolConfigIdFromChannelId,
+  toForm,
+  toPayload,
+  type CandidateChannelGroup,
+  type CandidateSearchMode,
+  type FoldedMember,
+  type FormItem,
+  type FormState,
+  type GroupRow,
+  type GroupSort,
+  type ModelPrefixOption,
+  type ProtocolMeta,
+  type SelectedModelPrefix,
+} from "./groups/shared";
+import { GroupsOverview } from "./groups/overview";
 
-type FormItem = {
-  channel_id: string;
-  channel_name: string;
-  protocol?: ProtocolKind | null;
-  credential_id: string;
-  credential_name: string;
-  credential_number: number;
-  model_name: string;
-  enabled: boolean;
-};
-
-type FormState = {
-  name: string;
-  protocols: ProtocolKind[];
-  strategy: RoutingStrategy;
-  route_group_id: string;
-  sync_filter_mode: ModelGroupSyncFilterMode;
-  sync_filter_query: string;
-  input_price_per_million: string;
-  output_price_per_million: string;
-  cache_read_price_per_million: string;
-  cache_write_price_per_million: string;
-  items: FormItem[];
-};
-
-type CandidateChannelGroup = {
-  key: string;
-  site_id: string;
-  channel_name: string;
-  candidates: ModelGroupCandidateItem[];
-};
-
-type FoldedMember = {
-  key: string;
-  combo_id: string;
-  model_name: string;
-  credential_id: string;
-  credential_name: string;
-  credential_number: number;
-  protocols: ProtocolKind[];
-  subItems: FormItem[];
-  enabled: boolean;
-  invalid: boolean;
-};
-
-type GroupDisplayMember = {
-  key: string;
-  model_name: string;
-  credential_name: string;
-  credential_number: number;
-  channel_names: string[];
-  protocols: ProtocolKind[];
-  items: ModelGroup["items"];
-  enabled: boolean;
-};
-
-type GroupSort = "members-desc" | "enabled-desc" | "name-asc" | "name-desc";
-type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, "">;
-
-type GroupRow = ModelGroup & {
-  member_count: number;
-  enabled_member_count: number;
-  channel_summary: string;
-  channel_names: string[];
-  display_members: GroupDisplayMember[];
-  is_route_group: boolean;
-};
-
-type ModelPrefixOption = {
-  key: string;
-  label: string;
-  sampleModel: string;
-};
-type SelectedModelPrefix = "all" | string;
-
-const emptyForm: FormState = {
-  name: "",
-  protocols: ["openai_chat"],
-  strategy: "round_robin",
-  route_group_id: "",
-  sync_filter_mode: "",
-  sync_filter_query: "",
-  input_price_per_million: "0",
-  output_price_per_million: "0",
-  cache_read_price_per_million: "0",
-  cache_write_price_per_million: "0",
-  items: [],
-};
-
-function buildCandidateHaystack(
-  item: ModelGroupCandidateItem,
-  channelMap: Map<string, ProtocolMeta>,
-  locale: "zh-CN" | "en-US",
-) {
-  const channel = channelMap.get(item.channel_id);
-  const channelName = channel?.name || item.channel_name;
-  const endpoint = item.base_url || channelEndpoint(channel);
-  return `${item.model_name} ${channelName} ${protocolLabel(item.protocol, locale)} ${credentialDisplayLabel(item, locale)} ${item.credential_name} ${endpoint}`;
-}
-
-function compileCandidateRegex(value: string) {
-  try {
-    return new RegExp(value.trim(), "i");
-  } catch {
-    return null;
-  }
-}
-
-function matchesCandidateSearch(
-  haystack: string,
-  mode: CandidateSearchMode,
-  query: string,
-) {
-  const normalizedQuery = query.trim();
-  if (!normalizedQuery) {
-    return true;
-  }
-  if (mode === "regex") {
-    const regex = compileCandidateRegex(normalizedQuery);
-    if (!regex) {
-      return false;
-    }
-    return regex.test(haystack);
-  }
-  return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
-}
-
-function candidatePayloadItemProtocol(
-  candidate: ModelGroupCandidateItem,
-  channelId: string,
-  channelMap?: Map<string, ProtocolMeta>,
-): ProtocolKind | undefined {
-  const channelProtocol = channelMap?.get(channelId)?.protocol;
-  if (channelProtocol) {
-    return channelProtocol;
-  }
-  const protocolEntry = Object.entries(candidate.protocol_channels).find(
-    ([, candidateChannelId]) => candidateChannelId === channelId,
-  );
-  if (protocolEntry) {
-    return protocolEntry[0] as ProtocolKind;
-  }
-  return channelId === candidate.channel_id ? candidate.protocol : undefined;
-}
-
-function candidatePayloadToFormItems(
-  candidate: ModelGroupCandidateItem,
-  channelMap?: Map<string, ProtocolMeta>,
-): FormItem[] {
-  return candidate.items.map((payloadItem) => {
-    const channelName =
-      channelMap?.get(payloadItem.channel_id)?.name || candidate.channel_name;
-    return {
-      channel_id: payloadItem.channel_id,
-      channel_name: channelName,
-      protocol: candidatePayloadItemProtocol(
-        candidate,
-        payloadItem.channel_id,
-        channelMap,
-      ),
-      credential_id: payloadItem.credential_id,
-      credential_name: candidate.credential_name,
-      credential_number: candidate.credential_number,
-      model_name: payloadItem.model_name,
-      enabled: true,
-    };
-  });
-}
-
-const PROTOCOL_SUFFIXES: ProtocolKind[] = [
-  "openai_chat",
-  "openai_responses",
-  "openai_embedding",
-  "rerank",
-  "anthropic",
-  "gemini",
-];
-
-function comboIdFromChannelId(channelId: string): string {
-  for (const suffix of PROTOCOL_SUFFIXES) {
-    if (channelId.endsWith(`_${suffix}`)) {
-      return channelId.slice(0, channelId.length - suffix.length - 1);
-    }
-  }
-  return channelId;
-}
-
-function modelFoldKey(
-  combo_id: string,
-  credential_id: string,
-  model_name: string,
-): string {
-  return `${combo_id}::${credential_id}::${model_name}`;
-}
-
-function buildGroupDisplayMembers(
-  items: ModelGroup["items"],
-  channelMap: Map<string, ProtocolMeta>,
-): GroupDisplayMember[] {
-  const orderMap = new Map<string, number>();
-  const memberMap = new Map<string, GroupDisplayMember>();
-
-  for (const item of items) {
-    const comboId = comboIdFromChannelId(item.channel_id);
-    const key = modelFoldKey(comboId, item.credential_id, item.model_name);
-    const channel = channelMap.get(item.channel_id);
-    const channelName = channel?.name || item.channel_name || item.channel_id;
-    const protocol = item.protocol || channel?.protocol;
-
-    if (!memberMap.has(key)) {
-      orderMap.set(key, orderMap.size);
-      memberMap.set(key, {
-        key,
-        model_name: item.model_name,
-        credential_name: item.credential_name,
-        credential_number: item.credential_number,
-        channel_names: [],
-        protocols: [],
-        items: [],
-        enabled: false,
-      });
-    }
-
-    const member = memberMap.get(key)!;
-    member.items.push(item);
-    if (item.enabled) member.enabled = true;
-    if (channelName && !member.channel_names.includes(channelName)) {
-      member.channel_names.push(channelName);
-    }
-    if (protocol && !member.protocols.includes(protocol)) {
-      member.protocols.push(protocol);
-    }
-  }
-
-  return Array.from(orderMap.entries())
-    .sort((a, b) => a[1] - b[1])
-    .map(([key]) => memberMap.get(key)!);
-}
-
-const strategyOptions: Array<{
-  value: RoutingStrategy;
-  zh: string;
-  en: string;
-}> = [
-  { value: "round_robin", zh: "轮询", en: "Round Robin" },
-  { value: "failover", zh: "故障转移", en: "Failover" },
-];
-
-const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> = {
-  openai_chat: { zh: "OpenAI Chat", en: "OpenAI Chat" },
-  openai_responses: { zh: "OpenAI Responses", en: "OpenAI Responses" },
-  openai_embedding: { zh: "OpenAI Embedding", en: "OpenAI Embedding" },
-  rerank: { zh: "Rerank", en: "Rerank" },
-  anthropic: { zh: "Anthropic", en: "Anthropic" },
-  gemini: { zh: "Gemini", en: "Gemini" },
-};
-
-function protocolLabel(protocol: ProtocolKind, locale: "zh-CN" | "en-US") {
-  return protocolLabels[protocol][locale === "zh-CN" ? "zh" : "en"];
-}
-
-function isGeneratedCredentialName(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return (
-    normalized === "默认密钥" ||
-    /^key\s*\d+$/.test(normalized) ||
-    /^密钥\s*\d+$/.test(value.trim())
-  );
-}
-
-function credentialDisplayLabel(
-  item: Pick<
-    FormItem | ModelGroupCandidateItem,
-    "credential_name" | "credential_number"
-  >,
-  locale: "zh-CN" | "en-US",
-) {
-  const name = item.credential_name.trim();
-  if (name && !isGeneratedCredentialName(name)) {
-    return name;
-  }
-  const number = item.credential_number > 0 ? item.credential_number : 1;
-  return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
-}
-
-function credentialNumberLabel(
-  item: Pick<FormItem | ModelGroupCandidateItem, "credential_number">,
-  locale: "zh-CN" | "en-US",
-) {
-  const number = item.credential_number > 0 ? item.credential_number : 1;
-  return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
-}
-
-function foldedMemberSourceLabel(
-  member: FoldedMember,
-  locale: "zh-CN" | "en-US",
-) {
-  const channelNames = Array.from(
-    new Set(member.subItems.map((item) => item.channel_name).filter(Boolean)),
-  );
-  const credentialLabel = credentialNumberLabel(member, locale);
-  return [...channelNames, credentialLabel].join(" · ");
-}
-
-function protocolBadgeClassName(protocol: ProtocolKind) {
-  switch (protocol) {
-    case "openai_chat":
-      return "border-transparent bg-sky-500/10 text-sky-700";
-    case "openai_responses":
-      return "border-transparent bg-indigo-500/10 text-indigo-700";
-    case "openai_embedding":
-      return "border-transparent bg-cyan-500/10 text-cyan-700";
-    case "rerank":
-      return "border-transparent bg-violet-500/10 text-violet-700";
-    case "anthropic":
-      return "border-transparent bg-amber-500/10 text-amber-700";
-    case "gemini":
-      return "border-transparent bg-emerald-500/10 text-emerald-700";
-    default:
-      return "border-transparent bg-secondary text-secondary-foreground";
-  }
-}
-
-function protocolOptions(locale: "zh-CN" | "en-US") {
-  return (Object.keys(protocolLabels) as ProtocolKind[]).map((value) => ({
-    value,
-    label: protocolLabel(value, locale),
-  }));
-}
-
-function formatMoney(value: number) {
-  if (value === 0) return "0";
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: value >= 1 ? 2 : 0,
-    maximumFractionDigits: 4,
-  }).format(value);
-}
-
-function metricLabel(
-  key: "input" | "output" | "cache_read" | "cache_write",
-  locale: "zh-CN" | "en-US",
-) {
-  const labels: Record<
-    "input" | "output" | "cache_read" | "cache_write",
-    { zh: string; en: string }
-  > = {
-    input: { zh: "输入", en: "Input" },
-    output: { zh: "输出", en: "Output" },
-    cache_read: { zh: "缓存读取", en: "Cache Read" },
-    cache_write: { zh: "缓存写入", en: "Cache Write" },
-  };
-
-  return labels[key][locale === "zh-CN" ? "zh" : "en"];
-}
-
-const selectClassName =
-  "w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground";
-
-function apiErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
-
-function itemKey(
-  item: Pick<FormItem, "channel_id" | "credential_id" | "model_name">,
-) {
-  return `${item.channel_id}::${item.credential_id}::${item.model_name}`;
-}
-
-function isGroupEnabled(
-  group: Pick<GroupRow, "enabled_member_count" | "is_route_group">,
-) {
-  return group.is_route_group || group.enabled_member_count > 0;
-}
-
-function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
-  if (
-    fromIndex === toIndex ||
-    fromIndex < 0 ||
-    toIndex < 0 ||
-    fromIndex >= items.length ||
-    toIndex >= items.length
-  ) {
-    return items;
-  }
-  const nextItems = items.slice();
-  const [target] = nextItems.splice(fromIndex, 1);
-  nextItems.splice(toIndex, 0, target);
-  return nextItems;
-}
-
-type ProtocolMeta = {
-  id: string;
-  site_id: string;
-  name: string;
-  base_url: string;
-  protocol: ProtocolKind;
-};
-
-function channelEndpoint(channel?: ProtocolMeta) {
-  if (!channel) return "";
-  return channel.base_url || "";
-}
-
-function protocolBaseUrl(site: Site, baseUrlId: string) {
-  const bound = site.base_urls.find((item) => item.id === baseUrlId);
-  return bound?.url || "";
-}
-
-function toForm(group: ModelGroup): FormState {
-  return {
-    name: group.name,
-    protocols: group.protocols,
-    strategy: group.strategy,
-    route_group_id: group.route_group_id ?? "",
-    sync_filter_mode: group.sync_filter_mode,
-    sync_filter_query: group.sync_filter_query,
-    input_price_per_million: String(group.input_price_per_million),
-    output_price_per_million: String(group.output_price_per_million),
-    cache_read_price_per_million: String(group.cache_read_price_per_million),
-    cache_write_price_per_million: String(group.cache_write_price_per_million),
-    items: group.items
-      .slice()
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map((item) => ({
-        channel_id: item.channel_id,
-        channel_name: item.channel_name,
-        protocol: item.protocol,
-        credential_id: item.credential_id,
-        credential_name: item.credential_name,
-        credential_number: item.credential_number,
-        model_name: item.model_name,
-        enabled: item.enabled,
-      })),
-  };
-}
-
-function toPayload(form: FormState): ModelGroupPayload {
-  return {
-    name: form.name.trim(),
-    protocols: form.protocols,
-    strategy: form.strategy,
-    route_group_id: form.route_group_id.trim(),
-    sync_filter_mode:
-      form.route_group_id.trim() || !form.sync_filter_query.trim()
-        ? ""
-        : form.sync_filter_mode,
-    sync_filter_query: form.route_group_id.trim()
-      ? ""
-      : form.sync_filter_query.trim(),
-    items: form.items.map((item) => ({
-      channel_id: item.channel_id,
-      credential_id: item.credential_id,
-      model_name: item.model_name,
-      enabled: item.enabled,
-    })),
-  };
-}
-
-function CompactPriceSummary({
-  locale,
-  inputPrice,
-  outputPrice,
-  cacheReadPrice,
-  cacheWritePrice,
-}: {
-  locale: "zh-CN" | "en-US";
-  inputPrice: number;
-  outputPrice: number;
-  cacheReadPrice: number;
-  cacheWritePrice: number;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span>
-            {metricLabel("input", locale)} ${formatMoney(inputPrice)}
-          </span>
-          <span>
-            {metricLabel("output", locale)} ${formatMoney(outputPrice)}
-          </span>
-          <span>
-            {metricLabel("cache_read", locale)} ${formatMoney(cacheReadPrice)}
-          </span>
-          <span>
-            {metricLabel("cache_write", locale)} ${formatMoney(cacheWritePrice)}
-          </span>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="top" align="start">
-        <div className="grid gap-1">
-          <div>
-            {metricLabel("input", locale)}: ${formatMoney(inputPrice)} / 1M
-            tokens
-          </div>
-          <div>
-            {metricLabel("output", locale)}: ${formatMoney(outputPrice)} / 1M
-            tokens
-          </div>
-          <div>
-            {metricLabel("cache_read", locale)}: ${formatMoney(cacheReadPrice)}{" "}
-            / 1M tokens
-          </div>
-          <div>
-            {metricLabel("cache_write", locale)}: $
-            {formatMoney(cacheWritePrice)} / 1M tokens
-          </div>
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function EditablePriceRow({
-  locale,
-  primaryLabel,
-  primaryValue,
-  secondaryLabel,
-  secondaryValue,
-  onPrimaryChange,
-  onSecondaryChange,
-}: {
-  locale: "zh-CN" | "en-US";
-  primaryLabel: "input" | "output";
-  primaryValue: string;
-  secondaryLabel: "cache_read" | "cache_write";
-  secondaryValue: string;
-  onPrimaryChange: (value: string) => void;
-  onSecondaryChange: (value: string) => void;
-}) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <Field className="min-w-0">
-        <FieldLabel>${metricLabel(primaryLabel, locale)}</FieldLabel>
-        <Input
-          className="mt-2"
-          value={primaryValue}
-          onChange={(event) => onPrimaryChange(event.target.value)}
-        />
-      </Field>
-
-      <Field className="min-w-0">
-        <FieldLabel>${metricLabel(secondaryLabel, locale)}</FieldLabel>
-        <Input
-          className="mt-2"
-          value={secondaryValue}
-          onChange={(event) => onSecondaryChange(event.target.value)}
-        />
-      </Field>
-    </div>
-  );
-}
-
-function StrategyToggle({
-  value,
-  locale,
-  disabled = false,
-  size = "default",
-  className,
-  onChange,
-}: {
-  value: RoutingStrategy;
-  locale: "zh-CN" | "en-US";
-  disabled?: boolean;
-  size?: "default" | "sm";
-  className?: string;
-  onChange: (value: RoutingStrategy) => void;
-}) {
-  return (
-    <ToggleGroup
-      type="single"
-      value={value}
-      onValueChange={(nextValue) => {
-        if (nextValue) {
-          onChange(nextValue as RoutingStrategy);
-        }
-      }}
-      variant="outline"
-      size={size}
-      spacing={1}
-      className={cn("max-w-full flex-wrap", className)}
-    >
-      {strategyOptions.map((option) => (
-        <ToggleGroupItem
-          key={option.value}
-          value={option.value}
-          disabled={disabled}
-          className="max-w-full"
-        >
-          {locale === "zh-CN" ? option.zh : option.en}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  );
-}
-
-function CandidateRow({
-  candidate,
-  active,
-  selectedProtocols,
-  locale,
-  onClick,
-}: {
-  candidate: ModelGroupCandidateItem;
-  active: boolean;
-  selectedProtocols: ProtocolKind[];
-  locale: "zh-CN" | "en-US";
-  onClick: () => void;
-}) {
-  const nativeProtocols = candidate.protocols;
-
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      className={cn(
-        "h-auto min-h-8 w-full justify-between rounded-md px-3 py-1.5 text-left",
-        active ? "cursor-not-allowed opacity-60" : "hover:bg-muted",
-      )}
-      onClick={onClick}
-      disabled={active}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">
-          {candidate.model_name}
-        </div>
-      </div>
-      <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5">
-        {nativeProtocols.map((p) => {
-          const usable = isItemValidForProtocols(p, selectedProtocols);
-          return (
-            <Badge
-              key={p}
-              variant="outline"
-              className={cn(
-                "px-1.5 py-0 text-[10px] font-normal",
-                usable
-                  ? protocolBadgeClassName(p)
-                  : "border-transparent bg-muted/50 text-muted-foreground/50",
-              )}
-            >
-              {protocolLabel(p, locale)}
-            </Badge>
-          );
-        })}
-        <span className="text-muted-foreground">
-          {active ? (
-            <Check size={15} className="text-primary" />
-          ) : (
-            <Plus size={15} />
-          )}
-        </span>
-      </div>
-    </Button>
-  );
-}
-
-function FoldedMemberRow({
-  member,
-  index,
-  dragging,
-  busy,
-  onToggle,
-  onRemove,
-  onDragStart,
-  onDragEnter,
-  onDragEnd,
-  locale,
-}: {
-  member: FoldedMember;
-  index: number;
-  dragging: boolean;
-  busy: boolean;
-  onToggle: () => void;
-  onRemove: () => void;
-  onDragStart: () => void;
-  onDragEnter: () => void;
-  onDragEnd: () => void;
-  locale: "zh-CN" | "en-US";
-}) {
-  const sourceLabel = foldedMemberSourceLabel(member, locale);
-
-  return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnter={onDragEnter}
-      onDragOver={(event) => event.preventDefault()}
-      onDragEnd={onDragEnd}
-      className={cn(
-        "flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0",
-        dragging && "opacity-60 shadow-sm",
-        !member.enabled && "opacity-55",
-        member.invalid && "border border-destructive bg-destructive/10",
-      )}
-    >
-      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
-        {index + 1}
-      </span>
-      <span className="cursor-grab text-muted-foreground active:cursor-grabbing">
-        <GripVertical size={14} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">
-          {member.model_name}
-        </div>
-        <div className="truncate text-xs text-muted-foreground">
-          {sourceLabel}
-          {!member.enabled
-            ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
-            : ""}
-        </div>
-      </div>
-      <div className="flex h-8 w-8 items-center justify-center">
-        <Switch
-          checked={member.enabled}
-          disabled={busy}
-          onCheckedChange={onToggle}
-        />
-      </div>
-      {member.invalid ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="grid h-8 w-8 shrink-0 place-items-center text-destructive">
-              <AlertCircle size={15} />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>
-            {locale === "zh-CN"
-              ? "不适用于当前所选的对外协议"
-              : "Invalid for current protocols"}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="text-muted-foreground hover:text-destructive"
-        onClick={onRemove}
-      >
-        <X size={13} />
-      </Button>
-    </div>
-  );
-}
-
-function SeriesChip({
-  selected,
-  label,
-  sampleModel,
-  onClick,
-  isAll = false,
-}: {
-  selected: boolean;
-  label: string;
-  sampleModel: string;
-  onClick: () => void;
-  isAll?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        "group flex min-w-[76px] snap-start items-center justify-center rounded-[22px] border bg-card px-4 py-4 text-center transition-all",
-        selected
-          ? "border-primary bg-primary/[0.05] shadow-[0_0_0_1px_rgba(37,99,235,0.08)]"
-          : "border-border/70 hover:border-primary/25 hover:bg-muted/20",
-      )}
-    >
-      <span
-        className={cn(
-          "flex size-11 items-center justify-center rounded-2xl border bg-background",
-          selected ? "border-primary/20 bg-primary/[0.06]" : "border-border/60",
-        )}
-      >
-        {isAll ? (
-          <LayoutGrid
-            size={20}
-            className={selected ? "text-primary" : "text-muted-foreground"}
-          />
-        ) : (
-          <ModelAvatar name={sampleModel} size={28} />
-        )}
-      </span>
-    </button>
-  );
-}
+const GroupEditorDialog = dynamic(() =>
+  import("./groups/dialogs").then((module) => module.GroupEditorDialog),
+);
+const DeleteGroupDialog = dynamic(() =>
+  import("./groups/dialogs").then((module) => module.DeleteGroupDialog),
+);
 
 export function GroupsScreen() {
   const queryClient = useQueryClient();
@@ -952,27 +139,32 @@ export function GroupsScreen() {
   const channelMap = useMemo(() => {
     const map = new Map<string, ProtocolMeta>();
     for (const site of sites ?? []) {
-      for (const combo of site.protocols) {
-        const baseUrl = site.base_urls.find((b) => b.id === combo.base_url_id);
+      for (const protocolConfig of site.protocols) {
+        const baseUrl = site.base_urls.find(
+          (b) => b.id === protocolConfig.base_url_id,
+        );
         const baseUrlStr =
-          baseUrl?.url ?? protocolBaseUrl(site, combo.base_url_id);
-        for (const p of combo.protocols) {
-          const compositeId = `${combo.id}_${p}`;
-          map.set(compositeId, {
-            id: compositeId,
+          baseUrl?.url ?? protocolBaseUrl(site, protocolConfig.base_url_id);
+        for (const p of protocolConfig.protocols) {
+          const runtimeChannelId = `${protocolConfig.id}_${p}`;
+          map.set(runtimeChannelId, {
+            id: runtimeChannelId,
             site_id: site.id,
             name: site.name,
             base_url: baseUrlStr,
             protocol: p,
           });
         }
-        if (!map.has(combo.id) && combo.protocols.length > 0) {
-          map.set(combo.id, {
-            id: combo.id,
+        if (
+          !map.has(protocolConfig.id) &&
+          protocolConfig.protocols.length > 0
+        ) {
+          map.set(protocolConfig.id, {
+            id: protocolConfig.id,
             site_id: site.id,
             name: site.name,
             base_url: baseUrlStr,
-            protocol: combo.protocols[0],
+            protocol: protocolConfig.protocols[0],
           });
         }
       }
@@ -1154,7 +346,7 @@ export function GroupsScreen() {
       const channel = channelMap.get(candidate.channel_id);
       const channelName = channel?.name || candidate.channel_name;
       const groupKey =
-        candidate.combo_id ||
+        candidate.protocol_config_id ||
         channel?.site_id ||
         candidate.site_id ||
         candidate.channel_id;
@@ -1183,13 +375,17 @@ export function GroupsScreen() {
     const memberMap = new Map<string, FoldedMember>();
 
     for (const item of form.items) {
-      const comboId = comboIdFromChannelId(item.channel_id);
-      const key = modelFoldKey(comboId, item.credential_id, item.model_name);
+      const protocolConfigId = protocolConfigIdFromChannelId(item.channel_id);
+      const key = modelFoldKey(
+        protocolConfigId,
+        item.credential_id,
+        item.model_name,
+      );
       if (!memberMap.has(key)) {
         orderMap.set(key, orderMap.size);
         memberMap.set(key, {
           key,
-          combo_id: comboId,
+          protocolConfigId,
           model_name: item.model_name,
           credential_id: item.credential_id,
           credential_name: item.credential_name,
@@ -1491,9 +687,13 @@ export function GroupsScreen() {
     setForm((current) => {
       const toRemove = new Set<string>();
       for (const item of current.items) {
-        const comboId = comboIdFromChannelId(item.channel_id);
+        const protocolConfigId = protocolConfigIdFromChannelId(item.channel_id);
         if (
-          modelFoldKey(comboId, item.credential_id, item.model_name) === foldKey
+          modelFoldKey(
+            protocolConfigId,
+            item.credential_id,
+            item.model_name,
+          ) === foldKey
         ) {
           toRemove.add(itemKey(item));
         }
@@ -1509,9 +709,13 @@ export function GroupsScreen() {
     setForm((current) => ({
       ...current,
       items: current.items.map((item) => {
-        const comboId = comboIdFromChannelId(item.channel_id);
+        const protocolConfigId = protocolConfigIdFromChannelId(item.channel_id);
         if (
-          modelFoldKey(comboId, item.credential_id, item.model_name) === foldKey
+          modelFoldKey(
+            protocolConfigId,
+            item.credential_id,
+            item.model_name,
+          ) === foldKey
         ) {
           return { ...item, enabled };
         }
@@ -1525,8 +729,12 @@ export function GroupsScreen() {
       const orderMap = new Map<string, number>();
       const memberMap = new Map<string, FormItem[]>();
       for (const item of current.items) {
-        const comboId = comboIdFromChannelId(item.channel_id);
-        const key = modelFoldKey(comboId, item.credential_id, item.model_name);
+        const protocolConfigId = protocolConfigIdFromChannelId(item.channel_id);
+        const key = modelFoldKey(
+          protocolConfigId,
+          item.credential_id,
+          item.model_name,
+        );
         if (!memberMap.has(key)) {
           orderMap.set(key, orderMap.size);
           memberMap.set(key, []);
@@ -1806,8 +1014,12 @@ export function GroupsScreen() {
     setForm((current) => ({
       ...current,
       items: current.items.filter((item) => {
-        const comboId = comboIdFromChannelId(item.channel_id);
-        const key = modelFoldKey(comboId, item.credential_id, item.model_name);
+        const protocolConfigId = protocolConfigIdFromChannelId(item.channel_id);
+        const key = modelFoldKey(
+          protocolConfigId,
+          item.credential_id,
+          item.model_name,
+        );
         return !invalidKeys.has(key);
       }),
     }));
@@ -1857,992 +1069,90 @@ export function GroupsScreen() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
-        <div className="order-2 grid gap-4 xl:order-1">
-          {hasModelPrefixOptions ? (
-            <div className="rounded-2xl border bg-card px-4 py-3 sm:px-5 sm:py-4">
-              <div className="flex items-center justify-between gap-3 sm:mb-3">
-                <div>
-                  <div className="text-base font-semibold text-foreground">
-                    {locale === "zh-CN"
-                      ? "选择模型系列"
-                      : "Choose model series"}
-                  </div>
-                </div>
-              </div>
+      <GroupsOverview
+        locale={locale}
+        hasModelPrefixOptions={hasModelPrefixOptions}
+        modelPrefixOptions={modelPrefixOptions}
+        effectiveSelectedModelPrefix={effectiveSelectedModelPrefix}
+        setSelectedModelPrefix={setSelectedModelPrefix}
+        isLoading={isLoading}
+        groupsIsError={groupsIsError}
+        visibleGroups={visibleGroups}
+        busyId={busyId}
+        cardDragging={cardDragging}
+        setCardDragging={setCardDragging}
+        search={search}
+        protocolFilter={protocolFilter}
+        strategyFilter={strategyFilter}
+        sortBy={sortBy}
+        activeFilterCount={activeFilterCount}
+        setSearch={setSearch}
+        setProtocolFilter={setProtocolFilter}
+        setStrategyFilter={setStrategyFilter}
+        setSortBy={setSortBy}
+        resetFilters={resetFilters}
+        openEdit={openEdit}
+        changeStrategy={changeStrategy}
+        reorderGroupMembers={reorderGroupMembers}
+        removeGroupMember={removeGroupMember}
+        toggleGroupEnabled={toggleGroupEnabled}
+        setDeleteTarget={setDeleteTarget}
+      />
 
-              <NativeSelect
-                className="mt-3 w-full sm:hidden"
-                value={effectiveSelectedModelPrefix}
-                onChange={(event) => setSelectedModelPrefix(event.target.value)}
-              >
-                {modelPrefixOptions.map((option) => (
-                  <NativeSelectOption key={option.key} value={option.key}>
-                    {option.label}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+      {dialogOpen ? (
+        <GroupEditorDialog
+          dialogOpen={dialogOpen}
+          setDialogOpen={setDialogOpen}
+          editingId={editingId}
+          locale={locale}
+          submit={submit}
+          form={form}
+          setForm={setForm}
+          toggleProtocol={toggleProtocol}
+          routeTargetOptions={routeTargetOptions}
+          changeRouteTarget={changeRouteTarget}
+          candidateSearchMode={candidateSearchMode}
+          changeCandidateSearchMode={changeCandidateSearchMode}
+          candidateSearch={candidateSearch}
+          changeCandidateSearch={changeCandidateSearch}
+          addMatchedItems={addMatchedItems}
+          candidateRegexInvalid={candidateRegexInvalid}
+          filteredCandidates={filteredCandidates}
+          refetchCandidates={refetchCandidates}
+          isFetchingCandidates={isFetchingCandidates}
+          applySavedFilter={applySavedFilter}
+          clearSavedFilter={clearSavedFilter}
+          groupedCandidates={groupedCandidates}
+          expandedChannels={expandedChannels}
+          toggleChannel={toggleChannel}
+          foldedMembers={foldedMembers}
+          addCandidate={addCandidate}
+          sitesIsError={sitesIsError}
+          candidateIsError={candidateIsError}
+          candidateListError={candidateListError}
+          invalidSelectedMemberCount={invalidSelectedMemberCount}
+          removeInvalidItems={removeInvalidItems}
+          setAllMembersEnabled={setAllMembersEnabled}
+          showEnabledOnly={showEnabledOnly}
+          setShowEnabledOnly={setShowEnabledOnly}
+          visibleFoldedMembers={visibleFoldedMembers}
+          draggingIndex={draggingIndex}
+          toggleFoldedMember={toggleFoldedMember}
+          removeFoldedMember={removeFoldedMember}
+          setDraggingIndex={setDraggingIndex}
+          moveFoldedMember={moveFoldedMember}
+        />
+      ) : null}
 
-              <div className="hidden snap-x gap-3 overflow-x-auto pb-1 sm:flex">
-                {modelPrefixOptions.map((option) => (
-                  <SeriesChip
-                    key={option.key}
-                    selected={effectiveSelectedModelPrefix === option.key}
-                    label={option.label}
-                    sampleModel={option.sampleModel}
-                    isAll={option.key === "all"}
-                    onClick={() => setSelectedModelPrefix(option.key)}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-18rem)]">
-            <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
-              {isLoading || groupsIsError ? null : visibleGroups.length ? (
-                <ItemGroup className="gap-3">
-                  {visibleGroups.map((group) => {
-                    const GroupAvatar = getModelGroupAvatar(group.name);
-                    return (
-                      <Item
-                        key={group.id}
-                        variant="outline"
-                        role="button"
-                        tabIndex={0}
-                        className="items-start gap-3 rounded-2xl border-border/80 bg-background px-4 py-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
-                        onClick={() => openEdit(group)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            openEdit(group);
-                          }
-                        }}
-                      >
-                        <ItemMedia
-                          variant="icon"
-                          className="mt-0.5 hidden size-11 self-start rounded-xl bg-muted/40 sm:flex"
-                        >
-                          <GroupAvatar size={30} />
-                        </ItemMedia>
-                        <ItemContent className="min-w-0">
-                          <div className="flex flex-col gap-1.5">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <ItemTitle className="truncate text-base">
-                                {group.name}
-                              </ItemTitle>
-                              <div className="flex flex-wrap gap-1.5">
-                                {group.protocols.map((protocol) => (
-                                  <Badge
-                                    key={protocol}
-                                    variant="outline"
-                                    className={cn(
-                                      "px-2.5 py-0.5",
-                                      protocolBadgeClassName(protocol),
-                                    )}
-                                  >
-                                    {protocolLabel(protocol, locale)}
-                                  </Badge>
-                                ))}
-                              </div>
-                              {group.is_route_group ? (
-                                <Badge
-                                  variant="outline"
-                                  className="px-2.5 py-0.5"
-                                >
-                                  {locale === "zh-CN"
-                                    ? "路由组"
-                                    : "Route group"}
-                                </Badge>
-                              ) : null}
-                            </div>
-                            {group.is_route_group ? (
-                              <ItemDescription className="text-sm">
-                                {`${group.name} -> ${group.route_group_name || group.route_group_id || "n/a"}`}
-                              </ItemDescription>
-                            ) : (
-                              <CompactPriceSummary
-                                locale={locale}
-                                inputPrice={group.input_price_per_million}
-                                outputPrice={group.output_price_per_million}
-                                cacheReadPrice={
-                                  group.cache_read_price_per_million
-                                }
-                                cacheWritePrice={
-                                  group.cache_write_price_per_million
-                                }
-                              />
-                            )}
-                          </div>
-                          {!group.is_route_group ? (
-                            <ItemFooter
-                              className="mt-3 flex flex-wrap items-center gap-2.5"
-                              onClick={(event) => event.stopPropagation()}
-                              onKeyDown={(event) => event.stopPropagation()}
-                            >
-                              <StrategyToggle
-                                value={group.strategy}
-                                locale={locale}
-                                disabled={busyId === group.id}
-                                size="sm"
-                                className="w-fit max-w-full"
-                                onChange={(value) =>
-                                  void changeStrategy(group, value)
-                                }
-                              />
-                            </ItemFooter>
-                          ) : null}
-                          <div
-                            className="mt-3 flex flex-wrap items-center gap-2"
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => event.stopPropagation()}
-                          >
-                            {group.is_route_group ? (
-                              <Badge variant="outline" className="px-3 py-1.5">
-                                {group.route_group_name ||
-                                  group.route_group_id ||
-                                  "n/a"}
-                              </Badge>
-                            ) : group.display_members.length ? (
-                              group.display_members.map((member, index) => {
-                                const channelName =
-                                  member.channel_names
-                                    .slice(0, 2)
-                                    .join(" · ") || "n/a";
-                                const sourceLabel = `${channelName} · ${credentialNumberLabel(member, locale)}`;
-                                return (
-                                  <div
-                                    key={`${member.key}::${index}`}
-                                    className={cn(
-                                      "flex min-w-0 max-w-full items-center rounded-full border bg-background",
-                                      !member.enabled && "opacity-55",
-                                      cardDragging?.groupId === group.id &&
-                                        cardDragging.index === index &&
-                                        "opacity-60",
-                                    )}
-                                    title={`${sourceLabel} · ${member.model_name}`}
-                                  >
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      draggable={busyId !== group.id}
-                                      className="h-auto min-w-0 max-w-full rounded-full rounded-r-none border-0 px-3 py-1.5 cursor-grab active:cursor-grabbing"
-                                      onDragStart={() =>
-                                        setCardDragging({
-                                          groupId: group.id,
-                                          index,
-                                        })
-                                      }
-                                      onDragOver={(event) =>
-                                        event.preventDefault()
-                                      }
-                                      onDrop={() => {
-                                        if (
-                                          !cardDragging ||
-                                          cardDragging.groupId !== group.id
-                                        )
-                                          return;
-                                        void reorderGroupMembers(
-                                          group,
-                                          cardDragging.index,
-                                          index,
-                                        );
-                                      }}
-                                      onDragEnd={() => setCardDragging(null)}
-                                    >
-                                      <GripVertical data-icon="inline-start" />
-                                      <span className="min-w-0 truncate">
-                                        {member.model_name}
-                                      </span>
-                                      <span className="min-w-0 truncate text-muted-foreground">
-                                        · {sourceLabel}
-                                      </span>
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon-xs"
-                                      className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
-                                      disabled={busyId === group.id}
-                                      onClick={() =>
-                                        void removeGroupMember(
-                                          group,
-                                          member.key,
-                                        )
-                                      }
-                                    >
-                                      <X />
-                                    </Button>
-                                  </div>
-                                );
-                              })
-                            ) : (
-                              <ItemDescription className="text-sm">
-                                {locale === "zh-CN" ? "暂无成员" : "No members"}
-                              </ItemDescription>
-                            )}
-                          </div>
-                        </ItemContent>
-                        <ItemActions
-                          className="basis-full flex-wrap justify-end self-start sm:ml-auto sm:basis-auto sm:shrink-0"
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => event.stopPropagation()}
-                        >
-                          <Switch
-                            checked={isGroupEnabled(group)}
-                            disabled={
-                              group.is_route_group ||
-                              busyId === group.id ||
-                              !group.items.length
-                            }
-                            onCheckedChange={(checked) =>
-                              void toggleGroupEnabled(group, checked)
-                            }
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => setDeleteTarget(group)}
-                          >
-                            <Trash2 data-icon="inline-start" />
-                            {locale === "zh-CN" ? "删除" : "Delete"}
-                          </Button>
-                        </ItemActions>
-                      </Item>
-                    );
-                  })}
-                </ItemGroup>
-              ) : (
-                <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-                  {effectiveSelectedModelPrefix !== "all" ||
-                  search.trim() ||
-                  protocolFilter !== "all" ||
-                  strategyFilter !== "all"
-                    ? locale === "zh-CN"
-                      ? "没有匹配的模型组。"
-                      : "No matching groups."
-                    : locale === "zh-CN"
-                      ? "当前还没有模型组。"
-                      : "No groups yet."}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <aside className="order-1 xl:order-2">
-          <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary/[0.08] text-primary">
-                  <Filter size={16} />
-                </span>
-                <div>
-                  <div className="text-sm font-semibold text-foreground">
-                    {locale === "zh-CN" ? "筛选" : "Filters"}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {locale === "zh-CN"
-                      ? `已启用 ${activeFilterCount} 项`
-                      : `${activeFilterCount} active`}
-                  </div>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={resetFilters}
-                disabled={!activeFilterCount && sortBy === "members-desc"}
-              >
-                {locale === "zh-CN" ? "清空" : "Clear"}
-              </Button>
-            </div>
-
-            <FieldSet className="gap-4">
-              <FieldLegend>
-                {locale === "zh-CN" ? "筛选条件" : "Refine results"}
-              </FieldLegend>
-              <FieldGroup className="gap-4">
-                <Field>
-                  <FieldLabel>
-                    {locale === "zh-CN" ? "关键词" : "Keyword"}
-                  </FieldLabel>
-                  <ToolbarSearchInput
-                    value={search}
-                    onChange={setSearch}
-                    onClear={() => setSearch("")}
-                    placeholder={
-                      locale === "zh-CN"
-                        ? "模型组 / 渠道 / 模型"
-                        : "Group / channel / model"
-                    }
-                    className="max-w-none"
-                  />
-                </Field>
-
-                <Field>
-                  <FieldLabel>
-                    {locale === "zh-CN" ? "协议" : "Protocol"}
-                  </FieldLabel>
-                  <NativeSelect
-                    value={protocolFilter}
-                    className="w-full"
-                    onChange={(event) =>
-                      setProtocolFilter(
-                        event.target.value as "all" | ProtocolKind,
-                      )
-                    }
-                  >
-                    <NativeSelectOption value="all">
-                      {locale === "zh-CN" ? "全部协议" : "All protocols"}
-                    </NativeSelectOption>
-                    {protocolOptions(locale).map((option) => (
-                      <NativeSelectOption
-                        key={option.value}
-                        value={option.value}
-                      >
-                        {option.label}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                </Field>
-
-                <Field>
-                  <FieldLabel>
-                    {locale === "zh-CN" ? "策略" : "Strategy"}
-                  </FieldLabel>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {[
-                      {
-                        key: "all" as const,
-                        label: locale === "zh-CN" ? "全部" : "All",
-                      },
-                      {
-                        key: "round_robin" as const,
-                        label: locale === "zh-CN" ? "轮询" : "Round Robin",
-                      },
-                      {
-                        key: "failover" as const,
-                        label: locale === "zh-CN" ? "故障转移" : "Failover",
-                      },
-                    ].map((option) => (
-                      <Button
-                        key={option.key}
-                        type="button"
-                        variant={
-                          strategyFilter === option.key ? "default" : "outline"
-                        }
-                        size="sm"
-                        onClick={() => setStrategyFilter(option.key)}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </div>
-                </Field>
-
-                <Field>
-                  <FieldLabel>
-                    {locale === "zh-CN" ? "排序" : "Sort"}
-                  </FieldLabel>
-                  <NativeSelect
-                    value={sortBy}
-                    className="w-full"
-                    onChange={(event) =>
-                      setSortBy(event.target.value as GroupSort)
-                    }
-                  >
-                    <NativeSelectOption value="members-desc">
-                      {locale === "zh-CN" ? "成员优先" : "Members first"}
-                    </NativeSelectOption>
-                    <NativeSelectOption value="enabled-desc">
-                      {locale === "zh-CN" ? "启用优先" : "Enabled first"}
-                    </NativeSelectOption>
-                    <NativeSelectOption value="name-asc">
-                      {locale === "zh-CN" ? "名称 A-Z" : "Name A-Z"}
-                    </NativeSelectOption>
-                    <NativeSelectOption value="name-desc">
-                      {locale === "zh-CN" ? "名称 Z-A" : "Name Z-A"}
-                    </NativeSelectOption>
-                  </NativeSelect>
-                </Field>
-              </FieldGroup>
-            </FieldSet>
-          </div>
-        </aside>
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AppDialogContent
-          className="h-[92dvh] max-w-6xl sm:h-[88vh]"
-          title={
-            editingId
-              ? locale === "zh-CN"
-                ? "编辑模型组"
-                : "Edit group"
-              : locale === "zh-CN"
-                ? "新建模型组"
-                : "Create group"
-          }
-        >
-          <form className="flex flex-col gap-4 pr-1" onSubmit={submit}>
-            <div className="flex flex-col gap-4">
-              <section className="grid gap-4">
-                <div className="text-base font-semibold text-foreground">
-                  {locale === "zh-CN" ? "基本信息" : "Group settings"}
-                </div>
-                <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "协议" : "External Protocols"}
-                    </FieldLabel>
-                    <ProtocolMultiSelect
-                      value={form.protocols}
-                      onChange={(next) => {
-                        const changedProtocols = protocolOptions(locale)
-                          .map((option) => option.value)
-                          .filter(
-                            (protocol) =>
-                              form.protocols.includes(protocol) !==
-                              next.includes(protocol),
-                          );
-                        if (changedProtocols.length === 1) {
-                          toggleProtocol(changedProtocols[0]);
-                          return;
-                        }
-                        setForm((current) => ({
-                          ...current,
-                          protocols: next,
-                        }));
-                      }}
-                      locale={locale}
-                      invalid={form.protocols.length === 0}
-                    />
-                    {form.protocols.length === 0 ? (
-                      <p className="text-sm text-destructive">
-                        {locale === "zh-CN"
-                          ? "至少需要选择一项协议。"
-                          : "At least one protocol is required."}
-                      </p>
-                    ) : null}
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="group-name">
-                      {locale === "zh-CN" ? "模型组名称" : "Group name"}
-                    </FieldLabel>
-                    <Input
-                      id="group-name"
-                      placeholder={
-                        locale === "zh-CN"
-                          ? "输入模型组名称"
-                          : "Enter group name"
-                      }
-                      value={form.name}
-                      onChange={(e) =>
-                        setForm({ ...form, name: e.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="group-route-target">
-                      {locale === "zh-CN"
-                        ? "路由目标模型组"
-                        : "Route target group"}
-                    </FieldLabel>
-                    <NativeSelect
-                      id="group-route-target"
-                      className={selectClassName}
-                      value={form.route_group_id}
-                      onChange={(event) =>
-                        changeRouteTarget(event.target.value)
-                      }
-                    >
-                      <NativeSelectOption value="">
-                        {locale === "zh-CN"
-                          ? "不启用模型组路由"
-                          : "No group routing"}
-                      </NativeSelectOption>
-                      {routeTargetOptions.map((group) => (
-                        <NativeSelectOption key={group.id} value={group.id}>
-                          {group.name}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
-                  </Field>
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "模型组策略" : "Group strategy"}
-                    </FieldLabel>
-                    <StrategyToggle
-                      value={form.strategy}
-                      locale={locale}
-                      disabled={Boolean(form.route_group_id)}
-                      onChange={(value) =>
-                        setForm((current) => ({ ...current, strategy: value }))
-                      }
-                    />
-                  </Field>
-                </FieldGroup>
-              </section>
-
-              {!form.route_group_id ? (
-                <>
-                  <Separator />
-
-                  <section className="grid gap-4">
-                    <div className="text-base font-semibold text-foreground">
-                      {locale === "zh-CN" ? "价格" : "Pricing"}
-                    </div>
-                    <div className="grid gap-3 xl:grid-cols-2">
-                      <EditablePriceRow
-                        locale={locale}
-                        primaryLabel="input"
-                        primaryValue={form.input_price_per_million}
-                        secondaryLabel="cache_read"
-                        secondaryValue={form.cache_read_price_per_million}
-                        onPrimaryChange={(value) =>
-                          setForm((current) => ({
-                            ...current,
-                            input_price_per_million: value,
-                          }))
-                        }
-                        onSecondaryChange={(value) =>
-                          setForm((current) => ({
-                            ...current,
-                            cache_read_price_per_million: value,
-                          }))
-                        }
-                      />
-                      <EditablePriceRow
-                        locale={locale}
-                        primaryLabel="output"
-                        primaryValue={form.output_price_per_million}
-                        secondaryLabel="cache_write"
-                        secondaryValue={form.cache_write_price_per_million}
-                        onPrimaryChange={(value) =>
-                          setForm((current) => ({
-                            ...current,
-                            output_price_per_million: value,
-                          }))
-                        }
-                        onSecondaryChange={(value) =>
-                          setForm((current) => ({
-                            ...current,
-                            cache_write_price_per_million: value,
-                          }))
-                        }
-                      />
-                    </div>
-                  </section>
-
-                  <Separator />
-
-                  <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-                    <section className="flex flex-col rounded-lg bg-muted/10">
-                      <div className="grid gap-3 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                        <div className="grid min-w-0 gap-2 sm:grid-cols-[128px_minmax(0,1fr)]">
-                          <NativeSelect
-                            size="sm"
-                            className="w-full"
-                            value={candidateSearchMode}
-                            onChange={(event) =>
-                              changeCandidateSearchMode(
-                                event.target.value as CandidateSearchMode,
-                              )
-                            }
-                          >
-                            <NativeSelectOption value="contains">
-                              {locale === "zh-CN" ? "包含" : "Contains"}
-                            </NativeSelectOption>
-                            <NativeSelectOption value="regex">
-                              {locale === "zh-CN" ? "正则" : "Regex"}
-                            </NativeSelectOption>
-                          </NativeSelect>
-                          <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
-                            <Search
-                              size={14}
-                              className="text-muted-foreground"
-                            />
-                            <Input
-                              className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0"
-                              value={candidateSearch}
-                              onChange={(e) =>
-                                changeCandidateSearch(e.target.value)
-                              }
-                              placeholder={
-                                candidateSearchMode === "regex"
-                                  ? locale === "zh-CN"
-                                    ? "输入正则表达式"
-                                    : "Enter regular expression"
-                                  : locale === "zh-CN"
-                                    ? "输入包含条件"
-                                    : "Enter contains filter"
-                              }
-                            />
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={addMatchedItems}
-                            disabled={
-                              form.protocols.length === 0 ||
-                              candidateRegexInvalid ||
-                              (!filteredCandidates.length &&
-                                !candidateSearch.trim())
-                            }
-                          >
-                            <Sparkles size={13} />
-                            {candidateSearch.trim()
-                              ? locale === "zh-CN"
-                                ? `加入并保存筛选 ${filteredCandidates.length}`
-                                : `Add and save filter ${filteredCandidates.length}`
-                              : locale === "zh-CN"
-                                ? `加入全部 ${filteredCandidates.length}`
-                                : `Add all ${filteredCandidates.length}`}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => void refetchCandidates()}
-                            disabled={
-                              isFetchingCandidates ||
-                              form.protocols.length === 0
-                            }
-                          >
-                            <RefreshCcw size={13} />
-                            {locale === "zh-CN" ? "刷新列表" : "Refresh"}
-                          </Button>
-                        </div>
-                      </div>
-                      {candidateRegexInvalid ? (
-                        <div className="px-2 text-sm text-destructive">
-                          {locale === "zh-CN"
-                            ? "正则表达式无效"
-                            : "Invalid regex"}
-                        </div>
-                      ) : null}
-                      {form.sync_filter_mode && form.sync_filter_query ? (
-                        <div className="mx-2 mb-2 flex flex-col gap-2 rounded-md border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0 text-sm text-muted-foreground">
-                            <span className="text-foreground">
-                              {locale === "zh-CN"
-                                ? "已保存筛选"
-                                : "Saved filter"}
-                            </span>
-                            <span className="mx-2">·</span>
-                            <span>
-                              {form.sync_filter_mode === "regex"
-                                ? locale === "zh-CN"
-                                  ? "正则"
-                                  : "Regex"
-                                : locale === "zh-CN"
-                                  ? "包含"
-                                  : "Contains"}
-                            </span>
-                            <span className="mx-2">·</span>
-                            <span className="break-all">
-                              {form.sync_filter_query}
-                            </span>
-                          </div>
-                          <div className="flex shrink-0 flex-wrap items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void applySavedFilter()}
-                            >
-                              <RefreshCcw data-icon="inline-start" />
-                              {locale === "zh-CN"
-                                ? "按规则更新"
-                                : "Update by rule"}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="text-muted-foreground"
-                              onClick={clearSavedFilter}
-                            >
-                              <X data-icon="inline-start" />
-                              {locale === "zh-CN" ? "清除规则" : "Clear rule"}
-                            </Button>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div className="px-2 pb-2">
-                        <div className="flex flex-col">
-                          {groupedCandidates.map((channelGroup) => {
-                            const channelKey = channelGroup.key;
-                            const isOpen =
-                              expandedChannels.includes(channelKey);
-                            return (
-                              <div
-                                key={channelKey}
-                                className="border-b last:border-b-0"
-                              >
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  className="h-auto min-h-11 w-full justify-start gap-3 rounded-none px-3 py-2 text-left hover:bg-muted"
-                                  onClick={() => toggleChannel(channelKey)}
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <div className="truncate text-sm font-medium text-foreground">
-                                      {channelGroup.channel_name}
-                                    </div>
-                                  </div>
-                                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                                    {channelGroup.candidates.length}
-                                  </span>
-                                  <ChevronDown
-                                    size={15}
-                                    className={cn(
-                                      "text-muted-foreground transition-transform",
-                                      isOpen && "rotate-180",
-                                    )}
-                                  />
-                                </Button>
-                                {isOpen ? (
-                                  <div className="flex flex-col gap-0.5 px-3 pb-2 pt-1">
-                                    <Separator className="mb-1" />
-                                    {channelGroup.candidates.map(
-                                      (candidate) => {
-                                        const fk = modelFoldKey(
-                                          candidate.combo_id,
-                                          candidate.credential_id,
-                                          candidate.model_name,
-                                        );
-                                        const isActive = foldedMembers.some(
-                                          (m) => m.key === fk,
-                                        );
-                                        return (
-                                          <CandidateRow
-                                            key={`${candidate.combo_id}-${candidate.credential_id}-${candidate.model_name}`}
-                                            candidate={candidate}
-                                            active={isActive}
-                                            selectedProtocols={form.protocols}
-                                            locale={locale}
-                                            onClick={() =>
-                                              addCandidate(candidate)
-                                            }
-                                          />
-                                        );
-                                      },
-                                    )}
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                          {sitesIsError || candidateIsError ? (
-                            <Alert variant="destructive" className="my-2">
-                              <AlertCircle />
-                              <AlertTitle>
-                                {candidateIsError
-                                  ? locale === "zh-CN"
-                                    ? "候选模型加载失败"
-                                    : "Failed to load candidates"
-                                  : locale === "zh-CN"
-                                    ? "渠道加载失败"
-                                    : "Failed to load channels"}
-                              </AlertTitle>
-                              <AlertDescription>
-                                {candidateListError instanceof Error
-                                  ? candidateListError.message
-                                  : locale === "zh-CN"
-                                    ? "无法读取候选模型"
-                                    : "Unable to read candidates"}
-                              </AlertDescription>
-                            </Alert>
-                          ) : !groupedCandidates.length ? (
-                            <p className="px-1 py-6 text-center text-sm text-muted-foreground">
-                              {form.protocols.length === 0
-                                ? locale === "zh-CN"
-                                  ? "请先在上方选择对外协议以加载候选节点。"
-                                  : "Select external protocols above to load candidates."
-                                : locale === "zh-CN"
-                                  ? "暂无可选模型"
-                                  : "No candidates found"}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="flex flex-col rounded-lg bg-muted/10">
-                      <div className="flex flex-col items-start justify-between gap-3 px-2 py-1 sm:flex-row sm:items-center">
-                        <div className="text-sm font-medium text-foreground">
-                          {locale === "zh-CN" ? "已选模型" : "Selected models"}
-                        </div>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          {invalidSelectedMemberCount > 0 ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="text-destructive"
-                              onClick={removeInvalidItems}
-                            >
-                              <AlertCircle size={13} />
-                              {locale === "zh-CN"
-                                ? "一键移除失效节点"
-                                : "Remove invalid items"}
-                            </Button>
-                          ) : null}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="text-muted-foreground"
-                            onClick={() => setAllMembersEnabled(true)}
-                          >
-                            {locale === "zh-CN" ? "全开" : "Enable all"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="text-muted-foreground"
-                            onClick={() => setAllMembersEnabled(false)}
-                          >
-                            {locale === "zh-CN" ? "全关" : "Disable all"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant={showEnabledOnly ? "default" : "outline"}
-                            className={cn(
-                              !showEnabledOnly && "text-muted-foreground",
-                            )}
-                            onClick={() =>
-                              setShowEnabledOnly((current) => !current)
-                            }
-                          >
-                            {locale === "zh-CN" ? "仅看启用" : "Enabled only"}
-                          </Button>
-                          <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                            {visibleFoldedMembers.length}/{foldedMembers.length}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="px-2 pb-2 pt-1">
-                        <div className="flex flex-col gap-1.5">
-                          {visibleFoldedMembers.length ? (
-                            visibleFoldedMembers.map(({ member, index }) => (
-                              <FoldedMemberRow
-                                key={member.key}
-                                member={member}
-                                index={index}
-                                dragging={draggingIndex === index}
-                                busy={false}
-                                onToggle={() =>
-                                  toggleFoldedMember(
-                                    member.key,
-                                    !member.enabled,
-                                  )
-                                }
-                                onRemove={() => removeFoldedMember(member.key)}
-                                onDragStart={() => setDraggingIndex(index)}
-                                onDragEnter={() => {
-                                  if (
-                                    draggingIndex === null ||
-                                    draggingIndex === index
-                                  )
-                                    return;
-                                  moveFoldedMember(draggingIndex, index);
-                                  setDraggingIndex(index);
-                                }}
-                                onDragEnd={() => setDraggingIndex(null)}
-                                locale={locale}
-                              />
-                            ))
-                          ) : (
-                            <p className="px-1 py-6 text-center text-sm text-muted-foreground">
-                              {locale === "zh-CN"
-                                ? "当前筛选下没有成员"
-                                : "No members under current filter"}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                </>
-              ) : null}
-            </div>
-
-            <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => setDialogOpen(false)}
-                >
-                  {locale === "zh-CN" ? "取消" : "Cancel"}
-                </Button>
-                <Button type="submit" disabled={form.protocols.length === 0}>
-                  {editingId
-                    ? locale === "zh-CN"
-                      ? "保存模型组"
-                      : "Save group"
-                    : locale === "zh-CN"
-                      ? "创建模型组"
-                      : "Create group"}
-                </Button>
-              </div>
-            </div>
-          </form>
-        </AppDialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(deleteTarget)}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-      >
-        <AppDialogContent
-          className="max-w-lg"
-          title={locale === "zh-CN" ? "确认删除模型组" : "Delete group"}
-          description={
-            locale === "zh-CN"
-              ? "删除后，该模型组名称将不再参与路由匹配。"
-              : "This group will no longer participate in routing."
-          }
-        >
-          <div className="grid gap-5 overflow-y-auto pr-1">
-            <div className="rounded-md border bg-muted/30 p-4">
-              <strong>{deleteTarget?.name}</strong>
-            </div>
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                variant="outline"
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-              >
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button
-                variant="destructive"
-                type="button"
-                onClick={() => deleteTarget && void remove(deleteTarget)}
-                disabled={busyId === deleteTarget?.id}
-              >
-                {busyId === deleteTarget?.id
-                  ? locale === "zh-CN"
-                    ? "删除中..."
-                    : "Deleting..."
-                  : locale === "zh-CN"
-                    ? "确认删除"
-                    : "Delete"}
-              </Button>
-            </div>
-          </div>
-        </AppDialogContent>
-      </Dialog>
+      {deleteTarget ? (
+        <DeleteGroupDialog
+          deleteTarget={deleteTarget}
+          locale={locale}
+          busyId={busyId}
+          setDeleteTarget={setDeleteTarget}
+          remove={remove}
+        />
+      ) : null}
     </section>
   );
 }

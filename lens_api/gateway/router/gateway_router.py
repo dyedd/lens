@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
 import re
 from threading import Lock
 from time import monotonic
 
-from .converters import can_reach_protocol
-from ..models import (
+from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
+from ...models import (
     ChannelConfig,
     ChannelHealth,
     ChannelKeyHealth,
@@ -19,6 +22,7 @@ from ..models import (
     RouterSnapshot,
     RoutingStrategy,
 )
+from ..converters import can_reach_protocol
 
 
 class ErrorCategory(Enum):
@@ -50,7 +54,7 @@ def classify_error(status_code: int | None) -> ErrorCategory:
     return ErrorCategory.UNKNOWN
 
 
-@dataclass
+@dataclass(slots=True)
 class _HealthState:
     consecutive_failures: int = 0
     last_error: str | None = None
@@ -59,14 +63,14 @@ class _HealthState:
     last_cooldown: float = 0.0
 
 
-@dataclass
+@dataclass(slots=True)
 class _KeyHealthState:
     cooled_until: float = 0.0
     last_cooldown: float = 0.0
     consecutive_failures: int = 0
 
 
-@dataclass
+@dataclass(slots=True)
 class _HealthWindow:
     successes: int = 0
     failures: int = 0
@@ -84,12 +88,12 @@ class _HealthWindow:
         return min(1.0, self.total / min_samples)
 
 
-@dataclass
+@dataclass(slots=True)
 class _SWRRNode:
     current_weight: int = 0
 
 
-@dataclass
+@dataclass(slots=True)
 class RouteTarget:
     channel: ChannelConfig
     model_name: str | None = None
@@ -97,13 +101,38 @@ class RouteTarget:
     credential_name: str | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class RouteSelection:
     primary: RouteTarget
     fallbacks: list[RouteTarget] = field(default_factory=list)
 
 
-class RoundRobinRouter:
+def _matches_model(channel: ChannelConfig, requested_model: str | None) -> bool:
+    if not requested_model:
+        return True
+
+    if channel.model_patterns:
+        for pattern in channel.model_patterns:
+            if _matches_pattern(pattern, requested_model):
+                return True
+        return False
+
+    return True
+
+
+@lru_cache(maxsize=2048)
+def _compile_model_pattern(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern)
+
+
+def _matches_pattern(pattern: str, value: str) -> bool:
+    try:
+        return bool(_compile_model_pattern(pattern).search(value))
+    except re.error:
+        return False
+
+
+class GatewayRouter:
     def __init__(
         self,
         *,
@@ -184,6 +213,62 @@ class RoundRobinRouter:
             fallbacks = active[primary_index + 1 :] + active[:primary_index]
 
             return RouteSelection(primary=primary, fallbacks=fallbacks)
+
+    def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:
+        with self._lock:
+            now = monotonic()
+            routes = [
+                self._build_route_state(channels, protocol, now=now)
+                for protocol in ProtocolKind
+            ]
+            health = [
+                self._build_channel_health(channel, now=now) for channel in channels
+            ]
+
+        return RouterSnapshot(routes=routes, health=health)
+
+    def preview(
+        self,
+        channels: list[ChannelConfig],
+        protocol: ProtocolKind,
+        requested_model: str | None,
+        strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN,
+        allowed_channel_ids: set[str] | None = None,
+        use_model_matching: bool = True,
+        requested_group_name: str | None = None,
+        resolved_group_name: str | None = None,
+        route_targets: list[RouteTarget] | None = None,
+        cursor_key: str | None = None,
+    ) -> RoutePreview:
+        with self._lock:
+            pool = self._build_active_pool(
+                channels,
+                protocol,
+                requested_model,
+                allowed_channel_ids,
+                use_model_matching,
+                route_targets,
+                skip_health_filter=True,
+            )
+            now = monotonic()
+            ordered_targets, _, _ = self._prepare_diagnostic_targets(
+                pool,
+                strategy=strategy,
+                cursor_key=cursor_key,
+                protocol=protocol,
+                now=now,
+            )
+            return RoutePreview(
+                protocol=protocol,
+                requested_group_name=requested_group_name,
+                resolved_group_name=resolved_group_name,
+                strategy=strategy,
+                matched_channel_ids=[target.channel.id for target in ordered_targets],
+                items=[
+                    self._build_preview_item(target, now=now)
+                    for target in ordered_targets
+                ],
+            )
 
     def record_success(
         self, channel_id: str, *, credential_id: str | None = None
@@ -268,116 +353,6 @@ class RoundRobinRouter:
         with self._lock:
             return self._target_is_available(target, now=monotonic())
 
-    def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:
-        with self._lock:
-            now = monotonic()
-            routes = [
-                self._build_route_state(channels, protocol, now=now)
-                for protocol in ProtocolKind
-            ]
-            health = [
-                self._build_channel_health(channel, now=now) for channel in channels
-            ]
-
-        return RouterSnapshot(routes=routes, health=health)
-
-    def _build_route_state(
-        self,
-        channels: list[ChannelConfig],
-        protocol: ProtocolKind,
-        *,
-        now: float,
-    ) -> RouteState:
-        pool = self._build_active_pool(
-            channels, protocol, None, skip_health_filter=True
-        )
-        ordered_targets, _, next_channel_id = self._prepare_diagnostic_targets(
-            pool,
-            strategy=RoutingStrategy.ROUND_ROBIN,
-            cursor_key=protocol.value,
-            protocol=protocol,
-        )
-        availability = [
-            self._target_is_available(target, now=now) for target in ordered_targets
-        ]
-        return RouteState(
-            protocol=protocol,
-            next_index=0,
-            next_channel_id=next_channel_id,
-            channel_ids=[target.channel.id for target in ordered_targets],
-            available_channel_ids=[
-                target.channel.id
-                for target, available in zip(ordered_targets, availability)
-                if available
-            ],
-            cooldown_channel_ids=[
-                target.channel.id
-                for target, available in zip(ordered_targets, availability)
-                if not available
-            ],
-            requested_model=None,
-        )
-
-    def preview(
-        self,
-        channels: list[ChannelConfig],
-        protocol: ProtocolKind,
-        requested_model: str | None,
-        strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN,
-        allowed_channel_ids: set[str] | None = None,
-        use_model_matching: bool = True,
-        requested_group_name: str | None = None,
-        resolved_group_name: str | None = None,
-        route_targets: list[RouteTarget] | None = None,
-        cursor_key: str | None = None,
-    ) -> RoutePreview:
-        with self._lock:
-            pool = self._build_active_pool(
-                channels,
-                protocol,
-                requested_model,
-                allowed_channel_ids,
-                use_model_matching,
-                route_targets,
-                skip_health_filter=True,
-            )
-            ordered_targets, _, _ = self._prepare_diagnostic_targets(
-                pool,
-                strategy=strategy,
-                cursor_key=cursor_key,
-                protocol=protocol,
-            )
-            now = monotonic()
-            return RoutePreview(
-                protocol=protocol,
-                requested_group_name=requested_group_name,
-                resolved_group_name=resolved_group_name,
-                strategy=strategy,
-                matched_channel_ids=[target.channel.id for target in ordered_targets],
-                items=[
-                    self._build_preview_item(target, now=now)
-                    for target in ordered_targets
-                ],
-            )
-
-    def _build_preview_item(
-        self, target: RouteTarget, *, now: float
-    ) -> RoutePreviewItem:
-        available = self._target_is_available(target, now=now)
-        return RoutePreviewItem(
-            channel_id=target.channel.id,
-            channel_name=target.channel.name,
-            model_name=target.model_name,
-            credential_id=target.credential_id,
-            credential_name=target.credential_name,
-            available=available,
-            in_cooldown=not available,
-            cooldown_remaining_seconds=self._target_cooldown_remaining_seconds(
-                target, now=now
-            ),
-            score=self._score(target.channel.id),
-        )
-
     def _build_active_pool(
         self,
         channels: list[ChannelConfig],
@@ -411,32 +386,31 @@ class RoundRobinRouter:
 
         return active
 
-    @staticmethod
-    def _combo_id_from_channel_id(channel_id: str) -> str:
-        for protocol in ProtocolKind:
-            suffix = f"_{protocol.value}"
-            if channel_id.endswith(suffix):
-                return channel_id[: -len(suffix)]
-        return channel_id
-
     def _prefer_native_targets(
         self, targets: list[RouteTarget], protocol: ProtocolKind
     ) -> list[RouteTarget]:
-        group_has_native: dict[tuple[str, str | None, str | None], bool] = {}
-        for target in targets:
-            combo_id = self._combo_id_from_channel_id(target.channel.id)
-            key = (combo_id, target.credential_id, target.model_name)
+        target_keys = [
+            (
+                target,
+                (
+                    protocol_config_id_from_runtime_channel_id(target.channel.id),
+                    target.credential_id,
+                    target.model_name,
+                ),
+            )
+            for target in targets
+        ]
+        native_available_by_key: dict[tuple[str, str | None, str | None], bool] = {}
+        for target, key in target_keys:
             if target.channel.protocol == protocol:
-                group_has_native[key] = True
-            elif key not in group_has_native:
-                group_has_native[key] = False
+                native_available_by_key[key] = True
+            elif key not in native_available_by_key:
+                native_available_by_key[key] = False
 
         result: list[RouteTarget] = []
-        for target in targets:
-            combo_id = self._combo_id_from_channel_id(target.channel.id)
-            key = (combo_id, target.credential_id, target.model_name)
+        for target, key in target_keys:
             is_native = target.channel.protocol == protocol
-            if group_has_native.get(key, False) and not is_native:
+            if native_available_by_key.get(key, False) and not is_native:
                 continue
             result.append(target)
         return result
@@ -531,35 +505,6 @@ class RoundRobinRouter:
                 return key
         return None
 
-    def _score(self, channel_id: str) -> float:
-        window = self._expire_window_if_needed(channel_id)
-        penalty = (
-            window.failure_rate
-            * self._health_penalty_weight
-            * window.confidence(self._health_min_samples)
-        )
-        return 1.0 - penalty
-
-    def _update_health_window(self, channel_id: str, *, success: bool) -> None:
-        window = self._expire_window_if_needed(channel_id)
-        if window.window_start == 0:
-            window.window_start = monotonic()
-        if success:
-            window.successes += 1
-        else:
-            window.failures += 1
-
-    def _expire_window_if_needed(self, channel_id: str) -> _HealthWindow:
-        window = self._health_windows[channel_id]
-        now = monotonic()
-        if (
-            window.window_start > 0
-            and now - window.window_start > self._health_window_seconds
-        ):
-            window = _HealthWindow(window_start=now)
-            self._health_windows[channel_id] = window
-        return window
-
     def _swrr_pick_index(
         self, active: list[RouteTarget], route_key: str, *, mutate: bool
     ) -> int:
@@ -592,6 +537,126 @@ class RoundRobinRouter:
             ].current_weight -= total_weight
         return best_idx
 
+    def _build_route_state(
+        self,
+        channels: list[ChannelConfig],
+        protocol: ProtocolKind,
+        *,
+        now: float,
+    ) -> RouteState:
+        pool = self._build_active_pool(
+            channels, protocol, None, skip_health_filter=True
+        )
+        ordered_targets, _, next_channel_id = self._prepare_diagnostic_targets(
+            pool,
+            strategy=RoutingStrategy.ROUND_ROBIN,
+            cursor_key=protocol.value,
+            protocol=protocol,
+            now=now,
+        )
+        availability = [
+            self._target_is_available(target, now=now) for target in ordered_targets
+        ]
+        return RouteState(
+            protocol=protocol,
+            next_index=0,
+            next_channel_id=next_channel_id,
+            channel_ids=[target.channel.id for target in ordered_targets],
+            available_channel_ids=[
+                target.channel.id
+                for target, available in zip(ordered_targets, availability)
+                if available
+            ],
+            cooldown_channel_ids=[
+                target.channel.id
+                for target, available in zip(ordered_targets, availability)
+                if not available
+            ],
+            requested_model=None,
+        )
+
+    def _build_preview_item(
+        self, target: RouteTarget, *, now: float
+    ) -> RoutePreviewItem:
+        available = self._target_is_available(target, now=now)
+        return RoutePreviewItem(
+            channel_id=target.channel.id,
+            channel_name=target.channel.name,
+            model_name=target.model_name,
+            credential_id=target.credential_id,
+            credential_name=target.credential_name,
+            available=available,
+            in_cooldown=not available,
+            cooldown_remaining_seconds=self._target_cooldown_remaining_seconds(
+                target, now=now
+            ),
+            score=self._score(target.channel.id),
+        )
+
+    def _prepare_diagnostic_targets(
+        self,
+        targets: list[RouteTarget],
+        *,
+        strategy: RoutingStrategy,
+        cursor_key: str | None,
+        protocol: ProtocolKind,
+        now: float,
+    ) -> tuple[list[RouteTarget], int, str | None]:
+        if not targets:
+            return [], 0, None
+        available: list[RouteTarget] = []
+        cooled: list[RouteTarget] = []
+        for target in targets:
+            (
+                available if self._target_is_available(target, now=now) else cooled
+            ).append(target)
+        available.sort(key=lambda target: self._score(target.channel.id), reverse=True)
+        cooled.sort(key=lambda target: self._score(target.channel.id), reverse=True)
+
+        if not available:
+            return cooled, 0, None
+
+        route_key = cursor_key or protocol.value
+        if strategy == RoutingStrategy.FAILOVER:
+            primary_index = 0
+        else:
+            primary_index = self._swrr_pick_index(available, route_key, mutate=False)
+        ordered_available = available[primary_index:] + available[:primary_index]
+        return (
+            ordered_available + cooled,
+            primary_index,
+            ordered_available[0].channel.id,
+        )
+
+    def _score(self, channel_id: str) -> float:
+        window = self._expire_window_if_needed(channel_id)
+        penalty = (
+            window.failure_rate
+            * self._health_penalty_weight
+            * window.confidence(self._health_min_samples)
+        )
+        return 1.0 - penalty
+
+    def _update_health_window(self, channel_id: str, *, success: bool) -> None:
+        window = self._expire_window_if_needed(channel_id)
+        if window.window_start == 0:
+            window.window_start = monotonic()
+        if success:
+            window.successes += 1
+        else:
+            window.failures += 1
+
+    def _expire_window_if_needed(self, channel_id: str) -> _HealthWindow:
+        window = self._health_windows[channel_id]
+        now = monotonic()
+        if (
+            window.window_start > 0
+            and now - window.window_start > self._health_window_seconds
+        ):
+            window = _HealthWindow(window_start=now)
+            self._health_windows[channel_id] = window
+        return window
+
     def _record_key_failure_locked(
         self,
         channel_id: str,
@@ -610,15 +675,13 @@ class RoundRobinRouter:
         state.cooled_until = monotonic() + cooldown
 
     def _all_keys_cooled_locked(
-        self, channel_id: str, keys: list[ChannelKeyItem]
+        self, channel_id: str, channel_keys: list[ChannelKeyItem]
     ) -> bool:
         now = monotonic()
-        enabled = [k for k in keys if k.enabled]
-        if not enabled:
-            return True
-        return not any(
-            self._is_key_available(channel_id, k.id, now=now) for k in enabled
-        )
+        for key in channel_keys:
+            if key.enabled and self._is_key_available(channel_id, key.id, now=now):
+                return False
+        return True
 
     def _apply_channel_cooldown_locked(
         self,
@@ -667,41 +730,6 @@ class RoundRobinRouter:
     def _is_key_available(self, channel_id: str, key_id: str, *, now: float) -> bool:
         state = self._key_health.get((channel_id, key_id))
         return state is None or state.cooled_until <= now
-
-    def _prepare_diagnostic_targets(
-        self,
-        targets: list[RouteTarget],
-        *,
-        strategy: RoutingStrategy,
-        cursor_key: str | None,
-        protocol: ProtocolKind,
-    ) -> tuple[list[RouteTarget], int, str | None]:
-        if not targets:
-            return [], 0, None
-        now = monotonic()
-        available: list[RouteTarget] = []
-        cooled: list[RouteTarget] = []
-        for target in targets:
-            (
-                available if self._target_is_available(target, now=now) else cooled
-            ).append(target)
-        available.sort(key=lambda target: self._score(target.channel.id), reverse=True)
-        cooled.sort(key=lambda target: self._score(target.channel.id), reverse=True)
-
-        if not available:
-            return cooled, 0, None
-
-        route_key = cursor_key or protocol.value
-        if strategy == RoutingStrategy.FAILOVER:
-            primary_index = 0
-        else:
-            primary_index = self._swrr_pick_index(available, route_key, mutate=False)
-        ordered_available = available[primary_index:] + available[:primary_index]
-        return (
-            ordered_available + cooled,
-            primary_index,
-            ordered_available[0].channel.id,
-        )
 
     def _build_channel_health(
         self, channel: ChannelConfig, *, now: float
@@ -783,21 +811,4 @@ class RoundRobinRouter:
         return _DEFAULT_INITIAL_COOLDOWN[category]
 
 
-def _matches_model(channel: ChannelConfig, requested_model: str | None) -> bool:
-    if not requested_model:
-        return True
-
-    if channel.model_patterns:
-        for pattern in channel.model_patterns:
-            if _matches_pattern(pattern, requested_model):
-                return True
-        return False
-
-    return True
-
-
-def _matches_pattern(pattern: str, value: str) -> bool:
-    try:
-        return bool(re.search(pattern, value))
-    except re.error:
-        return False
+__all__ = ["GatewayRouter", "RouteSelection", "RouteTarget"]

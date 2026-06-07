@@ -1,27 +1,9 @@
 "use client";
 
-import {
-  ChangeEvent,
-  FormEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ChevronDown,
-  Download,
-  Ellipsis,
-  FileInput,
-  Filter,
-  Globe2,
-  Plus,
-  RefreshCcw,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
+import dynamic from "next/dynamic";
+import { FileInput, Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -30,14 +12,10 @@ import {
   Site,
   SiteBatchImportPayload,
   SiteBatchImportResult,
-  SiteBaseUrlInput,
-  SiteCredentialInput,
   SiteModelFetchItem,
   SiteModelFetchPayload,
   SiteModelTestPayload,
   SiteModelTestResult,
-  SitePayload,
-  SiteModelInput,
   SiteRuntimeSummary,
   SettingItem,
   apiRequest,
@@ -47,10 +25,7 @@ import {
   MODEL_TEST_PROMPTS_SETTING_KEY,
   parseModelTestPrompts,
 } from "@/lib/model-test-prompts";
-import { cn } from "@/lib/utils";
 import { useAppTimeZone } from "@/hooks/use-app-time-zone";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -58,2829 +33,81 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Card, CardContent } from "@/components/ui/card";
-import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAggregatedModels } from "./channels/model-aggregation";
+import { ChannelsOverview } from "./channels/overview";
 import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
-
-const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
-  { value: "openai_chat", label: "OpenAI Chat" },
-  { value: "openai_responses", label: "OpenAI Responses" },
-  { value: "openai_embedding", label: "OpenAI Embedding" },
-  { value: "rerank", label: "Rerank" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "gemini", label: "Gemini" },
-];
-const allClientProtocols = protocolOptions.map((item) => item.value);
-
-type HeaderItem = { key: string; value: string };
-type FormCredential = Omit<SiteCredentialInput, "id"> & { id: string };
-type FormBaseUrl = Omit<SiteBaseUrlInput, "id"> & {
-  id: string;
-  supported_protocols: ProtocolKind[];
-};
-type ChannelHealthRow = RouteSnapshot["health"][number];
-type ChannelRuntimeSummary = SiteRuntimeSummary["channel_summaries"][number];
-type ChannelHealthBucket = ChannelRuntimeSummary["health_buckets"][number];
-type CoolingBadgeSpec = {
-  label: string;
-  title: string;
-  className: string;
-};
-type Locale = "zh-CN" | "en-US";
-const CHANNEL_HEALTH_BUCKET_COUNT = 12;
-
-function createLocalId(prefix: string) {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
-    return crypto.randomUUID();
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-type FormModel = Omit<SiteModelInput, "protocol"> & {
-  protocols: ProtocolKind[];
-  protocolIds?: Record<string, string>;
-};
-
-type FormCombo = {
-  id?: string | null;
-  name: string;
-  enabled: boolean;
-  headers: HeaderItem[];
-  channel_proxy: string;
-  param_override: string;
-  match_regex: string;
-  manual_model_name: string;
-  base_url_id: string;
-  credential_id: string;
-  models: FormModel[];
-  expanded: boolean;
-};
-
-type FormState = {
-  name: string;
-  base_urls: FormBaseUrl[];
-  credentials: FormCredential[];
-  combos: FormCombo[];
-};
-
-type PickerModelItem = {
-  credential_id: string;
-  model_name: string;
-};
-
-type PickerModelGroup = {
-  credential_id: string;
-  model_name: string;
-};
-
-function genericModelKey(
-  model: Pick<PickerModelItem, "credential_id" | "model_name">,
-) {
-  return `${model.credential_id}:${model.model_name}`;
-}
-
-function pickerModelKey(
-  model: Pick<PickerModelItem, "credential_id" | "model_name">,
-) {
-  return genericModelKey(model);
-}
-
-function groupPickerModels(models: PickerModelItem[]) {
-  const groups = new Map<string, PickerModelGroup>();
-  for (const model of models) {
-    const key = genericModelKey(model);
-    if (groups.has(key)) {
-      continue;
-    }
-    groups.set(key, {
-      credential_id: model.credential_id,
-      model_name: model.model_name,
-    });
-  }
-  return Array.from(groups.values());
-}
-
-function pickerModelKeys(models: PickerModelItem[]) {
-  return Array.from(new Set(models.map((item) => pickerModelKey(item))));
-}
-
-function modelSupportedProtocols(
-  model: Pick<FormModel, "protocols"> | null | undefined,
-) {
-  if (model?.protocols && model.protocols.length > 0) {
-    return Array.from(new Set(model.protocols));
-  }
-  return [];
-}
-
-function selectedModelTestProtocol(
-  protocols: ProtocolKind[],
-  selectedProtocol: ProtocolKind | null,
-) {
-  return selectedProtocol && protocols.includes(selectedProtocol)
-    ? selectedProtocol
-    : (protocols[0] ?? null);
-}
-
-type ModelTestTarget = {
-  protocolIndex: number;
-  modelIndex: number;
-};
-
-type BatchModelTestStatus = "pending" | "running" | "success" | "failed";
-
-type BatchModelTestRow = {
-  key: string;
-  modelName: string;
-  credentialName: string;
-  protocol: ProtocolKind;
-  status: BatchModelTestStatus;
-  statusCode?: number | null;
-  latencyMs?: number;
-  message: string;
-};
-
-type BatchModelTestOption = {
-  key: string;
-  target: ModelTestTarget;
-  modelName: string;
-  credentialName: string;
-  protocols: ProtocolKind[];
-  selectedProtocol: ProtocolKind;
-};
-
-type TestableModelOption = Omit<BatchModelTestOption, "selectedProtocol">;
-
-type SiteRow = Site & {
-  subtitle: string;
-  protocol_count: number;
-  model_count: number;
-  endpoint_summary: string;
-};
-type HealthPreviewChannel = {
-  channelId: string;
-  combo: SiteRow["protocols"][number];
-  comboIndex: number;
-  protocol: ProtocolKind;
-};
-
-type ChannelStatusFilter = "all" | "enabled" | "disabled";
-type ChannelSort =
-  | "requests-desc"
-  | "name-asc"
-  | "name-desc"
-  | "models-desc"
-  | "protocols-desc";
-
-const emptyCombo = (
-  baseUrlId = "",
-  name = "",
-  credentialId = "",
-): FormCombo => ({
-  id: null,
-  name,
-  enabled: true,
-  headers: [{ key: "", value: "" }],
-  channel_proxy: "",
-  param_override: "",
-  match_regex: "",
-  manual_model_name: "",
-  base_url_id: baseUrlId,
-  credential_id: credentialId,
-  models: [],
-  expanded: true,
-});
-
-type ImportResultRow = {
-  key: string;
-  index: number;
-  name: string;
-  status: "created" | "skipped" | "error";
-  reason: string;
-};
-
-const batchImportTemplate: SiteBatchImportPayload = {
-  sites: [
-    {
-      name: "OpenAI",
-      base_urls: [
-        {
-          ref: "main",
-          url: "https://api.openai.com/v1",
-          name: "",
-          enabled: true,
-        },
-      ],
-      credentials: [
-        {
-          ref: "key1",
-          name: "Key 1",
-          api_key: "sk-...",
-          enabled: true,
-        },
-      ],
-      protocols: [
-        {
-          protocol: "openai_chat",
-          enabled: true,
-          base_url_ref: "main",
-          credential_ref: "key1",
-          headers: {},
-          channel_proxy: "",
-          param_override: "",
-          match_regex: "",
-          models: [
-            {
-              model_name: "gpt-4.1",
-              credential_ref: "key1",
-              enabled: true,
-            },
-          ],
-        },
-      ],
-    },
-  ],
-};
-
-function batchImportTemplateText(): string {
-  return JSON.stringify(batchImportTemplate, null, 2);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function parseBatchImportPayload(
-  text: string,
-  locale: Locale,
-): SiteBatchImportPayload {
-  const content = text.trim();
-  if (!content) {
-    throw new Error(locale === "zh-CN" ? "JSON 内容为空" : "JSON is empty");
-  }
-
-  let value: unknown;
-  try {
-    value = JSON.parse(content);
-  } catch {
-    throw new Error(
-      locale === "zh-CN" ? "JSON 格式无效" : "Invalid JSON format",
-    );
-  }
-
-  if (!isRecord(value) || !Array.isArray(value.sites)) {
-    throw new Error(
-      locale === "zh-CN"
-        ? "JSON 必须包含 sites 数组"
-        : "JSON must include a sites array",
-    );
-  }
-
-  return value as SiteBatchImportPayload;
-}
-
-function importReasonLabel(reason: string, locale: Locale): string {
-  if (reason === "duplicate_name") {
-    return locale === "zh-CN" ? "同名渠道已存在" : "Channel already exists";
-  }
-  if (reason === "duplicate_in_file") {
-    return locale === "zh-CN" ? "文件内重名" : "Duplicate in file";
-  }
-  return reason;
-}
-
-function importStatusLabel(
-  status: ImportResultRow["status"],
-  locale: Locale,
-): string {
-  if (status === "created") return locale === "zh-CN" ? "已创建" : "Created";
-  if (status === "skipped") return locale === "zh-CN" ? "已跳过" : "Skipped";
-  return locale === "zh-CN" ? "错误" : "Error";
-}
-
-function importStatusVariant(
-  status: ImportResultRow["status"],
-): "default" | "secondary" | "destructive" {
-  if (status === "created") return "default";
-  if (status === "skipped") return "secondary";
-  return "destructive";
-}
-
-function batchTestStatusLabel(status: BatchModelTestStatus, locale: Locale) {
-  if (status === "pending") return locale === "zh-CN" ? "等待中" : "Pending";
-  if (status === "running") return locale === "zh-CN" ? "测试中" : "Running";
-  if (status === "success") return locale === "zh-CN" ? "成功" : "Success";
-  return locale === "zh-CN" ? "失败" : "Failed";
-}
-
-function batchTestStatusVariant(
-  status: BatchModelTestStatus,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "success") return "default";
-  if (status === "failed") return "destructive";
-  if (status === "running") return "secondary";
-  return "outline";
-}
-
-function importResultRows(
-  result: SiteBatchImportResult,
-  locale: Locale,
-): ImportResultRow[] {
-  return [
-    ...result.created.map((site, index) => ({
-      key: `created-${site.id}`,
-      index,
-      name: site.name,
-      status: "created" as const,
-      reason: "",
-    })),
-    ...result.skipped.map((item) => ({
-      key: `skipped-${item.index}-${item.name}`,
-      index: item.index,
-      name: item.name,
-      status: "skipped" as const,
-      reason: importReasonLabel(item.reason, locale),
-    })),
-    ...result.errors.map((item) => ({
-      key: `error-${item.index}-${item.field}-${item.message}`,
-      index: item.index,
-      name: item.field,
-      status: "error" as const,
-      reason: item.message,
-    })),
-  ];
-}
-
-const emptyForm = (locale: Locale = "zh-CN"): FormState => {
-  const baseUrlId = createLocalId("baseurl");
-  const credentialId = createLocalId("credential");
-  return {
-    name: "",
-    base_urls: [
-      {
-        id: baseUrlId,
-        url: "",
-        name: "",
-        enabled: true,
-        supported_protocols: [],
-      },
-    ],
-    credentials: [{ id: credentialId, name: "", api_key: "", enabled: true }],
-    combos: [emptyCombo(baseUrlId, defaultComboName(0, locale), credentialId)],
-  };
-};
-
-function protocolLabel(protocol: ProtocolKind) {
-  return (
-    protocolOptions.find((item) => item.value === protocol)?.label ?? protocol
-  );
-}
-
-function compactProtocolLabel(protocol: ProtocolKind) {
-  switch (protocol) {
-    case "openai_chat":
-      return "chat";
-    case "openai_responses":
-      return "responses";
-    case "openai_embedding":
-      return "embeddings";
-    case "rerank":
-      return "rerank";
-    case "anthropic":
-      return "anthropic";
-    case "gemini":
-      return "gemini";
-    default:
-      return protocol;
-  }
-}
-
-function isGeneratedCredentialName(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return (
-    normalized === "默认密钥" ||
-    /^key\s*\d+$/.test(normalized) ||
-    /^密钥\s*\d+$/.test(value.trim())
-  );
-}
-
-function fallbackCredentialName(index: number) {
-  return `Key ${index + 1}`;
-}
-
-function credentialIndexLabel(index: number, locale: string) {
-  return locale === "zh-CN" ? `密钥 ${index + 1}` : `Key ${index + 1}`;
-}
-
-function credentialLabel(
-  item: { name: string },
-  index: number,
-  locale: string,
-) {
-  const name = item.name.trim();
-  if (name) return name;
-  return credentialIndexLabel(index, locale);
-}
-
-function baseUrlIndexLabel(index: number, locale: string) {
-  return locale === "zh-CN" ? `地址 ${index + 1}` : `URL ${index + 1}`;
-}
-
-function baseUrlLabel(item: { name: string }, index: number, locale: string) {
-  const name = item.name.trim();
-  if (name) return name;
-  return baseUrlIndexLabel(index, locale);
-}
-
-function defaultComboName(index: number, locale: string) {
-  return locale === "zh-CN" ? `组合 ${index + 1}` : `Combo ${index + 1}`;
-}
-
-function comboDisplayName(
-  item: { name?: string | null },
-  index: number,
-  locale: string,
-) {
-  const name = safeText(item.name).trim();
-  return name || defaultComboName(index, locale);
-}
-
-function nextComboName(
-  combos: Array<{ name?: string | null }>,
-  locale: string,
-) {
-  const usedNames = new Set(
-    combos
-      .map((item, index) => comboDisplayName(item, index, locale).toLowerCase())
-      .filter(Boolean),
-  );
-  for (let index = combos.length; index < combos.length + 1000; index += 1) {
-    const candidate = defaultComboName(index, locale);
-    if (!usedNames.has(candidate.toLowerCase())) {
-      return candidate;
-    }
-  }
-  return defaultComboName(combos.length, locale);
-}
-
-function defaultBaseUrlId(items: Array<{ id: string; enabled: boolean }>) {
-  return items.find((item) => item.enabled)?.id ?? items[0]?.id ?? "";
-}
-
-function resolveBaseUrlId(
-  items: Array<{ id: string; enabled: boolean }>,
-  baseUrlId: string,
-) {
-  return items.some((item) => item.id === baseUrlId)
-    ? baseUrlId
-    : defaultBaseUrlId(items);
-}
-
-function activeBaseUrlValue(
-  form: FormState,
-  protocol: Pick<FormCombo, "base_url_id">,
-) {
-  const boundBaseUrl = protocol.base_url_id
-    ? form.base_urls.find((item) => item.id === protocol.base_url_id)
-    : undefined;
-  if (boundBaseUrl?.url) return boundBaseUrl.url;
-  const enabledUrl = form.base_urls.find(
-    (item) => item.enabled && item.url.trim(),
-  )?.url;
-  if (enabledUrl) return enabledUrl;
-  return form.base_urls[0]?.url || "";
-}
-
-function formHeaders(protocol: Pick<FormCombo, "headers">) {
-  return Object.fromEntries(
-    protocol.headers
-      .map((entry) => [entry.key.trim(), entry.value] as const)
-      .filter(([key]) => key),
-  );
-}
-
-function credentialDisplayName(
-  credential: Site["credentials"][number] | undefined,
-  index: number,
-  locale: Locale,
-) {
-  if (!credential) {
-    return locale === "zh-CN" ? `密钥 ${index + 1}` : `Key ${index + 1}`;
-  }
-  if (!credential.name.trim() || isGeneratedCredentialName(credential.name)) {
-    return locale === "zh-CN" ? `密钥 ${index + 1}` : `Key ${index + 1}`;
-  }
-  return credential.name.trim();
-}
-
-function safeText(value: string | null | undefined) {
-  return typeof value === "string" ? value : "";
-}
-
-function formatCooldownDuration(seconds: number) {
-  const value = Math.max(Math.floor(seconds), 0);
-  if (value < 60) return `${value}s`;
-
-  const minutes = Math.floor(value / 60);
-  const remainingSeconds = value % 60;
-  if (minutes < 60) {
-    return remainingSeconds
-      ? `${minutes}m ${remainingSeconds}s`
-      : `${minutes}m`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-}
-
-function modelBadgeClassName(enabled: boolean) {
-  return enabled
-    ? "inline-flex h-8 items-center gap-2 rounded-full border bg-background px-3 text-sm font-medium text-foreground transition hover:bg-muted"
-    : "inline-flex h-8 items-center gap-2 rounded-full border bg-muted/40 px-3 text-sm font-medium text-muted-foreground";
-}
-
-function selectClassName() {
-  return "w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground";
-}
-
-function siteProtocols(site: Site) {
-  return Array.from(
-    new Set(site.protocols.flatMap((combo) => combo.protocols)),
-  );
-}
-
-function siteSubtitle(site: Site) {
-  return siteProtocols(site).map(protocolLabel).join(" / ");
-}
-
-function siteEndpointSummary(site: Site, locale: string = "zh-CN") {
-  const enabled = site.base_urls.filter((item) => item.enabled);
-  const firstUrl = enabled[0]?.url || site.base_urls[0]?.url || "";
-  const extraCount =
-    enabled.length > 1
-      ? enabled.length - 1
-      : site.base_urls.length > 1
-        ? site.base_urls.length - 1
-        : 0;
-  if (extraCount > 0) {
-    const suffix =
-      locale === "zh-CN" ? ` + ${extraCount}个地址` : ` + ${extraCount} more`;
-    return firstUrl + suffix;
-  }
-  return firstUrl;
-}
-
-function siteModelCount(site: Site) {
-  return site.protocols.reduce(
-    (total, protocol) =>
-      total + protocol.models.filter((item) => item.enabled).length,
-    0,
-  );
-}
-
-function isSiteEnabled(site: Site) {
-  return site.protocols.some((item) => item.enabled);
-}
-
-function protocolBadgeClassName(protocol: ProtocolKind) {
-  switch (protocol) {
-    case "openai_chat":
-      return "border-transparent bg-sky-500/10 text-sky-700";
-    case "openai_responses":
-      return "border-transparent bg-indigo-500/10 text-indigo-700";
-    case "openai_embedding":
-      return "border-transparent bg-cyan-500/10 text-cyan-700";
-    case "rerank":
-      return "border-transparent bg-violet-500/10 text-violet-700";
-    case "anthropic":
-      return "border-transparent bg-amber-500/10 text-amber-700";
-    case "gemini":
-      return "border-transparent bg-emerald-500/10 text-emerald-700";
-    default:
-      return "border-transparent bg-secondary text-secondary-foreground";
-  }
-}
-
-function getSiteFaviconCandidates(url: string) {
-  try {
-    const parsed = new URL(url);
-    return [
-      `${parsed.origin}/favicon.ico`,
-      `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=64`,
-    ];
-  } catch {
-    return [];
-  }
-}
-
-function SiteFavicon({ url, name }: { url: string; name: string }) {
-  const [candidateIndex, setCandidateIndex] = useState(0);
-  const candidates = getSiteFaviconCandidates(url);
-  const currentSrc = candidates[candidateIndex];
-
-  return (
-    <span className="flex size-11 items-center justify-center rounded-xl border bg-background/80">
-      {currentSrc ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={currentSrc}
-          alt=""
-          className="size-5 rounded-sm object-contain"
-          loading="lazy"
-          onError={() => {
-            setCandidateIndex((current) =>
-              current < candidates.length - 1 ? current + 1 : current,
-            );
-          }}
-        />
-      ) : (
-        <Globe2 aria-hidden="true" className="text-muted-foreground" />
-      )}
-      <span className="sr-only">{name}</span>
-    </span>
-  );
-}
-
-function maxKeyCooldownSeconds(health: ChannelHealthRow | undefined) {
-  if (!health?.key_health?.length) {
-    return 0;
-  }
-  return Math.max(
-    0,
-    ...health.key_health.map((item) => item.cooldown_remaining_seconds),
-  );
-}
-
-function keyCooldownDetails(
-  site: SiteRow,
-  health: ChannelHealthRow,
-  locale: Locale,
-) {
-  const credentialById = new Map(
-    site.credentials.map((item) => [item.id, item] as const),
-  );
-  const credentialIndexById = new Map(
-    site.credentials.map((item, index) => [item.id, index] as const),
-  );
-
-  return health.key_health
-    .filter((item) => !item.available && item.cooldown_remaining_seconds > 0)
-    .sort(
-      (left, right) =>
-        right.cooldown_remaining_seconds - left.cooldown_remaining_seconds,
-    )
-    .map((item) => {
-      const credentialIndex = credentialIndexById.get(item.credential_id) ?? 0;
-      const credentialName = credentialDisplayName(
-        credentialById.get(item.credential_id),
-        credentialIndex,
-        locale,
-      );
-      const duration = formatCooldownDuration(item.cooldown_remaining_seconds);
-      return `${credentialName} ${locale === "zh-CN" ? "冷却剩余" : "cooldown remaining"} ${duration}`;
-    });
-}
-
-function resolveCoolingBadge(
-  site: SiteRow,
-  health: ChannelHealthRow | undefined,
-  locale: Locale,
-): CoolingBadgeSpec | null {
-  if (!health) {
-    return null;
-  }
-  if (health.cooldown_remaining_seconds > 0) {
-    const duration = formatCooldownDuration(health.cooldown_remaining_seconds);
-    return locale === "zh-CN"
-      ? {
-          label: `冷却 ${duration}`,
-          title: `渠道冷却剩余 ${duration}`,
-          className: "border-transparent bg-destructive/12 text-destructive",
-        }
-      : {
-          label: `Cooling ${duration}`,
-          title: `Channel cooldown remaining ${duration}`,
-          className: "border-transparent bg-destructive/12 text-destructive",
-        };
-  }
-  const keyCooldownSeconds = maxKeyCooldownSeconds(health);
-  if (keyCooldownSeconds > 0) {
-    const duration = formatCooldownDuration(keyCooldownSeconds);
-    const details = keyCooldownDetails(site, health, locale).join("\n");
-    return locale === "zh-CN"
-      ? {
-          label: `Key 冷却 ${duration}`,
-          title: details || `Key 冷却剩余 ${duration}`,
-          className: "border-transparent bg-amber-500/12 text-amber-700",
-        }
-      : {
-          label: `Key cooling ${duration}`,
-          title: details || `Key cooldown remaining ${duration}`,
-          className: "border-transparent bg-amber-500/12 text-amber-700",
-        };
-  }
-  return null;
-}
-
-function runtimeChannelId(comboId: string, protocol: ProtocolKind) {
-  return `${comboId}_${protocol}`;
-}
-
-function siteHealthPreviewChannels(site: SiteRow): HealthPreviewChannel[] {
-  return site.protocols.flatMap((combo, comboIndex) => {
-    if (!combo.enabled) {
-      return [];
-    }
-    return combo.protocols.map((protocol) => ({
-      channelId: runtimeChannelId(combo.id, protocol),
-      combo,
-      comboIndex,
-      protocol,
-    }));
-  });
-}
-
-function healthPreviewChannelLabel(
-  channel: HealthPreviewChannel,
-  locale: Locale,
-) {
-  return `${comboDisplayName(channel.combo, channel.comboIndex, locale)} / ${compactProtocolLabel(channel.protocol)}`;
-}
-
-function normalizedBucketCounts(bucket: ChannelHealthBucket) {
-  const total = Math.max(0, bucket.total_count);
-  return {
-    total,
-    success: Math.min(Math.max(0, bucket.success_count), total),
-  };
-}
-
-function healthBucketTone(bucket: ChannelHealthBucket) {
-  const { success, total } = normalizedBucketCounts(bucket);
-  if (total <= 0) {
-    return "bg-muted/70";
-  }
-  if (success >= total) {
-    return "bg-emerald-500";
-  }
-  if (success > 0) {
-    return "bg-amber-500";
-  }
-  return "bg-destructive";
-}
-
-function createHealthBucketTimeFormatter(locale: Locale, timeZone?: string) {
-  return new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-US", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    ...(timeZone ? { timeZone } : {}),
-  });
-}
-
-function formatHealthBucketRange(
-  bucket: ChannelHealthBucket,
-  formatDateTime: Intl.DateTimeFormat,
-) {
-  return `${formatDateTime.format(new Date(bucket.started_at))} - ${formatDateTime.format(new Date(bucket.ended_at))}`;
-}
-
-function SiteHealthPreview({
-  site,
-  summary,
-  healthByChannelId,
-  locale,
-  timeZone,
-}: {
-  site: SiteRow;
-  summary?: SiteRuntimeSummary;
-  healthByChannelId: Map<string, ChannelHealthRow>;
-  locale: Locale;
-  timeZone?: string;
-}) {
-  const channels = siteHealthPreviewChannels(site);
-  const summaryByChannelId = new Map(
-    (summary?.channel_summaries ?? []).map(
-      (item) => [item.channel_id, item] as const,
-    ),
-  );
-  const multiChannel = channels.length > 1;
-  const bucketTimeFormatter = createHealthBucketTimeFormatter(locale, timeZone);
-
-  if (!channels.length) {
-    return (
-      <div className="mt-3 text-xs text-muted-foreground">
-        {locale === "zh-CN" ? "暂无健康数据" : "No health data"}
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-3 flex flex-col gap-2.5">
-      <div className="text-xs font-medium text-muted-foreground">
-        {locale === "zh-CN" ? "健康状态" : "Health"}
-      </div>
-      {channels.map((channel) => {
-        const health = healthByChannelId.get(channel.channelId);
-        const channelSummary = summaryByChannelId.get(channel.channelId);
-        const buckets = (channelSummary?.health_buckets ?? []).slice(
-          -CHANNEL_HEALTH_BUCKET_COUNT,
-        );
-        const coolingBadge = resolveCoolingBadge(site, health, locale);
-        const segments = [
-          ...Array.from(
-            {
-              length: Math.max(CHANNEL_HEALTH_BUCKET_COUNT - buckets.length, 0),
-            },
-            (_, index) => ({
-              key: `${channel.channelId}-placeholder-${index}`,
-              bucket: null,
-            }),
-          ),
-          ...buckets.map((bucket, index) => ({
-            key: `${channel.channelId}-bucket-${bucket.started_at}-${index}`,
-            bucket,
-          })),
-        ];
-
-        return (
-          <div
-            key={channel.channelId}
-            className="flex min-w-0 flex-wrap items-center gap-3 py-0.5"
-          >
-            {multiChannel ? (
-              <span className="w-28 min-w-0 shrink-0 truncate text-[11px] font-medium text-muted-foreground">
-                {healthPreviewChannelLabel(channel, locale)}
-              </span>
-            ) : null}
-
-            <div
-              className="flex min-w-0 flex-1 items-end gap-1"
-              aria-label={locale === "zh-CN" ? "健康状态" : "health history"}
-            >
-              {segments.map((segment) => {
-                if (!segment.bucket) {
-                  return (
-                    <span
-                      key={segment.key}
-                      className="block h-6 w-1.5 rounded-[3px] bg-muted/70"
-                      aria-hidden
-                    />
-                  );
-                }
-
-                const { success, total } = normalizedBucketCounts(
-                  segment.bucket,
-                );
-                const bucketRange = formatHealthBucketRange(
-                  segment.bucket,
-                  bucketTimeFormatter,
-                );
-
-                const tooltipContent = (
-                  <TooltipContent
-                    side="bottom"
-                    sideOffset={8}
-                    collisionPadding={12}
-                    className="flex flex-col items-start gap-1 px-3 py-2 text-left text-xs"
-                  >
-                    <div className="font-medium">{bucketRange}</div>
-                    <div className="text-muted-foreground">
-                      {locale === "zh-CN" ? "成功" : "Success"}: {success}/
-                      {total}
-                    </div>
-                  </TooltipContent>
-                );
-
-                const segmentClassName = cn(
-                  "block h-6 w-1.5 appearance-none rounded-[3px] border-0 p-0",
-                  healthBucketTone(segment.bucket),
-                );
-
-                return (
-                  <Tooltip key={segment.key}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className={cn(
-                          segmentClassName,
-                          "outline-none transition-transform hover:scale-y-110 focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-1",
-                        )}
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                        aria-label={`${bucketRange} ${success}/${total}`}
-                      />
-                    </TooltipTrigger>
-                    {tooltipContent}
-                  </Tooltip>
-                );
-              })}
-            </div>
-
-            <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:shrink-0">
-              {coolingBadge ? (
-                <Badge
-                  variant="outline"
-                  title={coolingBadge.title}
-                  className={cn(
-                    "max-w-full truncate px-2.5 py-1 text-xs",
-                    coolingBadge.className,
-                  )}
-                >
-                  {coolingBadge.label}
-                </Badge>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
-  const baseUrls = site.base_urls.length
-    ? site.base_urls.map((item) => ({
-        id: item.id,
-        url: item.url,
-        name: item.name,
-        enabled: item.enabled,
-        supported_protocols: item.supported_protocols ?? [],
-      }))
-    : [
-        {
-          id: createLocalId("baseurl"),
-          url: "",
-          name: "",
-          enabled: true,
-          supported_protocols: [] as ProtocolKind[],
-        },
-      ];
-  const credentials = site.credentials.map((item) => ({
-    id: item.id,
-    name: isGeneratedCredentialName(item.name) ? "" : item.name,
-    api_key: item.api_key,
-    enabled: item.enabled,
-  }));
-  return {
-    name: site.name,
-    base_urls: baseUrls,
-    credentials,
-    combos: site.protocols.map((item, itemIndex) => {
-      const modelGroups = new Map<string, FormModel>();
-      for (const m of item.models) {
-        const key = `${m.credential_id}:${m.model_name}`;
-        const existing = modelGroups.get(key);
-        if (existing) {
-          if (m.protocol && !existing.protocols.includes(m.protocol)) {
-            existing.protocols.push(m.protocol);
-          }
-          if (m.id && m.protocol) {
-            existing.protocolIds = {
-              ...existing.protocolIds,
-              [m.protocol]: m.id,
-            };
-          }
-          existing.enabled = existing.enabled || m.enabled;
-          if (!existing.id && m.id) existing.id = m.id;
-        } else {
-          modelGroups.set(key, {
-            id: m.id ?? null,
-            protocols: m.protocol ? [m.protocol] : [],
-            protocolIds: m.id && m.protocol ? { [m.protocol]: m.id } : {},
-            credential_id: m.credential_id,
-            model_name: m.model_name,
-            enabled: m.enabled,
-          });
-        }
-      }
-      return {
-        id: item.id,
-        name: comboDisplayName(item, itemIndex, locale),
-        enabled: item.enabled,
-        headers: Object.entries(item.headers).length
-          ? Object.entries(item.headers).map(([key, value]) => ({ key, value }))
-          : [{ key: "", value: "" }],
-        channel_proxy: item.channel_proxy,
-        param_override: item.param_override,
-        match_regex: safeText(item.match_regex),
-        manual_model_name: "",
-        base_url_id: resolveBaseUrlId(baseUrls, item.base_url_id),
-        credential_id: item.credential_id,
-        models: Array.from(modelGroups.values()),
-        expanded: true,
-      };
-    }),
-  };
-}
-
-function comboEffectiveProtocols(combo: Pick<FormCombo, "models">) {
-  return Array.from(new Set(combo.models.flatMap((model) => model.protocols)));
-}
-
-function baseUrlProtocolMap(form: FormState) {
-  const map = new Map<string, Set<ProtocolKind>>();
-  for (const baseUrl of form.base_urls) {
-    map.set(baseUrl.id, new Set());
-  }
-  for (const combo of form.combos) {
-    const protocols = comboEffectiveProtocols(combo);
-    const set = map.get(combo.base_url_id);
-    if (!set) continue;
-    protocols.forEach((protocol) => set.add(protocol));
-  }
-  return map;
-}
-
-function formBaseUrlsForPayload(form: FormState) {
-  const protocolsByBaseUrl = baseUrlProtocolMap(form);
-  return form.base_urls
-    .map((item) => ({
-      id: item.id,
-      url: item.url.trim(),
-      name: item.name.trim(),
-      enabled: item.enabled,
-      supported_protocols: Array.from(protocolsByBaseUrl.get(item.id) ?? []),
-    }))
-    .filter((item) => item.url);
-}
-
-function toPayload(form: FormState): SitePayload {
-  const baseUrls = formBaseUrlsForPayload(form);
-  return {
-    name: form.name.trim(),
-    base_urls: baseUrls,
-    credentials: form.credentials
-      .map((item, index) => ({
-        id: item.id,
-        name: item.name.trim() || fallbackCredentialName(index),
-        api_key: item.api_key.trim(),
-        enabled: item.enabled,
-      }))
-      .filter((item) => item.api_key),
-    protocols: form.combos.map((item) => {
-      const credentialId = item.credential_id;
-      const comboProtocols = comboEffectiveProtocols(item);
-      return {
-        id: item.id,
-        name: item.name.trim(),
-        protocols: comboProtocols,
-        enabled: item.enabled,
-        headers: Object.fromEntries(
-          item.headers
-            .map((entry) => [entry.key.trim(), entry.value] as const)
-            .filter(([key]) => key),
-        ),
-        channel_proxy: item.channel_proxy.trim(),
-        param_override: item.param_override.trim(),
-        match_regex: safeText(item.match_regex).trim(),
-        base_url_id: item.base_url_id,
-        credential_id: credentialId,
-        models: item.models
-          .flatMap((model) => {
-            const allowed = comboProtocols;
-            const effectiveProtocols = model.protocols.filter((p) =>
-              allowed.includes(p),
-            );
-            if (effectiveProtocols.length === 0) {
-              return [];
-            }
-            return effectiveProtocols.map((proto) => ({
-              id: model.protocolIds?.[proto] ?? null,
-              protocol: proto,
-              credential_id: model.credential_id,
-              model_name: model.model_name.trim(),
-              enabled: model.enabled,
-            }));
-          })
-          .filter(
-            (model) => model.credential_id === credentialId && model.model_name,
-          ),
-      };
-    }),
-  };
-}
-
-function comboCredentialKeys(combo: FormCombo, baseUrlIds: Set<string>) {
-  if (!baseUrlIds.has(combo.base_url_id)) return [];
-  return [[combo.base_url_id, combo.credential_id].join(":")];
-}
-
-function duplicateComboKeys(
-  combos: FormCombo[],
-  baseUrls: Array<{ id: string }>,
-) {
-  const baseUrlIds = new Set(baseUrls.map((item) => item.id));
-  const counts = new Map<string, number>();
-  for (const item of combos) {
-    for (const key of comboCredentialKeys(item, baseUrlIds)) {
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  }
-  return new Set(
-    [...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key),
-  );
-}
-
-function invalidProtocolBaseUrlCount(form: FormState) {
-  const baseUrlIds = new Set(
-    formBaseUrlsForPayload(form).map((item) => item.id),
-  );
-  return form.combos.filter((item) => !baseUrlIds.has(item.base_url_id)).length;
-}
-
-function invalidEmptyComboCount(form: FormState) {
-  return form.combos.filter((item) => item.models.length === 0).length;
-}
-
-function invalidModelProtocolCount(form: FormState) {
-  return form.combos.reduce((total, combo) => {
-    return (
-      total +
-      combo.models.filter((model) => model.protocols.length === 0).length
-    );
-  }, 0);
-}
-
-function SwitchButton({
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
-  );
-}
-
-function ChannelFiltersPanel({
-  locale,
-  search,
-  statusFilter,
-  protocolFilter,
-  sortBy,
-  activeFilterCount,
-  onSearchChange,
-  onStatusChange,
-  onProtocolChange,
-  onSortChange,
-  onReset,
-}: {
-  locale: Locale;
-  search: string;
-  statusFilter: ChannelStatusFilter;
-  protocolFilter: "all" | ProtocolKind;
-  sortBy: ChannelSort;
-  activeFilterCount: number;
-  onSearchChange: (value: string) => void;
-  onStatusChange: (value: ChannelStatusFilter) => void;
-  onProtocolChange: (value: "all" | ProtocolKind) => void;
-  onSortChange: (value: ChannelSort) => void;
-  onReset: () => void;
-}) {
-  return (
-    <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex size-9 items-center justify-center rounded-xl bg-primary/[0.08] text-primary">
-            <Filter size={16} />
-          </span>
-          <div>
-            <div className="text-sm font-semibold text-foreground">
-              {locale === "zh-CN" ? "筛选" : "Filters"}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {locale === "zh-CN"
-                ? `已启用 ${activeFilterCount} 项`
-                : `${activeFilterCount} active`}
-            </div>
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onReset}
-          disabled={!activeFilterCount && sortBy === "requests-desc"}
-        >
-          {locale === "zh-CN" ? "清空" : "Clear"}
-        </Button>
-      </div>
-
-      <FieldSet className="gap-4">
-        <FieldLegend>
-          {locale === "zh-CN" ? "筛选条件" : "Refine results"}
-        </FieldLegend>
-        <FieldGroup className="gap-4">
-          <Field>
-            <FieldLabel>{locale === "zh-CN" ? "关键词" : "Keyword"}</FieldLabel>
-            <ToolbarSearchInput
-              value={search}
-              onChange={onSearchChange}
-              onClear={() => onSearchChange("")}
-              placeholder={
-                locale === "zh-CN"
-                  ? "渠道 / 协议 / 模型"
-                  : "Channel / protocol / model"
-              }
-              className="max-w-none"
-            />
-          </Field>
-
-          <Field>
-            <FieldLabel>{locale === "zh-CN" ? "状态" : "Status"}</FieldLabel>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {[
-                {
-                  key: "all" as const,
-                  label: locale === "zh-CN" ? "全部" : "All",
-                },
-                {
-                  key: "enabled" as const,
-                  label: locale === "zh-CN" ? "启用" : "Enabled",
-                },
-                {
-                  key: "disabled" as const,
-                  label: locale === "zh-CN" ? "停用" : "Disabled",
-                },
-              ].map((option) => (
-                <Button
-                  key={option.key}
-                  type="button"
-                  variant={statusFilter === option.key ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => onStatusChange(option.key)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
-          </Field>
-
-          <Field>
-            <FieldLabel htmlFor="channels-protocol-filter">
-              {locale === "zh-CN" ? "协议" : "Protocol"}
-            </FieldLabel>
-            <NativeSelect
-              id="channels-protocol-filter"
-              className="w-full"
-              value={protocolFilter}
-              onChange={(event) =>
-                onProtocolChange(event.target.value as "all" | ProtocolKind)
-              }
-            >
-              <NativeSelectOption value="all">
-                {locale === "zh-CN" ? "全部协议" : "All protocols"}
-              </NativeSelectOption>
-              {protocolOptions.map((option) => (
-                <NativeSelectOption key={option.value} value={option.value}>
-                  {option.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Field>
-
-          <Field>
-            <FieldLabel htmlFor="channels-sort">
-              {locale === "zh-CN" ? "排序" : "Sort by"}
-            </FieldLabel>
-            <NativeSelect
-              id="channels-sort"
-              className="w-full"
-              value={sortBy}
-              onChange={(event) =>
-                onSortChange(event.target.value as ChannelSort)
-              }
-            >
-              <NativeSelectOption value="requests-desc">
-                {locale === "zh-CN" ? "请求优先" : "Requests first"}
-              </NativeSelectOption>
-              <NativeSelectOption value="models-desc">
-                {locale === "zh-CN" ? "模型优先" : "Models first"}
-              </NativeSelectOption>
-              <NativeSelectOption value="protocols-desc">
-                {locale === "zh-CN" ? "协议优先" : "Protocols first"}
-              </NativeSelectOption>
-              <NativeSelectOption value="name-asc">
-                {locale === "zh-CN" ? "名称升序" : "Name asc"}
-              </NativeSelectOption>
-              <NativeSelectOption value="name-desc">
-                {locale === "zh-CN" ? "名称降序" : "Name desc"}
-              </NativeSelectOption>
-            </NativeSelect>
-          </Field>
-        </FieldGroup>
-      </FieldSet>
-    </div>
-  );
-}
-
-function ComboConfigItem({
-  form,
-  combo,
-  comboIndex,
-  locale,
-  fetchingProtocolIndex,
-  duplicatedComboKeys,
-  onUpdateCombo,
-  onRemoveCombo,
-  onAddManualModel,
-  onFetchModels,
-  onOpenAdvanced,
-}: {
-  form: FormState;
-  combo: FormCombo;
-  comboIndex: number;
-  locale: Locale;
-  fetchingProtocolIndex: number | null;
-  duplicatedComboKeys: Set<string>;
-  onUpdateCombo: (index: number, patch: Partial<FormCombo>) => void;
-  onRemoveCombo: (index: number) => void;
-  onAddManualModel: (index: number, credentialId: string) => void;
-  onFetchModels: (index: number) => void;
-  onOpenAdvanced: (index: number) => void;
-}) {
-  const submittedBaseUrls = formBaseUrlsForPayload(form);
-  const submittedBaseUrlIds = new Set(submittedBaseUrls.map((item) => item.id));
-  const comboDuplicated = comboCredentialKeys(combo, submittedBaseUrlIds).some(
-    (key) => duplicatedComboKeys.has(key),
-  );
-  const activeCredentialIds = new Set(
-    form.credentials
-      .filter((item) => item.enabled && item.api_key.trim())
-      .map((item) => item.id),
-  );
-  const credentialOptions = form.credentials.map((item, index) => ({
-    ...item,
-    display_name: credentialLabel(item, index, locale),
-  }));
-  const selectedCredentialId = combo.credential_id;
-  const selectedCredentialActive =
-    activeCredentialIds.has(selectedCredentialId);
-  const selectedCredentialKnown = credentialOptions.some(
-    (item) => item.id === selectedCredentialId,
-  );
-  const visibleModels = combo.models
-    .map((model, modelIndex) => ({ model, modelIndex }))
-    .filter(
-      ({ model }) =>
-        selectedCredentialId && model.credential_id === selectedCredentialId,
-    );
-
-  return (
-    <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-4 shadow-sm">
-      <div className="flex flex-col gap-3">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_32px_auto] xl:items-end">
-          <Field>
-            <FieldLabel>
-              {locale === "zh-CN" ? "组合名称" : "Combo name"}
-            </FieldLabel>
-            <Input
-              className="w-full min-w-0"
-              value={combo.name}
-              onChange={(event) =>
-                onUpdateCombo(comboIndex, {
-                  name: event.target.value,
-                })
-              }
-              placeholder={defaultComboName(comboIndex, locale)}
-            />
-          </Field>
-          <Field>
-            <FieldLabel>
-              {locale === "zh-CN" ? "地址来源" : "Base URL"}
-            </FieldLabel>
-            <NativeSelect
-              className={selectClassName()}
-              value={resolveBaseUrlId(form.base_urls, combo.base_url_id)}
-              onChange={(event) =>
-                onUpdateCombo(comboIndex, {
-                  base_url_id: event.target.value,
-                })
-              }
-            >
-              {form.base_urls.map((item, baseUrlIndex) => (
-                <NativeSelectOption key={item.id} value={item.id}>
-                  {baseUrlLabel(item, baseUrlIndex, locale)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Field>
-          <Field>
-            <FieldLabel>{locale === "zh-CN" ? "密钥" : "Key"}</FieldLabel>
-            <NativeSelect
-              className={selectClassName()}
-              value={selectedCredentialId}
-              onChange={(event) => {
-                const credentialId = event.target.value;
-                onUpdateCombo(comboIndex, {
-                  credential_id: credentialId,
-                  models: combo.models.filter(
-                    (model) => model.credential_id === credentialId,
-                  ),
-                });
-              }}
-            >
-              {selectedCredentialId && !selectedCredentialKnown ? (
-                <NativeSelectOption value={selectedCredentialId} disabled>
-                  {locale === "zh-CN"
-                    ? `无效密钥：${selectedCredentialId}`
-                    : `Invalid key: ${selectedCredentialId}`}
-                </NativeSelectOption>
-              ) : null}
-              {credentialOptions.length ? (
-                credentialOptions.map((item) => (
-                  <NativeSelectOption key={item.id} value={item.id}>
-                    {item.display_name}
-                  </NativeSelectOption>
-                ))
-              ) : (
-                <NativeSelectOption value="" disabled>
-                  {locale === "zh-CN" ? "暂无可用密钥" : "No available key"}
-                </NativeSelectOption>
-              )}
-            </NativeSelect>
-          </Field>
-          <div className="flex h-8 w-8 items-center justify-center xl:self-end">
-            <SwitchButton
-              checked={combo.enabled}
-              onChange={(checked) =>
-                onUpdateCombo(comboIndex, { enabled: checked })
-              }
-            />
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 xl:col-start-5 xl:row-start-1 xl:self-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="text-muted-foreground"
-              onClick={() => onOpenAdvanced(comboIndex)}
-            >
-              <Ellipsis size={16} />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="text-destructive hover:text-destructive"
-              onClick={() => onRemoveCombo(comboIndex)}
-            >
-              <X size={16} />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="default"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() =>
-                onUpdateCombo(comboIndex, {
-                  expanded: !combo.expanded,
-                })
-              }
-            >
-              <span>{locale === "zh-CN" ? "模型列表" : "Models"}</span>
-              <ChevronDown
-                size={16}
-                className={cn(
-                  "transition-transform",
-                  combo.expanded ? "rotate-180" : "",
-                )}
-              />
-            </Button>
-          </div>
-        </div>
-
-        {comboDuplicated ? (
-          <div className="text-sm text-destructive">
-            {locale === "zh-CN"
-              ? "地址来源和密钥重复"
-              : "Duplicate Base URL and key"}
-          </div>
-        ) : null}
-
-        {combo.expanded ? (
-          <div className="grid gap-3 pt-1">
-            <Separator />
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <FieldGroup className="gap-2">
-                <div className="text-sm font-medium text-foreground">
-                  {locale === "zh-CN" ? "手动添加模型" : "Add model manually"}
-                </div>
-                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "模型名称" : "Model name"}
-                    </FieldLabel>
-                    <Input
-                      className="w-full min-w-0"
-                      value={combo.manual_model_name}
-                      onChange={(event) =>
-                        onUpdateCombo(comboIndex, {
-                          manual_model_name: event.target.value,
-                        })
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
-                        onAddManualModel(comboIndex, selectedCredentialId);
-                      }}
-                      placeholder={
-                        locale === "zh-CN" ? "完整模型名" : "Exact model name"
-                      }
-                    />
-                  </Field>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      onAddManualModel(comboIndex, selectedCredentialId)
-                    }
-                    disabled={
-                      !selectedCredentialId || !combo.manual_model_name.trim()
-                    }
-                  >
-                    <Plus data-icon="inline-start" />
-                    {locale === "zh-CN" ? "添加模型" : "Add model"}
-                  </Button>
-                </div>
-              </FieldGroup>
-              <FieldGroup className="gap-2">
-                <div className="text-sm font-medium text-foreground">
-                  {locale === "zh-CN"
-                    ? "从上游获取模型"
-                    : "Fetch upstream models"}
-                </div>
-                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "模型过滤" : "Model filter"}
-                    </FieldLabel>
-                    <Input
-                      className="w-full min-w-0"
-                      value={combo.match_regex}
-                      onChange={(event) =>
-                        onUpdateCombo(comboIndex, {
-                          match_regex: event.target.value,
-                        })
-                      }
-                      placeholder={
-                        locale === "zh-CN"
-                          ? "正则表达式，留空获取全部"
-                          : "Regex, empty fetches all"
-                      }
-                    />
-                  </Field>
-                  <Button
-                    type="button"
-                    onClick={() => onFetchModels(comboIndex)}
-                    disabled={
-                      fetchingProtocolIndex === comboIndex ||
-                      !form.base_urls.some(
-                        (item) => item.enabled && item.url.trim(),
-                      ) ||
-                      !selectedCredentialActive
-                    }
-                  >
-                    <RefreshCcw
-                      data-icon="inline-start"
-                      className={
-                        fetchingProtocolIndex === comboIndex
-                          ? "animate-spin"
-                          : ""
-                      }
-                    />
-                    {locale === "zh-CN" ? "获取模型" : "Fetch models"}
-                  </Button>
-                </div>
-              </FieldGroup>
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-medium text-foreground">
-                {locale === "zh-CN" ? "已选模型" : "Selected models"}
-              </div>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => onUpdateCombo(comboIndex, { models: [] })}
-                disabled={!visibleModels.length}
-              >
-                <Trash2 data-icon="inline-start" />
-                {locale === "zh-CN" ? "清空全部" : "Clear all"}
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              {visibleModels.length ? (
-                <div className="flex w-full flex-col gap-1.5">
-                  {visibleModels.map(({ model, modelIndex }) => (
-                    <div
-                      key={
-                        model.id ||
-                        `${model.credential_id}-${model.model_name}-${modelIndex}`
-                      }
-                      className={cn(
-                        "flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-1.5",
-                        model.enabled
-                          ? "border-border bg-background"
-                          : "border-muted bg-muted/30 opacity-65",
-                      )}
-                    >
-                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                        {model.model_name}
-                      </span>
-                      {modelSupportedProtocols(model).map((item) => (
-                        <Badge
-                          key={item}
-                          variant="outline"
-                          title={
-                            locale === "zh-CN"
-                              ? `客户端协议：${protocolLabel(item)}`
-                              : `Client protocol: ${protocolLabel(item)}`
-                          }
-                          className={cn(
-                            "max-w-[140px] truncate",
-                            protocolBadgeClassName(item),
-                          )}
-                        >
-                          {compactProtocolLabel(item)}
-                        </Badge>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() =>
-                          onUpdateCombo(comboIndex, {
-                            models: combo.models.filter(
-                              (_, currentIndex) => currentIndex !== modelIndex,
-                            ),
-                          })
-                        }
-                      >
-                        <X size={14} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  {locale === "zh-CN" ? "当前没有模型" : "No models selected"}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function AdvancedProtocolDialog({
-  open,
-  protocol,
-  protocolIndex,
-  locale,
-  onOpenChange,
-  onUpdateProtocol,
-  onUpdateProtocolHeader,
-}: {
-  open: boolean;
-  protocol: FormCombo | undefined;
-  protocolIndex: number | null;
-  locale: Locale;
-  onOpenChange: (open: boolean) => void;
-  onUpdateProtocol: (index: number, patch: Partial<FormCombo>) => void;
-  onUpdateProtocolHeader: (
-    protocolIndex: number,
-    headerIndex: number,
-    patch: Partial<HeaderItem>,
-  ) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {protocolIndex !== null && protocol ? (
-        <AppDialogContent
-          className="max-w-3xl"
-          title={locale === "zh-CN" ? "更多设置" : "More settings"}
-        >
-          <div className="grid gap-4">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="protocol-proxy">
-                  {locale === "zh-CN" ? "代理地址" : "Proxy"}
-                </FieldLabel>
-                <Input
-                  id="protocol-proxy"
-                  value={protocol.channel_proxy}
-                  onChange={(event) =>
-                    onUpdateProtocol(protocolIndex, {
-                      channel_proxy: event.target.value,
-                    })
-                  }
-                  placeholder="http://127.0.0.1:7890"
-                />
-              </Field>
-            </FieldGroup>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-foreground">
-                  {locale === "zh-CN" ? "请求头" : "Headers"}
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    onUpdateProtocol(protocolIndex, {
-                      headers: [...protocol.headers, { key: "", value: "" }],
-                    })
-                  }
-                >
-                  <Plus data-icon="inline-start" />
-                  {locale === "zh-CN" ? "添加" : "Add"}
-                </Button>
-              </div>
-              {protocol.headers.map((header, headerIndex) => (
-                <div
-                  key={headerIndex}
-                  className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
-                >
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "请求头名称" : "Header key"}
-                    </FieldLabel>
-                    <Input
-                      value={header.key}
-                      onChange={(event) =>
-                        onUpdateProtocolHeader(protocolIndex, headerIndex, {
-                          key: event.target.value,
-                        })
-                      }
-                      placeholder={
-                        locale === "zh-CN" ? "请求头名称" : "Header-Key"
-                      }
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "请求头值" : "Header value"}
-                    </FieldLabel>
-                    <Input
-                      value={header.value}
-                      onChange={(event) =>
-                        onUpdateProtocolHeader(protocolIndex, headerIndex, {
-                          value: event.target.value,
-                        })
-                      }
-                      placeholder={
-                        locale === "zh-CN" ? "请求头值" : "Header-Value"
-                      }
-                    />
-                  </Field>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="text-muted-foreground"
-                    onClick={() =>
-                      onUpdateProtocol(protocolIndex, {
-                        headers:
-                          protocol.headers.length > 1
-                            ? protocol.headers.filter(
-                                (_, currentIndex) =>
-                                  currentIndex !== headerIndex,
-                              )
-                            : protocol.headers,
-                      })
-                    }
-                  >
-                    <X size={16} />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <Field>
-              <FieldLabel htmlFor="protocol-param-override">
-                {locale === "zh-CN" ? "参数覆盖" : "Param Override"}
-              </FieldLabel>
-              <Textarea
-                id="protocol-param-override"
-                className="min-h-24"
-                value={protocol.param_override}
-                onChange={(event) =>
-                  onUpdateProtocol(protocolIndex, {
-                    param_override: event.target.value,
-                  })
-                }
-              />
-              <FieldDescription>
-                {locale === "zh-CN"
-                  ? "填写 JSON 片段用于覆盖请求参数。"
-                  : "Use a JSON snippet to override request params."}
-              </FieldDescription>
-            </Field>
-          </div>
-        </AppDialogContent>
-      ) : null}
-    </Dialog>
-  );
-}
-
-function ModelTestDialog({
-  target,
-  form,
-  locale,
-  modelTestPrompts,
-  modelTestPromptMode,
-  modelTestPrompt,
-  modelTestProtocol,
-  modelTestResult,
-  testingModel,
-  onClose,
-  onPromptModeChange,
-  onPromptChange,
-  onProtocolChange,
-  onRun,
-}: {
-  target: ModelTestTarget | null;
-  form: FormState;
-  locale: Locale;
-  modelTestPrompts: string[];
-  modelTestPromptMode: string;
-  modelTestPrompt: string;
-  modelTestProtocol: ProtocolKind | null;
-  modelTestResult: SiteModelTestResult | null;
-  testingModel: boolean;
-  onClose: () => void;
-  onPromptModeChange: (value: string) => void;
-  onPromptChange: (value: string) => void;
-  onProtocolChange: (value: ProtocolKind) => void;
-  onRun: () => void;
-}) {
-  return (
-    <Dialog
-      open={target !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      {target !== null
-        ? (() => {
-            const protocol = form.combos[target.protocolIndex];
-            const model = protocol?.models[target.modelIndex];
-            const credentialIndex = model
-              ? form.credentials.findIndex(
-                  (item) => item.id === model.credential_id,
-                )
-              : -1;
-            const credential =
-              credentialIndex >= 0
-                ? form.credentials[credentialIndex]
-                : undefined;
-            const activeBaseUrl = protocol
-              ? activeBaseUrlValue(form, protocol).trim()
-              : "";
-            const supportedProtocols = modelSupportedProtocols(model);
-            const selectedProtocol = selectedModelTestProtocol(
-              supportedProtocols,
-              modelTestProtocol,
-            );
-            const canTest = Boolean(
-              protocol &&
-              model?.model_name.trim() &&
-              credential?.api_key.trim() &&
-              activeBaseUrl &&
-              selectedProtocol &&
-              modelTestPrompt.trim(),
-            );
-            const sourceText = [
-              model?.model_name || "",
-              credential
-                ? credentialLabel(credential, credentialIndex, locale)
-                : "",
-              activeBaseUrl,
-            ]
-              .filter(Boolean)
-              .join(" · ");
-            return (
-              <AppDialogContent
-                className="max-w-2xl"
-                title={locale === "zh-CN" ? "测试模型" : "Test model"}
-              >
-                <div className="grid gap-4">
-                  <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-foreground">
-                        {model?.model_name || "-"}
-                      </span>
-                      {supportedProtocols.map((item) => (
-                        <Badge
-                          key={item}
-                          variant="outline"
-                          className={cn(
-                            "max-w-[140px] truncate text-xs",
-                            protocolBadgeClassName(item),
-                          )}
-                        >
-                          {compactProtocolLabel(item)}
-                        </Badge>
-                      ))}
-                    </div>
-                    <div className="mt-1 break-all text-xs">{sourceText}</div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
-                    <div className="grid gap-3">
-                      <Field>
-                        <FieldLabel>
-                          {locale === "zh-CN" ? "问题" : "Prompt"}
-                        </FieldLabel>
-                        <NativeSelect
-                          className={selectClassName()}
-                          value={modelTestPromptMode}
-                          onChange={(event) =>
-                            onPromptModeChange(event.target.value)
-                          }
-                        >
-                          {modelTestPrompts.map((_, index) => (
-                            <NativeSelectOption
-                              key={index}
-                              value={String(index)}
-                            >
-                              {locale === "zh-CN"
-                                ? `预设 ${index + 1}`
-                                : `Preset ${index + 1}`}
-                            </NativeSelectOption>
-                          ))}
-                          <NativeSelectOption value="custom">
-                            {locale === "zh-CN" ? "自定义" : "Custom"}
-                          </NativeSelectOption>
-                        </NativeSelect>
-                      </Field>
-                      {supportedProtocols.length > 1 ? (
-                        <Field>
-                          <FieldLabel>
-                            {locale === "zh-CN" ? "测试协议" : "Test protocol"}
-                          </FieldLabel>
-                          <NativeSelect
-                            className={selectClassName()}
-                            value={selectedProtocol ?? ""}
-                            onChange={(event) =>
-                              onProtocolChange(
-                                event.target.value as ProtocolKind,
-                              )
-                            }
-                            disabled={testingModel}
-                          >
-                            {supportedProtocols.map((item) => (
-                              <NativeSelectOption key={item} value={item}>
-                                {protocolLabel(item)}
-                              </NativeSelectOption>
-                            ))}
-                          </NativeSelect>
-                        </Field>
-                      ) : null}
-                    </div>
-                    <Field>
-                      <FieldLabel>
-                        {locale === "zh-CN" ? "内容" : "Content"}
-                      </FieldLabel>
-                      <Textarea
-                        className="min-h-24"
-                        value={modelTestPrompt}
-                        onChange={(event) => onPromptChange(event.target.value)}
-                      />
-                      {false ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {locale === "zh-CN"
-                            ? "Rerank 测试：首行为查询，其余行作为候选文档（每行一个）。"
-                            : "Rerank test: first line is the query, remaining lines are candidate documents (one per line)."}
-                        </p>
-                      ) : null}
-                    </Field>
-                  </div>
-
-                  {modelTestResult ? (
-                    <div
-                      className={cn(
-                        "grid gap-2 rounded-md border px-3 py-2 text-sm",
-                        modelTestResult.success
-                          ? "bg-muted/20"
-                          : "border-destructive/40 bg-destructive/5",
-                      )}
-                    >
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <Badge
-                          variant="outline"
-                          className={
-                            modelTestResult.success
-                              ? "border-primary/30 text-primary"
-                              : "border-destructive/40 text-destructive"
-                          }
-                        >
-                          {modelTestResult.success
-                            ? locale === "zh-CN"
-                              ? "成功"
-                              : "Success"
-                            : locale === "zh-CN"
-                              ? "失败"
-                              : "Failed"}
-                        </Badge>
-                        <span>HTTP {modelTestResult.status_code ?? "-"}</span>
-                        <span>{modelTestResult.latency_ms}ms</span>
-                      </div>
-                      <div
-                        className={cn(
-                          "max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm",
-                          modelTestResult.success
-                            ? "text-foreground"
-                            : "text-destructive",
-                        )}
-                      >
-                        {modelTestResult.success
-                          ? modelTestResult.output_text ||
-                            (locale === "zh-CN"
-                              ? "上游返回成功，但没有可展示文本"
-                              : "Upstream succeeded but returned no displayable text")
-                          : modelTestResult.error_message ||
-                            (locale === "zh-CN" ? "测试失败" : "Test failed")}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={onClose}
-                      disabled={testingModel}
-                    >
-                      {locale === "zh-CN" ? "关闭" : "Close"}
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={onRun}
-                      disabled={!canTest || testingModel}
-                    >
-                      <RefreshCcw
-                        data-icon="inline-start"
-                        className={testingModel ? "animate-spin" : ""}
-                      />
-                      {locale === "zh-CN" ? "发送测试" : "Send test"}
-                    </Button>
-                  </div>
-                </div>
-              </AppDialogContent>
-            );
-          })()
-        : null}
-    </Dialog>
-  );
-}
-
-function BatchModelTestDialog({
-  open,
-  locale,
-  modelTestPrompts,
-  batchTestPromptMode,
-  batchTestPrompt,
-  batchTestConcurrency,
-  batchTestOptions,
-  batchTestRows,
-  batchTestingModels,
-  onOpenChange,
-  onPromptModeChange,
-  onPromptChange,
-  onConcurrencyChange,
-  onProtocolChange,
-  onRun,
-}: {
-  open: boolean;
-  locale: Locale;
-  modelTestPrompts: string[];
-  batchTestPromptMode: string;
-  batchTestPrompt: string;
-  batchTestConcurrency: string;
-  batchTestOptions: BatchModelTestOption[];
-  batchTestRows: BatchModelTestRow[];
-  batchTestingModels: boolean;
-  onOpenChange: (open: boolean) => void;
-  onPromptModeChange: (value: string) => void;
-  onPromptChange: (value: string) => void;
-  onConcurrencyChange: (value: string) => void;
-  onProtocolChange: (key: string, protocol: ProtocolKind) => void;
-  onRun: () => void;
-}) {
-  const multiProtocolOptions = batchTestOptions.filter(
-    (item) => item.protocols.length > 1,
-  );
-  const testableCount = batchTestOptions.length;
-  const canRun =
-    testableCount > 0 && Boolean(batchTestPrompt.trim()) && !batchTestingModels;
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen && batchTestingModels) return;
-        onOpenChange(nextOpen);
-      }}
-    >
-      {open ? (
-        <AppDialogContent
-          className="max-w-4xl"
-          title={locale === "zh-CN" ? "批量测试模型" : "Batch test models"}
-        >
-          <div className="grid gap-4">
-            <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              {locale === "zh-CN"
-                ? `将测试 ${testableCount} 个可用模型`
-                : `${testableCount} testable models`}
-            </div>
-
-            <FieldGroup>
-              <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
-                <div className="grid gap-3">
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "测试问题" : "Prompt"}
-                    </FieldLabel>
-                    <NativeSelect
-                      className={selectClassName()}
-                      value={batchTestPromptMode}
-                      onChange={(event) =>
-                        onPromptModeChange(event.target.value)
-                      }
-                      disabled={batchTestingModels}
-                    >
-                      {modelTestPrompts.map((_, index) => (
-                        <NativeSelectOption key={index} value={String(index)}>
-                          {locale === "zh-CN"
-                            ? `预设 ${index + 1}`
-                            : `Preset ${index + 1}`}
-                        </NativeSelectOption>
-                      ))}
-                      <NativeSelectOption value="custom">
-                        {locale === "zh-CN" ? "自定义" : "Custom"}
-                      </NativeSelectOption>
-                    </NativeSelect>
-                  </Field>
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "并发数" : "Concurrency"}
-                    </FieldLabel>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={batchTestConcurrency}
-                      onChange={(event) =>
-                        onConcurrencyChange(event.target.value)
-                      }
-                      disabled={batchTestingModels}
-                    />
-                  </Field>
-                </div>
-                <Field>
-                  <FieldLabel>
-                    {locale === "zh-CN" ? "内容" : "Content"}
-                  </FieldLabel>
-                  <Textarea
-                    className="min-h-24"
-                    value={batchTestPrompt}
-                    onChange={(event) => onPromptChange(event.target.value)}
-                    disabled={batchTestingModels}
-                  />
-                </Field>
-              </div>
-            </FieldGroup>
-
-            {multiProtocolOptions.length ? (
-              <FieldSet>
-                <FieldLegend>
-                  {locale === "zh-CN" ? "测试协议" : "Test protocol"}
-                </FieldLegend>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {multiProtocolOptions.map((item) => (
-                    <Field key={item.key}>
-                      <FieldLabel className="truncate">
-                        {item.modelName}
-                      </FieldLabel>
-                      <NativeSelect
-                        className={selectClassName()}
-                        value={item.selectedProtocol}
-                        onChange={(event) =>
-                          onProtocolChange(
-                            item.key,
-                            event.target.value as ProtocolKind,
-                          )
-                        }
-                        disabled={batchTestingModels}
-                      >
-                        {item.protocols.map((protocol) => (
-                          <NativeSelectOption key={protocol} value={protocol}>
-                            {protocolLabel(protocol)}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </Field>
-                  ))}
-                </div>
-              </FieldSet>
-            ) : null}
-
-            {batchTestRows.length ? (
-              <div className="overflow-hidden rounded-md border">
-                <div className="border-b px-3 py-2 text-sm font-medium">
-                  {locale === "zh-CN" ? "测试结果" : "Test results"}
-                </div>
-                <div className="max-h-80 overflow-y-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>
-                          {locale === "zh-CN" ? "模型" : "Model"}
-                        </TableHead>
-                        <TableHead className="w-28">
-                          {locale === "zh-CN" ? "协议" : "Protocol"}
-                        </TableHead>
-                        <TableHead className="w-24">
-                          {locale === "zh-CN" ? "状态" : "Status"}
-                        </TableHead>
-                        <TableHead className="w-28">
-                          {locale === "zh-CN" ? "耗时" : "Latency"}
-                        </TableHead>
-                        <TableHead>
-                          {locale === "zh-CN" ? "结果" : "Result"}
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {batchTestRows.map((row) => {
-                        const displayMessage =
-                          row.message ||
-                          (row.status === "running"
-                            ? locale === "zh-CN"
-                              ? "测试中..."
-                              : "Running..."
-                            : "-");
-                        return (
-                          <TableRow key={row.key}>
-                            <TableCell className="min-w-[180px]">
-                              <div className="truncate font-medium">
-                                {row.modelName}
-                              </div>
-                              <div className="truncate text-xs text-muted-foreground">
-                                {row.credentialName}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "max-w-[120px] truncate text-xs",
-                                  protocolBadgeClassName(row.protocol),
-                                )}
-                              >
-                                {compactProtocolLabel(row.protocol)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={batchTestStatusVariant(row.status)}
-                              >
-                                {batchTestStatusLabel(row.status, locale)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              <div>HTTP {row.statusCode ?? "-"}</div>
-                              <div>
-                                {row.latencyMs === undefined
-                                  ? "-"
-                                  : `${row.latencyMs}ms`}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div
-                                className={cn(
-                                  "max-h-24 min-w-[220px] overflow-y-auto whitespace-pre-wrap break-words text-xs",
-                                  row.status === "failed"
-                                    ? "text-destructive"
-                                    : "text-foreground",
-                                )}
-                              >
-                                {displayMessage}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={batchTestingModels}
-              >
-                {locale === "zh-CN" ? "关闭" : "Close"}
-              </Button>
-              <Button type="button" onClick={onRun} disabled={!canRun}>
-                <RefreshCcw
-                  data-icon="inline-start"
-                  className={batchTestingModels ? "animate-spin" : undefined}
-                />
-                {locale === "zh-CN" ? "开始测试" : "Start test"}
-              </Button>
-            </div>
-          </div>
-        </AppDialogContent>
-      ) : null}
-    </Dialog>
-  );
-}
-
-function ModelPickerDialog({
-  open,
-  availableModels,
-  pickerSelectedModelKeys,
-  locale,
-  onOpenChange,
-  onToggleModel,
-  onConfirm,
-  onConfirmAll,
-  onCancel,
-}: {
-  open: boolean;
-  availableModels: PickerModelItem[];
-  pickerSelectedModelKeys: string[];
-  locale: Locale;
-  onOpenChange: (open: boolean) => void;
-  onToggleModel: (key: string) => void;
-  onConfirm: () => void;
-  onConfirmAll: () => void;
-  onCancel: () => void;
-}) {
-  const modelGroups = useMemo(
-    () => groupPickerModels(availableModels),
-    [availableModels],
-  );
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {open ? (
-        <AppDialogContent
-          className="max-w-3xl"
-          title={locale === "zh-CN" ? "选择模型" : "Select models"}
-        >
-          <div className="grid gap-4">
-            <div className="max-h-[58dvh] overflow-y-auto p-1 sm:max-h-[420px]">
-              <div className="flex flex-wrap gap-2.5">
-                {modelGroups.length ? (
-                  modelGroups.map((model) => {
-                    const key = pickerModelKey(model);
-                    const checked = pickerSelectedModelKeys.includes(key);
-                    return (
-                      <Button
-                        key={key}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className={cn(
-                          "max-w-full rounded-full",
-                          modelBadgeClassName(checked),
-                          checked ? "border-primary text-primary" : "",
-                        )}
-                        onClick={() => onToggleModel(key)}
-                      >
-                        <span className="max-w-[180px] truncate sm:max-w-[220px]">
-                          {model.model_name}
-                        </span>
-                        <span className="text-xs">{checked ? "✓" : "+"}</span>
-                      </Button>
-                    );
-                  })
-                ) : (
-                  <div className="px-3 py-6 text-sm text-muted-foreground">
-                    {locale === "zh-CN"
-                      ? "未获取到可选模型"
-                      : "No models fetched."}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button type="button" variant="outline" onClick={onCancel}>
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onConfirmAll}
-                disabled={!modelGroups.length}
-              >
-                {locale === "zh-CN" ? "加入全部模型" : "Add all models"}
-              </Button>
-              <Button
-                type="button"
-                onClick={onConfirm}
-                disabled={!pickerSelectedModelKeys.length}
-              >
-                {locale === "zh-CN" ? "加入模型" : "Add models"}
-              </Button>
-            </div>
-          </div>
-        </AppDialogContent>
-      ) : null}
-    </Dialog>
-  );
-}
-
-type AggregatedModel = {
-  credentialId: string;
-  modelName: string;
-  protocols: ProtocolKind[];
-  sources: string[];
-};
-
-function useAggregatedModels(
-  combos: FormCombo[],
-  locale: Locale,
-): AggregatedModel[] {
-  return useMemo(() => {
-    const aggregate: Record<
-      string,
-      { protocols: Set<ProtocolKind>; sources: Set<string> }
-    > = {};
-    combos.forEach((combo, index) => {
-      if (!combo.enabled) return;
-      const comboName = comboDisplayName(combo, index, locale);
-      combo.models.forEach((model) => {
-        const key = genericModelKey(model);
-        if (!aggregate[key]) {
-          aggregate[key] = { protocols: new Set(), sources: new Set() };
-        }
-        const modelProtocols = Array.from(new Set(model.protocols));
-        modelProtocols.forEach((p) => aggregate[key].protocols.add(p));
-        aggregate[key].sources.add(comboName);
-      });
-    });
-    return Object.entries(aggregate).map(([key, { protocols, sources }]) => {
-      const separatorIndex = key.indexOf(":");
-      return {
-        credentialId: key.slice(0, separatorIndex),
-        modelName: key.slice(separatorIndex + 1),
-        protocols: Array.from(protocols),
-        sources: Array.from(sources),
-      };
-    });
-  }, [combos, locale]);
-}
-
-function SiteModelAggregateView({
-  models,
-  combos,
-  locale,
-  onChangeModelProtocols,
-  onOpenModelTest,
-  canTestModel,
-  testingDisabled,
-}: {
-  models: AggregatedModel[];
-  combos: FormCombo[];
-  locale: Locale;
-  onChangeModelProtocols?: (
-    credentialId: string,
-    modelName: string,
-    nextProtocols: ProtocolKind[],
-  ) => void;
-  onOpenModelTest?: (credentialId: string, modelName: string) => void;
-  canTestModel?: (credentialId: string, modelName: string) => boolean;
-  testingDisabled?: boolean;
-}) {
-  const allowedProtocolsMap = useMemo(() => {
-    const map: Record<string, Set<ProtocolKind>> = {};
-    combos.forEach((combo) => {
-      if (!combo.enabled) return;
-      combo.models.forEach((model) => {
-        const key = genericModelKey(model);
-        if (!map[key]) map[key] = new Set();
-        allClientProtocols.forEach((p) => map[key].add(p));
-      });
-    });
-    return map;
-  }, [combos]);
-  if (!models.length) {
-    return (
-      <div className="py-4 text-sm text-muted-foreground">
-        {locale === "zh-CN"
-          ? "暂无模型，请先添加或获取模型"
-          : "No models yet. Add or fetch models first."}
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-2">
-      {models.map(({ credentialId, modelName, protocols, sources }) => {
-        const modelKey = genericModelKey({
-          credential_id: credentialId,
-          model_name: modelName,
-        });
-        const allowed = Array.from(allowedProtocolsMap[modelKey] ?? []);
-        const testable = Boolean(canTestModel?.(credentialId, modelName));
-        return (
-          <div
-            key={modelKey}
-            className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border bg-background px-3 py-2"
-          >
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">
-              {modelName}
-            </span>
-            <ProtocolMultiSelect
-              value={protocols}
-              allowedProtocols={allowed}
-              onChange={(next) =>
-                onChangeModelProtocols?.(credentialId, modelName, next)
-              }
-              locale={locale}
-              className="w-auto min-w-[180px]"
-              invalid={protocols.length === 0}
-              requireAtLeastOne
-            />
-            <span className="text-xs text-muted-foreground">
-              {sources.join(", ")}
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => onOpenModelTest?.(credentialId, modelName)}
-              disabled={!testable || testingDisabled}
-            >
-              {locale === "zh-CN" ? "测试" : "Test"}
-            </Button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function BatchImportDialog({
-  open,
-  onOpenChange,
-  locale,
-  importText,
-  importError,
-  importResult,
-  importing,
-  onTextChange,
-  onFileChange,
-  onDownloadTemplate,
-  onImport,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  locale: Locale;
-  importText: string;
-  importError: string;
-  importResult: SiteBatchImportResult | null;
-  importing: boolean;
-  onTextChange: (value: string) => void;
-  onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onDownloadTemplate: () => void;
-  onImport: () => void;
-}) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const resultRows = useMemo(
-    () => (importResult ? importResultRows(importResult, locale) : []),
-    [importResult, locale],
-  );
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (importing) return;
-        onOpenChange(nextOpen);
-      }}
-    >
-      {open ? (
-        <AppDialogContent
-          className="max-w-3xl"
-          title={locale === "zh-CN" ? "批量导入渠道" : "Import channels"}
-        >
-          <div className="grid gap-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={onFileChange}
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={importing}
-              >
-                <Upload data-icon="inline-start" />
-                {locale === "zh-CN" ? "选择 JSON" : "Choose JSON"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onDownloadTemplate}
-                disabled={importing}
-              >
-                <Download data-icon="inline-start" />
-                {locale === "zh-CN" ? "下载模板" : "Template"}
-              </Button>
-            </div>
-
-            <FieldGroup>
-              <Field data-invalid={Boolean(importError)}>
-                <FieldLabel htmlFor="channels-batch-import-json">
-                  {locale === "zh-CN" ? "JSON 内容" : "JSON"}
-                </FieldLabel>
-                <Textarea
-                  id="channels-batch-import-json"
-                  value={importText}
-                  onChange={(event) => onTextChange(event.target.value)}
-                  className="min-h-[260px] font-mono text-xs"
-                  spellCheck={false}
-                  aria-invalid={Boolean(importError)}
-                  disabled={importing}
-                />
-                {importError ? (
-                  <FieldDescription className="text-destructive">
-                    {importError}
-                  </FieldDescription>
-                ) : null}
-              </Field>
-            </FieldGroup>
-
-            {importResult ? (
-              <div className="grid gap-3">
-                <div className="grid grid-cols-3 gap-2">
-                  <ImportSummaryMetric
-                    label={locale === "zh-CN" ? "创建" : "Created"}
-                    value={importResult.created_count}
-                  />
-                  <ImportSummaryMetric
-                    label={locale === "zh-CN" ? "跳过" : "Skipped"}
-                    value={importResult.skipped_count}
-                  />
-                  <ImportSummaryMetric
-                    label={locale === "zh-CN" ? "错误" : "Errors"}
-                    value={importResult.error_count}
-                  />
-                </div>
-
-                {resultRows.length ? (
-                  <div className="max-h-56 overflow-y-auto rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-16">
-                            {locale === "zh-CN" ? "序号" : "Index"}
-                          </TableHead>
-                          <TableHead>
-                            {locale === "zh-CN" ? "渠道" : "Channel"}
-                          </TableHead>
-                          <TableHead className="w-24">
-                            {locale === "zh-CN" ? "状态" : "Status"}
-                          </TableHead>
-                          <TableHead>
-                            {locale === "zh-CN" ? "原因" : "Reason"}
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {resultRows.map((row) => (
-                          <TableRow key={row.key}>
-                            <TableCell>{row.index + 1}</TableCell>
-                            <TableCell className="max-w-[180px] truncate">
-                              {row.name}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={importStatusVariant(row.status)}>
-                                {importStatusLabel(row.status, locale)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell
-                              className="max-w-[260px] truncate"
-                              title={row.reason}
-                            >
-                              {row.reason || "-"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={importing}
-              >
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button type="button" onClick={onImport} disabled={importing}>
-                {importing
-                  ? locale === "zh-CN"
-                    ? "导入中..."
-                    : "Importing..."
-                  : locale === "zh-CN"
-                    ? "导入"
-                    : "Import"}
-              </Button>
-            </div>
-          </div>
-        </AppDialogContent>
-      ) : null}
-    </Dialog>
-  );
-}
-
-function ImportSummaryMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-base font-semibold text-foreground">{value}</div>
-    </div>
-  );
-}
+  activeBaseUrlValue,
+  batchImportTemplateText,
+  BatchModelTestOption,
+  BatchModelTestRow,
+  ChannelSort,
+  ChannelStatusFilter,
+  createLocalId,
+  credentialLabel,
+  defaultBaseUrlId,
+  duplicateProtocolConfigKeys,
+  emptyForm,
+  emptyProtocolConfig,
+  FormBaseUrl,
+  FormCredential,
+  formBaseUrlsForPayload,
+  formHeaders,
+  FormProtocolConfig,
+  FormState,
+  fallbackCredentialName,
+  genericModelKey,
+  groupPickerModels,
+  HeaderItem,
+  invalidEmptyProtocolConfigCount,
+  invalidModelProtocolCount,
+  invalidProtocolBaseUrlCount,
+  isSiteEnabled,
+  ModelTestTarget,
+  modelSupportedProtocols,
+  nextProtocolConfigName,
+  parseBatchImportPayload,
+  pickerModelKey,
+  pickerModelKeys,
+  PickerModelItem,
+  protocolConfigDisplayName,
+  resolveBaseUrlId,
+  safeText,
+  selectedModelTestProtocol,
+  siteEndpointSummary,
+  siteModelCount,
+  SiteRow,
+  siteSubtitle,
+  toForm,
+  toPayload,
+  TestableModelOption,
+} from "./channels/shared";
+
+const ChannelEditorDialog = dynamic(() =>
+  import("./channels/dialogs").then((module) => module.ChannelEditorDialog),
+);
+const DeleteChannelDialog = dynamic(() =>
+  import("./channels/dialogs").then((module) => module.DeleteChannelDialog),
+);
+const AdvancedProtocolConfigDialog = dynamic(() =>
+  import("./channels/form-sections").then(
+    (module) => module.AdvancedProtocolConfigDialog,
+  ),
+);
+const BatchImportDialog = dynamic(() =>
+  import("./channels/import-dialog").then((module) => module.BatchImportDialog),
+);
+const BatchModelTestDialog = dynamic(() =>
+  import("./channels/model-dialogs").then(
+    (module) => module.BatchModelTestDialog,
+  ),
+);
+const ModelTestDialog = dynamic(() =>
+  import("./channels/model-dialogs").then((module) => module.ModelTestDialog),
+);
+const ModelPickerDialog = dynamic(() =>
+  import("./channels/model-dialogs").then((module) => module.ModelPickerDialog),
+);
 
 export function ChannelsScreen() {
   const queryClient = useQueryClient();
@@ -2902,18 +129,16 @@ export function ChannelsScreen() {
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm(locale));
-  const [newComboName, setNewComboName] = useState("");
-  const [comboNameDialogOpen, setComboNameDialogOpen] = useState(false);
+  const [newProtocolConfigName, setNewProtocolConfigName] = useState("");
+  const [protocolConfigNameDialogOpen, setProtocolConfigNameDialogOpen] =
+    useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [fetchingProtocolIndex, setFetchingProtocolIndex] = useState<
-    number | null
-  >(null);
-  const [advancedProtocolIndex, setAdvancedProtocolIndex] = useState<
-    number | null
-  >(null);
-  const [modelPickerProtocolIndex, setModelPickerProtocolIndex] = useState<
-    number | null
-  >(null);
+  const [fetchingProtocolConfigIndex, setFetchingProtocolConfigIndex] =
+    useState<number | null>(null);
+  const [advancedProtocolConfigIndex, setAdvancedProtocolConfigIndex] =
+    useState<number | null>(null);
+  const [modelPickerProtocolConfigIndex, setModelPickerProtocolConfigIndex] =
+    useState<number | null>(null);
   const [availableModels, setAvailableModels] = useState<PickerModelItem[]>([]);
   const [pickerSelectedModelKeys, setPickerSelectedModelKeys] = useState<
     string[]
@@ -2990,7 +215,7 @@ export function ChannelsScreen() {
     );
     return parseModelTestPrompts(mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY));
   }, [settings]);
-  const overviewModels = useAggregatedModels(form.combos, locale);
+  const overviewModels = useAggregatedModels(form.protocolConfigs, locale);
   const modelTestOptionByKey = useMemo(() => {
     const options = new Map<string, TestableModelOption>();
     const credentialById = new Map(
@@ -2998,9 +223,16 @@ export function ChannelsScreen() {
         (credential, index) => [credential.id, { credential, index }] as const,
       ),
     );
-    for (const [protocolIndex, combo] of form.combos.entries()) {
-      if (!combo.enabled || !activeBaseUrlValue(form, combo).trim()) continue;
-      for (const [modelIndex, model] of combo.models.entries()) {
+    for (const [
+      protocolConfigIndex,
+      protocolConfig,
+    ] of form.protocolConfigs.entries()) {
+      if (
+        !protocolConfig.enabled ||
+        !activeBaseUrlValue(form, protocolConfig).trim()
+      )
+        continue;
+      for (const [modelIndex, model] of protocolConfig.models.entries()) {
         const key = genericModelKey(model);
         if (options.has(key) || !model.model_name.trim()) continue;
         const credentialEntry = credentialById.get(model.credential_id);
@@ -3009,7 +241,7 @@ export function ChannelsScreen() {
         if (!protocols.length) continue;
         options.set(key, {
           key,
-          target: { protocolIndex, modelIndex },
+          target: { protocolConfigIndex, modelIndex },
           modelName: model.model_name.trim(),
           credentialName: credentialLabel(
             credentialEntry.credential,
@@ -3042,10 +274,13 @@ export function ChannelsScreen() {
       (sites ?? []).map((site) => ({
         ...site,
         subtitle: siteSubtitle(site),
-        protocol_count: site.protocols.reduce((total, combo) => {
-          if (!combo.enabled) return total;
-          return total + combo.protocols.length;
-        }, 0),
+        enabled_protocol_channel_count: site.protocols.reduce(
+          (total, protocolConfig) => {
+            if (!protocolConfig.enabled) return total;
+            return total + protocolConfig.protocols.length;
+          },
+          0,
+        ),
         model_count: siteModelCount(site),
         endpoint_summary: siteEndpointSummary(site, locale),
       })),
@@ -3058,9 +293,9 @@ export function ChannelsScreen() {
       if (statusFilter === "disabled" && isSiteEnabled(site)) return false;
       if (
         protocolFilter !== "all" &&
-        !site.protocols.some((combo) => {
-          if (!combo.enabled) return false;
-          return combo.protocols.includes(protocolFilter);
+        !site.protocols.some((protocolConfig) => {
+          if (!protocolConfig.enabled) return false;
+          return protocolConfig.protocols.includes(protocolFilter);
         })
       )
         return false;
@@ -3069,8 +304,8 @@ export function ChannelsScreen() {
         site.name,
         site.subtitle,
         site.endpoint_summary,
-        ...site.protocols.flatMap((item) =>
-          item.models.map((model) => model.model_name),
+        ...site.protocols.flatMap((protocolConfig) =>
+          protocolConfig.models.map((model) => model.model_name),
         ),
       ]
         .join(" ")
@@ -3094,7 +329,8 @@ export function ChannelsScreen() {
         );
       if (sortBy === "protocols-desc")
         return (
-          right.protocol_count - left.protocol_count ||
+          right.enabled_protocol_channel_count -
+            left.enabled_protocol_channel_count ||
           left.name.localeCompare(right.name, locale)
         );
       return (
@@ -3117,9 +353,9 @@ export function ChannelsScreen() {
     protocolFilter !== "all",
   ].filter(Boolean).length;
   const submittedBaseUrls = useMemo(() => formBaseUrlsForPayload(form), [form]);
-  const duplicatedComboKeys = useMemo(
-    () => duplicateComboKeys(form.combos, submittedBaseUrls),
-    [form.combos, submittedBaseUrls],
+  const duplicatedProtocolConfigKeys = useMemo(
+    () => duplicateProtocolConfigKeys(form.protocolConfigs, submittedBaseUrls),
+    [form.protocolConfigs, submittedBaseUrls],
   );
   const currentSnapshot = useMemo(
     () => JSON.stringify(toPayload(form)),
@@ -3372,11 +608,13 @@ export function ChannelsScreen() {
     event.preventDefault();
     if (invalidProtocolBaseUrlCount(form)) {
       toast.error(
-        locale === "zh-CN" ? "组合地址来源无效" : "Combo Base URL is invalid",
+        locale === "zh-CN"
+          ? "协议配置地址来源无效"
+          : "Protocol config Base URL is invalid",
       );
       return;
     }
-    if (duplicatedComboKeys.size) {
+    if (duplicatedProtocolConfigKeys.size) {
       const message =
         locale === "zh-CN"
           ? "同一个渠道内不允许重复地址来源和密钥"
@@ -3384,11 +622,11 @@ export function ChannelsScreen() {
       toast.error(message);
       return;
     }
-    if (invalidEmptyComboCount(form)) {
+    if (invalidEmptyProtocolConfigCount(form)) {
       toast.error(
         locale === "zh-CN"
-          ? "请为每个组合添加至少一个模型"
-          : "Add at least one model for every combo",
+          ? "请为每个协议配置添加至少一个模型"
+          : "Add at least one model for every protocol config",
       );
       return;
     }
@@ -3486,18 +724,18 @@ export function ChannelsScreen() {
             api_key: item.api_key,
             enabled: item.enabled,
           })),
-          protocols: site.protocols.map((item) => ({
-            id: item.id,
-            name: item.name,
-            protocols: item.protocols,
+          protocols: site.protocols.map((protocolConfig) => ({
+            id: protocolConfig.id,
+            name: protocolConfig.name,
+            protocols: protocolConfig.protocols,
             enabled,
-            headers: item.headers,
-            channel_proxy: item.channel_proxy,
-            param_override: item.param_override,
-            match_regex: item.match_regex,
-            base_url_id: item.base_url_id,
-            credential_id: item.credential_id,
-            models: item.models.map((model) => ({
+            headers: protocolConfig.headers,
+            channel_proxy: protocolConfig.channel_proxy,
+            param_override: protocolConfig.param_override,
+            match_regex: protocolConfig.match_regex,
+            base_url_id: protocolConfig.base_url_id,
+            credential_id: protocolConfig.credential_id,
+            models: protocolConfig.models.map((model) => ({
               id: model.id,
               protocol: model.protocol,
               credential_id: model.credential_id,
@@ -3559,15 +797,15 @@ export function ChannelsScreen() {
       return {
         ...current,
         credentials: nextCredentials,
-        combos: current.combos.map((combo) => {
+        protocolConfigs: current.protocolConfigs.map((protocolConfig) => {
           const credentialId =
-            combo.credential_id === target.id
+            protocolConfig.credential_id === target.id
               ? (nextCredentials[0]?.id ?? "")
-              : combo.credential_id;
+              : protocolConfig.credential_id;
           return {
-            ...combo,
+            ...protocolConfig,
             credential_id: credentialId,
-            models: combo.models.filter(
+            models: protocolConfig.models.filter(
               (model) => model.credential_id !== target.id,
             ),
           };
@@ -3576,11 +814,17 @@ export function ChannelsScreen() {
     });
   }
 
-  function updateCombo(index: number, patch: Partial<FormCombo>) {
+  function updateProtocolConfig(
+    index: number,
+    patch: Partial<FormProtocolConfig>,
+  ) {
     setForm((current) => ({
       ...current,
-      combos: current.combos.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, ...patch } : item,
+      protocolConfigs: current.protocolConfigs.map(
+        (protocolConfig, protocolConfigIndex) =>
+          protocolConfigIndex === index
+            ? { ...protocolConfig, ...patch }
+            : protocolConfig,
       ),
     }));
   }
@@ -3600,57 +844,68 @@ export function ChannelsScreen() {
     }
     setForm((current) => ({
       ...current,
-      combos: current.combos.map((combo) => {
+      protocolConfigs: current.protocolConfigs.map((protocolConfig) => {
         if (
-          !combo.models.some(
+          !protocolConfig.models.some(
             (m) =>
               m.credential_id === credentialId && m.model_name === modelName,
           )
         )
-          return combo;
+          return protocolConfig;
         const modelProtocols = Array.from(new Set(nextProtocols));
-        const nextModels = combo.models.map((m) =>
+        const nextModels = protocolConfig.models.map((m) =>
           m.credential_id === credentialId && m.model_name === modelName
             ? { ...m, protocols: modelProtocols }
             : m,
         );
         return {
-          ...combo,
+          ...protocolConfig,
           models: nextModels,
         };
       }),
     }));
   }
 
-  function openAddComboDialog() {
-    setNewComboName(nextComboName(form.combos, locale));
-    setComboNameDialogOpen(true);
+  function openAddProtocolConfigDialog() {
+    setNewProtocolConfigName(
+      nextProtocolConfigName(form.protocolConfigs, locale),
+    );
+    setProtocolConfigNameDialogOpen(true);
   }
 
-  function addComboWithName(event: FormEvent<HTMLFormElement>) {
+  function addProtocolConfigWithName(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const name = newComboName.trim();
+    const name = newProtocolConfigName.trim();
     if (!name) {
-      toast.error(locale === "zh-CN" ? "请输入组合名称" : "Enter a combo name");
+      toast.error(
+        locale === "zh-CN"
+          ? "请输入协议配置名称"
+          : "Enter a protocol config name",
+      );
       return;
     }
-    const exists = form.combos.some(
-      (combo, index) =>
-        comboDisplayName(combo, index, locale).toLowerCase() ===
-        name.toLowerCase(),
+    const exists = form.protocolConfigs.some(
+      (protocolConfig, index) =>
+        protocolConfigDisplayName(
+          protocolConfig,
+          index,
+          locale,
+        ).toLowerCase() === name.toLowerCase(),
     );
     if (exists) {
       toast.error(
-        locale === "zh-CN" ? "组合名称已存在" : "Combo name already exists",
+        locale === "zh-CN"
+          ? "协议配置名称已存在"
+          : "Protocol config name already exists",
       );
       return;
     }
     setForm((current) => ({
       ...current,
-      combos: [
-        ...current.combos,
+      protocolConfigs: [
+        ...current.protocolConfigs,
         {
-          ...emptyCombo(
+          ...emptyProtocolConfig(
             defaultBaseUrlId(current.base_urls),
             name,
             current.credentials[0]?.id ?? "",
@@ -3658,8 +913,8 @@ export function ChannelsScreen() {
         },
       ],
     }));
-    setComboNameDialogOpen(false);
-    setNewComboName("");
+    setProtocolConfigNameDialogOpen(false);
+    setNewProtocolConfigName("");
   }
 
   function addBaseUrl() {
@@ -3700,42 +955,47 @@ export function ChannelsScreen() {
       return {
         ...current,
         base_urls: baseUrls,
-        combos: current.combos.map((combo) => ({
-          ...combo,
-          base_url_id: resolveBaseUrlId(baseUrls, combo.base_url_id),
+        protocolConfigs: current.protocolConfigs.map((protocolConfig) => ({
+          ...protocolConfig,
+          base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
         })),
       };
     });
   }
 
-  function updateProtocolHeader(
-    protocolIndex: number,
+  function updateProtocolConfigHeader(
+    protocolConfigIndex: number,
     headerIndex: number,
     patch: Partial<HeaderItem>,
   ) {
     setForm((current) => ({
       ...current,
-      combos: current.combos.map((item, itemIndex) =>
-        itemIndex !== protocolIndex
-          ? item
-          : {
-              ...item,
-              headers: item.headers.map((header, currentHeaderIndex) =>
-                currentHeaderIndex === headerIndex
-                  ? { ...header, ...patch }
-                  : header,
-              ),
-            },
+      protocolConfigs: current.protocolConfigs.map(
+        (protocolConfig, currentProtocolConfigIndex) =>
+          currentProtocolConfigIndex !== protocolConfigIndex
+            ? protocolConfig
+            : {
+                ...protocolConfig,
+                headers: protocolConfig.headers.map(
+                  (header, currentHeaderIndex) =>
+                    currentHeaderIndex === headerIndex
+                      ? { ...header, ...patch }
+                      : header,
+                ),
+              },
       ),
     }));
   }
 
-  function addManualProtocolModel(protocolIndex: number, credentialId: string) {
-    const protocol = form.combos[protocolIndex];
-    const modelName = protocol?.manual_model_name.trim() ?? "";
-    if (!protocol || !credentialId || !modelName) return;
+  function addManualProtocolConfigModel(
+    protocolConfigIndex: number,
+    credentialId: string,
+  ) {
+    const protocolConfig = form.protocolConfigs[protocolConfigIndex];
+    const modelName = protocolConfig?.manual_model_name.trim() ?? "";
+    if (!protocolConfig || !credentialId || !modelName) return;
     if (
-      protocol.models.some(
+      protocolConfig.models.some(
         (model) =>
           model.credential_id === credentialId &&
           model.model_name === modelName,
@@ -3746,25 +1006,29 @@ export function ChannelsScreen() {
     }
     setForm((current) => ({
       ...current,
-      combos: current.combos.map((item, itemIndex) => {
-        if (itemIndex !== protocolIndex) return item;
-        return {
-          ...item,
-          manual_model_name: "",
-          expanded: true,
-          models: [
-            ...item.models,
-            {
-              id: null,
-              protocols: [],
-              protocolIds: {},
-              credential_id: credentialId,
-              model_name: modelName,
-              enabled: true,
-            },
-          ],
-        };
-      }),
+      protocolConfigs: current.protocolConfigs.map(
+        (protocolConfig, currentProtocolConfigIndex) => {
+          if (currentProtocolConfigIndex !== protocolConfigIndex) {
+            return protocolConfig;
+          }
+          return {
+            ...protocolConfig,
+            manual_model_name: "",
+            expanded: true,
+            models: [
+              ...protocolConfig.models,
+              {
+                id: null,
+                protocols: [],
+                protocolIds: {},
+                credential_id: credentialId,
+                model_name: modelName,
+                enabled: true,
+              },
+            ],
+          };
+        },
+      ),
     }));
   }
 
@@ -3777,7 +1041,7 @@ export function ChannelsScreen() {
   }
 
   function closeModelPicker() {
-    setModelPickerProtocolIndex(null);
+    setModelPickerProtocolConfigIndex(null);
     setAvailableModels([]);
     setPickerSelectedModelKeys([]);
   }
@@ -3787,19 +1051,19 @@ export function ChannelsScreen() {
     selectedProtocol: ProtocolKind | null,
     promptValue: string,
   ): SiteModelTestPayload | null {
-    const protocol = form.combos[target.protocolIndex];
-    const model = protocol?.models[target.modelIndex];
+    const protocolConfig = form.protocolConfigs[target.protocolConfigIndex];
+    const model = protocolConfig?.models[target.modelIndex];
     const credentialIndex = model
       ? form.credentials.findIndex((item) => item.id === model.credential_id)
       : -1;
     const credential =
       credentialIndex >= 0 ? form.credentials[credentialIndex] : undefined;
-    const activeBaseUrl = protocol
-      ? activeBaseUrlValue(form, protocol).trim()
+    const activeBaseUrl = protocolConfig
+      ? activeBaseUrlValue(form, protocolConfig).trim()
       : "";
     const prompt = promptValue.trim();
     if (
-      !protocol ||
+      !protocolConfig ||
       !model ||
       !credential ||
       !credential.api_key.trim() ||
@@ -3816,9 +1080,9 @@ export function ChannelsScreen() {
     return {
       protocol: testProtocol,
       base_url: activeBaseUrl,
-      headers: formHeaders(protocol),
-      channel_proxy: protocol.channel_proxy.trim(),
-      param_override: protocol.param_override.trim(),
+      headers: formHeaders(protocolConfig),
+      channel_proxy: protocolConfig.channel_proxy.trim(),
+      param_override: protocolConfig.param_override.trim(),
       credential: {
         id: credential.id,
         name: credential.name.trim() || fallbackCredentialName(credentialIndex),
@@ -3829,9 +1093,9 @@ export function ChannelsScreen() {
     };
   }
 
-  function openModelTest(protocolIndex: number, modelIndex: number) {
-    const combo = form.combos[protocolIndex];
-    const model = combo?.models[modelIndex];
+  function openModelTest(protocolConfigIndex: number, modelIndex: number) {
+    const protocolConfig = form.protocolConfigs[protocolConfigIndex];
+    const model = protocolConfig?.models[modelIndex];
     const protocols = modelSupportedProtocols(model);
     if (!protocols.length) {
       toast.error(
@@ -3841,7 +1105,7 @@ export function ChannelsScreen() {
       );
       return;
     }
-    setModelTestTarget({ protocolIndex, modelIndex });
+    setModelTestTarget({ protocolConfigIndex, modelIndex });
     setModelTestProtocol(protocols[0]);
     setModelTestPromptMode("0");
     setModelTestPrompt(modelTestPrompts[0] || "");
@@ -3864,7 +1128,7 @@ export function ChannelsScreen() {
       return;
     }
     const target = option.target;
-    openModelTest(target.protocolIndex, target.modelIndex);
+    openModelTest(target.protocolConfigIndex, target.modelIndex);
   }
 
   function closeModelTest() {
@@ -3886,41 +1150,45 @@ export function ChannelsScreen() {
   }
 
   function applyModelSelection(selectedKeys: string[]) {
-    if (modelPickerProtocolIndex === null) return;
+    if (modelPickerProtocolConfigIndex === null) return;
     const selectedModels = availableModels.filter((item) =>
       selectedKeys.includes(pickerModelKey(item)),
     );
     const selectedModelGroups = groupPickerModels(selectedModels);
     setForm((current) => ({
       ...current,
-      combos: current.combos.map((item, itemIndex) => {
-        if (itemIndex !== modelPickerProtocolIndex) return item;
-        const merged = [...item.models];
-        const existingModels = new Map(
-          merged.map((model, index) => [genericModelKey(model), index]),
-        );
-        for (const model of selectedModelGroups) {
-          const genericKey = genericModelKey(model);
-          const existingIndex = existingModels.get(genericKey);
-          if (existingIndex !== undefined) {
-            continue;
+      protocolConfigs: current.protocolConfigs.map(
+        (protocolConfig, protocolConfigIndex) => {
+          if (protocolConfigIndex !== modelPickerProtocolConfigIndex) {
+            return protocolConfig;
           }
-          existingModels.set(genericKey, merged.length);
-          merged.push({
-            id: null,
-            protocols: [],
-            protocolIds: {},
-            credential_id: model.credential_id,
-            model_name: model.model_name,
-            enabled: true,
-          });
-        }
-        return {
-          ...item,
-          models: merged,
-          expanded: true,
-        };
-      }),
+          const merged = [...protocolConfig.models];
+          const existingModels = new Map(
+            merged.map((model, index) => [genericModelKey(model), index]),
+          );
+          for (const model of selectedModelGroups) {
+            const genericKey = genericModelKey(model);
+            const existingIndex = existingModels.get(genericKey);
+            if (existingIndex !== undefined) {
+              continue;
+            }
+            existingModels.set(genericKey, merged.length);
+            merged.push({
+              id: null,
+              protocols: [],
+              protocolIds: {},
+              credential_id: model.credential_id,
+              model_name: model.model_name,
+              enabled: true,
+            });
+          }
+          return {
+            ...protocolConfig,
+            models: merged,
+            expanded: true,
+          };
+        },
+      ),
     }));
     closeModelPicker();
     if (selectedModelGroups.length) {
@@ -3932,22 +1200,26 @@ export function ChannelsScreen() {
     }
   }
 
-  async function fetchProtocolModels(protocolIndex: number) {
-    const combo = form.combos[protocolIndex];
-    if (!combo) return;
-    const selectedCredentialId = combo.credential_id;
+  async function fetchProtocolModels(protocolConfigIndex: number) {
+    const protocolConfig = form.protocolConfigs[protocolConfigIndex];
+    if (!protocolConfig) return;
+    const selectedCredentialId = protocolConfig.credential_id;
     if (!selectedCredentialId) {
-      toast.error(locale === "zh-CN" ? "组合密钥无效" : "Combo key is invalid");
+      toast.error(
+        locale === "zh-CN"
+          ? "协议配置密钥无效"
+          : "Protocol config key is invalid",
+      );
       return;
     }
-    setFetchingProtocolIndex(protocolIndex);
+    setFetchingProtocolConfigIndex(protocolConfigIndex);
     try {
-      const activeBaseUrl = activeBaseUrlValue(form, combo);
+      const activeBaseUrl = activeBaseUrlValue(form, protocolConfig);
       const payload: SiteModelFetchPayload = {
         base_url: safeText(activeBaseUrl).trim(),
-        headers: formHeaders(combo),
-        channel_proxy: combo.channel_proxy.trim(),
-        match_regex: safeText(combo.match_regex).trim(),
+        headers: formHeaders(protocolConfig),
+        channel_proxy: protocolConfig.channel_proxy.trim(),
+        match_regex: safeText(protocolConfig.match_regex).trim(),
         credentials: form.credentials
           .map((item, index) => ({
             id: item.id,
@@ -3971,7 +1243,7 @@ export function ChannelsScreen() {
       }));
       setAvailableModels(nextAvailableModels);
       setPickerSelectedModelKeys([]);
-      setModelPickerProtocolIndex(protocolIndex);
+      setModelPickerProtocolConfigIndex(protocolConfigIndex);
       toast.success(
         locale === "zh-CN"
           ? `已获取 ${models.length} 个可选模型`
@@ -3986,7 +1258,7 @@ export function ChannelsScreen() {
             : "Failed to fetch models";
       toast.error(message);
     } finally {
-      setFetchingProtocolIndex(null);
+      setFetchingProtocolConfigIndex(null);
     }
   }
 
@@ -4206,639 +1478,170 @@ export function ChannelsScreen() {
           </DropdownMenu>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
-          <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-12rem)]">
-            <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
-              {isLoading || sitesIsError ? null : visibleSites.length ? (
-                <ItemGroup className="gap-3">
-                  {visibleSites.map((site) => {
-                    const runtimeSummary = siteRuntimeById.get(site.id);
-                    return (
-                      <Item
-                        key={site.id}
-                        variant="outline"
-                        role="button"
-                        tabIndex={0}
-                        className="items-start gap-3 rounded-2xl border-border/80 bg-gradient-to-r from-background to-muted/[0.18] px-4 py-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer sm:gap-4 sm:px-5 sm:py-5"
-                        onClick={() => openEdit(site)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            openEdit(site);
-                          }
-                        }}
-                      >
-                        <ItemMedia
-                          variant="icon"
-                          className="mt-0.5 hidden self-start sm:flex"
-                        >
-                          <SiteFavicon
-                            key={site.endpoint_summary}
-                            url={site.endpoint_summary}
-                            name={site.name}
-                          />
-                        </ItemMedia>
-                        <ItemContent className="min-w-0">
-                          <div className="flex flex-col gap-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <ItemTitle className="truncate text-base">
-                                {site.name}
-                              </ItemTitle>
-                              {siteProtocols(site).map((p) => (
-                                <Badge
-                                  key={p}
-                                  variant="outline"
-                                  className={cn(
-                                    "px-2.5 py-0.5",
-                                    protocolBadgeClassName(p),
-                                  )}
-                                >
-                                  {protocolLabel(p)}
-                                </Badge>
-                              ))}
-                            </div>
-                            <ItemDescription className="truncate text-sm">
-                              {site.endpoint_summary ||
-                                (locale === "zh-CN"
-                                  ? "未配置请求地址"
-                                  : "No endpoint configured")}
-                            </ItemDescription>
-                            <SiteHealthPreview
-                              site={site}
-                              summary={runtimeSummary}
-                              healthByChannelId={channelHealthById}
-                              locale={locale}
-                              timeZone={timeZone}
-                            />
-                          </div>
-                        </ItemContent>
-                        <ItemActions
-                          className="basis-full flex-wrap justify-end self-start sm:ml-auto sm:basis-auto sm:shrink-0"
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => event.stopPropagation()}
-                        >
-                          <SwitchButton
-                            checked={isSiteEnabled(site)}
-                            disabled={busyId === site.id}
-                            onChange={(checked) =>
-                              void toggleSiteEnabled(site, checked)
-                            }
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="rounded-full text-destructive hover:text-destructive"
-                            onClick={() => setDeleteTarget(site)}
-                          >
-                            <Trash2 data-icon="inline-start" />
-                            {locale === "zh-CN" ? "删除" : "Delete"}
-                          </Button>
-                        </ItemActions>
-                      </Item>
-                    );
-                  })}
-                </ItemGroup>
-              ) : (
-                <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-                  {search.trim()
-                    ? locale === "zh-CN"
-                      ? "没有匹配的渠道。"
-                      : "No matching channels."
-                    : locale === "zh-CN"
-                      ? "当前还没有渠道。"
-                      : "No channels yet."}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <aside className="order-1 xl:order-2">
-            <ChannelFiltersPanel
-              locale={locale}
-              search={search}
-              statusFilter={statusFilter}
-              protocolFilter={protocolFilter}
-              sortBy={sortBy}
-              activeFilterCount={activeFilterCount}
-              onSearchChange={setSearch}
-              onStatusChange={setStatusFilter}
-              onProtocolChange={setProtocolFilter}
-              onSortChange={setSortBy}
-              onReset={resetFilters}
-            />
-          </aside>
-        </div>
-        <Dialog
-          open={dialogOpen}
-          onOpenChange={(open) => {
-            if (!open && hasUnsavedChanges) {
-              const confirmed = window.confirm(
-                locale === "zh-CN"
-                  ? "当前有未保存修改，确定关闭吗？"
-                  : "You have unsaved changes. Close anyway?",
-              );
-              if (!confirmed) return;
-            }
-            setDialogOpen(open);
-            if (!open) {
-              setEditingSiteId(null);
-            }
-          }}
-        >
-          <AppDialogContent
-            className="max-w-4xl"
-            title={
-              editingSiteId
-                ? locale === "zh-CN"
-                  ? "编辑渠道"
-                  : "Edit channel"
-                : locale === "zh-CN"
-                  ? "新建渠道"
-                  : "Create channel"
-            }
-          >
-            <form className="grid gap-5" onSubmit={submit}>
-              <div className="grid gap-4">
-                <section className="grid gap-5">
-                  <div className="text-base font-semibold text-foreground">
-                    {locale === "zh-CN" ? "基本信息" : "Channel and keys"}
-                  </div>
-                  <FieldGroup className="gap-4">
-                    <Field>
-                      <FieldLabel htmlFor="channel-name">
-                        {locale === "zh-CN" ? "渠道名称" : "Channel name"}
-                      </FieldLabel>
-                      <Input
-                        id="channel-name"
-                        value={form.name}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            name: event.target.value,
-                          }))
-                        }
-                      />
-                    </Field>
-
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <section className="grid gap-3">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <div className="text-sm font-medium text-foreground">
-                            {locale === "zh-CN" ? "请求地址" : "Base URLs"}
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={addBaseUrl}
-                          >
-                            <Plus data-icon="inline-start" />
-                            {locale === "zh-CN" ? "添加" : "Add"}
-                          </Button>
-                        </div>
-                        <FieldGroup className="gap-3">
-                          {form.base_urls.map((baseUrl, index) => (
-                            <div
-                              key={baseUrl.id}
-                              className="grid min-w-0 gap-3 border-b pb-3 last:border-b-0 last:pb-0"
-                            >
-                              <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
-                                <FieldGroup className="min-w-0 gap-3 md:contents">
-                                  <Field>
-                                    <FieldLabel>
-                                      {baseUrlIndexLabel(index, locale)}
-                                    </FieldLabel>
-                                    <Input
-                                      className="w-full min-w-0"
-                                      value={baseUrl.url}
-                                      onChange={(event) =>
-                                        updateBaseUrl(index, {
-                                          url: event.target.value,
-                                        })
-                                      }
-                                      placeholder="https://api.example.com"
-                                    />
-                                  </Field>
-                                  <Field>
-                                    <FieldLabel>
-                                      {locale === "zh-CN" ? "备注" : "Remark"}
-                                    </FieldLabel>
-                                    <Input
-                                      className="w-full min-w-0"
-                                      value={baseUrl.name}
-                                      onChange={(event) =>
-                                        updateBaseUrl(index, {
-                                          name: event.target.value,
-                                        })
-                                      }
-                                      placeholder={
-                                        locale === "zh-CN" ? "备注" : "Remark"
-                                      }
-                                    />
-                                  </Field>
-                                  <div className="flex h-8 w-8 items-center justify-center">
-                                    <SwitchButton
-                                      checked={baseUrl.enabled}
-                                      onChange={(checked) =>
-                                        updateBaseUrl(index, {
-                                          enabled: checked,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="text-muted-foreground"
-                                    onClick={() => removeBaseUrl(index)}
-                                    disabled={form.base_urls.length <= 1}
-                                  >
-                                    <X size={16} />
-                                  </Button>
-                                </FieldGroup>
-                              </div>
-                            </div>
-                          ))}
-                        </FieldGroup>
-                      </section>
-
-                      <section className="grid gap-3">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <div className="text-sm font-medium text-foreground">
-                            {locale === "zh-CN" ? "密钥" : "API Keys"}
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setForm((current) => ({
-                                ...current,
-                                credentials: [
-                                  ...current.credentials,
-                                  {
-                                    id: createLocalId("credential"),
-                                    name: "",
-                                    api_key: "",
-                                    enabled: true,
-                                  },
-                                ],
-                              }))
-                            }
-                          >
-                            <Plus data-icon="inline-start" />
-                            {locale === "zh-CN" ? "添加" : "Add"}
-                          </Button>
-                        </div>
-                        <FieldGroup className="gap-3">
-                          {form.credentials.map((credential, index) => (
-                            <div
-                              key={credential.id}
-                              className="grid min-w-0 gap-3 border-b pb-3 last:border-b-0 last:pb-0 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end"
-                            >
-                              <FieldGroup className="min-w-0 gap-3 md:contents">
-                                <Field>
-                                  <FieldLabel>
-                                    {credentialIndexLabel(index, locale)}
-                                  </FieldLabel>
-                                  <Input
-                                    className="w-full min-w-0"
-                                    value={credential.api_key}
-                                    onChange={(event) =>
-                                      updateCredential(index, {
-                                        api_key: event.target.value,
-                                      })
-                                    }
-                                    placeholder="sk-..."
-                                  />
-                                </Field>
-                                <Field>
-                                  <FieldLabel>
-                                    {locale === "zh-CN" ? "备注" : "Remark"}
-                                  </FieldLabel>
-                                  <Input
-                                    className="w-full min-w-0"
-                                    value={credential.name}
-                                    onChange={(event) =>
-                                      updateCredential(index, {
-                                        name: event.target.value,
-                                      })
-                                    }
-                                    placeholder={
-                                      locale === "zh-CN" ? "备注" : "Remark"
-                                    }
-                                  />
-                                </Field>
-                                <div className="flex h-8 w-8 items-center justify-center">
-                                  <SwitchButton
-                                    checked={credential.enabled}
-                                    onChange={(checked) =>
-                                      updateCredential(index, {
-                                        enabled: checked,
-                                      })
-                                    }
-                                  />
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="icon"
-                                  className="text-muted-foreground"
-                                  onClick={() => removeCredential(index)}
-                                >
-                                  <X size={16} />
-                                </Button>
-                              </FieldGroup>
-                            </div>
-                          ))}
-                        </FieldGroup>
-                      </section>
-                    </div>
-                  </FieldGroup>
-                </section>
-
-                <Separator />
-
-                <section className="grid gap-4">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div className="text-base font-semibold text-foreground">
-                      {locale === "zh-CN" ? "组合" : "Combos"}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="justify-start border-dashed"
-                      onClick={openAddComboDialog}
-                    >
-                      <Plus data-icon="inline-start" />
-                      {locale === "zh-CN" ? "增加一个组合" : "Add combo"}
-                    </Button>
-                  </div>
-                  <div className="flex flex-col gap-4">
-                    {form.combos.map((combo, comboIndex) => (
-                      <ComboConfigItem
-                        key={combo.id || comboIndex}
-                        form={form}
-                        combo={combo}
-                        comboIndex={comboIndex}
-                        locale={locale}
-                        fetchingProtocolIndex={fetchingProtocolIndex}
-                        duplicatedComboKeys={duplicatedComboKeys}
-                        onUpdateCombo={updateCombo}
-                        onRemoveCombo={(index) =>
-                          setForm((current) => ({
-                            ...current,
-                            combos:
-                              current.combos.length > 1
-                                ? current.combos.filter(
-                                    (_, currentIndex) => currentIndex !== index,
-                                  )
-                                : current.combos,
-                          }))
-                        }
-                        onAddManualModel={addManualProtocolModel}
-                        onFetchModels={fetchProtocolModels}
-                        onOpenAdvanced={setAdvancedProtocolIndex}
-                      />
-                    ))}
-                  </div>
-                  <div className="mt-4">
-                    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm font-medium text-foreground">
-                        {locale === "zh-CN" ? "模型总览" : "Model Overview"}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={openBatchModelTestDialog}
-                          disabled={
-                            !batchTestOptions.length ||
-                            batchTestingModels ||
-                            testingModel
-                          }
-                        >
-                          <RefreshCcw
-                            data-icon="inline-start"
-                            className={
-                              batchTestingModels ? "animate-spin" : undefined
-                            }
-                          />
-                          {locale === "zh-CN" ? "批量测试" : "Batch test"}
-                        </Button>
-                      </div>
-                    </div>
-                    <SiteModelAggregateView
-                      models={overviewModels}
-                      combos={form.combos}
-                      locale={locale}
-                      onChangeModelProtocols={updateModelProtocols}
-                      onOpenModelTest={openAggregateModelTest}
-                      canTestModel={(credentialId, modelName) =>
-                        modelTestOptionByKey.has(
-                          genericModelKey({
-                            credential_id: credentialId,
-                            model_name: modelName,
-                          }),
-                        )
-                      }
-                      testingDisabled={testingModel || batchTestingModels}
-                    />
-                  </div>
-                </section>
-              </div>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                <Button type="button" variant="outline" onClick={closeEditor}>
-                  {locale === "zh-CN" ? "取消" : "Cancel"}
-                </Button>
-                <Button type="submit">
-                  {editingSiteId
-                    ? locale === "zh-CN"
-                      ? "保存渠道"
-                      : "Save channel"
-                    : locale === "zh-CN"
-                      ? "创建渠道"
-                      : "Create channel"}
-                </Button>
-              </div>
-            </form>
-          </AppDialogContent>
-        </Dialog>
-        <Dialog
-          open={comboNameDialogOpen}
-          onOpenChange={setComboNameDialogOpen}
-        >
-          <AppDialogContent
-            className="max-w-md"
-            title={locale === "zh-CN" ? "命名组合" : "Name combo"}
-          >
-            <form className="grid gap-4" onSubmit={addComboWithName}>
-              <Field>
-                <FieldLabel htmlFor="new-combo-name">
-                  {locale === "zh-CN" ? "组合名称" : "Combo name"}
-                </FieldLabel>
-                <Input
-                  id="new-combo-name"
-                  value={newComboName}
-                  autoFocus
-                  onChange={(event) => setNewComboName(event.target.value)}
-                />
-              </Field>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setComboNameDialogOpen(false)}
-                >
-                  {locale === "zh-CN" ? "取消" : "Cancel"}
-                </Button>
-                <Button type="submit">
-                  {locale === "zh-CN" ? "创建组合" : "Create combo"}
-                </Button>
-              </div>
-            </form>
-          </AppDialogContent>
-        </Dialog>
-
-        <BatchImportDialog
-          open={batchImportOpen}
-          onOpenChange={setBatchImportOpen}
+        <ChannelsOverview
           locale={locale}
-          importText={batchImportText}
-          importError={batchImportError}
-          importResult={batchImportResult}
-          importing={batchImporting}
-          onTextChange={updateBatchImportText}
-          onFileChange={(event) => void handleBatchImportFile(event)}
-          onDownloadTemplate={downloadBatchImportTemplate}
-          onImport={() => void importBatchSites()}
+          visibleSites={visibleSites}
+          isLoading={isLoading}
+          sitesIsError={sitesIsError}
+          siteRuntimeById={siteRuntimeById}
+          channelHealthById={channelHealthById}
+          timeZone={timeZone}
+          search={search}
+          statusFilter={statusFilter}
+          protocolFilter={protocolFilter}
+          sortBy={sortBy}
+          activeFilterCount={activeFilterCount}
+          busyId={busyId}
+          onSearchChange={setSearch}
+          onStatusChange={setStatusFilter}
+          onProtocolChange={setProtocolFilter}
+          onSortChange={setSortBy}
+          onReset={resetFilters}
+          onOpenEdit={openEdit}
+          onToggleSiteEnabled={toggleSiteEnabled}
+          setDeleteTarget={setDeleteTarget}
         />
+        {dialogOpen ? (
+          <ChannelEditorDialog
+            dialogOpen={dialogOpen}
+            hasUnsavedChanges={hasUnsavedChanges}
+            editingSiteId={editingSiteId}
+            locale={locale}
+            form={form}
+            newProtocolConfigName={newProtocolConfigName}
+            protocolConfigNameDialogOpen={protocolConfigNameDialogOpen}
+            fetchingProtocolConfigIndex={fetchingProtocolConfigIndex}
+            duplicatedProtocolConfigKeys={duplicatedProtocolConfigKeys}
+            batchTestOptions={batchTestOptions}
+            batchTestingModels={batchTestingModels}
+            testingModel={testingModel}
+            overviewModels={overviewModels}
+            modelTestOptionByKey={modelTestOptionByKey}
+            setDialogOpen={setDialogOpen}
+            setEditingSiteId={setEditingSiteId}
+            setForm={setForm}
+            setNewProtocolConfigName={setNewProtocolConfigName}
+            setProtocolConfigNameDialogOpen={setProtocolConfigNameDialogOpen}
+            setAdvancedProtocolConfigIndex={setAdvancedProtocolConfigIndex}
+            submit={submit}
+            addBaseUrl={addBaseUrl}
+            updateBaseUrl={updateBaseUrl}
+            removeBaseUrl={removeBaseUrl}
+            updateCredential={updateCredential}
+            removeCredential={removeCredential}
+            openAddProtocolConfigDialog={openAddProtocolConfigDialog}
+            addProtocolConfigWithName={addProtocolConfigWithName}
+            updateProtocolConfig={updateProtocolConfig}
+            addManualProtocolConfigModel={addManualProtocolConfigModel}
+            fetchProtocolModels={fetchProtocolModels}
+            openBatchModelTestDialog={openBatchModelTestDialog}
+            updateModelProtocols={updateModelProtocols}
+            openAggregateModelTest={openAggregateModelTest}
+            closeEditor={closeEditor}
+          />
+        ) : null}
 
-        <BatchModelTestDialog
-          open={batchModelTestOpen}
-          locale={locale}
-          modelTestPrompts={modelTestPrompts}
-          batchTestPromptMode={batchTestPromptMode}
-          batchTestPrompt={batchTestPrompt}
-          batchTestConcurrency={batchTestConcurrency}
-          batchTestOptions={batchTestOptions}
-          batchTestRows={batchTestRows}
-          batchTestingModels={batchTestingModels}
-          onOpenChange={setBatchModelTestOpen}
-          onPromptModeChange={changeBatchTestPromptMode}
-          onPromptChange={changeBatchTestPrompt}
-          onConcurrencyChange={setBatchTestConcurrency}
-          onProtocolChange={changeBatchTestProtocol}
-          onRun={() => void runBatchModelTests()}
-        />
+        {batchImportOpen ? (
+          <BatchImportDialog
+            open={batchImportOpen}
+            onOpenChange={setBatchImportOpen}
+            locale={locale}
+            importText={batchImportText}
+            importError={batchImportError}
+            importResult={batchImportResult}
+            importing={batchImporting}
+            onTextChange={updateBatchImportText}
+            onFileChange={(event) => void handleBatchImportFile(event)}
+            onDownloadTemplate={downloadBatchImportTemplate}
+            onImport={() => void importBatchSites()}
+          />
+        ) : null}
 
-        <AdvancedProtocolDialog
-          open={advancedProtocolIndex !== null}
-          protocol={
-            advancedProtocolIndex !== null
-              ? form.combos[advancedProtocolIndex]
-              : undefined
-          }
-          protocolIndex={advancedProtocolIndex}
-          locale={locale}
-          onOpenChange={(open) => {
-            if (!open) setAdvancedProtocolIndex(null);
-          }}
-          onUpdateProtocol={updateCombo}
-          onUpdateProtocolHeader={updateProtocolHeader}
-        />
+        {batchModelTestOpen ? (
+          <BatchModelTestDialog
+            open={batchModelTestOpen}
+            locale={locale}
+            modelTestPrompts={modelTestPrompts}
+            batchTestPromptMode={batchTestPromptMode}
+            batchTestPrompt={batchTestPrompt}
+            batchTestConcurrency={batchTestConcurrency}
+            batchTestOptions={batchTestOptions}
+            batchTestRows={batchTestRows}
+            batchTestingModels={batchTestingModels}
+            onOpenChange={setBatchModelTestOpen}
+            onPromptModeChange={changeBatchTestPromptMode}
+            onPromptChange={changeBatchTestPrompt}
+            onConcurrencyChange={setBatchTestConcurrency}
+            onProtocolChange={changeBatchTestProtocol}
+            onRun={() => void runBatchModelTests()}
+          />
+        ) : null}
 
-        <Dialog
-          open={Boolean(deleteTarget)}
-          onOpenChange={(open) => {
-            if (!open) setDeleteTarget(null);
-          }}
-        >
-          <AppDialogContent
-            className="max-w-lg"
-            title={locale === "zh-CN" ? "确认删除渠道" : "Delete channel"}
-            description={
-              locale === "zh-CN"
-                ? "删除后该渠道下的协议、模型和模型组成员会一起移除。"
-                : "Protocol configs, models, and group members under this channel will be removed together."
+        {advancedProtocolConfigIndex !== null ? (
+          <AdvancedProtocolConfigDialog
+            open={advancedProtocolConfigIndex !== null}
+            protocolConfig={form.protocolConfigs[advancedProtocolConfigIndex]}
+            protocolConfigIndex={advancedProtocolConfigIndex}
+            locale={locale}
+            onOpenChange={(open) => {
+              if (!open) setAdvancedProtocolConfigIndex(null);
+            }}
+            onUpdateProtocolConfig={updateProtocolConfig}
+            onUpdateProtocolConfigHeader={updateProtocolConfigHeader}
+          />
+        ) : null}
+
+        {deleteTarget ? (
+          <DeleteChannelDialog
+            deleteTarget={deleteTarget}
+            locale={locale}
+            busyId={busyId}
+            setDeleteTarget={setDeleteTarget}
+            removeSite={removeSite}
+          />
+        ) : null}
+
+        {modelTestTarget ? (
+          <ModelTestDialog
+            target={modelTestTarget}
+            form={form}
+            locale={locale}
+            modelTestPrompts={modelTestPrompts}
+            modelTestPromptMode={modelTestPromptMode}
+            modelTestPrompt={modelTestPrompt}
+            modelTestProtocol={modelTestProtocol}
+            modelTestResult={modelTestResult}
+            testingModel={testingModel}
+            onClose={closeModelTest}
+            onPromptModeChange={changeModelTestPromptMode}
+            onPromptChange={(value) => {
+              setModelTestPrompt(value);
+              if (modelTestPromptMode !== "custom") {
+                setModelTestPromptMode("custom");
+              }
+            }}
+            onProtocolChange={setModelTestProtocol}
+            onRun={() => void runModelTest()}
+          />
+        ) : null}
+
+        {modelPickerProtocolConfigIndex !== null ? (
+          <ModelPickerDialog
+            open={modelPickerProtocolConfigIndex !== null}
+            availableModels={availableModels}
+            pickerSelectedModelKeys={pickerSelectedModelKeys}
+            locale={locale}
+            onOpenChange={(open) => {
+              if (!open) closeModelPicker();
+            }}
+            onToggleModel={togglePickerModel}
+            onConfirm={() => applyModelSelection(pickerSelectedModelKeys)}
+            onConfirmAll={() =>
+              applyModelSelection(pickerModelKeys(availableModels))
             }
-          >
-            <div className="grid gap-5">
-              <div className="rounded-md border bg-muted/30 p-4">
-                <strong className="text-foreground">
-                  {deleteTarget?.name}
-                </strong>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {deleteTarget ? siteSubtitle(deleteTarget) : ""}
-                </p>
-              </div>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDeleteTarget(null)}
-                >
-                  {locale === "zh-CN" ? "取消" : "Cancel"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => deleteTarget && void removeSite(deleteTarget)}
-                  disabled={busyId === deleteTarget?.id}
-                >
-                  {busyId === deleteTarget?.id
-                    ? locale === "zh-CN"
-                      ? "删除中..."
-                      : "Deleting..."
-                    : locale === "zh-CN"
-                      ? "确认删除"
-                      : "Delete"}
-                </Button>
-              </div>
-            </div>
-          </AppDialogContent>
-        </Dialog>
-
-        <ModelTestDialog
-          target={modelTestTarget}
-          form={form}
-          locale={locale}
-          modelTestPrompts={modelTestPrompts}
-          modelTestPromptMode={modelTestPromptMode}
-          modelTestPrompt={modelTestPrompt}
-          modelTestProtocol={modelTestProtocol}
-          modelTestResult={modelTestResult}
-          testingModel={testingModel}
-          onClose={closeModelTest}
-          onPromptModeChange={changeModelTestPromptMode}
-          onPromptChange={(value) => {
-            setModelTestPrompt(value);
-            if (modelTestPromptMode !== "custom") {
-              setModelTestPromptMode("custom");
-            }
-          }}
-          onProtocolChange={setModelTestProtocol}
-          onRun={() => void runModelTest()}
-        />
-
-        <ModelPickerDialog
-          open={modelPickerProtocolIndex !== null}
-          availableModels={availableModels}
-          pickerSelectedModelKeys={pickerSelectedModelKeys}
-          locale={locale}
-          onOpenChange={(open) => {
-            if (!open) closeModelPicker();
-          }}
-          onToggleModel={togglePickerModel}
-          onConfirm={() => applyModelSelection(pickerSelectedModelKeys)}
-          onConfirmAll={() =>
-            applyModelSelection(pickerModelKeys(availableModels))
-          }
-          onCancel={closeModelPicker}
-        />
+            onCancel={closeModelPicker}
+          />
+        ) : null}
       </section>
     </TooltipProvider>
   );

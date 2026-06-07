@@ -9,7 +9,7 @@ from ..core.config import Settings
 from ..models import ChannelConfig, ProtocolKind
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UpstreamRequest:
     method: str
     url: str
