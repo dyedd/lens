@@ -26,6 +26,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  activeBaseUrlValue,
   baseUrlLabel,
   compactProtocolLabel,
   credentialLabel,
@@ -106,7 +107,7 @@ export function ProtocolConfigItem({
         <div className="grid gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_32px_auto] xl:items-end">
           <Field>
             <FieldLabel>
-              {locale === "zh-CN" ? "协议配置名称" : "Protocol config name"}
+              {locale === "zh-CN" ? "组合名称" : "Combination name"}
             </FieldLabel>
             <Input
               className="w-full min-w-0"
@@ -324,9 +325,7 @@ export function ProtocolConfigItem({
                     onClick={() => onFetchModels(protocolConfigIndex)}
                     disabled={
                       fetchingProtocolConfigIndex === protocolConfigIndex ||
-                      !form.base_urls.some(
-                        (item) => item.enabled && item.url.trim(),
-                      ) ||
+                      !activeBaseUrlValue(form, protocolConfig).trim() ||
                       !selectedCredentialActive
                     }
                   >
