@@ -1,20 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
 import type { ProtocolKind } from "@/lib/api";
 import type { AggregatedModel } from "./model-aggregation";
-import {
-  allClientProtocols,
-  type FormProtocolConfig,
-  genericModelKey,
-  type Locale,
-} from "./shared";
+import type { Locale } from "./shared";
 
 export function SiteModelAggregateView({
   models,
-  protocolConfigs,
   locale,
   onChangeModelProtocols,
   onOpenModelTest,
@@ -22,29 +15,15 @@ export function SiteModelAggregateView({
   testingDisabled,
 }: {
   models: AggregatedModel[];
-  protocolConfigs: FormProtocolConfig[];
   locale: Locale;
   onChangeModelProtocols?: (
-    credentialId: string,
-    modelName: string,
+    modelKey: string,
     nextProtocols: ProtocolKind[],
   ) => void;
-  onOpenModelTest?: (credentialId: string, modelName: string) => void;
-  canTestModel?: (credentialId: string, modelName: string) => boolean;
+  onOpenModelTest?: (modelKey: string) => void;
+  canTestModel?: (modelKey: string) => boolean;
   testingDisabled?: boolean;
 }) {
-  const allowedProtocolsMap = useMemo(() => {
-    const map: Record<string, Set<ProtocolKind>> = {};
-    protocolConfigs.forEach((protocolConfig) => {
-      if (!protocolConfig.enabled) return;
-      protocolConfig.models.forEach((model) => {
-        const key = genericModelKey(model);
-        if (!map[key]) map[key] = new Set();
-        allClientProtocols.forEach((p) => map[key].add(p));
-      });
-    });
-    return map;
-  }, [protocolConfigs]);
   if (!models.length) {
     return (
       <div className="py-4 text-sm text-muted-foreground">
@@ -56,13 +35,8 @@ export function SiteModelAggregateView({
   }
   return (
     <div className="flex flex-col gap-2">
-      {models.map(({ credentialId, modelName, protocols, sources }) => {
-        const modelKey = genericModelKey({
-          credential_id: credentialId,
-          model_name: modelName,
-        });
-        const allowed = Array.from(allowedProtocolsMap[modelKey] ?? []);
-        const testable = Boolean(canTestModel?.(credentialId, modelName));
+      {models.map(({ key: modelKey, modelName, protocols, sources }) => {
+        const testable = Boolean(canTestModel?.(modelKey));
         return (
           <div
             key={modelKey}
@@ -73,10 +47,7 @@ export function SiteModelAggregateView({
             </span>
             <ProtocolMultiSelect
               value={protocols}
-              allowedProtocols={allowed}
-              onChange={(next) =>
-                onChangeModelProtocols?.(credentialId, modelName, next)
-              }
+              onChange={(next) => onChangeModelProtocols?.(modelKey, next)}
               locale={locale}
               className="w-auto min-w-[180px]"
               invalid={protocols.length === 0}
@@ -90,7 +61,7 @@ export function SiteModelAggregateView({
               variant="ghost"
               size="sm"
               className="h-8 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => onOpenModelTest?.(credentialId, modelName)}
+              onClick={() => onOpenModelTest?.(modelKey)}
               disabled={!testable || testingDisabled}
             >
               {locale === "zh-CN" ? "测试" : "Test"}

@@ -59,7 +59,6 @@ import {
   genericModelKey,
   groupPickerModels,
   HeaderItem,
-  invalidEmptyProtocolConfigCount,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
   isSiteEnabled,
@@ -71,6 +70,7 @@ import {
   pickerModelKeys,
   PickerModelItem,
   protocolConfigDisplayName,
+  protocolConfigModelKey,
   resolveBaseUrlId,
   safeText,
   selectedModelTestProtocol,
@@ -215,7 +215,11 @@ export function ChannelsScreen() {
     );
     return parseModelTestPrompts(mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY));
   }, [settings]);
-  const overviewModels = useAggregatedModels(form.protocolConfigs, locale);
+  const overviewModels = useAggregatedModels(
+    form.protocolConfigs,
+    form.base_urls,
+    locale,
+  );
   const modelTestOptionByKey = useMemo(() => {
     const options = new Map<string, TestableModelOption>();
     const credentialById = new Map(
@@ -233,7 +237,11 @@ export function ChannelsScreen() {
       )
         continue;
       for (const [modelIndex, model] of protocolConfig.models.entries()) {
-        const key = genericModelKey(model);
+        const key = protocolConfigModelKey(
+          protocolConfigIndex,
+          protocolConfig,
+          model,
+        );
         if (options.has(key) || !model.model_name.trim()) continue;
         const credentialEntry = credentialById.get(model.credential_id);
         if (!credentialEntry?.credential.api_key.trim()) continue;
@@ -609,8 +617,8 @@ export function ChannelsScreen() {
     if (invalidProtocolBaseUrlCount(form)) {
       toast.error(
         locale === "zh-CN"
-          ? "协议配置地址来源无效"
-          : "Protocol config Base URL is invalid",
+          ? "组合地址来源无效"
+          : "Combination Base URL is invalid",
       );
       return;
     }
@@ -620,14 +628,6 @@ export function ChannelsScreen() {
           ? "同一个渠道内不允许重复地址来源和密钥"
           : "Duplicate Base URL and key pairs are not allowed in one channel";
       toast.error(message);
-      return;
-    }
-    if (invalidEmptyProtocolConfigCount(form)) {
-      toast.error(
-        locale === "zh-CN"
-          ? "请为每个协议配置添加至少一个模型"
-          : "Add at least one model for every protocol config",
-      );
       return;
     }
     if (invalidModelProtocolCount(form)) {
@@ -830,8 +830,7 @@ export function ChannelsScreen() {
   }
 
   function updateModelProtocols(
-    credentialId: string,
-    modelName: string,
+    modelKey: string,
     nextProtocols: ProtocolKind[],
   ) {
     if (nextProtocols.length === 0) {
@@ -844,25 +843,24 @@ export function ChannelsScreen() {
     }
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((protocolConfig) => {
-        if (
-          !protocolConfig.models.some(
-            (m) =>
-              m.credential_id === credentialId && m.model_name === modelName,
-          )
-        )
-          return protocolConfig;
-        const modelProtocols = Array.from(new Set(nextProtocols));
-        const nextModels = protocolConfig.models.map((m) =>
-          m.credential_id === credentialId && m.model_name === modelName
-            ? { ...m, protocols: modelProtocols }
-            : m,
-        );
-        return {
-          ...protocolConfig,
-          models: nextModels,
-        };
-      }),
+      protocolConfigs: current.protocolConfigs.map(
+        (protocolConfig, protocolConfigIndex) => {
+          const modelProtocols = Array.from(new Set(nextProtocols));
+          const nextModels = protocolConfig.models.map((model) =>
+            protocolConfigModelKey(
+              protocolConfigIndex,
+              protocolConfig,
+              model,
+            ) === modelKey
+              ? { ...model, protocols: modelProtocols }
+              : model,
+          );
+          return {
+            ...protocolConfig,
+            models: nextModels,
+          };
+        },
+      ),
     }));
   }
 
@@ -878,9 +876,7 @@ export function ChannelsScreen() {
     const name = newProtocolConfigName.trim();
     if (!name) {
       toast.error(
-        locale === "zh-CN"
-          ? "请输入协议配置名称"
-          : "Enter a protocol config name",
+        locale === "zh-CN" ? "请输入组合名称" : "Enter a combination name",
       );
       return;
     }
@@ -895,8 +891,8 @@ export function ChannelsScreen() {
     if (exists) {
       toast.error(
         locale === "zh-CN"
-          ? "协议配置名称已存在"
-          : "Protocol config name already exists",
+          ? "组合名称已存在"
+          : "Combination name already exists",
       );
       return;
     }
@@ -1112,13 +1108,8 @@ export function ChannelsScreen() {
     setModelTestResult(null);
   }
 
-  function openAggregateModelTest(credentialId: string, modelName: string) {
-    const option = modelTestOptionByKey.get(
-      genericModelKey({
-        credential_id: credentialId,
-        model_name: modelName,
-      }),
-    );
+  function openAggregateModelTest(modelKey: string) {
+    const option = modelTestOptionByKey.get(modelKey);
     if (!option) {
       toast.error(
         locale === "zh-CN"
@@ -1206,9 +1197,7 @@ export function ChannelsScreen() {
     const selectedCredentialId = protocolConfig.credential_id;
     if (!selectedCredentialId) {
       toast.error(
-        locale === "zh-CN"
-          ? "协议配置密钥无效"
-          : "Protocol config key is invalid",
+        locale === "zh-CN" ? "组合密钥无效" : "Combination key is invalid",
       );
       return;
     }

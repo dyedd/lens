@@ -20,7 +20,6 @@ import {
   baseUrlIndexLabel,
   createLocalId,
   credentialIndexLabel,
-  genericModelKey,
   siteSubtitle,
   SwitchButton,
   type BatchModelTestOption,
@@ -108,11 +107,10 @@ export function ChannelEditorDialog({
   fetchProtocolModels: (protocolConfigIndex: number) => void;
   openBatchModelTestDialog: () => void;
   updateModelProtocols: (
-    credentialId: string,
-    modelName: string,
+    modelKey: string,
     nextProtocols: ProtocolKind[],
   ) => void;
-  openAggregateModelTest: (credentialId: string, modelName: string) => void;
+  openAggregateModelTest: (modelKey: string) => void;
   closeEditor: () => void;
 }) {
   return (
@@ -352,7 +350,7 @@ export function ChannelEditorDialog({
               <section className="grid gap-4">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="text-base font-semibold text-foreground">
-                    {locale === "zh-CN" ? "协议配置" : "Protocol configs"}
+                    {locale === "zh-CN" ? "组合" : "Combinations"}
                   </div>
                   <Button
                     type="button"
@@ -361,9 +359,7 @@ export function ChannelEditorDialog({
                     onClick={openAddProtocolConfigDialog}
                   >
                     <Plus data-icon="inline-start" />
-                    {locale === "zh-CN"
-                      ? "增加一个协议配置"
-                      : "Add protocol config"}
+                    {locale === "zh-CN" ? "增加一个组合" : "Add combination"}
                   </Button>
                 </div>
                 <div className="flex flex-col gap-4">
@@ -429,17 +425,11 @@ export function ChannelEditorDialog({
                   </div>
                   <SiteModelAggregateView
                     models={overviewModels}
-                    protocolConfigs={form.protocolConfigs}
                     locale={locale}
                     onChangeModelProtocols={updateModelProtocols}
                     onOpenModelTest={openAggregateModelTest}
-                    canTestModel={(credentialId, modelName) =>
-                      modelTestOptionByKey.has(
-                        genericModelKey({
-                          credential_id: credentialId,
-                          model_name: modelName,
-                        }),
-                      )
+                    canTestModel={(modelKey) =>
+                      modelTestOptionByKey.has(modelKey)
                     }
                     testingDisabled={testingModel || batchTestingModels}
                   />
@@ -469,12 +459,12 @@ export function ChannelEditorDialog({
       >
         <AppDialogContent
           className="max-w-md"
-          title={locale === "zh-CN" ? "命名协议配置" : "Name protocol config"}
+          title={locale === "zh-CN" ? "命名组合" : "Name combination"}
         >
           <form className="grid gap-4" onSubmit={addProtocolConfigWithName}>
             <Field>
               <FieldLabel htmlFor="new-protocol-config-name">
-                {locale === "zh-CN" ? "协议配置名称" : "Protocol config name"}
+                {locale === "zh-CN" ? "组合名称" : "Combination name"}
               </FieldLabel>
               <Input
                 id="new-protocol-config-name"
@@ -494,7 +484,7 @@ export function ChannelEditorDialog({
                 {locale === "zh-CN" ? "取消" : "Cancel"}
               </Button>
               <Button type="submit">
-                {locale === "zh-CN" ? "创建协议配置" : "Create protocol config"}
+                {locale === "zh-CN" ? "创建组合" : "Create combination"}
               </Button>
             </div>
           </form>
@@ -529,8 +519,8 @@ export function DeleteChannelDialog({
         title={locale === "zh-CN" ? "确认删除渠道" : "Delete channel"}
         description={
           locale === "zh-CN"
-            ? "删除后该渠道下的协议、模型和模型组成员会一起移除。"
-            : "Protocol configs, models, and group members under this channel will be removed together."
+            ? "删除后该渠道下的组合、模型和模型组成员会一起移除。"
+            : "Combinations, models, and group members under this channel will be removed together."
         }
       >
         <div className="grid gap-5">

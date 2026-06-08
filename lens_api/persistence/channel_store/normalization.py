@@ -59,7 +59,7 @@ class ChannelNormalizationMixin:
                         api_key=active_key.key,
                         status=(
                             ChannelStatus.ENABLED
-                            if protocol_config.enabled
+                            if protocol_config.enabled and bound_base_url.enabled
                             else ChannelStatus.DISABLED
                         ),
                         headers=protocol_config.headers,
