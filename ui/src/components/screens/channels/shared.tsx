@@ -85,6 +85,21 @@ export function genericModelKey(
   return `${model.credential_id}:${model.model_name}`;
 }
 
+export function protocolConfigModelKey(
+  protocolConfigIndex: number,
+  protocolConfig: Pick<FormProtocolConfig, "id" | "base_url_id">,
+  model: Pick<FormModel, "credential_id" | "model_name">,
+) {
+  const protocolConfigKey =
+    protocolConfig.id?.trim() || `index-${protocolConfigIndex}`;
+  return JSON.stringify([
+    protocolConfigKey,
+    protocolConfig.base_url_id,
+    model.credential_id,
+    model.model_name,
+  ]);
+}
+
 export function pickerModelKey(
   model: Pick<PickerModelItem, "credential_id" | "model_name">,
 ) {
@@ -449,9 +464,7 @@ export function baseUrlLabel(
 }
 
 export function defaultProtocolConfigName(index: number, locale: string) {
-  return locale === "zh-CN"
-    ? `协议配置 ${index + 1}`
-    : `Protocol config ${index + 1}`;
+  return locale === "zh-CN" ? `组合 ${index + 1}` : `Combination ${index + 1}`;
 }
 
 export function protocolConfigDisplayName(
@@ -509,7 +522,7 @@ export function activeBaseUrlValue(
   const boundBaseUrl = protocolConfig.base_url_id
     ? form.base_urls.find((item) => item.id === protocolConfig.base_url_id)
     : undefined;
-  if (boundBaseUrl?.url) return boundBaseUrl.url;
+  if (boundBaseUrl) return boundBaseUrl.enabled ? boundBaseUrl.url : "";
   const enabledUrl = form.base_urls.find(
     (item) => item.enabled && item.url.trim(),
   )?.url;
@@ -805,46 +818,51 @@ export function toPayload(form: FormState): SitePayload {
         enabled: item.enabled,
       }))
       .filter((item) => item.api_key),
-    protocols: form.protocolConfigs.map((protocolConfig) => {
+    protocols: form.protocolConfigs.flatMap((protocolConfig) => {
       const credentialId = protocolConfig.credential_id;
       const protocolConfigProtocols =
         protocolConfigEffectiveProtocols(protocolConfig);
-      return {
-        id: protocolConfig.id,
-        name: protocolConfig.name.trim(),
-        protocols: protocolConfigProtocols,
-        enabled: protocolConfig.enabled,
-        headers: Object.fromEntries(
-          protocolConfig.headers
-            .map((entry) => [entry.key.trim(), entry.value] as const)
-            .filter(([key]) => key),
-        ),
-        channel_proxy: protocolConfig.channel_proxy.trim(),
-        param_override: protocolConfig.param_override.trim(),
-        match_regex: safeText(protocolConfig.match_regex).trim(),
-        base_url_id: protocolConfig.base_url_id,
-        credential_id: credentialId,
-        models: protocolConfig.models
-          .flatMap((model) => {
-            const allowed = protocolConfigProtocols;
-            const effectiveProtocols = model.protocols.filter((p) =>
-              allowed.includes(p),
-            );
-            if (effectiveProtocols.length === 0) {
-              return [];
-            }
-            return effectiveProtocols.map((proto) => ({
-              id: model.protocolIds?.[proto] ?? null,
-              protocol: proto,
-              credential_id: model.credential_id,
-              model_name: model.model_name.trim(),
-              enabled: model.enabled,
-            }));
-          })
-          .filter(
-            (model) => model.credential_id === credentialId && model.model_name,
+      const models = protocolConfig.models
+        .flatMap((model) => {
+          const effectiveProtocols = model.protocols.filter((p) =>
+            protocolConfigProtocols.includes(p),
+          );
+          if (effectiveProtocols.length === 0) {
+            return [];
+          }
+          return effectiveProtocols.map((proto) => ({
+            id: model.protocolIds?.[proto] ?? null,
+            protocol: proto,
+            credential_id: model.credential_id,
+            model_name: model.model_name.trim(),
+            enabled: model.enabled,
+          }));
+        })
+        .filter(
+          (model) => model.credential_id === credentialId && model.model_name,
+        );
+      if (!models.length) {
+        return [];
+      }
+      return [
+        {
+          id: protocolConfig.id,
+          name: protocolConfig.name.trim(),
+          protocols: protocolConfigProtocols,
+          enabled: protocolConfig.enabled,
+          headers: Object.fromEntries(
+            protocolConfig.headers
+              .map((entry) => [entry.key.trim(), entry.value] as const)
+              .filter(([key]) => key),
           ),
-      };
+          channel_proxy: protocolConfig.channel_proxy.trim(),
+          param_override: protocolConfig.param_override.trim(),
+          match_regex: safeText(protocolConfig.match_regex).trim(),
+          base_url_id: protocolConfig.base_url_id,
+          credential_id: credentialId,
+          models,
+        },
+      ];
     }),
   };
 }
@@ -864,6 +882,7 @@ export function duplicateProtocolConfigKeys(
   const baseUrlIds = new Set(baseUrls.map((item) => item.id));
   const counts = new Map<string, number>();
   for (const item of protocolConfigs) {
+    if (protocolConfigEffectiveProtocols(item).length === 0) continue;
     for (const key of protocolConfigCredentialKeys(item, baseUrlIds)) {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -878,12 +897,10 @@ export function invalidProtocolBaseUrlCount(form: FormState) {
     formBaseUrlsForPayload(form).map((item) => item.id),
   );
   return form.protocolConfigs.filter(
-    (item) => !baseUrlIds.has(item.base_url_id),
+    (item) =>
+      protocolConfigEffectiveProtocols(item).length > 0 &&
+      !baseUrlIds.has(item.base_url_id),
   ).length;
-}
-
-export function invalidEmptyProtocolConfigCount(form: FormState) {
-  return form.protocolConfigs.filter((item) => item.models.length === 0).length;
 }
 
 export function invalidModelProtocolCount(form: FormState) {

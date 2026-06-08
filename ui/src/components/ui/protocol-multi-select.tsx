@@ -25,16 +25,14 @@ export interface ProtocolMultiSelectProps {
   placeholder?: string;
 }
 
-const CHAT_PROTOCOLS: ProtocolKind[] = [
+const CLIENT_PROTOCOLS: ProtocolKind[] = [
   "openai_chat",
   "openai_responses",
   "anthropic",
   "gemini",
+  "openai_embedding",
+  "rerank",
 ];
-
-const SPECIAL_PROTOCOLS: ProtocolKind[] = ["openai_embedding", "rerank"];
-
-const ALL_PROTOCOLS: ProtocolKind[] = [...CHAT_PROTOCOLS, ...SPECIAL_PROTOCOLS];
 
 const PROTOCOL_DOT_CLASS: Record<ProtocolKind, string> = {
   openai_chat: "bg-sky-500",
@@ -66,15 +64,13 @@ function protocolLabel(protocol: ProtocolKind): string {
 
 const COPY = {
   "zh-CN": {
-    placeholder: "选择协议",
-    chat: "聊天协议",
-    special: "特殊协议",
+    placeholder: "选择客户端协议",
+    client: "客户端协议",
     summarySuffix: (n: number) => `共 ${n} 项`,
   },
   "en-US": {
-    placeholder: "Select protocols",
-    chat: "Chat",
-    special: "Special",
+    placeholder: "Select client protocols",
+    client: "Client protocols",
     summarySuffix: (n: number) => `${n} selected`,
   },
 } as const;
@@ -154,9 +150,8 @@ export function ProtocolMultiSelect({
   requireAtLeastOne = false,
   placeholder,
 }: ProtocolMultiSelectProps): JSX.Element {
-  const allowed = allowedProtocols ?? ALL_PROTOCOLS;
-  const chatProtocols = CHAT_PROTOCOLS.filter((p) => allowed.includes(p));
-  const specialProtocols = SPECIAL_PROTOCOLS.filter((p) => allowed.includes(p));
+  const allowed = allowedProtocols ?? CLIENT_PROTOCOLS;
+  const clientProtocols = CLIENT_PROTOCOLS.filter((p) => allowed.includes(p));
   const copy = COPY[locale];
 
   const toggle = (protocol: ProtocolKind) => {
@@ -167,7 +162,7 @@ export function ProtocolMultiSelect({
     );
   };
 
-  const selectedInOrder = ALL_PROTOCOLS.filter((p) => value.includes(p));
+  const selectedInOrder = CLIENT_PROTOCOLS.filter((p) => value.includes(p));
   const clearDisabled = requireAtLeastOne && value.length <= 1;
 
   return (
@@ -214,18 +209,8 @@ export function ProtocolMultiSelect({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[21rem] gap-3 p-3">
         <ProtocolGroup
-          label={copy.chat}
-          protocols={chatProtocols}
-          value={value}
-          onToggle={toggle}
-          disabled={disabled}
-        />
-        {chatProtocols.length > 0 && specialProtocols.length > 0 ? (
-          <div className="h-px bg-border" />
-        ) : null}
-        <ProtocolGroup
-          label={copy.special}
-          protocols={specialProtocols}
+          label={copy.client}
+          protocols={clientProtocols}
           value={value}
           onToggle={toggle}
           disabled={disabled}

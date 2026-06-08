@@ -10,6 +10,7 @@ from .runtime_context import (
     Request,
     Response,
     app_state,
+    can_reach_protocol,
 )
 from .auth import _gateway_key_allows_model
 from .upstream_http import _forward_anthropic_headers
@@ -107,12 +108,33 @@ def _filtered_group_names(
     gateway_key: GatewayApiKey,
     protocols: frozenset[ProtocolKind] | set[ProtocolKind],
 ) -> list[str]:
+    group_by_id = {group.id: group for group in groups}
+    requested_protocols = frozenset(protocols)
+
+    def has_enabled_item(group: ModelGroup) -> bool:
+        target = (
+            group_by_id.get(group.route_group_id) if group.route_group_id else group
+        )
+        return bool(
+            target
+            and any(
+                item.enabled
+                and item.protocol is not None
+                and any(
+                    can_reach_protocol(item.protocol, protocol)
+                    for protocol in requested_protocols
+                )
+                for item in target.items
+            )
+        )
+
     return sorted(
         {
             group.name.strip()
             for group in groups
             if group.name.strip()
-            and set(group.protocols) & protocols
+            and set(group.protocols) & requested_protocols
+            and has_enabled_item(group)
             and _gateway_key_allows_model(gateway_key, group.name)
         }
     )
