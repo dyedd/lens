@@ -951,6 +951,7 @@ class ConfigBackupStatsSnapshot(StrictBaseModel):
 class ConfigBackupGatewayApiKey(GatewayApiKeyBase):
     id: str
     api_key: str
+    spent_cost_usd: float = 0.0
     created_at: str | None = None
     updated_at: str | None = None
 

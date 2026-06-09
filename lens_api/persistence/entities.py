@@ -165,6 +165,7 @@ class GatewayApiKeyEntity(Base):
     enabled: Mapped[int] = enabled_column()
     allowed_models_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     max_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    spent_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = timestamp_column()
     updated_at: Mapped[datetime] = auto_timestamp_column()

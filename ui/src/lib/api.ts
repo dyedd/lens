@@ -464,6 +464,7 @@ export type ConfigBackupGatewayApiKey = {
   enabled: boolean;
   allowed_models: string[];
   max_cost_usd: number;
+  spent_cost_usd: number;
   expires_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;

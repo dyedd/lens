@@ -294,6 +294,15 @@ class DomainRequestLogWritesMixin:
                 ),
             )
             session.add(entity)
+            await self._adjust_gateway_key_spend(
+                session,
+                gateway_key_id,
+                self._gateway_key_spend_contribution(
+                    gateway_key_id,
+                    lifecycle_value,
+                    total_cost_usd,
+                ),
+            )
             await session.commit()
             await session.refresh(entity)
             item = self._to_request_log(entity)
@@ -335,6 +344,12 @@ class DomainRequestLogWritesMixin:
             entity = await session.get(RequestLogEntity, log_id)
             if entity is None:
                 return None
+            previous_gateway_key_id = entity.gateway_key_id
+            previous_spend = self._gateway_key_spend_contribution(
+                previous_gateway_key_id,
+                entity.lifecycle_status,
+                entity.total_cost_usd,
+            )
             entity.protocol = protocol
             entity.user_agent = user_agent.strip()[:300]
             entity.requested_group_name = requested_group_name
@@ -364,6 +379,28 @@ class DomainRequestLogWritesMixin:
             entity.stats_archived = (
                 0 if lifecycle_value in REQUEST_LOG_TERMINAL_STATUSES else 1
             )
+            next_spend = self._gateway_key_spend_contribution(
+                gateway_key_id,
+                lifecycle_value,
+                total_cost_usd,
+            )
+            if previous_gateway_key_id == gateway_key_id:
+                await self._adjust_gateway_key_spend(
+                    session,
+                    gateway_key_id,
+                    next_spend - previous_spend,
+                )
+            else:
+                await self._adjust_gateway_key_spend(
+                    session,
+                    previous_gateway_key_id,
+                    -previous_spend,
+                )
+                await self._adjust_gateway_key_spend(
+                    session,
+                    gateway_key_id,
+                    next_spend,
+                )
             await session.commit()
             await session.refresh(entity)
             return self._to_request_log(entity)
@@ -406,3 +443,20 @@ class DomainRequestLogWritesMixin:
                 delete(RequestLogEntity).where(RequestLogEntity.created_at < cutoff)
             )
             await session.commit()
+
+    @staticmethod
+    def _gateway_key_spend_contribution(
+        gateway_key_id: str | None,
+        lifecycle_status: RequestLogLifecycleStatus | str,
+        total_cost_usd: float,
+    ) -> float:
+        if not gateway_key_id:
+            return 0.0
+        lifecycle_value = (
+            lifecycle_status.value
+            if isinstance(lifecycle_status, RequestLogLifecycleStatus)
+            else str(lifecycle_status)
+        )
+        if lifecycle_value not in REQUEST_LOG_TERMINAL_STATUSES:
+            return 0.0
+        return max(float(total_cost_usd), 0.0)
