@@ -567,6 +567,7 @@ class BackupReplacersMixin:
                         separators=(",", ":"),
                     ),
                     max_cost_usd=max(item.max_cost_usd, 0.0),
+                    spent_cost_usd=max(item.spent_cost_usd, 0.0),
                     expires_at=parse_optional_datetime(item.expires_at),
                     created_at=parse_optional_datetime(item.created_at) or now,
                     updated_at=parse_optional_datetime(item.updated_at) or now,
