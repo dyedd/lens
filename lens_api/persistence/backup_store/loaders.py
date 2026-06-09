@@ -480,6 +480,7 @@ class BackupLoadersMixin:
                 enabled=bool(row.enabled),
                 allowed_models=load_allowed_models(row.allowed_models_json),
                 max_cost_usd=max(row.max_cost_usd, 0.0),
+                spent_cost_usd=max(row.spent_cost_usd, 0.0),
                 expires_at=format_optional_datetime(row.expires_at),
                 created_at=format_optional_datetime(row.created_at),
                 updated_at=format_optional_datetime(row.updated_at),

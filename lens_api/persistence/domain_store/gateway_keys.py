@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from sqlalchemy import case
+
 from .shared import (
     Any,
     AsyncSession,
@@ -8,14 +10,12 @@ from .shared import (
     GatewayApiKeyCreate,
     GatewayApiKeyEntity,
     GatewayApiKeyUpdate,
-    REQUEST_LOG_TERMINAL_STATUSES,
-    RequestLogEntity,
     UTC,
     datetime,
-    func,
     json,
     secrets,
     select,
+    update,
     uuid,
 )
 
@@ -35,13 +35,7 @@ class DomainGatewayKeysMixin:
                 .scalars()
                 .all()
             )
-            spent_by_key = await self._gateway_key_spend_by_id(
-                session, [row.id for row in rows]
-            )
-            return [
-                self._to_gateway_api_key(row, spent_by_key.get(row.id, 0.0))
-                for row in rows
-            ]
+            return [self._to_gateway_api_key(row) for row in rows]
 
     async def get_gateway_api_key_by_secret(self, secret: str) -> GatewayApiKey | None:
         normalized = secret.strip()
@@ -57,10 +51,7 @@ class DomainGatewayKeysMixin:
             ).scalar_one_or_none()
             if entity is None:
                 return None
-            spent = (await self._gateway_key_spend_by_id(session, [entity.id])).get(
-                entity.id, 0.0
-            )
-            return self._to_gateway_api_key(entity, spent)
+            return self._to_gateway_api_key(entity)
 
     async def create_gateway_api_key(
         self, payload: GatewayApiKeyCreate
@@ -77,6 +68,7 @@ class DomainGatewayKeysMixin:
                     payload.allowed_models
                 ),
                 max_cost_usd=max(float(payload.max_cost_usd), 0.0),
+                spent_cost_usd=0.0,
                 expires_at=self._parse_gateway_key_expires_at(payload.expires_at),
                 created_at=now,
                 updated_at=now,
@@ -84,7 +76,7 @@ class DomainGatewayKeysMixin:
             session.add(entity)
             await session.commit()
             await session.refresh(entity)
-            return self._to_gateway_api_key(entity, 0.0)
+            return self._to_gateway_api_key(entity)
 
     async def update_gateway_api_key(
         self, key_id: str, payload: GatewayApiKeyUpdate
@@ -103,10 +95,7 @@ class DomainGatewayKeysMixin:
             entity.updated_at = datetime.now(UTC).replace(tzinfo=None)
             await session.commit()
             await session.refresh(entity)
-            spent = (await self._gateway_key_spend_by_id(session, [entity.id])).get(
-                entity.id, 0.0
-            )
-            return self._to_gateway_api_key(entity, spent)
+            return self._to_gateway_api_key(entity)
 
     async def delete_gateway_api_key(self, key_id: str) -> None:
         async with self._session_factory() as session:
@@ -210,31 +199,25 @@ class DomainGatewayKeysMixin:
             return None
         return value.replace(tzinfo=UTC).isoformat()
 
-    async def _gateway_key_spend_by_id(
-        self, session: AsyncSession, key_ids: list[str]
-    ) -> dict[str, float]:
-        unique_ids = [item for item in dict.fromkeys(key_ids) if item]
-        if not unique_ids:
-            return {}
-        rows = (
-            await session.execute(
-                select(
-                    RequestLogEntity.gateway_key_id,
-                    func.sum(RequestLogEntity.total_cost_usd),
+    async def _adjust_gateway_key_spend(
+        self, session: AsyncSession, gateway_key_id: str | None, delta: float
+    ) -> None:
+        if not gateway_key_id or delta == 0:
+            return
+        next_spend = GatewayApiKeyEntity.spent_cost_usd + float(delta)
+        await session.execute(
+            update(GatewayApiKeyEntity)
+            .where(GatewayApiKeyEntity.id == gateway_key_id)
+            .values(
+                spent_cost_usd=case(
+                    (next_spend < 0, 0.0),
+                    else_=next_spend,
                 )
-                .where(RequestLogEntity.gateway_key_id.in_(unique_ids))
-                .where(
-                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
-                )
-                .group_by(RequestLogEntity.gateway_key_id)
             )
-        ).all()
-        return {str(key_id): float(total) for key_id, total in rows}
+        )
 
     @classmethod
-    def _to_gateway_api_key(
-        cls, entity: GatewayApiKeyEntity, spent_cost_usd: float
-    ) -> GatewayApiKey:
+    def _to_gateway_api_key(cls, entity: GatewayApiKeyEntity) -> GatewayApiKey:
         return GatewayApiKey(
             id=entity.id,
             remark=entity.remark,
@@ -242,7 +225,7 @@ class DomainGatewayKeysMixin:
             enabled=bool(entity.enabled),
             allowed_models=cls._load_gateway_key_models(entity.allowed_models_json),
             max_cost_usd=max(float(entity.max_cost_usd), 0.0),
-            spent_cost_usd=max(float(spent_cost_usd), 0.0),
+            spent_cost_usd=max(float(entity.spent_cost_usd), 0.0),
             expires_at=cls._format_datetime(entity.expires_at),
             created_at=cls._format_datetime(entity.created_at),
             updated_at=cls._format_datetime(entity.updated_at),
