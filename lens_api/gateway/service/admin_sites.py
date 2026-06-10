@@ -6,10 +6,7 @@ from .runtime_context import (
     Depends,
     HTTPException,
     OverviewDailyPoint,
-    OverviewDashboardData,
-    OverviewMetrics,
     OverviewModelAnalytics,
-    OverviewPerformanceMetrics,
     OverviewSummary,
     ProtocolKind,
     Query,
@@ -32,14 +29,12 @@ from .runtime_context import (
     SiteRuntimeSummary,
     SiteUpdate,
     app_state,
-    asyncio,
 )
 from .errors import _apply_router_runtime_settings
 from .upstream_http import (
     _fetch_upstream_models,
     _format_channel_error,
 )
-from .lifecycle import _overview_window_minutes
 from .routing_plan import _resolve_routing_plan
 from .site_model_probe import (
     _apply_site_model_probe_param_override,
@@ -171,18 +166,6 @@ async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]
     return app_state.router.snapshot(channels).model_dump(mode="json")
 
 
-async def overview_metrics(_: Any = Depends(get_current_admin)) -> OverviewMetrics:
-    metrics = await app_state.domain_store.get_overview_metrics()
-    sites = await app_state.store.list_sites()
-    protocols = [protocol for site in sites for protocol in site.protocols]
-    return metrics.model_copy(
-        update={
-            "enabled_channels": sum(1 for protocol in protocols if protocol.enabled),
-            "total_channels": len(protocols),
-        }
-    )
-
-
 async def overview_summary(
     days: int = 7,
     _: Any = Depends(get_current_admin),
@@ -203,47 +186,14 @@ async def overview_daily(
 
 async def overview_models(
     days: int = 7,
+    metric: str = Query(default="cost", pattern="^(cost|requests|tokens)$"),
     gateway_key_id: str | None = None,
     _: Any = Depends(get_current_admin),
 ) -> OverviewModelAnalytics:
     return await app_state.domain_store.get_model_analytics(
         days=days,
+        metric=metric,
         gateway_key_id=gateway_key_id,
-    )
-
-
-async def overview_dashboard(
-    days: int = 7,
-    _: Any = Depends(get_current_admin),
-) -> OverviewDashboardData:
-    summary, daily, models = await asyncio.gather(
-        app_state.domain_store.get_overview_summary(
-            days=days,
-        ),
-        app_state.domain_store.list_overview_daily(
-            days=days,
-        ),
-        app_state.domain_store.get_model_analytics(
-            days=days,
-        ),
-    )
-    runtime = await app_state.domain_store.get_runtime_settings()
-    total_requests = summary.request_count.value
-    total_tokens = summary.total_tokens.value
-    window_minutes = _overview_window_minutes(days, daily, str(runtime["time_zone"]))
-    performance = OverviewPerformanceMetrics(
-        avg_requests_per_minute=(
-            round(total_requests / window_minutes, 2) if window_minutes > 0 else 0.0
-        ),
-        avg_tokens_per_minute=(
-            round(total_tokens / window_minutes, 2) if window_minutes > 0 else 0.0
-        ),
-    )
-    return OverviewDashboardData(
-        summary=summary,
-        performance=performance,
-        daily=daily,
-        models=models,
     )
 
 

@@ -80,13 +80,13 @@
   --chart-5: oklch(0.424 0.199 265.638);
   --radius: 0.625rem;
   /* 16px border radius for a softer look */
-  --sidebar: oklch(1 0 0);
+  --sidebar: oklch(0.97 0.001 106.424);
   --sidebar-foreground: oklch(0.147 0.004 49.25);
   --sidebar-primary: oklch(0.546 0.245 262.881);
   --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
-  --sidebar-accent: oklch(0.97 0.001 106.424);
+  --sidebar-accent: oklch(1 0 0);
   --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-border: oklch(0.923 0.003 48.717);
+  --sidebar-border: oklch(0.91 0.003 48.717);
   --sidebar-ring: oklch(0.709 0.01 56.259);
   --background: oklch(1 0 0);
   --foreground: oklch(0.147 0.004 49.25);
@@ -152,6 +152,13 @@
 
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+.brand-times-italic {
+  font-family:
+    "Times New Roman", Times, "Songti SC", "Noto Serif CJK SC", "SimSun",
+    serif;
+  font-style: italic;
 }
 
 @keyframes fadeIn {

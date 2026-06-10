@@ -11,13 +11,7 @@ import { setStoredToken } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -47,6 +41,12 @@ export function LoginScreen() {
   const nextLocale = locale === "zh-CN" ? "en-US" : "zh-CN";
   const languageActionLabel =
     locale === "zh-CN" ? "切换到 English" : "Switch to 中文";
+  const loginTitle =
+    locale === "zh-CN" ? `欢迎登录 ${siteName}` : `Sign in to ${siteName}`;
+  const usernamePlaceholder =
+    locale === "zh-CN" ? "请输入用户名" : "Enter username";
+  const passwordPlaceholder =
+    locale === "zh-CN" ? "请输入密码" : "Enter password";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,14 +71,14 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="relative flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+    <div className="relative flex min-h-svh w-full items-center justify-center bg-background p-6 md:p-10">
       <div className="absolute right-6 top-6 flex items-center gap-2">
         <ThemeToggle />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="icon-sm"
               aria-label={languageActionLabel}
               onClick={() => setLocale(nextLocale)}
@@ -92,9 +92,9 @@ export function LoginScreen() {
         </Tooltip>
       </div>
 
-      <div className="flex w-full max-w-sm flex-col gap-6">
+      <main className="flex w-full max-w-sm flex-col items-center">
         <header className="flex flex-col items-center gap-3 text-center">
-          <div className="relative size-20 overflow-hidden">
+          <div className="relative size-10 overflow-hidden rounded-lg">
             <Image
               src={logoUrl}
               alt={siteName}
@@ -104,66 +104,64 @@ export function LoginScreen() {
               unoptimized={logoUrl !== "/logo.svg"}
             />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {siteName}
+          <h1 className="text-xl leading-tight font-semibold text-foreground">
+            {loginTitle}
           </h1>
         </header>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {locale === "zh-CN" ? "登录你的账户" : "Login to your account"}
-            </CardTitle>
-            <CardDescription>
-              {locale === "zh-CN"
-                ? "输入用户名和密码继续"
-                : "Enter your username and password to continue"}
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent>
-            <form onSubmit={submit} className="grid gap-5">
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-foreground">
-                  {t.username}
-                </span>
-                <Input
-                  name="username"
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
-                  placeholder={t.username}
-                  autoComplete="username"
-                  required
-                  autoFocus
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-sm font-medium text-foreground">
-                  {t.password}
-                </span>
-                <Input
-                  name="password"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder={t.password}
-                  autoComplete="current-password"
-                  required
-                />
-              </label>
-              <Button
-                className="h-10 w-full"
-                type="submit"
-                disabled={submitting}
+        <form onSubmit={submit} className="mt-8 flex w-full flex-col gap-7">
+          <FieldGroup className="gap-6">
+            <Field className="gap-3">
+              <FieldLabel
+                htmlFor="login-username"
+                className="text-base leading-none font-normal text-foreground"
               >
-                {submitting ? t.signingIn : t.signIn}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+                {t.username}
+              </FieldLabel>
+              <Input
+                id="login-username"
+                name="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder={usernamePlaceholder}
+                autoComplete="username"
+                required
+                autoFocus
+                className="rounded-lg border-border bg-background px-4 shadow-xs"
+              />
+            </Field>
 
-        <footer className="text-center text-xs text-muted-foreground">
+            <Field className="gap-3">
+              <FieldLabel
+                htmlFor="login-password"
+                className="text-base leading-none font-normal text-foreground"
+              >
+                {t.password}
+              </FieldLabel>
+              <Input
+                id="login-password"
+                name="password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={passwordPlaceholder}
+                autoComplete="current-password"
+                required
+                className="rounded-lg border-border bg-background px-4 shadow-xs"
+              />
+            </Field>
+          </FieldGroup>
+
+          <Button
+            type="submit"
+            className="w-full rounded-lg text-base font-normal shadow-xs hover:bg-primary/90 active:bg-primary/90"
+            disabled={submitting}
+          >
+            {submitting ? t.signingIn : t.signIn}
+          </Button>
+        </form>
+
+        <footer className="mt-6 text-center text-xs text-muted-foreground">
           <a
             href="https://github.com/dyedd/lens"
             target="_blank"
@@ -173,7 +171,7 @@ export function LoginScreen() {
             powered by lens
           </a>
         </footer>
-      </div>
+      </main>
     </div>
   );
 }

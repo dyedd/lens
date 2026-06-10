@@ -12,7 +12,6 @@ import {
   ArrowUp,
   Filter,
   RefreshCcw,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 import {
@@ -30,6 +29,7 @@ import { getModelFamilyKey, getModelFamilyLabel } from "@/lib/model-icons";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { DashboardHeaderActions } from "@/components/shell/dashboard-header-actions";
 import {
   Field,
   FieldGroup,
@@ -320,8 +320,6 @@ export function RequestsScreen() {
       setAttemptDetailId(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview"] }),
-        queryClient.invalidateQueries({ queryKey: ["overview-dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-summary"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-daily"] }),
         queryClient.invalidateQueries({ queryKey: ["overview-models"] }),
@@ -380,30 +378,16 @@ export function RequestsScreen() {
     setPage(0);
   }
 
-  function resetFilters() {
-    setSelectedModelPrefix("all");
-    setStatusFilter("all");
-    setProtocolFilter("all");
-    setChannelFilter("all");
-    setSelectedGatewayKeyId("all");
-    setSortMode("latest");
-    setKeyword("");
-    setPage(0);
-  }
-
   return (
     <TooltipProvider>
-      <section className="flex flex-col gap-4 md:gap-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">
-              {titleForLocale(locale, "请求日志", "Requests")}
-            </h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+      <DashboardHeaderActions>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={titleForLocale(locale, "刷新", "Refresh")}
               onClick={() => void refreshLogs()}
               disabled={isFetching}
             >
@@ -411,20 +395,14 @@ export function RequestsScreen() {
                 data-icon="inline-start"
                 className={cn(isFetching && "animate-spin")}
               />
-              {titleForLocale(locale, "刷新", "Refresh")}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={resetFilters}
-              disabled={!activeFilterCount && sortMode === "latest"}
-            >
-              <RotateCcw data-icon="inline-start" />
-              {titleForLocale(locale, "重置", "Reset")}
-            </Button>
-          </div>
-        </div>
-
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            {titleForLocale(locale, "刷新", "Refresh")}
+          </TooltipContent>
+        </Tooltip>
+      </DashboardHeaderActions>
+      <section className="flex flex-col gap-4 md:gap-5">
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,4fr)_320px]">
           <div className="order-2 grid gap-4 xl:order-1">
             {showModelPrefixFilter ? (
@@ -521,15 +499,6 @@ export function RequestsScreen() {
                     </div>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetFilters}
-                  disabled={!activeFilterCount && sortMode === "latest"}
-                >
-                  {titleForLocale(locale, "清空", "Clear")}
-                </Button>
               </div>
 
               <div>
