@@ -27,9 +27,10 @@ from .upstream_http import (
     _is_generic_user_agent,
     _normalize_user_agent,
 )
-from .payload_serialization import _dump_json
+from .payload_serialization import _dump_log_json
 from .proxy_upstream import (
     _call_channel,
+    _prepare_channel_request,
     _record_target_failure,
 )
 from .request_logger import _RequestLogger, _update_request_log
@@ -63,7 +64,7 @@ async def _proxy_protocol(
     )
     _apply_router_runtime_settings(runtime)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
-    request_content = _dump_json(body) if log_body_enabled else None
+    request_content = _dump_log_json(body) if log_body_enabled else None
     inbound_ua = _normalize_user_agent(inbound_user_agent)
     upstream_user_agent = (
         inbound_ua
@@ -375,8 +376,49 @@ async def _try_target(
         upstream_body.pop("stream", None)
 
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
-    upstream_request_content = _dump_json(upstream_body) if log_body_enabled else None
     reasoning_effort = _extract_request_reasoning_effort(body, upstream_body)
+    try:
+        upstream, body_bytes, upstream_request_content = _prepare_channel_request(
+            channel,
+            upstream_body,
+            credential_id=target.credential_id,
+            user_agent=upstream_user_agent,
+            forwarded_headers=inbound_headers,
+            log_body_enabled=log_body_enabled,
+        )
+    except UpstreamRequestError as exc:
+        return await _record_target_failure(
+            target=target,
+            channel=channel,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            failure_status_codes=failure_status_codes,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=effective_user_agent,
+            upstream_body=upstream_body,
+            request_content=exc.request_content,
+            exc=exc,
+        )
+    except HTTPException as exc:
+        return await _record_target_failure(
+            target=target,
+            channel=channel,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            failure_status_codes=failure_status_codes,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=effective_user_agent,
+            upstream_body=upstream_body,
+            exc=UpstreamRequestError(
+                status_code=exc.status_code,
+                detail=exc.detail,
+                router_status_code=exc.status_code,
+            ),
+        )
     await log_ctx.update(
         requested_group_name=plan.requested_group_name,
         resolved_group_name=plan.resolved_group_name,
@@ -393,11 +435,11 @@ async def _try_target(
         result = await _call_channel(
             channel,
             upstream_body,
+            upstream,
+            body_bytes,
+            upstream_request_content,
             pricing_group_name=plan.resolved_group_name,
             client_protocol=protocol,
-            credential_id=target.credential_id,
-            user_agent=upstream_user_agent,
-            forwarded_headers=inbound_headers,
             log_body_enabled=log_body_enabled,
             deadline=deadline,
             global_proxy_url=str(runtime["proxy_url"]),
@@ -416,25 +458,6 @@ async def _try_target(
             upstream_body=upstream_body,
             request_content=upstream_request_content,
             exc=exc,
-        )
-    except HTTPException as exc:
-        return await _record_target_failure(
-            target=target,
-            channel=channel,
-            runtime=runtime,
-            log_ctx=log_ctx,
-            plan=plan,
-            errors=errors,
-            failure_status_codes=failure_status_codes,
-            attempt_started_at=attempt_started_at,
-            effective_user_agent=effective_user_agent,
-            upstream_body=upstream_body,
-            request_content=upstream_request_content,
-            exc=UpstreamRequestError(
-                status_code=exc.status_code,
-                detail=exc.detail,
-                router_status_code=exc.status_code,
-            ),
         )
 
     log_ctx.attempts.append(

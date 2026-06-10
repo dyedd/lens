@@ -6,7 +6,7 @@ from .runtime_context import (
     deepcopy,
     json,
 )
-from .payload_serialization import _dump_json
+from .payload_serialization import _dump_log_json
 from .usage import _parse_sse_payloads
 
 
@@ -26,13 +26,13 @@ def _distill_stream_response_content(
                 compact_payload = _compact_openai_response_payload(
                     _restore_openai_response_output(response_payload, payloads)
                 )
-                return _dump_json(compact_payload) or raw_content
+                return _dump_log_json(compact_payload) or raw_content
     if protocol == ProtocolKind.ANTHROPIC:
         restored_message = _restore_anthropic_stream_message(
             _parse_sse_payloads(raw_content)
         )
         if restored_message is not None:
-            return _dump_json(restored_message) or raw_content
+            return _dump_log_json(restored_message) or raw_content
 
     return raw_content
 
