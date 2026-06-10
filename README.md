@@ -102,6 +102,24 @@
 - 请求日志：记录协议、模型、延迟、Token、成本、User-Agent 和每次上游尝试链路
 - 配置备份：导出/导入站点、模型组、设置、价格、定时任务、统计数据，可选包含网关 Key 和请求日志
 
+## 截图
+
+| 总览 | 请求日志 |
+| ---- | -------- |
+| <img src="./screenshots/overview.png" alt="总览"> | <img src="./screenshots/request-logs.png" alt="请求日志"> |
+
+| 渠道 | 模型组 |
+| ---- | ------ |
+| <img src="./screenshots/channels.png" alt="渠道"> | <img src="./screenshots/model-groups.png" alt="模型组"> |
+
+| 系统设置 | API 密钥 |
+| -------- | -------- |
+| <img src="./screenshots/settings.png" alt="系统设置"> | <img src="./screenshots/api-keys.png" alt="API 密钥"> |
+
+| 定时任务 | 备份恢复 |
+| -------- | -------- |
+| <img src="./screenshots/scheduled-tasks.png" alt="定时任务"> | <img src="./screenshots/backups.png" alt="备份恢复"> |
+
 ## 快速开始
 
 ### Docker Compose（推荐）
