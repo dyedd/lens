@@ -7,7 +7,13 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DashboardHeaderActions } from "@/components/shell/dashboard-header-actions";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -658,25 +664,29 @@ export function CronjobsScreen() {
   }
 
   return (
-    <section className="flex min-w-0 flex-col gap-4">
-      <div className="flex min-w-0 flex-col gap-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <h1 className="text-xl font-semibold text-foreground">
-            {t.cronjobs}
-          </h1>
-          <div className="flex items-center gap-2">
+    <>
+      <DashboardHeaderActions>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
-              variant="outline"
+              variant="ghost"
+              size="icon-sm"
               type="button"
+              aria-label={t.refresh}
               onClick={() => void refresh()}
               disabled={isFetching || isFetchingSettings}
             >
               <RotateCcw data-icon="inline-start" />
-              <span className="hidden sm:inline">{t.refresh}</span>
             </Button>
-          </div>
-        </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            {t.refresh}
+          </TooltipContent>
+        </Tooltip>
+      </DashboardHeaderActions>
 
+      <section className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-6">
         <Card className="min-w-0 py-0">
           <CardContent className="min-w-0 p-3 sm:p-5">
             <Table className="min-w-[1320px] table-fixed">
@@ -854,6 +864,7 @@ export function CronjobsScreen() {
           </CardContent>
         </Card>
       </div>
-    </section>
+      </section>
+    </>
   );
 }

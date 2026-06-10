@@ -37,7 +37,6 @@ from ...models import (
     ModelPriceListResponse,
     ModelPriceUpdate,
     OverviewDailyPoint,
-    OverviewMetrics,
     OverviewModelAnalytics,
     OverviewModelMetricPoint,
     OverviewModelTrendPoint,

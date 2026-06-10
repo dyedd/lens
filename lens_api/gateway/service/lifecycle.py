@@ -5,11 +5,9 @@ from .runtime_context import (
     AsyncIterator,
     FastAPI,
     HTTPBearer,
-    OverviewDailyPoint,
     app_state,
     asynccontextmanager,
     asyncio,
-    datetime,
     resolve_time_zone,
     settings,
 )
@@ -34,27 +32,6 @@ async def _close_app_state(state: AppState) -> None:
 
 def _running_request_latency_cap_ms() -> int:
     return int(max(settings.request_timeout_seconds, 0) * 1000)
-
-
-def _overview_window_minutes(
-    days: int, daily_points: list[OverviewDailyPoint], time_zone_name: str
-) -> int:
-    time_zone = resolve_time_zone(time_zone_name)
-    now = datetime.now(time_zone)
-    if days == -1:
-        start_at = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        return max(int((now - start_at).total_seconds() // 60), 1)
-    if days > 0:
-        return max(days * 24 * 60, 1)
-    if daily_points:
-        try:
-            start_at = datetime.strptime(daily_points[0].date, "%Y%m%d").replace(
-                tzinfo=time_zone
-            )
-        except ValueError:
-            return max(len(daily_points) * 24 * 60, 1)
-        return max(int((now - start_at).total_seconds() // 60), 1)
-    return 0
 
 
 @asynccontextmanager

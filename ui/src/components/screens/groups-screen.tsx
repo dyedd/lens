@@ -18,7 +18,13 @@ import {
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { getModelFamilyKey, getModelFamilyLabel } from "@/lib/model-icons";
+import { DashboardHeaderActions } from "@/components/shell/dashboard-header-actions";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   apiErrorMessage,
   buildCandidateHaystack,
@@ -1033,42 +1039,59 @@ export function GroupsScreen() {
     setSortBy("members-desc");
   }
 
-  return (
-    <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-foreground">
-          {locale === "zh-CN" ? "模型组" : "Groups"}
-        </h1>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void syncPrices()}
-            disabled={syncingPrices}
-          >
-            <RefreshCcw
-              data-icon="inline-start"
-              className={syncingPrices ? "animate-spin" : ""}
-            />
-            {syncingPrices
-              ? locale === "zh-CN"
-                ? "同步中..."
-                : "Syncing..."
-              : locale === "zh-CN"
-                ? "同步价格"
-                : "Sync prices"}
-          </Button>
-          <Button
-            className="rounded-full"
-            size="icon-sm"
-            type="button"
-            onClick={openCreate}
-          >
-            <Plus size={18} />
-          </Button>
-        </div>
-      </div>
+  const syncPricesLabel = syncingPrices
+    ? locale === "zh-CN"
+      ? "同步中..."
+      : "Syncing..."
+    : locale === "zh-CN"
+      ? "同步价格"
+      : "Sync prices";
+  const createGroupLabel = locale === "zh-CN" ? "新增模型组" : "New model group";
 
+  return (
+    <>
+      <DashboardHeaderActions>
+        <div className="flex items-center justify-end gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={syncPricesLabel}
+                onClick={() => void syncPrices()}
+                disabled={syncingPrices}
+              >
+                <RefreshCcw
+                  data-icon="inline-start"
+                  className={syncingPrices ? "animate-spin" : ""}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {syncPricesLabel}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon-sm"
+                type="button"
+                variant="ghost"
+                aria-label={createGroupLabel}
+                onClick={openCreate}
+              >
+                <Plus />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {createGroupLabel}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </DashboardHeaderActions>
+
+      <section className="flex flex-col gap-4">
       <GroupsOverview
         locale={locale}
         hasModelPrefixOptions={hasModelPrefixOptions}
@@ -1153,6 +1176,7 @@ export function GroupsScreen() {
           remove={remove}
         />
       ) : null}
-    </section>
+      </section>
+    </>
   );
 }

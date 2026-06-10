@@ -5,12 +5,6 @@ from fastapi import FastAPI
 
 def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route(
-        "/api/admin/overview",
-        service_module.overview_metrics,
-        methods=["GET"],
-        response_model=service_module.OverviewMetrics,
-    )
-    app.add_api_route(
         "/api/admin/overview-summary",
         service_module.overview_summary,
         methods=["GET"],
@@ -27,10 +21,4 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         service_module.overview_models,
         methods=["GET"],
         response_model=service_module.OverviewModelAnalytics,
-    )
-    app.add_api_route(
-        "/api/admin/overview-dashboard",
-        service_module.overview_dashboard,
-        methods=["GET"],
-        response_model=service_module.OverviewDashboardData,
     )

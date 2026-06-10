@@ -3,6 +3,13 @@
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -29,6 +36,10 @@ import {
   getDashboardViewFromPathname,
   type DashboardView,
 } from "@/components/shell/dashboard-routes";
+import {
+  DashboardHeaderActionsContext,
+  useDashboardHeaderActionsState,
+} from "@/components/shell/dashboard-header-actions";
 import {
   apiRequest,
   hydrateProtocolConversions,
@@ -68,13 +79,16 @@ function GitHubMark(props: React.ComponentProps<"svg">) {
 }
 
 function CollapseButton({
-  label,
+  expandedLabel,
+  collapsedLabel,
   iconOnly = false,
 }: {
-  label: string;
+  expandedLabel: string;
+  collapsedLabel: string;
   iconOnly?: boolean;
 }) {
   const { toggleSidebar, state } = useSidebar();
+  const label = state === "collapsed" ? collapsedLabel : expandedLabel;
   return (
     <SidebarMenuButton
       tooltip={label}
@@ -108,6 +122,10 @@ function ShellNavItem({
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const Icon = item.icon;
+  const apiKeyParts =
+    item.key === "apiKeys" && item.label.includes("API")
+      ? item.label.split("API")
+      : null;
 
   function handleNavigate() {
     if (isMobile) {
@@ -123,11 +141,22 @@ function ShellNavItem({
         tooltip={item.label}
         onMouseEnter={() => onIntent(item.href)}
         onFocus={() => onIntent(item.href)}
-        className={cn(activeView === item.key && "font-medium")}
+        className={cn(
+          "w-40 max-w-full data-active:!bg-transparent data-active:!text-sidebar-foreground data-active:hover:!bg-transparent data-active:active:!bg-transparent",
+          activeView === item.key && "font-medium",
+        )}
       >
         <Link href={item.href} scroll={false} onClick={handleNavigate}>
           <Icon />
-          <span>{item.label}</span>
+          {apiKeyParts ? (
+            <span>
+              {apiKeyParts[0]}
+              <span className="brand-times-italic">API</span>
+              {apiKeyParts.slice(1).join("API")}
+            </span>
+          ) : (
+            <span>{item.label}</span>
+          )}
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -159,8 +188,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     [pathname],
   );
   const currentVersion = appInfo?.system_version.trim();
+  const versionText = locale === "zh-CN" ? "版本号" : "Version";
   const versionLabel = currentVersion
-    ? `${locale === "zh-CN" ? "版本号" : "Version"} ${currentVersion}`
+    ? `${versionText} ${currentVersion}`
     : appInfo
       ? locale === "zh-CN"
         ? "版本未获取"
@@ -180,6 +210,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const nextLocale = locale === "zh-CN" ? "en-US" : "zh-CN";
   const languageActionLabel =
     locale === "zh-CN" ? "切换到 English" : "Switch to 中文";
+  const { actions: headerActions, value: headerActionsContext } =
+    useDashboardHeaderActionsState();
 
   const navGroups = useMemo(
     () => [
@@ -256,6 +288,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   );
   const activeLabel =
     allItems.find((i) => i.key === activeView)?.label ?? t.dashboard;
+  const activeGroupLabel = navGroups.find((group) =>
+    group.items.some((item) => item.key === activeView),
+  )?.label;
 
   useEffect(() => {
     document.title = `${activeLabel} - ${siteName}`;
@@ -271,81 +306,110 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider className="h-dvh max-h-dvh overflow-hidden">
-      <Sidebar collapsible="icon" className="z-20">
-        <SidebarHeader className="min-h-16 px-4 py-3">
-          <div className="flex w-full items-center justify-between gap-2 group-data-[collapsible=icon]:justify-center">
-            <div className="flex min-w-0 items-center gap-2.5 group-data-[collapsible=icon]:hidden">
-              <Image
-                src={logoUrl}
-                alt={siteName}
-                width={32}
-                height={32}
-                loading="eager"
-                className="size-8 shrink-0 object-contain"
-                unoptimized={logoUrl !== "/logo.svg"}
-              />
-              <span className="truncate text-base font-semibold text-sidebar-foreground">
-                {siteName}
-              </span>
-            </div>
-            <div className="group-data-[collapsible=icon]:hidden">
-              <CollapseButton
-                label={locale === "zh-CN" ? "收起侧边栏" : "Collapse"}
-                iconOnly
-              />
-            </div>
-            <div className="hidden group-data-[collapsible=icon]:block">
-              <CollapseButton
-                label={locale === "zh-CN" ? "展开侧边栏" : "Expand"}
-                iconOnly
-              />
-            </div>
-          </div>
-        </SidebarHeader>
-        <SidebarContent className="py-2">
-          {navGroups.map((group) => (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-              <SidebarMenu>
-                {group.items.map((item) => (
-                  <ShellNavItem
-                    key={item.key}
-                    item={item}
-                    activeView={activeView}
-                    onIntent={handleViewIntent}
-                  />
-                ))}
+    <DashboardHeaderActionsContext.Provider value={headerActionsContext}>
+      <SidebarProvider className="h-dvh max-h-dvh overflow-hidden bg-muted">
+        <Sidebar collapsible="icon" className="z-20 bg-sidebar">
+          <SidebarHeader>
+            <div className="flex w-full items-center gap-1.5 group-data-[collapsible=icon]:justify-center">
+              <SidebarMenu className="min-w-0 flex-1">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    tooltip={siteName}
+                    className="data-[slot=sidebar-menu-button]:!p-1.5"
+                  >
+                    <Link
+                      href={DASHBOARD_ROUTES.overview}
+                      scroll={false}
+                      onMouseEnter={() =>
+                        handleViewIntent(DASHBOARD_ROUTES.overview)
+                      }
+                      onFocus={() =>
+                        handleViewIntent(DASHBOARD_ROUTES.overview)
+                      }
+                    >
+                      <Image
+                        src={logoUrl}
+                        alt={siteName}
+                        width={24}
+                        height={24}
+                        loading="eager"
+                        className="size-6 shrink-0 object-contain"
+                        unoptimized={logoUrl !== "/logo.svg"}
+                      />
+                      <span className="brand-times-italic truncate text-base font-semibold">
+                        {siteName}
+                      </span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
-            </SidebarGroup>
-          ))}
-        </SidebarContent>
-        <SidebarFooter className="px-3 py-3 group-data-[collapsible=icon]:px-2">
-          <SidebarSeparator />
-          <div className="flex flex-col gap-2 px-2 pt-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
-            <div
-              className="whitespace-nowrap text-center text-sm font-medium text-sidebar-foreground/90 group-data-[collapsible=icon]:text-xs"
-              title={versionLabel}
-            >
-              <span className="group-data-[collapsible=icon]:hidden">
-                {versionLabel}
-              </span>
-              <span className="hidden group-data-[collapsible=icon]:inline">
-                {compactVersionLabel}
-              </span>
             </div>
-            {versionCheck?.has_update ? (
-              versionCheck.release_url ? (
-                <Badge
-                  asChild
-                  variant="destructive"
-                  className="mx-auto max-w-full group-data-[collapsible=icon]:size-5 group-data-[collapsible=icon]:px-0"
-                  title={updateTitle}
-                >
-                  <a
-                    href={versionCheck.release_url}
-                    target="_blank"
-                    rel="noreferrer"
+          </SidebarHeader>
+          <SidebarContent>
+            {navGroups.map((group) => (
+              <SidebarGroup key={group.label}>
+                <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                <SidebarMenu>
+                  {group.items.map((item) => (
+                    <ShellNavItem
+                      key={item.key}
+                      item={item}
+                      activeView={activeView}
+                      onIntent={handleViewIntent}
+                    />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroup>
+            ))}
+          </SidebarContent>
+          <SidebarFooter className="px-3 py-3 group-data-[collapsible=icon]:px-2">
+            <SidebarSeparator />
+            <div className="flex flex-col gap-2 px-2 pt-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
+              <div
+                className="whitespace-nowrap text-center text-sm font-medium text-sidebar-foreground/90 group-data-[collapsible=icon]:text-xs"
+                title={versionLabel}
+              >
+                {currentVersion ? (
+                  <span className="group-data-[collapsible=icon]:hidden">
+                    {versionText}{" "}
+                    <span className="brand-times-italic">{currentVersion}</span>
+                  </span>
+                ) : (
+                  <span className="group-data-[collapsible=icon]:hidden">
+                    {versionLabel}
+                  </span>
+                )}
+                <span className="hidden group-data-[collapsible=icon]:inline">
+                  {compactVersionLabel}
+                </span>
+              </div>
+              {versionCheck?.has_update ? (
+                versionCheck.release_url ? (
+                  <Badge
+                    asChild
+                    variant="destructive"
+                    className="mx-auto max-w-full group-data-[collapsible=icon]:size-5 group-data-[collapsible=icon]:px-0"
+                    title={updateTitle}
+                  >
+                    <a
+                      href={versionCheck.release_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <span className="group-data-[collapsible=icon]:hidden">
+                        {updateLabel}
+                      </span>
+                      <span className="hidden group-data-[collapsible=icon]:inline">
+                        !
+                      </span>
+                    </a>
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="destructive"
+                    className="mx-auto max-w-full group-data-[collapsible=icon]:size-5 group-data-[collapsible=icon]:px-0"
+                    title={updateTitle}
                   >
                     <span className="group-data-[collapsible=icon]:hidden">
                       {updateLabel}
@@ -353,102 +417,124 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                     <span className="hidden group-data-[collapsible=icon]:inline">
                       !
                     </span>
-                  </a>
-                </Badge>
-              ) : (
-                <Badge
-                  variant="destructive"
-                  className="mx-auto max-w-full group-data-[collapsible=icon]:size-5 group-data-[collapsible=icon]:px-0"
-                  title={updateTitle}
-                >
-                  <span className="group-data-[collapsible=icon]:hidden">
-                    {updateLabel}
-                  </span>
-                  <span className="hidden group-data-[collapsible=icon]:inline">
-                    !
-                  </span>
-                </Badge>
-              )
-            ) : null}
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="GitHub"
-                  className="justify-center group-data-[collapsible=icon]:justify-center"
-                >
-                  <a
-                    href={GITHUB_REPO_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="GitHub"
+                  </Badge>
+                )
+              ) : null}
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    tooltip="GitHub"
+                    className="justify-center group-data-[collapsible=icon]:justify-center"
                   >
-                    <GitHubMark />
-                    <span>GitHub</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </div>
-        </SidebarFooter>
-      </Sidebar>
+                    <a
+                      href={GITHUB_REPO_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="GitHub"
+                    >
+                      <GitHubMark />
+                      <span className="brand-times-italic">GitHub</span>
+                    </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </div>
+          </SidebarFooter>
+        </Sidebar>
 
-      <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        <header className="flex min-h-14 min-w-0 shrink-0 items-center justify-between gap-2 border-b bg-card px-3 py-2 sm:px-4">
-          <div className="flex min-w-0 items-center gap-2 md:hidden">
-            <SidebarTrigger
-              aria-label={locale === "zh-CN" ? "打开导航" : "Open navigation"}
-            />
-            <span className="truncate text-sm font-medium text-foreground">
-              {activeLabel}
-            </span>
-          </div>
-          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <ThemeToggle />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={languageActionLabel}
-                  onClick={() => setLocale(nextLocale)}
-                >
-                  <Globe2 />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="end">
-                {languageActionLabel}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t.signOut}
-                  onClick={handleSignOut}
-                >
-                  <LogOut />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="end">
-                {t.signOut}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </header>
+        <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-muted">
+          <header className="flex min-h-14 min-w-0 shrink-0 items-center justify-between gap-2 bg-muted px-3 py-2 sm:px-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="hidden md:block">
+                <CollapseButton
+                  expandedLabel={locale === "zh-CN" ? "收起侧边栏" : "Collapse"}
+                  collapsedLabel={locale === "zh-CN" ? "展开侧边栏" : "Expand"}
+                  iconOnly
+                />
+              </div>
+              <div className="flex min-w-0 items-center gap-2 md:hidden">
+                <SidebarTrigger
+                  aria-label={
+                    locale === "zh-CN" ? "打开导航" : "Open navigation"
+                  }
+                />
+                <span className="truncate text-sm font-medium text-foreground">
+                  {activeLabel}
+                </span>
+              </div>
+              <Breadcrumb className="hidden min-w-0 md:block">
+                <BreadcrumbList className="min-w-0 flex-nowrap text-sm">
+                  {activeGroupLabel ? (
+                    <>
+                      <BreadcrumbItem className="shrink-0">
+                        <span>{activeGroupLabel}</span>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator />
+                    </>
+                  ) : null}
+                  <BreadcrumbItem className="min-w-0">
+                    <BreadcrumbPage className="truncate text-base font-semibold">
+                      {activeLabel}
+                    </BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
+            </div>
+            <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
+              {headerActions ? (
+                <div className="flex min-w-0 shrink items-center justify-end gap-2">
+                  {headerActions}
+                </div>
+              ) : null}
+              <div className="flex shrink-0 items-center justify-end gap-2">
+                <ThemeToggle />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={languageActionLabel}
+                      onClick={() => setLocale(nextLocale)}
+                    >
+                      <Globe2 />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" align="end">
+                    {languageActionLabel}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t.signOut}
+                      onClick={handleSignOut}
+                    >
+                      <LogOut />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" align="end">
+                    {t.signOut}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+          </header>
 
-        <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-muted p-3 pb-6 sm:p-4 sm:pb-7 lg:p-6 lg:pb-8">
-          <div
-            key={pathname}
-            className="min-h-[calc(100vh-10rem)] min-w-0 animate-[fadeIn_.16s_ease-out]"
-          >
-            {children}
+          <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-muted p-3 pb-6 sm:p-4 sm:pb-7 lg:p-6 lg:pb-8">
+            <div
+              key={pathname}
+              className="min-h-[calc(100vh-10rem)] min-w-0 animate-[fadeIn_.16s_ease-out]"
+            >
+              {children}
+            </div>
           </div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+        </SidebarInset>
+      </SidebarProvider>
+    </DashboardHeaderActionsContext.Provider>
   );
 }

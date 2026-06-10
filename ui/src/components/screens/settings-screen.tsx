@@ -1,13 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import {
-  useEffect,
-  useState,
-  type ComponentType,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -23,7 +17,6 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Field,
   FieldContent,
@@ -38,7 +31,13 @@ import {
 } from "@/components/ui/native-select";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   ApiError,
   type AdminProfile,
@@ -56,6 +55,7 @@ import {
   serializeModelTestPrompts,
 } from "@/lib/model-test-prompts";
 import { cn } from "@/lib/utils";
+import { DashboardHeaderActions } from "@/components/shell/dashboard-header-actions";
 
 const PROXY_URL = "proxy_url";
 const CORS_ALLOW_ORIGINS = "cors_allow_origins";
@@ -168,28 +168,31 @@ function normalizeOriginList(rawValue: string) {
 }
 
 function SettingCard({
-  icon: Icon,
   title,
+  description,
   className,
   children,
 }: {
-  icon: ComponentType<{ className?: string }>;
   title: string;
+  description?: string;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <Card className={cn("py-0", className)}>
-      <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
-          <Icon className="size-4 text-muted-foreground" />
-          <span>{title}</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
-        {children}
-      </CardContent>
-    </Card>
+    <section
+      className={cn(
+        "min-w-0 rounded-2xl border bg-card px-4 py-4 shadow-sm sm:px-6 sm:py-5",
+        className,
+      )}
+    >
+      <header className="border-b pb-4">
+        <h2 className="text-base font-semibold text-foreground">{title}</h2>
+        {description ? (
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        ) : null}
+      </header>
+      <div className="flex max-w-2xl flex-col gap-4 pt-5">{children}</div>
+    </section>
   );
 }
 
@@ -261,8 +264,8 @@ export function SettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["public-branding"] }),
       queryClient.invalidateQueries({ queryKey: ["app-info"] }),
       queryClient.invalidateQueries({ queryKey: ["model-groups"] }),
-      queryClient.invalidateQueries({ queryKey: ["overview-dashboard"] }),
-      queryClient.invalidateQueries({ queryKey: ["overview-metrics"] }),
+      queryClient.invalidateQueries({ queryKey: ["overview-summary"] }),
+      queryClient.invalidateQueries({ queryKey: ["overview-daily"] }),
       queryClient.invalidateQueries({ queryKey: ["overview-models"] }),
     ]);
   }
@@ -426,437 +429,565 @@ export function SettingsScreen() {
     }
   }
 
+  const refreshLabel = titleForLocale(locale, "刷新", "Refresh");
+  const saveSettingsLabel = saving
+    ? titleForLocale(locale, "保存中...", "Saving...")
+    : titleForLocale(locale, "保存设置", "Save settings");
+  const settingsTabs = [
+    {
+      value: "appearance",
+      label: titleForLocale(locale, "站点外观", "Appearance"),
+      description: titleForLocale(
+        locale,
+        "站点名称、Logo 和默认语言。",
+        "Site name, logo, and default language.",
+      ),
+      icon: Palette,
+    },
+    {
+      value: "account",
+      label: titleForLocale(locale, "账号", "Account"),
+      description: titleForLocale(
+        locale,
+        "管理员用户名和登录密码。",
+        "Admin username and sign-in password.",
+      ),
+      icon: UserRound,
+    },
+    {
+      value: "time",
+      label: titleForLocale(locale, "时间", "Time"),
+      description: titleForLocale(
+        locale,
+        "系统显示和统计使用的时区。",
+        "Time zone used by display and statistics.",
+      ),
+      icon: TimerReset,
+    },
+    {
+      value: "gateway",
+      label: titleForLocale(locale, "网关", "Gateway"),
+      description: titleForLocale(
+        locale,
+        "代理、跨域和日志兼容设置。",
+        "Proxy, CORS, and log compatibility settings.",
+      ),
+      icon: ServerCog,
+    },
+    {
+      value: "model-test",
+      label: titleForLocale(locale, "模型测试", "Model test"),
+      description: titleForLocale(
+        locale,
+        "批量测试模型时使用的预设问题。",
+        "Preset prompts used when testing models.",
+      ),
+      icon: TestTubeDiagonal,
+    },
+    {
+      value: "circuit-breaker",
+      label: titleForLocale(locale, "熔断器", "Circuit breaker"),
+      description: titleForLocale(
+        locale,
+        "失败阈值、冷却时间和健康评分参数。",
+        "Failure threshold, cooldown, and health scoring parameters.",
+      ),
+      icon: ShieldAlert,
+    },
+  ] as const;
+
   return (
-    <section className="flex min-w-0 flex-col gap-4">
-      <div className="flex min-w-0 flex-col gap-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <h1 className="text-xl font-semibold text-foreground">
-            {titleForLocale(locale, "系统设置", "Settings")}
-          </h1>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => void refresh()}
-            >
-              <RotateCcw data-icon="inline-start" />
-              <span className="hidden sm:inline">
-                {titleForLocale(locale, "刷新", "Refresh")}
-              </span>
-            </Button>
-            <Button
-              type="button"
-              disabled={saving || !settingsQuery.isSuccess}
-              onClick={() => void submitSettings()}
-            >
-              <Save data-icon="inline-start" />
-              {saving
-                ? titleForLocale(locale, "保存中...", "Saving...")
-                : titleForLocale(locale, "保存设置", "Save settings")}
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          <SettingCard
-            icon={Palette}
-            title={titleForLocale(locale, "站点外观", "Appearance")}
-          >
-            <FieldGroup>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "语言", "Language")}
-                </FieldLabel>
-                <SegmentedControl
-                  className="!w-fit self-start"
-                  value={locale}
-                  onValueChange={(value) => setLocale(value)}
-                  options={[
-                    { value: "zh-CN", label: "简体中文" },
-                    { value: "en-US", label: "English" },
-                  ]}
-                />
-              </Field>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "站点名称", "Site name")}
-                </FieldLabel>
-                <Input
-                  value={draft.siteName}
-                  onChange={(event) =>
-                    setDraftValue("siteName", event.target.value)
-                  }
-                  placeholder="Lens"
-                />
-              </Field>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "Logo 地址", "Logo URL")}
-                </FieldLabel>
-                <Input
-                  value={draft.siteLogoUrl}
-                  onChange={(event) =>
-                    setDraftValue("siteLogoUrl", event.target.value)
-                  }
-                  placeholder="https://example.com/logo.svg"
-                />
-              </Field>
-            </FieldGroup>
-            <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-4 py-3">
-              <span className="flex size-12 items-center justify-center overflow-hidden rounded-md border bg-background">
-                {draft.siteLogoUrl.trim() ? (
-                  <Image
-                    src={draft.siteLogoUrl.trim()}
-                    alt={draft.siteName || "logo"}
-                    width={48}
-                    height={48}
-                    className="size-12 object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <ImageIcon className="text-muted-foreground" />
-                )}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-foreground">
-                  {draft.siteName.trim() || "Lens"}
-                </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {draft.siteLogoUrl.trim() ||
-                    titleForLocale(locale, "未设置 Logo", "No logo configured")}
-                </div>
-              </div>
-            </div>
-          </SettingCard>
-
-          <SettingCard
-            icon={UserRound}
-            title={titleForLocale(locale, "账号", "Account")}
-          >
-            <form className="flex flex-col gap-4" onSubmit={submitAccount}>
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(locale, "用户名", "Username")}
-                  </FieldLabel>
-                  <Input
-                    value={accountForm.username}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({
-                        ...current,
-                        username: event.target.value,
-                      }))
-                    }
-                    autoComplete="username"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(locale, "当前密码", "Current password")}
-                  </FieldLabel>
-                  <Input
-                    type="password"
-                    value={accountForm.currentPassword}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({
-                        ...current,
-                        currentPassword: event.target.value,
-                      }))
-                    }
-                    autoComplete="current-password"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(locale, "新密码", "New password")}
-                  </FieldLabel>
-                  <Input
-                    type="password"
-                    value={accountForm.newPassword}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({
-                        ...current,
-                        newPassword: event.target.value,
-                      }))
-                    }
-                    autoComplete="new-password"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(
-                      locale,
-                      "确认新密码",
-                      "Confirm new password",
-                    )}
-                  </FieldLabel>
-                  <Input
-                    type="password"
-                    value={accountForm.confirmPassword}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({
-                        ...current,
-                        confirmPassword: event.target.value,
-                      }))
-                    }
-                    autoComplete="new-password"
-                  />
-                </Field>
-              </FieldGroup>
+    <>
+      <DashboardHeaderActions>
+        <div className="flex items-center justify-end gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button
-                type="submit"
-                variant="outline"
-                disabled={updatingAccount}
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                aria-label={refreshLabel}
+                onClick={() => void refresh()}
               >
-                {updatingAccount
-                  ? titleForLocale(locale, "提交中...", "Updating...")
-                  : titleForLocale(locale, "保存账号", "Save account")}
+                <RotateCcw data-icon="inline-start" />
               </Button>
-            </form>
-          </SettingCard>
-
-          <SettingCard
-            icon={TimerReset}
-            title={titleForLocale(locale, "时间", "Time")}
-          >
-            <FieldGroup>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "时区", "Time zone")}
-                </FieldLabel>
-                <NativeSelect
-                  className="w-full"
-                  value={draft.timeZone || "Asia/Shanghai"}
-                  onChange={(event) =>
-                    setDraftValue("timeZone", event.target.value)
-                  }
-                >
-                  {TIME_ZONE_OPTIONS.map((option) => (
-                    <NativeSelectOption key={option.value} value={option.value}>
-                      {option.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </Field>
-            </FieldGroup>
-          </SettingCard>
-
-          <SettingCard
-            icon={ServerCog}
-            title={titleForLocale(locale, "网关", "Gateway")}
-          >
-            <FieldGroup>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "全局代理地址", "Global proxy URL")}
-                </FieldLabel>
-                <Input
-                  value={draft.proxyUrl}
-                  onChange={(event) =>
-                    setDraftValue("proxyUrl", event.target.value)
-                  }
-                  placeholder="http://127.0.0.1:7890"
-                />
-              </Field>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(
-                    locale,
-                    "CORS 跨域名单",
-                    "CORS allow origins",
-                  )}
-                </FieldLabel>
-                <Textarea
-                  className="min-h-[92px]"
-                  value={draft.corsAllowOrigins}
-                  onChange={(event) =>
-                    setDraftValue("corsAllowOrigins", event.target.value)
-                  }
-                  placeholder={"*\nhttp://localhost:3000"}
-                />
-              </Field>
-              <Field
-                orientation="horizontal"
-                className="items-center justify-between gap-4"
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {refreshLabel}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={saveSettingsLabel}
+                disabled={saving || !settingsQuery.isSuccess}
+                onClick={() => void submitSettings()}
               >
-                <FieldContent>
-                  <FieldLabel className="w-auto">
-                    {titleForLocale(
-                      locale,
-                      "模型列表兼容模式",
-                      "Model list compatibility mode",
-                    )}
-                  </FieldLabel>
-                  <FieldDescription>
-                    {titleForLocale(
-                      locale,
-                      "开启后 /v1/models 会以 OpenAI 格式列出全部协议模型；如果客户端不支持某协议，实际请求仍可能失败。",
-                      "When enabled, /v1/models lists all protocol models in OpenAI format; requests can still fail if the client cannot call a protocol.",
-                    )}
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  checked={draft.modelListCompatModeEnabled}
-                  onCheckedChange={(checked) =>
-                    setDraftValue("modelListCompatModeEnabled", checked)
-                  }
-                />
-              </Field>
-              <Field
-                orientation="horizontal"
-                className="items-center justify-between gap-4"
-              >
-                <FieldContent>
-                  <FieldLabel className="w-auto">
-                    {titleForLocale(locale, "记录日志正文", "Record log body")}
-                  </FieldLabel>
-                </FieldContent>
-                <Switch
-                  checked={draft.relayLogBodyEnabled}
-                  onCheckedChange={(checked) =>
-                    setDraftValue("relayLogBodyEnabled", checked)
-                  }
-                />
-              </Field>
-            </FieldGroup>
-          </SettingCard>
-
-          <SettingCard
-            icon={TestTubeDiagonal}
-            title={titleForLocale(locale, "模型测试", "Model test")}
-          >
-            <FieldGroup>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "预设问题", "Preset prompts")}
-                </FieldLabel>
-                <Textarea
-                  className="min-h-[132px]"
-                  value={draft.modelTestPrompts}
-                  onChange={(event) =>
-                    setDraftValue("modelTestPrompts", event.target.value)
-                  }
-                  placeholder={DEFAULT_MODEL_TEST_PROMPTS.join("\n")}
-                />
-              </Field>
-            </FieldGroup>
-          </SettingCard>
-
-          <div className="xl:col-span-2">
-            <SettingCard
-              icon={ShieldAlert}
-              title={titleForLocale(locale, "熔断器", "Circuit breaker")}
-            >
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(locale, "失败阈值", "Failure threshold")}
-                  </FieldLabel>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={draft.circuitBreakerThreshold}
-                    onChange={(event) =>
-                      setDraftValue(
-                        "circuitBreakerThreshold",
-                        event.target.value,
-                      )
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(locale, "基础冷却秒数", "Cooldown seconds")}
-                  </FieldLabel>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={draft.circuitBreakerCooldown}
-                    onChange={(event) =>
-                      setDraftValue(
-                        "circuitBreakerCooldown",
-                        event.target.value,
-                      )
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(
-                      locale,
-                      "最大冷却秒数",
-                      "Max cooldown seconds",
-                    )}
-                  </FieldLabel>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={draft.circuitBreakerMaxCooldown}
-                    onChange={(event) =>
-                      setDraftValue(
-                        "circuitBreakerMaxCooldown",
-                        event.target.value,
-                      )
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(
-                      locale,
-                      "健康窗口秒数",
-                      "Health window seconds",
-                    )}
-                  </FieldLabel>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={draft.healthWindowSeconds}
-                    onChange={(event) =>
-                      setDraftValue("healthWindowSeconds", event.target.value)
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(
-                      locale,
-                      "健康惩罚权重",
-                      "Health penalty weight",
-                    )}
-                  </FieldLabel>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={draft.healthPenaltyWeight}
-                    onChange={(event) =>
-                      setDraftValue("healthPenaltyWeight", event.target.value)
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {titleForLocale(
-                      locale,
-                      "健康最小样本数",
-                      "Health min samples",
-                    )}
-                  </FieldLabel>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={draft.healthMinSamples}
-                    onChange={(event) =>
-                      setDraftValue("healthMinSamples", event.target.value)
-                    }
-                  />
-                </Field>
-              </FieldGroup>
-            </SettingCard>
-          </div>
+                <Save data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {saveSettingsLabel}
+            </TooltipContent>
+          </Tooltip>
         </div>
-      </div>
-    </section>
+      </DashboardHeaderActions>
+
+      <section className="min-w-0">
+        <Tabs
+          defaultValue="appearance"
+          orientation="vertical"
+          className="grid min-w-0 gap-6 lg:grid-cols-[220px_minmax(0,760px)] lg:items-start"
+        >
+          <TabsList className="flex h-auto w-full flex-row justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 text-foreground lg:sticky lg:top-4 lg:flex-col lg:items-start lg:overflow-visible">
+            {settingsTabs.map((item) => {
+              const Icon = item.icon;
+              return (
+                <TabsTrigger
+                  key={item.value}
+                  value={item.value}
+                  className="h-9 w-40 shrink-0 justify-start gap-2 rounded-md px-3 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:shadow-none"
+                >
+                  <Icon className="size-4" />
+                  <span>{item.label}</span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+
+          <div className="min-w-0">
+            <TabsContent value="appearance" className="mt-0">
+              <SettingCard
+                title={titleForLocale(locale, "站点外观", "Appearance")}
+                description={settingsTabs[0].description}
+              >
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(locale, "语言", "Language")}
+                    </FieldLabel>
+                    <SegmentedControl
+                      className="!w-fit self-start"
+                      value={locale}
+                      onValueChange={(value) => setLocale(value)}
+                      options={[
+                        { value: "zh-CN", label: "简体中文" },
+                        { value: "en-US", label: "English" },
+                      ]}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(locale, "站点名称", "Site name")}
+                    </FieldLabel>
+                    <Input
+                      value={draft.siteName}
+                      onChange={(event) =>
+                        setDraftValue("siteName", event.target.value)
+                      }
+                      placeholder="Lens"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(locale, "Logo 地址", "Logo URL")}
+                    </FieldLabel>
+                    <Input
+                      value={draft.siteLogoUrl}
+                      onChange={(event) =>
+                        setDraftValue("siteLogoUrl", event.target.value)
+                      }
+                      placeholder="https://example.com/logo.svg"
+                    />
+                  </Field>
+                </FieldGroup>
+                <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-4 py-3">
+                  <span className="flex size-12 items-center justify-center overflow-hidden rounded-md border bg-background">
+                    {draft.siteLogoUrl.trim() ? (
+                      <Image
+                        src={draft.siteLogoUrl.trim()}
+                        alt={draft.siteName || "logo"}
+                        width={48}
+                        height={48}
+                        className="size-12 object-contain"
+                        unoptimized
+                      />
+                    ) : (
+                      <ImageIcon className="text-muted-foreground" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-foreground">
+                      {draft.siteName.trim() || "Lens"}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {draft.siteLogoUrl.trim() ||
+                        titleForLocale(
+                          locale,
+                          "未设置 Logo",
+                          "No logo configured",
+                        )}
+                    </div>
+                  </div>
+                </div>
+              </SettingCard>
+            </TabsContent>
+
+            <TabsContent value="account" className="mt-0">
+              <SettingCard
+                title={titleForLocale(locale, "账号", "Account")}
+                description={settingsTabs[1].description}
+              >
+                <form className="flex flex-col gap-4" onSubmit={submitAccount}>
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel>
+                        {titleForLocale(locale, "用户名", "Username")}
+                      </FieldLabel>
+                      <Input
+                        value={accountForm.username}
+                        onChange={(event) =>
+                          setAccountForm((current) => ({
+                            ...current,
+                            username: event.target.value,
+                          }))
+                        }
+                        autoComplete="username"
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel>
+                        {titleForLocale(locale, "当前密码", "Current password")}
+                      </FieldLabel>
+                      <Input
+                        type="password"
+                        value={accountForm.currentPassword}
+                        onChange={(event) =>
+                          setAccountForm((current) => ({
+                            ...current,
+                            currentPassword: event.target.value,
+                          }))
+                        }
+                        autoComplete="current-password"
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel>
+                        {titleForLocale(locale, "新密码", "New password")}
+                      </FieldLabel>
+                      <Input
+                        type="password"
+                        value={accountForm.newPassword}
+                        onChange={(event) =>
+                          setAccountForm((current) => ({
+                            ...current,
+                            newPassword: event.target.value,
+                          }))
+                        }
+                        autoComplete="new-password"
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel>
+                        {titleForLocale(
+                          locale,
+                          "确认新密码",
+                          "Confirm new password",
+                        )}
+                      </FieldLabel>
+                      <Input
+                        type="password"
+                        value={accountForm.confirmPassword}
+                        onChange={(event) =>
+                          setAccountForm((current) => ({
+                            ...current,
+                            confirmPassword: event.target.value,
+                          }))
+                        }
+                        autoComplete="new-password"
+                      />
+                    </Field>
+                  </FieldGroup>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={updatingAccount}
+                  >
+                    {updatingAccount
+                      ? titleForLocale(locale, "提交中...", "Updating...")
+                      : titleForLocale(locale, "保存账号", "Save account")}
+                  </Button>
+                </form>
+              </SettingCard>
+            </TabsContent>
+
+            <TabsContent value="time" className="mt-0">
+              <SettingCard
+                title={titleForLocale(locale, "时间", "Time")}
+                description={settingsTabs[2].description}
+              >
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(locale, "时区", "Time zone")}
+                    </FieldLabel>
+                    <NativeSelect
+                      className="w-full"
+                      value={draft.timeZone || "Asia/Shanghai"}
+                      onChange={(event) =>
+                        setDraftValue("timeZone", event.target.value)
+                      }
+                    >
+                      {TIME_ZONE_OPTIONS.map((option) => (
+                        <NativeSelectOption
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                </FieldGroup>
+              </SettingCard>
+            </TabsContent>
+
+            <TabsContent value="gateway" className="mt-0">
+              <SettingCard
+                title={titleForLocale(locale, "网关", "Gateway")}
+                description={settingsTabs[3].description}
+              >
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(
+                        locale,
+                        "全局代理地址",
+                        "Global proxy URL",
+                      )}
+                    </FieldLabel>
+                    <Input
+                      value={draft.proxyUrl}
+                      onChange={(event) =>
+                        setDraftValue("proxyUrl", event.target.value)
+                      }
+                      placeholder="http://127.0.0.1:7890"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(
+                        locale,
+                        "CORS 跨域名单",
+                        "CORS allow origins",
+                      )}
+                    </FieldLabel>
+                    <Textarea
+                      className="min-h-[92px]"
+                      value={draft.corsAllowOrigins}
+                      onChange={(event) =>
+                        setDraftValue("corsAllowOrigins", event.target.value)
+                      }
+                      placeholder={"*\nhttp://localhost:3000"}
+                    />
+                  </Field>
+                  <Field
+                    orientation="horizontal"
+                    className="items-center justify-between gap-4"
+                  >
+                    <FieldContent>
+                      <FieldLabel className="w-auto">
+                        {titleForLocale(
+                          locale,
+                          "模型列表兼容模式",
+                          "Model list compatibility mode",
+                        )}
+                      </FieldLabel>
+                      <FieldDescription>
+                        {titleForLocale(
+                          locale,
+                          "开启后 /v1/models 会以 OpenAI 格式列出全部协议模型；如果客户端不支持某协议，实际请求仍可能失败。",
+                          "When enabled, /v1/models lists all protocol models in OpenAI format; requests can still fail if the client cannot call a protocol.",
+                        )}
+                      </FieldDescription>
+                    </FieldContent>
+                    <Switch
+                      checked={draft.modelListCompatModeEnabled}
+                      onCheckedChange={(checked) =>
+                        setDraftValue("modelListCompatModeEnabled", checked)
+                      }
+                    />
+                  </Field>
+                  <Field
+                    orientation="horizontal"
+                    className="items-center justify-between gap-4"
+                  >
+                    <FieldContent>
+                      <FieldLabel className="w-auto">
+                        {titleForLocale(
+                          locale,
+                          "记录日志正文",
+                          "Record log body",
+                        )}
+                      </FieldLabel>
+                    </FieldContent>
+                    <Switch
+                      checked={draft.relayLogBodyEnabled}
+                      onCheckedChange={(checked) =>
+                        setDraftValue("relayLogBodyEnabled", checked)
+                      }
+                    />
+                  </Field>
+                </FieldGroup>
+              </SettingCard>
+            </TabsContent>
+
+            <TabsContent value="model-test" className="mt-0">
+              <SettingCard
+                title={titleForLocale(locale, "模型测试", "Model test")}
+                description={settingsTabs[4].description}
+              >
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(locale, "预设问题", "Preset prompts")}
+                    </FieldLabel>
+                    <Textarea
+                      className="min-h-[132px]"
+                      value={draft.modelTestPrompts}
+                      onChange={(event) =>
+                        setDraftValue("modelTestPrompts", event.target.value)
+                      }
+                      placeholder={DEFAULT_MODEL_TEST_PROMPTS.join("\n")}
+                    />
+                  </Field>
+                </FieldGroup>
+              </SettingCard>
+            </TabsContent>
+
+            <TabsContent value="circuit-breaker" className="mt-0">
+              <SettingCard
+                title={titleForLocale(locale, "熔断器", "Circuit breaker")}
+                description={settingsTabs[5].description}
+              >
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(locale, "失败阈值", "Failure threshold")}
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={draft.circuitBreakerThreshold}
+                      onChange={(event) =>
+                        setDraftValue(
+                          "circuitBreakerThreshold",
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(
+                        locale,
+                        "基础冷却秒数",
+                        "Cooldown seconds",
+                      )}
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={draft.circuitBreakerCooldown}
+                      onChange={(event) =>
+                        setDraftValue(
+                          "circuitBreakerCooldown",
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(
+                        locale,
+                        "最大冷却秒数",
+                        "Max cooldown seconds",
+                      )}
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={draft.circuitBreakerMaxCooldown}
+                      onChange={(event) =>
+                        setDraftValue(
+                          "circuitBreakerMaxCooldown",
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(
+                        locale,
+                        "健康窗口秒数",
+                        "Health window seconds",
+                      )}
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={draft.healthWindowSeconds}
+                      onChange={(event) =>
+                        setDraftValue("healthWindowSeconds", event.target.value)
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(
+                        locale,
+                        "健康惩罚权重",
+                        "Health penalty weight",
+                      )}
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={draft.healthPenaltyWeight}
+                      onChange={(event) =>
+                        setDraftValue("healthPenaltyWeight", event.target.value)
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      {titleForLocale(
+                        locale,
+                        "健康最小样本数",
+                        "Health min samples",
+                      )}
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={draft.healthMinSamples}
+                      onChange={(event) =>
+                        setDraftValue("healthMinSamples", event.target.value)
+                      }
+                    />
+                  </Field>
+                </FieldGroup>
+              </SettingCard>
+            </TabsContent>
+          </div>
+        </Tabs>
+      </section>
+    </>
   );
 }

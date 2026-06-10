@@ -26,6 +26,7 @@ import {
   parseModelTestPrompts,
 } from "@/lib/model-test-prompts";
 import { useAppTimeZone } from "@/hooks/use-app-time-zone";
+import { DashboardHeaderActions } from "@/components/shell/dashboard-header-actions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -33,7 +34,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAggregatedModels } from "./channels/model-aggregation";
 import { ChannelsOverview } from "./channels/overview";
 import {
@@ -1437,36 +1443,38 @@ export function ChannelsScreen() {
 
   return (
     <TooltipProvider>
+      <DashboardHeaderActions>
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={locale === "zh-CN" ? "新增渠道" : "Add channels"}
+                >
+                  <Plus />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {locale === "zh-CN" ? "新增渠道" : "Add channels"}
+            </TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={openCreate}>
+              <Plus />
+              {locale === "zh-CN" ? "新建渠道" : "New channel"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={openBatchImport}>
+              <FileInput />
+              {locale === "zh-CN" ? "批量导入" : "Import channels"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </DashboardHeaderActions>
       <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold text-foreground">
-            {locale === "zh-CN" ? "渠道" : "Channels"}
-          </h1>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                className="rounded-full"
-                size="icon-sm"
-                title={locale === "zh-CN" ? "新增渠道" : "Add channels"}
-                aria-label={locale === "zh-CN" ? "新增渠道" : "Add channels"}
-              >
-                <Plus />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={openCreate}>
-                <Plus />
-                {locale === "zh-CN" ? "新建渠道" : "New channel"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={openBatchImport}>
-                <FileInput />
-                {locale === "zh-CN" ? "批量导入" : "Import channels"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
         <ChannelsOverview
           locale={locale}
           visibleSites={visibleSites}
