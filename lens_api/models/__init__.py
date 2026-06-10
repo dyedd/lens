@@ -1038,23 +1038,6 @@ class ConfigImportResult(StrictBaseModel):
     rows_affected: dict[str, int] = Field(default_factory=dict)
 
 
-class OverviewMetrics(StrictBaseModel):
-    total_requests: int = 0
-    successful_requests: int = 0
-    failed_requests: int = 0
-    enabled_gateway_keys: int = 0
-    total_gateway_keys: int = 0
-    enabled_groups: int = 0
-    total_groups: int = 0
-    enabled_channels: int = 0
-    total_channels: int = 0
-
-
-class OverviewPerformanceMetrics(StrictBaseModel):
-    avg_requests_per_minute: float = 0.0
-    avg_tokens_per_minute: float = 0.0
-
-
 class OverviewSummaryMetric(StrictBaseModel):
     value: float
     delta: float = 0.0
@@ -1076,6 +1059,8 @@ class OverviewSummary(StrictBaseModel):
 class OverviewDailyPoint(StrictBaseModel):
     date: str
     request_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
     total_tokens: int = 0
     total_cost_usd: float = 0.0
     wait_time_ms: int = 0
@@ -1098,16 +1083,8 @@ class OverviewModelTrendPoint(StrictBaseModel):
 
 class OverviewModelAnalytics(StrictBaseModel):
     distribution: list[OverviewModelMetricPoint] = Field(default_factory=list)
-    request_ranking: list[OverviewModelMetricPoint] = Field(default_factory=list)
     trend: list[OverviewModelTrendPoint] = Field(default_factory=list)
     available_models: list[str] = Field(default_factory=list)
-
-
-class OverviewDashboardData(StrictBaseModel):
-    summary: OverviewSummary
-    performance: OverviewPerformanceMetrics
-    daily: list[OverviewDailyPoint] = Field(default_factory=list)
-    models: OverviewModelAnalytics
 
 
 __all__ = [
@@ -1207,13 +1184,10 @@ __all__ = [
     "RequestLogDetail",
     "RequestLogFilterOption",
     "RequestLogPage",
-    "OverviewMetrics",
-    "OverviewPerformanceMetrics",
     "OverviewSummaryMetric",
     "OverviewSummary",
     "OverviewDailyPoint",
     "OverviewModelMetricPoint",
     "OverviewModelTrendPoint",
     "OverviewModelAnalytics",
-    "OverviewDashboardData",
 ]

@@ -3,13 +3,10 @@ from __future__ import annotations
 from .shared import (
     Any,
     AsyncSession,
-    GatewayApiKeyEntity,
     ImportedStatsDailyEntity,
     ImportedStatsTotalEntity,
-    ModelGroupEntity,
     ModelPriceEntity,
     OverviewDailyPoint,
-    OverviewMetrics,
     OverviewModelAnalytics,
     OverviewModelDailyStatsEntity,
     OverviewModelMetricPoint,
@@ -30,65 +27,6 @@ from .shared import (
 
 
 class DomainOverviewMixin:
-    async def get_overview_metrics(self) -> OverviewMetrics:
-        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
-        async with self._session_factory() as session:
-            imported_total = await session.get(ImportedStatsTotalEntity, 1)
-            if imported_total is not None:
-                extra_totals = await self._request_log_totals_excluding_imported_days(
-                    session, time_zone=time_zone
-                )
-                total_value = int(
-                    imported_total.request_success
-                    + imported_total.request_failed
-                    + extra_totals["request_count"]
-                )
-                success_value = int(
-                    imported_total.request_success + extra_totals["successful_requests"]
-                )
-            else:
-                archived_totals = await self._archived_period_totals(
-                    session, days=0, time_zone=time_zone
-                )
-                live_totals = await self._request_log_period_totals(
-                    session, days=0, time_zone=time_zone
-                )
-                total_value = int(
-                    archived_totals["request_count"] + live_totals["request_count"]
-                )
-                success_value = int(
-                    archived_totals["successful_requests"]
-                    + live_totals["successful_requests"]
-                )
-
-            total_groups = int(
-                await session.scalar(select(func.count()).select_from(ModelGroupEntity))
-            )
-            total_gateway_keys = int(
-                await session.scalar(
-                    select(func.count()).select_from(GatewayApiKeyEntity)
-                )
-            )
-            enabled_gateway_keys = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(GatewayApiKeyEntity)
-                    .where(GatewayApiKeyEntity.enabled == 1)
-                )
-            )
-
-        return OverviewMetrics(
-            total_requests=total_value,
-            successful_requests=success_value,
-            failed_requests=max(total_value - success_value, 0),
-            enabled_gateway_keys=enabled_gateway_keys,
-            total_gateway_keys=total_gateway_keys,
-            enabled_groups=total_groups,
-            total_groups=total_groups,
-            enabled_channels=0,
-            total_channels=0,
-        )
-
     async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
         time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
@@ -177,8 +115,12 @@ class DomainOverviewMixin:
             )
 
     async def get_model_analytics(
-        self, days: int = 7, gateway_key_id: str | None = None
+        self,
+        days: int = 7,
+        gateway_key_id: str | None = None,
+        metric: str = "cost",
     ) -> OverviewModelAnalytics:
+        model_metric = metric if metric in {"cost", "requests", "tokens"} else "cost"
         normalized_gateway_key_id = self._normalize_gateway_key_id(gateway_key_id)
         time_zone = self._runtime_time_zone(await self.get_runtime_settings())
         async with self._session_factory() as session:
@@ -269,14 +211,26 @@ class DomainOverviewMixin:
                 item["total_cost_usd"]
             )
 
+        def metric_value(item: dict[str, float | str]) -> float:
+            if model_metric == "requests":
+                return float(item["requests"])
+            if model_metric == "tokens":
+                return float(item["total_tokens"])
+            return float(item["total_cost_usd"])
+
+        def secondary_metric_value(item: dict[str, float | str]) -> float:
+            if model_metric == "cost":
+                return float(item["requests"])
+            return float(item["total_cost_usd"])
+
         aggregated_models = list(model_rows.values())
         distribution_rows = sorted(
             aggregated_models,
-            key=lambda item: (-float(item["total_cost_usd"]), -float(item["requests"])),
-        )
-        ranking_rows = sorted(
-            aggregated_models,
-            key=lambda item: (-float(item["requests"]), -float(item["total_cost_usd"])),
+            key=lambda item: (
+                -metric_value(item),
+                -secondary_metric_value(item),
+                str(item["model"]),
+            ),
         )
 
         distribution = [
@@ -289,33 +243,20 @@ class DomainOverviewMixin:
             for item in distribution_rows[:12]
         ]
 
-        ranking = [
-            OverviewModelMetricPoint(
-                model=str(item["model"]),
-                requests=int(item["requests"]),
-                total_tokens=int(item["total_tokens"]),
-                total_cost_usd=float(item["total_cost_usd"]),
-            )
-            for item in ranking_rows[:10]
-        ]
-
         trend = [
             OverviewModelTrendPoint(
                 date=str(item["date"]),
                 model=str(item["model"]),
-                value=float(item["total_cost_usd"]),
+                value=metric_value(item),
             )
             for item in trend_rows
         ]
 
         available_models = sorted(
-            {item.model for item in distribution}
-            | {item.model for item in ranking}
-            | {item.model for item in trend}
+            {item.model for item in distribution} | {item.model for item in trend}
         )
         return OverviewModelAnalytics(
             distribution=distribution,
-            request_ranking=ranking,
             trend=trend,
             available_models=available_models,
         )
@@ -397,6 +338,8 @@ class DomainOverviewMixin:
             merged[item.date] = OverviewDailyPoint(
                 date=item.date,
                 request_count=current.request_count + item.request_count,
+                input_tokens=current.input_tokens + item.input_tokens,
+                output_tokens=current.output_tokens + item.output_tokens,
                 total_tokens=current.total_tokens + item.total_tokens,
                 total_cost_usd=current.total_cost_usd + item.total_cost_usd,
                 wait_time_ms=current.wait_time_ms + item.wait_time_ms,
@@ -429,6 +372,8 @@ class DomainOverviewMixin:
             OverviewDailyPoint(
                 date=item.date,
                 request_count=int(item.request_success + item.request_failed),
+                input_tokens=int(item.input_token),
+                output_tokens=int(item.output_token),
                 total_tokens=int(item.input_token + item.output_token),
                 total_cost_usd=float(item.input_cost + item.output_cost),
                 wait_time_ms=int(item.wait_time),
@@ -466,6 +411,8 @@ class DomainOverviewMixin:
             OverviewDailyPoint(
                 date=item.date,
                 request_count=int(item.request_count),
+                input_tokens=int(item.input_tokens),
+                output_tokens=int(item.output_tokens),
                 total_tokens=int(item.total_tokens),
                 total_cost_usd=float(item.total_cost_usd),
                 wait_time_ms=int(item.wait_time_ms),
@@ -521,6 +468,8 @@ class DomainOverviewMixin:
                 OverviewDailyPoint(
                     date=date_value,
                     request_count=total_value,
+                    input_tokens=int(values["input_tokens"]),
+                    output_tokens=int(values["output_tokens"]),
                     total_tokens=int(values["total_tokens"]),
                     total_cost_usd=float(values["total_cost_usd"]),
                     wait_time_ms=int(values["wait_time_ms"]),

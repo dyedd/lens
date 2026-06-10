@@ -83,8 +83,8 @@ export function ChannelsOverview({
 }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
-      <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-12rem)]">
-        <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto">
+      <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-7.5rem)]">
+        <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-7.5rem)] xl:overflow-y-auto">
           {isLoading || sitesIsError ? null : visibleSites.length ? (
             <ItemGroup className="gap-3">
               {visibleSites.map((site) => {

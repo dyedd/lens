@@ -623,23 +623,6 @@ export type RoutePreview = {
   }>;
 };
 
-export type OverviewMetrics = {
-  total_requests: number;
-  successful_requests: number;
-  failed_requests: number;
-  enabled_gateway_keys: number;
-  total_gateway_keys: number;
-  enabled_groups: number;
-  total_groups: number;
-  enabled_channels: number;
-  total_channels: number;
-};
-
-export type OverviewPerformanceMetrics = {
-  avg_requests_per_minute: number;
-  avg_tokens_per_minute: number;
-};
-
 export type OverviewSummaryMetric = {
   value: number;
   delta: number;
@@ -661,6 +644,8 @@ export type OverviewSummary = {
 export type OverviewDailyPoint = {
   date: string;
   request_count: number;
+  input_tokens: number;
+  output_tokens: number;
   total_tokens: number;
   total_cost_usd: number;
   wait_time_ms: number;
@@ -683,16 +668,8 @@ export type OverviewModelTrendPoint = {
 
 export type OverviewModelAnalytics = {
   distribution: OverviewModelMetricPoint[];
-  request_ranking: OverviewModelMetricPoint[];
   trend: OverviewModelTrendPoint[];
   available_models: string[];
-};
-
-export type OverviewDashboardData = {
-  summary: OverviewSummary;
-  performance: OverviewPerformanceMetrics;
-  daily: OverviewDailyPoint[];
-  models: OverviewModelAnalytics;
 };
 
 export type RequestLogItem = {

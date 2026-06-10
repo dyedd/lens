@@ -1,7 +1,8 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import { Filter, GripVertical, Trash2, X } from "lucide-react";
+import { Copy, Filter, GripVertical, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +29,11 @@ import {
 } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { ModelGroup, ProtocolKind, RoutingStrategy } from "@/lib/api";
 import { getModelGroupAvatar } from "@/lib/model-icons";
 import { cn } from "@/lib/utils";
@@ -107,6 +113,20 @@ export function GroupsOverview({
   toggleGroupEnabled: (group: GroupRow, enabled: boolean) => void;
   setDeleteTarget: Dispatch<SetStateAction<ModelGroup | null>>;
 }) {
+  const copyModelNameLabel =
+    locale === "zh-CN" ? "复制模型名称" : "Copy model name";
+
+  async function copyGroupName(name: string) {
+    try {
+      await navigator.clipboard.writeText(name);
+      toast.success(
+        locale === "zh-CN" ? "模型名称已复制" : "Model name copied",
+      );
+    } catch {
+      toast.error(locale === "zh-CN" ? "复制失败" : "Failed to copy");
+    }
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
       <div className="order-2 grid gap-4 xl:order-1">
@@ -180,6 +200,27 @@ export function GroupsOverview({
                             <ItemTitle className="truncate text-base">
                               {group.name}
                             </ItemTitle>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  aria-label={copyModelNameLabel}
+                                  className="-ml-1 text-muted-foreground hover:text-foreground"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void copyGroupName(group.name);
+                                  }}
+                                  onKeyDown={(event) => event.stopPropagation()}
+                                >
+                                  <Copy />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" align="start">
+                                {copyModelNameLabel}
+                              </TooltipContent>
+                            </Tooltip>
                             <div className="flex flex-wrap gap-1.5">
                               {group.protocols.map((protocol) => (
                                 <Badge
