@@ -37,7 +37,8 @@ from .upstream_http import (
 )
 from .payload_serialization import (
     _decode_content_bytes,
-    _dump_json,
+    _decode_log_content_bytes,
+    _dump_log_json,
     _json_body_bytes,
 )
 from .request_logger import _RequestLogger
@@ -252,7 +253,9 @@ async def _build_json_result(
         output_cost_usd=cost[1],
         total_cost_usd=cost[2],
         request_content=request_content,
-        response_content=_decode_content_bytes(content) if log_body_enabled else None,
+        response_content=(
+            _decode_log_content_bytes(content) if log_body_enabled else None
+        ),
     )
 
 
@@ -320,7 +323,7 @@ async def _record_target_failure(
             else (
                 request_content
                 if request_content is not None
-                else (_dump_json(upstream_body) if log_body_enabled else None)
+                else (_dump_log_json(upstream_body) if log_body_enabled else None)
             )
         ),
         error_message=message,
@@ -335,18 +338,15 @@ async def _record_target_failure(
     return None
 
 
-async def _call_channel(
+def _prepare_channel_request(
     channel: ChannelConfig,
     body: dict[str, Any],
-    deadline: _RequestDeadline,
-    pricing_group_name: str | None = None,
-    client_protocol: ProtocolKind | None = None,
-    credential_id: str | None = None,
-    user_agent: str | None = None,
-    forwarded_headers: Mapping[str, str] | None = None,
-    log_body_enabled: bool = False,
-    global_proxy_url: str | None = None,
-) -> UpstreamResult:
+    *,
+    credential_id: str | None,
+    user_agent: str | None,
+    forwarded_headers: Mapping[str, str] | None,
+    log_body_enabled: bool,
+) -> tuple[Any, bytes, str | None]:
     upstream = build_upstream_request(
         channel,
         body,
@@ -356,7 +356,7 @@ async def _call_channel(
         forwarded_headers=forwarded_headers,
     )
     body_bytes = _json_body_bytes(upstream.json_body)
-    request_content = _decode_content_bytes(body_bytes) if log_body_enabled else None
+    request_content = _dump_log_json(upstream.json_body) if log_body_enabled else None
     too_large_message = _request_body_too_large_message(
         len(body_bytes), settings.max_request_body_bytes
     )
@@ -370,6 +370,21 @@ async def _call_channel(
             stop_fallback=True,
             request_content=request_content,
         )
+    return upstream, body_bytes, request_content
+
+
+async def _call_channel(
+    channel: ChannelConfig,
+    body: dict[str, Any],
+    upstream: Any,
+    body_bytes: bytes,
+    request_content: str | None,
+    deadline: _RequestDeadline,
+    pricing_group_name: str | None = None,
+    client_protocol: ProtocolKind | None = None,
+    log_body_enabled: bool = False,
+    global_proxy_url: str | None = None,
+) -> UpstreamResult:
     proxy_url = resolve_upstream_proxy_url(channel, global_proxy_url)
     client, close_client = _resolve_http_client(proxy_url)
     is_stream_request = bool(body.get("stream"))
