@@ -380,6 +380,8 @@ async def _call_channel(
     body_bytes: bytes,
     request_content: str | None,
     deadline: _RequestDeadline,
+    *,
+    credential_id: str | None,
     pricing_group_name: str | None = None,
     client_protocol: ProtocolKind | None = None,
     log_body_enabled: bool = False,
