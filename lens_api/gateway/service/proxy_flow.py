@@ -438,6 +438,7 @@ async def _try_target(
             upstream,
             body_bytes,
             upstream_request_content,
+            credential_id=target.credential_id,
             pricing_group_name=plan.resolved_group_name,
             client_protocol=protocol,
             log_body_enabled=log_body_enabled,
