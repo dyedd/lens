@@ -302,6 +302,15 @@ async def _routing_error_response(
     )
 
 
+def _effective_user_agent_from_headers(
+    headers: Mapping[str, str], fallback: str
+) -> str:
+    for name, value in headers.items():
+        if name.lower() == "user-agent":
+            return _normalize_user_agent(value)
+    return fallback
+
+
 async def _try_target(
     *,
     target: RouteTarget,
@@ -318,11 +327,9 @@ async def _try_target(
 ) -> Response | None:
     channel = target.channel
     attempt_started_at = perf_counter()
-    effective_user_agent = upstream_user_agent
-    for name, value in channel.headers.items():
-        if name.lower() == "user-agent":
-            effective_user_agent = _normalize_user_agent(value)
-            break
+    effective_user_agent = _effective_user_agent_from_headers(
+        channel.headers, upstream_user_agent
+    )
 
     if needs_conversion(protocol, channel.protocol):
         try:
@@ -384,7 +391,11 @@ async def _try_target(
             credential_id=target.credential_id,
             user_agent=upstream_user_agent,
             forwarded_headers=inbound_headers,
+            upstream_headers_config=runtime["upstream_headers_config"],
             log_body_enabled=log_body_enabled,
+        )
+        effective_user_agent = _effective_user_agent_from_headers(
+            upstream.headers, effective_user_agent
         )
     except UpstreamRequestError as exc:
         return await _record_target_failure(

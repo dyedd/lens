@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
+import json
+
+from pydantic import ValidationError
+
+from ...models import UpstreamHeadersConfig
 from .shared import (
     Any,
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
@@ -17,6 +23,7 @@ from .shared import (
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
+    SETTING_UPSTREAM_HEADERS_CONFIG,
     SettingEntity,
     SettingItem,
     monotonic,
@@ -47,7 +54,23 @@ class DomainSettingsMixin:
         allow_origins = cloned.get("cors_allow_origins")
         if isinstance(allow_origins, list):
             cloned["cors_allow_origins"] = list(allow_origins)
+        upstream_headers_config = cloned.get("upstream_headers_config")
+        if isinstance(upstream_headers_config, dict):
+            cloned["upstream_headers_config"] = deepcopy(upstream_headers_config)
         return cloned
+
+    @staticmethod
+    def _parse_upstream_headers_config(value: str | None) -> dict[str, Any]:
+        raw_value = (value or "").strip()
+        if not raw_value:
+            config = UpstreamHeadersConfig()
+        else:
+            try:
+                payload = json.loads(raw_value)
+                config = UpstreamHeadersConfig.model_validate(payload)
+            except (TypeError, ValueError, json.JSONDecodeError, ValidationError):
+                config = UpstreamHeadersConfig()
+        return config.model_dump(mode="json", by_alias=True)
 
     async def get_runtime_settings(self) -> dict[str, Any]:
         cached = self._runtime_settings_cache
@@ -97,6 +120,9 @@ class DomainSettingsMixin:
             ),
             "model_list_compat_mode_enabled": self._parse_bool(
                 mapping.get(SETTING_MODEL_LIST_COMPAT_MODE_ENABLED), default=False
+            ),
+            "upstream_headers_config": self._parse_upstream_headers_config(
+                mapping.get(SETTING_UPSTREAM_HEADERS_CONFIG)
             ),
             "site_name": mapping.get(SETTING_SITE_NAME, "Lens").strip() or "Lens",
             "site_logo_url": mapping.get(SETTING_SITE_LOGO_URL, "").strip(),

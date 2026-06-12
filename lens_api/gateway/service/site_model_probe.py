@@ -62,14 +62,15 @@ async def _call_site_model_probe_channel(
     model_name: str,
     credential_id: str,
 ) -> SiteModelTestResult:
+    runtime = await app_state.domain_store.get_runtime_settings()
     upstream = build_upstream_request(
         channel,
         body,
         settings,
         credential_id=credential_id,
         user_agent=_default_lens_user_agent(),
+        upstream_headers_config=runtime["upstream_headers_config"],
     )
-    runtime = await app_state.domain_store.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client, close_client = _resolve_http_client(proxy_url)
 

@@ -167,7 +167,9 @@ async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
     client, close_client = _resolve_http_client(proxy_url)
 
     try:
-        response = await client.request(**_model_list_request(channel))
+        response = await client.request(
+            **_model_list_request(channel, runtime["upstream_headers_config"])
+        )
         response.raise_for_status()
         return _parse_model_list(response.json(), channel.match_regex)
     except httpx.HTTPStatusError as exc:
@@ -199,7 +201,9 @@ def _resolve_http_client(proxy_url: str | None) -> tuple[httpx.AsyncClient, bool
     return client, True
 
 
-def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
+def _model_list_request(
+    channel: ChannelConfig, upstream_headers_config: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     api_key = resolve_channel_api_key(channel)
     headers = dict(channel.headers)
 
@@ -210,6 +214,7 @@ def _model_list_request(channel: ChannelConfig) -> dict[str, Any]:
             {"authorization": f"Bearer {api_key}"},
             headers,
             user_agent=_default_lens_user_agent(),
+            upstream_headers_config=upstream_headers_config,
         ),
     }
 
