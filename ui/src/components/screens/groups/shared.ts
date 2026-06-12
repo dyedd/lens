@@ -113,17 +113,23 @@ export function buildCandidateHaystack(
 }
 
 export function compileCandidateRegex(value: string) {
+  const normalizedValue = value.trim();
+  const pattern = normalizedValue.startsWith("(?i)")
+    ? normalizedValue.slice(4)
+    : normalizedValue;
   try {
-    return new RegExp(value.trim(), "i");
+    return new RegExp(pattern, "i");
   } catch {
     return null;
   }
 }
 
 export function matchesCandidateSearch(
-  haystack: string,
+  item: ModelGroupCandidateItem,
   mode: CandidateSearchMode,
   query: string,
+  channelMap: Map<string, ProtocolMeta>,
+  locale: "zh-CN" | "en-US",
 ) {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) {
@@ -134,8 +140,9 @@ export function matchesCandidateSearch(
     if (!regex) {
       return false;
     }
-    return regex.test(haystack);
+    return regex.test(item.model_name);
   }
+  const haystack = buildCandidateHaystack(item, channelMap, locale);
   return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
 }
 
