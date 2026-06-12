@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/tooltip";
 import {
   apiErrorMessage,
-  buildCandidateHaystack,
   buildGroupDisplayMembers,
   candidatePayloadToFormItems,
   compileCandidateRegex,
@@ -332,9 +331,11 @@ export function GroupsScreen() {
   const filteredCandidates = useMemo(() => {
     return (candidateResponse?.candidates ?? []).filter((item) => {
       return matchesCandidateSearch(
-        buildCandidateHaystack(item, channelMap, locale),
+        item,
         candidateSearchMode,
         candidateSearch,
+        channelMap,
+        locale,
       );
     });
   }, [
@@ -922,9 +923,11 @@ export function GroupsScreen() {
       for (const candidate of response.candidates) {
         if (
           !matchesCandidateSearch(
-            buildCandidateHaystack(candidate, channelMap, locale),
+            candidate,
             form.sync_filter_mode as CandidateSearchMode,
             form.sync_filter_query,
+            channelMap,
+            locale,
           )
         ) {
           continue;
