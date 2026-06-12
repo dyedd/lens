@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from collections.abc import Mapping
+import re
 from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
@@ -33,6 +34,7 @@ def build_upstream_request(
     credential_id: str | None = None,
     user_agent: str | None = None,
     forwarded_headers: Mapping[str, str] | None = None,
+    upstream_headers_config: Mapping[str, Any] | None = None,
 ) -> UpstreamRequest:
     api_key = resolve_channel_api_key(channel, credential_id=credential_id)
 
@@ -57,6 +59,8 @@ def build_upstream_request(
                 {"content-type": "application/json"},
                 channel.headers,
                 user_agent=user_agent,
+                upstream_headers_config=upstream_headers_config,
+                model_name=str(model_name),
             ),
             json_body=payload,
         )
@@ -85,7 +89,11 @@ def build_upstream_request(
         method="POST",
         url=_append_url_path(_protocol_base_url(channel), suffix),
         headers=build_upstream_headers(
-            default_headers, channel.headers, user_agent=user_agent
+            default_headers,
+            channel.headers,
+            user_agent=user_agent,
+            upstream_headers_config=upstream_headers_config,
+            model_name=str(body.get("model") or ""),
         ),
         json_body=dict(body),
     )
@@ -95,12 +103,92 @@ def build_upstream_headers(
     default_headers: dict[str, str],
     channel_headers: dict[str, str],
     user_agent: str | None = None,
+    upstream_headers_config: Mapping[str, Any] | None = None,
+    model_name: str | None = None,
 ) -> dict[str, str]:
-    headers = dict(default_headers)
+    headers: dict[str, str] = {}
+    _merge_headers(headers, default_headers)
     if user_agent and not any(key.lower() == "user-agent" for key in channel_headers):
-        headers["user-agent"] = user_agent
-    headers.update(channel_headers)
+        _set_header(headers, "user-agent", user_agent)
+    _merge_headers(headers, _upstream_global_headers(upstream_headers_config))
+    for rule_headers in _matching_upstream_rule_headers(
+        upstream_headers_config, model_name
+    ):
+        _merge_headers(headers, rule_headers)
+    _merge_headers(headers, channel_headers)
     return headers
+
+
+def _set_header(headers: dict[str, str], key: str, value: str) -> None:
+    normalized_key = key.strip()
+    if not normalized_key:
+        return
+    lower_key = normalized_key.lower()
+    for existing_key in list(headers):
+        if existing_key.lower() == lower_key:
+            headers.pop(existing_key)
+            break
+    headers[normalized_key] = str(value)
+
+
+def _merge_headers(headers: dict[str, str], updates: Mapping[str, str] | None) -> None:
+    if not updates:
+        return
+    for key, value in updates.items():
+        _set_header(headers, str(key), str(value))
+
+
+def _upstream_global_headers(
+    upstream_headers_config: Mapping[str, Any] | None,
+) -> Mapping[str, str] | None:
+    if not isinstance(upstream_headers_config, Mapping):
+        return None
+    global_headers = upstream_headers_config.get("global")
+    if isinstance(global_headers, Mapping):
+        return {str(key): str(value) for key, value in global_headers.items()}
+    return None
+
+
+def _matching_upstream_rule_headers(
+    upstream_headers_config: Mapping[str, Any] | None,
+    model_name: str | None,
+) -> list[Mapping[str, str]]:
+    if not isinstance(upstream_headers_config, Mapping):
+        return []
+    rules = upstream_headers_config.get("rules")
+    if not isinstance(rules, list):
+        return []
+    matched: list[Mapping[str, str]] = []
+    normalized_model = (model_name or "").strip()
+    for rule in rules:
+        if not isinstance(rule, Mapping):
+            continue
+        if not bool(rule.get("enabled", True)):
+            continue
+        if not _upstream_header_rule_matches(rule, normalized_model):
+            continue
+        headers = rule.get("headers")
+        if isinstance(headers, Mapping):
+            matched.append({str(key): str(value) for key, value in headers.items()})
+    return matched
+
+
+def _upstream_header_rule_matches(rule: Mapping[str, Any], model_name: str) -> bool:
+    if not model_name:
+        return False
+    match_type = str(rule.get("match_type") or "exact")
+    if match_type == "regex":
+        pattern = str(rule.get("pattern") or "").strip()
+        if not pattern:
+            return False
+        try:
+            return bool(re.search(pattern, model_name))
+        except re.error:
+            return False
+    models = rule.get("models")
+    if not isinstance(models, list):
+        return False
+    return any(str(item).strip() == model_name for item in models)
 
 
 def _protocol_base_url(channel: ChannelConfig) -> str:

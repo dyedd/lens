@@ -5,12 +5,16 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  ArrowDown,
+  ArrowUp,
   ImageIcon,
   Palette,
+  Plus,
   RotateCcw,
   Save,
   ServerCog,
   ShieldAlert,
+  Trash2,
   TestTubeDiagonal,
   UserRound,
   TimerReset,
@@ -29,6 +33,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { Separator } from "@/components/ui/separator";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -67,6 +72,7 @@ const HEALTH_PENALTY_WEIGHT = "health_penalty_weight";
 const HEALTH_MIN_SAMPLES = "health_min_samples";
 const RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled";
 const MODEL_LIST_COMPAT_MODE_ENABLED = "model_list_compat_mode_enabled";
+const UPSTREAM_HEADERS_CONFIG = "upstream_headers_config";
 const SITE_NAME = "site_name";
 const SITE_LOGO_URL = "site_logo_url";
 const TIME_ZONE = "time_zone";
@@ -94,7 +100,52 @@ type DraftState = {
   siteLogoUrl: string;
   timeZone: string;
   modelTestPrompts: string;
+  upstreamHeadersConfig: UpstreamHeadersDraft;
 };
+
+type HeaderItem = { key: string; value: string };
+type UpstreamHeaderMatchType = "exact" | "regex";
+type UpstreamHeaderRuleDraft = {
+  id: string;
+  enabled: boolean;
+  name: string;
+  matchType: UpstreamHeaderMatchType;
+  models: string;
+  pattern: string;
+  headers: HeaderItem[];
+};
+type UpstreamHeadersDraft = {
+  global: HeaderItem[];
+  rules: UpstreamHeaderRuleDraft[];
+};
+
+const EMPTY_HEADERS: HeaderItem[] = [{ key: "", value: "" }];
+
+function createDraftId(prefix: string) {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function emptyUpstreamHeadersDraft(): UpstreamHeadersDraft {
+  return { global: [...EMPTY_HEADERS], rules: [] };
+}
+
+function emptyUpstreamHeaderRule(): UpstreamHeaderRuleDraft {
+  return {
+    id: createDraftId("upstream-header-rule"),
+    enabled: true,
+    name: "",
+    matchType: "exact",
+    models: "",
+    pattern: "",
+    headers: [{ key: "", value: "" }],
+  };
+}
 
 const EMPTY_DRAFT: DraftState = {
   proxyUrl: "",
@@ -111,6 +162,7 @@ const EMPTY_DRAFT: DraftState = {
   siteLogoUrl: "",
   timeZone: "Asia/Shanghai",
   modelTestPrompts: DEFAULT_MODEL_TEST_PROMPTS.join("\n"),
+  upstreamHeadersConfig: emptyUpstreamHeadersDraft(),
 };
 
 function titleForLocale(locale: Locale, zh: string, en: string) {
@@ -142,6 +194,9 @@ function parseSettings(items: SettingItem[] | undefined) {
     modelTestPrompts: parseModelTestPrompts(
       mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY),
     ).join("\n"),
+    upstreamHeadersConfig: parseUpstreamHeadersConfig(
+      mapping.get(UPSTREAM_HEADERS_CONFIG),
+    ),
   } satisfies DraftState;
 }
 
@@ -165,6 +220,190 @@ function normalizeOriginList(rawValue: string) {
     return "*";
   }
   return items.join(",");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseHeaderRows(value: unknown): HeaderItem[] {
+  if (!isRecord(value)) {
+    return [{ key: "", value: "" }];
+  }
+  const rows = Object.entries(value)
+    .map(([key, rawValue]) => ({
+      key,
+      value: typeof rawValue === "string" ? rawValue : String(rawValue ?? ""),
+    }))
+    .filter((item) => item.key.trim());
+  return rows.length ? rows : [{ key: "", value: "" }];
+}
+
+function parseModelListText(value: string) {
+  const models: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value.replaceAll("，", ",").split(/[\n,]/)) {
+    const model = item.trim();
+    if (!model || seen.has(model)) {
+      continue;
+    }
+    seen.add(model);
+    models.push(model);
+  }
+  return models;
+}
+
+function headersToRecord(headers: HeaderItem[]) {
+  const output: Record<string, string> = {};
+  const lowerToKey = new Map<string, string>();
+  for (const item of headers) {
+    const key = item.key.trim();
+    if (!key) {
+      continue;
+    }
+    const lowerKey = key.toLowerCase();
+    const existingKey = lowerToKey.get(lowerKey);
+    if (existingKey) {
+      delete output[existingKey];
+    }
+    lowerToKey.set(lowerKey, key);
+    output[key] = item.value.trim();
+  }
+  return output;
+}
+
+function hasHeaderDraftContent(headers: HeaderItem[]) {
+  return headers.some((header) => header.key.trim() || header.value.trim());
+}
+
+function hasHeaderValueWithoutKey(headers: HeaderItem[]) {
+  return headers.some((header) => header.value.trim() && !header.key.trim());
+}
+
+function hasRuleDraftContent(rule: UpstreamHeaderRuleDraft) {
+  return Boolean(
+    rule.name.trim() ||
+    rule.models.trim() ||
+    rule.pattern.trim() ||
+    hasHeaderDraftContent(rule.headers),
+  );
+}
+
+function validateUpstreamHeadersConfig(
+  config: UpstreamHeadersDraft,
+  locale: Locale,
+) {
+  if (hasHeaderValueWithoutKey(config.global)) {
+    return titleForLocale(
+      locale,
+      "全局请求头名称不能为空。",
+      "Global header keys are required.",
+    );
+  }
+  for (const rule of config.rules) {
+    if (!hasRuleDraftContent(rule)) {
+      continue;
+    }
+    if (hasHeaderValueWithoutKey(rule.headers)) {
+      return titleForLocale(
+        locale,
+        "规则请求头名称不能为空。",
+        "Rule header keys are required.",
+      );
+    }
+    if (!Object.keys(headersToRecord(rule.headers)).length) {
+      return titleForLocale(
+        locale,
+        "模型请求头规则需要至少填写一个请求头名称。",
+        "Model header rules need at least one header key.",
+      );
+    }
+    if (rule.matchType === "exact" && !parseModelListText(rule.models).length) {
+      return titleForLocale(
+        locale,
+        "精确匹配规则需要填写至少一个模型名称。",
+        "Exact match rules need at least one model name.",
+      );
+    }
+    if (rule.matchType === "regex" && !rule.pattern.trim()) {
+      return titleForLocale(
+        locale,
+        "正则匹配规则需要填写模型正则。",
+        "Regex match rules need a model regex.",
+      );
+    }
+  }
+  return null;
+}
+
+function parseUpstreamHeadersConfig(rawValue: string | undefined) {
+  if (!rawValue?.trim()) {
+    return emptyUpstreamHeadersDraft();
+  }
+  try {
+    const payload: unknown = JSON.parse(rawValue);
+    if (!isRecord(payload)) {
+      return emptyUpstreamHeadersDraft();
+    }
+    const rawRules = Array.isArray(payload["rules"]) ? payload["rules"] : [];
+    return {
+      global: parseHeaderRows(payload["global"]),
+      rules: rawRules.filter(isRecord).map((rule) => {
+        const matchType = rule["match_type"] === "regex" ? "regex" : "exact";
+        const rawModels = Array.isArray(rule["models"]) ? rule["models"] : [];
+        const models = rawModels
+          .map((item) => String(item ?? "").trim())
+          .filter(Boolean)
+          .join("\n");
+        return {
+          id: createDraftId("upstream-header-rule"),
+          enabled: rule["enabled"] !== false,
+          name: typeof rule["name"] === "string" ? rule["name"] : "",
+          matchType,
+          models,
+          pattern: typeof rule["pattern"] === "string" ? rule["pattern"] : "",
+          headers: parseHeaderRows(rule["headers"]),
+        } satisfies UpstreamHeaderRuleDraft;
+      }),
+    } satisfies UpstreamHeadersDraft;
+  } catch {
+    return emptyUpstreamHeadersDraft();
+  }
+}
+
+function serializeUpstreamHeadersConfig(config: UpstreamHeadersDraft) {
+  const rules = config.rules.flatMap((rule) => {
+    if (!hasRuleDraftContent(rule)) {
+      return [];
+    }
+    const headers = headersToRecord(rule.headers);
+    const hasHeaders = Object.keys(headers).length > 0;
+    if (!hasHeaders) {
+      return [];
+    }
+    const models = parseModelListText(rule.models);
+    const pattern = rule.pattern.trim();
+    if (rule.matchType === "exact" && !models.length) {
+      return [];
+    }
+    if (rule.matchType === "regex" && !pattern) {
+      return [];
+    }
+    return [
+      {
+        enabled: rule.enabled,
+        name: rule.name.trim(),
+        match_type: rule.matchType,
+        models,
+        pattern,
+        headers,
+      },
+    ];
+  });
+  return JSON.stringify({
+    global: headersToRecord(config.global),
+    rules,
+  });
 }
 
 function SettingCard({
@@ -193,6 +432,75 @@ function SettingCard({
       </header>
       <div className="flex max-w-2xl flex-col gap-4 pt-5">{children}</div>
     </section>
+  );
+}
+
+function HeaderRows({
+  title,
+  headers,
+  locale,
+  onAdd,
+  onUpdate,
+  onRemove,
+}: {
+  title: string;
+  headers: HeaderItem[];
+  locale: Locale;
+  onAdd: () => void;
+  onUpdate: (index: number, patch: Partial<HeaderItem>) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-medium text-foreground">{title}</div>
+        <Button type="button" variant="outline" size="sm" onClick={onAdd}>
+          <Plus data-icon="inline-start" />
+          {titleForLocale(locale, "添加", "Add")}
+        </Button>
+      </div>
+      {headers.map((header, headerIndex) => (
+        <div
+          key={headerIndex}
+          className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+        >
+          <Field>
+            <FieldLabel>
+              {titleForLocale(locale, "请求头名称", "Header key")}
+            </FieldLabel>
+            <Input
+              value={header.key}
+              onChange={(event) =>
+                onUpdate(headerIndex, { key: event.target.value })
+              }
+              placeholder="X-Header-Name"
+            />
+          </Field>
+          <Field>
+            <FieldLabel>
+              {titleForLocale(locale, "请求头值", "Header value")}
+            </FieldLabel>
+            <Input
+              value={header.value}
+              onChange={(event) =>
+                onUpdate(headerIndex, { value: event.target.value })
+              }
+              placeholder="value"
+            />
+          </Field>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="text-muted-foreground"
+            aria-label={titleForLocale(locale, "删除请求头", "Remove header")}
+            onClick={() => onRemove(headerIndex)}
+          >
+            <Trash2 data-icon="inline-start" />
+          </Button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -258,6 +566,112 @@ export function SettingsScreen() {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function updateUpstreamHeadersConfig(
+    updater: (current: UpstreamHeadersDraft) => UpstreamHeadersDraft,
+  ) {
+    setDraft((current) => ({
+      ...current,
+      upstreamHeadersConfig: updater(current.upstreamHeadersConfig),
+    }));
+  }
+
+  function updateGlobalHeader(index: number, patch: Partial<HeaderItem>) {
+    updateUpstreamHeadersConfig((current) => ({
+      ...current,
+      global: current.global.map((header, currentIndex) =>
+        currentIndex === index ? { ...header, ...patch } : header,
+      ),
+    }));
+  }
+
+  function removeGlobalHeader(index: number) {
+    updateUpstreamHeadersConfig((current) => {
+      const nextHeaders = current.global.filter(
+        (_, currentIndex) => currentIndex !== index,
+      );
+      return {
+        ...current,
+        global: nextHeaders.length ? nextHeaders : [{ key: "", value: "" }],
+      };
+    });
+  }
+
+  function updateUpstreamHeaderRule(
+    index: number,
+    patch: Partial<UpstreamHeaderRuleDraft>,
+  ) {
+    updateUpstreamHeadersConfig((current) => ({
+      ...current,
+      rules: current.rules.map((rule, currentIndex) =>
+        currentIndex === index ? { ...rule, ...patch } : rule,
+      ),
+    }));
+  }
+
+  function removeUpstreamHeaderRule(index: number) {
+    updateUpstreamHeadersConfig((current) => ({
+      ...current,
+      rules: current.rules.filter((_, currentIndex) => currentIndex !== index),
+    }));
+  }
+
+  function moveUpstreamHeaderRule(index: number, direction: -1 | 1) {
+    updateUpstreamHeadersConfig((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.rules.length) {
+        return current;
+      }
+      const rules = [...current.rules];
+      const rule = rules[index];
+      if (!rule) {
+        return current;
+      }
+      rules.splice(index, 1);
+      rules.splice(nextIndex, 0, rule);
+      return { ...current, rules };
+    });
+  }
+
+  function updateRuleHeader(
+    ruleIndex: number,
+    headerIndex: number,
+    patch: Partial<HeaderItem>,
+  ) {
+    updateUpstreamHeadersConfig((current) => ({
+      ...current,
+      rules: current.rules.map((rule, currentRuleIndex) =>
+        currentRuleIndex === ruleIndex
+          ? {
+              ...rule,
+              headers: rule.headers.map((header, currentHeaderIndex) =>
+                currentHeaderIndex === headerIndex
+                  ? { ...header, ...patch }
+                  : header,
+              ),
+            }
+          : rule,
+      ),
+    }));
+  }
+
+  function removeRuleHeader(ruleIndex: number, headerIndex: number) {
+    updateUpstreamHeadersConfig((current) => ({
+      ...current,
+      rules: current.rules.map((rule, currentRuleIndex) => {
+        if (currentRuleIndex !== ruleIndex) {
+          return rule;
+        }
+        const nextHeaders = rule.headers.filter(
+          (_, currentHeaderIndex) => currentHeaderIndex !== headerIndex,
+        );
+        return {
+          ...rule,
+          headers: nextHeaders.length ? nextHeaders : [{ key: "", value: "" }],
+        };
+      }),
+    }));
+  }
+
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["settings"] }),
@@ -272,6 +686,14 @@ export function SettingsScreen() {
 
   async function submitSettings() {
     if (!settingsQuery.isSuccess) {
+      return;
+    }
+    const upstreamHeadersError = validateUpstreamHeadersConfig(
+      draft.upstreamHeadersConfig,
+      locale,
+    );
+    if (upstreamHeadersError) {
+      toast.error(upstreamHeadersError);
       return;
     }
     setSaving(true);
@@ -320,6 +742,10 @@ export function SettingsScreen() {
         {
           key: MODEL_TEST_PROMPTS_SETTING_KEY,
           value: serializeModelTestPrompts(draft.modelTestPrompts),
+        },
+        {
+          key: UPSTREAM_HEADERS_CONFIG,
+          value: serializeUpstreamHeadersConfig(draft.upstreamHeadersConfig),
         },
       ];
       await apiRequest<SettingItem[]>("/admin/settings", {
@@ -469,8 +895,8 @@ export function SettingsScreen() {
       label: titleForLocale(locale, "网关", "Gateway"),
       description: titleForLocale(
         locale,
-        "代理、跨域和日志兼容设置。",
-        "Proxy, CORS, and log compatibility settings.",
+        "代理、跨域、日志和上游请求设置。",
+        "Proxy, CORS, logs, and upstream request settings.",
       ),
       icon: ServerCog,
     },
@@ -841,6 +1267,262 @@ export function SettingsScreen() {
                       }
                     />
                   </Field>
+                  <div className="flex flex-col gap-5 rounded-lg border bg-muted/20 p-4">
+                    <HeaderRows
+                      title={titleForLocale(
+                        locale,
+                        "全局请求头",
+                        "Global headers",
+                      )}
+                      headers={draft.upstreamHeadersConfig.global}
+                      locale={locale}
+                      onAdd={() =>
+                        updateUpstreamHeadersConfig((current) => ({
+                          ...current,
+                          global: [...current.global, { key: "", value: "" }],
+                        }))
+                      }
+                      onUpdate={updateGlobalHeader}
+                      onRemove={removeGlobalHeader}
+                    />
+                    <Separator />
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium text-foreground">
+                        {titleForLocale(
+                          locale,
+                          "模型请求头规则",
+                          "Model header rules",
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          updateUpstreamHeadersConfig((current) => ({
+                            ...current,
+                            rules: [
+                              ...current.rules,
+                              emptyUpstreamHeaderRule(),
+                            ],
+                          }))
+                        }
+                      >
+                        <Plus data-icon="inline-start" />
+                        {titleForLocale(locale, "添加规则", "Add rule")}
+                      </Button>
+                    </div>
+                    {draft.upstreamHeadersConfig.rules.length ? (
+                      <div className="flex flex-col gap-4">
+                        {draft.upstreamHeadersConfig.rules.map(
+                          (rule, ruleIndex) => (
+                            <div
+                              key={rule.id}
+                              className="flex flex-col gap-4 rounded-lg border bg-background p-3"
+                            >
+                              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
+                                <Field>
+                                  <FieldLabel>
+                                    {titleForLocale(
+                                      locale,
+                                      "规则名称",
+                                      "Rule name",
+                                    )}
+                                  </FieldLabel>
+                                  <Input
+                                    value={rule.name}
+                                    onChange={(event) =>
+                                      updateUpstreamHeaderRule(ruleIndex, {
+                                        name: event.target.value,
+                                      })
+                                    }
+                                    placeholder={titleForLocale(
+                                      locale,
+                                      "规则名称",
+                                      "Rule name",
+                                    )}
+                                  />
+                                </Field>
+                                <Field>
+                                  <FieldLabel>
+                                    {titleForLocale(
+                                      locale,
+                                      "匹配方式",
+                                      "Match type",
+                                    )}
+                                  </FieldLabel>
+                                  <SegmentedControl<UpstreamHeaderMatchType>
+                                    value={rule.matchType}
+                                    onValueChange={(matchType) =>
+                                      updateUpstreamHeaderRule(ruleIndex, {
+                                        matchType,
+                                      })
+                                    }
+                                    options={[
+                                      {
+                                        value: "exact",
+                                        label: titleForLocale(
+                                          locale,
+                                          "精确",
+                                          "Exact",
+                                        ),
+                                      },
+                                      {
+                                        value: "regex",
+                                        label: titleForLocale(
+                                          locale,
+                                          "正则",
+                                          "Regex",
+                                        ),
+                                      },
+                                    ]}
+                                  />
+                                </Field>
+                                <div className="flex items-center justify-between gap-2 lg:justify-end">
+                                  <Switch
+                                    checked={rule.enabled}
+                                    aria-label={titleForLocale(
+                                      locale,
+                                      "启用规则",
+                                      "Enable rule",
+                                    )}
+                                    onCheckedChange={(enabled) =>
+                                      updateUpstreamHeaderRule(ruleIndex, {
+                                        enabled,
+                                      })
+                                    }
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    aria-label={titleForLocale(
+                                      locale,
+                                      "上移规则",
+                                      "Move rule up",
+                                    )}
+                                    disabled={ruleIndex === 0}
+                                    onClick={() =>
+                                      moveUpstreamHeaderRule(ruleIndex, -1)
+                                    }
+                                  >
+                                    <ArrowUp data-icon="inline-start" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    aria-label={titleForLocale(
+                                      locale,
+                                      "下移规则",
+                                      "Move rule down",
+                                    )}
+                                    disabled={
+                                      ruleIndex ===
+                                      draft.upstreamHeadersConfig.rules.length -
+                                        1
+                                    }
+                                    onClick={() =>
+                                      moveUpstreamHeaderRule(ruleIndex, 1)
+                                    }
+                                  >
+                                    <ArrowDown data-icon="inline-start" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="text-muted-foreground"
+                                    aria-label={titleForLocale(
+                                      locale,
+                                      "删除规则",
+                                      "Remove rule",
+                                    )}
+                                    onClick={() =>
+                                      removeUpstreamHeaderRule(ruleIndex)
+                                    }
+                                  >
+                                    <Trash2 data-icon="inline-start" />
+                                  </Button>
+                                </div>
+                              </div>
+                              {rule.matchType === "exact" ? (
+                                <Field>
+                                  <FieldLabel>
+                                    {titleForLocale(
+                                      locale,
+                                      "模型名称",
+                                      "Models",
+                                    )}
+                                  </FieldLabel>
+                                  <Textarea
+                                    className="min-h-[84px]"
+                                    value={rule.models}
+                                    onChange={(event) =>
+                                      updateUpstreamHeaderRule(ruleIndex, {
+                                        models: event.target.value,
+                                      })
+                                    }
+                                    placeholder={"gpt-5.5\ngpt-5.4-mini"}
+                                  />
+                                </Field>
+                              ) : (
+                                <Field>
+                                  <FieldLabel>
+                                    {titleForLocale(
+                                      locale,
+                                      "模型正则",
+                                      "Model regex",
+                                    )}
+                                  </FieldLabel>
+                                  <Input
+                                    value={rule.pattern}
+                                    onChange={(event) =>
+                                      updateUpstreamHeaderRule(ruleIndex, {
+                                        pattern: event.target.value,
+                                      })
+                                    }
+                                    placeholder="^claude-"
+                                  />
+                                </Field>
+                              )}
+                              <HeaderRows
+                                title={titleForLocale(
+                                  locale,
+                                  "规则请求头",
+                                  "Rule headers",
+                                )}
+                                headers={rule.headers}
+                                locale={locale}
+                                onAdd={() =>
+                                  updateUpstreamHeaderRule(ruleIndex, {
+                                    headers: [
+                                      ...rule.headers,
+                                      { key: "", value: "" },
+                                    ],
+                                  })
+                                }
+                                onUpdate={(headerIndex, patch) =>
+                                  updateRuleHeader(
+                                    ruleIndex,
+                                    headerIndex,
+                                    patch,
+                                  )
+                                }
+                                onRemove={(headerIndex) =>
+                                  removeRuleHeader(ruleIndex, headerIndex)
+                                }
+                              />
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">
+                        {titleForLocale(locale, "暂无规则", "No rules")}
+                      </div>
+                    )}
+                  </div>
                 </FieldGroup>
               </SettingCard>
             </TabsContent>
