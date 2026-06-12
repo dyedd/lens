@@ -345,6 +345,7 @@ def _prepare_channel_request(
     credential_id: str | None,
     user_agent: str | None,
     forwarded_headers: Mapping[str, str] | None,
+    upstream_headers_config: Mapping[str, Any] | None,
     log_body_enabled: bool,
 ) -> tuple[Any, bytes, str | None]:
     upstream = build_upstream_request(
@@ -354,6 +355,7 @@ def _prepare_channel_request(
         credential_id=credential_id,
         user_agent=user_agent,
         forwarded_headers=forwarded_headers,
+        upstream_headers_config=upstream_headers_config,
     )
     body_bytes = _json_body_bytes(upstream.json_body)
     request_content = _dump_log_json(upstream.json_body) if log_body_enabled else None

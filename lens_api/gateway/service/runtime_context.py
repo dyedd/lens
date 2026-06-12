@@ -102,6 +102,7 @@ from ...models import (
     SiteRuntimeSummary,
     SiteUpdate,
     VersionCheckResult,
+    normalize_upstream_headers_config_json,
 )
 from ...persistence.admin_store import AdminStore
 from ...persistence.backup_store import BackupStore
@@ -120,6 +121,7 @@ from ...persistence.domain_store import (
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
+    SETTING_UPSTREAM_HEADERS_CONFIG,
     SETTING_VERSION_CHECK_AT,
     DomainStore,
 )

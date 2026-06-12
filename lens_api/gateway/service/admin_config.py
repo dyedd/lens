@@ -30,6 +30,7 @@ from .runtime_context import (
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
+    SETTING_UPSTREAM_HEADERS_CONFIG,
     SettingItem,
     SettingsUpdate,
     UploadFile,
@@ -37,6 +38,7 @@ from .runtime_context import (
     app_state,
     datetime,
     json,
+    normalize_upstream_headers_config_json,
     resolve_time_zone,
 )
 from .tasks import _sync_group_prices
@@ -164,6 +166,14 @@ async def update_settings(
             next_time_zone = time_zone.key
             next_time_zone_value = time_zone
             normalized_items.append(SettingItem(key=item.key, value=time_zone.key))
+            continue
+        if item.key == SETTING_UPSTREAM_HEADERS_CONFIG:
+            normalized_items.append(
+                SettingItem(
+                    key=item.key,
+                    value=normalize_upstream_headers_config_json(item.value),
+                )
+            )
             continue
         if item.key in INTEGER_SETTING_KEYS:
             value = item.value.strip()

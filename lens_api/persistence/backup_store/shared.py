@@ -31,6 +31,7 @@ from ...models import (
     RequestLogLifecycleStatus,
     SettingItem,
     SiteConfig,
+    normalize_upstream_headers_config_json,
 )
 from ..domain_store import (
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
@@ -48,6 +49,7 @@ from ..domain_store import (
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
     SETTING_MODEL_PRICE_LAST_SYNC_AT,
+    SETTING_UPSTREAM_HEADERS_CONFIG,
 )
 from ..entities import (
     GatewayApiKeyEntity,
@@ -89,6 +91,7 @@ EXPORTABLE_SETTING_KEYS = (
     SETTING_HEALTH_PENALTY_WEIGHT,
     SETTING_HEALTH_MIN_SAMPLES,
     SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
+    SETTING_UPSTREAM_HEADERS_CONFIG,
     SETTING_SITE_NAME,
     SETTING_SITE_LOGO_URL,
     SETTING_TIME_ZONE,
