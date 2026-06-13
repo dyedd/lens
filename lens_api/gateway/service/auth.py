@@ -55,7 +55,7 @@ async def get_current_admin(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
 
-    admin = await app_state.admin_store.get_by_username(username)
+    admin = await app_state.admin_repo.get_by_username(username)
     if admin is None or admin.is_active != 1:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found"
@@ -82,7 +82,9 @@ async def get_current_gateway_key(request: Request) -> GatewayApiKey:
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing gateway API key"
         )
 
-    gateway_key = await app_state.domain_store.get_gateway_api_key_by_secret(secret)
+    gateway_key = await app_state.gateway_api_key_repo.get_gateway_api_key_by_secret(
+        secret
+    )
 
     if gateway_key is None:
         raise HTTPException(
@@ -155,14 +157,14 @@ def _has_version_update(latest_version: str, current_version: str) -> bool:
 
 
 async def public_branding() -> PublicBranding:
-    branding = await app_state.domain_store.get_branding_settings()
+    branding = await app_state.settings_repo.get_branding_settings()
     return PublicBranding(
         site_name=branding["site_name"], logo_url=branding["site_logo_url"]
     )
 
 
 async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
-    runtime = await app_state.domain_store.get_runtime_settings()
+    runtime = await app_state.settings_repo.get_runtime_settings()
     return AppInfo(
         system_version=_read_system_version(),
         site_name=str(runtime["site_name"]),
@@ -175,7 +177,7 @@ async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
 async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResult:
     current_version = _read_system_version()
 
-    settings = await app_state.domain_store.list_settings()
+    settings = await app_state.settings_repo.list_settings()
     settings_dict = {s.key: s.value for s in settings}
 
     latest_version = settings_dict.get(SETTING_LATEST_VERSION, "")
@@ -194,7 +196,7 @@ async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResu
 
 
 async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
-    user = await app_state.admin_store.authenticate(payload.username, payload.password)
+    user = await app_state.admin_repo.authenticate(payload.username, payload.password)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -221,7 +223,7 @@ async def update_profile(
     if not normalized_username:
         raise HTTPException(status_code=400, detail="Username is required")
 
-    updated_admin = await app_state.admin_store.update_profile(
+    updated_admin = await app_state.admin_repo.update_profile(
         admin.username,
         normalized_username,
         payload.current_password,
@@ -242,7 +244,7 @@ async def change_password(
     payload: AdminPasswordChangeRequest,
     admin: AdminUserEntity = Depends(get_current_admin),
 ) -> Response:
-    await app_state.admin_store.update_password(
+    await app_state.admin_repo.update_password(
         admin.username, payload.current_password, payload.new_password
     )
     return Response(status_code=204)

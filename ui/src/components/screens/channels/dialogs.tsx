@@ -12,6 +12,7 @@ import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import type { ProtocolKind, Site } from "@/lib/api";
 import { ProtocolConfigItem } from "./form-sections";
 import { SiteModelAggregateView } from "./model-aggregate-view";
@@ -21,7 +22,6 @@ import {
   createLocalId,
   credentialIndexLabel,
   siteSubtitle,
-  SwitchButton,
   type BatchModelTestOption,
   type FormBaseUrl,
   type FormCredential,
@@ -224,9 +224,9 @@ export function ChannelEditorDialog({
                                   />
                                 </Field>
                                 <div className="flex h-8 w-8 items-center justify-center">
-                                  <SwitchButton
+                                  <Switch
                                     checked={baseUrl.enabled}
-                                    onChange={(checked) =>
+                                    onCheckedChange={(checked) =>
                                       updateBaseUrl(index, {
                                         enabled: checked,
                                       })
@@ -318,9 +318,9 @@ export function ChannelEditorDialog({
                                 />
                               </Field>
                               <div className="flex h-8 w-8 items-center justify-center">
-                                <SwitchButton
+                                <Switch
                                   checked={credential.enabled}
-                                  onChange={(checked) =>
+                                  onCheckedChange={(checked) =>
                                     updateCredential(index, {
                                       enabled: checked,
                                     })

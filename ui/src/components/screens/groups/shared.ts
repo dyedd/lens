@@ -7,6 +7,8 @@ import type {
   RoutingStrategy,
   Site,
 } from "@/lib/api";
+import { isGeneratedCredentialName } from "@/lib/utils";
+export { isGeneratedCredentialName, protocolBadgeClassName } from "@/lib/utils";
 
 export type FormItem = {
   channel_id: string;
@@ -80,12 +82,10 @@ export type GroupRow = ModelGroup & {
   is_route_group: boolean;
 };
 
-export type ModelPrefixOption = {
-  key: string;
-  label: string;
-  sampleModel: string;
-};
-export type SelectedModelPrefix = "all" | string;
+export type {
+  ModelPrefixOption,
+  SelectedModelPrefix,
+} from "@/lib/model-prefix";
 
 export const emptyForm: FormState = {
   name: "",
@@ -288,15 +288,6 @@ export function protocolLabel(
   return protocolLabels[protocol][locale === "zh-CN" ? "zh" : "en"];
 }
 
-export function isGeneratedCredentialName(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return (
-    normalized === "默认密钥" ||
-    /^key\s*\d+$/.test(normalized) ||
-    /^密钥\s*\d+$/.test(value.trim())
-  );
-}
-
 export function credentialDisplayLabel(
   item: Pick<
     FormItem | ModelGroupCandidateItem,
@@ -329,25 +320,6 @@ export function foldedMemberSourceLabel(
   );
   const credentialLabel = credentialNumberLabel(member, locale);
   return [...channelNames, credentialLabel].join(" · ");
-}
-
-export function protocolBadgeClassName(protocol: ProtocolKind) {
-  switch (protocol) {
-    case "openai_chat":
-      return "border-transparent bg-sky-500/10 text-sky-700";
-    case "openai_responses":
-      return "border-transparent bg-indigo-500/10 text-indigo-700";
-    case "openai_embedding":
-      return "border-transparent bg-cyan-500/10 text-cyan-700";
-    case "rerank":
-      return "border-transparent bg-violet-500/10 text-violet-700";
-    case "anthropic":
-      return "border-transparent bg-amber-500/10 text-amber-700";
-    case "gemini":
-      return "border-transparent bg-emerald-500/10 text-emerald-700";
-    default:
-      return "border-transparent bg-secondary text-secondary-foreground";
-  }
 }
 
 export function protocolOptions(locale: "zh-CN" | "en-US") {

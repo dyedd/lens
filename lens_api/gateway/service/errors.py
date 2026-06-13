@@ -26,59 +26,21 @@ from .runtime_context import (
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-    @app.exception_handler(StarletteHTTPException)
-    async def _http_exception_handler(
-        request: Request, exc: StarletteHTTPException
-    ) -> JSONResponse:
-        return await handle_http_exception(request, exc)
+    exception_mapping: list[tuple[type[Exception], Callable]] = [
+        (StarletteHTTPException, handle_http_exception),
+        (RequestValidationError, handle_validation_error),
+        (OperationalError, handle_operational_error),
+        (jwt.InvalidTokenError, handle_invalid_token_error),
+        (CronjobAlreadyRunningError, handle_cronjob_already_running),
+        (KeyError, handle_key_error),
+        (LookupError, handle_lookup_error),
+        (ValueError, handle_value_error),
+        (json.JSONDecodeError, handle_json_decode_error),
+        (Exception, handle_unexpected_error),
+    ]
 
-    @app.exception_handler(RequestValidationError)
-    async def _validation_exception_handler(
-        request: Request, exc: RequestValidationError
-    ) -> JSONResponse:
-        return await handle_validation_error(request, exc)
-
-    @app.exception_handler(OperationalError)
-    async def _operational_error_handler(
-        request: Request, exc: OperationalError
-    ) -> JSONResponse:
-        return await handle_operational_error(request, exc)
-
-    @app.exception_handler(jwt.InvalidTokenError)
-    async def _invalid_token_handler(
-        request: Request, exc: jwt.InvalidTokenError
-    ) -> JSONResponse:
-        return await handle_invalid_token_error(request, exc)
-
-    @app.exception_handler(CronjobAlreadyRunningError)
-    async def _cronjob_running_handler(
-        request: Request, exc: CronjobAlreadyRunningError
-    ) -> JSONResponse:
-        return await handle_cronjob_already_running(request, exc)
-
-    @app.exception_handler(KeyError)
-    async def _key_error_handler(request: Request, exc: KeyError) -> JSONResponse:
-        return await handle_key_error(request, exc)
-
-    @app.exception_handler(LookupError)
-    async def _lookup_error_handler(request: Request, exc: LookupError) -> JSONResponse:
-        return await handle_lookup_error(request, exc)
-
-    @app.exception_handler(ValueError)
-    async def _value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
-        return await handle_value_error(request, exc)
-
-    @app.exception_handler(json.JSONDecodeError)
-    async def _json_decode_error_handler(
-        request: Request, exc: json.JSONDecodeError
-    ) -> JSONResponse:
-        return await handle_json_decode_error(request, exc)
-
-    @app.exception_handler(Exception)
-    async def _unexpected_error_handler(
-        request: Request, exc: Exception
-    ) -> JSONResponse:
-        return await handle_unexpected_error(request, exc)
+    for exc_class, handler in exception_mapping:
+        app.add_exception_handler(exc_class, handler)
 
 
 def _error_response(
@@ -401,7 +363,7 @@ async def dynamic_cors_middleware(
 ) -> Response:
     response = await call_next(request)
     try:
-        runtime = await app_state.domain_store.get_runtime_settings()
+        runtime = await app_state.settings_repo.get_runtime_settings()
         _apply_router_runtime_settings(runtime)
     except OperationalError as exc:
         return _database_error_response(exc, request)
@@ -419,7 +381,7 @@ async def dynamic_cors_middleware(
 
 
 async def cors_preflight(path: str, request: Request) -> Response:
-    runtime = await app_state.domain_store.get_runtime_settings()
+    runtime = await app_state.settings_repo.get_runtime_settings()
     _apply_router_runtime_settings(runtime)
     allow_origins = runtime["cors_allow_origins"]
     origin = request.headers.get("origin", "")

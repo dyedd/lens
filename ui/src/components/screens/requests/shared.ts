@@ -3,18 +3,18 @@ import type {
   RequestLogItem,
   SettingItem,
 } from "@/lib/api";
+import { titleForLocale } from "@/lib/i18n";
+export { titleForLocale };
 
 export const PAGE_SIZE = 20;
 export const REQUEST_LOG_DETAIL_GC_TIME = 60_000;
 export const RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled";
 export const EMPTY_FILTER_OPTION_ID = "n/a";
 
-export type ModelPrefixOption = {
-  key: string;
-  label: string;
-  sampleModel: string;
-};
-export type SelectedModelPrefix = "all" | string;
+export type {
+  ModelPrefixOption,
+  SelectedModelPrefix,
+} from "@/lib/model-prefix";
 export type StatusFilter = "all" | "running" | "success" | "failed";
 export type SortMode = "latest" | "cost" | "latency" | "tokens";
 export type JsonLike =
@@ -47,14 +47,6 @@ export type UserAgentProduct = {
   name: string;
   version: string;
 };
-
-export function titleForLocale(
-  locale: "zh-CN" | "en-US",
-  zh: string,
-  en: string,
-) {
-  return locale === "zh-CN" ? zh : en;
-}
 
 export function parseRelayLogBodyEnabled(settings: SettingItem[] | undefined) {
   const item = settings?.find(

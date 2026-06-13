@@ -23,6 +23,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
@@ -42,7 +43,6 @@ import {
   protocolLabel,
   resolveBaseUrlId,
   selectClassName,
-  SwitchButton,
 } from "./shared";
 
 export function ProtocolConfigItem({
@@ -182,9 +182,9 @@ export function ProtocolConfigItem({
             </NativeSelect>
           </Field>
           <div className="flex h-8 w-8 items-center justify-center xl:self-end">
-            <SwitchButton
+            <Switch
               checked={protocolConfig.enabled}
-              onChange={(checked) =>
+              onCheckedChange={(checked) =>
                 onUpdateProtocolConfig(protocolConfigIndex, {
                   enabled: checked,
                 })

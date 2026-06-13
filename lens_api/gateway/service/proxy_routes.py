@@ -207,8 +207,8 @@ async def list_gateway_models(
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
-    groups = await app_state.domain_store.list_groups()
-    runtime = await app_state.domain_store.get_runtime_settings()
+    groups = await app_state.group_repo.list_groups()
+    runtime = await app_state.settings_repo.get_runtime_settings()
     if runtime["model_list_compat_mode_enabled"]:
         return _build_openai_models_payload(
             groups, gateway_key, _ALL_MODEL_LIST_PROTOCOLS
@@ -221,7 +221,7 @@ async def list_gateway_models(
 async def list_gemini_models(
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
-    groups = await app_state.domain_store.list_groups()
+    groups = await app_state.group_repo.list_groups()
     return _build_gemini_models_payload(groups, gateway_key)
 
 

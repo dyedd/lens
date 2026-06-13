@@ -107,20 +107,20 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 
 ## Screenshots
 
-| Overview | Request Logs |
-| -------- | ------------ |
+| Overview                                              | Request Logs                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------- |
 | <img src="./screenshots/overview.png" alt="Overview"> | <img src="./screenshots/request-logs.png" alt="Request Logs"> |
 
-| Channels | Model Groups |
-| -------- | ------------ |
+| Channels                                              | Model Groups                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------- |
 | <img src="./screenshots/channels.png" alt="Channels"> | <img src="./screenshots/model-groups.png" alt="Model Groups"> |
 
-| Settings | API Keys |
-| -------- | -------- |
+| Settings                                              | API Keys                                              |
+| ----------------------------------------------------- | ----------------------------------------------------- |
 | <img src="./screenshots/settings.png" alt="Settings"> | <img src="./screenshots/api-keys.png" alt="API Keys"> |
 
-| Scheduled Tasks | Backup & Restore |
-| --------------- | ---------------- |
+| Scheduled Tasks                                                     | Backup & Restore                                               |
+| ------------------------------------------------------------------- | -------------------------------------------------------------- |
 | <img src="./screenshots/scheduled-tasks.png" alt="Scheduled Tasks"> | <img src="./screenshots/backups.png" alt="Backup and Restore"> |
 
 ## Quick Start

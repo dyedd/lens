@@ -97,7 +97,7 @@ async def _build_anthropic_sse_to_json_result(
         media_type = "application/json"
         response_headers.pop("content-type", None)
 
-    cost = await app_state.domain_store.estimate_model_cost(
+    cost = await app_state.model_price_repo.estimate_model_cost(
         pricing_group_name,
         parsed["input_tokens"],
         parsed["output_tokens"],
@@ -227,7 +227,7 @@ async def _build_json_result(
             client_protocol, channel.protocol, content, body.get("model", "")
         )
 
-    cost = await app_state.domain_store.estimate_model_cost(
+    cost = await app_state.model_price_repo.estimate_model_cost(
         pricing_group_name,
         parsed["input_tokens"],
         parsed["output_tokens"],
