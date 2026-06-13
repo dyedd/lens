@@ -161,6 +161,7 @@ class BackupReplacersMixin:
                         headers_json=json.dumps(
                             protocol_config.headers, ensure_ascii=True
                         ),
+                        proxy_mode=protocol_config.proxy_mode.value,
                         channel_proxy=protocol_config.channel_proxy,
                         param_override=protocol_config.param_override,
                         match_regex=protocol_config.match_regex,

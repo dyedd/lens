@@ -7,7 +7,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 from fastapi import HTTPException
 
 from ..core.config import Settings
-from ..models import ChannelConfig, ProtocolKind
+from ..models import ChannelConfig, ChannelProxyMode, ProtocolKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,9 +255,10 @@ def resolve_channel_api_key(
 def resolve_upstream_proxy_url(
     channel: ChannelConfig, global_proxy_url: str | None = None
 ) -> str | None:
-    channel_proxy = channel.channel_proxy.strip()
-    if channel_proxy:
-        return channel_proxy
+    if channel.proxy_mode == ChannelProxyMode.DIRECT:
+        return None
+    if channel.proxy_mode == ChannelProxyMode.CUSTOM:
+        return channel.channel_proxy.strip() or None
     global_proxy = (global_proxy_url or "").strip()
     return global_proxy or None
 

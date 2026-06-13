@@ -115,6 +115,7 @@ async def fetch_site_models(
                 }
             ],
             models=[],
+            proxy_mode=payload.proxy_mode,
             channel_proxy=payload.channel_proxy,
             param_override="",
             match_regex=payload.match_regex,

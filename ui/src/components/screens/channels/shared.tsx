@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Globe2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import type {
+  ChannelProxyMode,
   ProtocolKind,
   Site,
   SiteBatchImportPayload,
@@ -52,6 +53,7 @@ export type FormProtocolConfig = {
   name: string;
   enabled: boolean;
   headers: HeaderItem[];
+  proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   param_override: string;
   match_regex: string;
@@ -199,6 +201,7 @@ export const emptyProtocolConfig = (
   name,
   enabled: true,
   headers: [{ key: "", value: "" }],
+  proxy_mode: "inherit",
   channel_proxy: "",
   param_override: "",
   match_regex: "",
@@ -244,6 +247,7 @@ export const batchImportTemplate: SiteBatchImportPayload = {
           base_url_ref: "main",
           credential_ref: "key1",
           headers: {},
+          proxy_mode: "inherit",
           channel_proxy: "",
           param_override: "",
           match_regex: "",
@@ -756,6 +760,7 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
                 value,
               }))
             : [{ key: "", value: "" }],
+          proxy_mode: protocolConfig.proxy_mode,
           channel_proxy: protocolConfig.channel_proxy,
           param_override: protocolConfig.param_override,
           match_regex: safeText(protocolConfig.match_regex),
@@ -855,6 +860,7 @@ export function toPayload(form: FormState): SitePayload {
               .map((entry) => [entry.key.trim(), entry.value] as const)
               .filter(([key]) => key),
           ),
+          proxy_mode: protocolConfig.proxy_mode,
           channel_proxy: protocolConfig.channel_proxy.trim(),
           param_override: protocolConfig.param_override.trim(),
           match_regex: safeText(protocolConfig.match_regex).trim(),
