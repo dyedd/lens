@@ -162,7 +162,7 @@ def _forward_anthropic_headers(headers: Mapping[str, str]) -> dict[str, str]:
 
 
 async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
-    runtime = await app_state.domain_store.get_runtime_settings()
+    runtime = await app_state.settings_repo.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client, close_client = _resolve_http_client(proxy_url)
 

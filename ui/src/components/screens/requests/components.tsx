@@ -1,7 +1,6 @@
 "use client";
 
 import type * as React from "react";
-import { LayoutGrid } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -9,9 +8,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { RequestLogItem } from "@/lib/api";
-import { ModelAvatar } from "@/lib/model-icons";
 import { cn } from "@/lib/utils";
 import { titleForLocale } from "./shared";
+
+export { SeriesChip } from "@/lib/model-prefix";
 
 export function RequestOutcomeBadge({
   status,
@@ -165,50 +165,5 @@ export function RequestMeta({
         {tooltip}
       </TooltipContent>
     </Tooltip>
-  );
-}
-
-export function SeriesChip({
-  selected,
-  label,
-  sampleModel,
-  onClick,
-  isAll = false,
-}: {
-  selected: boolean;
-  label: string;
-  sampleModel: string;
-  onClick: () => void;
-  isAll?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        "group flex min-w-[76px] snap-start items-center justify-center rounded-[22px] border bg-card px-4 py-4 text-center transition-all",
-        selected
-          ? "border-primary bg-primary/[0.05] shadow-[0_0_0_1px_rgba(37,99,235,0.08)]"
-          : "border-border/70 hover:border-primary/25 hover:bg-muted/20",
-      )}
-    >
-      <span
-        className={cn(
-          "flex size-11 items-center justify-center rounded-2xl border bg-background",
-          selected ? "border-primary/20 bg-primary/[0.06]" : "border-border/60",
-        )}
-      >
-        {isAll ? (
-          <LayoutGrid
-            size={20}
-            className={selected ? "text-primary" : "text-muted-foreground"}
-          />
-        ) : (
-          <ModelAvatar name={sampleModel} size={28} />
-        )}
-      </span>
-    </button>
   );
 }

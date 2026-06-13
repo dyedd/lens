@@ -489,32 +489,6 @@ class RouteState(StrictBaseModel):
     requested_model: str | None = None
 
 
-class RoutePreview(StrictBaseModel):
-    protocol: ProtocolKind
-    requested_group_name: str | None = None
-    resolved_group_name: str | None = None
-    strategy: RoutingStrategy | None = None
-    matched_channel_ids: list[str] = Field(default_factory=list)
-    items: list["RoutePreviewItem"] = Field(default_factory=list)
-
-
-class RoutePreviewItem(StrictBaseModel):
-    channel_id: str
-    channel_name: str = ""
-    model_name: str | None = None
-    credential_id: str | None = None
-    credential_name: str | None = None
-    available: bool = True
-    in_cooldown: bool = False
-    cooldown_remaining_seconds: int = 0
-    score: float = 1.0
-
-
-class RoutePreviewRequest(StrictBaseModel):
-    protocol: ProtocolKind
-    model: str | None = None
-
-
 class RouterSnapshot(StrictBaseModel):
     routes: list[RouteState]
     health: list[ChannelHealth]
@@ -778,17 +752,6 @@ def normalize_upstream_headers_config_json(value: str) -> str:
     else:
         config = UpstreamHeadersConfig()
     return json.dumps(config.model_dump(mode="json", by_alias=True), ensure_ascii=True)
-
-
-class ModelGroupStats(StrictBaseModel):
-    name: str
-    request_count: int = 0
-    success_count: int = 0
-    failed_count: int = 0
-    total_tokens: int = 0
-    total_cost_usd: float = 0.0
-    avg_latency_ms: int = 0
-    last_resolved_model: str | None = None
 
 
 class ModelGroupCandidateItem(StrictBaseModel):
@@ -1237,9 +1200,6 @@ __all__ = [
     "ChannelKeyHealth",
     "ChannelHealth",
     "RouteState",
-    "RoutePreview",
-    "RoutePreviewItem",
-    "RoutePreviewRequest",
     "RouterSnapshot",
     "ErrorResponse",
     "AdminLoginRequest",
@@ -1260,7 +1220,6 @@ __all__ = [
     "UpstreamHeaderRule",
     "UpstreamHeadersConfig",
     "normalize_upstream_headers_config_json",
-    "ModelGroupStats",
     "ModelGroupCandidateItem",
     "ModelGroupCandidatesRequest",
     "ModelGroupCandidatesResponse",

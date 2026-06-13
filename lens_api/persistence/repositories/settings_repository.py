@@ -6,7 +6,9 @@ import json
 from pydantic import ValidationError
 
 from ...models import UpstreamHeadersConfig
-from .shared import (
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ..shared import (
     Any,
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
@@ -32,7 +34,18 @@ from .shared import (
 )
 
 
-class DomainSettingsMixin:
+class SettingsRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        import asyncio
+
+        self._session_factory = session_factory
+        self._settings_cache: list[SettingItem] | None = None
+        self._settings_cache_at = 0.0
+        self._settings_cache_ttl_seconds = 2.0
+        self._settings_cache_lock = asyncio.Lock()
+        self._runtime_settings_cache: dict[Any, Any] | None = None
+        self._runtime_settings_cache_at = 0.0
+
     def _clone_settings_items(self, items: list[SettingItem]) -> list[SettingItem]:
         return [SettingItem(key=item.key, value=item.value) for item in items]
 
@@ -71,6 +84,37 @@ class DomainSettingsMixin:
             except (TypeError, ValueError, json.JSONDecodeError, ValidationError):
                 config = UpstreamHeadersConfig()
         return config.model_dump(mode="json", by_alias=True)
+
+    @staticmethod
+    def _split_comma_lines(raw_value: str) -> list[str]:
+        items: list[str] = []
+        seen: set[str] = set()
+        for chunk in raw_value.replace("\r", "\n").replace("，", ",").splitlines():
+            for item in chunk.split(","):
+                normalized = item.strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                items.append(normalized)
+        return items
+
+    @staticmethod
+    def _parse_bool(value: str | None, *, default: bool) -> bool:
+        if value is None:
+            return default
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+
+    @staticmethod
+    def _parse_int(value: str | None, *, default: int) -> int:
+        if value is None:
+            return default
+        return int(value.strip())
+
+    @staticmethod
+    def _parse_float(value: str | None, *, default: float) -> float:
+        if value is None:
+            return default
+        return float(value.strip())
 
     async def get_runtime_settings(self) -> dict[str, Any]:
         cached = self._runtime_settings_cache

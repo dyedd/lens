@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .shared import (
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ..shared import (
     Any,
     GatewayApiKeyEntity,
     ProtocolKind,
@@ -21,7 +23,10 @@ from .shared import (
 )
 
 
-class DomainRequestLogFiltersMixin:
+class RequestLogFilterMixin:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
     @staticmethod
     def _resolve_request_log_window(
         days: int, *, time_zone: ZoneInfo, offset_days: int = 0
