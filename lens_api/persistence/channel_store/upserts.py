@@ -176,6 +176,7 @@ class ChannelUpsertsMixin:
             entity.protocols_json = _dump_protocols_json(input_protocols)
             entity.enabled = int(protocol_config.enabled)
             entity.headers_json = json.dumps(protocol_config.headers, ensure_ascii=True)
+            entity.proxy_mode = protocol_config.proxy_mode.value
             entity.channel_proxy = protocol_config.channel_proxy
             entity.param_override = protocol_config.param_override
             entity.match_regex = protocol_config.match_regex
