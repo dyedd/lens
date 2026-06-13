@@ -190,6 +190,7 @@ class BackupLoadersMixin:
                     ],
                     "enabled": bool(row.enabled),
                     "headers": headers,
+                    "proxy_mode": row.proxy_mode,
                     "channel_proxy": row.channel_proxy,
                     "param_override": row.param_override,
                     "match_regex": row.match_regex,

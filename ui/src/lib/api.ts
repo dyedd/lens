@@ -8,6 +8,8 @@ export type ProtocolKind =
   | "anthropic"
   | "gemini";
 
+export type ChannelProxyMode = "inherit" | "direct" | "custom";
+
 const DEFAULT_SUPPORTED_CONVERSIONS: Partial<
   Record<ProtocolKind, ProtocolKind[]>
 > = {
@@ -179,6 +181,7 @@ export type SiteProtocolConfig = {
   protocols: ProtocolKind[];
   enabled: boolean;
   headers: Record<string, string>;
+  proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   param_override: string;
   match_regex: string;
@@ -193,6 +196,7 @@ export type SiteProtocolConfigInput = {
   protocols: ProtocolKind[];
   enabled: boolean;
   headers: Record<string, string>;
+  proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   param_override: string;
   match_regex: string;
@@ -265,6 +269,7 @@ export type SiteBatchImportProtocolInput = {
   protocol: ProtocolKind;
   enabled?: boolean;
   headers?: Record<string, string>;
+  proxy_mode?: ChannelProxyMode;
   channel_proxy?: string;
   param_override?: string;
   match_regex?: string;
@@ -309,6 +314,7 @@ export type SiteBatchImportResult = {
 export type SiteModelFetchPayload = {
   base_url: string;
   headers: Record<string, string>;
+  proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   match_regex: string;
   credentials: SiteCredentialInput[];
@@ -325,6 +331,7 @@ export type SiteModelTestPayload = {
   protocol: ProtocolKind;
   base_url: string;
   headers: Record<string, string>;
+  proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   param_override: string;
   credential: {

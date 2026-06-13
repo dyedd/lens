@@ -89,6 +89,12 @@ class ProtocolKind(str, Enum):
     GEMINI = "gemini"
 
 
+class ChannelProxyMode(str, Enum):
+    INHERIT = "inherit"
+    DIRECT = "direct"
+    CUSTOM = "custom"
+
+
 class RequestLogStatusFilter(str, Enum):
     RUNNING = "running"
     SUCCESS = "success"
@@ -171,6 +177,7 @@ class ChannelConfig(StrictBaseModel):
     model_patterns: list[str] = Field(default_factory=list)
     keys: list[ChannelKeyItem] = Field(default_factory=list)
     models: list[ChannelDiscoveredModel] = Field(default_factory=list)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
@@ -238,6 +245,7 @@ class SiteProtocolConfig(StrictBaseModel):
     protocols: list[ProtocolKind] = Field(default_factory=list)
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
@@ -252,6 +260,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
     protocols: list[ProtocolKind] = Field(default_factory=list)
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
@@ -338,6 +347,7 @@ class SiteImportProtocolInput(StrictBaseModel):
     protocol: ProtocolKind
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
@@ -387,6 +397,7 @@ class SiteBatchImportResult(StrictBaseModel):
 class SiteModelFetchRequest(StrictBaseModel):
     base_url: HttpUrl
     headers: dict[str, str] = Field(default_factory=dict)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     match_regex: str = ""
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
@@ -416,6 +427,7 @@ class SiteModelTestRequest(StrictBaseModel):
     protocol: ProtocolKind
     base_url: HttpUrl
     headers: dict[str, str] = Field(default_factory=dict)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
     credential: SiteModelTestCredential
@@ -1181,6 +1193,7 @@ __all__ = [
     "StrictBaseModel",
     "normalize_base_url",
     "ProtocolKind",
+    "ChannelProxyMode",
     "RequestLogStatusFilter",
     "RequestLogLifecycleStatus",
     "RequestLogSortMode",

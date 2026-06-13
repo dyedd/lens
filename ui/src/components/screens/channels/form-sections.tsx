@@ -462,20 +462,48 @@ export function AdvancedProtocolConfigDialog({
           <div className="grid gap-4">
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="protocol-proxy">
-                  {locale === "zh-CN" ? "代理地址" : "Proxy"}
+                <FieldLabel htmlFor="protocol-proxy-mode">
+                  {locale === "zh-CN" ? "代理模式" : "Proxy mode"}
                 </FieldLabel>
-                <Input
-                  id="protocol-proxy"
-                  value={protocolConfig.channel_proxy}
+                <NativeSelect
+                  id="protocol-proxy-mode"
+                  className={selectClassName()}
+                  value={protocolConfig.proxy_mode}
                   onChange={(event) =>
                     onUpdateProtocolConfig(protocolConfigIndex, {
-                      channel_proxy: event.target.value,
+                      proxy_mode: event.target
+                        .value as FormProtocolConfig["proxy_mode"],
                     })
                   }
-                  placeholder="http://127.0.0.1:7890"
-                />
+                >
+                  <NativeSelectOption value="inherit">
+                    {locale === "zh-CN" ? "跟随系统代理" : "Use system proxy"}
+                  </NativeSelectOption>
+                  <NativeSelectOption value="direct">
+                    {locale === "zh-CN" ? "不使用代理" : "Direct"}
+                  </NativeSelectOption>
+                  <NativeSelectOption value="custom">
+                    {locale === "zh-CN" ? "自定义代理" : "Custom proxy"}
+                  </NativeSelectOption>
+                </NativeSelect>
               </Field>
+              {protocolConfig.proxy_mode === "custom" ? (
+                <Field>
+                  <FieldLabel htmlFor="protocol-proxy">
+                    {locale === "zh-CN" ? "代理地址" : "Proxy URL"}
+                  </FieldLabel>
+                  <Input
+                    id="protocol-proxy"
+                    value={protocolConfig.channel_proxy}
+                    onChange={(event) =>
+                      onUpdateProtocolConfig(protocolConfigIndex, {
+                        channel_proxy: event.target.value,
+                      })
+                    }
+                    placeholder="http://127.0.0.1:7890"
+                  />
+                </Field>
+              ) : null}
             </FieldGroup>
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">

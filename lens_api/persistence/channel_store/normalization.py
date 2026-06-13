@@ -70,6 +70,7 @@ class ChannelNormalizationMixin:
                         models=self._build_channel_models(
                             protocol_models, credentials_by_id
                         ),
+                        proxy_mode=protocol_config.proxy_mode,
                         channel_proxy=protocol_config.channel_proxy,
                         param_override=protocol_config.param_override,
                         match_regex=protocol_config.match_regex,
@@ -292,6 +293,7 @@ class ChannelNormalizationMixin:
                     protocols=_parse_protocols_json(row.protocols_json),
                     enabled=bool(row.enabled),
                     headers=json.loads(row.headers_json),
+                    proxy_mode=row.proxy_mode,
                     channel_proxy=row.channel_proxy,
                     param_override=row.param_override,
                     match_regex=row.match_regex,

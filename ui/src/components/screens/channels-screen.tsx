@@ -736,6 +736,7 @@ export function ChannelsScreen() {
             protocols: protocolConfig.protocols,
             enabled,
             headers: protocolConfig.headers,
+            proxy_mode: protocolConfig.proxy_mode,
             channel_proxy: protocolConfig.channel_proxy,
             param_override: protocolConfig.param_override,
             match_regex: protocolConfig.match_regex,
@@ -1083,6 +1084,7 @@ export function ChannelsScreen() {
       protocol: testProtocol,
       base_url: activeBaseUrl,
       headers: formHeaders(protocolConfig),
+      proxy_mode: protocolConfig.proxy_mode,
       channel_proxy: protocolConfig.channel_proxy.trim(),
       param_override: protocolConfig.param_override.trim(),
       credential: {
@@ -1213,6 +1215,7 @@ export function ChannelsScreen() {
       const payload: SiteModelFetchPayload = {
         base_url: safeText(activeBaseUrl).trim(),
         headers: formHeaders(protocolConfig),
+        proxy_mode: protocolConfig.proxy_mode,
         channel_proxy: protocolConfig.channel_proxy.trim(),
         match_regex: safeText(protocolConfig.match_regex).trim(),
         credentials: form.credentials

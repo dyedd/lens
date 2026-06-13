@@ -237,6 +237,7 @@ class ChannelSiteImportNormalizationMixin:
                         for key, value in protocol.headers.items()
                         if key.strip()
                     },
+                    proxy_mode=protocol.proxy_mode,
                     channel_proxy=protocol.channel_proxy.strip(),
                     param_override=protocol.param_override.strip(),
                     match_regex=protocol.match_regex.strip(),
