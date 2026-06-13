@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .shared import (
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ..shared import (
     AsyncSession,
     ModelGroup,
     ModelGroupCandidateItem,
@@ -11,7 +13,6 @@ from .shared import (
     ModelGroupItem,
     ModelGroupItemEntity,
     ModelGroupItemInput,
-    ModelGroupStats,
     ModelGroupUpdate,
     ModelPriceEntity,
     ProtocolKind,
@@ -35,7 +36,10 @@ from .shared import (
 )
 
 
-class DomainGroupsMixin:
+class GroupRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
     async def list_groups(self) -> list[ModelGroup]:
         async with self._session_factory() as session:
             entities = (
@@ -228,97 +232,6 @@ class DomainGroupsMixin:
         candidates.sort(key=lambda c: (c.channel_name, c.model_name))
 
         return ModelGroupCandidatesResponse(candidates=candidates)
-
-    async def list_group_stats(self) -> list[ModelGroupStats]:
-        async with self._session_factory() as session:
-            groups = (
-                (
-                    await session.execute(
-                        select(ModelGroupEntity).order_by(ModelGroupEntity.name)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            grouped_rows = (
-                await session.execute(
-                    select(
-                        RequestLogEntity.resolved_group_name,
-                        func.count(RequestLogEntity.id),
-                        func.sum(RequestLogEntity.success),
-                        func.sum(RequestLogEntity.total_tokens),
-                        func.sum(RequestLogEntity.total_cost_usd),
-                        func.avg(RequestLogEntity.latency_ms),
-                    )
-                    .where(RequestLogEntity.resolved_group_name.is_not(None))
-                    .where(
-                        RequestLogEntity.lifecycle_status.in_(
-                            REQUEST_LOG_TERMINAL_STATUSES
-                        )
-                    )
-                    .group_by(RequestLogEntity.resolved_group_name)
-                )
-            ).all()
-
-            last_model_rows = (
-                await session.execute(
-                    select(
-                        RequestLogEntity.resolved_group_name,
-                        RequestLogEntity.upstream_model_name,
-                    )
-                    .where(RequestLogEntity.resolved_group_name.is_not(None))
-                    .where(RequestLogEntity.upstream_model_name.is_not(None))
-                    .where(
-                        RequestLogEntity.lifecycle_status.in_(
-                            REQUEST_LOG_TERMINAL_STATUSES
-                        )
-                    )
-                    .order_by(
-                        RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()
-                    )
-                )
-            ).all()
-
-        aggregates = {
-            str(name): {
-                "request_count": int(request_count),
-                "success_count": int(success_count),
-                "total_tokens": int(total_tokens),
-                "total_cost_usd": float(total_cost_usd),
-                "avg_latency_ms": int(avg_latency_ms),
-            }
-            for name, request_count, success_count, total_tokens, total_cost_usd, avg_latency_ms in grouped_rows
-            if name
-        }
-
-        last_models: dict[str, str] = {}
-        for group_name, upstream_model_name in last_model_rows:
-            if not group_name or not upstream_model_name:
-                continue
-            key = str(group_name)
-            if key not in last_models:
-                last_models[key] = str(upstream_model_name)
-
-        items: list[ModelGroupStats] = []
-        for group in groups:
-            aggregate = aggregates.get(group.name, {})
-            request_count = int(aggregate.get("request_count", 0))
-            success_count = int(aggregate.get("success_count", 0))
-            items.append(
-                ModelGroupStats(
-                    name=group.name,
-                    request_count=request_count,
-                    success_count=success_count,
-                    failed_count=max(request_count - success_count, 0),
-                    total_tokens=int(aggregate.get("total_tokens", 0)),
-                    total_cost_usd=round(
-                        float(aggregate.get("total_cost_usd", 0.0)), 6
-                    ),
-                    avg_latency_ms=int(aggregate.get("avg_latency_ms", 0)),
-                    last_resolved_model=last_models.get(group.name),
-                )
-            )
-        return items
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
         async with self._session_factory() as session:
@@ -841,3 +754,13 @@ class DomainGroupsMixin:
             ),
             items=items,
         )
+
+    async def list_group_names(self, *, include_routed: bool = False) -> list[str]:
+        from ..shared import ModelGroupEntity, select
+
+        async with self._session_factory() as session:
+            query = select(ModelGroupEntity.name).order_by(ModelGroupEntity.name.asc())
+            if not include_routed:
+                query = query.where(ModelGroupEntity.route_group_id == "")
+            rows = await session.execute(query)
+            return [str(item) for item in rows.scalars().all() if str(item).strip()]

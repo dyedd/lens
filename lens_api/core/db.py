@@ -34,10 +34,6 @@ def normalize_sync_database_url(database_url: str) -> str:
     return normalized
 
 
-def is_sqlite_url(database_url: str) -> bool:
-    return database_url.strip().startswith("sqlite")
-
-
 def create_engine(database_url: str) -> AsyncEngine:
     database_url = normalize_async_database_url(database_url)
     is_sqlite = database_url.startswith("sqlite")

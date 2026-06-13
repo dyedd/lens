@@ -18,9 +18,9 @@ from .shared import (
     SiteProtocolConfigEntity,
     SiteProtocolConfigInput,
     _channel_id_matches_protocol_config,
+    _deduplicate_protocols,
     _deduplicate_protocol_config_models,
     _dump_protocols_json,
-    _input_protocols,
     delete,
     json,
     or_,
@@ -149,7 +149,7 @@ class ChannelUpsertsMixin:
                     "Credential not found for protocol config "
                     f"{protocol_config_id}: {protocol_config.credential_id}"
                 )
-            input_protocols = _input_protocols(protocol_config)
+            input_protocols = _deduplicate_protocols(protocol_config.protocols)
             if not input_protocols:
                 raise ValueError(
                     "At least one upstream protocol is required for protocol config "

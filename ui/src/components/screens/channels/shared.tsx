@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Globe2 } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 import type {
   ChannelProxyMode,
   ProtocolKind,
@@ -14,6 +13,9 @@ import type {
   SiteModelInput,
   SitePayload,
 } from "@/lib/api";
+import { isGeneratedCredentialName } from "@/lib/utils";
+import type { Locale } from "@/lib/i18n";
+export { isGeneratedCredentialName, protocolBadgeClassName } from "@/lib/utils";
 
 export const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
   { value: "openai_chat", label: "OpenAI Chat" },
@@ -23,7 +25,6 @@ export const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
   { value: "anthropic", label: "Anthropic" },
   { value: "gemini", label: "Gemini" },
 ];
-export const allClientProtocols = protocolOptions.map((item) => item.value);
 
 export type HeaderItem = { key: string; value: string };
 export type FormCredential = Omit<SiteCredentialInput, "id"> & { id: string };
@@ -31,7 +32,7 @@ export type FormBaseUrl = Omit<SiteBaseUrlInput, "id"> & {
   id: string;
   supported_protocols: ProtocolKind[];
 };
-export type Locale = "zh-CN" | "en-US";
+export type { Locale };
 
 export function createLocalId(prefix: string) {
   if (
@@ -76,11 +77,6 @@ export type PickerModelItem = {
   model_name: string;
 };
 
-export type PickerModelGroup = {
-  credential_id: string;
-  model_name: string;
-};
-
 export function genericModelKey(
   model: Pick<PickerModelItem, "credential_id" | "model_name">,
 ) {
@@ -109,7 +105,7 @@ export function pickerModelKey(
 }
 
 export function groupPickerModels(models: PickerModelItem[]) {
-  const groups = new Map<string, PickerModelGroup>();
+  const groups = new Map<string, PickerModelItem>();
   for (const model of models) {
     const key = genericModelKey(model);
     if (groups.has(key)) {
@@ -426,15 +422,6 @@ export function compactProtocolLabel(protocol: ProtocolKind) {
   }
 }
 
-export function isGeneratedCredentialName(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return (
-    normalized === "默认密钥" ||
-    /^key\s*\d+$/.test(normalized) ||
-    /^密钥\s*\d+$/.test(value.trim())
-  );
-}
-
 export function fallbackCredentialName(index: number) {
   return `Key ${index + 1}`;
 }
@@ -628,25 +615,6 @@ export function siteModelCount(site: Site) {
 
 export function isSiteEnabled(site: Site) {
   return site.protocols.some((protocolConfig) => protocolConfig.enabled);
-}
-
-export function protocolBadgeClassName(protocol: ProtocolKind) {
-  switch (protocol) {
-    case "openai_chat":
-      return "border-transparent bg-sky-500/10 text-sky-700";
-    case "openai_responses":
-      return "border-transparent bg-indigo-500/10 text-indigo-700";
-    case "openai_embedding":
-      return "border-transparent bg-cyan-500/10 text-cyan-700";
-    case "rerank":
-      return "border-transparent bg-violet-500/10 text-violet-700";
-    case "anthropic":
-      return "border-transparent bg-amber-500/10 text-amber-700";
-    case "gemini":
-      return "border-transparent bg-emerald-500/10 text-emerald-700";
-    default:
-      return "border-transparent bg-secondary text-secondary-foreground";
-  }
 }
 
 export function getSiteFaviconCandidates(url: string) {
@@ -917,18 +885,4 @@ export function invalidModelProtocolCount(form: FormState) {
         .length
     );
   }, 0);
-}
-
-export function SwitchButton({
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
-  );
 }

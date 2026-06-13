@@ -30,6 +30,7 @@ from .usage import (
 )
 from .payload_serialization import _stringify_text_content
 from .request_logger import _update_request_log
+from .stream_types import parse_chat_stream_payload, parse_anthropic_stream_payload
 
 
 def _stream_payload_has_output(protocol: ProtocolKind, payload: dict[str, Any]) -> bool:
@@ -45,34 +46,28 @@ def _stream_payload_has_output(protocol: ProtocolKind, payload: dict[str, Any]) 
 
 
 def _chat_stream_payload_has_output(payload: dict[str, Any]) -> bool:
-    choices = payload.get("choices")
-    if not isinstance(choices, list):
+    choices = parse_chat_stream_payload(payload)
+    if not choices:
         return False
+
     for choice in choices:
-        if not isinstance(choice, dict):
-            continue
-        delta = choice.get("delta")
-        if not isinstance(delta, dict):
-            continue
-        if _has_non_empty_stream_value(_stringify_text_content(delta.get("content"))):
+        delta = choice.delta
+        if _has_non_empty_stream_value(_stringify_text_content(delta.content)):
             return True
-        if _has_non_empty_stream_value(delta.get("reasoning_content")):
+        if _has_non_empty_stream_value(delta.reasoning_content):
             return True
-        if _has_non_empty_stream_value(delta.get("reasoning")):
+        if _has_non_empty_stream_value(delta.reasoning):
             return True
-        if _chat_function_delta_has_output(delta.get("function_call")):
+        if delta.function_call and _chat_function_delta_has_output(delta.function_call):
             return True
-        tool_calls = delta.get("tool_calls")
-        if isinstance(tool_calls, list) and any(
-            _chat_tool_call_delta_has_output(item) for item in tool_calls
+        if delta.tool_calls and any(
+            _chat_tool_call_delta_has_output(item) for item in delta.tool_calls
         ):
             return True
     return False
 
 
-def _chat_function_delta_has_output(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
+def _chat_function_delta_has_output(value: dict[str, Any]) -> bool:
     return _has_non_empty_stream_value(
         value.get("name")
     ) or _has_non_empty_stream_value(value.get("arguments"))
@@ -105,23 +100,25 @@ def _responses_stream_payload_has_output(payload: dict[str, Any]) -> bool:
 
 
 def _anthropic_stream_payload_has_output(payload: dict[str, Any]) -> bool:
-    payload_type = str(payload.get("type") or "")
-    if payload_type == "content_block_delta":
-        delta = payload.get("delta")
-        if not isinstance(delta, dict):
+    block = parse_anthropic_stream_payload(payload)
+    if not block:
+        return False
+
+    if block.type == "content_block_delta":
+        if not block.delta:
             return False
         return any(
-            _has_non_empty_stream_value(delta.get(key))
+            _has_non_empty_stream_value(block.delta.get(key))
             for key in ("text", "thinking", "partial_json")
         )
-    if payload_type == "content_block_start":
-        block = payload.get("content_block")
+    if block.type == "content_block_start":
+        content_block = block.content_block
         return (
-            isinstance(block, dict)
-            and block.get("type") == "tool_use"
+            content_block
+            and content_block.get("type") == "tool_use"
             and (
-                _has_non_empty_stream_value(block.get("name"))
-                or _has_non_empty_stream_value(block.get("id"))
+                _has_non_empty_stream_value(content_block.get("name"))
+                or _has_non_empty_stream_value(content_block.get("id"))
             )
         )
     return False
@@ -184,7 +181,7 @@ async def _persist_stream_first_token_latency(
     latency_ms: int,
 ) -> None:
     try:
-        await app_state.domain_store.update_request_log_runtime(
+        await app_state.request_log_store.update_request_log_runtime(
             request_log_id,
             first_token_latency_ms=first_token_latency_ms,
             latency_ms=latency_ms,
@@ -296,7 +293,7 @@ async def _record_stream_request_log(
         input_cost_usd,
         output_cost_usd,
         total_cost_usd,
-    ) = await app_state.domain_store.estimate_model_cost(
+    ) = await app_state.model_price_repo.estimate_model_cost(
         resolved_group_name,
         input_tokens,
         output_tokens,
@@ -353,7 +350,7 @@ async def _record_stream_route_health(
         return
 
     try:
-        runtime = await app_state.domain_store.get_runtime_settings()
+        runtime = await app_state.settings_repo.get_runtime_settings()
         app_state.router.record_failure(
             channel.id,
             _format_channel_error(capture_issue),

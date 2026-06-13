@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from .shared import (
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ..shared import (
     Any,
     OverviewModelDailyStatsEntity,
+    REQUEST_LOG_RUNNING_STATUSES,
     REQUEST_LOG_TERMINAL_STATUSES,
     RequestLogDailyStatsEntity,
     RequestLogEntity,
@@ -20,9 +23,12 @@ from .shared import (
 )
 
 
-class DomainRequestLogWritesMixin:
+class RequestLogWriteMixin:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
     async def persist_request_log_stats(self, *, force: bool = False) -> None:
-        runtime = await self.get_runtime_settings()
+        runtime = await self._settings_repo.get_runtime_settings()
         now = datetime.now(UTC).replace(tzinfo=None)
         time_zone = self._runtime_time_zone(runtime)
         local_now = now.replace(tzinfo=UTC).astimezone(time_zone)
@@ -294,7 +300,7 @@ class DomainRequestLogWritesMixin:
                 ),
             )
             session.add(entity)
-            await self._adjust_gateway_key_spend(
+            await self._gateway_key_repo._adjust_gateway_key_spend(
                 session,
                 gateway_key_id,
                 self._gateway_key_spend_contribution(
@@ -385,18 +391,18 @@ class DomainRequestLogWritesMixin:
                 total_cost_usd,
             )
             if previous_gateway_key_id == gateway_key_id:
-                await self._adjust_gateway_key_spend(
+                await self._gateway_key_repo._adjust_gateway_key_spend(
                     session,
                     gateway_key_id,
                     next_spend - previous_spend,
                 )
             else:
-                await self._adjust_gateway_key_spend(
+                await self._gateway_key_repo._adjust_gateway_key_spend(
                     session,
                     previous_gateway_key_id,
                     -previous_spend,
                 )
-                await self._adjust_gateway_key_spend(
+                await self._gateway_key_repo._adjust_gateway_key_spend(
                     session,
                     gateway_key_id,
                     next_spend,
@@ -429,7 +435,7 @@ class DomainRequestLogWritesMixin:
             await session.commit()
 
     async def prune_request_logs(self) -> None:
-        runtime = await self.get_runtime_settings()
+        runtime = await self._settings_repo.get_runtime_settings()
         if not runtime["relay_log_keep_enabled"]:
             return
         await self.persist_request_log_stats(force=True)
@@ -460,3 +466,44 @@ class DomainRequestLogWritesMixin:
         if lifecycle_value not in REQUEST_LOG_TERMINAL_STATUSES:
             return 0.0
         return max(float(total_cost_usd), 0.0)
+
+    async def fail_running_request_logs(
+        self, *, interrupted_latency_cap_ms: int | None = None
+    ) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        latency_cap_ms = (
+            max(interrupted_latency_cap_ms, 0)
+            if interrupted_latency_cap_ms is not None
+            else None
+        )
+        async with self._session_factory() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(RequestLogEntity).where(
+                            RequestLogEntity.lifecycle_status.in_(
+                                REQUEST_LOG_RUNNING_STATUSES
+                            )
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for entity in rows:
+                created_at = entity.created_at
+                if created_at.tzinfo is not None:
+                    created_at = created_at.astimezone(UTC).replace(tzinfo=None)
+                elapsed_ms = max(int((now - created_at).total_seconds() * 1000), 0)
+                if latency_cap_ms is not None:
+                    elapsed_ms = min(elapsed_ms, latency_cap_ms)
+                entity.lifecycle_status = RequestLogLifecycleStatus.FAILED.value
+                entity.success = 0
+                entity.status_code = None
+                entity.latency_ms = max(entity.latency_ms, elapsed_ms)
+                if not (entity.error_message or "").strip():
+                    entity.error_message = (
+                        "Request interrupted while the service was not running"
+                    )
+                entity.stats_archived = 0
+            await session.commit()

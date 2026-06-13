@@ -63,7 +63,7 @@ async def _call_site_model_probe_channel(
     model_name: str,
     credential_id: str,
 ) -> SiteModelTestResult:
-    runtime = await app_state.domain_store.get_runtime_settings()
+    runtime = await app_state.settings_repo.get_runtime_settings()
     upstream = build_upstream_request(
         channel,
         body,

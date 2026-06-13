@@ -10,20 +10,17 @@ export type ProtocolKind =
 
 export type ChannelProxyMode = "inherit" | "direct" | "custom";
 
-const DEFAULT_SUPPORTED_CONVERSIONS: Partial<
-  Record<ProtocolKind, ProtocolKind[]>
-> = {
-  openai_chat: ["anthropic", "openai_responses"],
-};
-
-let supportedConversions: Partial<Record<ProtocolKind, ProtocolKind[]>> = {
-  ...DEFAULT_SUPPORTED_CONVERSIONS,
-};
+let supportedConversions: Partial<Record<ProtocolKind, ProtocolKind[]>> = {};
 
 export function hydrateProtocolConversions(
   matrix: Record<string, string[]> | undefined,
 ): void {
-  if (!matrix) return;
+  if (!matrix) {
+    console.warn(
+      "Protocol conversion matrix not provided. UI filtering may be incorrect.",
+    );
+    return;
+  }
   const next: Partial<Record<ProtocolKind, ProtocolKind[]>> = {};
   for (const [channel, targets] of Object.entries(matrix)) {
     const reachable = targets.filter(
@@ -51,14 +48,6 @@ export function isItemValidForProtocols(
   selectedProtocols: ProtocolKind[],
 ): boolean {
   return selectedProtocols.some((p) => canReachProtocol(itemProtocol, p));
-}
-
-export function getConvertibleProtocols(
-  channelProtocol: ProtocolKind,
-  selectedProtocols: ProtocolKind[],
-): ProtocolKind[] {
-  const targets = supportedConversions[channelProtocol] ?? [];
-  return targets.filter((p) => selectedProtocols.includes(p));
 }
 
 export type RoutingStrategy = "round_robin" | "failover";
@@ -608,25 +597,6 @@ export type RouteSnapshot = {
       last_cooldown_seconds: number;
       available: boolean;
     }>;
-  }>;
-};
-
-export type RoutePreview = {
-  protocol: ProtocolKind;
-  requested_group_name?: string | null;
-  resolved_group_name?: string | null;
-  strategy?: RoutingStrategy | null;
-  matched_channel_ids: string[];
-  items: Array<{
-    channel_id: string;
-    channel_name: string;
-    model_name?: string | null;
-    credential_id?: string | null;
-    credential_name?: string | null;
-    available: boolean;
-    in_cooldown: boolean;
-    cooldown_remaining_seconds: number;
-    score: number;
   }>;
 };
 

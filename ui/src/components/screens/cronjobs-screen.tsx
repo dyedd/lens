@@ -44,7 +44,7 @@ import {
   type SettingItem,
 } from "@/lib/api";
 import { formatLogDateTime } from "@/lib/datetime";
-import { useI18n, type Locale } from "@/lib/i18n";
+import { titleForLocale, useI18n, type Locale } from "@/lib/i18n";
 
 type TaskDraft = {
   enabled: boolean;
@@ -74,10 +74,6 @@ const WEEKDAYS = [
   { value: "6", zh: "六", en: "Sat" },
   { value: "7", zh: "日", en: "Sun" },
 ];
-
-function titleForLocale(locale: Locale, zh: string, en: string) {
-  return locale === "zh-CN" ? zh : en;
-}
 
 function statusLabel(locale: Locale, status: CronjobItem["status"]) {
   const labels: Record<CronjobItem["status"], [string, string]> = {
@@ -686,184 +682,186 @@ export function CronjobsScreen() {
       </DashboardHeaderActions>
 
       <section className="flex min-w-0 flex-col gap-4">
-      <div className="flex min-w-0 flex-col gap-6">
-        <Card className="min-w-0 py-0">
-          <CardContent className="min-w-0 p-3 sm:p-5">
-            <Table className="min-w-[1320px] table-fixed">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-64">
-                    {titleForLocale(locale, "任务", "Task")}
-                  </TableHead>
-                  <TableHead className="w-16">
-                    {titleForLocale(locale, "启用", "Enabled")}
-                  </TableHead>
-                  <TableHead className="w-72 text-center">
-                    {titleForLocale(locale, "计划", "Schedule")}
-                  </TableHead>
-                  <TableHead className="w-56 text-center">
-                    {titleForLocale(locale, "任务配置", "Task config")}
-                  </TableHead>
-                  <TableHead className="w-24">
-                    {titleForLocale(locale, "状态", "Status")}
-                  </TableHead>
-                  <TableHead className="w-36">
-                    {titleForLocale(locale, "上次执行", "Last run")}
-                  </TableHead>
-                  <TableHead className="w-36">
-                    {titleForLocale(locale, "下次执行", "Next run")}
-                  </TableHead>
-                  <TableHead className="w-40 text-right">
-                    {titleForLocale(locale, "操作", "Actions")}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {!tasksIsError && hasTasks ? (
-                  tasks.map((task) => {
-                    const draft = drafts[task.id] ?? taskDraft(task);
-                    const invalidDraft = isDraftInvalid(draft);
-                    const retentionTask = task.id === REQUEST_LOG_PRUNE_TASK_ID;
-                    const waitingForRetentionSettings =
-                      retentionTask && settings === undefined;
-                    const invalidRetention =
-                      retentionTask && isRetentionDraftInvalid(retentionDraft);
-                    const retentionChanged =
-                      retentionTask &&
-                      isRetentionDraftChanged(settings, retentionDraft);
-                    const changed =
-                      isDraftChanged(task, draft) || retentionChanged;
-                    const running =
-                      task.status === "running" || runningTaskId === task.id;
-                    return (
-                      <TableRow key={task.id}>
-                        <TableCell>
-                          <div className="flex min-w-52 flex-col gap-1">
-                            <span className="font-medium text-foreground">
-                              {taskTitle(locale, task)}
-                            </span>
-                            <span className="max-w-80 truncate text-xs text-muted-foreground">
-                              {taskDescription(locale, task)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Switch
-                            checked={draft.enabled}
-                            onCheckedChange={(checked) =>
-                              setDraftValue(task, { enabled: checked })
-                            }
-                            aria-label={titleForLocale(
-                              locale,
-                              "启用任务",
-                              "Enable task",
-                            )}
-                          />
-                        </TableCell>
-                        <TableCell className="text-center align-middle">
-                          <ScheduleEditor
-                            draft={draft}
-                            locale={locale}
-                            invalid={invalidDraft}
-                            onChange={(value) => setDraftValue(task, value)}
-                          />
-                        </TableCell>
-                        <TableCell className="text-center align-middle">
-                          {retentionTask ? (
-                            <RetentionEditor
-                              draft={retentionDraft}
-                              locale={locale}
-                              invalid={invalidRetention}
-                              disabled={waitingForRetentionSettings}
-                              onChange={setRetentionDraftValue}
-                            />
-                          ) : (
-                            <span className="text-sm text-muted-foreground">
-                              -
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <Badge variant={statusVariant(task.status)}>
-                              {statusLabel(locale, task.status)}
-                            </Badge>
-                            {task.last_error ? (
-                              <span
-                                className="max-w-64 truncate text-xs text-muted-foreground"
-                                title={task.last_error}
-                              >
-                                {task.last_error}
-                              </span>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {formatTaskTime(
-                            locale,
-                            task.last_finished_at ?? task.last_started_at,
-                            timeZone,
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {formatTaskTime(locale, task.next_run_at, timeZone)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={
-                                !changed ||
-                                waitingForRetentionSettings ||
-                                invalidDraft ||
-                                invalidRetention ||
-                                savingTaskId === task.id
-                              }
-                              onClick={() => updateTask.mutate(task)}
-                            >
-                              <Save data-icon="inline-start" />
-                              {titleForLocale(locale, "保存", "Save")}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={running}
-                              onClick={() => runTask.mutate(task)}
-                            >
-                              <Play data-icon="inline-start" />
-                              {running
-                                ? titleForLocale(locale, "运行中", "Running")
-                                : titleForLocale(locale, "运行", "Run")}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : tasksIsError ? null : (
+        <div className="flex min-w-0 flex-col gap-6">
+          <Card className="min-w-0 py-0">
+            <CardContent className="min-w-0 p-3 sm:p-5">
+              <Table className="min-w-[1320px] table-fixed">
+                <TableHeader>
                   <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="py-8 text-center text-muted-foreground"
-                    >
-                      {isFetching
-                        ? titleForLocale(locale, "加载中...", "Loading...")
-                        : titleForLocale(
-                            locale,
-                            "暂无定时任务",
-                            "No cron jobs",
-                          )}
-                    </TableCell>
+                    <TableHead className="w-64">
+                      {titleForLocale(locale, "任务", "Task")}
+                    </TableHead>
+                    <TableHead className="w-16">
+                      {titleForLocale(locale, "启用", "Enabled")}
+                    </TableHead>
+                    <TableHead className="w-72 text-center">
+                      {titleForLocale(locale, "计划", "Schedule")}
+                    </TableHead>
+                    <TableHead className="w-56 text-center">
+                      {titleForLocale(locale, "任务配置", "Task config")}
+                    </TableHead>
+                    <TableHead className="w-24">
+                      {titleForLocale(locale, "状态", "Status")}
+                    </TableHead>
+                    <TableHead className="w-36">
+                      {titleForLocale(locale, "上次执行", "Last run")}
+                    </TableHead>
+                    <TableHead className="w-36">
+                      {titleForLocale(locale, "下次执行", "Next run")}
+                    </TableHead>
+                    <TableHead className="w-40 text-right">
+                      {titleForLocale(locale, "操作", "Actions")}
+                    </TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
+                </TableHeader>
+                <TableBody>
+                  {!tasksIsError && hasTasks ? (
+                    tasks.map((task) => {
+                      const draft = drafts[task.id] ?? taskDraft(task);
+                      const invalidDraft = isDraftInvalid(draft);
+                      const retentionTask =
+                        task.id === REQUEST_LOG_PRUNE_TASK_ID;
+                      const waitingForRetentionSettings =
+                        retentionTask && settings === undefined;
+                      const invalidRetention =
+                        retentionTask &&
+                        isRetentionDraftInvalid(retentionDraft);
+                      const retentionChanged =
+                        retentionTask &&
+                        isRetentionDraftChanged(settings, retentionDraft);
+                      const changed =
+                        isDraftChanged(task, draft) || retentionChanged;
+                      const running =
+                        task.status === "running" || runningTaskId === task.id;
+                      return (
+                        <TableRow key={task.id}>
+                          <TableCell>
+                            <div className="flex min-w-52 flex-col gap-1">
+                              <span className="font-medium text-foreground">
+                                {taskTitle(locale, task)}
+                              </span>
+                              <span className="max-w-80 truncate text-xs text-muted-foreground">
+                                {taskDescription(locale, task)}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Switch
+                              checked={draft.enabled}
+                              onCheckedChange={(checked) =>
+                                setDraftValue(task, { enabled: checked })
+                              }
+                              aria-label={titleForLocale(
+                                locale,
+                                "启用任务",
+                                "Enable task",
+                              )}
+                            />
+                          </TableCell>
+                          <TableCell className="text-center align-middle">
+                            <ScheduleEditor
+                              draft={draft}
+                              locale={locale}
+                              invalid={invalidDraft}
+                              onChange={(value) => setDraftValue(task, value)}
+                            />
+                          </TableCell>
+                          <TableCell className="text-center align-middle">
+                            {retentionTask ? (
+                              <RetentionEditor
+                                draft={retentionDraft}
+                                locale={locale}
+                                invalid={invalidRetention}
+                                disabled={waitingForRetentionSettings}
+                                onChange={setRetentionDraftValue}
+                              />
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                -
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              <Badge variant={statusVariant(task.status)}>
+                                {statusLabel(locale, task.status)}
+                              </Badge>
+                              {task.last_error ? (
+                                <span
+                                  className="max-w-64 truncate text-xs text-muted-foreground"
+                                  title={task.last_error}
+                                >
+                                  {task.last_error}
+                                </span>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {formatTaskTime(
+                              locale,
+                              task.last_finished_at ?? task.last_started_at,
+                              timeZone,
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {formatTaskTime(locale, task.next_run_at, timeZone)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={
+                                  !changed ||
+                                  waitingForRetentionSettings ||
+                                  invalidDraft ||
+                                  invalidRetention ||
+                                  savingTaskId === task.id
+                                }
+                                onClick={() => updateTask.mutate(task)}
+                              >
+                                <Save data-icon="inline-start" />
+                                {titleForLocale(locale, "保存", "Save")}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={running}
+                                onClick={() => runTask.mutate(task)}
+                              >
+                                <Play data-icon="inline-start" />
+                                {running
+                                  ? titleForLocale(locale, "运行中", "Running")
+                                  : titleForLocale(locale, "运行", "Run")}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  ) : tasksIsError ? null : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={8}
+                        className="py-8 text-center text-muted-foreground"
+                      >
+                        {isFetching
+                          ? titleForLocale(locale, "加载中...", "Loading...")
+                          : titleForLocale(
+                              locale,
+                              "暂无定时任务",
+                              "No cron jobs",
+                            )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
       </section>
     </>
   );

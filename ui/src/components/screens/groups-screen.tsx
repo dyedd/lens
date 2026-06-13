@@ -17,7 +17,11 @@ import {
   isItemValidForProtocols,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { getModelFamilyKey, getModelFamilyLabel } from "@/lib/model-icons";
+import { getModelFamilyKey } from "@/lib/model-icons";
+import {
+  buildModelPrefixOptions,
+  resolveEffectiveModelPrefix,
+} from "@/lib/model-prefix";
 import { DashboardHeaderActions } from "@/components/shell/dashboard-header-actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +51,6 @@ import {
   type FormState,
   type GroupRow,
   type GroupSort,
-  type ModelPrefixOption,
   type ProtocolMeta,
   type SelectedModelPrefix,
 } from "./groups/shared";
@@ -232,42 +235,20 @@ export function GroupsScreen() {
     [editingId, form.protocols, groups, locale],
   );
 
-  const modelPrefixOptions = useMemo(() => {
-    const optionsByPrefix = new Map<string, ModelPrefixOption>();
-    for (const group of groupRows) {
-      const prefix = getModelFamilyKey(group.name);
-      if (prefix && !optionsByPrefix.has(prefix)) {
-        optionsByPrefix.set(prefix, {
-          key: prefix,
-          label: getModelFamilyLabel(group.name),
-          sampleModel: group.name,
-        });
-      }
-    }
-
-    const options = Array.from(optionsByPrefix.values()).sort((left, right) =>
-      left.label.localeCompare(right.label, locale),
-    );
-    if (!options.length) {
-      return [];
-    }
-
-    return [
-      {
-        key: "all" as const,
-        label: locale === "zh-CN" ? "全部" : "All",
-        sampleModel: "all",
-      },
-      ...options,
-    ];
-  }, [groupRows, locale]);
+  const modelPrefixOptions = useMemo(
+    () =>
+      buildModelPrefixOptions(
+        groupRows.map((group) => group.name),
+        locale,
+      ),
+    [groupRows, locale],
+  );
   const hasModelPrefixOptions = modelPrefixOptions.length > 0;
 
-  const effectiveSelectedModelPrefix = modelPrefixOptions.some(
-    (item) => item.key === selectedModelPrefix,
-  )
-    ? selectedModelPrefix
-    : "all";
+  const effectiveSelectedModelPrefix = resolveEffectiveModelPrefix(
+    modelPrefixOptions,
+    selectedModelPrefix,
+  );
 
   const visibleGroups = useMemo<GroupRow[]>(() => {
     const keyword = search.trim().toLowerCase();
@@ -1049,7 +1030,8 @@ export function GroupsScreen() {
     : locale === "zh-CN"
       ? "同步价格"
       : "Sync prices";
-  const createGroupLabel = locale === "zh-CN" ? "新增模型组" : "New model group";
+  const createGroupLabel =
+    locale === "zh-CN" ? "新增模型组" : "New model group";
 
   return (
     <>
@@ -1095,90 +1077,90 @@ export function GroupsScreen() {
       </DashboardHeaderActions>
 
       <section className="flex flex-col gap-4">
-      <GroupsOverview
-        locale={locale}
-        hasModelPrefixOptions={hasModelPrefixOptions}
-        modelPrefixOptions={modelPrefixOptions}
-        effectiveSelectedModelPrefix={effectiveSelectedModelPrefix}
-        setSelectedModelPrefix={setSelectedModelPrefix}
-        isLoading={isLoading}
-        groupsIsError={groupsIsError}
-        visibleGroups={visibleGroups}
-        busyId={busyId}
-        cardDragging={cardDragging}
-        setCardDragging={setCardDragging}
-        search={search}
-        protocolFilter={protocolFilter}
-        strategyFilter={strategyFilter}
-        sortBy={sortBy}
-        activeFilterCount={activeFilterCount}
-        setSearch={setSearch}
-        setProtocolFilter={setProtocolFilter}
-        setStrategyFilter={setStrategyFilter}
-        setSortBy={setSortBy}
-        resetFilters={resetFilters}
-        openEdit={openEdit}
-        changeStrategy={changeStrategy}
-        reorderGroupMembers={reorderGroupMembers}
-        removeGroupMember={removeGroupMember}
-        toggleGroupEnabled={toggleGroupEnabled}
-        setDeleteTarget={setDeleteTarget}
-      />
-
-      {dialogOpen ? (
-        <GroupEditorDialog
-          dialogOpen={dialogOpen}
-          setDialogOpen={setDialogOpen}
-          editingId={editingId}
+        <GroupsOverview
           locale={locale}
-          submit={submit}
-          form={form}
-          setForm={setForm}
-          toggleProtocol={toggleProtocol}
-          routeTargetOptions={routeTargetOptions}
-          changeRouteTarget={changeRouteTarget}
-          candidateSearchMode={candidateSearchMode}
-          changeCandidateSearchMode={changeCandidateSearchMode}
-          candidateSearch={candidateSearch}
-          changeCandidateSearch={changeCandidateSearch}
-          addMatchedItems={addMatchedItems}
-          candidateRegexInvalid={candidateRegexInvalid}
-          filteredCandidates={filteredCandidates}
-          refetchCandidates={refetchCandidates}
-          isFetchingCandidates={isFetchingCandidates}
-          applySavedFilter={applySavedFilter}
-          clearSavedFilter={clearSavedFilter}
-          groupedCandidates={groupedCandidates}
-          expandedChannels={expandedChannels}
-          toggleChannel={toggleChannel}
-          foldedMembers={foldedMembers}
-          addCandidate={addCandidate}
-          sitesIsError={sitesIsError}
-          candidateIsError={candidateIsError}
-          candidateListError={candidateListError}
-          invalidSelectedMemberCount={invalidSelectedMemberCount}
-          removeInvalidItems={removeInvalidItems}
-          setAllMembersEnabled={setAllMembersEnabled}
-          showEnabledOnly={showEnabledOnly}
-          setShowEnabledOnly={setShowEnabledOnly}
-          visibleFoldedMembers={visibleFoldedMembers}
-          draggingIndex={draggingIndex}
-          toggleFoldedMember={toggleFoldedMember}
-          removeFoldedMember={removeFoldedMember}
-          setDraggingIndex={setDraggingIndex}
-          moveFoldedMember={moveFoldedMember}
-        />
-      ) : null}
-
-      {deleteTarget ? (
-        <DeleteGroupDialog
-          deleteTarget={deleteTarget}
-          locale={locale}
+          hasModelPrefixOptions={hasModelPrefixOptions}
+          modelPrefixOptions={modelPrefixOptions}
+          effectiveSelectedModelPrefix={effectiveSelectedModelPrefix}
+          setSelectedModelPrefix={setSelectedModelPrefix}
+          isLoading={isLoading}
+          groupsIsError={groupsIsError}
+          visibleGroups={visibleGroups}
           busyId={busyId}
+          cardDragging={cardDragging}
+          setCardDragging={setCardDragging}
+          search={search}
+          protocolFilter={protocolFilter}
+          strategyFilter={strategyFilter}
+          sortBy={sortBy}
+          activeFilterCount={activeFilterCount}
+          setSearch={setSearch}
+          setProtocolFilter={setProtocolFilter}
+          setStrategyFilter={setStrategyFilter}
+          setSortBy={setSortBy}
+          resetFilters={resetFilters}
+          openEdit={openEdit}
+          changeStrategy={changeStrategy}
+          reorderGroupMembers={reorderGroupMembers}
+          removeGroupMember={removeGroupMember}
+          toggleGroupEnabled={toggleGroupEnabled}
           setDeleteTarget={setDeleteTarget}
-          remove={remove}
         />
-      ) : null}
+
+        {dialogOpen ? (
+          <GroupEditorDialog
+            dialogOpen={dialogOpen}
+            setDialogOpen={setDialogOpen}
+            editingId={editingId}
+            locale={locale}
+            submit={submit}
+            form={form}
+            setForm={setForm}
+            toggleProtocol={toggleProtocol}
+            routeTargetOptions={routeTargetOptions}
+            changeRouteTarget={changeRouteTarget}
+            candidateSearchMode={candidateSearchMode}
+            changeCandidateSearchMode={changeCandidateSearchMode}
+            candidateSearch={candidateSearch}
+            changeCandidateSearch={changeCandidateSearch}
+            addMatchedItems={addMatchedItems}
+            candidateRegexInvalid={candidateRegexInvalid}
+            filteredCandidates={filteredCandidates}
+            refetchCandidates={refetchCandidates}
+            isFetchingCandidates={isFetchingCandidates}
+            applySavedFilter={applySavedFilter}
+            clearSavedFilter={clearSavedFilter}
+            groupedCandidates={groupedCandidates}
+            expandedChannels={expandedChannels}
+            toggleChannel={toggleChannel}
+            foldedMembers={foldedMembers}
+            addCandidate={addCandidate}
+            sitesIsError={sitesIsError}
+            candidateIsError={candidateIsError}
+            candidateListError={candidateListError}
+            invalidSelectedMemberCount={invalidSelectedMemberCount}
+            removeInvalidItems={removeInvalidItems}
+            setAllMembersEnabled={setAllMembersEnabled}
+            showEnabledOnly={showEnabledOnly}
+            setShowEnabledOnly={setShowEnabledOnly}
+            visibleFoldedMembers={visibleFoldedMembers}
+            draggingIndex={draggingIndex}
+            toggleFoldedMember={toggleFoldedMember}
+            removeFoldedMember={removeFoldedMember}
+            setDraggingIndex={setDraggingIndex}
+            moveFoldedMember={moveFoldedMember}
+          />
+        ) : null}
+
+        {deleteTarget ? (
+          <DeleteGroupDialog
+            deleteTarget={deleteTarget}
+            locale={locale}
+            busyId={busyId}
+            setDeleteTarget={setDeleteTarget}
+            remove={remove}
+          />
+        ) : null}
       </section>
     </>
   );

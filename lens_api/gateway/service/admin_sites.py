@@ -11,13 +11,10 @@ from .runtime_context import (
     ProtocolKind,
     Query,
     RequestLogDetail,
-    RequestLogItem,
     RequestLogPage,
     RequestLogSortMode,
     RequestLogStatusFilter,
     Response,
-    RoutePreviewRequest,
-    RoutingStrategy,
     SiteBatchImportRequest,
     SiteBatchImportResult,
     SiteConfig,
@@ -30,12 +27,10 @@ from .runtime_context import (
     SiteUpdate,
     app_state,
 )
-from .errors import _apply_router_runtime_settings
 from .upstream_http import (
     _fetch_upstream_models,
     _format_channel_error,
 )
-from .routing_plan import _resolve_routing_plan
 from .site_model_probe import (
     _apply_site_model_probe_param_override,
     _call_site_model_probe_channel,
@@ -46,42 +41,42 @@ from .auth import get_current_admin
 
 
 async def list_sites(_: Any = Depends(get_current_admin)) -> list[SiteConfig]:
-    return await app_state.store.list_sites()
+    return await app_state.channel_store.list_sites()
 
 
 async def site_runtime_summaries(
     _: Any = Depends(get_current_admin),
 ) -> list[SiteRuntimeSummary]:
-    return await app_state.domain_store.list_site_runtime_summaries()
+    return await app_state.request_log_store.list_site_runtime_summaries()
 
 
 async def create_site(
     payload: SiteCreate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
-    return await app_state.store.create_site(payload)
+    return await app_state.channel_store.create_site(payload)
 
 
 async def import_sites(
     payload: SiteBatchImportRequest, _: Any = Depends(get_current_admin)
 ) -> SiteBatchImportResult:
-    return await app_state.store.import_sites(payload)
+    return await app_state.channel_store.import_sites(payload)
 
 
 async def update_site(
     site_id: str, payload: SiteUpdate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
-    return await app_state.store.update_site(site_id, payload)
+    return await app_state.channel_store.update_site(site_id, payload)
 
 
 async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Response:
-    await app_state.store.delete_site(site_id)
+    await app_state.channel_store.delete_site(site_id)
     return Response(status_code=204)
 
 
 async def fetch_site_models(
     payload: SiteModelFetchRequest, _: Any = Depends(get_current_admin)
 ) -> list[SiteModelFetchItem]:
-    previews = await app_state.store.fetch_models_preview(payload)
+    previews = await app_state.channel_store.fetch_models_preview(payload)
     items: list[SiteModelFetchItem] = []
     seen: set[tuple[str, str]] = set()
     errors: list[str] = []
@@ -163,7 +158,7 @@ async def test_site_model(
 
 
 async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]:
-    channels = await app_state.store.list()
+    channels = await app_state.channel_store.list()
     return app_state.router.snapshot(channels).model_dump(mode="json")
 
 
@@ -171,7 +166,7 @@ async def overview_summary(
     days: int = 7,
     _: Any = Depends(get_current_admin),
 ) -> OverviewSummary:
-    return await app_state.domain_store.get_overview_summary(
+    return await app_state.request_log_store.get_overview_summary(
         days=days,
     )
 
@@ -180,7 +175,7 @@ async def overview_daily(
     days: int = 0,
     _: Any = Depends(get_current_admin),
 ) -> list[OverviewDailyPoint]:
-    return await app_state.domain_store.list_overview_daily(
+    return await app_state.request_log_store.list_overview_daily(
         days=days,
     )
 
@@ -191,22 +186,9 @@ async def overview_models(
     gateway_key_id: str | None = None,
     _: Any = Depends(get_current_admin),
 ) -> OverviewModelAnalytics:
-    return await app_state.domain_store.get_model_analytics(
+    return await app_state.request_log_store.get_model_analytics(
         days=days,
         metric=metric,
-        gateway_key_id=gateway_key_id,
-    )
-
-
-async def request_logs(
-    limit: int = 100,
-    offset: int = 0,
-    gateway_key_id: str | None = None,
-    _: Any = Depends(get_current_admin),
-) -> list[RequestLogItem]:
-    return await app_state.domain_store.list_request_logs(
-        limit=limit,
-        offset=offset,
         gateway_key_id=gateway_key_id,
     )
 
@@ -223,7 +205,7 @@ async def request_log_page(
     sort: RequestLogSortMode = RequestLogSortMode.LATEST,
     _: Any = Depends(get_current_admin),
 ) -> RequestLogPage:
-    return await app_state.domain_store.list_request_log_page(
+    return await app_state.request_log_store.list_request_log_page(
         limit=limit,
         offset=offset,
         gateway_key_id=gateway_key_id,
@@ -237,40 +219,11 @@ async def request_log_page(
 
 
 async def clear_request_logs(_: Any = Depends(get_current_admin)) -> Response:
-    await app_state.domain_store.clear_request_logs()
+    await app_state.request_log_store.clear_request_logs()
     return Response(status_code=204)
 
 
 async def request_log_detail(
     log_id: int, _: Any = Depends(get_current_admin)
 ) -> RequestLogDetail:
-    return await app_state.domain_store.get_request_log(log_id)
-
-
-async def router_preview(
-    payload: RoutePreviewRequest, _: Any = Depends(get_current_admin)
-) -> dict[str, Any]:
-    channels = await app_state.store.list()
-    runtime = await app_state.domain_store.get_runtime_settings()
-    _apply_router_runtime_settings(runtime)
-    if not payload.model:
-        return app_state.router.preview(
-            channels,
-            payload.protocol,
-            None,
-            strategy=RoutingStrategy.ROUND_ROBIN,
-            route_targets=None,
-            use_model_matching=True,
-        ).model_dump(mode="json")
-    plan = await _resolve_routing_plan(payload.protocol, payload.model, channels)
-    return app_state.router.preview(
-        channels,
-        payload.protocol,
-        plan.resolved_group_name or payload.model,
-        strategy=plan.strategy,
-        route_targets=plan.route_targets,
-        use_model_matching=plan.use_model_matching,
-        requested_group_name=plan.requested_group_name,
-        resolved_group_name=plan.resolved_group_name,
-        cursor_key=plan.cursor_key,
-    ).model_dump(mode="json")
+    return await app_state.request_log_store.get_request_log(log_id)

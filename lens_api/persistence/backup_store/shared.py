@@ -33,7 +33,7 @@ from ...models import (
     SiteConfig,
     normalize_upstream_headers_config_json,
 )
-from ..domain_store import (
+from ..shared import (
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_THRESHOLD,

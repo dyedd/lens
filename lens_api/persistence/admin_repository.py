@@ -6,7 +6,7 @@ from ..core.auth import hash_password, verify_password
 from .entities import AdminUserEntity
 
 
-class AdminStore:
+class AdminRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 

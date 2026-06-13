@@ -21,7 +21,6 @@ from .runtime_context import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
-    ModelGroupStats,
     ModelGroupUpdate,
     ModelPriceItem,
     ModelPriceListResponse,
@@ -46,31 +45,25 @@ from .auth import get_current_admin
 
 
 async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGroup]:
-    return await app_state.domain_store.list_groups()
+    return await app_state.group_repo.list_groups()
 
 
 async def get_model_group(
     group_id: str, _: Any = Depends(get_current_admin)
 ) -> ModelGroup:
-    return await app_state.domain_store.get_group(group_id)
-
-
-async def list_model_group_stats(
-    _: Any = Depends(get_current_admin),
-) -> list[ModelGroupStats]:
-    return await app_state.domain_store.list_group_stats()
+    return await app_state.group_repo.get_group(group_id)
 
 
 async def list_model_prices(
     _: Any = Depends(get_current_admin),
 ) -> ModelPriceListResponse:
-    return await app_state.domain_store.list_model_prices()
+    return await app_state.model_price_repo.list_model_prices()
 
 
 async def update_model_price(
     model_key: str, payload: ModelPriceUpdate, _: Any = Depends(get_current_admin)
 ) -> ModelPriceItem:
-    return await app_state.domain_store.upsert_model_price(
+    return await app_state.model_price_repo.upsert_model_price(
         payload.model_copy(update={"model_key": model_key})
     )
 
@@ -79,7 +72,7 @@ async def sync_model_prices(
     _: Any = Depends(get_current_admin),
 ) -> ModelPriceListResponse:
     await _sync_group_prices(app_state, overwrite_existing=True)
-    return await app_state.domain_store.list_model_prices()
+    return await app_state.model_price_repo.list_model_prices()
 
 
 async def list_cronjobs(
@@ -116,30 +109,30 @@ async def run_cronjob(
 async def model_group_candidates(
     payload: ModelGroupCandidatesRequest, _: Any = Depends(get_current_admin)
 ) -> ModelGroupCandidatesResponse:
-    return await app_state.domain_store.list_group_candidates(payload)
+    return await app_state.group_repo.list_group_candidates(payload)
 
 
 async def create_model_group(
     payload: ModelGroupCreate, _: Any = Depends(get_current_admin)
 ) -> ModelGroup:
-    return await app_state.domain_store.create_group(payload)
+    return await app_state.group_repo.create_group(payload)
 
 
 async def update_model_group(
     group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)
 ) -> ModelGroup:
-    return await app_state.domain_store.update_group(group_id, payload)
+    return await app_state.group_repo.update_group(group_id, payload)
 
 
 async def delete_model_group(
     group_id: str, _: Any = Depends(get_current_admin)
 ) -> Response:
-    await app_state.domain_store.delete_group(group_id)
+    await app_state.group_repo.delete_group(group_id)
     return Response(status_code=204)
 
 
 async def list_settings(_: Any = Depends(get_current_admin)) -> list[SettingItem]:
-    return await app_state.domain_store.list_settings()
+    return await app_state.settings_repo.list_settings()
 
 
 async def update_settings(
@@ -150,7 +143,7 @@ async def update_settings(
     next_time_zone = None
     next_time_zone_value = None
     if any(item.key == SETTING_TIME_ZONE for item in payload.items):
-        runtime = await app_state.domain_store.get_runtime_settings()
+        runtime = await app_state.settings_repo.get_runtime_settings()
         current_time_zone = str(runtime["time_zone"])
     for item in payload.items:
         if item.key == SETTING_SITE_NAME:
@@ -198,9 +191,9 @@ async def update_settings(
             )
             continue
         normalized_items.append(SettingItem(key=item.key, value=item.value.strip()))
-    stored_items = await app_state.domain_store.upsert_settings(normalized_items)
+    stored_items = await app_state.settings_repo.upsert_settings(normalized_items)
     if next_time_zone is not None and next_time_zone != current_time_zone:
-        await app_state.domain_store.persist_request_log_stats(force=True)
+        await app_state.request_log_store.persist_request_log_stats(force=True)
         if next_time_zone_value is not None:
             await app_state.cronjob_runner.reschedule_cronjobs(next_time_zone_value)
     return stored_items
@@ -209,25 +202,25 @@ async def update_settings(
 async def list_gateway_api_keys(
     _: Any = Depends(get_current_admin),
 ) -> list[GatewayApiKey]:
-    return await app_state.domain_store.list_gateway_api_keys()
+    return await app_state.gateway_api_key_repo.list_gateway_api_keys()
 
 
 async def create_gateway_api_key(
     payload: GatewayApiKeyCreate, _: Any = Depends(get_current_admin)
 ) -> GatewayApiKey:
-    return await app_state.domain_store.create_gateway_api_key(payload)
+    return await app_state.gateway_api_key_repo.create_gateway_api_key(payload)
 
 
 async def update_gateway_api_key(
     key_id: str, payload: GatewayApiKeyUpdate, _: Any = Depends(get_current_admin)
 ) -> GatewayApiKey:
-    return await app_state.domain_store.update_gateway_api_key(key_id, payload)
+    return await app_state.gateway_api_key_repo.update_gateway_api_key(key_id, payload)
 
 
 async def delete_gateway_api_key(
     key_id: str, _: Any = Depends(get_current_admin)
 ) -> Response:
-    await app_state.domain_store.delete_gateway_api_key(key_id)
+    await app_state.gateway_api_key_repo.delete_gateway_api_key(key_id)
     return Response(status_code=204)
 
 
@@ -241,7 +234,7 @@ async def export_settings_bundle(
         include_request_logs=include_logs,
         include_gateway_api_keys=include_gateway_api_keys,
     )
-    runtime = await app_state.domain_store.get_runtime_settings()
+    runtime = await app_state.settings_repo.get_runtime_settings()
     timestamp = datetime.now(resolve_time_zone(str(runtime["time_zone"]))).strftime(
         "%Y%m%d%H%M%S"
     )
@@ -260,7 +253,7 @@ async def import_settings_bundle(
     dump = _parse_config_backup_dump(payload)
     result = await app_state.backup_store.import_dump(dump)
 
-    app_state.domain_store.invalidate_settings_cache()
+    app_state.settings_repo.invalidate_settings_cache()
     return result
 
 

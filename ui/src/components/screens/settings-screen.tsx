@@ -1,41 +1,26 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowDown,
-  ArrowUp,
-  ImageIcon,
   Palette,
-  Plus,
   RotateCcw,
   Save,
   ServerCog,
   ShieldAlert,
-  Trash2,
   TestTubeDiagonal,
   UserRound,
   TimerReset,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { Separator } from "@/components/ui/separator";
-import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -52,7 +37,7 @@ import {
   apiRequest,
 } from "@/lib/api";
 import { setStoredToken } from "@/lib/auth";
-import { useI18n, type Locale } from "@/lib/i18n";
+import { titleForLocale, useI18n, type Locale } from "@/lib/i18n";
 import {
   DEFAULT_MODEL_TEST_PROMPTS,
   MODEL_TEST_PROMPTS_SETTING_KEY,
@@ -61,6 +46,9 @@ import {
 } from "@/lib/model-test-prompts";
 import { cn } from "@/lib/utils";
 import { DashboardHeaderActions } from "@/components/shell/dashboard-header-actions";
+import { AppearanceSettings } from "@/components/settings/appearance-settings";
+import { AccountSettings } from "@/components/settings/account-settings";
+import { GatewaySettings } from "@/components/settings/gateway-settings";
 
 const PROXY_URL = "proxy_url";
 const CORS_ALLOW_ORIGINS = "cors_allow_origins";
@@ -164,10 +152,6 @@ const EMPTY_DRAFT: DraftState = {
   modelTestPrompts: DEFAULT_MODEL_TEST_PROMPTS.join("\n"),
   upstreamHeadersConfig: emptyUpstreamHeadersDraft(),
 };
-
-function titleForLocale(locale: Locale, zh: string, en: string) {
-  return locale === "zh-CN" ? zh : en;
-}
 
 function parseSettings(items: SettingItem[] | undefined) {
   const mapping = new Map((items ?? []).map((item) => [item.key, item.value]));
@@ -432,75 +416,6 @@ function SettingCard({
       </header>
       <div className="flex max-w-2xl flex-col gap-4 pt-5">{children}</div>
     </section>
-  );
-}
-
-function HeaderRows({
-  title,
-  headers,
-  locale,
-  onAdd,
-  onUpdate,
-  onRemove,
-}: {
-  title: string;
-  headers: HeaderItem[];
-  locale: Locale;
-  onAdd: () => void;
-  onUpdate: (index: number, patch: Partial<HeaderItem>) => void;
-  onRemove: (index: number) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-medium text-foreground">{title}</div>
-        <Button type="button" variant="outline" size="sm" onClick={onAdd}>
-          <Plus data-icon="inline-start" />
-          {titleForLocale(locale, "添加", "Add")}
-        </Button>
-      </div>
-      {headers.map((header, headerIndex) => (
-        <div
-          key={headerIndex}
-          className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
-        >
-          <Field>
-            <FieldLabel>
-              {titleForLocale(locale, "请求头名称", "Header key")}
-            </FieldLabel>
-            <Input
-              value={header.key}
-              onChange={(event) =>
-                onUpdate(headerIndex, { key: event.target.value })
-              }
-              placeholder="X-Header-Name"
-            />
-          </Field>
-          <Field>
-            <FieldLabel>
-              {titleForLocale(locale, "请求头值", "Header value")}
-            </FieldLabel>
-            <Input
-              value={header.value}
-              onChange={(event) =>
-                onUpdate(headerIndex, { value: event.target.value })
-              }
-              placeholder="value"
-            />
-          </Field>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="text-muted-foreground"
-            aria-label={titleForLocale(locale, "删除请求头", "Remove header")}
-            onClick={() => onRemove(headerIndex)}
-          >
-            <Trash2 data-icon="inline-start" />
-          </Button>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -990,75 +905,14 @@ export function SettingsScreen() {
                 title={titleForLocale(locale, "站点外观", "Appearance")}
                 description={settingsTabs[0].description}
               >
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>
-                      {titleForLocale(locale, "语言", "Language")}
-                    </FieldLabel>
-                    <SegmentedControl
-                      className="!w-fit self-start"
-                      value={locale}
-                      onValueChange={(value) => setLocale(value)}
-                      options={[
-                        { value: "zh-CN", label: "简体中文" },
-                        { value: "en-US", label: "English" },
-                      ]}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>
-                      {titleForLocale(locale, "站点名称", "Site name")}
-                    </FieldLabel>
-                    <Input
-                      value={draft.siteName}
-                      onChange={(event) =>
-                        setDraftValue("siteName", event.target.value)
-                      }
-                      placeholder="Lens"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>
-                      {titleForLocale(locale, "Logo 地址", "Logo URL")}
-                    </FieldLabel>
-                    <Input
-                      value={draft.siteLogoUrl}
-                      onChange={(event) =>
-                        setDraftValue("siteLogoUrl", event.target.value)
-                      }
-                      placeholder="https://example.com/logo.svg"
-                    />
-                  </Field>
-                </FieldGroup>
-                <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-4 py-3">
-                  <span className="flex size-12 items-center justify-center overflow-hidden rounded-md border bg-background">
-                    {draft.siteLogoUrl.trim() ? (
-                      <Image
-                        src={draft.siteLogoUrl.trim()}
-                        alt={draft.siteName || "logo"}
-                        width={48}
-                        height={48}
-                        className="size-12 object-contain"
-                        unoptimized
-                      />
-                    ) : (
-                      <ImageIcon className="text-muted-foreground" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-foreground">
-                      {draft.siteName.trim() || "Lens"}
-                    </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {draft.siteLogoUrl.trim() ||
-                        titleForLocale(
-                          locale,
-                          "未设置 Logo",
-                          "No logo configured",
-                        )}
-                    </div>
-                  </div>
-                </div>
+                <AppearanceSettings
+                  siteName={draft.siteName}
+                  siteLogoUrl={draft.siteLogoUrl}
+                  onSiteNameChange={(value) => setDraftValue("siteName", value)}
+                  onSiteLogoUrlChange={(value) =>
+                    setDraftValue("siteLogoUrl", value)
+                  }
+                />
               </SettingCard>
             </TabsContent>
 
@@ -1067,86 +921,38 @@ export function SettingsScreen() {
                 title={titleForLocale(locale, "账号", "Account")}
                 description={settingsTabs[1].description}
               >
-                <form className="flex flex-col gap-4" onSubmit={submitAccount}>
-                  <FieldGroup>
-                    <Field>
-                      <FieldLabel>
-                        {titleForLocale(locale, "用户名", "Username")}
-                      </FieldLabel>
-                      <Input
-                        value={accountForm.username}
-                        onChange={(event) =>
-                          setAccountForm((current) => ({
-                            ...current,
-                            username: event.target.value,
-                          }))
-                        }
-                        autoComplete="username"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel>
-                        {titleForLocale(locale, "当前密码", "Current password")}
-                      </FieldLabel>
-                      <Input
-                        type="password"
-                        value={accountForm.currentPassword}
-                        onChange={(event) =>
-                          setAccountForm((current) => ({
-                            ...current,
-                            currentPassword: event.target.value,
-                          }))
-                        }
-                        autoComplete="current-password"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel>
-                        {titleForLocale(locale, "新密码", "New password")}
-                      </FieldLabel>
-                      <Input
-                        type="password"
-                        value={accountForm.newPassword}
-                        onChange={(event) =>
-                          setAccountForm((current) => ({
-                            ...current,
-                            newPassword: event.target.value,
-                          }))
-                        }
-                        autoComplete="new-password"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel>
-                        {titleForLocale(
-                          locale,
-                          "确认新密码",
-                          "Confirm new password",
-                        )}
-                      </FieldLabel>
-                      <Input
-                        type="password"
-                        value={accountForm.confirmPassword}
-                        onChange={(event) =>
-                          setAccountForm((current) => ({
-                            ...current,
-                            confirmPassword: event.target.value,
-                          }))
-                        }
-                        autoComplete="new-password"
-                      />
-                    </Field>
-                  </FieldGroup>
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={updatingAccount}
-                  >
-                    {updatingAccount
-                      ? titleForLocale(locale, "提交中...", "Updating...")
-                      : titleForLocale(locale, "保存账号", "Save account")}
-                  </Button>
-                </form>
+                <AccountSettings
+                  username={accountForm.username}
+                  currentPassword={accountForm.currentPassword}
+                  newPassword={accountForm.newPassword}
+                  confirmPassword={accountForm.confirmPassword}
+                  updatingAccount={updatingAccount}
+                  onUsernameChange={(value) =>
+                    setAccountForm((current) => ({
+                      ...current,
+                      username: value,
+                    }))
+                  }
+                  onCurrentPasswordChange={(value) =>
+                    setAccountForm((current) => ({
+                      ...current,
+                      currentPassword: value,
+                    }))
+                  }
+                  onNewPasswordChange={(value) =>
+                    setAccountForm((current) => ({
+                      ...current,
+                      newPassword: value,
+                    }))
+                  }
+                  onConfirmPasswordChange={(value) =>
+                    setAccountForm((current) => ({
+                      ...current,
+                      confirmPassword: value,
+                    }))
+                  }
+                  onSubmit={submitAccount}
+                />
               </SettingCard>
             </TabsContent>
 
@@ -1186,344 +992,51 @@ export function SettingsScreen() {
                 title={titleForLocale(locale, "网关", "Gateway")}
                 description={settingsTabs[3].description}
               >
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>
-                      {titleForLocale(
-                        locale,
-                        "全局代理地址",
-                        "Global proxy URL",
-                      )}
-                    </FieldLabel>
-                    <Input
-                      value={draft.proxyUrl}
-                      onChange={(event) =>
-                        setDraftValue("proxyUrl", event.target.value)
-                      }
-                      placeholder="http://127.0.0.1:7890"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>
-                      {titleForLocale(
-                        locale,
-                        "CORS 跨域名单",
-                        "CORS allow origins",
-                      )}
-                    </FieldLabel>
-                    <Textarea
-                      className="min-h-[92px]"
-                      value={draft.corsAllowOrigins}
-                      onChange={(event) =>
-                        setDraftValue("corsAllowOrigins", event.target.value)
-                      }
-                      placeholder={"*\nhttp://localhost:3000"}
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="items-center justify-between gap-4"
-                  >
-                    <FieldContent>
-                      <FieldLabel className="w-auto">
-                        {titleForLocale(
-                          locale,
-                          "模型列表兼容模式",
-                          "Model list compatibility mode",
-                        )}
-                      </FieldLabel>
-                      <FieldDescription>
-                        {titleForLocale(
-                          locale,
-                          "开启后 /v1/models 会以 OpenAI 格式列出全部协议模型；如果客户端不支持某协议，实际请求仍可能失败。",
-                          "When enabled, /v1/models lists all protocol models in OpenAI format; requests can still fail if the client cannot call a protocol.",
-                        )}
-                      </FieldDescription>
-                    </FieldContent>
-                    <Switch
-                      checked={draft.modelListCompatModeEnabled}
-                      onCheckedChange={(checked) =>
-                        setDraftValue("modelListCompatModeEnabled", checked)
-                      }
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="items-center justify-between gap-4"
-                  >
-                    <FieldContent>
-                      <FieldLabel className="w-auto">
-                        {titleForLocale(
-                          locale,
-                          "记录日志正文",
-                          "Record log body",
-                        )}
-                      </FieldLabel>
-                    </FieldContent>
-                    <Switch
-                      checked={draft.relayLogBodyEnabled}
-                      onCheckedChange={(checked) =>
-                        setDraftValue("relayLogBodyEnabled", checked)
-                      }
-                    />
-                  </Field>
-                  <div className="flex flex-col gap-5 rounded-lg border bg-muted/20 p-4">
-                    <HeaderRows
-                      title={titleForLocale(
-                        locale,
-                        "全局请求头",
-                        "Global headers",
-                      )}
-                      headers={draft.upstreamHeadersConfig.global}
-                      locale={locale}
-                      onAdd={() =>
-                        updateUpstreamHeadersConfig((current) => ({
-                          ...current,
-                          global: [...current.global, { key: "", value: "" }],
-                        }))
-                      }
-                      onUpdate={updateGlobalHeader}
-                      onRemove={removeGlobalHeader}
-                    />
-                    <Separator />
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-medium text-foreground">
-                        {titleForLocale(
-                          locale,
-                          "模型请求头规则",
-                          "Model header rules",
-                        )}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          updateUpstreamHeadersConfig((current) => ({
-                            ...current,
-                            rules: [
-                              ...current.rules,
-                              emptyUpstreamHeaderRule(),
-                            ],
-                          }))
-                        }
-                      >
-                        <Plus data-icon="inline-start" />
-                        {titleForLocale(locale, "添加规则", "Add rule")}
-                      </Button>
-                    </div>
-                    {draft.upstreamHeadersConfig.rules.length ? (
-                      <div className="flex flex-col gap-4">
-                        {draft.upstreamHeadersConfig.rules.map(
-                          (rule, ruleIndex) => (
-                            <div
-                              key={rule.id}
-                              className="flex flex-col gap-4 rounded-lg border bg-background p-3"
-                            >
-                              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
-                                <Field>
-                                  <FieldLabel>
-                                    {titleForLocale(
-                                      locale,
-                                      "规则名称",
-                                      "Rule name",
-                                    )}
-                                  </FieldLabel>
-                                  <Input
-                                    value={rule.name}
-                                    onChange={(event) =>
-                                      updateUpstreamHeaderRule(ruleIndex, {
-                                        name: event.target.value,
-                                      })
-                                    }
-                                    placeholder={titleForLocale(
-                                      locale,
-                                      "规则名称",
-                                      "Rule name",
-                                    )}
-                                  />
-                                </Field>
-                                <Field>
-                                  <FieldLabel>
-                                    {titleForLocale(
-                                      locale,
-                                      "匹配方式",
-                                      "Match type",
-                                    )}
-                                  </FieldLabel>
-                                  <SegmentedControl<UpstreamHeaderMatchType>
-                                    value={rule.matchType}
-                                    onValueChange={(matchType) =>
-                                      updateUpstreamHeaderRule(ruleIndex, {
-                                        matchType,
-                                      })
-                                    }
-                                    options={[
-                                      {
-                                        value: "exact",
-                                        label: titleForLocale(
-                                          locale,
-                                          "精确",
-                                          "Exact",
-                                        ),
-                                      },
-                                      {
-                                        value: "regex",
-                                        label: titleForLocale(
-                                          locale,
-                                          "正则",
-                                          "Regex",
-                                        ),
-                                      },
-                                    ]}
-                                  />
-                                </Field>
-                                <div className="flex items-center justify-between gap-2 lg:justify-end">
-                                  <Switch
-                                    checked={rule.enabled}
-                                    aria-label={titleForLocale(
-                                      locale,
-                                      "启用规则",
-                                      "Enable rule",
-                                    )}
-                                    onCheckedChange={(enabled) =>
-                                      updateUpstreamHeaderRule(ruleIndex, {
-                                        enabled,
-                                      })
-                                    }
-                                  />
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    aria-label={titleForLocale(
-                                      locale,
-                                      "上移规则",
-                                      "Move rule up",
-                                    )}
-                                    disabled={ruleIndex === 0}
-                                    onClick={() =>
-                                      moveUpstreamHeaderRule(ruleIndex, -1)
-                                    }
-                                  >
-                                    <ArrowUp data-icon="inline-start" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    aria-label={titleForLocale(
-                                      locale,
-                                      "下移规则",
-                                      "Move rule down",
-                                    )}
-                                    disabled={
-                                      ruleIndex ===
-                                      draft.upstreamHeadersConfig.rules.length -
-                                        1
-                                    }
-                                    onClick={() =>
-                                      moveUpstreamHeaderRule(ruleIndex, 1)
-                                    }
-                                  >
-                                    <ArrowDown data-icon="inline-start" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="text-muted-foreground"
-                                    aria-label={titleForLocale(
-                                      locale,
-                                      "删除规则",
-                                      "Remove rule",
-                                    )}
-                                    onClick={() =>
-                                      removeUpstreamHeaderRule(ruleIndex)
-                                    }
-                                  >
-                                    <Trash2 data-icon="inline-start" />
-                                  </Button>
-                                </div>
-                              </div>
-                              {rule.matchType === "exact" ? (
-                                <Field>
-                                  <FieldLabel>
-                                    {titleForLocale(
-                                      locale,
-                                      "模型名称",
-                                      "Models",
-                                    )}
-                                  </FieldLabel>
-                                  <Textarea
-                                    className="min-h-[84px]"
-                                    value={rule.models}
-                                    onChange={(event) =>
-                                      updateUpstreamHeaderRule(ruleIndex, {
-                                        models: event.target.value,
-                                      })
-                                    }
-                                    placeholder={"gpt-5.5\ngpt-5.4-mini"}
-                                  />
-                                </Field>
-                              ) : (
-                                <Field>
-                                  <FieldLabel>
-                                    {titleForLocale(
-                                      locale,
-                                      "模型正则",
-                                      "Model regex",
-                                    )}
-                                  </FieldLabel>
-                                  <Input
-                                    value={rule.pattern}
-                                    onChange={(event) =>
-                                      updateUpstreamHeaderRule(ruleIndex, {
-                                        pattern: event.target.value,
-                                      })
-                                    }
-                                    placeholder="^claude-"
-                                  />
-                                </Field>
-                              )}
-                              <HeaderRows
-                                title={titleForLocale(
-                                  locale,
-                                  "规则请求头",
-                                  "Rule headers",
-                                )}
-                                headers={rule.headers}
-                                locale={locale}
-                                onAdd={() =>
-                                  updateUpstreamHeaderRule(ruleIndex, {
-                                    headers: [
-                                      ...rule.headers,
-                                      { key: "", value: "" },
-                                    ],
-                                  })
-                                }
-                                onUpdate={(headerIndex, patch) =>
-                                  updateRuleHeader(
-                                    ruleIndex,
-                                    headerIndex,
-                                    patch,
-                                  )
-                                }
-                                onRemove={(headerIndex) =>
-                                  removeRuleHeader(ruleIndex, headerIndex)
-                                }
-                              />
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground">
-                        {titleForLocale(locale, "暂无规则", "No rules")}
-                      </div>
-                    )}
-                  </div>
-                </FieldGroup>
+                <GatewaySettings
+                  proxyUrl={draft.proxyUrl}
+                  corsAllowOrigins={draft.corsAllowOrigins}
+                  relayLogBodyEnabled={draft.relayLogBodyEnabled}
+                  modelListCompatModeEnabled={draft.modelListCompatModeEnabled}
+                  upstreamHeadersConfig={draft.upstreamHeadersConfig}
+                  onProxyUrlChange={(value) => setDraftValue("proxyUrl", value)}
+                  onCorsAllowOriginsChange={(value) =>
+                    setDraftValue("corsAllowOrigins", value)
+                  }
+                  onRelayLogBodyEnabledChange={(checked) =>
+                    setDraftValue("relayLogBodyEnabled", checked)
+                  }
+                  onModelListCompatModeEnabledChange={(checked) =>
+                    setDraftValue("modelListCompatModeEnabled", checked)
+                  }
+                  onAddGlobalHeader={() =>
+                    updateUpstreamHeadersConfig((current) => ({
+                      ...current,
+                      global: [...current.global, { key: "", value: "" }],
+                    }))
+                  }
+                  onUpdateGlobalHeader={updateGlobalHeader}
+                  onRemoveGlobalHeader={removeGlobalHeader}
+                  onAddRule={() =>
+                    updateUpstreamHeadersConfig((current) => ({
+                      ...current,
+                      rules: [...current.rules, emptyUpstreamHeaderRule()],
+                    }))
+                  }
+                  onUpdateRule={updateUpstreamHeaderRule}
+                  onRemoveRule={removeUpstreamHeaderRule}
+                  onMoveRule={moveUpstreamHeaderRule}
+                  onAddRuleHeader={(ruleIndex) =>
+                    updateUpstreamHeaderRule(ruleIndex, {
+                      headers: [
+                        ...draft.upstreamHeadersConfig.rules[ruleIndex]!
+                          .headers,
+                        { key: "", value: "" },
+                      ],
+                    })
+                  }
+                  onUpdateRuleHeader={updateRuleHeader}
+                  onRemoveRuleHeader={removeRuleHeader}
+                />
               </SettingCard>
             </TabsContent>
 

@@ -2,94 +2,24 @@ from __future__ import annotations
 
 from .shared import (
     AsyncSession,
-    SiteBaseUrlEntity,
     SiteConfig,
-    SiteCredentialEntity,
-    SiteDiscoveredModelEntity,
-    SiteEntity,
-    SiteProtocolConfigEntity,
-    select,
 )
+from ..site_loader import fetch_site_rows
 
 
 class ChannelLoadersMixin:
     async def _load_sites(
         self, session: AsyncSession, site_ids: list[str] | None = None
     ) -> list[SiteConfig]:
-        site_query = select(SiteEntity).order_by(SiteEntity.name.asc())
-        if site_ids is not None:
-            site_query = site_query.where(SiteEntity.id.in_(site_ids))
-        site_rows = (await session.execute(site_query)).scalars().all()
+        (
+            site_rows,
+            base_url_rows,
+            credential_rows,
+            protocol_rows,
+            model_rows,
+        ) = await fetch_site_rows(session, site_ids=site_ids)
         if not site_rows:
             return []
-
-        ids = [item.id for item in site_rows]
-        base_url_rows = (
-            (
-                await session.execute(
-                    select(SiteBaseUrlEntity)
-                    .where(SiteBaseUrlEntity.site_id.in_(ids))
-                    .order_by(
-                        SiteBaseUrlEntity.site_id.asc(),
-                        SiteBaseUrlEntity.sort_order.asc(),
-                        SiteBaseUrlEntity.id.asc(),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        credential_rows = (
-            (
-                await session.execute(
-                    select(SiteCredentialEntity)
-                    .where(SiteCredentialEntity.site_id.in_(ids))
-                    .order_by(
-                        SiteCredentialEntity.site_id.asc(),
-                        SiteCredentialEntity.sort_order.asc(),
-                        SiteCredentialEntity.id.asc(),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        protocol_rows = (
-            (
-                await session.execute(
-                    select(SiteProtocolConfigEntity)
-                    .where(SiteProtocolConfigEntity.site_id.in_(ids))
-                    .order_by(
-                        SiteProtocolConfigEntity.site_id.asc(),
-                        SiteProtocolConfigEntity.id.asc(),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        protocol_config_ids = [item.id for item in protocol_rows]
-        model_rows = []
-        if protocol_config_ids:
-            model_rows = (
-                (
-                    await session.execute(
-                        select(SiteDiscoveredModelEntity)
-                        .where(
-                            SiteDiscoveredModelEntity.protocol_config_id.in_(
-                                protocol_config_ids
-                            )
-                        )
-                        .order_by(
-                            SiteDiscoveredModelEntity.protocol_config_id.asc(),
-                            SiteDiscoveredModelEntity.sort_order.asc(),
-                            SiteDiscoveredModelEntity.id.asc(),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
 
         base_urls_by_site = self._group_base_urls(base_url_rows)
         credentials_by_site, credentials_by_id = self._group_credentials(

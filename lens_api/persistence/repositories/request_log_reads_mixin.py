@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .shared import (
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ..shared import (
     CHANNEL_HEALTH_BUCKET_COUNT,
     CHANNEL_HEALTH_BUCKET_SECONDS,
     ProtocolKind,
@@ -28,29 +30,9 @@ from .shared import (
 )
 
 
-class DomainRequestLogReadsMixin:
-    async def list_request_logs(
-        self,
-        limit: int = 100,
-        days: int = 0,
-        offset: int = 0,
-        gateway_key_id: str | None = None,
-    ) -> list[RequestLogItem]:
-        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
-        async with self._session_factory() as session:
-            stmt = (
-                select(RequestLogEntity)
-                .order_by(
-                    RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()
-                )
-                .offset(offset)
-                .limit(limit)
-            )
-            stmt = self._apply_request_log_window(stmt, days=days, time_zone=time_zone)
-            stmt = self._apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
-            result = await session.execute(stmt)
-            entities = result.scalars().all()
-            return await self._hydrate_request_logs(session, entities)
+class RequestLogReadMixin:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
 
     async def list_request_log_page(
         self,
@@ -65,7 +47,9 @@ class DomainRequestLogReadsMixin:
         keyword: str | None = None,
         sort: RequestLogSortMode = RequestLogSortMode.LATEST,
     ) -> RequestLogPage:
-        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
+        time_zone = self._runtime_time_zone(
+            await self._settings_repo.get_runtime_settings()
+        )
         async with self._session_factory() as session:
             items_stmt = select(RequestLogEntity)
             items_stmt = self._apply_request_log_filters(
@@ -179,8 +163,10 @@ class DomainRequestLogReadsMixin:
             gateway_key_ids = sorted(
                 key_id for key_id in gateway_key_options_by_id if key_id != "n/a"
             )
-            gateway_key_remarks = await self._gateway_key_remarks_by_id(
-                session, gateway_key_ids
+            gateway_key_remarks = (
+                await self._gateway_key_repo._gateway_key_remarks_by_id(
+                    session, gateway_key_ids
+                )
             )
             gateway_has_multiple_keys = await self._gateway_has_multiple_keys(session)
             gateway_keys = [
@@ -477,7 +463,7 @@ class DomainRequestLogReadsMixin:
             entity = await session.get(RequestLogEntity, log_id)
             if entity is None:
                 raise KeyError(log_id)
-            remarks = await self._gateway_key_remarks_by_id(
+            remarks = await self._gateway_key_repo._gateway_key_remarks_by_id(
                 session, [entity.gateway_key_id]
             )
             gateway_has_multiple_keys = await self._gateway_has_multiple_keys(session)

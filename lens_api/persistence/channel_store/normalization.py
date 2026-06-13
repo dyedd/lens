@@ -20,12 +20,12 @@ from .shared import (
     SiteModel,
     SiteProtocolConfig,
     SiteProtocolConfigEntity,
-    _parse_protocols_json,
     defaultdict,
     json,
     select,
     uuid,
 )
+from ..shared import _parse_supported_protocols_json
 
 
 class ChannelNormalizationMixin:
@@ -229,7 +229,7 @@ class ChannelNormalizationMixin:
                     name=row.name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
-                    supported_protocols=_parse_protocols_json(
+                    supported_protocols=_parse_supported_protocols_json(
                         row.supported_protocols_json
                     ),
                 )
@@ -290,7 +290,7 @@ class ChannelNormalizationMixin:
                 SiteProtocolConfig(
                     id=row.id,
                     name=row.name,
-                    protocols=_parse_protocols_json(row.protocols_json),
+                    protocols=_parse_supported_protocols_json(row.protocols_json),
                     enabled=bool(row.enabled),
                     headers=json.loads(row.headers_json),
                     proxy_mode=row.proxy_mode,

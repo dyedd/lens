@@ -68,7 +68,6 @@ from ...models import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
-    ModelGroupStats,
     ModelGroupUpdate,
     ModelPriceItem,
     ModelPriceListResponse,
@@ -84,7 +83,6 @@ from ...models import (
     RequestLogPage,
     RequestLogSortMode,
     RequestLogStatusFilter,
-    RoutePreviewRequest,
     RoutingStrategy,
     CronjobItem,
     CronjobRunResult,
@@ -104,10 +102,10 @@ from ...models import (
     VersionCheckResult,
     normalize_upstream_headers_config_json,
 )
-from ...persistence.admin_store import AdminStore
+from ...persistence.admin_repository import AdminRepository
 from ...persistence.backup_store import BackupStore
 from ...persistence.channel_store import ChannelStore
-from ...persistence.domain_store import (
+from ...persistence.shared import (
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_THRESHOLD,
@@ -123,7 +121,13 @@ from ...persistence.domain_store import (
     SETTING_TIME_ZONE,
     SETTING_UPSTREAM_HEADERS_CONFIG,
     SETTING_VERSION_CHECK_AT,
-    DomainStore,
+)
+from ...persistence.repositories import (
+    GatewayApiKeyRepository,
+    GroupRepository,
+    ModelPriceRepository,
+    RequestLogStore,
+    SettingsRepository,
 )
 from ...persistence.cronjob_store import CronjobSpec, CronjobStore
 from ...persistence.entities import AdminUserEntity
@@ -231,19 +235,28 @@ class AppState:
         self.http = self._create_http_client()
         self.engine = create_engine(settings.database_url)
         self.session_factory = create_session_factory(self.engine)
-        self.admin_store = AdminStore(self.session_factory)
-        self.domain_store = DomainStore(self.session_factory)
+        self.admin_repo = AdminRepository(self.session_factory)
+        self.settings_repo = SettingsRepository(self.session_factory)
+        self.gateway_api_key_repo = GatewayApiKeyRepository(self.session_factory)
+        self.group_repo = GroupRepository(self.session_factory)
+        self.model_price_repo = ModelPriceRepository(self.session_factory)
+        self.request_log_store = RequestLogStore(
+            self.session_factory,
+            settings_repo=self.settings_repo,
+            gateway_key_repo=self.gateway_api_key_repo,
+        )
+
         self.cronjob_store = CronjobStore(self.session_factory)
-        self.store = ChannelStore(self.session_factory)
+        self.channel_store = ChannelStore(self.session_factory)
         self.backup_store = BackupStore(self.session_factory)
         self.router = GatewayRouter()
         self.cronjob_runner = CronjobRunner(
             store=self.cronjob_store,
             specs=CRONJOB_SPECS,
             handlers={
-                TASK_REQUEST_LOG_PRUNE: self.domain_store.prune_request_logs,
+                TASK_REQUEST_LOG_PRUNE: self.request_log_store.prune_request_logs,
                 TASK_MODEL_PRICE_SYNC: self._sync_model_prices,
-                TASK_REQUEST_LOG_STATS_PERSIST: self.domain_store.persist_request_log_stats,
+                TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.persist_request_log_stats,
                 TASK_VERSION_CHECK: self._check_version_update,
             },
             time_zone_provider=self._runtime_time_zone,
@@ -263,7 +276,7 @@ class AppState:
         return httpx.AsyncClient(timeout=timeout, limits=limits)
 
     async def _runtime_time_zone(self) -> ZoneInfo:
-        runtime = await self.domain_store.get_runtime_settings()
+        runtime = await self.settings_repo.get_runtime_settings()
         return resolve_time_zone(str(runtime["time_zone"]))
 
     async def _sync_model_prices(self) -> None:
@@ -289,7 +302,7 @@ class AppState:
                 if latest_version and version.parse(latest_version) > version.parse(
                     current_version
                 ):
-                    await self.domain_store.upsert_settings(
+                    await self.settings_repo.upsert_settings(
                         [
                             SettingItem(
                                 key=SETTING_LATEST_VERSION, value=latest_version
@@ -304,7 +317,7 @@ class AppState:
                         ]
                     )
                 else:
-                    await self.domain_store.upsert_settings(
+                    await self.settings_repo.upsert_settings(
                         [
                             SettingItem(
                                 key=SETTING_VERSION_CHECK_AT,

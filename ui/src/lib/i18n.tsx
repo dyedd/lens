@@ -4,6 +4,10 @@ import { createContext, useContext, useMemo, useState } from "react";
 
 export type Locale = "zh-CN" | "en-US";
 
+export function titleForLocale(locale: Locale, zh: string, en: string) {
+  return locale === "zh-CN" ? zh : en;
+}
+
 type Copy = {
   loginTitle: string;
   loginSubtitle: string;

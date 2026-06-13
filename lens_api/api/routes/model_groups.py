@@ -5,12 +5,6 @@ from fastapi import FastAPI
 
 def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route(
-        "/api/admin/model-group-stats",
-        service_module.list_model_group_stats,
-        methods=["GET"],
-        response_model=list[service_module.ModelGroupStats],
-    )
-    app.add_api_route(
         "/api/admin/model-group-candidates",
         service_module.model_group_candidates,
         methods=["POST"],

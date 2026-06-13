@@ -24,14 +24,14 @@ from .runtime_context import (
 async def _resolve_routing_plan(
     protocol: ProtocolKind, requested_model: str, channels: list[ChannelConfig]
 ) -> RoutingPlan:
-    matched_group = await app_state.domain_store.find_group_by_name(
+    matched_group = await app_state.group_repo.find_group_by_name(
         protocol.value, requested_model
     )
     if matched_group is not None and protocol in matched_group.protocols:
         resolved_group = matched_group
         if matched_group.route_group_id.strip():
             try:
-                resolved_group = await app_state.domain_store.get_group(
+                resolved_group = await app_state.group_repo.get_group(
                     matched_group.route_group_id
                 )
             except KeyError as exc:

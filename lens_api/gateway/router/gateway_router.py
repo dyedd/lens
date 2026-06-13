@@ -16,8 +16,6 @@ from ...models import (
     ChannelKeyItem,
     ChannelStatus,
     ProtocolKind,
-    RoutePreview,
-    RoutePreviewItem,
     RouteState,
     RouterSnapshot,
     RoutingStrategy,
@@ -226,49 +224,6 @@ class GatewayRouter:
             ]
 
         return RouterSnapshot(routes=routes, health=health)
-
-    def preview(
-        self,
-        channels: list[ChannelConfig],
-        protocol: ProtocolKind,
-        requested_model: str | None,
-        strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN,
-        allowed_channel_ids: set[str] | None = None,
-        use_model_matching: bool = True,
-        requested_group_name: str | None = None,
-        resolved_group_name: str | None = None,
-        route_targets: list[RouteTarget] | None = None,
-        cursor_key: str | None = None,
-    ) -> RoutePreview:
-        with self._lock:
-            pool = self._build_active_pool(
-                channels,
-                protocol,
-                requested_model,
-                allowed_channel_ids,
-                use_model_matching,
-                route_targets,
-                skip_health_filter=True,
-            )
-            now = monotonic()
-            ordered_targets, _, _ = self._prepare_diagnostic_targets(
-                pool,
-                strategy=strategy,
-                cursor_key=cursor_key,
-                protocol=protocol,
-                now=now,
-            )
-            return RoutePreview(
-                protocol=protocol,
-                requested_group_name=requested_group_name,
-                resolved_group_name=resolved_group_name,
-                strategy=strategy,
-                matched_channel_ids=[target.channel.id for target in ordered_targets],
-                items=[
-                    self._build_preview_item(target, now=now)
-                    for target in ordered_targets
-                ],
-            )
 
     def record_success(
         self, channel_id: str, *, credential_id: str | None = None
@@ -573,24 +528,6 @@ class GatewayRouter:
                 if not available
             ],
             requested_model=None,
-        )
-
-    def _build_preview_item(
-        self, target: RouteTarget, *, now: float
-    ) -> RoutePreviewItem:
-        available = self._target_is_available(target, now=now)
-        return RoutePreviewItem(
-            channel_id=target.channel.id,
-            channel_name=target.channel.name,
-            model_name=target.model_name,
-            credential_id=target.credential_id,
-            credential_name=target.credential_name,
-            available=available,
-            in_cooldown=not available,
-            cooldown_remaining_seconds=self._target_cooldown_remaining_seconds(
-                target, now=now
-            ),
-            score=self._score(target.channel.id),
         )
 
     def _prepare_diagnostic_targets(

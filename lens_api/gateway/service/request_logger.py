@@ -111,7 +111,7 @@ async def _update_request_log(
     attempts: list[dict[str, Any]] | None = None,
     error_message: str | None,
 ) -> None:
-    await app_state.domain_store.update_request_log(
+    await app_state.request_log_store.update_request_log(
         request_log_id,
         protocol=protocol.value,
         requested_group_name=requested_group_name,

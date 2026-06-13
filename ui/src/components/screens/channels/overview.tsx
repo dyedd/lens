@@ -21,6 +21,7 @@ import type {
   SiteRuntimeSummary,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
 import { ChannelFiltersPanel } from "./filters";
 import { SiteHealthPreview } from "./health-preview";
 import {
@@ -29,7 +30,6 @@ import {
   protocolLabel,
   SiteFavicon,
   siteProtocols,
-  SwitchButton,
   type ChannelSort,
   type ChannelStatusFilter,
   type Locale,
@@ -153,10 +153,10 @@ export function ChannelsOverview({
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
-                      <SwitchButton
+                      <Switch
                         checked={isSiteEnabled(site)}
                         disabled={busyId === site.id}
-                        onChange={(checked) =>
+                        onCheckedChange={(checked) =>
                           void onToggleSiteEnabled(site, checked)
                         }
                       />

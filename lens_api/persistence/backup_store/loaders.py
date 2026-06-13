@@ -24,10 +24,8 @@ from .shared import (
     RequestLogDailyStatsEntity,
     RequestLogEntity,
     RequestLogLifecycleStatus,
-    SiteBaseUrlEntity,
     SiteConfig,
     SiteCredentialEntity,
-    SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
     UTC,
@@ -42,85 +40,20 @@ from .value_parsing import (
     load_weekdays,
     parse_attempts,
 )
+from ..site_loader import fetch_site_rows
 
 
 class BackupLoadersMixin:
     async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
-        site_rows = (
-            (await session.execute(select(SiteEntity).order_by(SiteEntity.name.asc())))
-            .scalars()
-            .all()
-        )
+        (
+            site_rows,
+            base_url_rows,
+            credential_rows,
+            protocol_rows,
+            model_rows,
+        ) = await fetch_site_rows(session)
         if not site_rows:
             return []
-
-        site_ids = [item.id for item in site_rows]
-        base_url_rows = (
-            (
-                await session.execute(
-                    select(SiteBaseUrlEntity)
-                    .where(SiteBaseUrlEntity.site_id.in_(site_ids))
-                    .order_by(
-                        SiteBaseUrlEntity.site_id.asc(),
-                        SiteBaseUrlEntity.sort_order.asc(),
-                        SiteBaseUrlEntity.id.asc(),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        credential_rows = (
-            (
-                await session.execute(
-                    select(SiteCredentialEntity)
-                    .where(SiteCredentialEntity.site_id.in_(site_ids))
-                    .order_by(
-                        SiteCredentialEntity.site_id.asc(),
-                        SiteCredentialEntity.sort_order.asc(),
-                        SiteCredentialEntity.id.asc(),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        protocol_rows = (
-            (
-                await session.execute(
-                    select(SiteProtocolConfigEntity)
-                    .where(SiteProtocolConfigEntity.site_id.in_(site_ids))
-                    .order_by(
-                        SiteProtocolConfigEntity.site_id.asc(),
-                        SiteProtocolConfigEntity.id.asc(),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        protocol_config_ids = [item.id for item in protocol_rows]
-        model_rows = []
-        if protocol_config_ids:
-            model_rows = (
-                (
-                    await session.execute(
-                        select(SiteDiscoveredModelEntity)
-                        .where(
-                            SiteDiscoveredModelEntity.protocol_config_id.in_(
-                                protocol_config_ids
-                            )
-                        )
-                        .order_by(
-                            SiteDiscoveredModelEntity.protocol_config_id.asc(),
-                            SiteDiscoveredModelEntity.sort_order.asc(),
-                            SiteDiscoveredModelEntity.id.asc(),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
 
         valid_protocol_values = {pk.value for pk in ProtocolKind}
         base_urls_by_site: dict[str, list[dict[str, object]]] = {}

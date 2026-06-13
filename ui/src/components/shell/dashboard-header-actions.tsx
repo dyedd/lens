@@ -25,11 +25,7 @@ export function useDashboardHeaderActionsState() {
   return { actions, value };
 }
 
-export function DashboardHeaderActions({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export function DashboardHeaderActions({ children }: { children: ReactNode }) {
   const context = useContext(DashboardHeaderActionsContext);
 
   useEffect(() => {

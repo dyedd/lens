@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .shared import (
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ..shared import (
     Any,
     AsyncSession,
     GatewayApiKeyEntity,
@@ -18,7 +20,10 @@ from .shared import (
 )
 
 
-class DomainRequestLogChannelResolutionMixin:
+class RequestLogChannelResolutionMixin:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
     async def _hydrate_request_logs(
         self,
         session: AsyncSession,
@@ -26,7 +31,7 @@ class DomainRequestLogChannelResolutionMixin:
         *,
         gateway_has_multiple_keys: bool | None = None,
     ) -> list[RequestLogItem]:
-        remarks = await self._gateway_key_remarks_by_id(
+        remarks = await self._gateway_key_repo._gateway_key_remarks_by_id(
             session, [entity.gateway_key_id for entity in entities]
         )
         if gateway_has_multiple_keys is None:

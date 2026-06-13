@@ -169,12 +169,12 @@ def dev(_args: argparse.Namespace) -> None:
 
 
 def seed_admin(args: argparse.Namespace) -> None:
-    from .persistence.admin_store import AdminStore
+    from .persistence.admin_repository import AdminRepository
 
     async def _run() -> None:
         engine = create_engine(settings.database_url)
         session_factory = create_session_factory(engine)
-        store = AdminStore(session_factory)
+        store = AdminRepository(session_factory)
         created = await store.ensure_default_admin(args.username, args.password)
         await engine.dispose()
         if created:

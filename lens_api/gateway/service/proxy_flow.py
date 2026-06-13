@@ -59,8 +59,8 @@ async def _proxy_protocol(
     started_at = perf_counter()
     deadline = _RequestDeadline(started_at, settings.request_timeout_seconds)
     channels, runtime = await asyncio.gather(
-        app_state.store.list(),
-        app_state.domain_store.get_runtime_settings(),
+        app_state.channel_store.list(),
+        app_state.settings_repo.get_runtime_settings(),
     )
     _apply_router_runtime_settings(runtime)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
@@ -74,7 +74,7 @@ async def _proxy_protocol(
     is_stream_body = bool(body.get("stream"))
     requested_model = body.get("model")
     if not isinstance(requested_model, str) or not requested_model.strip():
-        request_log = await app_state.domain_store.create_pending_request_log(
+        request_log = await app_state.request_log_store.create_pending_request_log(
             protocol=protocol.value,
             user_agent=upstream_user_agent,
             requested_group_name=None,
@@ -121,7 +121,7 @@ async def _proxy_protocol(
             message="Gateway API key is not allowed to use this model",
         )
     plan: RoutingPlan | None = None
-    request_log = await app_state.domain_store.create_pending_request_log(
+    request_log = await app_state.request_log_store.create_pending_request_log(
         protocol=protocol.value,
         user_agent=upstream_user_agent,
         requested_group_name=requested_model,
@@ -327,9 +327,6 @@ async def _try_target(
 ) -> Response | None:
     channel = target.channel
     attempt_started_at = perf_counter()
-    effective_user_agent = _effective_user_agent_from_headers(
-        channel.headers, upstream_user_agent
-    )
 
     if needs_conversion(protocol, channel.protocol):
         try:
@@ -352,7 +349,7 @@ async def _try_target(
                 errors=errors,
                 failure_status_codes=failure_status_codes,
                 attempt_started_at=attempt_started_at,
-                effective_user_agent=effective_user_agent,
+                effective_user_agent=upstream_user_agent,
                 upstream_body=body,
                 exc=UpstreamRequestError(
                     status_code=400,
@@ -375,7 +372,7 @@ async def _try_target(
             errors=errors,
             failure_status_codes=failure_status_codes,
             attempt_started_at=attempt_started_at,
-            effective_user_agent=effective_user_agent,
+            effective_user_agent=upstream_user_agent,
             upstream_body=upstream_body,
             exc=exc,
         )
@@ -395,7 +392,7 @@ async def _try_target(
             log_body_enabled=log_body_enabled,
         )
         effective_user_agent = _effective_user_agent_from_headers(
-            upstream.headers, effective_user_agent
+            upstream.headers, upstream_user_agent
         )
     except UpstreamRequestError as exc:
         return await _record_target_failure(
@@ -407,7 +404,7 @@ async def _try_target(
             errors=errors,
             failure_status_codes=failure_status_codes,
             attempt_started_at=attempt_started_at,
-            effective_user_agent=effective_user_agent,
+            effective_user_agent=upstream_user_agent,
             upstream_body=upstream_body,
             request_content=exc.request_content,
             exc=exc,
@@ -422,7 +419,7 @@ async def _try_target(
             errors=errors,
             failure_status_codes=failure_status_codes,
             attempt_started_at=attempt_started_at,
-            effective_user_agent=effective_user_agent,
+            effective_user_agent=upstream_user_agent,
             upstream_body=upstream_body,
             exc=UpstreamRequestError(
                 status_code=exc.status_code,

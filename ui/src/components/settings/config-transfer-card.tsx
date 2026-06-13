@@ -54,11 +54,7 @@ import {
   importConfigBackup,
 } from "@/lib/api";
 import { useAppTimeZone } from "@/hooks/use-app-time-zone";
-import { type Locale } from "@/lib/i18n";
-
-function titleForLocale(locale: Locale, zh: string, en: string) {
-  return locale === "zh-CN" ? zh : en;
-}
+import { titleForLocale, type Locale } from "@/lib/i18n";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

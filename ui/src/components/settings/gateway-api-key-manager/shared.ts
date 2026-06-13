@@ -6,7 +6,8 @@ import type {
   ModelGroup,
   ProtocolKind,
 } from "@/lib/api";
-import type { Locale } from "@/lib/i18n";
+import { titleForLocale, type Locale } from "@/lib/i18n";
+export { titleForLocale };
 
 export type GatewayApiKeyForm = {
   remark: string;
@@ -41,10 +42,6 @@ export const PROTOCOL_LABELS: Record<ProtocolKind, [string, string]> = {
   anthropic: ["Anthropic", "Anthropic"],
   gemini: ["Gemini", "Gemini"],
 };
-
-export function titleForLocale(locale: Locale, zh: string, en: string) {
-  return locale === "zh-CN" ? zh : en;
-}
 
 export function maskGatewayKey(value: string) {
   if (!value) {

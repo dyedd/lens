@@ -7,13 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  AlertCircle,
-  ArrowUp,
-  Filter,
-  RefreshCcw,
-  Trash2,
-} from "lucide-react";
+import { AlertCircle, ArrowUp, Filter, RefreshCcw, Trash2 } from "lucide-react";
 import {
   ApiError,
   ProtocolKind,
@@ -25,7 +19,10 @@ import {
 import { useAppTimeZone } from "@/hooks/use-app-time-zone";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { getModelFamilyKey, getModelFamilyLabel } from "@/lib/model-icons";
+import {
+  buildModelPrefixOptions,
+  resolveEffectiveModelPrefix,
+} from "@/lib/model-prefix";
 import { Dialog, AppDialogContent } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -70,7 +67,6 @@ import {
   gatewayKeyFilterOptionLabel,
   parseRelayLogBodyEnabled,
   titleForLocale,
-  type ModelPrefixOption,
   type SelectedModelPrefix,
   type SortMode,
   type StatusFilter,
@@ -196,38 +192,17 @@ export function RequestsScreen() {
     gcTime: REQUEST_LOG_DETAIL_GC_TIME,
   });
 
-  const modelPrefixOptions = useMemo(() => {
-    const optionsByPrefix = new Map<string, ModelPrefixOption>();
-    for (const model of data?.model_names ?? []) {
-      const prefix = getModelFamilyKey(model);
-      if (prefix && !optionsByPrefix.has(prefix)) {
-        optionsByPrefix.set(prefix, {
-          key: prefix,
-          label: getModelFamilyLabel(model),
-          sampleModel: model,
-        });
-      }
-    }
-
-    return [
-      {
-        key: "all" as const,
-        label: titleForLocale(locale, "全部", "All"),
-        sampleModel: "all",
-      },
-      ...Array.from(optionsByPrefix.values()).sort((a, b) =>
-        a.label.localeCompare(b.label),
-      ),
-    ];
-  }, [data?.model_names, locale]);
+  const modelPrefixOptions = useMemo(
+    () => buildModelPrefixOptions(data?.model_names ?? [], locale),
+    [data?.model_names, locale],
+  );
 
   const visibleData = data?.items ?? [];
   const showModelPrefixFilter = modelPrefixOptions.length > 1;
-  const effectiveSelectedModelPrefix = modelPrefixOptions.some(
-    (item) => item.key === selectedModelPrefix,
-  )
-    ? selectedModelPrefix
-    : "all";
+  const effectiveSelectedModelPrefix = resolveEffectiveModelPrefix(
+    modelPrefixOptions,
+    selectedModelPrefix,
+  );
 
   const channelOptions = useMemo(() => {
     return filterOptionsWithSelected(data?.channels, channelQueryValue);

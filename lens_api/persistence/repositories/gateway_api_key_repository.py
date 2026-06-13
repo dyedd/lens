@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from sqlalchemy import case
 
-from .shared import (
-    Any,
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ..shared import (
     AsyncSession,
     GATEWAY_API_KEY_CHARS,
     GatewayApiKey,
@@ -20,7 +21,10 @@ from .shared import (
 )
 
 
-class DomainGatewayKeysMixin:
+class GatewayApiKeyRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
     async def list_gateway_api_keys(self) -> list[GatewayApiKey]:
         async with self._session_factory() as session:
             rows = (
@@ -104,27 +108,6 @@ class DomainGatewayKeysMixin:
                 raise KeyError(key_id)
             await session.delete(entity)
             await session.commit()
-
-    async def count_active_gateway_api_keys(self) -> int:
-        now = datetime.now(UTC).replace(tzinfo=None)
-        keys = await self.list_gateway_api_keys()
-        return sum(1 for key in keys if self._is_gateway_api_key_usable(key, now=now))
-
-    @staticmethod
-    def _normalize_gateway_key_id(gateway_key_id: str | None) -> str | None:
-        normalized = (gateway_key_id or "").strip()
-        return normalized or None
-
-    @classmethod
-    def _apply_gateway_key_filter(
-        cls, stmt: Any, *, gateway_key_id: str | None = None
-    ) -> Any:
-        normalized = cls._normalize_gateway_key_id(gateway_key_id)
-        if normalized is None:
-            return stmt
-        if normalized == "n/a":
-            return stmt.where(RequestLogEntity.gateway_key_id.is_(None))
-        return stmt.where(RequestLogEntity.gateway_key_id == normalized)
 
     @staticmethod
     def _load_gateway_key_models(raw_value: str | None) -> list[str]:
@@ -230,50 +213,6 @@ class DomainGatewayKeysMixin:
             created_at=cls._format_datetime(entity.created_at),
             updated_at=cls._format_datetime(entity.updated_at),
         )
-
-    @classmethod
-    def _is_gateway_api_key_usable(cls, key: GatewayApiKey, *, now: datetime) -> bool:
-        if not key.enabled:
-            return False
-        if key.expires_at:
-            try:
-                expires_at = cls._parse_gateway_key_expires_at(key.expires_at)
-            except ValueError:
-                return False
-            if expires_at is not None and expires_at <= now:
-                return False
-        return not (key.max_cost_usd > 0 and key.spent_cost_usd >= key.max_cost_usd)
-
-    @staticmethod
-    def _split_comma_lines(raw_value: str) -> list[str]:
-        items: list[str] = []
-        seen: set[str] = set()
-        for chunk in raw_value.replace("\r", "\n").replace("，", ",").splitlines():
-            for item in chunk.split(","):
-                normalized = item.strip()
-                if not normalized or normalized in seen:
-                    continue
-                seen.add(normalized)
-                items.append(normalized)
-        return items
-
-    @staticmethod
-    def _parse_bool(value: str | None, *, default: bool) -> bool:
-        if value is None:
-            return default
-        return value.strip().lower() not in {"0", "false", "no", "off"}
-
-    @staticmethod
-    def _parse_int(value: str | None, *, default: int) -> int:
-        if value is None:
-            return default
-        return int(value.strip())
-
-    @staticmethod
-    def _parse_float(value: str | None, *, default: float) -> float:
-        if value is None:
-            return default
-        return float(value.strip())
 
     @staticmethod
     async def _gateway_key_remarks_by_id(

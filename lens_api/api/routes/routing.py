@@ -13,6 +13,3 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route(
         "/api/admin/routes", service_module.router_snapshot, methods=["GET"]
     )
-    app.add_api_route(
-        "/api/admin/route-previews", service_module.router_preview, methods=["POST"]
-    )

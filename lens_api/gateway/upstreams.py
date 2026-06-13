@@ -2,11 +2,12 @@ from dataclasses import dataclass
 from collections.abc import Mapping
 import re
 from typing import Any
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 
 from ..core.config import Settings
+from ..core.url_utils import normalize_base_url, append_url_path
 from ..models import ChannelConfig, ChannelProxyMode, ProtocolKind
 
 
@@ -49,7 +50,7 @@ def build_upstream_request(
         }
         return UpstreamRequest(
             method="POST",
-            url=_append_url_path(
+            url=append_url_path(
                 _protocol_base_url(channel),
                 "models",
                 f"{model_name}:{path}",
@@ -60,7 +61,7 @@ def build_upstream_request(
                 channel.headers,
                 user_agent=user_agent,
                 upstream_headers_config=upstream_headers_config,
-                model_name=str(model_name),
+                model_name=model_name,
             ),
             json_body=payload,
         )
@@ -87,13 +88,13 @@ def build_upstream_request(
 
     return UpstreamRequest(
         method="POST",
-        url=_append_url_path(_protocol_base_url(channel), suffix),
+        url=append_url_path(_protocol_base_url(channel), suffix),
         headers=build_upstream_headers(
             default_headers,
             channel.headers,
             user_agent=user_agent,
             upstream_headers_config=upstream_headers_config,
-            model_name=str(body.get("model") or ""),
+            model_name=body.get("model") or "",
         ),
         json_body=dict(body),
     )
@@ -135,64 +136,53 @@ def _merge_headers(headers: dict[str, str], updates: Mapping[str, str] | None) -
     if not updates:
         return
     for key, value in updates.items():
-        _set_header(headers, str(key), str(value))
+        _set_header(headers, key, value)
 
 
 def _upstream_global_headers(
     upstream_headers_config: Mapping[str, Any] | None,
-) -> Mapping[str, str] | None:
-    if not isinstance(upstream_headers_config, Mapping):
+) -> dict[str, str] | None:
+    if not upstream_headers_config:
         return None
-    global_headers = upstream_headers_config.get("global")
-    if isinstance(global_headers, Mapping):
-        return {str(key): str(value) for key, value in global_headers.items()}
-    return None
+    return upstream_headers_config.get("global")
 
 
 def _matching_upstream_rule_headers(
     upstream_headers_config: Mapping[str, Any] | None,
     model_name: str | None,
-) -> list[Mapping[str, str]]:
-    if not isinstance(upstream_headers_config, Mapping):
+) -> list[dict[str, str]]:
+    if not upstream_headers_config:
         return []
-    rules = upstream_headers_config.get("rules")
-    if not isinstance(rules, list):
-        return []
-    matched: list[Mapping[str, str]] = []
+    rules = upstream_headers_config.get("rules", [])
+    matched: list[dict[str, str]] = []
     normalized_model = (model_name or "").strip()
+    if not normalized_model:
+        return []
     for rule in rules:
-        if not isinstance(rule, Mapping):
-            continue
-        if not bool(rule.get("enabled", True)):
+        if not rule.get("enabled", True):
             continue
         if not _upstream_header_rule_matches(rule, normalized_model):
             continue
-        headers = rule.get("headers")
-        if isinstance(headers, Mapping):
-            matched.append({str(key): str(value) for key, value in headers.items()})
+        matched.append(rule["headers"])
     return matched
 
 
-def _upstream_header_rule_matches(rule: Mapping[str, Any], model_name: str) -> bool:
-    if not model_name:
-        return False
-    match_type = str(rule.get("match_type") or "exact")
+def _upstream_header_rule_matches(rule: dict[str, Any], model_name: str) -> bool:
+    match_type = rule.get("match_type", "exact")
     if match_type == "regex":
-        pattern = str(rule.get("pattern") or "").strip()
+        pattern = rule.get("pattern", "").strip()
         if not pattern:
             return False
         try:
             return bool(re.search(pattern, model_name))
         except re.error:
             return False
-    models = rule.get("models")
-    if not isinstance(models, list):
-        return False
-    return any(str(item).strip() == model_name for item in models)
+    models = rule.get("models", [])
+    return model_name in models
 
 
 def _protocol_base_url(channel: ChannelConfig) -> str:
-    root = _normalize_base_url(str(channel.base_url))
+    root = normalize_base_url(str(channel.base_url))
     if channel.protocol == ProtocolKind.OPENAI_CHAT:
         parsed = urlsplit(root)
         if parsed.hostname == "open.bigmodel.cn" and parsed.path.rstrip("/") in {
@@ -207,28 +197,10 @@ def _protocol_base_url(channel: ChannelConfig) -> str:
         ProtocolKind.RERANK,
         ProtocolKind.ANTHROPIC,
     }:
-        return _append_url_path(root, "v1")
+        return append_url_path(root, "v1")
     if channel.protocol == ProtocolKind.GEMINI:
-        return _append_url_path(root, "v1beta")
+        return append_url_path(root, "v1beta")
     return root
-
-
-def _normalize_base_url(value: str) -> str:
-    normalized = value.strip()
-    parsed = urlsplit(normalized)
-    path = parsed.path.rstrip("/")
-    if path.endswith("/v1beta"):
-        path = path[:-7]
-    elif path.endswith("/v1"):
-        path = path[:-3]
-    return _urlunsplit_preserving_empty_components(
-        normalized,
-        parsed.scheme,
-        parsed.netloc,
-        path,
-        parsed.query,
-        parsed.fragment,
-    )
 
 
 def resolve_channel_api_key(
@@ -264,68 +236,4 @@ def resolve_upstream_proxy_url(
 
 
 def resolve_channel_model_list_url(channel: ChannelConfig) -> str:
-    return _append_url_path(_protocol_base_url(channel), "models")
-
-
-def append_channel_url_path(
-    channel: ChannelConfig,
-    *segments: str,
-    query_params: dict[str, str] | None = None,
-) -> str:
-    return _append_url_path(
-        _normalize_base_url(str(channel.base_url)),
-        *segments,
-        query_params=query_params,
-    )
-
-
-def _append_url_path(
-    base_url: str,
-    *segments: str,
-    query_params: dict[str, str] | None = None,
-) -> str:
-    parsed = urlsplit(base_url)
-    path_parts = [parsed.path.rstrip("/")]
-    path_parts.extend(segment.strip("/") for segment in segments if segment.strip("/"))
-    path = "/".join(part for part in path_parts if part)
-    if parsed.path.startswith("/") and not path.startswith("/"):
-        path = f"/{path}"
-    if not path:
-        path = parsed.path
-
-    query = parsed.query
-    if query_params:
-        encoded_params = urlencode(query_params)
-        query = f"{query}&{encoded_params}" if query else encoded_params
-
-    return _urlunsplit_preserving_empty_components(
-        base_url,
-        parsed.scheme,
-        parsed.netloc,
-        path,
-        query,
-        parsed.fragment,
-    )
-
-
-def _urlunsplit_preserving_empty_components(
-    source: str,
-    scheme: str,
-    netloc: str,
-    path: str,
-    query: str,
-    fragment: str,
-) -> str:
-    rebuilt = urlunsplit((scheme, netloc, path, query, fragment))
-    before_fragment, fragment_separator, _ = source.partition("#")
-    has_empty_query = "?" in before_fragment and query == ""
-    has_empty_fragment = bool(fragment_separator) and fragment == ""
-
-    if has_empty_query:
-        if "#" in rebuilt:
-            rebuilt = rebuilt.replace("#", "?#", 1)
-        else:
-            rebuilt += "?"
-    if has_empty_fragment and "#" not in rebuilt:
-        rebuilt += "#"
-    return rebuilt
+    return append_url_path(_protocol_base_url(channel), "models")

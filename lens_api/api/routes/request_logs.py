@@ -5,12 +5,6 @@ from fastapi import FastAPI
 
 def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route(
-        "/api/admin/request-logs",
-        service_module.request_logs,
-        methods=["GET"],
-        response_model=list[service_module.RequestLogItem],
-    )
-    app.add_api_route(
         "/api/admin/request-logs/page",
         service_module.request_log_page,
         methods=["GET"],

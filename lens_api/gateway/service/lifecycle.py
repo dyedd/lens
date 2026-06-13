@@ -19,7 +19,7 @@ async def _startup_app_state(state: AppState) -> None:
     resolve_time_zone(None)
     if state.http.is_closed:
         state.http = state._create_http_client()
-    await state.domain_store.fail_running_request_logs(
+    await state.request_log_store.fail_running_request_logs(
         interrupted_latency_cap_ms=_running_request_latency_cap_ms()
     )
 

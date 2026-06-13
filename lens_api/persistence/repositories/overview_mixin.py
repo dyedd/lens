@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from .shared import (
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ..shared import (
     Any,
     AsyncSession,
     ImportedStatsDailyEntity,
     ImportedStatsTotalEntity,
-    ModelPriceEntity,
     OverviewDailyPoint,
     OverviewModelAnalytics,
     OverviewModelDailyStatsEntity,
@@ -20,15 +21,19 @@ from .shared import (
     ZoneInfo,
     datetime,
     func,
-    normalize_model_key,
     select,
     timedelta,
 )
 
 
-class DomainOverviewMixin:
+class OverviewMixin:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
     async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
-        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
+        time_zone = self._runtime_time_zone(
+            await self._settings_repo.get_runtime_settings()
+        )
         async with self._session_factory() as session:
             if days != 0:
                 comparison_offset = 1 if days == -1 else days
@@ -108,7 +113,9 @@ class DomainOverviewMixin:
         )
 
     async def list_overview_daily(self, days: int = 0) -> list[OverviewDailyPoint]:
-        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
+        time_zone = self._runtime_time_zone(
+            await self._settings_repo.get_runtime_settings()
+        )
         async with self._session_factory() as session:
             return await self._merged_daily_points(
                 session, days=days, time_zone=time_zone
@@ -122,7 +129,9 @@ class DomainOverviewMixin:
     ) -> OverviewModelAnalytics:
         model_metric = metric if metric in {"cost", "requests", "tokens"} else "cost"
         normalized_gateway_key_id = self._normalize_gateway_key_id(gateway_key_id)
-        time_zone = self._runtime_time_zone(await self.get_runtime_settings())
+        time_zone = self._runtime_time_zone(
+            await self._settings_repo.get_runtime_settings()
+        )
         async with self._session_factory() as session:
             if normalized_gateway_key_id is not None:
                 archived_model_rows = []
@@ -260,46 +269,6 @@ class DomainOverviewMixin:
             trend=trend,
             available_models=available_models,
         )
-
-    async def estimate_model_cost(
-        self,
-        model_name: str | None,
-        input_tokens: int,
-        output_tokens: int,
-        cache_read_input_tokens: int = 0,
-        cache_write_input_tokens: int = 0,
-    ) -> tuple[float, float, float]:
-        if not model_name:
-            return 0.0, 0.0, 0.0
-
-        async with self._session_factory() as session:
-            entity = await session.get(
-                ModelPriceEntity, normalize_model_key(model_name)
-            )
-            if entity is None:
-                return 0.0, 0.0, 0.0
-
-        total_input_tokens = max(input_tokens, 0)
-        cache_read_tokens = max(cache_read_input_tokens, 0)
-        cache_write_tokens = max(cache_write_input_tokens, 0)
-        regular_input_tokens = max(
-            total_input_tokens - cache_read_tokens - cache_write_tokens, 0
-        )
-
-        input_cost = (regular_input_tokens / 1_000_000) * float(
-            entity.input_price_per_million
-        )
-        input_cost += (cache_read_tokens / 1_000_000) * float(
-            entity.cache_read_price_per_million
-        )
-        input_cost += (cache_write_tokens / 1_000_000) * float(
-            entity.cache_write_price_per_million
-        )
-        output_cost = (max(output_tokens, 0) / 1_000_000) * float(
-            entity.output_price_per_million
-        )
-        total_cost = input_cost + output_cost
-        return round(input_cost, 8), round(output_cost, 8), round(total_cost, 8)
 
     async def _merged_daily_points(
         self,
