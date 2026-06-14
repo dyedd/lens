@@ -52,6 +52,9 @@ class ChannelUpsertsMixin:
         disabled_base_url_ids = {
             item.id for item in normalized_base_urls if not item.enabled
         }
+        disabled_credential_ids = {
+            item.id for item in normalized_credentials if not item.enabled
+        }
 
         site = await session.get(SiteEntity, site_id)
         if site is None:
@@ -73,6 +76,7 @@ class ChannelUpsertsMixin:
             credential_ids,
             base_url_ids,
             disabled_base_url_ids,
+            disabled_credential_ids,
         )
 
         await self._cleanup_deleted_protocol_configs(
@@ -130,6 +134,7 @@ class ChannelUpsertsMixin:
         credential_ids: set[str],
         base_url_ids: set[str],
         disabled_base_url_ids: set[str],
+        disabled_credential_ids: set[str],
     ) -> set[str]:
         protocol_config_ids: set[str] = set()
         protocol_config_keys: set[tuple[str, str]] = set()
@@ -198,6 +203,13 @@ class ChannelUpsertsMixin:
                     protocol_config_id,
                     input_protocols,
                 )
+            elif disabled_credential_ids:
+                await self._disable_group_items_for_credentials(
+                    session,
+                    protocol_config_id,
+                    input_protocols,
+                    disabled_credential_ids,
+                )
         return protocol_config_ids
 
     async def _disable_group_items_for_channels(
@@ -215,6 +227,26 @@ class ChannelUpsertsMixin:
         await session.execute(
             update(ModelGroupItemEntity)
             .where(ModelGroupItemEntity.channel_id.in_(channel_ids))
+            .values(enabled=0)
+        )
+
+    async def _disable_group_items_for_credentials(
+        self,
+        session: AsyncSession,
+        protocol_config_id: str,
+        protocols: list[ProtocolKind],
+        credential_ids: set[str],
+    ) -> None:
+        channel_ids = [
+            compose_runtime_channel_id(protocol_config_id, protocol)
+            for protocol in protocols
+        ]
+        if not channel_ids:
+            return
+        await session.execute(
+            update(ModelGroupItemEntity)
+            .where(ModelGroupItemEntity.channel_id.in_(channel_ids))
+            .where(ModelGroupItemEntity.credential_id.in_(credential_ids))
             .values(enabled=0)
         )
 
