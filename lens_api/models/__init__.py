@@ -136,6 +136,11 @@ class UpstreamHeaderRuleMatchType(str, Enum):
     REGEX = "regex"
 
 
+class UpstreamParamOverrideRuleMatchType(str, Enum):
+    EXACT = "exact"
+    REGEX = "regex"
+
+
 class CronjobStatus(str, Enum):
     IDLE = "idle"
     RUNNING = "running"
@@ -747,10 +752,81 @@ class UpstreamHeadersConfig(StrictBaseModel):
 def normalize_upstream_headers_config_json(value: str) -> str:
     raw_value = value.strip()
     if raw_value:
-        payload = json.loads(raw_value)
+        try:
+            payload = json.loads(raw_value)
+        except json.JSONDecodeError:
+            payload = {}
         config = UpstreamHeadersConfig.model_validate(payload)
     else:
         config = UpstreamHeadersConfig()
+    return json.dumps(config.model_dump(mode="json", by_alias=True), ensure_ascii=True)
+
+
+class UpstreamParamOverrideRule(StrictBaseModel):
+    enabled: bool = True
+    name: str = ""
+    match_type: UpstreamParamOverrideRuleMatchType = (
+        UpstreamParamOverrideRuleMatchType.EXACT
+    )
+    models: list[str] = Field(default_factory=list)
+    pattern: str = ""
+    override: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("name", "pattern")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("models")
+    @classmethod
+    def normalize_models(cls, models: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in models:
+            model = str(item).strip()
+            if not model or model in seen:
+                continue
+            seen.add(model)
+            normalized.append(model)
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_matcher(self) -> "UpstreamParamOverrideRule":
+        if "model" in self.override:
+            raise ValueError("model cannot be overridden")
+        if self.match_type == UpstreamParamOverrideRuleMatchType.REGEX:
+            if not self.pattern:
+                raise ValueError("Regex upstream param override rule requires pattern")
+            try:
+                re.compile(self.pattern)
+            except re.error as exc:
+                raise ValueError(
+                    f"Invalid upstream param override rule regex: "
+                    f"{self.pattern}. {exc}"
+                ) from exc
+        return self
+
+
+class UpstreamParamOverrideConfig(StrictBaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    global_override: dict[str, Any] = Field(default_factory=dict, alias="global")
+    rules: list[UpstreamParamOverrideRule] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_global_override(self) -> "UpstreamParamOverrideConfig":
+        if "model" in self.global_override:
+            raise ValueError("model cannot be overridden")
+        return self
+
+
+def normalize_upstream_param_override_config_json(value: str) -> str:
+    raw_value = value.strip()
+    if raw_value:
+        payload = json.loads(raw_value)
+        config = UpstreamParamOverrideConfig.model_validate(payload)
+    else:
+        config = UpstreamParamOverrideConfig()
     return json.dumps(config.model_dump(mode="json", by_alias=True), ensure_ascii=True)
 
 
@@ -1164,6 +1240,7 @@ __all__ = [
     "RoutingStrategy",
     "ModelGroupSyncFilterMode",
     "UpstreamHeaderRuleMatchType",
+    "UpstreamParamOverrideRuleMatchType",
     "CronjobStatus",
     "CronjobScheduleType",
     "ChannelKeyItem",
@@ -1220,6 +1297,9 @@ __all__ = [
     "UpstreamHeaderRule",
     "UpstreamHeadersConfig",
     "normalize_upstream_headers_config_json",
+    "UpstreamParamOverrideRule",
+    "UpstreamParamOverrideConfig",
+    "normalize_upstream_param_override_config_json",
     "ModelGroupCandidateItem",
     "ModelGroupCandidatesRequest",
     "ModelGroupCandidatesResponse",
