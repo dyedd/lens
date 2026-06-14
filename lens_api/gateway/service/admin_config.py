@@ -30,6 +30,7 @@ from .runtime_context import (
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
     SETTING_UPSTREAM_HEADERS_CONFIG,
+    SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
     SettingItem,
     SettingsUpdate,
     UploadFile,
@@ -38,6 +39,7 @@ from .runtime_context import (
     datetime,
     json,
     normalize_upstream_headers_config_json,
+    normalize_upstream_param_override_config_json,
     resolve_time_zone,
 )
 from .tasks import _sync_group_prices
@@ -165,6 +167,14 @@ async def update_settings(
                 SettingItem(
                     key=item.key,
                     value=normalize_upstream_headers_config_json(item.value),
+                )
+            )
+            continue
+        if item.key == SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG:
+            normalized_items.append(
+                SettingItem(
+                    key=item.key,
+                    value=normalize_upstream_param_override_config_json(item.value),
                 )
             )
             continue

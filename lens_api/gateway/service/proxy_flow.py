@@ -36,6 +36,7 @@ from .proxy_upstream import (
 from .request_logger import _RequestLogger, _update_request_log
 from .routing_plan import (
     _apply_deepseek_thinking_compat,
+    _apply_global_param_override,
     _apply_param_override,
     _elapsed_ms,
     _extract_request_reasoning_effort,
@@ -360,6 +361,11 @@ async def _try_target(
     else:
         upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
     try:
+        upstream_body = _apply_global_param_override(
+            upstream_body,
+            runtime["upstream_param_override_config"],
+            target.model_name or "",
+        )
         upstream_body = _apply_param_override(channel, upstream_body)
         upstream_body = _apply_deepseek_thinking_compat(channel, upstream_body)
     except UpstreamRequestError as exc:
