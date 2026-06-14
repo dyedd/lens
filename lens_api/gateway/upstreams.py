@@ -27,6 +27,17 @@ _OPENAI_LIKE_PATH = {
     ProtocolKind.ANTHROPIC: "messages",
 }
 
+_OPENAI_COMPATIBLE_PROTOCOLS = frozenset(
+    {
+        ProtocolKind.OPENAI_CHAT,
+        ProtocolKind.OPENAI_RESPONSES,
+        ProtocolKind.OPENAI_EMBEDDING,
+        ProtocolKind.RERANK,
+    }
+)
+_GLM_HOSTS = frozenset({"open.bigmodel.cn", "api.z.ai"})
+_GLM_OPENAI_VERSIONED_PATHS = frozenset({"/api/paas/v4", "/api/coding/paas/v4"})
+
 
 def build_upstream_request(
     channel: ChannelConfig,
@@ -183,20 +194,19 @@ def _upstream_header_rule_matches(rule: dict[str, Any], model_name: str) -> bool
 
 def _protocol_base_url(channel: ChannelConfig) -> str:
     root = normalize_base_url(str(channel.base_url))
-    if channel.protocol == ProtocolKind.OPENAI_CHAT:
-        parsed = urlsplit(root)
-        if parsed.hostname == "open.bigmodel.cn" and parsed.path.rstrip("/") in {
-            "/api/paas/v4",
-            "/api/coding/paas/v4",
-        }:
-            return root
-    if channel.protocol in {
-        ProtocolKind.OPENAI_CHAT,
-        ProtocolKind.OPENAI_RESPONSES,
-        ProtocolKind.OPENAI_EMBEDDING,
-        ProtocolKind.RERANK,
-        ProtocolKind.ANTHROPIC,
-    }:
+    parsed = urlsplit(root)
+
+    if (
+        channel.protocol in _OPENAI_COMPATIBLE_PROTOCOLS
+        and (parsed.hostname or "") in _GLM_HOSTS
+        and parsed.path.rstrip("/") in _GLM_OPENAI_VERSIONED_PATHS
+    ):
+        return root
+
+    if (
+        channel.protocol in _OPENAI_COMPATIBLE_PROTOCOLS
+        or channel.protocol == ProtocolKind.ANTHROPIC
+    ):
         return append_url_path(root, "v1")
     if channel.protocol == ProtocolKind.GEMINI:
         return append_url_path(root, "v1beta")
