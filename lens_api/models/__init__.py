@@ -84,6 +84,7 @@ class ProtocolKind(str, Enum):
     OPENAI_CHAT = "openai_chat"
     OPENAI_RESPONSES = "openai_responses"
     OPENAI_EMBEDDING = "openai_embedding"
+    OPENAI_IMAGE = "openai_image"
     RERANK = "rerank"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"

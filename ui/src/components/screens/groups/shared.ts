@@ -8,7 +8,9 @@ import type {
   Site,
 } from "@/lib/api";
 import { isGeneratedCredentialName } from "@/lib/utils";
-export { isGeneratedCredentialName, protocolBadgeClassName } from "@/lib/utils";
+import { protocolLabel, protocolOptions } from "@/lib/protocols";
+export { isGeneratedCredentialName, protocolLabel, protocolOptions };
+export { protocolBadgeClassName } from "@/lib/protocols";
 
 export type FormItem = {
   channel_id: string;
@@ -192,6 +194,7 @@ export const PROTOCOL_SUFFIXES: ProtocolKind[] = [
   "openai_chat",
   "openai_responses",
   "openai_embedding",
+  "openai_image",
   "rerank",
   "anthropic",
   "gemini",
@@ -271,23 +274,6 @@ export const strategyOptions: Array<{
   { value: "failover", zh: "故障转移", en: "Failover" },
 ];
 
-export const protocolLabels: Record<ProtocolKind, { zh: string; en: string }> =
-  {
-    openai_chat: { zh: "OpenAI Chat", en: "OpenAI Chat" },
-    openai_responses: { zh: "OpenAI Responses", en: "OpenAI Responses" },
-    openai_embedding: { zh: "OpenAI Embedding", en: "OpenAI Embedding" },
-    rerank: { zh: "Rerank", en: "Rerank" },
-    anthropic: { zh: "Anthropic", en: "Anthropic" },
-    gemini: { zh: "Gemini", en: "Gemini" },
-  };
-
-export function protocolLabel(
-  protocol: ProtocolKind,
-  locale: "zh-CN" | "en-US",
-) {
-  return protocolLabels[protocol][locale === "zh-CN" ? "zh" : "en"];
-}
-
 export function credentialDisplayLabel(
   item: Pick<
     FormItem | ModelGroupCandidateItem,
@@ -320,13 +306,6 @@ export function foldedMemberSourceLabel(
   );
   const credentialLabel = credentialNumberLabel(member, locale);
   return [...channelNames, credentialLabel].join(" · ");
-}
-
-export function protocolOptions(locale: "zh-CN" | "en-US") {
-  return (Object.keys(protocolLabels) as ProtocolKind[]).map((value) => ({
-    value,
-    label: protocolLabel(value, locale),
-  }));
 }
 
 export function formatMoney(value: number) {

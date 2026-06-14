@@ -5,6 +5,11 @@ import { ChevronDown } from "lucide-react";
 
 import { type ProtocolKind } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  PROTOCOL_LIST,
+  PROTOCOL_DOT_CLASS,
+  compactProtocolLabel,
+} from "@/lib/protocols";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -23,43 +28,6 @@ export interface ProtocolMultiSelectProps {
   invalid?: boolean;
   requireAtLeastOne?: boolean;
   placeholder?: string;
-}
-
-const CLIENT_PROTOCOLS: ProtocolKind[] = [
-  "openai_chat",
-  "openai_responses",
-  "anthropic",
-  "gemini",
-  "openai_embedding",
-  "rerank",
-];
-
-const PROTOCOL_DOT_CLASS: Record<ProtocolKind, string> = {
-  openai_chat: "bg-sky-500",
-  openai_responses: "bg-indigo-500",
-  anthropic: "bg-amber-500",
-  gemini: "bg-emerald-500",
-  openai_embedding: "bg-muted-foreground/60",
-  rerank: "bg-muted-foreground/60",
-};
-
-function protocolLabel(protocol: ProtocolKind): string {
-  switch (protocol) {
-    case "openai_chat":
-      return "chat";
-    case "openai_responses":
-      return "responses";
-    case "openai_embedding":
-      return "embeddings";
-    case "rerank":
-      return "rerank";
-    case "anthropic":
-      return "anthropic";
-    case "gemini":
-      return "gemini";
-    default:
-      return protocol;
-  }
 }
 
 const COPY = {
@@ -129,7 +97,7 @@ function ProtocolGroup({
                   disabled && "cursor-not-allowed",
                 )}
               >
-                {protocolLabel(protocol)}
+                {compactProtocolLabel(protocol)}
               </label>
             </div>
           );
@@ -150,8 +118,8 @@ export function ProtocolMultiSelect({
   requireAtLeastOne = false,
   placeholder,
 }: ProtocolMultiSelectProps): JSX.Element {
-  const allowed = allowedProtocols ?? CLIENT_PROTOCOLS;
-  const clientProtocols = CLIENT_PROTOCOLS.filter((p) => allowed.includes(p));
+  const allowed = allowedProtocols ?? PROTOCOL_LIST;
+  const clientProtocols = PROTOCOL_LIST.filter((p) => allowed.includes(p));
   const copy = COPY[locale];
 
   const toggle = (protocol: ProtocolKind) => {
@@ -162,7 +130,7 @@ export function ProtocolMultiSelect({
     );
   };
 
-  const selectedInOrder = CLIENT_PROTOCOLS.filter((p) => value.includes(p));
+  const selectedInOrder = PROTOCOL_LIST.filter((p) => value.includes(p));
   const clearDisabled = requireAtLeastOne && value.length <= 1;
 
   return (
@@ -194,7 +162,7 @@ export function ProtocolMultiSelect({
                       PROTOCOL_DOT_CLASS[protocol],
                     )}
                   />
-                  {protocolLabel(protocol)}
+                  {compactProtocolLabel(protocol)}
                 </span>
               ))}
               {selectedInOrder.length > 3 ? (
