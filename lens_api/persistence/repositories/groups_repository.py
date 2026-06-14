@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..shared import (
     AsyncSession,
+    ChannelStatus,
     ModelGroup,
     ModelGroupCandidateItem,
     ModelGroupCandidatesRequest,
@@ -458,6 +459,23 @@ class GroupRepository:
                 raise ValueError(
                     f"Credential not found in channel {item.channel_id}: "
                     f"{item.credential_id}"
+                )
+
+        for item in normalized_items:
+            if not item.enabled:
+                continue
+            member_channel = channel_by_id[item.channel_id]
+            if member_channel.status != ChannelStatus.ENABLED:
+                raise ValueError(
+                    f"Channel '{member_channel.name}' is disabled; "
+                    "enable the channel before enabling its members"
+                )
+            enabled_credential_ids = {
+                key.id for key in member_channel.keys if key.enabled
+            }
+            if item.credential_id not in enabled_credential_ids:
+                raise ValueError(
+                    "Credential is disabled; enable it before enabling this member"
                 )
 
         invalid_channel_ids = [

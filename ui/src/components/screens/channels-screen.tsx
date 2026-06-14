@@ -409,6 +409,7 @@ export function ChannelsScreen() {
       queryClient.invalidateQueries({ queryKey: ["site-runtime-summaries"] }),
       queryClient.invalidateQueries({ queryKey: ["router-snapshot"] }),
       queryClient.invalidateQueries({ queryKey: ["group-candidates"] }),
+      queryClient.invalidateQueries({ queryKey: ["groups"] }),
     ]);
   }
 
