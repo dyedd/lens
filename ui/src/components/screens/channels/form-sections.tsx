@@ -386,8 +386,8 @@ export function ProtocolConfigItem({
                           variant="outline"
                           title={
                             locale === "zh-CN"
-                              ? `客户端协议：${protocolLabel(item)}`
-                              : `Client protocol: ${protocolLabel(item)}`
+                              ? `客户端协议：${protocolLabel(item, locale)}`
+                              : `Client protocol: ${protocolLabel(item, locale)}`
                           }
                           className={cn(
                             "max-w-[140px] truncate",

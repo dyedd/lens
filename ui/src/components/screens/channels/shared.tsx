@@ -14,17 +14,20 @@ import type {
   SitePayload,
 } from "@/lib/api";
 import { isGeneratedCredentialName } from "@/lib/utils";
+import {
+  protocolLabel,
+  protocolOptions,
+  compactProtocolLabel,
+  protocolBadgeClassName,
+} from "@/lib/protocols";
+export {
+  isGeneratedCredentialName,
+  protocolBadgeClassName,
+  protocolLabel,
+  protocolOptions,
+  compactProtocolLabel,
+};
 import type { Locale } from "@/lib/i18n";
-export { isGeneratedCredentialName, protocolBadgeClassName } from "@/lib/utils";
-
-export const protocolOptions: Array<{ value: ProtocolKind; label: string }> = [
-  { value: "openai_chat", label: "OpenAI Chat" },
-  { value: "openai_responses", label: "OpenAI Responses" },
-  { value: "openai_embedding", label: "OpenAI Embedding" },
-  { value: "rerank", label: "Rerank" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "gemini", label: "Gemini" },
-];
 
 export type HeaderItem = { key: string; value: string };
 export type FormCredential = Omit<SiteCredentialInput, "id"> & { id: string };
@@ -98,12 +101,6 @@ export function protocolConfigModelKey(
   ]);
 }
 
-export function pickerModelKey(
-  model: Pick<PickerModelItem, "credential_id" | "model_name">,
-) {
-  return genericModelKey(model);
-}
-
 export function groupPickerModels(models: PickerModelItem[]) {
   const groups = new Map<string, PickerModelItem>();
   for (const model of models) {
@@ -120,7 +117,7 @@ export function groupPickerModels(models: PickerModelItem[]) {
 }
 
 export function pickerModelKeys(models: PickerModelItem[]) {
-  return Array.from(new Set(models.map((item) => pickerModelKey(item))));
+  return Array.from(new Set(models.map((item) => genericModelKey(item))));
 }
 
 export function modelSupportedProtocols(
@@ -397,31 +394,6 @@ export const emptyForm = (locale: Locale = "zh-CN"): FormState => {
   };
 };
 
-export function protocolLabel(protocol: ProtocolKind) {
-  return (
-    protocolOptions.find((item) => item.value === protocol)?.label ?? protocol
-  );
-}
-
-export function compactProtocolLabel(protocol: ProtocolKind) {
-  switch (protocol) {
-    case "openai_chat":
-      return "chat";
-    case "openai_responses":
-      return "responses";
-    case "openai_embedding":
-      return "embeddings";
-    case "rerank":
-      return "rerank";
-    case "anthropic":
-      return "anthropic";
-    case "gemini":
-      return "gemini";
-    default:
-      return protocol;
-  }
-}
-
 export function fallbackCredentialName(index: number) {
   return `Key ${index + 1}`;
 }
@@ -584,8 +556,10 @@ export function siteProtocols(site: Site) {
   );
 }
 
-export function siteSubtitle(site: Site) {
-  return siteProtocols(site).map(protocolLabel).join(" / ");
+export function siteSubtitle(site: Site, locale: "zh-CN" | "en-US") {
+  return siteProtocols(site)
+    .map((p) => protocolLabel(p, locale))
+    .join(" / ");
 }
 
 export function siteEndpointSummary(site: Site, locale: string = "zh-CN") {

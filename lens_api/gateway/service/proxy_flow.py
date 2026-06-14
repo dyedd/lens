@@ -56,6 +56,8 @@ async def _proxy_protocol(
     gateway_key: GatewayApiKey,
     inbound_user_agent: str | None = None,
     inbound_headers: Mapping[str, str] | None = None,
+    path_suffix: str | None = None,
+    multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
 ) -> Response:
     started_at = perf_counter()
     deadline = _RequestDeadline(started_at, settings.request_timeout_seconds)
@@ -194,6 +196,8 @@ async def _proxy_protocol(
                 errors=errors,
                 failure_status_codes=failure_status_codes,
                 deadline=deadline,
+                path_suffix=path_suffix,
+                multipart_files=multipart_files,
             )
             if response is not None:
                 return response
@@ -325,6 +329,8 @@ async def _try_target(
     errors: list[str],
     failure_status_codes: list[int | None],
     deadline: _RequestDeadline,
+    path_suffix: str | None = None,
+    multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
 ) -> Response | None:
     channel = target.channel
     attempt_started_at = perf_counter()
@@ -396,6 +402,8 @@ async def _try_target(
             forwarded_headers=inbound_headers,
             upstream_headers_config=runtime["upstream_headers_config"],
             log_body_enabled=log_body_enabled,
+            path_suffix=path_suffix,
+            multipart_files=multipart_files,
         )
         effective_user_agent = _effective_user_agent_from_headers(
             upstream.headers, upstream_user_agent
@@ -488,6 +496,7 @@ async def _try_target(
             reasoning_effort=reasoning_effort,
         )
     )
+
     merged_request_content = result.request_content or upstream_request_content
     if result.is_stream:
         if result.stream_capture is not None:

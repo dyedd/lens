@@ -141,7 +141,7 @@ export function ChannelFiltersPanel({
               <NativeSelectOption value="all">
                 {locale === "zh-CN" ? "全部协议" : "All protocols"}
               </NativeSelectOption>
-              {protocolOptions.map((option) => (
+              {protocolOptions(locale).map((option) => (
                 <NativeSelectOption key={option.value} value={option.value}>
                   {option.label}
                 </NativeSelectOption>

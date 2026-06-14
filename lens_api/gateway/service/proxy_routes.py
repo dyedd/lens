@@ -9,6 +9,7 @@ from .runtime_context import (
     ProtocolKind,
     Request,
     Response,
+    UploadFile,
     app_state,
     can_reach_protocol,
 )
@@ -91,11 +92,55 @@ async def proxy_rerank(
     )
 
 
+async def proxy_openai_image_generations(
+    request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
+) -> Response:
+    body = await request.json()
+    return await _proxy_protocol(
+        ProtocolKind.OPENAI_IMAGE,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+        path_suffix="images/generations",
+    )
+
+
+async def proxy_openai_image_edits(
+    request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
+) -> Response:
+    form = await request.form()
+    fields: dict[str, str] = {}
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    for field_name, value in form.multi_items():
+        if isinstance(value, UploadFile):
+            files.append(
+                (
+                    field_name,
+                    (
+                        value.filename or field_name,
+                        await value.read(),
+                        value.content_type or "application/octet-stream",
+                    ),
+                )
+            )
+        else:
+            fields[field_name] = value
+    return await _proxy_protocol(
+        ProtocolKind.OPENAI_IMAGE,
+        dict(fields),
+        gateway_key,
+        request.headers.get("user-agent"),
+        path_suffix="images/edits",
+        multipart_files=files,
+    )
+
+
 _OPENAI_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
     {
         ProtocolKind.OPENAI_CHAT,
         ProtocolKind.OPENAI_RESPONSES,
         ProtocolKind.OPENAI_EMBEDDING,
+        ProtocolKind.OPENAI_IMAGE,
         ProtocolKind.RERANK,
     }
 )

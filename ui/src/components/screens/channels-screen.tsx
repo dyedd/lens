@@ -72,7 +72,6 @@ import {
   modelSupportedProtocols,
   nextProtocolConfigName,
   parseBatchImportPayload,
-  pickerModelKey,
   pickerModelKeys,
   PickerModelItem,
   protocolConfigDisplayName,
@@ -287,7 +286,7 @@ export function ChannelsScreen() {
     () =>
       (sites ?? []).map((site) => ({
         ...site,
-        subtitle: siteSubtitle(site),
+        subtitle: siteSubtitle(site, locale),
         enabled_protocol_channel_count: site.protocols.reduce(
           (total, protocolConfig) => {
             if (!protocolConfig.enabled) return total;
@@ -1152,7 +1151,7 @@ export function ChannelsScreen() {
   function applyModelSelection(selectedKeys: string[]) {
     if (modelPickerProtocolConfigIndex === null) return;
     const selectedModels = availableModels.filter((item) =>
-      selectedKeys.includes(pickerModelKey(item)),
+      selectedKeys.includes(genericModelKey(item)),
     );
     const selectedModelGroups = groupPickerModels(selectedModels);
     setForm((current) => ({

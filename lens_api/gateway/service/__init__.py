@@ -92,6 +92,8 @@ from .proxy_routes import (
     proxy_gemini_stream_generate_content,
     proxy_openai_chat,
     proxy_openai_embeddings,
+    proxy_openai_image_edits,
+    proxy_openai_image_generations,
     proxy_openai_responses,
     proxy_rerank,
 )

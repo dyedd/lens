@@ -6,6 +6,7 @@ import type {
   ModelGroup,
   ProtocolKind,
 } from "@/lib/api";
+import { PROTOCOL_LABELS } from "@/lib/protocols";
 import { titleForLocale, type Locale } from "@/lib/i18n";
 export { titleForLocale };
 
@@ -32,15 +33,6 @@ export const EMPTY_FORM: GatewayApiKeyForm = {
   allowedModels: [],
   maxCostUsd: "0",
   expiresOn: undefined,
-};
-
-export const PROTOCOL_LABELS: Record<ProtocolKind, [string, string]> = {
-  openai_chat: ["OpenAI Chat", "OpenAI Chat"],
-  openai_responses: ["OpenAI Responses", "OpenAI Responses"],
-  openai_embedding: ["OpenAI Embedding", "OpenAI Embedding"],
-  rerank: ["Rerank", "Rerank"],
-  anthropic: ["Anthropic", "Anthropic"],
-  gemini: ["Gemini", "Gemini"],
 };
 
 export function maskGatewayKey(value: string) {
@@ -311,7 +303,7 @@ export function protocolSummary(locale: Locale, protocols: ProtocolKind[]) {
   return protocols
     .map((protocol) => {
       const labels = PROTOCOL_LABELS[protocol];
-      return locale === "zh-CN" ? labels[0] : labels[1];
+      return locale === "zh-CN" ? labels.zh : labels.en;
     })
     .join(" / ");
 }

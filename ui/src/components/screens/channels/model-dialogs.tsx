@@ -37,12 +37,12 @@ import {
   compactProtocolLabel,
   credentialLabel,
   FormState,
+  genericModelKey,
   groupPickerModels,
   Locale,
   ModelTestTarget,
   modelBadgeClassName,
   modelSupportedProtocols,
-  pickerModelKey,
   PickerModelItem,
   protocolBadgeClassName,
   protocolLabel,
@@ -199,7 +199,7 @@ export function ModelTestDialog({
                           >
                             {supportedProtocols.map((item) => (
                               <NativeSelectOption key={item} value={item}>
-                                {protocolLabel(item)}
+                                {protocolLabel(item, locale)}
                               </NativeSelectOption>
                             ))}
                           </NativeSelect>
@@ -443,7 +443,7 @@ export function BatchModelTestDialog({
                       >
                         {item.protocols.map((protocol) => (
                           <NativeSelectOption key={protocol} value={protocol}>
-                            {protocolLabel(protocol)}
+                            {protocolLabel(protocol, locale)}
                           </NativeSelectOption>
                         ))}
                       </NativeSelect>
@@ -607,7 +607,7 @@ export function ModelPickerDialog({
               <div className="flex flex-wrap gap-2.5">
                 {modelGroups.length ? (
                   modelGroups.map((model) => {
-                    const key = pickerModelKey(model);
+                    const key = genericModelKey(model);
                     const checked = pickerSelectedModelKeys.includes(key);
                     return (
                       <Button

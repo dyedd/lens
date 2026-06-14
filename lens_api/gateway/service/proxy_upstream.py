@@ -347,6 +347,8 @@ def _prepare_channel_request(
     forwarded_headers: Mapping[str, str] | None,
     upstream_headers_config: Mapping[str, Any] | None,
     log_body_enabled: bool,
+    path_suffix: str | None = None,
+    multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
 ) -> tuple[Any, bytes, str | None]:
     upstream = build_upstream_request(
         channel,
@@ -356,8 +358,19 @@ def _prepare_channel_request(
         user_agent=user_agent,
         forwarded_headers=forwarded_headers,
         upstream_headers_config=upstream_headers_config,
+        path_suffix=path_suffix,
     )
-    body_bytes = _json_body_bytes(upstream.json_body)
+    if multipart_files is not None:
+        multipart_request = httpx.Request(
+            "POST",
+            upstream.url,
+            data=upstream.json_body,
+            files=multipart_files,
+        )
+        body_bytes = multipart_request.read()
+        upstream.headers["content-type"] = multipart_request.headers["content-type"]
+    else:
+        body_bytes = _json_body_bytes(upstream.json_body)
     request_content = _dump_log_json(upstream.json_body) if log_body_enabled else None
     too_large_message = _request_body_too_large_message(
         len(body_bytes), settings.max_request_body_bytes

@@ -238,6 +238,16 @@ def _site_model_probe_output_text(protocol: ProtocolKind, raw_payload: Any) -> s
                 if parts:
                     output_text = "\n".join(parts)
                     break
+    elif protocol == ProtocolKind.OPENAI_IMAGE:
+        data = raw_payload.get("data")
+        if isinstance(data, list):
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                revised = item.get("revised_prompt")
+                if isinstance(revised, str) and revised.strip():
+                    output_text = revised.strip()
+                    break
     return output_text
 
 
@@ -284,6 +294,13 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
         return {
             "model": payload.model_name,
             "input": text,
+        }
+    if payload.protocol == ProtocolKind.OPENAI_IMAGE:
+        return {
+            "model": payload.model_name,
+            "prompt": text,
+            "n": 1,
+            "size": "1024x1024",
         }
     if payload.protocol == ProtocolKind.RERANK:
         query, documents = _rerank_test_prompt(text)
