@@ -45,6 +45,7 @@ from .request_logger import _RequestLogger
 from .stream_logging import (
     _cancel_stream_capture,
     _capture_converted_stream_iterator,
+    _safe_estimate_cost,
     _stream_upstream_iterator,
 )
 from .stream_restore import _distill_stream_response_content
@@ -97,7 +98,7 @@ async def _build_anthropic_sse_to_json_result(
         media_type = "application/json"
         response_headers.pop("content-type", None)
 
-    cost = await app_state.model_price_repo.estimate_model_cost(
+    cost = await _safe_estimate_cost(
         pricing_group_name,
         parsed["input_tokens"],
         parsed["output_tokens"],
@@ -227,7 +228,7 @@ async def _build_json_result(
             client_protocol, channel.protocol, content, body.get("model", "")
         )
 
-    cost = await app_state.model_price_repo.estimate_model_cost(
+    cost = await _safe_estimate_cost(
         pricing_group_name,
         parsed["input_tokens"],
         parsed["output_tokens"],
