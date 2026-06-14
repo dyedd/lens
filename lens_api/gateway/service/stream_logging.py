@@ -193,9 +193,31 @@ async def _persist_stream_first_token_latency(
 async def _cancel_stream_capture(
     capture: StreamCapture, reason: str | None = None
 ) -> None:
+    if capture.completed:
+        return
     capture.client_disconnected = True
     if reason and reason not in capture.errors:
         capture.errors.append(reason)
+
+
+async def _safe_estimate_cost(
+    model_name: str | None,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_input_tokens: int = 0,
+    cache_write_input_tokens: int = 0,
+) -> tuple[float, float, float]:
+    try:
+        return await app_state.model_price_repo.estimate_model_cost(
+            model_name,
+            input_tokens,
+            output_tokens,
+            cache_read_input_tokens,
+            cache_write_input_tokens,
+        )
+    except Exception:
+        logger.exception("Failed to estimate model cost")
+        return (0.0, 0.0, 0.0)
 
 
 async def _record_stream_request_log(
@@ -293,7 +315,7 @@ async def _record_stream_request_log(
         input_cost_usd,
         output_cost_usd,
         total_cost_usd,
-    ) = await app_state.model_price_repo.estimate_model_cost(
+    ) = await _safe_estimate_cost(
         resolved_group_name,
         input_tokens,
         output_tokens,
@@ -417,12 +439,14 @@ async def _stream_upstream_iterator(
         _flush_stream_event_buffer(protocol, capture, stream_started_at)
         capture.completed = True
     except asyncio.CancelledError:
+        capture.error_status_code = 499
         await _cancel_stream_capture(capture, "client disconnected")
         raise
     except TimeoutError:
         capture.error_status_code = 504
         capture.errors.append(deadline.message())
     except httpx.HTTPError as exc:
+        capture.error_status_code = 502
         capture.errors.append(f"stream failed: {type(exc).__name__}: {exc}")
     finally:
         await response.aclose()
