@@ -17,6 +17,7 @@ from .runtime_context import (
     deepcopy,
     json,
     perf_counter,
+    re,
     urlsplit,
 )
 
@@ -282,6 +283,57 @@ def _deep_merge_json_objects(
         else:
             merged[key] = deepcopy(override_value)
     return merged
+
+
+def _apply_global_param_override(
+    body: dict[str, Any],
+    config: Mapping[str, Any] | None,
+    model_name: str,
+) -> dict[str, Any]:
+    merged = dict(body)
+    if not config:
+        return merged
+    global_override = config.get("global")
+    if isinstance(global_override, Mapping):
+        merged = _deep_merge_json_objects(merged, global_override)
+    matched_rules = _matching_param_override_rules(config, model_name)
+    # earlier rules take precedence (first matching rule wins on conflict)
+    for rule_override in reversed(matched_rules):
+        merged = _deep_merge_json_objects(merged, rule_override)
+    return merged
+
+
+def _matching_param_override_rules(
+    config: Mapping[str, Any], model_name: str
+) -> list[dict[str, Any]]:
+    matched: list[dict[str, Any]] = []
+    normalized_model = (model_name or "").strip()
+    if not normalized_model:
+        return matched
+    rules = config.get("rules", [])
+    for rule in rules:
+        if not rule.get("enabled", True):
+            continue
+        if not _param_override_rule_matches(rule, normalized_model):
+            continue
+        override = rule.get("override")
+        if isinstance(override, Mapping):
+            matched.append(dict(override))
+    return matched
+
+
+def _param_override_rule_matches(rule: Mapping[str, Any], model_name: str) -> bool:
+    match_type = rule.get("match_type", "exact")
+    if match_type == "regex":
+        pattern = str(rule.get("pattern", "")).strip()
+        if not pattern:
+            return False
+        try:
+            return bool(re.search(pattern, model_name))
+        except re.error:
+            return False
+    models = rule.get("models", [])
+    return model_name in models
 
 
 def _normalize_openai_responses_input(value: Any) -> Any:

@@ -45,6 +45,10 @@ import {
   serializeModelTestPrompts,
 } from "@/lib/model-test-prompts";
 import { cn } from "@/lib/utils";
+import {
+  type UpstreamParamOverrideDraft,
+  type UpstreamParamOverrideRuleDraft,
+} from "@/lib/settings-types";
 import { DashboardHeaderActions } from "@/components/shell/dashboard-header-actions";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { AccountSettings } from "@/components/settings/account-settings";
@@ -61,6 +65,7 @@ const HEALTH_MIN_SAMPLES = "health_min_samples";
 const RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled";
 const MODEL_LIST_COMPAT_MODE_ENABLED = "model_list_compat_mode_enabled";
 const UPSTREAM_HEADERS_CONFIG = "upstream_headers_config";
+const UPSTREAM_PARAM_OVERRIDE_CONFIG = "upstream_param_override_config";
 const SITE_NAME = "site_name";
 const SITE_LOGO_URL = "site_logo_url";
 const TIME_ZONE = "time_zone";
@@ -89,6 +94,7 @@ type DraftState = {
   timeZone: string;
   modelTestPrompts: string;
   upstreamHeadersConfig: UpstreamHeadersDraft;
+  upstreamParamOverrideConfig: UpstreamParamOverrideDraft;
 };
 
 type HeaderItem = { key: string; value: string };
@@ -135,6 +141,22 @@ function emptyUpstreamHeaderRule(): UpstreamHeaderRuleDraft {
   };
 }
 
+function emptyUpstreamParamOverrideDraft(): UpstreamParamOverrideDraft {
+  return { global: "{}", rules: [] };
+}
+
+function emptyUpstreamParamOverrideRule(): UpstreamParamOverrideRuleDraft {
+  return {
+    id: createDraftId("upstream-param-override-rule"),
+    enabled: true,
+    name: "",
+    matchType: "exact",
+    models: "",
+    pattern: "",
+    override: "",
+  };
+}
+
 const EMPTY_DRAFT: DraftState = {
   proxyUrl: "",
   corsAllowOrigins: "*",
@@ -151,6 +173,7 @@ const EMPTY_DRAFT: DraftState = {
   timeZone: "Asia/Shanghai",
   modelTestPrompts: DEFAULT_MODEL_TEST_PROMPTS.join("\n"),
   upstreamHeadersConfig: emptyUpstreamHeadersDraft(),
+  upstreamParamOverrideConfig: emptyUpstreamParamOverrideDraft(),
 };
 
 function parseSettings(items: SettingItem[] | undefined) {
@@ -180,6 +203,9 @@ function parseSettings(items: SettingItem[] | undefined) {
     ).join("\n"),
     upstreamHeadersConfig: parseUpstreamHeadersConfig(
       mapping.get(UPSTREAM_HEADERS_CONFIG),
+    ),
+    upstreamParamOverrideConfig: parseUpstreamParamOverrideConfig(
+      mapping.get(UPSTREAM_PARAM_OVERRIDE_CONFIG),
     ),
   } satisfies DraftState;
 }
@@ -390,6 +416,164 @@ function serializeUpstreamHeadersConfig(config: UpstreamHeadersDraft) {
   });
 }
 
+function formatJsonObject(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return JSON.stringify(value, null, 2);
+  }
+  return "";
+}
+
+function parseOverrideObject(raw: string): Record<string, unknown> | null {
+  const trimmed = raw.trim();
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function hasParamRuleContent(rule: UpstreamParamOverrideRuleDraft) {
+  return Boolean(
+    rule.name.trim() ||
+    rule.models.trim() ||
+    rule.pattern.trim() ||
+    rule.override.trim(),
+  );
+}
+
+function validateUpstreamParamOverrideConfig(
+  config: UpstreamParamOverrideDraft,
+  locale: Locale,
+) {
+  const globalOverride = parseOverrideObject(config.global);
+  if (globalOverride === null) {
+    return titleForLocale(
+      locale,
+      "全局参数不是合法的 JSON 对象。",
+      "Global params must be a valid JSON object.",
+    );
+  }
+  if ("model" in globalOverride) {
+    return titleForLocale(
+      locale,
+      "全局参数不可包含 model。",
+      "Global params cannot include model.",
+    );
+  }
+  for (const rule of config.rules) {
+    if (!hasParamRuleContent(rule)) {
+      continue;
+    }
+    const override = parseOverrideObject(rule.override);
+    if (override === null) {
+      return titleForLocale(
+        locale,
+        "覆盖参数不是合法的 JSON 对象。",
+        "Override params must be a valid JSON object.",
+      );
+    }
+    if ("model" in override) {
+      return titleForLocale(
+        locale,
+        "覆盖参数不可包含 model。",
+        "Override params cannot include model.",
+      );
+    }
+    if (Object.keys(override).length === 0) {
+      return titleForLocale(
+        locale,
+        "参数覆盖规则需要至少填写一个覆盖参数。",
+        "Param override rules need at least one override param.",
+      );
+    }
+    if (rule.matchType === "exact" && !parseModelListText(rule.models).length) {
+      return titleForLocale(
+        locale,
+        "精确匹配规则需要填写至少一个模型名称。",
+        "Exact match rules need at least one model name.",
+      );
+    }
+    if (rule.matchType === "regex" && !rule.pattern.trim()) {
+      return titleForLocale(
+        locale,
+        "正则匹配规则需要填写模型正则。",
+        "Regex match rules need a model regex.",
+      );
+    }
+  }
+  return null;
+}
+
+function parseUpstreamParamOverrideConfig(rawValue: string | undefined) {
+  if (!rawValue?.trim()) {
+    return emptyUpstreamParamOverrideDraft();
+  }
+  try {
+    const payload: unknown = JSON.parse(rawValue);
+    if (!isRecord(payload)) {
+      return emptyUpstreamParamOverrideDraft();
+    }
+    const rawRules = Array.isArray(payload["rules"]) ? payload["rules"] : [];
+    return {
+      global: formatJsonObject(payload["global"]) || "{}",
+      rules: rawRules.filter(isRecord).map((rule) => {
+        const matchType = rule["match_type"] === "regex" ? "regex" : "exact";
+        const rawModels = Array.isArray(rule["models"]) ? rule["models"] : [];
+        const models = rawModels
+          .map((item) => String(item ?? "").trim())
+          .filter(Boolean)
+          .join("\n");
+        return {
+          id: createDraftId("upstream-param-override-rule"),
+          enabled: rule["enabled"] !== false,
+          name: typeof rule["name"] === "string" ? rule["name"] : "",
+          matchType,
+          models,
+          pattern: typeof rule["pattern"] === "string" ? rule["pattern"] : "",
+          override: formatJsonObject(rule["override"]),
+        } satisfies UpstreamParamOverrideRuleDraft;
+      }),
+    } satisfies UpstreamParamOverrideDraft;
+  } catch {
+    return emptyUpstreamParamOverrideDraft();
+  }
+}
+
+function serializeUpstreamParamOverrideConfig(
+  config: UpstreamParamOverrideDraft,
+) {
+  const rules = config.rules.flatMap((rule) => {
+    const override = parseOverrideObject(rule.override);
+    if (override === null || Object.keys(override).length === 0) {
+      return [];
+    }
+    const models = parseModelListText(rule.models);
+    const pattern = rule.pattern.trim();
+    if (rule.matchType === "exact" && !models.length) {
+      return [];
+    }
+    if (rule.matchType === "regex" && !pattern) {
+      return [];
+    }
+    return [
+      {
+        enabled: rule.enabled,
+        name: rule.name.trim(),
+        match_type: rule.matchType,
+        models,
+        pattern,
+        override,
+      },
+    ];
+  });
+  const globalOverride = parseOverrideObject(config.global);
+  return JSON.stringify({ global: globalOverride, rules });
+}
+
 function SettingCard({
   title,
   description,
@@ -421,7 +605,7 @@ function SettingCard({
 
 export function SettingsScreen() {
   const queryClient = useQueryClient();
-  const { locale, setLocale } = useI18n();
+  const { locale } = useI18n();
   const settingsQuery = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
@@ -587,6 +771,67 @@ export function SettingsScreen() {
     }));
   }
 
+  function updateUpstreamParamOverrideConfig(
+    updater: (
+      current: UpstreamParamOverrideDraft,
+    ) => UpstreamParamOverrideDraft,
+  ) {
+    setDraft((current) => ({
+      ...current,
+      upstreamParamOverrideConfig: updater(current.upstreamParamOverrideConfig),
+    }));
+  }
+
+  function updateGlobalParamOverride(value: string) {
+    updateUpstreamParamOverrideConfig((current) => ({
+      ...current,
+      global: value,
+    }));
+  }
+
+  function addParamOverrideRule() {
+    updateUpstreamParamOverrideConfig((current) => ({
+      ...current,
+      rules: [...current.rules, emptyUpstreamParamOverrideRule()],
+    }));
+  }
+
+  function updateParamOverrideRule(
+    index: number,
+    patch: Partial<UpstreamParamOverrideRuleDraft>,
+  ) {
+    updateUpstreamParamOverrideConfig((current) => ({
+      ...current,
+      rules: current.rules.map((rule, ruleIndex) =>
+        ruleIndex === index ? { ...rule, ...patch } : rule,
+      ),
+    }));
+  }
+
+  function removeParamOverrideRule(index: number) {
+    updateUpstreamParamOverrideConfig((current) => ({
+      ...current,
+      rules: current.rules.filter((_, ruleIndex) => ruleIndex !== index),
+    }));
+  }
+
+  function moveParamOverrideRule(index: number, direction: -1 | 1) {
+    updateUpstreamParamOverrideConfig((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.rules.length) {
+        return current;
+      }
+      const rules = [...current.rules];
+      const rule = rules[index];
+      if (!rule) {
+        return current;
+      }
+      rules.splice(index, 1);
+      rules.splice(nextIndex, 0, rule);
+      return { ...current, rules };
+    });
+  }
+
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["settings"] }),
@@ -609,6 +854,14 @@ export function SettingsScreen() {
     );
     if (upstreamHeadersError) {
       toast.error(upstreamHeadersError);
+      return;
+    }
+    const upstreamParamOverrideError = validateUpstreamParamOverrideConfig(
+      draft.upstreamParamOverrideConfig,
+      locale,
+    );
+    if (upstreamParamOverrideError) {
+      toast.error(upstreamParamOverrideError);
       return;
     }
     setSaving(true);
@@ -661,6 +914,12 @@ export function SettingsScreen() {
         {
           key: UPSTREAM_HEADERS_CONFIG,
           value: serializeUpstreamHeadersConfig(draft.upstreamHeadersConfig),
+        },
+        {
+          key: UPSTREAM_PARAM_OVERRIDE_CONFIG,
+          value: serializeUpstreamParamOverrideConfig(
+            draft.upstreamParamOverrideConfig,
+          ),
         },
       ];
       await apiRequest<SettingItem[]>("/admin/settings", {
@@ -1036,6 +1295,14 @@ export function SettingsScreen() {
                   }
                   onUpdateRuleHeader={updateRuleHeader}
                   onRemoveRuleHeader={removeRuleHeader}
+                  upstreamParamOverrideConfig={
+                    draft.upstreamParamOverrideConfig
+                  }
+                  onGlobalParamOverrideChange={updateGlobalParamOverride}
+                  onAddParamOverrideRule={addParamOverrideRule}
+                  onUpdateParamOverrideRule={updateParamOverrideRule}
+                  onRemoveParamOverrideRule={removeParamOverrideRule}
+                  onMoveParamOverrideRule={moveParamOverrideRule}
                 />
               </SettingCard>
             </TabsContent>

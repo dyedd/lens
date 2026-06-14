@@ -5,7 +5,7 @@ import json
 
 from pydantic import ValidationError
 
-from ...models import UpstreamHeadersConfig
+from ...models import UpstreamHeadersConfig, UpstreamParamOverrideConfig
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..shared import (
@@ -26,6 +26,7 @@ from ..shared import (
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
     SETTING_UPSTREAM_HEADERS_CONFIG,
+    SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
     SettingEntity,
     SettingItem,
     monotonic,
@@ -70,6 +71,11 @@ class SettingsRepository:
         upstream_headers_config = cloned.get("upstream_headers_config")
         if isinstance(upstream_headers_config, dict):
             cloned["upstream_headers_config"] = deepcopy(upstream_headers_config)
+        upstream_param_override_config = cloned.get("upstream_param_override_config")
+        if isinstance(upstream_param_override_config, dict):
+            cloned["upstream_param_override_config"] = deepcopy(
+                upstream_param_override_config
+            )
         return cloned
 
     @staticmethod
@@ -83,6 +89,19 @@ class SettingsRepository:
                 config = UpstreamHeadersConfig.model_validate(payload)
             except (TypeError, ValueError, json.JSONDecodeError, ValidationError):
                 config = UpstreamHeadersConfig()
+        return config.model_dump(mode="json", by_alias=True)
+
+    @staticmethod
+    def _parse_upstream_param_override_config(value: str | None) -> dict[str, Any]:
+        raw_value = (value or "").strip()
+        if not raw_value:
+            config = UpstreamParamOverrideConfig()
+        else:
+            try:
+                payload = json.loads(raw_value)
+                config = UpstreamParamOverrideConfig.model_validate(payload)
+            except (TypeError, ValueError, json.JSONDecodeError, ValidationError):
+                config = UpstreamParamOverrideConfig()
         return config.model_dump(mode="json", by_alias=True)
 
     @staticmethod
@@ -167,6 +186,9 @@ class SettingsRepository:
             ),
             "upstream_headers_config": self._parse_upstream_headers_config(
                 mapping.get(SETTING_UPSTREAM_HEADERS_CONFIG)
+            ),
+            "upstream_param_override_config": self._parse_upstream_param_override_config(
+                mapping.get(SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG)
             ),
             "site_name": mapping.get(SETTING_SITE_NAME, "Lens").strip() or "Lens",
             "site_logo_url": mapping.get(SETTING_SITE_LOGO_URL, "").strip(),

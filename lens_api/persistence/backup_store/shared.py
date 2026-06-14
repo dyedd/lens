@@ -32,6 +32,7 @@ from ...models import (
     SettingItem,
     SiteConfig,
     normalize_upstream_headers_config_json,
+    normalize_upstream_param_override_config_json,
 )
 from ..shared import (
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
@@ -50,6 +51,7 @@ from ..shared import (
     SETTING_TIME_ZONE,
     SETTING_MODEL_PRICE_LAST_SYNC_AT,
     SETTING_UPSTREAM_HEADERS_CONFIG,
+    SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
 )
 from ..entities import (
     GatewayApiKeyEntity,
@@ -92,6 +94,7 @@ EXPORTABLE_SETTING_KEYS = (
     SETTING_HEALTH_MIN_SAMPLES,
     SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
     SETTING_UPSTREAM_HEADERS_CONFIG,
+    SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
     SETTING_SITE_NAME,
     SETTING_SITE_LOGO_URL,
     SETTING_TIME_ZONE,
