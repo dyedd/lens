@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
-import { Check, Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +71,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
   const [removingKeyId, setRemovingKeyId] = useState("");
   const [togglingKeyId, setTogglingKeyId] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
+  const [visibleKey, setVisibleKey] = useState("");
 
   function openCreateDialog() {
     setEditingKey(null);
@@ -82,7 +83,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     setDialogOpen(true);
   }
 
-  async function copyGatewayKey(value: string) {
+  async function copyGatewayKey(value: string, itemId: string) {
     try {
       await navigator.clipboard.writeText(value);
       setCopiedKey(value);
@@ -91,7 +92,14 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         setCopiedKey((current) => (current === value ? "" : current));
       }, 1500);
     } catch {
-      toast.error(titleForLocale(locale, "复制失败", "Failed to copy"));
+      setVisibleKey(itemId);
+      toast.info(
+        titleForLocale(
+          locale,
+          "非 HTTPS 环境，无法自动复制，已显示完整 Key 请手动复制",
+          "Non-HTTPS environment. Key revealed for manual copy.",
+        ),
+      );
     }
   }
 
@@ -272,7 +280,9 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                           <div className="flex min-w-0 items-center gap-2">
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-mono text-sm text-foreground">
-                                {maskGatewayKey(item.api_key)}
+                                {visibleKey === item.id
+                                  ? item.api_key
+                                  : maskGatewayKey(item.api_key)}
                               </div>
                               <div className="text-xs text-muted-foreground">
                                 {titleForLocale(
@@ -286,7 +296,26 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
                               type="button"
                               variant="ghost"
                               size="icon-sm"
-                              onClick={() => void copyGatewayKey(item.api_key)}
+                              onClick={() =>
+                                setVisibleKey(
+                                  visibleKey === item.id ? "" : item.id,
+                                )
+                              }
+                              title={
+                                visibleKey === item.id
+                                  ? titleForLocale(locale, "隐藏", "Hide")
+                                  : titleForLocale(locale, "显示", "Show")
+                              }
+                            >
+                              {visibleKey === item.id ? <EyeOff /> : <Eye />}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() =>
+                                void copyGatewayKey(item.api_key, item.id)
+                              }
                               title={titleForLocale(locale, "复制", "Copy")}
                             >
                               {copiedKey === item.api_key ? (
