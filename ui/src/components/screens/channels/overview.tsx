@@ -129,7 +129,7 @@ export function ChannelsOverview({
                                 protocolBadgeClassName(p),
                               )}
                             >
-                              {protocolLabel(p)}
+                              {protocolLabel(p, locale)}
                             </Badge>
                           ))}
                         </div>

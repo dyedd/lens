@@ -39,6 +39,10 @@ def build_models_dev_price_index(
                 normalize_model_key(str(model_id)),
                 normalize_model_key(f"{normalized_provider_id}/{model_id}"),
             }
+            if "/" in (model_id or ""):
+                tail = model_id.rsplit("/", 1)[-1].strip()
+                if tail:
+                    aliases.add(normalize_model_key(tail))
             price_payload = {
                 "input_price_per_million": float(cost_payload.get("input") or 0.0),
                 "output_price_per_million": float(cost_payload.get("output") or 0.0),

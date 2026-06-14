@@ -110,6 +110,22 @@ def _openai_responses_usage(
     }
 
 
+def _openai_image_usage(
+    payload: Mapping[str, Any], *, model: str | None
+) -> dict[str, int | str | None]:
+    usage = _usage_mapping(payload.get("usage"))
+    prompt_tokens = _usage_int(usage, "prompt_tokens")
+    total_tokens = _usage_int(usage, "total_tokens")
+    return {
+        "resolved_model": model,
+        "input_tokens": prompt_tokens,
+        "cache_read_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": max(total_tokens - prompt_tokens, 0),
+        "total_tokens": total_tokens,
+    }
+
+
 def _openai_embedding_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
     usage = _usage_mapping(payload.get("usage"))
     return {
@@ -304,6 +320,8 @@ def _extract_response_usage(
         return _openai_chat_usage(payload)
     if protocol == ProtocolKind.OPENAI_RESPONSES:
         return _openai_responses_usage(payload, model=payload.get("model"))
+    if protocol == ProtocolKind.OPENAI_IMAGE:
+        return _openai_image_usage(payload, model=fallback_model)
     if protocol == ProtocolKind.OPENAI_EMBEDDING:
         return _openai_embedding_usage(payload)
     if protocol == ProtocolKind.ANTHROPIC:

@@ -87,6 +87,7 @@ export function ProtocolBadge({
     rerank: "rerank",
     anthropic: "anthropic",
     gemini: "gemini",
+    openai_image: "image",
   } as const;
 
   return (

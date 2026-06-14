@@ -23,6 +23,7 @@ _OPENAI_LIKE_PATH = {
     ProtocolKind.OPENAI_CHAT: "chat/completions",
     ProtocolKind.OPENAI_RESPONSES: "responses",
     ProtocolKind.OPENAI_EMBEDDING: "embeddings",
+    ProtocolKind.OPENAI_IMAGE: "images/generations",
     ProtocolKind.RERANK: "rerank",
     ProtocolKind.ANTHROPIC: "messages",
 }
@@ -32,6 +33,7 @@ _OPENAI_COMPATIBLE_PROTOCOLS = frozenset(
         ProtocolKind.OPENAI_CHAT,
         ProtocolKind.OPENAI_RESPONSES,
         ProtocolKind.OPENAI_EMBEDDING,
+        ProtocolKind.OPENAI_IMAGE,
         ProtocolKind.RERANK,
     }
 )
@@ -47,6 +49,7 @@ def build_upstream_request(
     user_agent: str | None = None,
     forwarded_headers: Mapping[str, str] | None = None,
     upstream_headers_config: Mapping[str, Any] | None = None,
+    path_suffix: str | None = None,
 ) -> UpstreamRequest:
     api_key = resolve_channel_api_key(channel, credential_id=credential_id)
 
@@ -77,7 +80,7 @@ def build_upstream_request(
             json_body=payload,
         )
 
-    suffix = _OPENAI_LIKE_PATH.get(channel.protocol)
+    suffix = path_suffix or _OPENAI_LIKE_PATH.get(channel.protocol)
     if suffix is None:
         raise HTTPException(
             status_code=500, detail=f"Unsupported protocol={channel.protocol.value}"
