@@ -140,8 +140,16 @@ async def _build_stream_result(
     deadline: _RequestDeadline,
     client_to_close: httpx.AsyncClient | None = None,
 ) -> UpstreamResult:
+    chat_expected_choices = body.get("n", 1)
+    if (
+        isinstance(chat_expected_choices, bool)
+        or not isinstance(chat_expected_choices, int)
+        or chat_expected_choices < 1
+    ):
+        chat_expected_choices = 1
     capture = StreamCapture(
         capture_body=log_body_enabled,
+        chat_expected_choices=chat_expected_choices,
         client_to_close=client_to_close,
         deadline=deadline,
     )

@@ -245,8 +245,23 @@ def _describe_stream_capture_issue(
     raw_content: str | None,
 ) -> str | None:
     issues: list[str] = []
+
+    client_disconnect_after_chat_finish = (
+        capture is not None
+        and capture.client_disconnected
+        and protocol == ProtocolKind.OPENAI_CHAT
+        and len(capture.chat_finished_choices) >= capture.chat_expected_choices
+    )
+
     if capture is not None:
-        issues.extend(error for error in capture.errors if error)
+        for error in capture.errors:
+            if error:
+                if (
+                    client_disconnect_after_chat_finish
+                    and error == "client disconnected"
+                ):
+                    continue
+                issues.append(error)
         issues.extend(error for error in capture.parse_errors if error)
 
     if capture is None or capture.capture_body:
@@ -261,7 +276,8 @@ def _describe_stream_capture_issue(
                 issues.append("stream ended before response.completed")
 
     if capture is not None and not capture.completed:
-        issues.append("stream did not drain to completion")
+        if not client_disconnect_after_chat_finish:
+            issues.append("stream did not drain to completion")
     if (
         capture is not None
         and capture.completed
