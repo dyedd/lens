@@ -67,6 +67,21 @@ def _chat_stream_payload_has_output(payload: dict[str, Any]) -> bool:
     return False
 
 
+def _record_chat_stream_finish_reasons(
+    capture: StreamCapture, payload: dict[str, Any]
+) -> None:
+    choices = payload.get("choices")
+    if not isinstance(choices, list):
+        return
+    for choice in choices:
+        if not isinstance(choice, dict) or choice.get("finish_reason") is None:
+            continue
+        index = choice.get("index", 0)
+        if isinstance(index, bool) or not isinstance(index, int):
+            index = 0
+        capture.chat_finished_choices.add(index)
+
+
 def _chat_function_delta_has_output(value: dict[str, Any]) -> bool:
     return _has_non_empty_stream_value(
         value.get("name")
@@ -573,6 +588,8 @@ def _record_stream_event_payload(
 ) -> None:
     if not capture.saw_first_chunk and _stream_payload_has_output(protocol, payload):
         _mark_stream_first_chunk(capture, stream_started_at)
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        _record_chat_stream_finish_reasons(capture, payload)
     try:
         parsed = _extract_usage_from_payload(protocol, payload)
     except ValueError as exc:
