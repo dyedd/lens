@@ -68,6 +68,8 @@ from ...models import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
+    ModelGroupEnsureFromSiteRequest,
+    ModelGroupEnsureFromSiteResponse,
     ModelGroupUpdate,
     ModelPriceItem,
     ModelPriceListResponse,

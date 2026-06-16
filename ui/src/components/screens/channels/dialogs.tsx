@@ -6,7 +6,7 @@ import type {
   FormEventHandler,
   SetStateAction,
 } from "react";
-import { Plus, RefreshCcw, X } from "lucide-react";
+import { FolderPlus, Plus, RefreshCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -44,6 +44,7 @@ export function ChannelEditorDialog({
   batchTestOptions,
   batchTestingModels,
   testingModel,
+  ensuringModelGroups,
   overviewModels,
   modelTestOptionByKey,
   setDialogOpen,
@@ -63,6 +64,7 @@ export function ChannelEditorDialog({
   updateProtocolConfig,
   addManualProtocolConfigModel,
   fetchProtocolModels,
+  openModelGroupEnsureDialog,
   openBatchModelTestDialog,
   updateModelProtocols,
   openAggregateModelTest,
@@ -80,6 +82,7 @@ export function ChannelEditorDialog({
   batchTestOptions: BatchModelTestOption[];
   batchTestingModels: boolean;
   testingModel: boolean;
+  ensuringModelGroups: boolean;
   overviewModels: AggregatedModel[];
   modelTestOptionByKey: Map<string, TestableModelOption>;
   setDialogOpen: Dispatch<SetStateAction<boolean>>;
@@ -105,6 +108,7 @@ export function ChannelEditorDialog({
     credentialId: string,
   ) => void;
   fetchProtocolModels: (protocolConfigIndex: number) => void;
+  openModelGroupEnsureDialog: () => void;
   openBatchModelTestDialog: () => void;
   updateModelProtocols: (
     modelKey: string,
@@ -402,6 +406,34 @@ export function ChannelEditorDialog({
                       {locale === "zh-CN" ? "模型总览" : "Model Overview"}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={openModelGroupEnsureDialog}
+                        disabled={
+                          !overviewModels.length ||
+                          ensuringModelGroups ||
+                          batchTestingModels ||
+                          testingModel
+                        }
+                      >
+                        {ensuringModelGroups ? (
+                          <RefreshCcw
+                            data-icon="inline-start"
+                            className="animate-spin"
+                          />
+                        ) : (
+                          <FolderPlus data-icon="inline-start" />
+                        )}
+                        {locale === "zh-CN"
+                          ? ensuringModelGroups
+                            ? "生成预览中..."
+                            : "加入/创建模型组"
+                          : ensuringModelGroups
+                            ? "Preparing preview..."
+                            : "Add/create groups"}
+                      </Button>
                       <Button
                         type="button"
                         variant="outline"

@@ -1,7 +1,7 @@
 from enum import Enum
 import json
 import re
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import (
@@ -856,6 +856,44 @@ class ModelGroupCandidatesResponse(StrictBaseModel):
     candidates: list[ModelGroupCandidateItem] = Field(default_factory=list)
 
 
+class ModelGroupEnsureModelInput(StrictBaseModel):
+    protocol_config_id: str = Field(min_length=1)
+    credential_id: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+    group_name: str = ""
+    protocols: list[ProtocolKind] = Field(min_length=1)
+
+
+class ModelGroupEnsureFromSiteRequest(StrictBaseModel):
+    site_id: str = Field(min_length=1)
+    dry_run: bool = True
+    allow_protocol_extension: bool = False
+    models: list[ModelGroupEnsureModelInput] = Field(default_factory=list)
+
+
+class ModelGroupEnsureResultItem(StrictBaseModel):
+    group_id: str = ""
+    group_name: str
+    protocol_config_id: str
+    credential_id: str
+    model_name: str
+    protocols: list[ProtocolKind] = Field(default_factory=list)
+    status: Literal["create", "update", "unchanged", "skipped"]
+    added_count: int = Field(default=0, ge=0)
+    existing_count: int = Field(default=0, ge=0)
+    skipped_reason: str = ""
+    missing_protocols: list[ProtocolKind] = Field(default_factory=list)
+
+
+class ModelGroupEnsureFromSiteResponse(StrictBaseModel):
+    dry_run: bool
+    created_count: int = Field(default=0, ge=0)
+    updated_count: int = Field(default=0, ge=0)
+    unchanged_count: int = Field(default=0, ge=0)
+    skipped_count: int = Field(default=0, ge=0)
+    items: list[ModelGroupEnsureResultItem] = Field(default_factory=list)
+
+
 class ModelPriceItem(StrictBaseModel):
     model_key: str
     display_name: str
@@ -1304,6 +1342,10 @@ __all__ = [
     "ModelGroupCandidateItem",
     "ModelGroupCandidatesRequest",
     "ModelGroupCandidatesResponse",
+    "ModelGroupEnsureModelInput",
+    "ModelGroupEnsureFromSiteRequest",
+    "ModelGroupEnsureResultItem",
+    "ModelGroupEnsureFromSiteResponse",
     "ModelPriceItem",
     "ModelPriceUpdate",
     "ModelPriceListResponse",

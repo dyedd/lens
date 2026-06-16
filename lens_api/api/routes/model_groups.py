@@ -24,6 +24,12 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         status_code=201,
     )
     app.add_api_route(
+        "/api/admin/model-groups/ensure-from-site",
+        service_module.ensure_model_groups_from_site,
+        methods=["POST"],
+        response_model=service_module.ModelGroupEnsureFromSiteResponse,
+    )
+    app.add_api_route(
         "/api/admin/model-groups/{group_id}",
         service_module.get_model_group,
         methods=["GET"],

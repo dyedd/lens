@@ -21,6 +21,8 @@ from .runtime_context import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
+    ModelGroupEnsureFromSiteRequest,
+    ModelGroupEnsureFromSiteResponse,
     ModelGroupUpdate,
     ModelPriceItem,
     ModelPriceListResponse,
@@ -112,6 +114,12 @@ async def model_group_candidates(
     payload: ModelGroupCandidatesRequest, _: Any = Depends(get_current_admin)
 ) -> ModelGroupCandidatesResponse:
     return await app_state.group_repo.list_group_candidates(payload)
+
+
+async def ensure_model_groups_from_site(
+    payload: ModelGroupEnsureFromSiteRequest, _: Any = Depends(get_current_admin)
+) -> ModelGroupEnsureFromSiteResponse:
+    return await app_state.group_repo.ensure_groups_from_site(payload)
 
 
 async def create_model_group(
