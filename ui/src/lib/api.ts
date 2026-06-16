@@ -352,6 +352,50 @@ export type ModelGroupCandidatesResponse = {
   candidates: ModelGroupCandidateItem[];
 };
 
+export type ModelGroupEnsureStatus =
+  | "create"
+  | "update"
+  | "unchanged"
+  | "skipped";
+
+export type ModelGroupEnsureModelInput = {
+  protocol_config_id: string;
+  credential_id: string;
+  model_name: string;
+  group_name?: string;
+  protocols: ProtocolKind[];
+};
+
+export type ModelGroupEnsureFromSitePayload = {
+  site_id: string;
+  dry_run: boolean;
+  allow_protocol_extension: boolean;
+  models: ModelGroupEnsureModelInput[];
+};
+
+export type ModelGroupEnsureResultItem = {
+  group_id: string;
+  group_name: string;
+  protocol_config_id: string;
+  credential_id: string;
+  model_name: string;
+  protocols: ProtocolKind[];
+  status: ModelGroupEnsureStatus;
+  added_count: number;
+  existing_count: number;
+  skipped_reason: string;
+  missing_protocols: ProtocolKind[];
+};
+
+export type ModelGroupEnsureFromSiteResponse = {
+  dry_run: boolean;
+  created_count: number;
+  updated_count: number;
+  unchanged_count: number;
+  skipped_count: number;
+  items: ModelGroupEnsureResultItem[];
+};
+
 export type ModelPriceItem = {
   model_key: string;
   display_name: string;
