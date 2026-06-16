@@ -1,12 +1,24 @@
 "use client";
 
-import { useMemo } from "react";
-import { RefreshCcw } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { KeyboardEvent } from "react";
+import { Check, ChevronsUpDown, RefreshCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import {
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
   FieldLegend,
@@ -18,6 +30,11 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Table,
   TableBody,
   TableCell,
@@ -27,7 +44,14 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { ProtocolKind, SiteModelTestResult } from "@/lib/api";
+import type {
+  ModelGroup,
+  ModelGroupEnsureFromSiteResponse,
+  ModelGroupEnsureResultItem,
+  ModelGroupEnsureStatus,
+  ProtocolKind,
+  SiteModelTestResult,
+} from "@/lib/api";
 import {
   activeBaseUrlValue,
   BatchModelTestOption,
@@ -49,6 +73,592 @@ import {
   selectClassName,
   selectedModelTestProtocol,
 } from "./shared";
+import {
+  canSubmitModelGroupEnsureItem,
+  executionModelGroups,
+  modelGroupEnsureReasonLabel,
+  modelGroupEnsureResultKey,
+  selectableModelGroupsForEnsureItem,
+} from "./model-group-ensure";
+
+function modelGroupEnsureStatusLabel(
+  status: ModelGroupEnsureStatus,
+  locale: Locale,
+) {
+  if (status === "create") return locale === "zh-CN" ? "新建" : "Create";
+  if (status === "update") return locale === "zh-CN" ? "加入" : "Update";
+  if (status === "unchanged")
+    return locale === "zh-CN" ? "已存在" : "Unchanged";
+  return locale === "zh-CN" ? "跳过" : "Skipped";
+}
+
+function modelGroupEnsureStatusVariant(
+  status: ModelGroupEnsureStatus,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "create") return "default";
+  if (status === "update") return "secondary";
+  if (status === "skipped") return "destructive";
+  return "outline";
+}
+
+function nextCreateModelGroupName(
+  modelName: string,
+  modelGroups: ModelGroup[],
+) {
+  const groupNames = new Set(modelGroups.map((group) => group.name));
+  if (!groupNames.has(modelName)) return modelName;
+  for (let index = 1; ; index += 1) {
+    const candidate = `${modelName}-${index}`;
+    if (!groupNames.has(candidate)) return candidate;
+  }
+}
+
+export function ModelGroupEnsureDialog({
+  open,
+  locale,
+  result,
+  modelGroups,
+  selectedItemKeys,
+  allowProtocolExtension,
+  confirming,
+  onOpenChange,
+  onToggleItem,
+  onAllowProtocolExtensionChange,
+  onTargetGroupChange,
+  onConfirm,
+}: {
+  open: boolean;
+  locale: Locale;
+  result: ModelGroupEnsureFromSiteResponse | null;
+  modelGroups: ModelGroup[];
+  selectedItemKeys: string[];
+  allowProtocolExtension: boolean;
+  confirming: boolean;
+  onOpenChange: (open: boolean) => void;
+  onToggleItem: (item: ModelGroupEnsureResultItem) => void;
+  onAllowProtocolExtensionChange: (allowed: boolean) => void;
+  onTargetGroupChange: (
+    item: ModelGroupEnsureResultItem,
+    groupName: string,
+  ) => void;
+  onConfirm: (groupNameOverrides?: Record<string, string>) => void;
+}) {
+  const [createGroupNameDrafts, setCreateGroupNameDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [createGroupNameErrors, setCreateGroupNameErrors] = useState<
+    Record<string, string>
+  >({});
+  const [openTargetGroupKey, setOpenTargetGroupKey] = useState<string | null>(
+    null,
+  );
+  const requiresProtocolExtension = Boolean(
+    result?.items.some(
+      (item) =>
+        item.skipped_reason === "protocol_extension_required" ||
+        item.missing_protocols.length > 0,
+    ),
+  );
+  const missingProtocolLabels = Array.from(
+    new Set(
+      result?.items.flatMap((item) =>
+        item.missing_protocols.map(compactProtocolLabel),
+      ) ?? [],
+    ),
+  );
+  const selectedCount =
+    result?.items.filter(
+      (item) =>
+        canSubmitModelGroupEnsureItem(item) &&
+        selectedItemKeys.includes(modelGroupEnsureResultKey(item)),
+    ).length ?? 0;
+  const hasInvalidSelectedCreateName =
+    result?.items.some((item) => {
+      const key = modelGroupEnsureResultKey(item);
+      const selected = selectedItemKeys.includes(key);
+      if (!selected || !canSubmitModelGroupEnsureItem(item)) return false;
+      const targetModelGroups = selectableModelGroupsForEnsureItem(
+        item,
+        modelGroups,
+        allowProtocolExtension,
+      );
+      const targetGroupExists = targetModelGroups.some(
+        (group) => group.name === item.group_name,
+      );
+      if (targetGroupExists) return false;
+
+      const createName = createGroupNameForItem(
+        item,
+        key,
+        targetGroupExists,
+      ).trim();
+      if (!createName) return true;
+
+      const matchedGroup = executionModelGroups(modelGroups).find(
+        (g) => g.name === createName,
+      );
+      return Boolean(matchedGroup);
+    }) ?? false;
+
+  function createGroupNameForItem(
+    item: ModelGroupEnsureResultItem,
+    key: string,
+    targetGroupIsSelectable: boolean,
+  ) {
+    return (
+      createGroupNameDrafts[key] ??
+      (targetGroupIsSelectable
+        ? item.group_name
+        : nextCreateModelGroupName(item.model_name, modelGroups))
+    );
+  }
+
+  function commitCreateGroupName(item: ModelGroupEnsureResultItem) {
+    const key = modelGroupEnsureResultKey(item);
+    const nextGroupName = createGroupNameDrafts[key]?.trim();
+    if (!nextGroupName) return;
+
+    const matchedGroup = executionModelGroups(modelGroups).find(
+      (g) => g.name === nextGroupName,
+    );
+    if (matchedGroup) {
+      setCreateGroupNameErrors((current) => ({
+        ...current,
+        [key]:
+          locale === "zh-CN"
+            ? "同名组已存在，请使用其他名称。"
+            : "Name already exists, choose another.",
+      }));
+      return;
+    }
+
+    setCreateGroupNameErrors((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+
+    setCreateGroupNameDrafts((current) => ({
+      ...current,
+      [key]: nextGroupName,
+    }));
+    if (nextGroupName !== item.group_name) {
+      onTargetGroupChange(item, nextGroupName);
+    }
+  }
+
+  function confirmWithDrafts() {
+    const overrides: Record<string, string> = {};
+    for (const [key, value] of Object.entries(createGroupNameDrafts)) {
+      const groupName = value.trim();
+      if (groupName) overrides[key] = groupName;
+    }
+    onConfirm(overrides);
+  }
+
+  function handleCreateNameKeyDown(
+    event: KeyboardEvent<HTMLInputElement>,
+    item: ModelGroupEnsureResultItem,
+  ) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitCreateGroupName(item);
+  }
+
+  function selectCreateTarget(item: ModelGroupEnsureResultItem, key: string) {
+    const nextGroupName = nextCreateModelGroupName(
+      item.model_name,
+      modelGroups,
+    );
+    setCreateGroupNameErrors((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setCreateGroupNameDrafts((current) => ({
+      ...current,
+      [key]: nextGroupName,
+    }));
+    setOpenTargetGroupKey(null);
+    onTargetGroupChange(item, nextGroupName);
+  }
+
+  function selectExistingTarget(
+    item: ModelGroupEnsureResultItem,
+    key: string,
+    groupName: string,
+  ) {
+    setCreateGroupNameErrors((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setCreateGroupNameDrafts((current) => ({
+      ...current,
+      [key]: groupName,
+    }));
+    setOpenTargetGroupKey(null);
+    onTargetGroupChange(item, groupName);
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && confirming) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      {open && result ? (
+        <AppDialogContent
+          className="max-w-5xl"
+          title={locale === "zh-CN" ? "加入/创建模型组" : "Add/create groups"}
+        >
+          <div className="grid gap-4">
+            <div className="flex flex-wrap gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+              <span>
+                {locale === "zh-CN"
+                  ? `新建 ${result.created_count}`
+                  : `Create ${result.created_count}`}
+              </span>
+              <span>
+                {locale === "zh-CN"
+                  ? `加入 ${result.updated_count}`
+                  : `Update ${result.updated_count}`}
+              </span>
+              <span>
+                {locale === "zh-CN"
+                  ? `已存在 ${result.unchanged_count}`
+                  : `Unchanged ${result.unchanged_count}`}
+              </span>
+              <span>
+                {locale === "zh-CN"
+                  ? `跳过 ${result.skipped_count}`
+                  : `Skipped ${result.skipped_count}`}
+              </span>
+            </div>
+
+            {requiresProtocolExtension ? (
+              <Field orientation="horizontal" className="items-center gap-3">
+                <Checkbox
+                  checked={allowProtocolExtension}
+                  disabled={confirming}
+                  aria-label={
+                    locale === "zh-CN"
+                      ? "允许扩展已有模型组协议"
+                      : "Allow protocol extension"
+                  }
+                  onCheckedChange={(checked) =>
+                    onAllowProtocolExtensionChange(Boolean(checked))
+                  }
+                />
+                <div className="flex min-w-0 flex-col gap-1">
+                  <FieldLabel className="w-auto">
+                    {locale === "zh-CN"
+                      ? "允许扩展已有模型组协议"
+                      : "Allow protocol extension"}
+                  </FieldLabel>
+                  <FieldDescription>
+                    {locale === "zh-CN"
+                      ? `不修改已有组协议。以下协议现有组不包含，相关模型会被跳过：${missingProtocolLabels.join(", ")}`
+                      : `Existing group protocols stay unchanged. Models using the following protocols will be skipped: ${missingProtocolLabels.join(", ")}`}
+                  </FieldDescription>
+                </div>
+              </Field>
+            ) : null}
+
+            <div className="overflow-hidden rounded-md border">
+              <div className="max-h-[52dvh] overflow-y-auto sm:max-h-[420px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <span className="sr-only">
+                          {locale === "zh-CN" ? "选择" : "Select"}
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-24">
+                        {locale === "zh-CN" ? "状态" : "Status"}
+                      </TableHead>
+                      <TableHead className="w-[280px]">
+                        {locale === "zh-CN" ? "模型" : "Model"}
+                      </TableHead>
+                      <TableHead className="w-[360px]">
+                        {locale === "zh-CN" ? "目标模型组" : "Target group"}
+                      </TableHead>
+                      <TableHead className="w-44">
+                        {locale === "zh-CN" ? "协议" : "Protocols"}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {result.items.map((item) => {
+                      const key = modelGroupEnsureResultKey(item);
+                      const executable = canSubmitModelGroupEnsureItem(item);
+                      const selected = selectedItemKeys.includes(key);
+                      const targetModelGroups =
+                        selectableModelGroupsForEnsureItem(
+                          item,
+                          modelGroups,
+                          allowProtocolExtension,
+                        );
+                      const targetGroupIsSelectable = targetModelGroups.some(
+                        (group) => group.name === item.group_name,
+                      );
+                      const createGroupName = createGroupNameForItem(
+                        item,
+                        key,
+                        targetGroupIsSelectable,
+                      );
+                      const createValue = "__create__";
+                      const targetValue = targetGroupIsSelectable
+                        ? item.group_name
+                        : createValue;
+                      return (
+                        <TableRow key={key}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selected}
+                              disabled={!executable || confirming}
+                              aria-label={
+                                locale === "zh-CN"
+                                  ? `选择 ${item.group_name}`
+                                  : `Select ${item.group_name}`
+                              }
+                              onCheckedChange={() => onToggleItem(item)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={modelGroupEnsureStatusVariant(
+                                item.status,
+                              )}
+                            >
+                              {modelGroupEnsureStatusLabel(item.status, locale)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="min-w-[220px] max-w-[300px]">
+                            <div
+                              className="truncate font-medium"
+                              title={item.model_name}
+                            >
+                              {item.model_name}
+                            </div>
+                          </TableCell>
+                          <TableCell className="min-w-[320px]">
+                            <div className="flex max-w-[360px] flex-col gap-1.5">
+                              <Popover
+                                open={openTargetGroupKey === key}
+                                onOpenChange={(nextOpen) =>
+                                  setOpenTargetGroupKey(nextOpen ? key : null)
+                                }
+                              >
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={confirming}
+                                    role="combobox"
+                                    aria-expanded={openTargetGroupKey === key}
+                                    className="w-full justify-between"
+                                  >
+                                    <span className="truncate">
+                                      {targetValue === createValue
+                                        ? locale === "zh-CN"
+                                          ? "新建模型组"
+                                          : "Create group"
+                                        : item.group_name}
+                                    </span>
+                                    <ChevronsUpDown data-icon="inline-end" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                  align="start"
+                                  className="w-[var(--radix-popover-trigger-width)] p-0"
+                                >
+                                  <Command>
+                                    <CommandInput
+                                      placeholder={
+                                        locale === "zh-CN"
+                                          ? "搜索模型组..."
+                                          : "Search groups..."
+                                      }
+                                    />
+                                    <CommandList>
+                                      <CommandEmpty>
+                                        {locale === "zh-CN"
+                                          ? "没有匹配的模型组"
+                                          : "No matching groups"}
+                                      </CommandEmpty>
+                                      <CommandGroup
+                                        heading={
+                                          locale === "zh-CN" ? "操作" : "Action"
+                                        }
+                                      >
+                                        <CommandItem
+                                          value={`${createValue} ${createGroupName} ${item.model_name}`}
+                                          forceMount
+                                          onSelect={() =>
+                                            selectCreateTarget(item, key)
+                                          }
+                                        >
+                                          <div className="flex min-w-0 flex-col">
+                                            <span>
+                                              {locale === "zh-CN"
+                                                ? "新建模型组"
+                                                : "Create group"}
+                                            </span>
+                                            <span className="truncate text-xs text-muted-foreground">
+                                              {createGroupName}
+                                            </span>
+                                          </div>
+                                          <Check
+                                            className={cn(
+                                              "ml-auto",
+                                              targetValue === createValue
+                                                ? "opacity-100"
+                                                : "opacity-0",
+                                            )}
+                                          />
+                                        </CommandItem>
+                                      </CommandGroup>
+                                      {targetModelGroups.length ? (
+                                        <>
+                                          <CommandSeparator />
+                                          <CommandGroup
+                                            heading={
+                                              locale === "zh-CN"
+                                                ? "已有模型组"
+                                                : "Existing groups"
+                                            }
+                                          >
+                                            {targetModelGroups.map((group) => (
+                                              <CommandItem
+                                                key={group.id}
+                                                value={group.name}
+                                                onSelect={() =>
+                                                  selectExistingTarget(
+                                                    item,
+                                                    key,
+                                                    group.name,
+                                                  )
+                                                }
+                                              >
+                                                <span className="truncate">
+                                                  {group.name}
+                                                </span>
+                                                <Check
+                                                  className={cn(
+                                                    "ml-auto",
+                                                    item.group_name ===
+                                                      group.name
+                                                      ? "opacity-100"
+                                                      : "opacity-0",
+                                                  )}
+                                                />
+                                              </CommandItem>
+                                            ))}
+                                          </CommandGroup>
+                                        </>
+                                      ) : null}
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                              {targetValue === createValue ? (
+                                <Input
+                                  value={createGroupName}
+                                  disabled={confirming}
+                                  placeholder={
+                                    locale === "zh-CN"
+                                      ? "模型组名称"
+                                      : "Group name"
+                                  }
+                                  aria-label={
+                                    locale === "zh-CN"
+                                      ? "新建模型组名称"
+                                      : "New group name"
+                                  }
+                                  onChange={(event) => {
+                                    setCreateGroupNameErrors((current) => {
+                                      const next = { ...current };
+                                      delete next[key];
+                                      return next;
+                                    });
+                                    setCreateGroupNameDrafts((current) => ({
+                                      ...current,
+                                      [key]: event.target.value,
+                                    }));
+                                  }}
+                                  onBlur={() => commitCreateGroupName(item)}
+                                  onKeyDown={(event) =>
+                                    handleCreateNameKeyDown(event, item)
+                                  }
+                                />
+                              ) : null}
+                              {targetValue === createValue ? (
+                                createGroupNameErrors[key] ? (
+                                  <p className="text-xs text-destructive">
+                                    {createGroupNameErrors[key]}
+                                  </p>
+                                ) : null
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex max-w-[180px] flex-wrap gap-1">
+                              {item.protocols.map((protocol) => (
+                                <Badge
+                                  key={protocol}
+                                  variant="outline"
+                                  className={cn(
+                                    "max-w-[120px] truncate text-xs",
+                                    protocolBadgeClassName(protocol),
+                                  )}
+                                >
+                                  {compactProtocolLabel(protocol)}
+                                </Badge>
+                              ))}
+                              {item.skipped_reason ===
+                              "protocol_extension_required" ? (
+                                <Badge variant="outline" className="text-xs">
+                                  {modelGroupEnsureReasonLabel(
+                                    item.skipped_reason,
+                                    locale,
+                                  )}
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <Button
+                type="button"
+                onClick={confirmWithDrafts}
+                disabled={
+                  !selectedCount || confirming || hasInvalidSelectedCreateName
+                }
+              >
+                <RefreshCcw
+                  data-icon="inline-start"
+                  className={confirming ? "animate-spin" : undefined}
+                />
+                {locale === "zh-CN" ? "确认处理" : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        </AppDialogContent>
+      ) : null}
+    </Dialog>
+  );
+}
 
 export function ModelTestDialog({
   target,

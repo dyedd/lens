@@ -7,6 +7,11 @@ import { FileInput, Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
+  ModelGroup,
+  ModelGroupEnsureFromSitePayload,
+  ModelGroupEnsureFromSiteResponse,
+  ModelGroupEnsureModelInput,
+  ModelGroupEnsureResultItem,
   ProtocolKind,
   RouteSnapshot,
   Site,
@@ -41,6 +46,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAggregatedModels } from "./channels/model-aggregation";
+import {
+  canSubmitModelGroupEnsureItem,
+  executionModelGroups,
+  modelGroupEnsureInputsFromResult,
+  modelGroupEnsureResultKey,
+  modelGroupEnsureSkippedToastMessage,
+  suggestModelGroupName,
+} from "./channels/model-group-ensure";
 import { ChannelsOverview } from "./channels/overview";
 import {
   activeBaseUrlValue,
@@ -107,12 +120,86 @@ const BatchModelTestDialog = dynamic(() =>
     (module) => module.BatchModelTestDialog,
   ),
 );
+const ModelGroupEnsureDialog = dynamic(() =>
+  import("./channels/model-dialogs").then(
+    (module) => module.ModelGroupEnsureDialog,
+  ),
+);
 const ModelTestDialog = dynamic(() =>
   import("./channels/model-dialogs").then((module) => module.ModelTestDialog),
 );
 const ModelPickerDialog = dynamic(() =>
   import("./channels/model-dialogs").then((module) => module.ModelPickerDialog),
 );
+
+function buildModelGroupEnsureInputs(
+  site: Site,
+  modelGroups: ModelGroup[],
+): ModelGroupEnsureModelInput[] {
+  const enabledBaseUrlIds = new Set(
+    site.base_urls
+      .filter((item) => item.enabled && item.url.trim())
+      .map((item) => item.id),
+  );
+  const enabledCredentialIds = new Set(
+    site.credentials
+      .filter((item) => item.enabled && item.api_key.trim())
+      .map((item) => item.id),
+  );
+  const modelsByKey = new Map<string, ModelGroupEnsureModelInput>();
+
+  for (const protocolConfig of site.protocols) {
+    if (
+      !protocolConfig.enabled ||
+      !enabledBaseUrlIds.has(protocolConfig.base_url_id)
+    ) {
+      continue;
+    }
+    const configuredProtocols = new Set(protocolConfig.protocols);
+    for (const model of protocolConfig.models) {
+      const modelName = model.model_name.trim();
+      if (
+        !model.enabled ||
+        !modelName ||
+        !model.protocol ||
+        !configuredProtocols.has(model.protocol) ||
+        !enabledCredentialIds.has(model.credential_id)
+      ) {
+        continue;
+      }
+
+      const key = JSON.stringify([
+        protocolConfig.id,
+        model.credential_id,
+        modelName,
+      ]);
+      const current = modelsByKey.get(key);
+      if (current) {
+        if (!current.protocols.includes(model.protocol)) {
+          current.protocols.push(model.protocol);
+        }
+        continue;
+      }
+      modelsByKey.set(key, {
+        protocol_config_id: protocolConfig.id,
+        credential_id: model.credential_id,
+        model_name: modelName,
+        group_name: suggestModelGroupName(modelName, modelGroups),
+        protocols: [model.protocol],
+      });
+    }
+  }
+
+  return Array.from(modelsByKey.values());
+}
+
+function showModelGroupEnsureSkippedToast(
+  result: ModelGroupEnsureFromSiteResponse,
+  locale: string,
+) {
+  const message = modelGroupEnsureSkippedToastMessage(result, locale);
+  if (message) toast.warning(message);
+}
 
 export function ChannelsScreen() {
   const queryClient = useQueryClient();
@@ -166,6 +253,20 @@ export function ChannelsScreen() {
     Record<string, ProtocolKind>
   >({});
   const [batchTestRows, setBatchTestRows] = useState<BatchModelTestRow[]>([]);
+  const [modelGroupEnsureOpen, setModelGroupEnsureOpen] = useState(false);
+  const [ensuringModelGroups, setEnsuringModelGroups] = useState(false);
+  const [modelGroupEnsureSiteId, setModelGroupEnsureSiteId] = useState("");
+  const [modelGroupEnsureResult, setModelGroupEnsureResult] =
+    useState<ModelGroupEnsureFromSiteResponse | null>(null);
+  const [modelGroupEnsureGroups, setModelGroupEnsureGroups] = useState<
+    ModelGroup[]
+  >([]);
+  const [
+    allowModelGroupProtocolExtension,
+    setAllowModelGroupProtocolExtension,
+  ] = useState(false);
+  const [selectedModelGroupEnsureKeys, setSelectedModelGroupEnsureKeys] =
+    useState<string[]>([]);
   const [formSnapshot, setFormSnapshot] = useState("");
 
   const {
@@ -409,6 +510,7 @@ export function ChannelsScreen() {
       queryClient.invalidateQueries({ queryKey: ["router-snapshot"] }),
       queryClient.invalidateQueries({ queryKey: ["group-candidates"] }),
       queryClient.invalidateQueries({ queryKey: ["groups"] }),
+      queryClient.invalidateQueries({ queryKey: ["model-groups"] }),
     ]);
   }
 
@@ -618,15 +720,14 @@ export function ChannelsScreen() {
     setSortBy("requests-desc");
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function validateSiteForm() {
     if (invalidProtocolBaseUrlCount(form)) {
       toast.error(
         locale === "zh-CN"
           ? "组合地址来源无效"
           : "Combination Base URL is invalid",
       );
-      return;
+      return false;
     }
     if (duplicatedProtocolConfigKeys.size) {
       const message =
@@ -634,7 +735,7 @@ export function ChannelsScreen() {
           ? "同一个渠道内不允许重复地址来源和密钥"
           : "Duplicate Base URL and key pairs are not allowed in one channel";
       toast.error(message);
-      return;
+      return false;
     }
     if (invalidModelProtocolCount(form)) {
       toast.error(
@@ -642,28 +743,44 @@ export function ChannelsScreen() {
           ? "请为每个模型选择至少一个有效协议"
           : "Select at least one valid protocol for every model",
       );
-      return;
+      return false;
     }
+    return true;
+  }
+
+  async function saveCurrentSite({ keepEditing = false } = {}) {
+    const wasEditing = Boolean(editingSiteId);
+    const savedSite = await apiRequest<Site>(
+      editingSiteId ? `/admin/sites/${editingSiteId}` : "/admin/sites",
+      {
+        method: editingSiteId ? "PUT" : "POST",
+        body: JSON.stringify(toPayload(form)),
+      },
+    );
+    queryClient.setQueryData<Site[]>(["sites"], (current) => {
+      const rows = current ?? [];
+      const exists = rows.some((site) => site.id === savedSite.id);
+      return exists
+        ? rows.map((site) => (site.id === savedSite.id ? savedSite : site))
+        : [savedSite, ...rows];
+    });
+    applyPreparedForm(toForm(savedSite, locale));
+    if (keepEditing) {
+      setEditingSiteId(savedSite.id);
+    }
+    await invalidateChannelData();
+    return { savedSite, wasEditing };
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!validateSiteForm()) return;
     try {
-      const savedSite = await apiRequest<Site>(
-        editingSiteId ? `/admin/sites/${editingSiteId}` : "/admin/sites",
-        {
-          method: editingSiteId ? "PUT" : "POST",
-          body: JSON.stringify(toPayload(form)),
-        },
-      );
-      queryClient.setQueryData<Site[]>(["sites"], (current) => {
-        const rows = current ?? [];
-        const exists = rows.some((site) => site.id === savedSite.id);
-        return exists
-          ? rows.map((site) => (site.id === savedSite.id ? savedSite : site))
-          : [savedSite, ...rows];
-      });
-      applyPreparedForm(toForm(savedSite, locale));
+      const { wasEditing } = await saveCurrentSite();
       setDialogOpen(false);
       setEditingSiteId(null);
       toast.success(
-        editingSiteId
+        wasEditing
           ? locale === "zh-CN"
             ? "渠道已更新"
             : "Channel updated"
@@ -671,7 +788,6 @@ export function ChannelsScreen() {
             ? "渠道已创建"
             : "Channel created",
       );
-      await invalidateChannelData();
     } catch (e) {
       const message =
         e instanceof ApiError
@@ -680,6 +796,249 @@ export function ChannelsScreen() {
             ? "保存渠道失败"
             : "Failed to save channel";
       toast.error(message);
+    }
+  }
+
+  async function openModelGroupEnsureDialog() {
+    if (!validateSiteForm()) return;
+    setEnsuringModelGroups(true);
+    setModelGroupEnsureResult(null);
+    setModelGroupEnsureGroups([]);
+    setAllowModelGroupProtocolExtension(false);
+    setSelectedModelGroupEnsureKeys([]);
+    try {
+      const { savedSite } = await saveCurrentSite({ keepEditing: true });
+      const modelGroups = await queryClient.fetchQuery<ModelGroup[]>({
+        queryKey: ["model-groups"],
+        queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
+      });
+      const models = buildModelGroupEnsureInputs(
+        savedSite,
+        executionModelGroups(modelGroups),
+      );
+      if (!models.length) {
+        toast.info(
+          locale === "zh-CN"
+            ? "没有可加入模型组的启用模型"
+            : "No enabled models can be added to groups",
+        );
+        return;
+      }
+
+      const payload: ModelGroupEnsureFromSitePayload = {
+        site_id: savedSite.id,
+        dry_run: true,
+        allow_protocol_extension: false,
+        models,
+      };
+      const result = await apiRequest<ModelGroupEnsureFromSiteResponse>(
+        "/admin/model-groups/ensure-from-site",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
+      setModelGroupEnsureSiteId(savedSite.id);
+      setModelGroupEnsureGroups(modelGroups);
+      setModelGroupEnsureResult(result);
+      setSelectedModelGroupEnsureKeys(
+        result.items
+          .filter(canSubmitModelGroupEnsureItem)
+          .map(modelGroupEnsureResultKey),
+      );
+      showModelGroupEnsureSkippedToast(result, locale);
+      setModelGroupEnsureOpen(true);
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : locale === "zh-CN"
+            ? "生成模型组预览失败"
+            : "Failed to preview model groups";
+      toast.error(message);
+    } finally {
+      setEnsuringModelGroups(false);
+    }
+  }
+
+  async function updateModelGroupEnsureTarget(
+    item: ModelGroupEnsureResultItem,
+    groupName: string,
+  ) {
+    if (!modelGroupEnsureResult || !modelGroupEnsureSiteId) return;
+    const changedKey = modelGroupEnsureResultKey(item);
+    const wasSelected = selectedModelGroupEnsureKeys.includes(changedKey);
+    const groupNameOverrides = new Map([[changedKey, groupName]]);
+    setEnsuringModelGroups(true);
+    try {
+      const payload: ModelGroupEnsureFromSitePayload = {
+        site_id: modelGroupEnsureSiteId,
+        dry_run: true,
+        allow_protocol_extension: allowModelGroupProtocolExtension,
+        models: modelGroupEnsureInputsFromResult(
+          modelGroupEnsureResult.items,
+          groupNameOverrides,
+        ),
+      };
+      const result = await apiRequest<ModelGroupEnsureFromSiteResponse>(
+        "/admin/model-groups/ensure-from-site",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
+      setModelGroupEnsureResult(result);
+      showModelGroupEnsureSkippedToast(result, locale);
+      setSelectedModelGroupEnsureKeys((current) => {
+        const executableKeys = new Set(
+          result.items
+            .filter(canSubmitModelGroupEnsureItem)
+            .map(modelGroupEnsureResultKey),
+        );
+        const next = current.filter((key) => executableKeys.has(key));
+        const changedItem = result.items.find(
+          (row) => modelGroupEnsureResultKey(row) === changedKey,
+        );
+        if (
+          changedItem &&
+          canSubmitModelGroupEnsureItem(changedItem) &&
+          (wasSelected || !canSubmitModelGroupEnsureItem(item)) &&
+          !next.includes(changedKey)
+        ) {
+          next.push(changedKey);
+        }
+        return next;
+      });
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : locale === "zh-CN"
+            ? "更新模型组预览失败"
+            : "Failed to update model group preview";
+      toast.error(message);
+    } finally {
+      setEnsuringModelGroups(false);
+    }
+  }
+
+  async function updateModelGroupEnsureProtocolExtension(allowed: boolean) {
+    if (!modelGroupEnsureResult || !modelGroupEnsureSiteId) return;
+    setAllowModelGroupProtocolExtension(allowed);
+    setEnsuringModelGroups(true);
+    try {
+      const payload: ModelGroupEnsureFromSitePayload = {
+        site_id: modelGroupEnsureSiteId,
+        dry_run: true,
+        allow_protocol_extension: allowed,
+        models: modelGroupEnsureInputsFromResult(modelGroupEnsureResult.items),
+      };
+      const result = await apiRequest<ModelGroupEnsureFromSiteResponse>(
+        "/admin/model-groups/ensure-from-site",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
+      setModelGroupEnsureResult(result);
+      showModelGroupEnsureSkippedToast(result, locale);
+      setSelectedModelGroupEnsureKeys((current) => {
+        const executableKeys = new Set(
+          result.items
+            .filter(canSubmitModelGroupEnsureItem)
+            .map(modelGroupEnsureResultKey),
+        );
+        if (allowed) return Array.from(executableKeys);
+        return current.filter((key) => executableKeys.has(key));
+      });
+    } catch (e) {
+      setAllowModelGroupProtocolExtension(!allowed);
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : locale === "zh-CN"
+            ? "更新模型组预览失败"
+            : "Failed to update model group preview";
+      toast.error(message);
+    } finally {
+      setEnsuringModelGroups(false);
+    }
+  }
+
+  function toggleModelGroupEnsureItem(item: ModelGroupEnsureResultItem) {
+    if (!canSubmitModelGroupEnsureItem(item)) return;
+    const key = modelGroupEnsureResultKey(item);
+    setSelectedModelGroupEnsureKeys((current) =>
+      current.includes(key)
+        ? current.filter((itemKey) => itemKey !== key)
+        : [...current, key],
+    );
+  }
+
+  async function confirmModelGroupEnsure(
+    groupNameOverrides: Record<string, string> = {},
+  ) {
+    if (!modelGroupEnsureResult || !modelGroupEnsureSiteId) return;
+    const selectedKeys = new Set(selectedModelGroupEnsureKeys);
+    const groupNameOverrideMap = new Map(
+      Object.entries(groupNameOverrides)
+        .map(([key, value]) => [key, value.trim()] as const)
+        .filter(([, value]) => value),
+    );
+    const models = modelGroupEnsureResult.items
+      .filter(
+        (item) =>
+          canSubmitModelGroupEnsureItem(item) &&
+          selectedKeys.has(modelGroupEnsureResultKey(item)),
+      )
+      .map<ModelGroupEnsureModelInput>(
+        (item) =>
+          modelGroupEnsureInputsFromResult([item], groupNameOverrideMap)[0],
+      );
+    if (!models.length) {
+      toast.info(
+        locale === "zh-CN" ? "请选择要处理的模型" : "Select models to process",
+      );
+      return;
+    }
+
+    setEnsuringModelGroups(true);
+    try {
+      const payload: ModelGroupEnsureFromSitePayload = {
+        site_id: modelGroupEnsureSiteId,
+        dry_run: false,
+        allow_protocol_extension: allowModelGroupProtocolExtension,
+        models,
+      };
+      const result = await apiRequest<ModelGroupEnsureFromSiteResponse>(
+        "/admin/model-groups/ensure-from-site",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
+      setModelGroupEnsureOpen(false);
+      setModelGroupEnsureSiteId("");
+      setModelGroupEnsureResult(null);
+      setModelGroupEnsureGroups([]);
+      setAllowModelGroupProtocolExtension(false);
+      setSelectedModelGroupEnsureKeys([]);
+      toast.success(
+        locale === "zh-CN"
+          ? `已处理 ${result.created_count + result.updated_count} 项`
+          : `Processed ${result.created_count + result.updated_count} items`,
+      );
+      await invalidateChannelData();
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : locale === "zh-CN"
+            ? "处理模型组失败"
+            : "Failed to process model groups";
+      toast.error(message);
+    } finally {
+      setEnsuringModelGroups(false);
     }
   }
 
@@ -1515,6 +1874,7 @@ export function ChannelsScreen() {
             batchTestOptions={batchTestOptions}
             batchTestingModels={batchTestingModels}
             testingModel={testingModel}
+            ensuringModelGroups={ensuringModelGroups}
             overviewModels={overviewModels}
             modelTestOptionByKey={modelTestOptionByKey}
             setDialogOpen={setDialogOpen}
@@ -1534,10 +1894,34 @@ export function ChannelsScreen() {
             updateProtocolConfig={updateProtocolConfig}
             addManualProtocolConfigModel={addManualProtocolConfigModel}
             fetchProtocolModels={fetchProtocolModels}
+            openModelGroupEnsureDialog={openModelGroupEnsureDialog}
             openBatchModelTestDialog={openBatchModelTestDialog}
             updateModelProtocols={updateModelProtocols}
             openAggregateModelTest={openAggregateModelTest}
             closeEditor={closeEditor}
+          />
+        ) : null}
+
+        {modelGroupEnsureOpen ? (
+          <ModelGroupEnsureDialog
+            open={modelGroupEnsureOpen}
+            locale={locale}
+            result={modelGroupEnsureResult}
+            modelGroups={modelGroupEnsureGroups}
+            selectedItemKeys={selectedModelGroupEnsureKeys}
+            allowProtocolExtension={allowModelGroupProtocolExtension}
+            confirming={ensuringModelGroups}
+            onOpenChange={setModelGroupEnsureOpen}
+            onToggleItem={toggleModelGroupEnsureItem}
+            onAllowProtocolExtensionChange={(allowed) =>
+              void updateModelGroupEnsureProtocolExtension(allowed)
+            }
+            onTargetGroupChange={(item, groupName) =>
+              void updateModelGroupEnsureTarget(item, groupName)
+            }
+            onConfirm={(groupNameOverrides) =>
+              void confirmModelGroupEnsure(groupNameOverrides)
+            }
           />
         ) : null}
 
