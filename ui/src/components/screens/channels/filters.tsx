@@ -10,9 +10,12 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
 import type { ProtocolKind } from "@/lib/api";
 import {
@@ -130,53 +133,57 @@ export function ChannelFiltersPanel({
             <FieldLabel htmlFor="channels-protocol-filter">
               {locale === "zh-CN" ? "协议" : "Protocol"}
             </FieldLabel>
-            <NativeSelect
-              id="channels-protocol-filter"
-              className="w-full"
+            <Select
               value={protocolFilter}
-              onChange={(event) =>
-                onProtocolChange(event.target.value as "all" | ProtocolKind)
+              onValueChange={(value) =>
+                onProtocolChange(value as "all" | ProtocolKind)
               }
             >
-              <NativeSelectOption value="all">
-                {locale === "zh-CN" ? "全部协议" : "All protocols"}
-              </NativeSelectOption>
-              {protocolOptions(locale).map((option) => (
-                <NativeSelectOption key={option.value} value={option.value}>
-                  {option.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              <SelectTrigger id="channels-protocol-filter" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  {locale === "zh-CN" ? "全部协议" : "All protocols"}
+                </SelectItem>
+                {protocolOptions(locale).map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field>
             <FieldLabel htmlFor="channels-sort">
               {locale === "zh-CN" ? "排序" : "Sort by"}
             </FieldLabel>
-            <NativeSelect
-              id="channels-sort"
-              className="w-full"
+            <Select
               value={sortBy}
-              onChange={(event) =>
-                onSortChange(event.target.value as ChannelSort)
-              }
+              onValueChange={(value) => onSortChange(value as ChannelSort)}
             >
-              <NativeSelectOption value="requests-desc">
-                {locale === "zh-CN" ? "请求优先" : "Requests first"}
-              </NativeSelectOption>
-              <NativeSelectOption value="models-desc">
-                {locale === "zh-CN" ? "模型优先" : "Models first"}
-              </NativeSelectOption>
-              <NativeSelectOption value="protocols-desc">
-                {locale === "zh-CN" ? "协议优先" : "Protocols first"}
-              </NativeSelectOption>
-              <NativeSelectOption value="name-asc">
-                {locale === "zh-CN" ? "名称升序" : "Name asc"}
-              </NativeSelectOption>
-              <NativeSelectOption value="name-desc">
-                {locale === "zh-CN" ? "名称降序" : "Name desc"}
-              </NativeSelectOption>
-            </NativeSelect>
+              <SelectTrigger id="channels-sort" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="requests-desc">
+                  {locale === "zh-CN" ? "请求优先" : "Requests first"}
+                </SelectItem>
+                <SelectItem value="models-desc">
+                  {locale === "zh-CN" ? "模型优先" : "Models first"}
+                </SelectItem>
+                <SelectItem value="protocols-desc">
+                  {locale === "zh-CN" ? "协议优先" : "Protocols first"}
+                </SelectItem>
+                <SelectItem value="name-asc">
+                  {locale === "zh-CN" ? "名称升序" : "Name asc"}
+                </SelectItem>
+                <SelectItem value="name-desc">
+                  {locale === "zh-CN" ? "名称降序" : "Name desc"}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
         </FieldGroup>
       </FieldSet>
