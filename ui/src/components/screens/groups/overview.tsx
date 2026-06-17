@@ -23,10 +23,14 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
 import {
@@ -140,17 +144,17 @@ export function GroupsOverview({
               </div>
             </div>
 
-            <NativeSelect
+            <Combobox
               className="mt-3 w-full sm:hidden"
               value={effectiveSelectedModelPrefix}
               onChange={(event) => setSelectedModelPrefix(event.target.value)}
             >
               {modelPrefixOptions.map((option) => (
-                <NativeSelectOption key={option.key} value={option.key}>
+                <ComboboxOption key={option.key} value={option.key}>
                   {option.label}
-                </NativeSelectOption>
+                </ComboboxOption>
               ))}
-            </NativeSelect>
+            </Combobox>
 
             <div className="hidden snap-x gap-3 overflow-x-auto pb-1 sm:flex">
               {modelPrefixOptions.map((option) => (
@@ -472,24 +476,26 @@ export function GroupsOverview({
                 <FieldLabel>
                   {locale === "zh-CN" ? "协议" : "Protocol"}
                 </FieldLabel>
-                <NativeSelect
+                <Select
                   value={protocolFilter}
-                  className="w-full"
-                  onChange={(event) =>
-                    setProtocolFilter(
-                      event.target.value as "all" | ProtocolKind,
-                    )
+                  onValueChange={(value) =>
+                    setProtocolFilter(value as "all" | ProtocolKind)
                   }
                 >
-                  <NativeSelectOption value="all">
-                    {locale === "zh-CN" ? "全部协议" : "All protocols"}
-                  </NativeSelectOption>
-                  {protocolOptions(locale).map((option) => (
-                    <NativeSelectOption key={option.value} value={option.value}>
-                      {option.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      {locale === "zh-CN" ? "全部协议" : "All protocols"}
+                    </SelectItem>
+                    {protocolOptions(locale).map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
 
               <Field>
@@ -528,26 +534,28 @@ export function GroupsOverview({
 
               <Field>
                 <FieldLabel>{locale === "zh-CN" ? "排序" : "Sort"}</FieldLabel>
-                <NativeSelect
+                <Select
                   value={sortBy}
-                  className="w-full"
-                  onChange={(event) =>
-                    setSortBy(event.target.value as GroupSort)
-                  }
+                  onValueChange={(value) => setSortBy(value as GroupSort)}
                 >
-                  <NativeSelectOption value="members-desc">
-                    {locale === "zh-CN" ? "成员优先" : "Members first"}
-                  </NativeSelectOption>
-                  <NativeSelectOption value="enabled-desc">
-                    {locale === "zh-CN" ? "启用优先" : "Enabled first"}
-                  </NativeSelectOption>
-                  <NativeSelectOption value="name-asc">
-                    {locale === "zh-CN" ? "名称 A-Z" : "Name A-Z"}
-                  </NativeSelectOption>
-                  <NativeSelectOption value="name-desc">
-                    {locale === "zh-CN" ? "名称 Z-A" : "Name Z-A"}
-                  </NativeSelectOption>
-                </NativeSelect>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="members-desc">
+                      {locale === "zh-CN" ? "成员优先" : "Members first"}
+                    </SelectItem>
+                    <SelectItem value="enabled-desc">
+                      {locale === "zh-CN" ? "启用优先" : "Enabled first"}
+                    </SelectItem>
+                    <SelectItem value="name-asc">
+                      {locale === "zh-CN" ? "名称 A-Z" : "Name A-Z"}
+                    </SelectItem>
+                    <SelectItem value="name-desc">
+                      {locale === "zh-CN" ? "名称 Z-A" : "Name Z-A"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
             </FieldGroup>
           </FieldSet>

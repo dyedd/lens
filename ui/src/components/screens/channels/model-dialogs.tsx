@@ -26,14 +26,17 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -70,7 +73,6 @@ import {
   PickerModelItem,
   protocolBadgeClassName,
   protocolLabel,
-  selectClassName,
   selectedModelTestProtocol,
 } from "./shared";
 import {
@@ -770,49 +772,50 @@ export function ModelTestDialog({
                         <FieldLabel>
                           {locale === "zh-CN" ? "问题" : "Prompt"}
                         </FieldLabel>
-                        <NativeSelect
-                          className={selectClassName()}
+                        <Select
                           value={modelTestPromptMode}
-                          onChange={(event) =>
-                            onPromptModeChange(event.target.value)
-                          }
+                          onValueChange={onPromptModeChange}
                         >
-                          {modelTestPrompts.map((_, index) => (
-                            <NativeSelectOption
-                              key={index}
-                              value={String(index)}
-                            >
-                              {locale === "zh-CN"
-                                ? `预设 ${index + 1}`
-                                : `Preset ${index + 1}`}
-                            </NativeSelectOption>
-                          ))}
-                          <NativeSelectOption value="custom">
-                            {locale === "zh-CN" ? "自定义" : "Custom"}
-                          </NativeSelectOption>
-                        </NativeSelect>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {modelTestPrompts.map((_, index) => (
+                              <SelectItem key={index} value={String(index)}>
+                                {locale === "zh-CN"
+                                  ? `预设 ${index + 1}`
+                                  : `Preset ${index + 1}`}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="custom">
+                              {locale === "zh-CN" ? "自定义" : "Custom"}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </Field>
                       {supportedProtocols.length > 1 ? (
                         <Field>
                           <FieldLabel>
                             {locale === "zh-CN" ? "测试协议" : "Test protocol"}
                           </FieldLabel>
-                          <NativeSelect
-                            className={selectClassName()}
+                          <Select
                             value={selectedProtocol ?? ""}
-                            onChange={(event) =>
-                              onProtocolChange(
-                                event.target.value as ProtocolKind,
-                              )
+                            onValueChange={(value) =>
+                              onProtocolChange(value as ProtocolKind)
                             }
                             disabled={testingModel}
                           >
-                            {supportedProtocols.map((item) => (
-                              <NativeSelectOption key={item} value={item}>
-                                {protocolLabel(item, locale)}
-                              </NativeSelectOption>
-                            ))}
-                          </NativeSelect>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {supportedProtocols.map((item) => (
+                                <SelectItem key={item} value={item}>
+                                  {protocolLabel(item, locale)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </Field>
                       ) : null}
                     </div>
@@ -979,25 +982,27 @@ export function BatchModelTestDialog({
                     <FieldLabel>
                       {locale === "zh-CN" ? "测试问题" : "Prompt"}
                     </FieldLabel>
-                    <NativeSelect
-                      className={selectClassName()}
+                    <Select
                       value={batchTestPromptMode}
-                      onChange={(event) =>
-                        onPromptModeChange(event.target.value)
-                      }
+                      onValueChange={onPromptModeChange}
                       disabled={batchTestingModels}
                     >
-                      {modelTestPrompts.map((_, index) => (
-                        <NativeSelectOption key={index} value={String(index)}>
-                          {locale === "zh-CN"
-                            ? `预设 ${index + 1}`
-                            : `Preset ${index + 1}`}
-                        </NativeSelectOption>
-                      ))}
-                      <NativeSelectOption value="custom">
-                        {locale === "zh-CN" ? "自定义" : "Custom"}
-                      </NativeSelectOption>
-                    </NativeSelect>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {modelTestPrompts.map((_, index) => (
+                          <SelectItem key={index} value={String(index)}>
+                            {locale === "zh-CN"
+                              ? `预设 ${index + 1}`
+                              : `Preset ${index + 1}`}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="custom">
+                          {locale === "zh-CN" ? "自定义" : "Custom"}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                   <Field>
                     <FieldLabel>
@@ -1040,23 +1045,24 @@ export function BatchModelTestDialog({
                       <FieldLabel className="truncate">
                         {item.modelName}
                       </FieldLabel>
-                      <NativeSelect
-                        className={selectClassName()}
+                      <Select
                         value={item.selectedProtocol}
-                        onChange={(event) =>
-                          onProtocolChange(
-                            item.key,
-                            event.target.value as ProtocolKind,
-                          )
+                        onValueChange={(value) =>
+                          onProtocolChange(item.key, value as ProtocolKind)
                         }
                         disabled={batchTestingModels}
                       >
-                        {item.protocols.map((protocol) => (
-                          <NativeSelectOption key={protocol} value={protocol}>
-                            {protocolLabel(protocol, locale)}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {item.protocols.map((protocol) => (
+                            <SelectItem key={protocol} value={protocol}>
+                              {protocolLabel(protocol, locale)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </Field>
                   ))}
                 </div>

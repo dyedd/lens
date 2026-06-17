@@ -333,9 +333,6 @@ export function metricLabel(
   return labels[key][locale === "zh-CN" ? "zh" : "en"];
 }
 
-export const selectClassName =
-  "w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground";
-
 export function apiErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }

@@ -17,10 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -1225,7 +1222,7 @@ export function SettingsScreen() {
                     <FieldLabel>
                       {titleForLocale(locale, "时区", "Time zone")}
                     </FieldLabel>
-                    <NativeSelect
+                    <Combobox
                       className="w-full"
                       value={draft.timeZone || "Asia/Shanghai"}
                       onChange={(event) =>
@@ -1233,14 +1230,11 @@ export function SettingsScreen() {
                       }
                     >
                       {TIME_ZONE_OPTIONS.map((option) => (
-                        <NativeSelectOption
-                          key={option.value}
-                          value={option.value}
-                        >
+                        <ComboboxOption key={option.value} value={option.value}>
                           {option.label}
-                        </NativeSelectOption>
+                        </ComboboxOption>
                       ))}
-                    </NativeSelect>
+                    </Combobox>
                   </Field>
                 </FieldGroup>
               </SettingCard>

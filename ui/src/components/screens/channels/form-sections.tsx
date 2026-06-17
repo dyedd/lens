@@ -18,10 +18,14 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,7 +46,6 @@ import {
   protocolConfigCredentialKeys,
   protocolLabel,
   resolveBaseUrlId,
-  selectClassName,
 } from "./shared";
 
 export function ProtocolConfigItem({
@@ -127,8 +130,8 @@ export function ProtocolConfigItem({
             <FieldLabel>
               {locale === "zh-CN" ? "地址来源" : "Base URL"}
             </FieldLabel>
-            <NativeSelect
-              className={selectClassName()}
+            <Combobox
+              className="w-full"
               value={resolveBaseUrlId(
                 form.base_urls,
                 protocolConfig.base_url_id,
@@ -140,16 +143,16 @@ export function ProtocolConfigItem({
               }
             >
               {form.base_urls.map((item, baseUrlIndex) => (
-                <NativeSelectOption key={item.id} value={item.id}>
+                <ComboboxOption key={item.id} value={item.id}>
                   {baseUrlLabel(item, baseUrlIndex, locale)}
-                </NativeSelectOption>
+                </ComboboxOption>
               ))}
-            </NativeSelect>
+            </Combobox>
           </Field>
           <Field>
             <FieldLabel>{locale === "zh-CN" ? "密钥" : "Key"}</FieldLabel>
-            <NativeSelect
-              className={selectClassName()}
+            <Combobox
+              className="w-full"
               value={selectedCredentialId}
               onChange={(event) => {
                 const credentialId = event.target.value;
@@ -162,24 +165,24 @@ export function ProtocolConfigItem({
               }}
             >
               {selectedCredentialId && !selectedCredentialKnown ? (
-                <NativeSelectOption value={selectedCredentialId} disabled>
+                <ComboboxOption value={selectedCredentialId} disabled>
                   {locale === "zh-CN"
                     ? `无效密钥：${selectedCredentialId}`
                     : `Invalid key: ${selectedCredentialId}`}
-                </NativeSelectOption>
+                </ComboboxOption>
               ) : null}
               {credentialOptions.length ? (
                 credentialOptions.map((item) => (
-                  <NativeSelectOption key={item.id} value={item.id}>
+                  <ComboboxOption key={item.id} value={item.id}>
                     {item.display_name}
-                  </NativeSelectOption>
+                  </ComboboxOption>
                 ))
               ) : (
-                <NativeSelectOption value="" disabled>
+                <ComboboxOption value="" disabled>
                   {locale === "zh-CN" ? "暂无可用密钥" : "No available key"}
-                </NativeSelectOption>
+                </ComboboxOption>
               )}
-            </NativeSelect>
+            </Combobox>
           </Field>
           <div className="flex h-8 w-8 items-center justify-center xl:self-end">
             <Switch
@@ -465,27 +468,29 @@ export function AdvancedProtocolConfigDialog({
                 <FieldLabel htmlFor="protocol-proxy-mode">
                   {locale === "zh-CN" ? "代理模式" : "Proxy mode"}
                 </FieldLabel>
-                <NativeSelect
-                  id="protocol-proxy-mode"
-                  className={selectClassName()}
+                <Select
                   value={protocolConfig.proxy_mode}
-                  onChange={(event) =>
+                  onValueChange={(value) =>
                     onUpdateProtocolConfig(protocolConfigIndex, {
-                      proxy_mode: event.target
-                        .value as FormProtocolConfig["proxy_mode"],
+                      proxy_mode: value as FormProtocolConfig["proxy_mode"],
                     })
                   }
                 >
-                  <NativeSelectOption value="inherit">
-                    {locale === "zh-CN" ? "跟随系统代理" : "Use system proxy"}
-                  </NativeSelectOption>
-                  <NativeSelectOption value="direct">
-                    {locale === "zh-CN" ? "不使用代理" : "Direct"}
-                  </NativeSelectOption>
-                  <NativeSelectOption value="custom">
-                    {locale === "zh-CN" ? "自定义代理" : "Custom proxy"}
-                  </NativeSelectOption>
-                </NativeSelect>
+                  <SelectTrigger id="protocol-proxy-mode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">
+                      {locale === "zh-CN" ? "跟随系统代理" : "Use system proxy"}
+                    </SelectItem>
+                    <SelectItem value="direct">
+                      {locale === "zh-CN" ? "不使用代理" : "Direct"}
+                    </SelectItem>
+                    <SelectItem value="custom">
+                      {locale === "zh-CN" ? "自定义代理" : "Custom proxy"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               {protocolConfig.proxy_mode === "custom" ? (
                 <Field>
