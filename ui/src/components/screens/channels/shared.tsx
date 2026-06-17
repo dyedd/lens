@@ -544,10 +544,6 @@ export function modelBadgeClassName(enabled: boolean) {
     : "inline-flex h-8 items-center gap-2 rounded-full border bg-muted/40 px-3 text-sm font-medium text-muted-foreground";
 }
 
-export function selectClassName() {
-  return "w-full [&_select]:border-border [&_select]:bg-background [&_select]:text-sm [&_select]:text-foreground";
-}
-
 export function siteProtocols(site: Site) {
   return Array.from(
     new Set(

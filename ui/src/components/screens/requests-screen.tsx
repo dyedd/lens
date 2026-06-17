@@ -34,10 +34,7 @@ import {
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import {
   Pagination,
   PaginationContent,
@@ -47,6 +44,13 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
@@ -392,7 +396,7 @@ export function RequestsScreen() {
                   </div>
                 </div>
 
-                <NativeSelect
+                <Combobox
                   className="mt-3 w-full sm:hidden"
                   value={effectiveSelectedModelPrefix}
                   onChange={(event) =>
@@ -400,11 +404,11 @@ export function RequestsScreen() {
                   }
                 >
                   {modelPrefixOptions.map((option) => (
-                    <NativeSelectOption key={option.key} value={option.key}>
+                    <ComboboxOption key={option.key} value={option.key}>
                       {option.label}
-                    </NativeSelectOption>
+                    </ComboboxOption>
                   ))}
-                </NativeSelect>
+                </Combobox>
 
                 <div className="hidden snap-x gap-3 overflow-x-auto pb-1 sm:flex">
                   {modelPrefixOptions.map((option) => (
@@ -543,45 +547,47 @@ export function RequestsScreen() {
                       <FieldLabel htmlFor="request-log-protocol">
                         {titleForLocale(locale, "协议", "Protocol")}
                       </FieldLabel>
-                      <NativeSelect
-                        id="request-log-protocol"
-                        className="w-full"
+                      <Select
                         value={protocolFilter}
-                        onChange={(event) =>
-                          handleProtocolChange(
-                            event.target.value as "all" | ProtocolKind,
-                          )
+                        onValueChange={(value) =>
+                          handleProtocolChange(value as "all" | ProtocolKind)
                         }
                       >
-                        <NativeSelectOption value="all">
-                          {titleForLocale(locale, "全部协议", "All protocols")}
-                        </NativeSelectOption>
-                        <NativeSelectOption value="openai_chat">
-                          OpenAI Chat
-                        </NativeSelectOption>
-                        <NativeSelectOption value="openai_responses">
-                          OpenAI Responses
-                        </NativeSelectOption>
-                        <NativeSelectOption value="openai_embedding">
-                          OpenAI Embedding
-                        </NativeSelectOption>
-                        <NativeSelectOption value="rerank">
-                          Rerank
-                        </NativeSelectOption>
-                        <NativeSelectOption value="anthropic">
-                          Anthropic
-                        </NativeSelectOption>
-                        <NativeSelectOption value="gemini">
-                          Gemini
-                        </NativeSelectOption>
-                      </NativeSelect>
+                        <SelectTrigger
+                          id="request-log-protocol"
+                          className="w-full"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">
+                            {titleForLocale(
+                              locale,
+                              "全部协议",
+                              "All protocols",
+                            )}
+                          </SelectItem>
+                          <SelectItem value="openai_chat">
+                            OpenAI Chat
+                          </SelectItem>
+                          <SelectItem value="openai_responses">
+                            OpenAI Responses
+                          </SelectItem>
+                          <SelectItem value="openai_embedding">
+                            OpenAI Embedding
+                          </SelectItem>
+                          <SelectItem value="rerank">Rerank</SelectItem>
+                          <SelectItem value="anthropic">Anthropic</SelectItem>
+                          <SelectItem value="gemini">Gemini</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
 
                     <Field>
                       <FieldLabel htmlFor="request-log-channel">
                         {titleForLocale(locale, "渠道", "Channel")}
                       </FieldLabel>
-                      <NativeSelect
+                      <Combobox
                         id="request-log-channel"
                         className="w-full"
                         value={channelFilter}
@@ -589,18 +595,15 @@ export function RequestsScreen() {
                           handleChannelChange(event.target.value)
                         }
                       >
-                        <NativeSelectOption value="all">
+                        <ComboboxOption value="all">
                           {titleForLocale(locale, "全部渠道", "All channels")}
-                        </NativeSelectOption>
+                        </ComboboxOption>
                         {channelOptions.map((channel) => (
-                          <NativeSelectOption
-                            key={channel.id}
-                            value={channel.id}
-                          >
+                          <ComboboxOption key={channel.id} value={channel.id}>
                             {filterOptionLabel(channel)}
-                          </NativeSelectOption>
+                          </ComboboxOption>
                         ))}
-                      </NativeSelect>
+                      </Combobox>
                     </Field>
 
                     {showGatewayKeyFilter ? (
@@ -608,7 +611,7 @@ export function RequestsScreen() {
                         <FieldLabel htmlFor="request-log-gateway-key">
                           API Key
                         </FieldLabel>
-                        <NativeSelect
+                        <Combobox
                           id="request-log-gateway-key"
                           className="w-full"
                           value={selectedGatewayKeyId}
@@ -616,19 +619,19 @@ export function RequestsScreen() {
                             handleGatewayKeyChange(event.target.value)
                           }
                         >
-                          <NativeSelectOption value="all">
+                          <ComboboxOption value="all">
                             {titleForLocale(
                               locale,
                               "全部 API Key",
                               "All API keys",
                             )}
-                          </NativeSelectOption>
+                          </ComboboxOption>
                           {gatewayKeyOptions.map((item) => (
-                            <NativeSelectOption key={item.id} value={item.id}>
+                            <ComboboxOption key={item.id} value={item.id}>
                               {gatewayKeyFilterOptionLabel(item, locale)}
-                            </NativeSelectOption>
+                            </ComboboxOption>
                           ))}
-                        </NativeSelect>
+                        </Combobox>
                       </Field>
                     ) : null}
 
@@ -636,31 +639,38 @@ export function RequestsScreen() {
                       <FieldLabel htmlFor="request-log-sort">
                         {titleForLocale(locale, "排序", "Sort by")}
                       </FieldLabel>
-                      <NativeSelect
-                        id="request-log-sort"
-                        className="w-full"
+                      <Select
                         value={sortMode}
-                        onChange={(event) =>
-                          handleSortChange(event.target.value as SortMode)
+                        onValueChange={(value) =>
+                          handleSortChange(value as SortMode)
                         }
                       >
-                        <NativeSelectOption value="latest">
-                          {titleForLocale(locale, "最新优先", "Latest first")}
-                        </NativeSelectOption>
-                        <NativeSelectOption value="cost">
-                          {titleForLocale(locale, "费用优先", "Highest cost")}
-                        </NativeSelectOption>
-                        <NativeSelectOption value="latency">
-                          {titleForLocale(
-                            locale,
-                            "耗时优先",
-                            "Longest latency",
-                          )}
-                        </NativeSelectOption>
-                        <NativeSelectOption value="tokens">
-                          {titleForLocale(locale, "Token 优先", "Most tokens")}
-                        </NativeSelectOption>
-                      </NativeSelect>
+                        <SelectTrigger id="request-log-sort" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="latest">
+                            {titleForLocale(locale, "最新优先", "Latest first")}
+                          </SelectItem>
+                          <SelectItem value="cost">
+                            {titleForLocale(locale, "费用优先", "Highest cost")}
+                          </SelectItem>
+                          <SelectItem value="latency">
+                            {titleForLocale(
+                              locale,
+                              "耗时优先",
+                              "Longest latency",
+                            )}
+                          </SelectItem>
+                          <SelectItem value="tokens">
+                            {titleForLocale(
+                              locale,
+                              "Token 优先",
+                              "Most tokens",
+                            )}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                   </FieldGroup>
                 </FieldSet>

@@ -14,11 +14,15 @@ import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import type {
   ModelGroup,
@@ -35,7 +39,6 @@ import {
 import {
   modelFoldKey,
   protocolOptions,
-  selectClassName,
   type CandidateChannelGroup,
   type CandidateSearchMode,
   type FoldedMember,
@@ -199,23 +202,23 @@ export function GroupEditorDialog({
                       ? "路由目标模型组"
                       : "Route target group"}
                   </FieldLabel>
-                  <NativeSelect
+                  <Combobox
                     id="group-route-target"
-                    className={selectClassName}
+                    className="w-full"
                     value={form.route_group_id}
                     onChange={(event) => changeRouteTarget(event.target.value)}
                   >
-                    <NativeSelectOption value="">
+                    <ComboboxOption value="">
                       {locale === "zh-CN"
                         ? "不启用模型组路由"
                         : "No group routing"}
-                    </NativeSelectOption>
+                    </ComboboxOption>
                     {routeTargetOptions.map((group) => (
-                      <NativeSelectOption key={group.id} value={group.id}>
+                      <ComboboxOption key={group.id} value={group.id}>
                         {group.name}
-                      </NativeSelectOption>
+                      </ComboboxOption>
                     ))}
-                  </NativeSelect>
+                  </Combobox>
                 </Field>
                 <Field>
                   <FieldLabel>
@@ -289,23 +292,26 @@ export function GroupEditorDialog({
                   <section className="flex flex-col rounded-lg bg-muted/10">
                     <div className="grid gap-3 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                       <div className="grid min-w-0 gap-2 sm:grid-cols-[128px_minmax(0,1fr)]">
-                        <NativeSelect
-                          size="sm"
-                          className="w-full"
+                        <Select
                           value={candidateSearchMode}
-                          onChange={(event) =>
+                          onValueChange={(value) =>
                             changeCandidateSearchMode(
-                              event.target.value as CandidateSearchMode,
+                              value as CandidateSearchMode,
                             )
                           }
                         >
-                          <NativeSelectOption value="contains">
-                            {locale === "zh-CN" ? "包含" : "Contains"}
-                          </NativeSelectOption>
-                          <NativeSelectOption value="regex">
-                            {locale === "zh-CN" ? "正则" : "Regex"}
-                          </NativeSelectOption>
-                        </NativeSelect>
+                          <SelectTrigger className="h-7 w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="contains">
+                              {locale === "zh-CN" ? "包含" : "Contains"}
+                            </SelectItem>
+                            <SelectItem value="regex">
+                              {locale === "zh-CN" ? "正则" : "Regex"}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                         <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
                           <Search size={14} className="text-muted-foreground" />
                           <Input
