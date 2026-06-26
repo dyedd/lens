@@ -12,6 +12,7 @@ from ...models import (
     ConfigImportResult,
     CronjobItem,
     CronjobRunResult,
+    ChannelModelSyncResponse,
     GatewayApiKey,
     ModelGroup,
     ModelGroupCandidatesResponse,
@@ -69,6 +70,7 @@ from .admin_sites import (
     router_snapshot,
     site_runtime_summaries,
     test_site_model,
+    sync_channel_models,
     update_site,
 )
 from .auth import (
@@ -110,6 +112,7 @@ __all__ = [
     "ConfigImportResult",
     "CronjobItem",
     "CronjobRunResult",
+    "ChannelModelSyncResponse",
     "GatewayApiKey",
     "ModelGroup",
     "ModelGroupCandidatesResponse",
@@ -180,6 +183,7 @@ __all__ = [
     "site_runtime_summaries",
     "sync_model_prices",
     "test_site_model",
+    "sync_channel_models",
     "update_cronjob",
     "update_gateway_api_key",
     "update_model_group",

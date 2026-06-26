@@ -4,6 +4,7 @@ from .shared import (
     AsyncSession,
     ChannelConfig,
     ModelGroupItemEntity,
+    ProtocolKind,
     SiteBaseUrlEntity,
     SiteBatchImportError,
     SiteBatchImportRequest,
@@ -16,18 +17,22 @@ from .shared import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteModelFetchRequest,
+    SiteModelInput,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigInput,
     SiteUpdate,
     _channel_id_matches_protocol_config,
     async_sessionmaker,
     delete,
     or_,
+    select,
     uuid,
 )
 from .loaders import ChannelLoadersMixin
 from .normalization import ChannelNormalizationMixin
 from .site_import_normalization import ChannelSiteImportNormalizationMixin
 from .upserts import ChannelUpsertsMixin
+from ..shared import _parse_supported_protocols_json
 
 
 class ChannelStore(
@@ -266,3 +271,59 @@ class ChannelStore(
                 "credential_name": credential.name,
             }
         ]
+
+    async def replace_protocol_config_models(
+        self,
+        protocol_config_id: str,
+        model_names_by_protocol: dict[ProtocolKind, list[str]],
+    ) -> None:
+        async with self._session_factory() as session:
+            entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
+            if entity is None:
+                raise KeyError(protocol_config_id)
+            credential_id = entity.credential_id
+            if not credential_id:
+                raise ValueError(
+                    f"Protocol config has no bound credential: {protocol_config_id}"
+                )
+
+            protocols = _parse_supported_protocols_json(entity.protocols_json)
+            existing_enabled = {
+                (row.model_name, row.protocol): bool(row.enabled)
+                for row in (
+                    await session.execute(
+                        select(SiteDiscoveredModelEntity).where(
+                            SiteDiscoveredModelEntity.protocol_config_id
+                            == protocol_config_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            }
+            models = [
+                SiteModelInput(
+                    credential_id=credential_id,
+                    model_name=model_name,
+                    enabled=existing_enabled.get((model_name, protocol.value), True),
+                    protocol=protocol,
+                )
+                for protocol in protocols
+                for model_name in model_names_by_protocol.get(protocol, [])
+            ]
+            protocol_config = SiteProtocolConfigInput(
+                id=protocol_config_id,
+                protocols=protocols,
+                base_url_id=entity.base_url_id,
+                credential_id=credential_id,
+                models=models,
+            )
+
+            await self._upsert_protocol_config_models(
+                session,
+                protocol_config_id,
+                protocol_config,
+                {credential_id},
+            )
+            await self._cleanup_invalid_group_items(session, {protocol_config_id})
+            await session.commit()

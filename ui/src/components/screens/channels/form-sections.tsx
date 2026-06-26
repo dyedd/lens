@@ -343,6 +343,19 @@ export function ProtocolConfigItem({
                     {locale === "zh-CN" ? "获取模型" : "Fetch models"}
                   </Button>
                 </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-foreground">
+                    {locale === "zh-CN" ? "自动同步" : "Auto sync"}
+                  </div>
+                  <Switch
+                    checked={protocolConfig.auto_sync_enabled}
+                    onCheckedChange={(checked) =>
+                      onUpdateProtocolConfig(protocolConfigIndex, {
+                        auto_sync_enabled: checked,
+                      })
+                    }
+                  />
+                </div>
               </FieldGroup>
             </div>
 
