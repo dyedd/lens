@@ -169,6 +169,9 @@ class BackupReplacersMixin:
                         match_regex=protocol_config.match_regex,
                         base_url_id=protocol_config.base_url_id,
                         credential_id=protocol_config.credential_id,
+                        auto_sync_enabled=(
+                            1 if protocol_config.auto_sync_enabled else 0
+                        ),
                     )
                 )
 

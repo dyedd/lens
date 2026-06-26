@@ -3,10 +3,11 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
-import { FileInput, Plus } from "lucide-react";
+import { FileInput, Plus, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
+  ChannelModelSyncResponse,
   ModelGroup,
   ModelGroupEnsureFromSitePayload,
   ModelGroupEnsureFromSiteResponse,
@@ -131,6 +132,11 @@ const ModelTestDialog = dynamic(() =>
 const ModelPickerDialog = dynamic(() =>
   import("./channels/model-dialogs").then((module) => module.ModelPickerDialog),
 );
+const ChannelModelSyncDialog = dynamic(() =>
+  import("./channels/model-dialogs").then(
+    (module) => module.ChannelModelSyncDialog,
+  ),
+);
 
 function buildModelGroupEnsureInputs(
   site: Site,
@@ -218,6 +224,10 @@ export function ChannelsScreen() {
   const [batchImportResult, setBatchImportResult] =
     useState<SiteBatchImportResult | null>(null);
   const [batchImporting, setBatchImporting] = useState(false);
+  const [channelSyncOpen, setChannelSyncOpen] = useState(false);
+  const [channelSyncResult, setChannelSyncResult] =
+    useState<ChannelModelSyncResponse | null>(null);
+  const [channelSyncing, setChannelSyncing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm(locale));
@@ -593,6 +603,71 @@ export function ChannelsScreen() {
     setBatchImportError("");
     setBatchImportResult(null);
     setBatchImportOpen(true);
+  }
+
+  async function openChannelModelSync() {
+    setChannelSyncResult(null);
+    setChannelSyncOpen(true);
+    setChannelSyncing(true);
+    try {
+      const result = await apiRequest<ChannelModelSyncResponse>(
+        "/admin/channel-model-sync",
+        {
+          method: "POST",
+          body: JSON.stringify({ dry_run: true }),
+        },
+      );
+      setChannelSyncResult(result);
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : locale === "zh-CN"
+            ? "生成同步预览失败"
+            : "Failed to preview sync";
+      toast.error(message);
+      setChannelSyncOpen(false);
+    } finally {
+      setChannelSyncing(false);
+    }
+  }
+
+  async function confirmChannelModelSync() {
+    setChannelSyncing(true);
+    try {
+      const result = await apiRequest<ChannelModelSyncResponse>(
+        "/admin/channel-model-sync",
+        {
+          method: "POST",
+          body: JSON.stringify({ dry_run: false }),
+        },
+      );
+      await invalidateChannelData();
+      const added = result.items.reduce(
+        (sum, item) => sum + item.added.length,
+        0,
+      );
+      const removed = result.items.reduce(
+        (sum, item) => sum + item.removed.length,
+        0,
+      );
+      toast.success(
+        locale === "zh-CN"
+          ? `已同步 ${result.synced_channel_count} 个渠道，新增 ${added} 个，移除 ${removed} 个`
+          : `Synced ${result.synced_channel_count} channels, +${added} / -${removed}`,
+      );
+      setChannelSyncOpen(false);
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : locale === "zh-CN"
+            ? "同步失败"
+            : "Sync failed";
+      toast.error(message);
+    } finally {
+      setChannelSyncing(false);
+    }
   }
 
   function updateBatchImportText(value: string) {
@@ -1833,6 +1908,10 @@ export function ChannelsScreen() {
               <FileInput />
               {locale === "zh-CN" ? "批量导入" : "Import channels"}
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void openChannelModelSync()}>
+              <RefreshCcw />
+              {locale === "zh-CN" ? "同步模型" : "Sync models"}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </DashboardHeaderActions>
@@ -1938,6 +2017,17 @@ export function ChannelsScreen() {
             onFileChange={(event) => void handleBatchImportFile(event)}
             onDownloadTemplate={downloadBatchImportTemplate}
             onImport={() => void importBatchSites()}
+          />
+        ) : null}
+
+        {channelSyncOpen ? (
+          <ChannelModelSyncDialog
+            open={channelSyncOpen}
+            onOpenChange={setChannelSyncOpen}
+            locale={locale}
+            result={channelSyncResult}
+            syncing={channelSyncing}
+            onConfirm={() => void confirmChannelModelSync()}
           />
         ) : null}
 

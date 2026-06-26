@@ -3,6 +3,8 @@ from __future__ import annotations
 from .runtime_context import (
     Any,
     ChannelConfig,
+    ChannelModelSyncRequest,
+    ChannelModelSyncResponse,
     Depends,
     HTTPException,
     OverviewDailyPoint,
@@ -155,6 +157,14 @@ async def test_site_model(
         model_name=payload.model_name,
         credential_id=payload.credential.id,
     )
+
+
+async def sync_channel_models(
+    payload: ChannelModelSyncRequest, _: Any = Depends(get_current_admin)
+) -> ChannelModelSyncResponse:
+    from .model_sync import sync_channel_models as run_channel_model_sync
+
+    return await run_channel_model_sync(app_state, dry_run=payload.dry_run)
 
 
 async def router_snapshot(_: Any = Depends(get_current_admin)) -> dict[str, Any]:
