@@ -187,6 +187,7 @@ class ChannelUpsertsMixin:
             entity.match_regex = protocol_config.match_regex
             entity.base_url_id = protocol_config.base_url_id
             entity.credential_id = protocol_config.credential_id
+            entity.auto_sync_enabled = int(protocol_config.auto_sync_enabled)
 
             await self._upsert_protocol_config_models(
                 session,

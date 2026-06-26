@@ -90,6 +90,9 @@ class SiteProtocolConfigEntity(Base):
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
     match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
     base_url_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    auto_sync_enabled: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
 
 class SiteDiscoveredModelEntity(Base):

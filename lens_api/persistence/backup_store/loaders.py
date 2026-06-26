@@ -129,6 +129,7 @@ class BackupLoadersMixin:
                     "match_regex": row.match_regex,
                     "base_url_id": row.base_url_id,
                     "credential_id": row.credential_id,
+                    "auto_sync_enabled": bool(row.auto_sync_enabled),
                     "models": models_by_protocol_config.get(row.id, []),
                 }
             )

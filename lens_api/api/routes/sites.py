@@ -44,3 +44,9 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         methods=["POST"],
         response_model=service_module.SiteModelTestResult,
     )
+    app.add_api_route(
+        "/api/admin/channel-model-sync",
+        service_module.sync_channel_models,
+        methods=["POST"],
+        response_model=service_module.ChannelModelSyncResponse,
+    )

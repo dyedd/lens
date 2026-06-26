@@ -257,6 +257,7 @@ class SiteProtocolConfig(StrictBaseModel):
     match_regex: str = ""
     base_url_id: str = Field(min_length=1)
     credential_id: str = ""
+    auto_sync_enabled: bool = False
     models: list[SiteModel] = Field(default_factory=list)
 
 
@@ -272,6 +273,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
     match_regex: str = ""
     base_url_id: str = Field(min_length=1)
     credential_id: str = ""
+    auto_sync_enabled: bool = False
     models: list[SiteModelInput] = Field(default_factory=list)
 
     @field_validator("match_regex")
@@ -892,6 +894,32 @@ class ModelGroupEnsureFromSiteResponse(StrictBaseModel):
     unchanged_count: int = Field(default=0, ge=0)
     skipped_count: int = Field(default=0, ge=0)
     items: list[ModelGroupEnsureResultItem] = Field(default_factory=list)
+
+
+class ChannelModelSyncRequest(StrictBaseModel):
+    dry_run: bool = True
+
+
+class ChannelModelSyncGroupChange(StrictBaseModel):
+    group_name: str
+    model_name: str
+
+
+class ChannelModelSyncResultItem(StrictBaseModel):
+    protocol_config_id: str
+    channel_name: str
+    success: bool
+    error: str = ""
+    added: list[str] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)
+    group_added: list[ChannelModelSyncGroupChange] = Field(default_factory=list)
+
+
+class ChannelModelSyncResponse(StrictBaseModel):
+    dry_run: bool
+    synced_channel_count: int = Field(default=0, ge=0)
+    skipped_channel_count: int = Field(default=0, ge=0)
+    items: list[ChannelModelSyncResultItem] = Field(default_factory=list)
 
 
 class ModelPriceItem(StrictBaseModel):

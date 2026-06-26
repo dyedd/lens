@@ -58,6 +58,8 @@ from ...models import (
     AppInfo,
     AuthTokenResponse,
     ChannelConfig,
+    ChannelModelSyncRequest,
+    ChannelModelSyncResponse,
     ConfigBackupDump,
     ConfigImportResult,
     ErrorResponse,
@@ -157,6 +159,7 @@ TASK_REQUEST_LOG_PRUNE = "request_log_prune"
 TASK_MODEL_PRICE_SYNC = "model_price_sync"
 TASK_REQUEST_LOG_STATS_PERSIST = "request_log_stats_persist"
 TASK_VERSION_CHECK = "version_check"
+TASK_CHANNEL_MODEL_SYNC = "channel_model_sync"
 
 GENERIC_USER_AGENT_TOKENS = (
     "python-httpx",
@@ -211,6 +214,13 @@ CRONJOB_SPECS = (
         description="检测 GitHub releases 是否有新版本",
         default_interval_hours=24,
     ),
+    CronjobSpec(
+        id=TASK_CHANNEL_MODEL_SYNC,
+        name="渠道模型同步",
+        description="按周期拉取上游模型并同步模型组成员",
+        default_interval_hours=24,
+        default_enabled=False,
+    ),
 )
 
 logger = logging.getLogger(__name__)
@@ -262,6 +272,7 @@ class AppState:
                 TASK_MODEL_PRICE_SYNC: self._sync_model_prices,
                 TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.persist_request_log_stats,
                 TASK_VERSION_CHECK: self._check_version_update,
+                TASK_CHANNEL_MODEL_SYNC: self._sync_channel_models,
             },
             time_zone_provider=self._runtime_time_zone,
             logger=logger,
@@ -287,6 +298,11 @@ class AppState:
         from .tasks import _sync_group_prices
 
         await _sync_group_prices(self, overwrite_existing=True)
+
+    async def _sync_channel_models(self) -> None:
+        from .model_sync import sync_channel_models
+
+        await sync_channel_models(self, dry_run=False)
 
     async def _check_version_update(self) -> None:
         try:

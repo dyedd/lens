@@ -64,6 +64,7 @@ export type FormProtocolConfig = {
   manual_model_name: string;
   base_url_id: string;
   credential_id: string;
+  auto_sync_enabled: boolean;
   models: FormModel[];
   expanded: boolean;
 };
@@ -201,6 +202,7 @@ export const emptyProtocolConfig = (
   manual_model_name: "",
   base_url_id: baseUrlId,
   credential_id: credentialId,
+  auto_sync_enabled: false,
   models: [],
   expanded: true,
 });
@@ -705,6 +707,7 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           manual_model_name: "",
           base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
           credential_id: protocolConfig.credential_id,
+          auto_sync_enabled: protocolConfig.auto_sync_enabled,
           models: Array.from(modelGroups.values()),
           expanded: true,
         };
@@ -804,6 +807,7 @@ export function toPayload(form: FormState): SitePayload {
           match_regex: safeText(protocolConfig.match_regex).trim(),
           base_url_id: protocolConfig.base_url_id,
           credential_id: credentialId,
+          auto_sync_enabled: protocolConfig.auto_sync_enabled,
           models,
         },
       ];

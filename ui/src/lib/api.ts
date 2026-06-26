@@ -177,6 +177,7 @@ export type SiteProtocolConfig = {
   match_regex: string;
   base_url_id: string;
   credential_id: string;
+  auto_sync_enabled: boolean;
   models: SiteModel[];
 };
 
@@ -192,6 +193,7 @@ export type SiteProtocolConfigInput = {
   match_regex: string;
   base_url_id: string;
   credential_id: string;
+  auto_sync_enabled: boolean;
   models: SiteModelInput[];
 };
 
@@ -394,6 +396,32 @@ export type ModelGroupEnsureFromSiteResponse = {
   unchanged_count: number;
   skipped_count: number;
   items: ModelGroupEnsureResultItem[];
+};
+
+export type ChannelModelSyncPayload = {
+  dry_run: boolean;
+};
+
+export type ChannelModelSyncGroupChange = {
+  group_name: string;
+  model_name: string;
+};
+
+export type ChannelModelSyncResultItem = {
+  protocol_config_id: string;
+  channel_name: string;
+  success: boolean;
+  error: string;
+  added: string[];
+  removed: string[];
+  group_added: ChannelModelSyncGroupChange[];
+};
+
+export type ChannelModelSyncResponse = {
+  dry_run: boolean;
+  synced_channel_count: number;
+  skipped_channel_count: number;
+  items: ChannelModelSyncResultItem[];
 };
 
 export type ModelPriceItem = {
