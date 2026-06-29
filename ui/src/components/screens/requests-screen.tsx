@@ -253,10 +253,10 @@ export function RequestsScreen() {
           error instanceof Error
             ? error.message
             : titleForLocale(
-                locale,
-                "无法读取请求日志",
-                "Unable to read request logs",
-              ),
+              locale,
+              "无法读取请求日志",
+              "Unable to read request logs",
+            ),
       },
     );
   }, [error, isError, locale]);
@@ -312,10 +312,10 @@ export function RequestsScreen() {
         requestError instanceof ApiError
           ? requestError.message
           : titleForLocale(
-              locale,
-              "清空请求日志失败",
-              "Failed to clear request logs",
-            ),
+            locale,
+            "清空请求日志失败",
+            "Failed to clear request logs",
+          ),
       );
     } finally {
       setClearingLogs(false);
@@ -430,15 +430,15 @@ export function RequestsScreen() {
                 <div className="rounded-xl border border-dashed bg-background px-6 py-14 text-center text-sm text-muted-foreground">
                   {activeFilterCount
                     ? titleForLocale(
-                        locale,
-                        "当前筛选条件下没有请求日志。",
-                        "No request logs match the current filters.",
-                      )
+                      locale,
+                      "当前筛选条件下没有请求日志。",
+                      "No request logs match the current filters.",
+                    )
                     : titleForLocale(
-                        locale,
-                        "暂无请求日志。",
-                        "No request logs yet.",
-                      )}
+                      locale,
+                      "暂无请求日志。",
+                      "No request logs yet.",
+                    )}
                 </div>
               ) : null}
 
@@ -686,10 +686,10 @@ export function RequestsScreen() {
                     {clearingLogs
                       ? titleForLocale(locale, "清空中...", "Clearing...")
                       : titleForLocale(
-                          locale,
-                          "清空请求日志",
-                          "Clear request logs",
-                        )}
+                        locale,
+                        "清空请求日志",
+                        "Clear request logs",
+                      )}
                   </Button>
                 </div>
               </div>
@@ -775,10 +775,10 @@ export function RequestsScreen() {
                   {detailError instanceof Error
                     ? detailError.message
                     : titleForLocale(
-                        locale,
-                        "无法读取日志详情",
-                        "Unable to read log detail",
-                      )}
+                      locale,
+                      "无法读取日志详情",
+                      "Unable to read log detail",
+                    )}
                 </AlertDescription>
               </Alert>
             ) : detailLoading || !detail ? (
@@ -839,10 +839,10 @@ export function RequestsScreen() {
                   {attemptDetailError instanceof Error
                     ? attemptDetailError.message
                     : titleForLocale(
-                        locale,
-                        "无法读取尝试链路",
-                        "Unable to read attempts",
-                      )}
+                      locale,
+                      "无法读取尝试链路",
+                      "Unable to read attempts",
+                    )}
                 </AlertDescription>
               </Alert>
             ) : attemptDetailLoading || !attemptDetail ? (
