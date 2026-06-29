@@ -454,7 +454,7 @@ export function ChannelsScreen() {
       if (sortBy === "protocols-desc")
         return (
           right.enabled_protocol_channel_count -
-            left.enabled_protocol_channel_count ||
+          left.enabled_protocol_channel_count ||
           left.name.localeCompare(right.name, locale)
         );
       return (
@@ -1412,32 +1412,42 @@ export function ChannelsScreen() {
           currentProtocolConfigIndex !== protocolConfigIndex
             ? protocolConfig
             : {
-                ...protocolConfig,
-                headers: protocolConfig.headers.map(
-                  (header, currentHeaderIndex) =>
-                    currentHeaderIndex === headerIndex
-                      ? { ...header, ...patch }
-                      : header,
-                ),
-              },
+              ...protocolConfig,
+              headers: protocolConfig.headers.map(
+                (header, currentHeaderIndex) =>
+                  currentHeaderIndex === headerIndex
+                    ? { ...header, ...patch }
+                    : header,
+              ),
+            },
       ),
     }));
   }
 
   function addManualProtocolConfigModel(
     protocolConfigIndex: number,
-    credentialId: string,
+    credentialIds: string[],
   ) {
     const protocolConfig = form.protocolConfigs[protocolConfigIndex];
     const modelName = protocolConfig?.manual_model_name.trim() ?? "";
-    if (!protocolConfig || !credentialId || !modelName) return;
-    if (
-      protocolConfig.models.some(
-        (model) =>
-          model.credential_id === credentialId &&
-          model.model_name === modelName,
-      )
-    ) {
+    const targetCredentialIds = Array.from(new Set(credentialIds)).filter(Boolean);
+    if (!protocolConfig || !targetCredentialIds.length || !modelName) return;
+    const existingKeys = new Set(
+      protocolConfig.models.map(
+        (model) => `${model.credential_id}:${model.model_name}`,
+      ),
+    );
+    const newModels = targetCredentialIds
+      .filter((credentialId) => !existingKeys.has(`${credentialId}:${modelName}`))
+      .map((credentialId) => ({
+        id: null,
+        protocols: [],
+        protocolIds: {},
+        credential_id: credentialId,
+        model_name: modelName,
+        enabled: true,
+      }));
+    if (!newModels.length) {
       toast.info(locale === "zh-CN" ? "模型已存在" : "Model already exists");
       return;
     }
@@ -1452,17 +1462,7 @@ export function ChannelsScreen() {
             ...protocolConfig,
             manual_model_name: "",
             expanded: true,
-            models: [
-              ...protocolConfig.models,
-              {
-                id: null,
-                protocols: [],
-                protocolIds: {},
-                credential_id: credentialId,
-                model_name: modelName,
-                enabled: true,
-              },
-            ],
+            models: [...protocolConfig.models, ...newModels],
           };
         },
       ),
@@ -1636,11 +1636,11 @@ export function ChannelsScreen() {
   async function fetchProtocolModels(protocolConfigIndex: number) {
     const protocolConfig = form.protocolConfigs[protocolConfigIndex];
     if (!protocolConfig) return;
-    const selectedCredentialId = protocolConfig.credential_id;
-    if (!selectedCredentialId) {
-      toast.error(
-        locale === "zh-CN" ? "组合密钥无效" : "Combination key is invalid",
-      );
+    const credentialIds = form.credentials
+      .filter((item) => item.enabled && item.api_key.trim())
+      .map((item) => item.id);
+    if (!credentialIds.length) {
+      toast.error(locale === "zh-CN" ? "没有可用密钥" : "No available keys");
       return;
     }
     setFetchingProtocolConfigIndex(protocolConfigIndex);
@@ -1660,7 +1660,7 @@ export function ChannelsScreen() {
             enabled: item.enabled,
           }))
           .filter((item) => item.api_key),
-        credential_id: selectedCredentialId,
+        credential_ids: credentialIds,
       };
       const models = await apiRequest<SiteModelFetchItem[]>(
         "/admin/site-model-discoveries",
@@ -1671,6 +1671,7 @@ export function ChannelsScreen() {
       );
       const nextAvailableModels = models.map((item) => ({
         credential_id: item.credential_id,
+        credential_name: item.credential_name,
         model_name: item.model_name,
       }));
       setAvailableModels(nextAvailableModels);
@@ -1835,11 +1836,11 @@ export function ChannelsScreen() {
                 latencyMs: result.latency_ms,
                 message: success
                   ? result.output_text ||
-                    (locale === "zh-CN"
-                      ? "上游返回成功，但没有可展示文本"
-                      : "Upstream succeeded but returned no displayable text")
+                  (locale === "zh-CN"
+                    ? "上游返回成功，但没有可展示文本"
+                    : "Upstream succeeded but returned no displayable text")
                   : result.error_message ||
-                    (locale === "zh-CN" ? "测试失败" : "Test failed"),
+                  (locale === "zh-CN" ? "测试失败" : "Test failed"),
               });
               if (result.success) {
                 succeeded += 1;

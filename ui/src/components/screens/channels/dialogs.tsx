@@ -105,7 +105,7 @@ export function ChannelEditorDialog({
   ) => void;
   addManualProtocolConfigModel: (
     protocolConfigIndex: number,
-    credentialId: string,
+    credentialIds: string[],
   ) => void;
   fetchProtocolModels: (protocolConfigIndex: number) => void;
   openModelGroupEnsureDialog: () => void;
@@ -388,8 +388,8 @@ export function ChannelEditorDialog({
                             protocolConfigs:
                               current.protocolConfigs.length > 1
                                 ? current.protocolConfigs.filter(
-                                    (_, currentIndex) => currentIndex !== index,
-                                  )
+                                  (_, currentIndex) => currentIndex !== index,
+                                )
                                 : current.protocolConfigs,
                           }))
                         }

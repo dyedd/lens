@@ -1239,8 +1239,13 @@ export function ModelPickerDialog({
                         )}
                         onClick={() => onToggleModel(key)}
                       >
-                        <span className="max-w-[180px] truncate sm:max-w-[220px]">
-                          {model.model_name}
+                        <span className="min-w-0 max-w-[220px] text-left sm:max-w-[280px]">
+                          <span className="block truncate">{model.model_name}</span>
+                          {model.credential_name ? (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {model.credential_name}
+                            </span>
+                          ) : null}
                         </span>
                         <span className="text-xs">{checked ? "✓" : "+"}</span>
                       </Button>

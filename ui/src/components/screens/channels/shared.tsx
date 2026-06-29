@@ -78,6 +78,7 @@ export type FormState = {
 
 export type PickerModelItem = {
   credential_id: string;
+  credential_name?: string;
   model_name: string;
 };
 
@@ -111,6 +112,7 @@ export function groupPickerModels(models: PickerModelItem[]) {
     }
     groups.set(key, {
       credential_id: model.credential_id,
+      credential_name: model.credential_name,
       model_name: model.model_name,
     });
   }
@@ -632,21 +634,21 @@ export function SiteFavicon({ url, name }: { url: string; name: string }) {
 export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
   const baseUrls = site.base_urls.length
     ? site.base_urls.map((item) => ({
-        id: item.id,
-        url: item.url,
-        name: item.name,
-        enabled: item.enabled,
-        supported_protocols: item.supported_protocols ?? [],
-      }))
+      id: item.id,
+      url: item.url,
+      name: item.name,
+      enabled: item.enabled,
+      supported_protocols: item.supported_protocols ?? [],
+    }))
     : [
-        {
-          id: createLocalId("baseurl"),
-          url: "",
-          name: "",
-          enabled: true,
-          supported_protocols: [] as ProtocolKind[],
-        },
-      ];
+      {
+        id: createLocalId("baseurl"),
+        url: "",
+        name: "",
+        enabled: true,
+        supported_protocols: [] as ProtocolKind[],
+      },
+    ];
   const credentials = site.credentials.map((item) => ({
     id: item.id,
     name: isGeneratedCredentialName(item.name) ? "" : item.name,
@@ -696,9 +698,9 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           enabled: protocolConfig.enabled,
           headers: Object.entries(protocolConfig.headers).length
             ? Object.entries(protocolConfig.headers).map(([key, value]) => ({
-                key,
-                value,
-              }))
+              key,
+              value,
+            }))
             : [{ key: "", value: "" }],
           proxy_mode: protocolConfig.proxy_mode,
           channel_proxy: protocolConfig.channel_proxy,
@@ -784,9 +786,7 @@ export function toPayload(form: FormState): SitePayload {
             enabled: model.enabled,
           }));
         })
-        .filter(
-          (model) => model.credential_id === credentialId && model.model_name,
-        );
+        .filter((model) => model.credential_id && model.model_name);
       if (!models.length) {
         return [];
       }
@@ -820,7 +820,9 @@ export function protocolConfigCredentialKeys(
   baseUrlIds: Set<string>,
 ) {
   if (!baseUrlIds.has(protocolConfig.base_url_id)) return [];
-  return [[protocolConfig.base_url_id, protocolConfig.credential_id].join(":")];
+  return protocolConfigEffectiveProtocols(protocolConfig).map((protocol) =>
+    JSON.stringify([protocolConfig.base_url_id, protocol]),
+  );
 }
 
 export function duplicateProtocolConfigKeys(
