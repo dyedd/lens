@@ -256,21 +256,28 @@ class ChannelStore(
             if item.name.strip() and item.api_key.strip()
         ]
         credential_map = {item.id: item for item in credentials}
-        if payload.credential_id not in credential_map:
-            raise ValueError(
-                f"Credential not found for model discovery: {payload.credential_id}"
+        credential_ids = list(dict.fromkeys(payload.credential_ids))
+        if not credential_ids:
+            raise ValueError("At least one credential is required for model discovery")
+
+        previews: list[dict[str, str]] = []
+        for credential_id in credential_ids:
+            credential = credential_map.get(credential_id)
+            if credential is None:
+                raise ValueError(
+                    f"Credential not found for model discovery: {credential_id}"
+                )
+            if not credential.enabled:
+                raise ValueError(
+                    f"Credential is disabled for model discovery: {credential_id}"
+                )
+            previews.append(
+                {
+                    "credential_id": credential.id,
+                    "credential_name": credential.name,
+                }
             )
-        credential = credential_map[payload.credential_id]
-        if not credential.enabled:
-            raise ValueError(
-                f"Credential is disabled for model discovery: {payload.credential_id}"
-            )
-        return [
-            {
-                "credential_id": credential.id,
-                "credential_name": credential.name,
-            }
-        ]
+        return previews
 
     async def replace_protocol_config_models(
         self,

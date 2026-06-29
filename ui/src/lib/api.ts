@@ -310,7 +310,7 @@ export type SiteModelFetchPayload = {
   channel_proxy: string;
   match_regex: string;
   credentials: SiteCredentialInput[];
-  credential_id: string;
+  credential_ids: string[];
 };
 
 export type SiteModelFetchItem = {
