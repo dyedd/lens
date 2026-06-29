@@ -72,7 +72,7 @@ export function ProtocolConfigItem({
     patch: Partial<FormProtocolConfig>,
   ) => void;
   onRemoveProtocolConfig: (index: number) => void;
-  onAddManualModel: (index: number, credentialId: string) => void;
+  onAddManualModel: (index: number, credentialIds: string[]) => void;
   onFetchModels: (index: number) => void;
   onOpenAdvanced: (index: number) => void;
 }) {
@@ -92,17 +92,18 @@ export function ProtocolConfigItem({
     display_name: credentialLabel(item, index, locale),
   }));
   const selectedCredentialId = protocolConfig.credential_id;
-  const selectedCredentialActive =
-    activeCredentialIds.has(selectedCredentialId);
+  const selectedCredentialActive = activeCredentialIds.has(selectedCredentialId);
   const selectedCredentialKnown = credentialOptions.some(
     (item) => item.id === selectedCredentialId,
   );
-  const visibleModels = protocolConfig.models
-    .map((model, modelIndex) => ({ model, modelIndex }))
-    .filter(
-      ({ model }) =>
-        selectedCredentialId && model.credential_id === selectedCredentialId,
-    );
+  const activeCredentialCount = activeCredentialIds.size;
+  const credentialLabelById = new Map(
+    credentialOptions.map((item) => [item.id, item.display_name]),
+  );
+  const visibleModels = protocolConfig.models.map((model, modelIndex) => ({
+    model,
+    modelIndex,
+  }));
 
   return (
     <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-4 shadow-sm">
@@ -150,17 +151,15 @@ export function ProtocolConfigItem({
             </Combobox>
           </Field>
           <Field>
-            <FieldLabel>{locale === "zh-CN" ? "密钥" : "Key"}</FieldLabel>
+            <FieldLabel>
+              {locale === "zh-CN" ? "默认密钥" : "Default key"}
+            </FieldLabel>
             <Combobox
               className="w-full"
               value={selectedCredentialId}
               onChange={(event) => {
-                const credentialId = event.target.value;
                 onUpdateProtocolConfig(protocolConfigIndex, {
-                  credential_id: credentialId,
-                  models: protocolConfig.models.filter(
-                    (model) => model.credential_id === credentialId,
-                  ),
+                  credential_id: event.target.value,
                 });
               }}
             >
@@ -239,8 +238,8 @@ export function ProtocolConfigItem({
         {protocolConfigDuplicated ? (
           <div className="text-sm text-destructive">
             {locale === "zh-CN"
-              ? "地址来源和密钥重复"
-              : "Duplicate Base URL and key"}
+              ? "地址来源和协议重复"
+              : "Duplicate Base URL and protocols"}
           </div>
         ) : null}
 
@@ -268,10 +267,9 @@ export function ProtocolConfigItem({
                       onKeyDown={(event) => {
                         if (event.key !== "Enter") return;
                         event.preventDefault();
-                        onAddManualModel(
-                          protocolConfigIndex,
+                        onAddManualModel(protocolConfigIndex, [
                           selectedCredentialId,
-                        );
+                        ]);
                       }}
                       placeholder={
                         locale === "zh-CN" ? "完整模型名" : "Exact model name"
@@ -282,13 +280,12 @@ export function ProtocolConfigItem({
                     type="button"
                     variant="outline"
                     onClick={() =>
-                      onAddManualModel(
-                        protocolConfigIndex,
+                      onAddManualModel(protocolConfigIndex, [
                         selectedCredentialId,
-                      )
+                      ])
                     }
                     disabled={
-                      !selectedCredentialId ||
+                      !selectedCredentialActive ||
                       !protocolConfig.manual_model_name.trim()
                     }
                   >
@@ -296,6 +293,24 @@ export function ProtocolConfigItem({
                     {locale === "zh-CN" ? "添加模型" : "Add model"}
                   </Button>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="justify-self-start text-muted-foreground hover:text-foreground"
+                  onClick={() =>
+                    onAddManualModel(
+                      protocolConfigIndex,
+                      Array.from(activeCredentialIds),
+                    )
+                  }
+                  disabled={
+                    activeCredentialCount === 0 ||
+                    !protocolConfig.manual_model_name.trim()
+                  }
+                >
+                  <Plus data-icon="inline-start" />
+                  {locale === "zh-CN" ? "添加到全部密钥" : "Add to all keys"}
+                </Button>
               </FieldGroup>
               <FieldGroup className="gap-2">
                 <div className="text-sm font-medium text-foreground">
@@ -329,7 +344,7 @@ export function ProtocolConfigItem({
                     disabled={
                       fetchingProtocolConfigIndex === protocolConfigIndex ||
                       !activeBaseUrlValue(form, protocolConfig).trim() ||
-                      !selectedCredentialActive
+                      activeCredentialCount === 0
                     }
                   >
                     <RefreshCcw
@@ -393,9 +408,15 @@ export function ProtocolConfigItem({
                           : "border-muted bg-muted/30 opacity-65",
                       )}
                     >
-                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                        {model.model_name}
-                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm text-foreground">
+                          {model.model_name}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {credentialLabelById.get(model.credential_id) ||
+                            (locale === "zh-CN" ? "未知密钥" : "Unknown key")}
+                        </div>
+                      </div>
                       {modelSupportedProtocols(model).map((item) => (
                         <Badge
                           key={item}
@@ -600,9 +621,9 @@ export function AdvancedProtocolConfigDialog({
                         headers:
                           protocolConfig.headers.length > 1
                             ? protocolConfig.headers.filter(
-                                (_, currentIndex) =>
-                                  currentIndex !== headerIndex,
-                              )
+                              (_, currentIndex) =>
+                                currentIndex !== headerIndex,
+                            )
                             : protocolConfig.headers,
                       })
                     }

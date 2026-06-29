@@ -137,7 +137,7 @@ class ChannelUpsertsMixin:
         disabled_credential_ids: set[str],
     ) -> set[str]:
         protocol_config_ids: set[str] = set()
-        protocol_config_keys: set[tuple[str, str]] = set()
+        protocol_config_keys: set[tuple[str, ProtocolKind]] = set()
         for protocol_config in protocol_configs:
             protocol_config_id = protocol_config.id or str(uuid.uuid4())
             protocol_config_ids.add(protocol_config_id)
@@ -160,17 +160,15 @@ class ChannelUpsertsMixin:
                     "At least one upstream protocol is required for protocol config "
                     f"{protocol_config_id}"
                 )
-            protocol_config_key = (
-                protocol_config.base_url_id,
-                protocol_config.credential_id,
-            )
-            if protocol_config_key in protocol_config_keys:
-                raise ValueError(
-                    "Duplicate protocol config for "
-                    f"base_url_id={protocol_config.base_url_id} "
-                    f"credential_id={protocol_config.credential_id}"
-                )
-            protocol_config_keys.add(protocol_config_key)
+            for protocol in input_protocols:
+                protocol_config_key = (protocol_config.base_url_id, protocol)
+                if protocol_config_key in protocol_config_keys:
+                    raise ValueError(
+                        "Duplicate protocol config for "
+                        f"base_url_id={protocol_config.base_url_id} "
+                        f"protocol={protocol.value}"
+                    )
+                protocol_config_keys.add(protocol_config_key)
 
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
