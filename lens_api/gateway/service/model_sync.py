@@ -164,6 +164,16 @@ async def sync_channel_models(
                 if model.protocol is not None:
                     old_names_by_protocol[model.protocol].add(model.model_name)
 
+            suspect_protocols: set[ProtocolKind] = set()
+            for protocol in list(new_names_by_protocol):
+                if not new_names_by_protocol[protocol] and old_names_by_protocol.get(
+                    protocol
+                ):
+                    suspect_protocols.add(protocol)
+                    new_names_by_protocol[protocol] = sorted(
+                        old_names_by_protocol[protocol]
+                    )
+
             added: set[str] = set()
             removed: set[str] = set()
             added_protocols_by_model: dict[str, set[ProtocolKind]] = defaultdict(set)
@@ -188,11 +198,21 @@ async def sync_channel_models(
                 ensure_inputs_by_site.extend(ensure_inputs)
 
             synced += 1
+            warning = ""
+            if suspect_protocols:
+                protocols_label = ", ".join(
+                    sorted(p.value for p in suspect_protocols)
+                )
+                warning = (
+                    "upstream returned no models for "
+                    f"[{protocols_label}]; kept existing models to avoid data loss"
+                )
             items.append(
                 ChannelModelSyncResultItem(
                     protocol_config_id=protocol_config.id,
                     channel_name=site.name,
                     success=True,
+                    warning=warning,
                     added=sorted(added),
                     removed=sorted(removed),
                     group_added=changes,

@@ -910,6 +910,7 @@ class ChannelModelSyncResultItem(StrictBaseModel):
     channel_name: str
     success: bool
     error: str = ""
+    warning: str = ""
     added: list[str] = Field(default_factory=list)
     removed: list[str] = Field(default_factory=list)
     group_added: list[ChannelModelSyncGroupChange] = Field(default_factory=list)

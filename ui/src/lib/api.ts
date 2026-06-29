@@ -412,6 +412,7 @@ export type ChannelModelSyncResultItem = {
   channel_name: string;
   success: boolean;
   error: string;
+  warning: string;
   added: string[];
   removed: string[];
   group_added: ChannelModelSyncGroupChange[];

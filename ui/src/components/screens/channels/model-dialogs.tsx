@@ -1357,6 +1357,12 @@ export function ChannelModelSyncDialog({
                                 item.error}
                             </div>
                           ) : null}
+                          {item.success && item.warning ? (
+                            <div className="text-amber-600">
+                              {(locale === "zh-CN" ? "警告：" : "Warning: ") +
+                                item.warning}
+                            </div>
+                          ) : null}
                           {item.added.map((name) => (
                             <div key={`a-${name}`} className="text-emerald-600">
                               {`+ ${name}`}
@@ -1377,7 +1383,8 @@ export function ChannelModelSyncDialog({
                           ))}
                           {item.success &&
                           !item.added.length &&
-                          !item.removed.length ? (
+                          !item.removed.length &&
+                          !item.warning ? (
                             <div className="text-muted-foreground">
                               {locale === "zh-CN" ? "无变更" : "No changes"}
                             </div>
