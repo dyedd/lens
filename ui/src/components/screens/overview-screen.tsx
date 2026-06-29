@@ -85,31 +85,31 @@ const TIME_RANGE_OPTIONS: Array<{
   zhLabel: string;
   enLabel: string;
 }> = [
-  { value: "-1", zhLabel: "今天", enLabel: "Today" },
-  { value: "7", zhLabel: "近 7 天", enLabel: "Last 7 days" },
-  { value: "30", zhLabel: "近 30 天", enLabel: "Last 30 days" },
-  { value: "0", zhLabel: "全部", enLabel: "All time" },
-];
+    { value: "-1", zhLabel: "今天", enLabel: "Today" },
+    { value: "7", zhLabel: "近 7 天", enLabel: "Last 7 days" },
+    { value: "30", zhLabel: "近 30 天", enLabel: "Last 30 days" },
+    { value: "0", zhLabel: "全部", enLabel: "All time" },
+  ];
 
 const PIE_METRIC_OPTIONS: Array<{
   value: PieMetric;
   zhLabel: string;
   enLabel: string;
 }> = [
-  { value: "cost", zhLabel: "费用", enLabel: "Cost" },
-  { value: "requests", zhLabel: "请求", enLabel: "Requests" },
-  { value: "tokens", zhLabel: "Token", enLabel: "Tokens" },
-];
+    { value: "cost", zhLabel: "费用", enLabel: "Cost" },
+    { value: "requests", zhLabel: "请求", enLabel: "Requests" },
+    { value: "tokens", zhLabel: "Token", enLabel: "Tokens" },
+  ];
 
 const HEATMAP_METRIC_OPTIONS: Array<{
   value: HeatmapMetric;
   zhLabel: string;
   enLabel: string;
 }> = [
-  { value: "requests", zhLabel: "请求", enLabel: "Requests" },
-  { value: "tokens", zhLabel: "Token 消耗", enLabel: "Token usage" },
-  { value: "duration", zhLabel: "消耗时间", enLabel: "Time spent" },
-];
+    { value: "requests", zhLabel: "请求", enLabel: "Requests" },
+    { value: "tokens", zhLabel: "Token 消耗", enLabel: "Token usage" },
+    { value: "duration", zhLabel: "消耗时间", enLabel: "Time spent" },
+  ];
 
 const CHART_COLORS = [
   "var(--chart-4)",
@@ -469,13 +469,11 @@ function RequestHeatmap({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      aria-label={`${formatHeatmapDate(point.date, zh)}，${
-                        zh ? "请求" : "requests"
-                      } ${formatCompact(point.count)}，Token ${formatCompact(
-                        point.tokens,
-                      )}，${
-                        zh ? "消耗时间" : "time spent"
-                      } ${formatDuration(point.waitTimeMs)}`}
+                      aria-label={`${formatHeatmapDate(point.date, zh)}，${zh ? "请求" : "requests"
+                        } ${formatCompact(point.count)}，Token ${formatCompact(
+                          point.tokens,
+                        )}，${zh ? "消耗时间" : "time spent"
+                        } ${formatDuration(point.waitTimeMs)}`}
                       className={cn(
                         "aspect-square w-full cursor-pointer rounded-[3px] ring-1 ring-foreground/5 transition-colors hover:ring-ring/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
                         toneClass(heatmapMetricValue(point, metric)),
@@ -596,8 +594,8 @@ export function OverviewScreen() {
   const pageError = summaryIsError
     ? summaryError
     : allDailyError ||
-      heatmapDailyError ||
-      (modelsIsError ? modelsError : null);
+    heatmapDailyError ||
+    (modelsIsError ? modelsError : null);
 
   useEffect(() => {
     if (!pageError) return;
@@ -729,10 +727,10 @@ export function OverviewScreen() {
     const sortedDates = [...dateMap.keys()].sort();
     const trendBuckets = isHourlyTrend
       ? Array.from(
-          { length: 24 },
-          (_, hour) =>
-            `${getDateBucketPrefix(timeZone)}${String(hour).padStart(2, "0")}`,
-        )
+        { length: 24 },
+        (_, hour) =>
+          `${getDateBucketPrefix(timeZone)}${String(hour).padStart(2, "0")}`,
+      )
       : sortedDates;
     const data = trendBuckets.map((bucket) => ({
       date: formatTrendLabel(bucket),
@@ -771,7 +769,7 @@ export function OverviewScreen() {
       Math.floor(
         (new Date(toLocalDateKey(today)).getTime() -
           new Date(toLocalDateKey(start)).getTime()) /
-          86_400_000,
+        86_400_000,
       ) + 1;
     const points = Array.from({ length }, (_, index) => {
       const date = toLocalDateKey(addDays(start, index));
