@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
+import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
 import {
   Select,
   SelectContent,
@@ -286,13 +287,34 @@ export function ProtocolConfigItem({
                     }
                     disabled={
                       !selectedCredentialActive ||
-                      !protocolConfig.manual_model_name.trim()
+                      !protocolConfig.manual_model_name.trim() ||
+                      !protocolConfig.manual_protocols.length
                     }
                   >
                     <Plus data-icon="inline-start" />
                     {locale === "zh-CN" ? "添加模型" : "Add model"}
                   </Button>
                 </div>
+                <Field>
+                  <FieldLabel>
+                    {locale === "zh-CN" ? "客户端协议" : "Client protocols"}
+                  </FieldLabel>
+                  <ProtocolMultiSelect
+                    value={protocolConfig.manual_protocols}
+                    onChange={(next) =>
+                      onUpdateProtocolConfig(protocolConfigIndex, {
+                        manual_protocols: next,
+                      })
+                    }
+                    locale={locale}
+                    invalid={protocolConfig.manual_protocols.length === 0}
+                  />
+                  <FieldDescription>
+                    {locale === "zh-CN"
+                      ? "手动添加的模型会使用这些协议。"
+                      : "Manually added models will use these protocols."}
+                  </FieldDescription>
+                </Field>
                 <Button
                   type="button"
                   variant="ghost"
@@ -305,7 +327,8 @@ export function ProtocolConfigItem({
                   }
                   disabled={
                     activeCredentialCount === 0 ||
-                    !protocolConfig.manual_model_name.trim()
+                    !protocolConfig.manual_model_name.trim() ||
+                    !protocolConfig.manual_protocols.length
                   }
                 >
                   <Plus data-icon="inline-start" />
