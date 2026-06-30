@@ -89,6 +89,7 @@ import {
   pickerModelKeys,
   PickerModelItem,
   protocolConfigDisplayName,
+  protocolConfigEffectiveProtocols,
   protocolConfigModelKey,
   resolveBaseUrlId,
   safeText,
@@ -245,6 +246,12 @@ export function ChannelsScreen() {
   const [pickerSelectedModelKeys, setPickerSelectedModelKeys] = useState<
     string[]
   >([]);
+  const [pickerImportProtocols, setPickerImportProtocols] = useState<
+    ProtocolKind[]
+  >([]);
+  const [pickerModelProtocols, setPickerModelProtocols] = useState<
+    Record<string, ProtocolKind[]>
+  >({});
   const [modelTestTarget, setModelTestTarget] =
     useState<ModelTestTarget | null>(null);
   const [modelTestPromptMode, setModelTestPromptMode] = useState("0");
@@ -1432,6 +1439,17 @@ export function ChannelsScreen() {
     const modelName = protocolConfig?.manual_model_name.trim() ?? "";
     const targetCredentialIds = Array.from(new Set(credentialIds)).filter(Boolean);
     if (!protocolConfig || !targetCredentialIds.length || !modelName) return;
+    const importProtocols = Array.from(
+      new Set(protocolConfig.manual_protocols),
+    );
+    if (!importProtocols.length) {
+      toast.error(
+        locale === "zh-CN"
+          ? "请先选择手动添加模型的客户端协议"
+          : "Select client protocols for manually added models first",
+      );
+      return;
+    }
     const existingKeys = new Set(
       protocolConfig.models.map(
         (model) => `${model.credential_id}:${model.model_name}`,
@@ -1441,7 +1459,7 @@ export function ChannelsScreen() {
       .filter((credentialId) => !existingKeys.has(`${credentialId}:${modelName}`))
       .map((credentialId) => ({
         id: null,
-        protocols: [],
+        protocols: importProtocols,
         protocolIds: {},
         credential_id: credentialId,
         model_name: modelName,
@@ -1481,6 +1499,8 @@ export function ChannelsScreen() {
     setModelPickerProtocolConfigIndex(null);
     setAvailableModels([]);
     setPickerSelectedModelKeys([]);
+    setPickerImportProtocols([]);
+    setPickerModelProtocols({});
   }
 
   function buildModelTestPayload(
@@ -1584,53 +1604,67 @@ export function ChannelsScreen() {
 
   function applyModelSelection(selectedKeys: string[]) {
     if (modelPickerProtocolConfigIndex === null) return;
+    const protocolConfig =
+      form.protocolConfigs[modelPickerProtocolConfigIndex];
+    if (!protocolConfig) return;
+    const protocolsForKey = (key: string) =>
+      Array.from(new Set(pickerModelProtocols[key] ?? pickerImportProtocols));
+    const existingKeys = new Set(
+      protocolConfig.models.map((model) => genericModelKey(model)),
+    );
     const selectedModels = availableModels.filter((item) =>
       selectedKeys.includes(genericModelKey(item)),
     );
-    const selectedModelGroups = groupPickerModels(selectedModels);
+    const newModels = groupPickerModels(selectedModels).filter(
+      (model) => !existingKeys.has(genericModelKey(model)),
+    );
+    if (!newModels.length) {
+      toast.info(locale === "zh-CN" ? "模型已存在" : "Model already exists");
+      closeModelPicker();
+      return;
+    }
+    const missingProtocols = newModels.some(
+      (model) => !protocolsForKey(genericModelKey(model)).length,
+    );
+    if (missingProtocols) {
+      toast.error(
+        locale === "zh-CN"
+          ? "请为所有选中模型选择协议，或先设置本次导入协议"
+          : "Select protocols for every selected model, or set the import protocols first",
+      );
+      return;
+    }
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map(
-        (protocolConfig, protocolConfigIndex) => {
+        (item, protocolConfigIndex) => {
           if (protocolConfigIndex !== modelPickerProtocolConfigIndex) {
-            return protocolConfig;
-          }
-          const merged = [...protocolConfig.models];
-          const existingModels = new Map(
-            merged.map((model, index) => [genericModelKey(model), index]),
-          );
-          for (const model of selectedModelGroups) {
-            const genericKey = genericModelKey(model);
-            const existingIndex = existingModels.get(genericKey);
-            if (existingIndex !== undefined) {
-              continue;
-            }
-            existingModels.set(genericKey, merged.length);
-            merged.push({
-              id: null,
-              protocols: [],
-              protocolIds: {},
-              credential_id: model.credential_id,
-              model_name: model.model_name,
-              enabled: true,
-            });
+            return item;
           }
           return {
-            ...protocolConfig,
-            models: merged,
+            ...item,
             expanded: true,
+            models: [
+              ...item.models,
+              ...newModels.map((model) => ({
+                id: null,
+                protocols: protocolsForKey(genericModelKey(model)),
+                protocolIds: {},
+                credential_id: model.credential_id,
+                model_name: model.model_name,
+                enabled: true,
+              })),
+            ],
           };
         },
       ),
     }));
     closeModelPicker();
-    if (selectedModelGroups.length) {
-      toast.success(
-        locale === "zh-CN"
-          ? `已加入 ${selectedModelGroups.length} 个模型`
-          : `Added ${selectedModelGroups.length} models`,
-      );
-    }
+    toast.success(
+      locale === "zh-CN"
+        ? `已加入 ${newModels.length} 个模型`
+        : `Added ${newModels.length} models`,
+    );
   }
 
   async function fetchProtocolModels(protocolConfigIndex: number) {
@@ -1676,6 +1710,8 @@ export function ChannelsScreen() {
       }));
       setAvailableModels(nextAvailableModels);
       setPickerSelectedModelKeys([]);
+      setPickerImportProtocols(protocolConfigEffectiveProtocols(protocolConfig));
+      setPickerModelProtocols({});
       setModelPickerProtocolConfigIndex(protocolConfigIndex);
       toast.success(
         locale === "zh-CN"
@@ -2105,11 +2141,20 @@ export function ChannelsScreen() {
             open={modelPickerProtocolConfigIndex !== null}
             availableModels={availableModels}
             pickerSelectedModelKeys={pickerSelectedModelKeys}
+            pickerImportProtocols={pickerImportProtocols}
+            pickerModelProtocols={pickerModelProtocols}
             locale={locale}
             onOpenChange={(open) => {
               if (!open) closeModelPicker();
             }}
             onToggleModel={togglePickerModel}
+            onImportProtocolsChange={setPickerImportProtocols}
+            onModelProtocolsChange={(key, protocols) =>
+              setPickerModelProtocols((current) => ({
+                ...current,
+                [key]: protocols,
+              }))
+            }
             onConfirm={() => applyModelSelection(pickerSelectedModelKeys)}
             onConfirmAll={() =>
               applyModelSelection(pickerModelKeys(availableModels))
