@@ -191,8 +191,9 @@ class GroupRepository:
             protocol_config_id, credential_id, model_name = model_key
 
             if protocols_filter:
-                if not all(
-                    any(can_reach_protocol(q, p) for q in aggregate.native_protocols)
+                if not any(
+                    can_reach_protocol(q, p)
+                    for q in aggregate.native_protocols
                     for p in protocols_filter
                 ):
                     continue
@@ -200,12 +201,11 @@ class GroupRepository:
             if model_key in excluded_model_ids:
                 continue
 
-            rep_protocol: ProtocolKind = aggregate.native_protocols[0]
-            if protocols_filter:
-                for p in protocols_filter:
-                    if p in aggregate.protocol_channels:
-                        rep_protocol = p
-                        break
+            rep_protocol = self._representative_candidate_protocol(
+                aggregate.native_protocols,
+                aggregate.protocol_channels,
+                protocols_filter,
+            )
             rep_channel_id = aggregate.protocol_channels.get(
                 rep_protocol, next(iter(aggregate.protocol_channels.values()))
             )
@@ -269,6 +269,22 @@ class GroupRepository:
         candidates.sort(key=lambda c: (c.channel_name, c.model_name))
 
         return ModelGroupCandidatesResponse(candidates=candidates)
+
+    @staticmethod
+    def _representative_candidate_protocol(
+        native_protocols: list[ProtocolKind],
+        protocol_channels: dict[ProtocolKind, str],
+        protocols_filter: list[ProtocolKind],
+    ) -> ProtocolKind:
+        if protocols_filter:
+            for protocol in protocols_filter:
+                if protocol in protocol_channels:
+                    return protocol
+            for selected_protocol in protocols_filter:
+                for native_protocol in native_protocols:
+                    if can_reach_protocol(native_protocol, selected_protocol):
+                        return native_protocol
+        return native_protocols[0]
 
     async def ensure_groups_from_site(
         self, payload: ModelGroupEnsureFromSiteRequest
