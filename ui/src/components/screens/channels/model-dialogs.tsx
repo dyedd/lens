@@ -6,6 +6,7 @@ import { Check, ChevronsUpDown, RefreshCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
 import {
   Command,
   CommandEmpty,
@@ -69,7 +70,6 @@ import {
   groupPickerModels,
   Locale,
   ModelTestTarget,
-  modelBadgeClassName,
   modelSupportedProtocols,
   PickerModelItem,
   protocolBadgeClassName,
@@ -1190,9 +1190,13 @@ export function ModelPickerDialog({
   open,
   availableModels,
   pickerSelectedModelKeys,
+  pickerImportProtocols,
+  pickerModelProtocols,
   locale,
   onOpenChange,
   onToggleModel,
+  onImportProtocolsChange,
+  onModelProtocolsChange,
   onConfirm,
   onConfirmAll,
   onCancel,
@@ -1200,9 +1204,13 @@ export function ModelPickerDialog({
   open: boolean;
   availableModels: PickerModelItem[];
   pickerSelectedModelKeys: string[];
+  pickerImportProtocols: ProtocolKind[];
+  pickerModelProtocols: Record<string, ProtocolKind[]>;
   locale: Locale;
   onOpenChange: (open: boolean) => void;
   onToggleModel: (key: string) => void;
+  onImportProtocolsChange: (protocols: ProtocolKind[]) => void;
+  onModelProtocolsChange: (key: string, protocols: ProtocolKind[]) => void;
   onConfirm: () => void;
   onConfirmAll: () => void;
   onCancel: () => void;
@@ -1211,6 +1219,8 @@ export function ModelPickerDialog({
     () => groupPickerModels(availableModels),
     [availableModels],
   );
+  const effectiveModelProtocols = (key: string) =>
+    pickerModelProtocols[key] ?? pickerImportProtocols;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1220,45 +1230,84 @@ export function ModelPickerDialog({
           title={locale === "zh-CN" ? "选择模型" : "Select models"}
         >
           <div className="grid gap-4">
+            <div className="grid gap-2 rounded-md border bg-muted/20 p-3">
+              <div className="text-sm font-medium text-foreground">
+                {locale === "zh-CN" ? "本次导入协议" : "Import protocols"}
+              </div>
+              <ProtocolMultiSelect
+                value={pickerImportProtocols}
+                onChange={onImportProtocolsChange}
+                locale={locale}
+                invalid={pickerImportProtocols.length === 0}
+                placeholder={
+                  locale === "zh-CN"
+                    ? "选择要批量应用的协议"
+                    : "Select protocols to apply"
+                }
+              />
+              <div className="text-xs text-muted-foreground">
+                {locale === "zh-CN"
+                  ? "默认应用到所有选中模型，可对单个模型单独覆盖；已有模型不会被覆盖。"
+                  : "Applied to all selected models by default; individual models can override. Existing models are not overwritten."}
+              </div>
+            </div>
             <div className="max-h-[58dvh] overflow-y-auto p-1 sm:max-h-[420px]">
-              <div className="flex flex-wrap gap-2.5">
-                {modelGroups.length ? (
-                  modelGroups.map((model) => {
+              {modelGroups.length ? (
+                <div className="flex w-full flex-col gap-1.5">
+                  {modelGroups.map((model) => {
                     const key = genericModelKey(model);
                     const checked = pickerSelectedModelKeys.includes(key);
+                    const protocols = effectiveModelProtocols(key);
                     return (
-                      <Button
+                      <div
                         key={key}
-                        type="button"
-                        variant="outline"
-                        size="sm"
                         className={cn(
-                          "max-w-full rounded-full",
-                          modelBadgeClassName(checked),
-                          checked ? "border-primary text-primary" : "",
+                          "flex min-w-0 flex-wrap items-center gap-2 rounded-md border px-2.5 py-1.5",
+                          checked
+                            ? "border-primary bg-background"
+                            : "border-border bg-background",
                         )}
-                        onClick={() => onToggleModel(key)}
                       >
-                        <span className="min-w-0 max-w-[220px] text-left sm:max-w-[280px]">
-                          <span className="block truncate">{model.model_name}</span>
-                          {model.credential_name ? (
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {model.credential_name}
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          onClick={() => onToggleModel(key)}
+                        >
+                          <span className="text-xs">
+                            {checked ? "✓" : "+"}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm text-foreground">
+                              {model.model_name}
                             </span>
-                          ) : null}
-                        </span>
-                        <span className="text-xs">{checked ? "✓" : "+"}</span>
-                      </Button>
+                            {model.credential_name ? (
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {model.credential_name}
+                              </span>
+                            ) : null}
+                          </span>
+                        </button>
+                        <ProtocolMultiSelect
+                          value={protocols}
+                          onChange={(next) => onModelProtocolsChange(key, next)}
+                          locale={locale}
+                          className="w-auto min-w-[180px]"
+                          invalid={checked && protocols.length === 0}
+                          placeholder={
+                            locale === "zh-CN" ? "继承本次协议" : "Inherit import"
+                          }
+                        />
+                      </div>
                     );
-                  })
-                ) : (
-                  <div className="px-3 py-6 text-sm text-muted-foreground">
-                    {locale === "zh-CN"
-                      ? "未获取到可选模型"
-                      : "No models fetched."}
-                  </div>
-                )}
-              </div>
+                  })}
+                </div>
+              ) : (
+                <div className="px-3 py-6 text-sm text-muted-foreground">
+                  {locale === "zh-CN"
+                    ? "未获取到可选模型"
+                    : "No models fetched."}
+                </div>
+              )}
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <Button type="button" variant="outline" onClick={onCancel}>

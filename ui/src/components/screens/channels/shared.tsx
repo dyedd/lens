@@ -62,6 +62,7 @@ export type FormProtocolConfig = {
   param_override: string;
   match_regex: string;
   manual_model_name: string;
+  manual_protocols: ProtocolKind[];
   base_url_id: string;
   credential_id: string;
   auto_sync_enabled: boolean;
@@ -202,6 +203,7 @@ export const emptyProtocolConfig = (
   param_override: "",
   match_regex: "",
   manual_model_name: "",
+  manual_protocols: [],
   base_url_id: baseUrlId,
   credential_id: credentialId,
   auto_sync_enabled: false,
@@ -707,6 +709,9 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           param_override: protocolConfig.param_override,
           match_regex: safeText(protocolConfig.match_regex),
           manual_model_name: "",
+          manual_protocols: Array.from(
+            new Set(protocolConfig.protocols ?? []),
+          ),
           base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
           credential_id: protocolConfig.credential_id,
           auto_sync_enabled: protocolConfig.auto_sync_enabled,
