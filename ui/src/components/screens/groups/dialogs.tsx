@@ -37,7 +37,7 @@ import {
   StrategyToggle,
 } from "./components";
 import {
-  modelFoldKey,
+  itemKey,
   protocolOptions,
   type CandidateChannelGroup,
   type CandidateSearchMode,
@@ -128,6 +128,8 @@ export function GroupEditorDialog({
   setDraggingIndex: Dispatch<SetStateAction<number | null>>;
   moveFoldedMember: (fromIndex: number, toIndex: number) => void;
 }) {
+  const existingItemKeys = new Set(form.items.map((item) => itemKey(item)));
+
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       <AppDialogContent
@@ -456,13 +458,9 @@ export function GroupEditorDialog({
                                 <div className="flex flex-col gap-0.5 px-3 pb-2 pt-1">
                                   <Separator className="mb-1" />
                                   {channelGroup.candidates.map((candidate) => {
-                                    const fk = modelFoldKey(
-                                      candidate.protocol_config_id,
-                                      candidate.credential_id,
-                                      candidate.model_name,
-                                    );
-                                    const isActive = foldedMembers.some(
-                                      (m) => m.key === fk,
+                                    const isActive = candidate.items.every(
+                                      (item) =>
+                                        existingItemKeys.has(itemKey(item)),
                                     );
                                     return (
                                       <CandidateRow
