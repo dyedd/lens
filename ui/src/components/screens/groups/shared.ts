@@ -66,6 +66,8 @@ export type GroupDisplayMember = {
   protocols: ProtocolKind[];
   items: ModelGroup["items"];
   enabled: boolean;
+  routable: boolean;
+  unavailable: boolean;
 };
 
 export type GroupSort =
@@ -78,6 +80,7 @@ export type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, "">;
 export type GroupRow = ModelGroup & {
   member_count: number;
   enabled_member_count: number;
+  unavailable_member_count: number;
   channel_summary: string;
   channel_names: string[];
   display_members: GroupDisplayMember[];
@@ -217,9 +220,37 @@ export function modelFoldKey(
   return `${protocolConfigId}::${credentialId}::${modelName}`;
 }
 
+export function modelAvailabilityKey(
+  item: Pick<ModelGroup["items"][number], "credential_id" | "model_name">,
+) {
+  return JSON.stringify([item.credential_id, item.model_name]);
+}
+
+function isGroupItemUpstreamAvailable(
+  item: Pick<
+    ModelGroup["items"][number],
+    "channel_id" | "credential_id" | "model_name"
+  >,
+  channelMap: Map<string, ProtocolMeta>,
+  upstreamAvailabilityReady: boolean,
+) {
+  if (!upstreamAvailabilityReady) return true;
+  const channel = channelMap.get(item.channel_id);
+  if (!channel) return false;
+  if (!channel.enabled) return false;
+  const credentialEnabled = channel.credential_enabled_by_id.get(
+    item.credential_id,
+  );
+  if (credentialEnabled !== true) {
+    return false;
+  }
+  return channel.model_enabled_by_key.get(modelAvailabilityKey(item)) === true;
+}
+
 export function buildGroupDisplayMembers(
   items: ModelGroup["items"],
   channelMap: Map<string, ProtocolMeta>,
+  upstreamAvailabilityReady: boolean,
 ): GroupDisplayMember[] {
   const orderMap = new Map<string, number>();
   const memberMap = new Map<string, GroupDisplayMember>();
@@ -234,6 +265,11 @@ export function buildGroupDisplayMembers(
     const channel = channelMap.get(item.channel_id);
     const channelName = channel?.name || item.channel_name || item.channel_id;
     const protocol = item.protocol || channel?.protocol;
+    const upstreamAvailable = isGroupItemUpstreamAvailable(
+      item,
+      channelMap,
+      upstreamAvailabilityReady,
+    );
 
     if (!memberMap.has(key)) {
       orderMap.set(key, orderMap.size);
@@ -246,12 +282,16 @@ export function buildGroupDisplayMembers(
         protocols: [],
         items: [],
         enabled: false,
+        routable: false,
+        unavailable: false,
       });
     }
 
     const member = memberMap.get(key)!;
     member.items.push(item);
     if (item.enabled) member.enabled = true;
+    if (item.enabled && upstreamAvailable) member.routable = true;
+    if (!upstreamAvailable) member.unavailable = true;
     if (channelName && !member.channel_names.includes(channelName)) {
       member.channel_names.push(channelName);
     }
@@ -343,10 +383,8 @@ export function itemKey(
   return `${item.channel_id}::${item.credential_id}::${item.model_name}`;
 }
 
-export function isGroupEnabled(
-  group: Pick<GroupRow, "enabled_member_count" | "is_route_group">,
-) {
-  return group.is_route_group || group.enabled_member_count > 0;
+export function isGroupEnabled(group: Pick<GroupRow, "enabled_member_count">) {
+  return group.enabled_member_count > 0;
 }
 
 export function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
@@ -371,6 +409,9 @@ export type ProtocolMeta = {
   name: string;
   base_url: string;
   protocol: ProtocolKind;
+  enabled: boolean;
+  credential_enabled_by_id: Map<string, boolean>;
+  model_enabled_by_key: Map<string, boolean>;
 };
 
 export function channelEndpoint(channel?: ProtocolMeta) {

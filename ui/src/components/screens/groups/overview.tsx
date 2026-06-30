@@ -1,7 +1,14 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import { Copy, Filter, GripVertical, Trash2, X } from "lucide-react";
+import {
+  Copy,
+  Filter,
+  GripVertical,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -119,6 +126,15 @@ export function GroupsOverview({
 }) {
   const copyModelNameLabel =
     locale === "zh-CN" ? "复制模型名称" : "Copy model name";
+  const unavailableMemberStatusLabel = locale === "zh-CN" ? "失效" : "Invalid";
+  const unavailableMemberTooltip =
+    locale === "zh-CN"
+      ? "成员关联的目标模型组、渠道、Base URL、密钥或模型不可用"
+      : "Member references an unavailable route target, channel, base URL, key, or model";
+  const unavailableMembersLabel = (count: number) =>
+    locale === "zh-CN"
+      ? `包含 ${count} 个失效成员`
+      : `${count} invalid ${count === 1 ? "member" : "members"}`;
 
   async function copyGroupName(name: string) {
     try {
@@ -247,6 +263,25 @@ export function GroupsOverview({
                                 {locale === "zh-CN" ? "路由组" : "Route group"}
                               </Badge>
                             ) : null}
+                            {group.unavailable_member_count > 0 ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge
+                                    variant="destructive"
+                                    className="px-2.5 py-0.5"
+                                    tabIndex={0}
+                                  >
+                                    <TriangleAlert data-icon="inline-start" />
+                                    {unavailableMembersLabel(
+                                      group.unavailable_member_count,
+                                    )}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" align="start">
+                                  {unavailableMemberTooltip}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : null}
                           </div>
                           {group.is_route_group ? (
                             <ItemDescription className="text-sm">
@@ -306,12 +341,20 @@ export function GroupsOverview({
                                   key={`${member.key}::${index}`}
                                   className={cn(
                                     "flex min-w-0 max-w-full items-center rounded-full border bg-background",
-                                    !member.enabled && "opacity-55",
+                                    !member.enabled &&
+                                      !member.unavailable &&
+                                      "opacity-55",
+                                    member.unavailable &&
+                                      "border-destructive/30 bg-destructive/5",
                                     cardDragging?.groupId === group.id &&
                                       cardDragging.index === index &&
                                       "opacity-60",
                                   )}
-                                  title={`${sourceLabel} · ${member.model_name}`}
+                                  title={`${sourceLabel} · ${member.model_name}${
+                                    member.unavailable
+                                      ? ` · ${unavailableMemberStatusLabel}`
+                                      : ""
+                                  }`}
                                 >
                                   <Button
                                     type="button"
@@ -350,6 +393,23 @@ export function GroupsOverview({
                                       · {sourceLabel}
                                     </span>
                                   </Button>
+                                  {member.unavailable ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Badge
+                                          variant="destructive"
+                                          className="mr-1"
+                                          tabIndex={0}
+                                        >
+                                          <TriangleAlert data-icon="inline-start" />
+                                          {unavailableMemberStatusLabel}
+                                        </Badge>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom">
+                                        {unavailableMemberTooltip}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : null}
                                   <Button
                                     type="button"
                                     variant="ghost"
