@@ -38,6 +38,7 @@ import {
   isGroupEnabled,
   itemKey,
   matchesCandidateSearch,
+  modelAvailabilityKey,
   modelFoldKey,
   moveItems,
   protocolBaseUrl,
@@ -113,6 +114,7 @@ export function GroupsScreen() {
     queryFn: () => apiRequest<Site[]>("/admin/sites"),
     staleTime: 2 * 60_000,
   });
+  const upstreamAvailabilityReady = sites !== undefined && !sitesIsError;
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(
     () => ({
       protocols: form.protocols,
@@ -147,32 +149,42 @@ export function GroupsScreen() {
   const channelMap = useMemo(() => {
     const map = new Map<string, ProtocolMeta>();
     for (const site of sites ?? []) {
+      const credentialEnabledById = new Map(
+        site.credentials.map(
+          (credential) =>
+            [
+              credential.id,
+              credential.enabled && Boolean(credential.api_key.trim()),
+            ] as const,
+        ),
+      );
       for (const protocolConfig of site.protocols) {
         const baseUrl = site.base_urls.find(
           (b) => b.id === protocolConfig.base_url_id,
         );
         const baseUrlStr =
           baseUrl?.url ?? protocolBaseUrl(site, protocolConfig.base_url_id);
+        const channelEnabled =
+          protocolConfig.enabled && Boolean(baseUrl?.enabled);
         for (const p of protocolConfig.protocols) {
           const runtimeChannelId = `${protocolConfig.id}_${p}`;
+          const modelEnabledByKey = new Map(
+            protocolConfig.models
+              .filter((model) => model.protocol === p)
+              .map(
+                (model) =>
+                  [modelAvailabilityKey(model), model.enabled] as const,
+              ),
+          );
           map.set(runtimeChannelId, {
             id: runtimeChannelId,
             site_id: site.id,
             name: site.name,
             base_url: baseUrlStr,
             protocol: p,
-          });
-        }
-        if (
-          !map.has(protocolConfig.id) &&
-          protocolConfig.protocols.length > 0
-        ) {
-          map.set(protocolConfig.id, {
-            id: protocolConfig.id,
-            site_id: site.id,
-            name: site.name,
-            base_url: baseUrlStr,
-            protocol: protocolConfig.protocols[0],
+            enabled: channelEnabled,
+            credential_enabled_by_id: credentialEnabledById,
+            model_enabled_by_key: modelEnabledByKey,
           });
         }
       }
@@ -180,45 +192,79 @@ export function GroupsScreen() {
     return map;
   }, [sites]);
 
-  const groupRows = useMemo<GroupRow[]>(
-    () =>
-      (groups ?? []).map((group) => {
-        const isRouteGroup = Boolean(group.route_group_id);
-        const items = group.items
-          .slice()
-          .sort((a, b) => a.sort_order - b.sort_order);
-        const displayMembers = isRouteGroup
-          ? []
-          : buildGroupDisplayMembers(items, channelMap);
-        const channelNames = isRouteGroup
-          ? [group.route_group_name || group.route_group_id || ""]
-          : [
-              ...new Set(
-                items
-                  .map(
-                    (item) =>
-                      channelMap.get(item.channel_id)?.name ||
-                      item.channel_name ||
-                      item.channel_id,
-                  )
-                  .filter(Boolean),
-              ),
-            ];
-        return {
-          ...group,
-          items,
-          member_count: isRouteGroup ? 1 : displayMembers.length,
-          enabled_member_count: isRouteGroup
-            ? 1
-            : displayMembers.filter((member) => member.enabled).length,
-          channel_summary: channelNames.slice(0, 2).join(" · "),
-          channel_names: channelNames,
-          display_members: displayMembers,
-          is_route_group: isRouteGroup,
-        };
-      }),
-    [channelMap, groups],
-  );
+  const groupRows = useMemo<GroupRow[]>(() => {
+    const sourceGroups = groups ?? [];
+    const executionRowsById = new Map<string, GroupRow>();
+
+    function buildExecutionRow(group: ModelGroup): GroupRow {
+      const items = group.items
+        .slice()
+        .sort((a, b) => a.sort_order - b.sort_order);
+      const displayMembers = buildGroupDisplayMembers(
+        items,
+        channelMap,
+        upstreamAvailabilityReady,
+      );
+      const channelNames = [
+        ...new Set(
+          items
+            .map(
+              (item) =>
+                channelMap.get(item.channel_id)?.name ||
+                item.channel_name ||
+                item.channel_id,
+            )
+            .filter(Boolean),
+        ),
+      ];
+      return {
+        ...group,
+        items,
+        member_count: displayMembers.length,
+        enabled_member_count: displayMembers.filter((member) => member.routable)
+          .length,
+        unavailable_member_count: displayMembers.filter(
+          (member) => member.unavailable,
+        ).length,
+        channel_summary: channelNames.slice(0, 2).join(" · "),
+        channel_names: channelNames,
+        display_members: displayMembers,
+        is_route_group: false,
+      };
+    }
+
+    for (const group of sourceGroups) {
+      if (!group.route_group_id?.trim()) {
+        const row = buildExecutionRow(group);
+        executionRowsById.set(group.id, row);
+      }
+    }
+
+    return sourceGroups.map((group) => {
+      const routeGroupId = group.route_group_id?.trim() ?? "";
+      if (!routeGroupId) return executionRowsById.get(group.id)!;
+      const items = group.items
+        .slice()
+        .sort((a, b) => a.sort_order - b.sort_order);
+      const targetRow = executionRowsById.get(routeGroupId);
+      const channelNames = [group.route_group_name || routeGroupId || ""];
+      const unavailableMemberCount =
+        targetRow?.unavailable_member_count ??
+        (upstreamAvailabilityReady ? 1 : 0);
+
+      return {
+        ...group,
+        items,
+        member_count: 1,
+        enabled_member_count: targetRow?.enabled_member_count ?? 0,
+        unavailable_member_count: unavailableMemberCount,
+        channel_summary: channelNames.slice(0, 2).join(" · "),
+        channel_names: channelNames,
+        display_members: [],
+        is_route_group: true,
+      };
+    });
+  }, [channelMap, groups, upstreamAvailabilityReady]);
 
   const routeTargetOptions = useMemo(
     () =>
