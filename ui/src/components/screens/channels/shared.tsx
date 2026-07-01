@@ -65,6 +65,7 @@ export type FormProtocolConfig = {
   manual_protocols: ProtocolKind[];
   base_url_id: string;
   credential_id: string;
+  credential_ids: string[];
   auto_sync_enabled: boolean;
   models: FormModel[];
   expanded: boolean;
@@ -118,6 +119,23 @@ export function groupPickerModels(models: PickerModelItem[]) {
     });
   }
   return Array.from(groups.values());
+}
+
+export function hasPickerModelProtocolOverride(
+  overrides: Record<string, ProtocolKind[]>,
+  key: string,
+) {
+  return Object.prototype.hasOwnProperty.call(overrides, key);
+}
+
+export function resolvePickerModelProtocols(
+  key: string,
+  overrides: Record<string, ProtocolKind[]>,
+  fallback: ProtocolKind[],
+) {
+  return hasPickerModelProtocolOverride(overrides, key)
+    ? (overrides[key] ?? [])
+    : fallback;
 }
 
 export function pickerModelKeys(models: PickerModelItem[]) {
@@ -206,6 +224,7 @@ export const emptyProtocolConfig = (
   manual_protocols: [],
   base_url_id: baseUrlId,
   credential_id: credentialId,
+  credential_ids: credentialId ? [credentialId] : [],
   auto_sync_enabled: false,
   models: [],
   expanded: true,
@@ -527,6 +546,60 @@ export function safeText(value: string | null | undefined) {
   return typeof value === "string" ? value : "";
 }
 
+export function normalizeCredentialIds(values: string[]) {
+  return Array.from(new Set(values.map((item) => item.trim()).filter(Boolean)));
+}
+
+export function protocolConfigSelectedCredentialIds(
+  protocolConfig: Pick<FormProtocolConfig, "credential_id" | "credential_ids">,
+) {
+  const credentialIds = protocolConfig.credential_ids.length
+    ? protocolConfig.credential_ids
+    : [protocolConfig.credential_id];
+  return normalizeCredentialIds(credentialIds);
+}
+
+export type ModelQueryInputKind = "empty" | "plain" | "regex";
+
+export function classifyModelQueryInput(value: string): ModelQueryInputKind {
+  const query = safeText(value).trim();
+  if (!query) return "empty";
+  if (query.startsWith("(?")) return "regex";
+  if (query.includes(".*") || query.includes(".+") || query.includes(".?")) {
+    return "regex";
+  }
+  if (/[\\^$()[\]{}|+*?]/.test(query)) return "regex";
+  return "plain";
+}
+
+export function isValidModelQueryRegex(value: string) {
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function protocolConfigAutoSyncActive(
+  protocolConfig: Pick<FormProtocolConfig, "auto_sync_enabled" | "match_regex">,
+) {
+  return (
+    protocolConfig.auto_sync_enabled &&
+    classifyModelQueryInput(protocolConfig.match_regex) === "regex"
+  );
+}
+
+export function protocolConfigSyncStatusLabel(
+  protocolConfig: Pick<FormProtocolConfig, "auto_sync_enabled" | "match_regex">,
+  locale: Locale,
+) {
+  if (protocolConfigAutoSyncActive(protocolConfig)) {
+    return locale === "zh-CN" ? "自动同步" : "Auto sync";
+  }
+  return locale === "zh-CN" ? "手动维护" : "Manual";
+}
+
 export function formatCooldownDuration(seconds: number) {
   const value = Math.max(Math.floor(seconds), 0);
   if (value < 60) return `${value}s`;
@@ -636,21 +709,21 @@ export function SiteFavicon({ url, name }: { url: string; name: string }) {
 export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
   const baseUrls = site.base_urls.length
     ? site.base_urls.map((item) => ({
-      id: item.id,
-      url: item.url,
-      name: item.name,
-      enabled: item.enabled,
-      supported_protocols: item.supported_protocols ?? [],
-    }))
+        id: item.id,
+        url: item.url,
+        name: item.name,
+        enabled: item.enabled,
+        supported_protocols: item.supported_protocols ?? [],
+      }))
     : [
-      {
-        id: createLocalId("baseurl"),
-        url: "",
-        name: "",
-        enabled: true,
-        supported_protocols: [] as ProtocolKind[],
-      },
-    ];
+        {
+          id: createLocalId("baseurl"),
+          url: "",
+          name: "",
+          enabled: true,
+          supported_protocols: [] as ProtocolKind[],
+        },
+      ];
   const credentials = site.credentials.map((item) => ({
     id: item.id,
     name: isGeneratedCredentialName(item.name) ? "" : item.name,
@@ -690,6 +763,10 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
             });
           }
         }
+        const credentialIds = normalizeCredentialIds([
+          protocolConfig.credential_id,
+          ...protocolConfig.models.map((model) => model.credential_id),
+        ]);
         return {
           id: protocolConfig.id,
           name: protocolConfigDisplayName(
@@ -700,23 +777,22 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           enabled: protocolConfig.enabled,
           headers: Object.entries(protocolConfig.headers).length
             ? Object.entries(protocolConfig.headers).map(([key, value]) => ({
-              key,
-              value,
-            }))
+                key,
+                value,
+              }))
             : [{ key: "", value: "" }],
           proxy_mode: protocolConfig.proxy_mode,
           channel_proxy: protocolConfig.channel_proxy,
           param_override: protocolConfig.param_override,
           match_regex: safeText(protocolConfig.match_regex),
-          manual_model_name: "",
-          manual_protocols: Array.from(
-            new Set(protocolConfig.protocols ?? []),
-          ),
+          manual_model_name: safeText(protocolConfig.match_regex),
+          manual_protocols: Array.from(new Set(protocolConfig.protocols ?? [])),
           base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
           credential_id: protocolConfig.credential_id,
+          credential_ids: credentialIds,
           auto_sync_enabled: protocolConfig.auto_sync_enabled,
           models: Array.from(modelGroups.values()),
-          expanded: true,
+          expanded: modelGroups.size === 0,
         };
       },
     ),
@@ -772,9 +848,18 @@ export function toPayload(form: FormState): SitePayload {
       }))
       .filter((item) => item.api_key),
     protocols: form.protocolConfigs.flatMap((protocolConfig) => {
-      const credentialId = protocolConfig.credential_id;
+      const selectedCredentialIds =
+        protocolConfigSelectedCredentialIds(protocolConfig);
+      const credentialId = selectedCredentialIds.includes(
+        protocolConfig.credential_id,
+      )
+        ? protocolConfig.credential_id
+        : (selectedCredentialIds[0] ?? "");
       const protocolConfigProtocols =
         protocolConfigEffectiveProtocols(protocolConfig);
+      const matchRegex = safeText(protocolConfig.match_regex).trim();
+      const enabledMatchRegex =
+        classifyModelQueryInput(matchRegex) === "regex" ? matchRegex : "";
       const models = protocolConfig.models
         .flatMap((model) => {
           const effectiveProtocols = model.protocols.filter((p) =>
@@ -809,10 +894,12 @@ export function toPayload(form: FormState): SitePayload {
           proxy_mode: protocolConfig.proxy_mode,
           channel_proxy: protocolConfig.channel_proxy.trim(),
           param_override: protocolConfig.param_override.trim(),
-          match_regex: safeText(protocolConfig.match_regex).trim(),
+          match_regex: enabledMatchRegex,
           base_url_id: protocolConfig.base_url_id,
           credential_id: credentialId,
-          auto_sync_enabled: protocolConfig.auto_sync_enabled,
+          auto_sync_enabled: enabledMatchRegex
+            ? protocolConfig.auto_sync_enabled
+            : false,
           models,
         },
       ];
@@ -825,8 +912,11 @@ export function protocolConfigCredentialKeys(
   baseUrlIds: Set<string>,
 ) {
   if (!baseUrlIds.has(protocolConfig.base_url_id)) return [];
-  return protocolConfigEffectiveProtocols(protocolConfig).map((protocol) =>
-    JSON.stringify([protocolConfig.base_url_id, protocol]),
+  const credentialIds = protocolConfigSelectedCredentialIds(protocolConfig);
+  return credentialIds.flatMap((credentialId) =>
+    protocolConfigEffectiveProtocols(protocolConfig).map((protocol) =>
+      JSON.stringify([protocolConfig.base_url_id, credentialId, protocol]),
+    ),
   );
 }
 

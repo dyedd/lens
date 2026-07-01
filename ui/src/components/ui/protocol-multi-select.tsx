@@ -49,6 +49,7 @@ interface ProtocolGroupProps {
   value: ProtocolKind[];
   onToggle: (protocol: ProtocolKind) => void;
   disabled: boolean;
+  multiColumn: boolean;
 }
 
 function ProtocolGroup({
@@ -57,6 +58,7 @@ function ProtocolGroup({
   value,
   onToggle,
   disabled,
+  multiColumn,
 }: ProtocolGroupProps): JSX.Element | null {
   if (protocols.length === 0) return null;
 
@@ -65,7 +67,12 @@ function ProtocolGroup({
       <div className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
-      <div className="grid grid-cols-2 gap-0.5">
+      <div
+        className={cn(
+          "grid gap-0.5",
+          multiColumn ? "grid-cols-2" : "grid-cols-[minmax(0,max-content)]",
+        )}
+      >
         {protocols.map((protocol) => {
           const checked = value.includes(protocol);
           const checkboxId = `protocol-opt-${protocol}`;
@@ -73,7 +80,8 @@ function ProtocolGroup({
             <div
               key={protocol}
               className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
+                "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
+                multiColumn ? "w-36" : "max-w-56",
                 disabled &&
                   "cursor-not-allowed opacity-50 hover:bg-transparent",
               )}
@@ -121,6 +129,7 @@ export function ProtocolMultiSelect({
   const allowed = allowedProtocols ?? PROTOCOL_LIST;
   const clientProtocols = PROTOCOL_LIST.filter((p) => allowed.includes(p));
   const copy = COPY[locale];
+  const multiColumn = clientProtocols.length > 4;
 
   const toggle = (protocol: ProtocolKind) => {
     onChange(
@@ -142,7 +151,7 @@ export function ProtocolMultiSelect({
           disabled={disabled}
           aria-invalid={invalid || undefined}
           className={cn(
-            "w-full justify-between px-3 font-normal",
+            "w-fit min-w-[9.5rem] max-w-56 justify-between px-3 font-normal",
             selectedInOrder.length === 0 && "text-muted-foreground",
             className,
           )}
@@ -154,7 +163,7 @@ export function ProtocolMultiSelect({
               {selectedInOrder.slice(0, 3).map((protocol) => (
                 <span
                   key={protocol}
-                  className="flex shrink-0 items-center gap-1 text-xs text-foreground"
+                  className="flex min-w-0 shrink items-center gap-1 text-xs text-foreground"
                 >
                   <span
                     className={cn(
@@ -162,7 +171,9 @@ export function ProtocolMultiSelect({
                       PROTOCOL_DOT_CLASS[protocol],
                     )}
                   />
-                  {compactProtocolLabel(protocol)}
+                  <span className="truncate">
+                    {compactProtocolLabel(protocol)}
+                  </span>
                 </span>
               ))}
               {selectedInOrder.length > 3 ? (
@@ -175,13 +186,17 @@ export function ProtocolMultiSelect({
           <ChevronDown className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[21rem] gap-3 p-3">
+      <PopoverContent
+        align="start"
+        className="w-max min-w-[var(--radix-popover-trigger-width)] max-w-80 gap-3 p-3"
+      >
         <ProtocolGroup
           label={copy.client}
           protocols={clientProtocols}
           value={value}
           onToggle={toggle}
           disabled={disabled}
+          multiColumn={multiColumn}
         />
         {value.length > 0 ? (
           <div className="flex items-center justify-between border-t pt-2 text-xs text-muted-foreground">
