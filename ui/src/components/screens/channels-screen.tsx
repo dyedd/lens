@@ -1,6 +1,13 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { FileInput, Plus, RefreshCcw } from "lucide-react";
@@ -63,6 +70,7 @@ import {
   BatchModelTestRow,
   ChannelSort,
   ChannelStatusFilter,
+  classifyModelQueryInput,
   createLocalId,
   credentialLabel,
   defaultBaseUrlId,
@@ -81,17 +89,17 @@ import {
   HeaderItem,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
+  isValidModelQueryRegex,
   isSiteEnabled,
   ModelTestTarget,
   modelSupportedProtocols,
   nextProtocolConfigName,
   parseBatchImportPayload,
-  pickerModelKeys,
   PickerModelItem,
-  protocolConfigDisplayName,
-  protocolConfigEffectiveProtocols,
+  protocolConfigSelectedCredentialIds,
   protocolConfigModelKey,
   resolveBaseUrlId,
+  resolvePickerModelProtocols,
   safeText,
   selectedModelTestProtocol,
   siteEndpointSummary,
@@ -102,6 +110,8 @@ import {
   toPayload,
   TestableModelOption,
 } from "./channels/shared";
+
+const MODEL_ACTION_COOLDOWN_MS = 800;
 
 const ChannelEditorDialog = dynamic(() =>
   import("./channels/dialogs").then((module) => module.ChannelEditorDialog),
@@ -232,8 +242,7 @@ export function ChannelsScreen() {
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm(locale));
-  const [newProtocolConfigName, setNewProtocolConfigName] = useState("");
-  const [protocolConfigNameDialogOpen, setProtocolConfigNameDialogOpen] =
+  const [shouldFocusAddedProtocolConfig, setShouldFocusAddedProtocolConfig] =
     useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fetchingProtocolConfigIndex, setFetchingProtocolConfigIndex] =
@@ -285,6 +294,7 @@ export function ChannelsScreen() {
   const [selectedModelGroupEnsureKeys, setSelectedModelGroupEnsureKeys] =
     useState<string[]>([]);
   const [formSnapshot, setFormSnapshot] = useState("");
+  const modelActionLastRunAtRef = useRef<Record<string, number>>({});
 
   const {
     data: sites,
@@ -341,6 +351,7 @@ export function ChannelsScreen() {
   const overviewModels = useAggregatedModels(
     form.protocolConfigs,
     form.base_urls,
+    form.credentials,
     locale,
   );
   const modelTestOptionByKey = useMemo(() => {
@@ -461,7 +472,7 @@ export function ChannelsScreen() {
       if (sortBy === "protocols-desc")
         return (
           right.enabled_protocol_channel_count -
-          left.enabled_protocol_channel_count ||
+            left.enabled_protocol_channel_count ||
           left.name.localeCompare(right.name, locale)
         );
       return (
@@ -503,6 +514,21 @@ export function ChannelsScreen() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dialogOpen, hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!shouldFocusAddedProtocolConfig || !dialogOpen) return;
+    const protocolConfigIndex = form.protocolConfigs.length - 1;
+    if (protocolConfigIndex < 0) return;
+    const section = document.querySelector<HTMLElement>(
+      `[data-protocol-config-index="${protocolConfigIndex}"]`,
+    );
+    if (!section) return;
+
+    section.scrollIntoView({ behavior: "smooth", block: "center" });
+    const input = section.querySelector<HTMLInputElement>("input");
+    (input ?? section).focus({ preventScroll: true });
+    setShouldFocusAddedProtocolConfig(false);
+  }, [dialogOpen, form.protocolConfigs.length, shouldFocusAddedProtocolConfig]);
 
   useEffect(() => {
     if (!sitesIsError) return;
@@ -814,8 +840,8 @@ export function ChannelsScreen() {
     if (duplicatedProtocolConfigKeys.size) {
       const message =
         locale === "zh-CN"
-          ? "同一个渠道内不允许重复地址来源和密钥"
-          : "Duplicate Base URL and key pairs are not allowed in one channel";
+          ? "同一个渠道内不允许重复地址来源、密钥和协议"
+          : "Duplicate Base URL, key, and protocol sets are not allowed in one channel";
       toast.error(message);
       return false;
     }
@@ -1246,13 +1272,22 @@ export function ChannelsScreen() {
         ...current,
         credentials: nextCredentials,
         protocolConfigs: current.protocolConfigs.map((protocolConfig) => {
-          const credentialId =
-            protocolConfig.credential_id === target.id
-              ? (nextCredentials[0]?.id ?? "")
-              : protocolConfig.credential_id;
+          const selectedCredentialIds = protocolConfigSelectedCredentialIds(
+            protocolConfig,
+          ).filter((credentialId) => credentialId !== target.id);
+          const credentialId = selectedCredentialIds.includes(
+            protocolConfig.credential_id,
+          )
+            ? protocolConfig.credential_id
+            : (selectedCredentialIds[0] ?? nextCredentials[0]?.id ?? "");
           return {
             ...protocolConfig,
             credential_id: credentialId,
+            credential_ids: selectedCredentialIds.length
+              ? selectedCredentialIds
+              : credentialId
+                ? [credentialId]
+                : [],
             models: protocolConfig.models.filter(
               (model) => model.credential_id !== target.id,
             ),
@@ -1312,38 +1347,37 @@ export function ChannelsScreen() {
     }));
   }
 
-  function openAddProtocolConfigDialog() {
-    setNewProtocolConfigName(
-      nextProtocolConfigName(form.protocolConfigs, locale),
-    );
-    setProtocolConfigNameDialogOpen(true);
+  function removeAggregateModel(modelKey: string) {
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map(
+        (protocolConfig, protocolConfigIndex) => ({
+          ...protocolConfig,
+          models: protocolConfig.models.filter(
+            (model) =>
+              protocolConfigModelKey(
+                protocolConfigIndex,
+                protocolConfig,
+                model,
+              ) !== modelKey,
+          ),
+        }),
+      ),
+    }));
   }
 
-  function addProtocolConfigWithName(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = newProtocolConfigName.trim();
-    if (!name) {
-      toast.error(
-        locale === "zh-CN" ? "请输入组合名称" : "Enter a combination name",
-      );
-      return;
-    }
-    const exists = form.protocolConfigs.some(
-      (protocolConfig, index) =>
-        protocolConfigDisplayName(
-          protocolConfig,
-          index,
-          locale,
-        ).toLowerCase() === name.toLowerCase(),
-    );
-    if (exists) {
-      toast.error(
-        locale === "zh-CN"
-          ? "组合名称已存在"
-          : "Combination name already exists",
-      );
-      return;
-    }
+  function clearAggregateModels() {
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map((protocolConfig) => ({
+        ...protocolConfig,
+        models: [],
+      })),
+    }));
+  }
+
+  function addProtocolConfig() {
+    setShouldFocusAddedProtocolConfig(true);
     setForm((current) => ({
       ...current,
       protocolConfigs: [
@@ -1351,14 +1385,12 @@ export function ChannelsScreen() {
         {
           ...emptyProtocolConfig(
             defaultBaseUrlId(current.base_urls),
-            name,
+            nextProtocolConfigName(current.protocolConfigs, locale),
             current.credentials[0]?.id ?? "",
           ),
         },
       ],
     }));
-    setProtocolConfigNameDialogOpen(false);
-    setNewProtocolConfigName("");
   }
 
   function addBaseUrl() {
@@ -1419,26 +1451,61 @@ export function ChannelsScreen() {
           currentProtocolConfigIndex !== protocolConfigIndex
             ? protocolConfig
             : {
-              ...protocolConfig,
-              headers: protocolConfig.headers.map(
-                (header, currentHeaderIndex) =>
-                  currentHeaderIndex === headerIndex
-                    ? { ...header, ...patch }
-                    : header,
-              ),
-            },
+                ...protocolConfig,
+                headers: protocolConfig.headers.map(
+                  (header, currentHeaderIndex) =>
+                    currentHeaderIndex === headerIndex
+                      ? { ...header, ...patch }
+                      : header,
+                ),
+              },
       ),
     }));
   }
 
-  function addManualProtocolConfigModel(
-    protocolConfigIndex: number,
-    credentialIds: string[],
-  ) {
+  function canRunModelAction(actionKey: string) {
+    const now = Date.now();
+    const lastRunAt = modelActionLastRunAtRef.current[actionKey] ?? 0;
+    if (now - lastRunAt < MODEL_ACTION_COOLDOWN_MS) {
+      return false;
+    }
+    modelActionLastRunAtRef.current[actionKey] = now;
+    return true;
+  }
+
+  function activeSelectedCredentialIds(protocolConfig: FormProtocolConfig) {
+    const selectedCredentialIds =
+      protocolConfigSelectedCredentialIds(protocolConfig);
+    const credentialById = new Map(
+      form.credentials.map((credential) => [credential.id, credential]),
+    );
+    return selectedCredentialIds.filter((credentialId) => {
+      const credential = credentialById.get(credentialId);
+      return Boolean(credential?.enabled && credential.api_key.trim());
+    });
+  }
+
+  function addManualProtocolConfigModel(protocolConfigIndex: number) {
     const protocolConfig = form.protocolConfigs[protocolConfigIndex];
     const modelName = protocolConfig?.manual_model_name.trim() ?? "";
-    const targetCredentialIds = Array.from(new Set(credentialIds)).filter(Boolean);
-    if (!protocolConfig || !targetCredentialIds.length || !modelName) return;
+    if (!protocolConfig || !modelName) return;
+    const selectedCredentialIds = activeSelectedCredentialIds(protocolConfig);
+    if (!selectedCredentialIds.length) {
+      toast.error(
+        locale === "zh-CN"
+          ? "请选择至少一个可用密钥"
+          : "Select at least one available key",
+      );
+      return;
+    }
+    if (classifyModelQueryInput(modelName) !== "plain") {
+      toast.error(
+        locale === "zh-CN"
+          ? "正则或空值不能直接添加模型"
+          : "Regex or empty input cannot be added directly",
+      );
+      return;
+    }
     const importProtocols = Array.from(
       new Set(protocolConfig.manual_protocols),
     );
@@ -1450,13 +1517,16 @@ export function ChannelsScreen() {
       );
       return;
     }
+    if (!canRunModelAction(`add:${protocolConfigIndex}`)) return;
     const existingKeys = new Set(
       protocolConfig.models.map(
         (model) => `${model.credential_id}:${model.model_name}`,
       ),
     );
-    const newModels = targetCredentialIds
-      .filter((credentialId) => !existingKeys.has(`${credentialId}:${modelName}`))
+    const newModels = selectedCredentialIds
+      .filter(
+        (credentialId) => !existingKeys.has(`${credentialId}:${modelName}`),
+      )
       .map((credentialId) => ({
         id: null,
         protocols: importProtocols,
@@ -1479,6 +1549,8 @@ export function ChannelsScreen() {
           return {
             ...protocolConfig,
             manual_model_name: "",
+            match_regex: "",
+            auto_sync_enabled: false,
             expanded: true,
             models: [...protocolConfig.models, ...newModels],
           };
@@ -1604,16 +1676,24 @@ export function ChannelsScreen() {
 
   function applyModelSelection(selectedKeys: string[]) {
     if (modelPickerProtocolConfigIndex === null) return;
-    const protocolConfig =
-      form.protocolConfigs[modelPickerProtocolConfigIndex];
+    const protocolConfig = form.protocolConfigs[modelPickerProtocolConfigIndex];
     if (!protocolConfig) return;
     const protocolsForKey = (key: string) =>
-      Array.from(new Set(pickerModelProtocols[key] ?? pickerImportProtocols));
+      Array.from(
+        new Set(
+          resolvePickerModelProtocols(
+            key,
+            pickerModelProtocols,
+            pickerImportProtocols,
+          ),
+        ),
+      );
+    const selectedKeySet = new Set(selectedKeys);
     const existingKeys = new Set(
       protocolConfig.models.map((model) => genericModelKey(model)),
     );
     const selectedModels = availableModels.filter((item) =>
-      selectedKeys.includes(genericModelKey(item)),
+      selectedKeySet.has(genericModelKey(item)),
     );
     const newModels = groupPickerModels(selectedModels).filter(
       (model) => !existingKeys.has(genericModelKey(model)),
@@ -1629,8 +1709,8 @@ export function ChannelsScreen() {
     if (missingProtocols) {
       toast.error(
         locale === "zh-CN"
-          ? "请为所有选中模型选择协议，或先设置本次导入协议"
-          : "Select protocols for every selected model, or set the import protocols first",
+          ? "请为所有选中模型选择协议"
+          : "Select protocols for every selected model",
       );
       return;
     }
@@ -1668,24 +1748,61 @@ export function ChannelsScreen() {
   }
 
   async function fetchProtocolModels(protocolConfigIndex: number) {
+    if (fetchingProtocolConfigIndex !== null) return;
     const protocolConfig = form.protocolConfigs[protocolConfigIndex];
     if (!protocolConfig) return;
-    const credentialIds = form.credentials
-      .filter((item) => item.enabled && item.api_key.trim())
-      .map((item) => item.id);
-    if (!credentialIds.length) {
-      toast.error(locale === "zh-CN" ? "没有可用密钥" : "No available keys");
+    const modelQueryInput = protocolConfig.manual_model_name.trim();
+    const modelQueryKind = classifyModelQueryInput(modelQueryInput);
+    if (modelQueryKind === "plain") {
+      toast.error(
+        locale === "zh-CN"
+          ? "普通模型名不能获取更多"
+          : "Plain model names cannot fetch more",
+      );
       return;
     }
+    if (
+      modelQueryKind === "regex" &&
+      !isValidModelQueryRegex(modelQueryInput)
+    ) {
+      toast.error(locale === "zh-CN" ? "正则无效" : "Invalid regex");
+      return;
+    }
+    const importProtocols = Array.from(
+      new Set(protocolConfig.manual_protocols),
+    );
+    if (!importProtocols.length) {
+      toast.error(
+        locale === "zh-CN"
+          ? "请先选择本次获取的客户端协议"
+          : "Select client protocols for this fetch first",
+      );
+      return;
+    }
+    const selectedCredentialIds = activeSelectedCredentialIds(protocolConfig);
+    if (!selectedCredentialIds.length) {
+      toast.error(
+        locale === "zh-CN"
+          ? "请选择至少一个可用密钥"
+          : "Select at least one available key",
+      );
+      return;
+    }
+    const activeBaseUrl = activeBaseUrlValue(form, protocolConfig);
+    if (!safeText(activeBaseUrl).trim()) {
+      toast.error(locale === "zh-CN" ? "地址为空" : "Base URL is empty");
+      return;
+    }
+    if (!canRunModelAction(`fetch:${protocolConfigIndex}`)) return;
     setFetchingProtocolConfigIndex(protocolConfigIndex);
     try {
-      const activeBaseUrl = activeBaseUrlValue(form, protocolConfig);
+      const selectedCredentialIdSet = new Set(selectedCredentialIds);
       const payload: SiteModelFetchPayload = {
         base_url: safeText(activeBaseUrl).trim(),
         headers: formHeaders(protocolConfig),
         proxy_mode: protocolConfig.proxy_mode,
         channel_proxy: protocolConfig.channel_proxy.trim(),
-        match_regex: safeText(protocolConfig.match_regex).trim(),
+        match_regex: modelQueryKind === "regex" ? modelQueryInput : "",
         credentials: form.credentials
           .map((item, index) => ({
             id: item.id,
@@ -1693,8 +1810,10 @@ export function ChannelsScreen() {
             api_key: item.api_key.trim(),
             enabled: item.enabled,
           }))
-          .filter((item) => item.api_key),
-        credential_ids: credentialIds,
+          .filter(
+            (item) => item.api_key && selectedCredentialIdSet.has(item.id),
+          ),
+        credential_ids: selectedCredentialIds,
       };
       const models = await apiRequest<SiteModelFetchItem[]>(
         "/admin/site-model-discoveries",
@@ -1710,7 +1829,7 @@ export function ChannelsScreen() {
       }));
       setAvailableModels(nextAvailableModels);
       setPickerSelectedModelKeys([]);
-      setPickerImportProtocols(protocolConfigEffectiveProtocols(protocolConfig));
+      setPickerImportProtocols(importProtocols);
       setPickerModelProtocols({});
       setModelPickerProtocolConfigIndex(protocolConfigIndex);
       toast.success(
@@ -1872,11 +1991,11 @@ export function ChannelsScreen() {
                 latencyMs: result.latency_ms,
                 message: success
                   ? result.output_text ||
-                  (locale === "zh-CN"
-                    ? "上游返回成功，但没有可展示文本"
-                    : "Upstream succeeded but returned no displayable text")
+                    (locale === "zh-CN"
+                      ? "上游返回成功，但没有可展示文本"
+                      : "Upstream succeeded but returned no displayable text")
                   : result.error_message ||
-                  (locale === "zh-CN" ? "测试失败" : "Test failed"),
+                    (locale === "zh-CN" ? "测试失败" : "Test failed"),
               });
               if (result.success) {
                 succeeded += 1;
@@ -1983,8 +2102,6 @@ export function ChannelsScreen() {
             editingSiteId={editingSiteId}
             locale={locale}
             form={form}
-            newProtocolConfigName={newProtocolConfigName}
-            protocolConfigNameDialogOpen={protocolConfigNameDialogOpen}
             fetchingProtocolConfigIndex={fetchingProtocolConfigIndex}
             duplicatedProtocolConfigKeys={duplicatedProtocolConfigKeys}
             batchTestOptions={batchTestOptions}
@@ -1996,8 +2113,6 @@ export function ChannelsScreen() {
             setDialogOpen={setDialogOpen}
             setEditingSiteId={setEditingSiteId}
             setForm={setForm}
-            setNewProtocolConfigName={setNewProtocolConfigName}
-            setProtocolConfigNameDialogOpen={setProtocolConfigNameDialogOpen}
             setAdvancedProtocolConfigIndex={setAdvancedProtocolConfigIndex}
             submit={submit}
             addBaseUrl={addBaseUrl}
@@ -2005,8 +2120,7 @@ export function ChannelsScreen() {
             removeBaseUrl={removeBaseUrl}
             updateCredential={updateCredential}
             removeCredential={removeCredential}
-            openAddProtocolConfigDialog={openAddProtocolConfigDialog}
-            addProtocolConfigWithName={addProtocolConfigWithName}
+            addProtocolConfig={addProtocolConfig}
             updateProtocolConfig={updateProtocolConfig}
             addManualProtocolConfigModel={addManualProtocolConfigModel}
             fetchProtocolModels={fetchProtocolModels}
@@ -2014,6 +2128,8 @@ export function ChannelsScreen() {
             openBatchModelTestDialog={openBatchModelTestDialog}
             updateModelProtocols={updateModelProtocols}
             openAggregateModelTest={openAggregateModelTest}
+            removeAggregateModel={removeAggregateModel}
+            clearAggregateModels={clearAggregateModels}
             closeEditor={closeEditor}
           />
         ) : null}
@@ -2149,16 +2265,21 @@ export function ChannelsScreen() {
             }}
             onToggleModel={togglePickerModel}
             onImportProtocolsChange={setPickerImportProtocols}
-            onModelProtocolsChange={(key, protocols) =>
-              setPickerModelProtocols((current) => ({
-                ...current,
-                [key]: protocols,
-              }))
+            onFilteredModelProtocolsChange={(keys, protocols) =>
+              setPickerModelProtocols((current) => {
+                const next = { ...current };
+                for (const key of keys) {
+                  if (protocols.length) {
+                    next[key] = protocols;
+                  } else {
+                    delete next[key];
+                  }
+                }
+                return next;
+              })
             }
             onConfirm={() => applyModelSelection(pickerSelectedModelKeys)}
-            onConfirmAll={() =>
-              applyModelSelection(pickerModelKeys(availableModels))
-            }
+            onConfirmAll={(keys) => applyModelSelection(keys)}
             onCancel={closeModelPicker}
           />
         ) : null}

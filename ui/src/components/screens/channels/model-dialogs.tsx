@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
+import { ToolbarSearchInput } from "@/components/ui/toolbar-search-input";
 import {
   Command,
   CommandEmpty,
@@ -68,12 +69,14 @@ import {
   FormState,
   genericModelKey,
   groupPickerModels,
+  hasPickerModelProtocolOverride,
   Locale,
   ModelTestTarget,
   modelSupportedProtocols,
   PickerModelItem,
   protocolBadgeClassName,
   protocolLabel,
+  resolvePickerModelProtocols,
   selectedModelTestProtocol,
 } from "./shared";
 import {
@@ -317,7 +320,7 @@ export function ModelGroupEnsureDialog({
           className="max-w-5xl"
           title={locale === "zh-CN" ? "加入/创建模型组" : "Add/create groups"}
         >
-          <div className="grid gap-4">
+          <div className="grid gap-4 pt-1">
             <div className="flex flex-wrap gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
               <span>
                 {locale === "zh-CN"
@@ -623,7 +626,7 @@ export function ModelGroupEnsureDialog({
                                 </Badge>
                               ))}
                               {item.skipped_reason ===
-                                "protocol_extension_required" ? (
+                              "protocol_extension_required" ? (
                                 <Badge variant="outline" className="text-xs">
                                   {modelGroupEnsureReasonLabel(
                                     item.skipped_reason,
@@ -703,215 +706,215 @@ export function ModelTestDialog({
     >
       {target !== null
         ? (() => {
-          const protocolConfig =
-            form.protocolConfigs[target.protocolConfigIndex];
-          const model = protocolConfig?.models[target.modelIndex];
-          const credentialIndex = model
-            ? form.credentials.findIndex(
-              (item) => item.id === model.credential_id,
-            )
-            : -1;
-          const credential =
-            credentialIndex >= 0
-              ? form.credentials[credentialIndex]
-              : undefined;
-          const activeBaseUrl = protocolConfig
-            ? activeBaseUrlValue(form, protocolConfig).trim()
-            : "";
-          const supportedProtocols = modelSupportedProtocols(model);
-          const selectedProtocol = selectedModelTestProtocol(
-            supportedProtocols,
-            modelTestProtocol,
-          );
-          const canTest = Boolean(
-            protocolConfig &&
-            model?.model_name.trim() &&
-            credential?.api_key.trim() &&
-            activeBaseUrl &&
-            selectedProtocol &&
-            modelTestPrompt.trim(),
-          );
-          const sourceText = [
-            model?.model_name || "",
-            credential
-              ? credentialLabel(credential, credentialIndex, locale)
-              : "",
-            activeBaseUrl,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          return (
-            <AppDialogContent
-              className="max-w-2xl"
-              title={locale === "zh-CN" ? "测试模型" : "Test model"}
-            >
-              <div className="grid gap-4">
-                <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-foreground">
-                      {model?.model_name || "-"}
-                    </span>
-                    {supportedProtocols.map((item) => (
-                      <Badge
-                        key={item}
-                        variant="outline"
-                        className={cn(
-                          "max-w-[140px] truncate text-xs",
-                          protocolBadgeClassName(item),
-                        )}
-                      >
-                        {compactProtocolLabel(item)}
-                      </Badge>
-                    ))}
+            const protocolConfig =
+              form.protocolConfigs[target.protocolConfigIndex];
+            const model = protocolConfig?.models[target.modelIndex];
+            const credentialIndex = model
+              ? form.credentials.findIndex(
+                  (item) => item.id === model.credential_id,
+                )
+              : -1;
+            const credential =
+              credentialIndex >= 0
+                ? form.credentials[credentialIndex]
+                : undefined;
+            const activeBaseUrl = protocolConfig
+              ? activeBaseUrlValue(form, protocolConfig).trim()
+              : "";
+            const supportedProtocols = modelSupportedProtocols(model);
+            const selectedProtocol = selectedModelTestProtocol(
+              supportedProtocols,
+              modelTestProtocol,
+            );
+            const canTest = Boolean(
+              protocolConfig &&
+              model?.model_name.trim() &&
+              credential?.api_key.trim() &&
+              activeBaseUrl &&
+              selectedProtocol &&
+              modelTestPrompt.trim(),
+            );
+            const sourceText = [
+              model?.model_name || "",
+              credential
+                ? credentialLabel(credential, credentialIndex, locale)
+                : "",
+              activeBaseUrl,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <AppDialogContent
+                className="max-w-2xl"
+                title={locale === "zh-CN" ? "测试模型" : "Test model"}
+              >
+                <div className="grid gap-4">
+                  <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-foreground">
+                        {model?.model_name || "-"}
+                      </span>
+                      {supportedProtocols.map((item) => (
+                        <Badge
+                          key={item}
+                          variant="outline"
+                          className={cn(
+                            "max-w-[140px] truncate text-xs",
+                            protocolBadgeClassName(item),
+                          )}
+                        >
+                          {compactProtocolLabel(item)}
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="mt-1 break-all text-xs">{sourceText}</div>
                   </div>
-                  <div className="mt-1 break-all text-xs">{sourceText}</div>
-                </div>
 
-                <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
-                  <div className="grid gap-3">
-                    <Field>
-                      <FieldLabel>
-                        {locale === "zh-CN" ? "问题" : "Prompt"}
-                      </FieldLabel>
-                      <Select
-                        value={modelTestPromptMode}
-                        onValueChange={onPromptModeChange}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {modelTestPrompts.map((_, index) => (
-                            <SelectItem key={index} value={String(index)}>
-                              {locale === "zh-CN"
-                                ? `预设 ${index + 1}`
-                                : `Preset ${index + 1}`}
-                            </SelectItem>
-                          ))}
-                          <SelectItem value="custom">
-                            {locale === "zh-CN" ? "自定义" : "Custom"}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    {supportedProtocols.length > 1 ? (
+                  <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
+                    <div className="grid gap-3">
                       <Field>
                         <FieldLabel>
-                          {locale === "zh-CN" ? "测试协议" : "Test protocol"}
+                          {locale === "zh-CN" ? "问题" : "Prompt"}
                         </FieldLabel>
                         <Select
-                          value={selectedProtocol ?? ""}
-                          onValueChange={(value) =>
-                            onProtocolChange(value as ProtocolKind)
-                          }
-                          disabled={testingModel}
+                          value={modelTestPromptMode}
+                          onValueChange={onPromptModeChange}
                         >
                           <SelectTrigger className="w-full">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {supportedProtocols.map((item) => (
-                              <SelectItem key={item} value={item}>
-                                {protocolLabel(item, locale)}
+                            {modelTestPrompts.map((_, index) => (
+                              <SelectItem key={index} value={String(index)}>
+                                {locale === "zh-CN"
+                                  ? `预设 ${index + 1}`
+                                  : `Preset ${index + 1}`}
                               </SelectItem>
                             ))}
+                            <SelectItem value="custom">
+                              {locale === "zh-CN" ? "自定义" : "Custom"}
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </Field>
-                    ) : null}
-                  </div>
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "内容" : "Content"}
-                    </FieldLabel>
-                    <Textarea
-                      className="min-h-24"
-                      value={modelTestPrompt}
-                      onChange={(event) => onPromptChange(event.target.value)}
-                    />
-                    {false ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {locale === "zh-CN"
-                          ? "Rerank 测试：首行为查询，其余行作为候选文档（每行一个）。"
-                          : "Rerank test: first line is the query, remaining lines are candidate documents (one per line)."}
-                      </p>
-                    ) : null}
-                  </Field>
-                </div>
-
-                {modelTestResult ? (
-                  <div
-                    className={cn(
-                      "grid gap-2 rounded-md border px-3 py-2 text-sm",
-                      modelTestResult.success
-                        ? "bg-muted/20"
-                        : "border-destructive/40 bg-destructive/5",
-                    )}
-                  >
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge
-                        variant="outline"
-                        className={
-                          modelTestResult.success
-                            ? "border-primary/30 text-primary"
-                            : "border-destructive/40 text-destructive"
-                        }
-                      >
-                        {modelTestResult.success
-                          ? locale === "zh-CN"
-                            ? "成功"
-                            : "Success"
-                          : locale === "zh-CN"
-                            ? "失败"
-                            : "Failed"}
-                      </Badge>
-                      <span>HTTP {modelTestResult.status_code ?? "-"}</span>
-                      <span>{modelTestResult.latency_ms}ms</span>
+                      {supportedProtocols.length > 1 ? (
+                        <Field>
+                          <FieldLabel>
+                            {locale === "zh-CN" ? "测试协议" : "Test protocol"}
+                          </FieldLabel>
+                          <Select
+                            value={selectedProtocol ?? ""}
+                            onValueChange={(value) =>
+                              onProtocolChange(value as ProtocolKind)
+                            }
+                            disabled={testingModel}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {supportedProtocols.map((item) => (
+                                <SelectItem key={item} value={item}>
+                                  {protocolLabel(item, locale)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                      ) : null}
                     </div>
+                    <Field>
+                      <FieldLabel>
+                        {locale === "zh-CN" ? "内容" : "Content"}
+                      </FieldLabel>
+                      <Textarea
+                        className="min-h-24"
+                        value={modelTestPrompt}
+                        onChange={(event) => onPromptChange(event.target.value)}
+                      />
+                      {false ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {locale === "zh-CN"
+                            ? "Rerank 测试：首行为查询，其余行作为候选文档（每行一个）。"
+                            : "Rerank test: first line is the query, remaining lines are candidate documents (one per line)."}
+                        </p>
+                      ) : null}
+                    </Field>
+                  </div>
+
+                  {modelTestResult ? (
                     <div
                       className={cn(
-                        "max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm",
+                        "grid gap-2 rounded-md border px-3 py-2 text-sm",
                         modelTestResult.success
-                          ? "text-foreground"
-                          : "text-destructive",
+                          ? "bg-muted/20"
+                          : "border-destructive/40 bg-destructive/5",
                       )}
                     >
-                      {modelTestResult.success
-                        ? modelTestResult.output_text ||
-                        (locale === "zh-CN"
-                          ? "上游返回成功，但没有可展示文本"
-                          : "Upstream succeeded but returned no displayable text")
-                        : modelTestResult.error_message ||
-                        (locale === "zh-CN" ? "测试失败" : "Test failed")}
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <Badge
+                          variant="outline"
+                          className={
+                            modelTestResult.success
+                              ? "border-primary/30 text-primary"
+                              : "border-destructive/40 text-destructive"
+                          }
+                        >
+                          {modelTestResult.success
+                            ? locale === "zh-CN"
+                              ? "成功"
+                              : "Success"
+                            : locale === "zh-CN"
+                              ? "失败"
+                              : "Failed"}
+                        </Badge>
+                        <span>HTTP {modelTestResult.status_code ?? "-"}</span>
+                        <span>{modelTestResult.latency_ms}ms</span>
+                      </div>
+                      <div
+                        className={cn(
+                          "max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm",
+                          modelTestResult.success
+                            ? "text-foreground"
+                            : "text-destructive",
+                        )}
+                      >
+                        {modelTestResult.success
+                          ? modelTestResult.output_text ||
+                            (locale === "zh-CN"
+                              ? "上游返回成功，但没有可展示文本"
+                              : "Upstream succeeded but returned no displayable text")
+                          : modelTestResult.error_message ||
+                            (locale === "zh-CN" ? "测试失败" : "Test failed")}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={onClose}
-                    disabled={testingModel}
-                  >
-                    {locale === "zh-CN" ? "关闭" : "Close"}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={onRun}
-                    disabled={!canTest || testingModel}
-                  >
-                    <RefreshCcw
-                      data-icon="inline-start"
-                      className={testingModel ? "animate-spin" : ""}
-                    />
-                    {locale === "zh-CN" ? "发送测试" : "Send test"}
-                  </Button>
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={onClose}
+                      disabled={testingModel}
+                    >
+                      {locale === "zh-CN" ? "关闭" : "Close"}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={onRun}
+                      disabled={!canTest || testingModel}
+                    >
+                      <RefreshCcw
+                        data-icon="inline-start"
+                        className={testingModel ? "animate-spin" : ""}
+                      />
+                      {locale === "zh-CN" ? "发送测试" : "Send test"}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </AppDialogContent>
-          );
-        })()
+              </AppDialogContent>
+            );
+          })()
         : null}
     </Dialog>
   );
@@ -1196,7 +1199,7 @@ export function ModelPickerDialog({
   onOpenChange,
   onToggleModel,
   onImportProtocolsChange,
-  onModelProtocolsChange,
+  onFilteredModelProtocolsChange,
   onConfirm,
   onConfirmAll,
   onCancel,
@@ -1210,17 +1213,64 @@ export function ModelPickerDialog({
   onOpenChange: (open: boolean) => void;
   onToggleModel: (key: string) => void;
   onImportProtocolsChange: (protocols: ProtocolKind[]) => void;
-  onModelProtocolsChange: (key: string, protocols: ProtocolKind[]) => void;
+  onFilteredModelProtocolsChange: (
+    keys: string[],
+    protocols: ProtocolKind[],
+  ) => void;
   onConfirm: () => void;
-  onConfirmAll: () => void;
+  onConfirmAll: (keys: string[]) => void;
   onCancel: () => void;
 }) {
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
   const modelGroups = useMemo(
     () => groupPickerModels(availableModels),
     [availableModels],
   );
-  const effectiveModelProtocols = (key: string) =>
-    pickerModelProtocols[key] ?? pickerImportProtocols;
+  const normalizedModelSearch = modelSearchQuery.trim().toLowerCase();
+  const filteredModelGroups = useMemo(() => {
+    if (!normalizedModelSearch) return modelGroups;
+    return modelGroups.filter((model) =>
+      [model.model_name, model.credential_name ?? ""].some((value) =>
+        value.toLowerCase().includes(normalizedModelSearch),
+      ),
+    );
+  }, [modelGroups, normalizedModelSearch]);
+  const searchTargetsModels = normalizedModelSearch.length > 0;
+  const effectiveModelProtocols = (key: string) => {
+    return resolvePickerModelProtocols(
+      key,
+      pickerModelProtocols,
+      pickerImportProtocols,
+    );
+  };
+  const sameProtocols = (left: ProtocolKind[], right: ProtocolKind[]) =>
+    left.length === right.length && left.every((item) => right.includes(item));
+  const toolbarProtocols =
+    searchTargetsModels && filteredModelGroups.length
+      ? (() => {
+          const first = effectiveModelProtocols(
+            genericModelKey(filteredModelGroups[0]),
+          );
+          return filteredModelGroups.every((model) =>
+            sameProtocols(
+              first,
+              effectiveModelProtocols(genericModelKey(model)),
+            ),
+          )
+            ? first
+            : [];
+        })()
+      : pickerImportProtocols;
+  const changeToolbarProtocols = (protocols: ProtocolKind[]) => {
+    if (!searchTargetsModels) {
+      onImportProtocolsChange(protocols);
+      return;
+    }
+    onFilteredModelProtocolsChange(
+      filteredModelGroups.map((model) => genericModelKey(model)),
+      protocols,
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1229,55 +1279,94 @@ export function ModelPickerDialog({
           className="max-w-3xl"
           title={locale === "zh-CN" ? "选择模型" : "Select models"}
         >
-          <div className="grid gap-4">
-            <div className="grid gap-2 rounded-md border bg-muted/20 p-3">
-              <div className="text-sm font-medium text-foreground">
-                {locale === "zh-CN" ? "本次导入协议" : "Import protocols"}
+          <div className="grid gap-4 pt-2">
+            <div className="space-y-2 border-b pb-3">
+              <div className="grid gap-2 sm:grid-cols-[minmax(18rem,1fr)_minmax(14rem,auto)] sm:items-center">
+                <ToolbarSearchInput
+                  value={modelSearchQuery}
+                  onChange={setModelSearchQuery}
+                  onClear={() => setModelSearchQuery("")}
+                  placeholder={
+                    locale === "zh-CN"
+                      ? "搜索模型或密钥"
+                      : "Search models or keys"
+                  }
+                  className="max-w-none"
+                />
+                <div className="flex min-w-0 items-center gap-2 sm:justify-end">
+                  <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                    {locale === "zh-CN" ? "客户端协议" : "Client protocols"}
+                  </span>
+                  <ProtocolMultiSelect
+                    value={toolbarProtocols}
+                    onChange={changeToolbarProtocols}
+                    locale={locale}
+                    disabled={
+                      searchTargetsModels && !filteredModelGroups.length
+                    }
+                    className="h-9 max-w-full"
+                    placeholder={
+                      searchTargetsModels
+                        ? locale === "zh-CN"
+                          ? "设置匹配协议"
+                          : "Set matched"
+                        : locale === "zh-CN"
+                          ? "客户端协议"
+                          : "Client protocols"
+                    }
+                  />
+                </div>
               </div>
-              <ProtocolMultiSelect
-                value={pickerImportProtocols}
-                onChange={onImportProtocolsChange}
-                locale={locale}
-                invalid={pickerImportProtocols.length === 0}
-                placeholder={
-                  locale === "zh-CN"
-                    ? "选择要批量应用的协议"
-                    : "Select protocols to apply"
-                }
-              />
               <div className="text-xs text-muted-foreground">
-                {locale === "zh-CN"
-                  ? "默认应用到所有选中模型，可对单个模型单独覆盖；已有模型不会被覆盖。"
-                  : "Applied to all selected models by default; individual models can override. Existing models are not overwritten."}
+                <span>
+                  {searchTargetsModels
+                    ? locale === "zh-CN"
+                      ? `找到 ${filteredModelGroups.length}/${modelGroups.length} 个模型`
+                      : `${filteredModelGroups.length}/${modelGroups.length} matched`
+                    : locale === "zh-CN"
+                      ? `找到 ${modelGroups.length} 个模型`
+                      : `${modelGroups.length} models`}
+                </span>
               </div>
             </div>
-            <div className="max-h-[58dvh] overflow-y-auto p-1 sm:max-h-[420px]">
-              {modelGroups.length ? (
-                <div className="flex w-full flex-col gap-1.5">
-                  {modelGroups.map((model) => {
+            <div className="max-h-[58dvh] overflow-y-auto sm:max-h-[420px]">
+              {filteredModelGroups.length ? (
+                <div className="flex w-full flex-col divide-y">
+                  {filteredModelGroups.map((model) => {
                     const key = genericModelKey(model);
                     const checked = pickerSelectedModelKeys.includes(key);
                     const protocols = effectiveModelProtocols(key);
+                    const overridden = hasPickerModelProtocolOverride(
+                      pickerModelProtocols,
+                      key,
+                    );
                     return (
                       <div
                         key={key}
                         className={cn(
-                          "flex min-w-0 flex-wrap items-center gap-2 rounded-md border px-2.5 py-1.5",
-                          checked
-                            ? "border-primary bg-background"
-                            : "border-border bg-background",
+                          "grid min-w-0 gap-2 px-1 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
+                          checked && "bg-primary/5",
                         )}
                       >
-                        <button
-                          type="button"
-                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                          onClick={() => onToggleModel(key)}
-                        >
-                          <span className="text-xs">
-                            {checked ? "✓" : "+"}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm text-foreground">
+                        <div className="flex min-w-0 items-center gap-3 rounded-md px-1.5 py-1.5 transition-colors hover:bg-muted/50">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() => onToggleModel(key)}
+                            aria-label={
+                              locale === "zh-CN" ? "选择模型" : "Select model"
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 text-left"
+                            onClick={() => onToggleModel(key)}
+                          >
+                            <span
+                              className={cn(
+                                "block truncate text-sm text-foreground",
+                                checked && "font-medium",
+                              )}
+                            >
                               {model.model_name}
                             </span>
                             {model.credential_name ? (
@@ -1285,27 +1374,46 @@ export function ModelPickerDialog({
                                 {model.credential_name}
                               </span>
                             ) : null}
-                          </span>
-                        </button>
-                        <ProtocolMultiSelect
-                          value={protocols}
-                          onChange={(next) => onModelProtocolsChange(key, next)}
-                          locale={locale}
-                          className="w-auto min-w-[180px]"
-                          invalid={checked && protocols.length === 0}
-                          placeholder={
-                            locale === "zh-CN" ? "继承本次协议" : "Inherit import"
-                          }
-                        />
+                          </button>
+                        </div>
+                        <div className="flex min-w-0 items-center gap-2 pl-8 sm:justify-end sm:pl-0">
+                          {overridden ? (
+                            <span className="shrink-0 text-xs text-foreground">
+                              {locale === "zh-CN" ? "覆盖" : "Override"}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {locale === "zh-CN" ? "继承" : "Inherit"}
+                            </span>
+                          )}
+                          <ProtocolMultiSelect
+                            value={protocols}
+                            onChange={(next) =>
+                              onFilteredModelProtocolsChange([key], next)
+                            }
+                            locale={locale}
+                            invalid={checked && protocols.length === 0}
+                            className="h-8 max-w-full sm:max-w-52"
+                            placeholder={
+                              locale === "zh-CN"
+                                ? "继承本次协议"
+                                : "Inherit import"
+                            }
+                          />
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="px-3 py-6 text-sm text-muted-foreground">
+                <div className="px-3 py-8 text-sm text-muted-foreground">
                   {locale === "zh-CN"
-                    ? "未获取到可选模型"
-                    : "No models fetched."}
+                    ? searchTargetsModels
+                      ? "没有匹配的模型"
+                      : "未获取到可选模型"
+                    : searchTargetsModels
+                      ? "No matching models."
+                      : "No models fetched."}
                 </div>
               )}
             </div>
@@ -1316,10 +1424,20 @@ export function ModelPickerDialog({
               <Button
                 type="button"
                 variant="outline"
-                onClick={onConfirmAll}
-                disabled={!modelGroups.length}
+                onClick={() =>
+                  onConfirmAll(
+                    filteredModelGroups.map((model) => genericModelKey(model)),
+                  )
+                }
+                disabled={!filteredModelGroups.length}
               >
-                {locale === "zh-CN" ? "加入全部模型" : "Add all models"}
+                {searchTargetsModels
+                  ? locale === "zh-CN"
+                    ? "加入匹配模型"
+                    : "Add matched models"
+                  : locale === "zh-CN"
+                    ? "加入全部模型"
+                    : "Add all models"}
               </Button>
               <Button
                 type="button"
@@ -1436,9 +1554,9 @@ export function ChannelModelSyncDialog({
                             </div>
                           ))}
                           {item.success &&
-                            !item.added.length &&
-                            !item.removed.length &&
-                            !item.warning ? (
+                          !item.added.length &&
+                          !item.removed.length &&
+                          !item.warning ? (
                             <div className="text-muted-foreground">
                               {locale === "zh-CN" ? "无变更" : "No changes"}
                             </div>

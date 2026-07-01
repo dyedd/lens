@@ -4,11 +4,14 @@ import { useMemo } from "react";
 import type { ProtocolKind } from "@/lib/api";
 import {
   baseUrlLabel,
+  credentialLabel,
   type FormBaseUrl,
+  type FormCredential,
   type FormProtocolConfig,
   type Locale,
   protocolConfigDisplayName,
   protocolConfigModelKey,
+  protocolConfigSyncStatusLabel,
 } from "./shared";
 
 export type AggregatedModel = {
@@ -21,6 +24,7 @@ export type AggregatedModel = {
 export function useAggregatedModels(
   protocolConfigs: FormProtocolConfig[],
   baseUrls: FormBaseUrl[],
+  credentials: FormCredential[],
   locale: Locale,
 ): AggregatedModel[] {
   return useMemo(() => {
@@ -32,6 +36,12 @@ export function useAggregatedModels(
         sources: Set<string>;
       }
     > = {};
+    const credentialNameById = new Map(
+      credentials.map(
+        (credential, index) =>
+          [credential.id, credentialLabel(credential, index, locale)] as const,
+      ),
+    );
     protocolConfigs.forEach((protocolConfig, index) => {
       const baseUrlIndex = baseUrls.findIndex(
         (item) => item.id === protocolConfig.base_url_id,
@@ -46,6 +56,13 @@ export function useAggregatedModels(
         ? `${protocolConfigName} · ${baseUrlLabel(baseUrl, baseUrlIndex, locale)}`
         : protocolConfigName;
       protocolConfig.models.forEach((model) => {
+        const credentialName =
+          credentialNameById.get(model.credential_id) ||
+          (locale === "zh-CN" ? "未知密钥" : "Unknown key");
+        const sourceLabel = `${sourceName} · ${credentialName} · ${protocolConfigSyncStatusLabel(
+          protocolConfig,
+          locale,
+        )}`;
         const key = protocolConfigModelKey(index, protocolConfig, model);
         if (!aggregate[key]) {
           aggregate[key] = {
@@ -56,7 +73,7 @@ export function useAggregatedModels(
         }
         const modelProtocols = Array.from(new Set(model.protocols));
         modelProtocols.forEach((p) => aggregate[key].protocols.add(p));
-        aggregate[key].sources.add(sourceName);
+        aggregate[key].sources.add(sourceLabel);
       });
     });
     return Object.entries(aggregate).map(
@@ -67,5 +84,5 @@ export function useAggregatedModels(
         sources: Array.from(sources),
       }),
     );
-  }, [baseUrls, protocolConfigs, locale]);
+  }, [baseUrls, credentials, protocolConfigs, locale]);
 }

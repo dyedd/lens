@@ -5,6 +5,7 @@ from sqlalchemy import update
 from ...core.runtime_channel_ids import compose_runtime_channel_id
 from .shared import (
     AsyncSession,
+    ModelGroupEntity,
     ModelGroupItemEntity,
     ProtocolKind,
     SiteBaseUrl,
@@ -137,7 +138,7 @@ class ChannelUpsertsMixin:
         disabled_credential_ids: set[str],
     ) -> set[str]:
         protocol_config_ids: set[str] = set()
-        protocol_config_keys: set[tuple[str, ProtocolKind]] = set()
+        protocol_config_keys: set[tuple[str, str, ProtocolKind]] = set()
         for protocol_config in protocol_configs:
             protocol_config_id = protocol_config.id or str(uuid.uuid4())
             protocol_config_ids.add(protocol_config_id)
@@ -161,11 +162,16 @@ class ChannelUpsertsMixin:
                     f"{protocol_config_id}"
                 )
             for protocol in input_protocols:
-                protocol_config_key = (protocol_config.base_url_id, protocol)
+                protocol_config_key = (
+                    protocol_config.base_url_id,
+                    protocol_config.credential_id,
+                    protocol,
+                )
                 if protocol_config_key in protocol_config_keys:
                     raise ValueError(
                         "Duplicate protocol config for "
                         f"base_url_id={protocol_config.base_url_id} "
+                        f"credential_id={protocol_config.credential_id} "
                         f"protocol={protocol.value}"
                     )
                 protocol_config_keys.add(protocol_config_key)

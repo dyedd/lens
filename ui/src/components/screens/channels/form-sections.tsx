@@ -1,15 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import {
   ChevronDown,
-  Ellipsis,
   Plus,
   RefreshCcw,
+  Search,
+  Settings,
   Trash2,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import {
   Field,
@@ -20,6 +22,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -34,20 +41,190 @@ import { cn } from "@/lib/utils";
 import {
   activeBaseUrlValue,
   baseUrlLabel,
-  compactProtocolLabel,
   credentialLabel,
   defaultProtocolConfigName,
   formBaseUrlsForPayload,
   FormProtocolConfig,
   FormState,
   HeaderItem,
+  classifyModelQueryInput,
+  isValidModelQueryRegex,
   Locale,
-  modelSupportedProtocols,
-  protocolBadgeClassName,
   protocolConfigCredentialKeys,
-  protocolLabel,
+  protocolConfigSelectedCredentialIds,
   resolveBaseUrlId,
 } from "./shared";
+
+type CredentialOption = {
+  id: string;
+  display_name: string;
+  enabled: boolean;
+  api_key: string;
+};
+
+function CredentialMultiSelect({
+  value,
+  options,
+  locale,
+  invalid,
+  onChange,
+}: {
+  value: string[];
+  options: CredentialOption[];
+  locale: Locale;
+  invalid: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const optionById = new Map(options.map((item) => [item.id, item]));
+  const selectedInOrder = [
+    ...options.filter((item) => value.includes(item.id)).map((item) => item.id),
+    ...value.filter((id) => !optionById.has(id)),
+  ];
+  const selectedOptions = selectedInOrder.map((id) => ({
+    id,
+    label:
+      optionById.get(id)?.display_name ||
+      (locale === "zh-CN" ? "未知密钥" : "Unknown key"),
+    available:
+      Boolean(optionById.get(id)?.enabled) &&
+      Boolean(optionById.get(id)?.api_key.trim()),
+  }));
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredOptions = normalizedSearchQuery
+    ? options.filter((item) =>
+        [item.display_name, item.id].some((text) =>
+          text.toLowerCase().includes(normalizedSearchQuery),
+        ),
+      )
+    : options;
+  const multiColumn = filteredOptions.length > 4;
+
+  const toggle = (id: string) => {
+    onChange(
+      value.includes(id) ? value.filter((item) => item !== id) : [...value, id],
+    );
+  };
+
+  return (
+    <Popover
+      onOpenChange={(open) => {
+        if (!open) setSearchQuery("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          aria-invalid={invalid || undefined}
+          className={cn(
+            "w-full justify-between px-3 font-normal",
+            selectedOptions.length === 0 && "text-muted-foreground",
+          )}
+        >
+          {selectedOptions.length ? (
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+              {selectedOptions.slice(0, 2).map((item) => (
+                <span
+                  key={item.id}
+                  className={cn(
+                    "truncate text-xs",
+                    item.available
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {item.label}
+                </span>
+              ))}
+              {selectedOptions.length > 2 ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  +{selectedOptions.length - 2}
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            <span className="truncate">
+              {locale === "zh-CN" ? "选择密钥" : "Select keys"}
+            </span>
+          )}
+          <ChevronDown className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className={cn(
+          "p-2",
+          multiColumn
+            ? "w-80"
+            : "w-max min-w-[var(--radix-popover-trigger-width)]",
+        )}
+      >
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            className="h-8 pl-8"
+            placeholder={locale === "zh-CN" ? "搜索密钥" : "Search keys"}
+          />
+        </div>
+        {filteredOptions.length ? (
+          <div className={cn("grid gap-1", multiColumn && "grid-cols-2")}>
+            {filteredOptions.map((item) => {
+              const checked = value.includes(item.id);
+              const available = item.enabled && item.api_key.trim();
+              const checkboxId = `credential-opt-${item.id}`;
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted"
+                >
+                  <Checkbox
+                    id={checkboxId}
+                    checked={checked}
+                    onCheckedChange={() => toggle(item.id)}
+                  />
+                  <label
+                    htmlFor={checkboxId}
+                    className="min-w-0 flex-1 cursor-pointer truncate"
+                  >
+                    {item.display_name}
+                  </label>
+                  {!available ? (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {locale === "zh-CN" ? "不可用" : "Unavailable"}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+            {locale === "zh-CN" ? "没有匹配密钥" : "No matching keys"}
+          </div>
+        )}
+        {selectedOptions.length ? (
+          <div className="mt-2 flex items-center justify-between border-t pt-2 text-xs text-muted-foreground">
+            <span>
+              {locale === "zh-CN"
+                ? `已选 ${selectedOptions.length} 个`
+                : `${selectedOptions.length} selected`}
+            </span>
+            <button
+              type="button"
+              className="text-foreground hover:underline"
+              onClick={() => onChange([])}
+            >
+              {locale === "zh-CN" ? "清空" : "Clear"}
+            </button>
+          </div>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function ProtocolConfigItem({
   form,
@@ -73,7 +250,7 @@ export function ProtocolConfigItem({
     patch: Partial<FormProtocolConfig>,
   ) => void;
   onRemoveProtocolConfig: (index: number) => void;
-  onAddManualModel: (index: number, credentialIds: string[]) => void;
+  onAddManualModel: (index: number) => void;
   onFetchModels: (index: number) => void;
   onOpenAdvanced: (index: number) => void;
 }) {
@@ -92,22 +269,33 @@ export function ProtocolConfigItem({
     ...item,
     display_name: credentialLabel(item, index, locale),
   }));
-  const selectedCredentialId = protocolConfig.credential_id;
-  const selectedCredentialActive = activeCredentialIds.has(selectedCredentialId);
-  const selectedCredentialKnown = credentialOptions.some(
-    (item) => item.id === selectedCredentialId,
+  const selectedCredentialIds =
+    protocolConfigSelectedCredentialIds(protocolConfig);
+  const selectedActiveCredentialIds = selectedCredentialIds.filter((id) =>
+    activeCredentialIds.has(id),
   );
-  const activeCredentialCount = activeCredentialIds.size;
-  const credentialLabelById = new Map(
-    credentialOptions.map((item) => [item.id, item.display_name]),
-  );
-  const visibleModels = protocolConfig.models.map((model, modelIndex) => ({
-    model,
-    modelIndex,
-  }));
-
+  const modelQueryInput = protocolConfig.manual_model_name.trim();
+  const modelQueryKind = classifyModelQueryInput(modelQueryInput);
+  const isRegexQuery = modelQueryKind === "regex";
+  const validRegexQuery =
+    !isRegexQuery || isValidModelQueryRegex(modelQueryInput);
+  const addModelDisabled =
+    selectedActiveCredentialIds.length === 0 ||
+    modelQueryKind !== "plain" ||
+    !protocolConfig.manual_protocols.length;
+  const fetchModelsDisabled =
+    fetchingProtocolConfigIndex === protocolConfigIndex ||
+    !activeBaseUrlValue(form, protocolConfig).trim() ||
+    selectedActiveCredentialIds.length === 0 ||
+    !protocolConfig.manual_protocols.length ||
+    modelQueryKind === "plain" ||
+    !validRegexQuery;
   return (
-    <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-4 shadow-sm">
+    <div
+      className="grid min-w-0 gap-3 border-b pb-3 last:border-b-0 last:pb-0"
+      data-protocol-config-index={protocolConfigIndex}
+      tabIndex={-1}
+    >
       <div className="flex flex-col gap-3">
         <div className="grid gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_32px_auto] xl:items-end">
           <Field>
@@ -152,37 +340,28 @@ export function ProtocolConfigItem({
             </Combobox>
           </Field>
           <Field>
-            <FieldLabel>
-              {locale === "zh-CN" ? "默认密钥" : "Default key"}
-            </FieldLabel>
-            <Combobox
-              className="w-full"
-              value={selectedCredentialId}
-              onChange={(event) => {
+            <FieldLabel>{locale === "zh-CN" ? "密钥" : "Key"}</FieldLabel>
+            <CredentialMultiSelect
+              value={selectedCredentialIds}
+              options={credentialOptions}
+              locale={locale}
+              invalid={selectedActiveCredentialIds.length === 0}
+              onChange={(next) => {
+                const nextCredentialIdSet = new Set(next);
+                const primaryCredentialId = next.includes(
+                  protocolConfig.credential_id,
+                )
+                  ? protocolConfig.credential_id
+                  : (next[0] ?? "");
                 onUpdateProtocolConfig(protocolConfigIndex, {
-                  credential_id: event.target.value,
+                  credential_id: primaryCredentialId,
+                  credential_ids: next,
+                  models: protocolConfig.models.filter((model) =>
+                    nextCredentialIdSet.has(model.credential_id),
+                  ),
                 });
               }}
-            >
-              {selectedCredentialId && !selectedCredentialKnown ? (
-                <ComboboxOption value={selectedCredentialId} disabled>
-                  {locale === "zh-CN"
-                    ? `无效密钥：${selectedCredentialId}`
-                    : `Invalid key: ${selectedCredentialId}`}
-                </ComboboxOption>
-              ) : null}
-              {credentialOptions.length ? (
-                credentialOptions.map((item) => (
-                  <ComboboxOption key={item.id} value={item.id}>
-                    {item.display_name}
-                  </ComboboxOption>
-                ))
-              ) : (
-                <ComboboxOption value="" disabled>
-                  {locale === "zh-CN" ? "暂无可用密钥" : "No available key"}
-                </ComboboxOption>
-              )}
-            </Combobox>
+            />
           </Field>
           <div className="flex h-8 w-8 items-center justify-center xl:self-end">
             <Switch
@@ -200,18 +379,26 @@ export function ProtocolConfigItem({
               variant="outline"
               size="icon"
               className="text-muted-foreground"
+              aria-label={
+                locale === "zh-CN" ? "组合设置" : "Combination settings"
+              }
+              title={locale === "zh-CN" ? "组合设置" : "Combination settings"}
               onClick={() => onOpenAdvanced(protocolConfigIndex)}
             >
-              <Ellipsis size={16} />
+              <Settings size={16} />
             </Button>
             <Button
               type="button"
               variant="outline"
               size="icon"
               className="text-destructive hover:text-destructive"
+              aria-label={
+                locale === "zh-CN" ? "删除组合" : "Delete combination"
+              }
+              title={locale === "zh-CN" ? "删除组合" : "Delete combination"}
               onClick={() => onRemoveProtocolConfig(protocolConfigIndex)}
             >
-              <X size={16} />
+              <Trash2 size={16} />
             </Button>
             <Button
               type="button"
@@ -224,7 +411,7 @@ export function ProtocolConfigItem({
                 })
               }
             >
-              <span>{locale === "zh-CN" ? "模型列表" : "Models"}</span>
+              <span>{locale === "zh-CN" ? "模型操作" : "Model actions"}</span>
               <ChevronDown
                 size={16}
                 className={cn(
@@ -239,62 +426,48 @@ export function ProtocolConfigItem({
         {protocolConfigDuplicated ? (
           <div className="text-sm text-destructive">
             {locale === "zh-CN"
-              ? "地址来源和协议重复"
-              : "Duplicate Base URL and protocols"}
+              ? "地址来源、密钥和协议重复"
+              : "Duplicate Base URL, key, and protocols"}
           </div>
         ) : null}
 
         {protocolConfig.expanded ? (
           <div className="grid gap-3 pt-1">
             <Separator />
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <FieldGroup className="gap-2">
-                <div className="text-sm font-medium text-foreground">
-                  {locale === "zh-CN" ? "手动添加模型" : "Add model manually"}
-                </div>
-                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "模型名称" : "Model name"}
-                    </FieldLabel>
-                    <Input
-                      className="w-full min-w-0"
-                      value={protocolConfig.manual_model_name}
-                      onChange={(event) =>
-                        onUpdateProtocolConfig(protocolConfigIndex, {
-                          manual_model_name: event.target.value,
-                        })
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
-                        onAddManualModel(protocolConfigIndex, [
-                          selectedCredentialId,
-                        ]);
-                      }}
-                      placeholder={
-                        locale === "zh-CN" ? "完整模型名" : "Exact model name"
-                      }
-                    />
-                  </Field>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      onAddManualModel(protocolConfigIndex, [
-                        selectedCredentialId,
-                      ])
+            <FieldGroup className="gap-3">
+              <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(180px,0.42fr)_auto_auto] lg:items-end">
+                <Field data-invalid={isRegexQuery && !validRegexQuery}>
+                  <FieldLabel>
+                    {locale === "zh-CN" ? "模型名称" : "Model name"}
+                  </FieldLabel>
+                  <Input
+                    className="w-full min-w-0"
+                    value={protocolConfig.manual_model_name}
+                    aria-invalid={isRegexQuery && !validRegexQuery}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      const nextKind = classifyModelQueryInput(nextValue);
+                      onUpdateProtocolConfig(protocolConfigIndex, {
+                        manual_model_name: nextValue,
+                        match_regex: nextKind === "plain" ? "" : nextValue,
+                        auto_sync_enabled:
+                          nextKind === "regex"
+                            ? protocolConfig.auto_sync_enabled
+                            : false,
+                      });
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" || addModelDisabled) return;
+                      event.preventDefault();
+                      onAddManualModel(protocolConfigIndex);
+                    }}
+                    placeholder={
+                      locale === "zh-CN"
+                        ? "模型名、正则，或留空"
+                        : "Model name, regex, or empty"
                     }
-                    disabled={
-                      !selectedCredentialActive ||
-                      !protocolConfig.manual_model_name.trim() ||
-                      !protocolConfig.manual_protocols.length
-                    }
-                  >
-                    <Plus data-icon="inline-start" />
-                    {locale === "zh-CN" ? "添加模型" : "Add model"}
-                  </Button>
-                </div>
+                  />
+                </Field>
                 <Field>
                   <FieldLabel>
                     {locale === "zh-CN" ? "客户端协议" : "Client protocols"}
@@ -309,78 +482,33 @@ export function ProtocolConfigItem({
                     locale={locale}
                     invalid={protocolConfig.manual_protocols.length === 0}
                   />
-                  <FieldDescription>
-                    {locale === "zh-CN"
-                      ? "手动添加的模型会使用这些协议。"
-                      : "Manually added models will use these protocols."}
-                  </FieldDescription>
                 </Field>
                 <Button
                   type="button"
-                  variant="ghost"
-                  className="justify-self-start text-muted-foreground hover:text-foreground"
-                  onClick={() =>
-                    onAddManualModel(
-                      protocolConfigIndex,
-                      Array.from(activeCredentialIds),
-                    )
-                  }
-                  disabled={
-                    activeCredentialCount === 0 ||
-                    !protocolConfig.manual_model_name.trim() ||
-                    !protocolConfig.manual_protocols.length
-                  }
+                  variant="outline"
+                  onClick={() => onAddManualModel(protocolConfigIndex)}
+                  disabled={addModelDisabled}
                 >
                   <Plus data-icon="inline-start" />
-                  {locale === "zh-CN" ? "添加到全部密钥" : "Add to all keys"}
+                  {locale === "zh-CN" ? "添加模型" : "Add model"}
                 </Button>
-              </FieldGroup>
-              <FieldGroup className="gap-2">
-                <div className="text-sm font-medium text-foreground">
-                  {locale === "zh-CN"
-                    ? "从上游获取模型"
-                    : "Fetch upstream models"}
-                </div>
-                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "模型过滤" : "Model filter"}
-                    </FieldLabel>
-                    <Input
-                      className="w-full min-w-0"
-                      value={protocolConfig.match_regex}
-                      onChange={(event) =>
-                        onUpdateProtocolConfig(protocolConfigIndex, {
-                          match_regex: event.target.value,
-                        })
-                      }
-                      placeholder={
-                        locale === "zh-CN"
-                          ? "正则表达式，留空获取全部"
-                          : "Regex, empty fetches all"
-                      }
-                    />
-                  </Field>
-                  <Button
-                    type="button"
-                    onClick={() => onFetchModels(protocolConfigIndex)}
-                    disabled={
-                      fetchingProtocolConfigIndex === protocolConfigIndex ||
-                      !activeBaseUrlValue(form, protocolConfig).trim() ||
-                      activeCredentialCount === 0
+                <Button
+                  type="button"
+                  onClick={() => onFetchModels(protocolConfigIndex)}
+                  disabled={fetchModelsDisabled}
+                >
+                  <RefreshCcw
+                    data-icon="inline-start"
+                    className={
+                      fetchingProtocolConfigIndex === protocolConfigIndex
+                        ? "animate-spin"
+                        : ""
                     }
-                  >
-                    <RefreshCcw
-                      data-icon="inline-start"
-                      className={
-                        fetchingProtocolConfigIndex === protocolConfigIndex
-                          ? "animate-spin"
-                          : ""
-                      }
-                    />
-                    {locale === "zh-CN" ? "获取模型" : "Fetch models"}
-                  </Button>
-                </div>
+                  />
+                  {locale === "zh-CN" ? "获取更多" : "Fetch more"}
+                </Button>
+              </div>
+              {isRegexQuery ? (
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm text-foreground">
                     {locale === "zh-CN" ? "自动同步" : "Auto sync"}
@@ -390,97 +518,14 @@ export function ProtocolConfigItem({
                     onCheckedChange={(checked) =>
                       onUpdateProtocolConfig(protocolConfigIndex, {
                         auto_sync_enabled: checked,
+                        match_regex: protocolConfig.manual_model_name,
                       })
                     }
+                    disabled={!validRegexQuery}
                   />
                 </div>
-              </FieldGroup>
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-medium text-foreground">
-                {locale === "zh-CN" ? "已选模型" : "Selected models"}
-              </div>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() =>
-                  onUpdateProtocolConfig(protocolConfigIndex, { models: [] })
-                }
-                disabled={!visibleModels.length}
-              >
-                <Trash2 data-icon="inline-start" />
-                {locale === "zh-CN" ? "清空全部" : "Clear all"}
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              {visibleModels.length ? (
-                <div className="flex w-full flex-col gap-1.5">
-                  {visibleModels.map(({ model, modelIndex }) => (
-                    <div
-                      key={
-                        model.id ||
-                        `${model.credential_id}-${model.model_name}-${modelIndex}`
-                      }
-                      className={cn(
-                        "flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-1.5",
-                        model.enabled
-                          ? "border-border bg-background"
-                          : "border-muted bg-muted/30 opacity-65",
-                      )}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm text-foreground">
-                          {model.model_name}
-                        </div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {credentialLabelById.get(model.credential_id) ||
-                            (locale === "zh-CN" ? "未知密钥" : "Unknown key")}
-                        </div>
-                      </div>
-                      {modelSupportedProtocols(model).map((item) => (
-                        <Badge
-                          key={item}
-                          variant="outline"
-                          title={
-                            locale === "zh-CN"
-                              ? `客户端协议：${protocolLabel(item, locale)}`
-                              : `Client protocol: ${protocolLabel(item, locale)}`
-                          }
-                          className={cn(
-                            "max-w-[140px] truncate",
-                            protocolBadgeClassName(item),
-                          )}
-                        >
-                          {compactProtocolLabel(item)}
-                        </Badge>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() =>
-                          onUpdateProtocolConfig(protocolConfigIndex, {
-                            models: protocolConfig.models.filter(
-                              (_, currentIndex) => currentIndex !== modelIndex,
-                            ),
-                          })
-                        }
-                      >
-                        <X size={14} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  {locale === "zh-CN" ? "当前没有模型" : "No models selected"}
-                </div>
-              )}
-            </div>
+              ) : null}
+            </FieldGroup>
           </div>
         ) : null}
       </div>
@@ -644,9 +689,9 @@ export function AdvancedProtocolConfigDialog({
                         headers:
                           protocolConfig.headers.length > 1
                             ? protocolConfig.headers.filter(
-                              (_, currentIndex) =>
-                                currentIndex !== headerIndex,
-                            )
+                                (_, currentIndex) =>
+                                  currentIndex !== headerIndex,
+                              )
                             : protocolConfig.headers,
                       })
                     }
