@@ -1,5 +1,6 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProtocolMultiSelect } from "@/components/ui/protocol-multi-select";
 import type { ProtocolKind } from "@/lib/api";
@@ -11,6 +12,7 @@ export function SiteModelAggregateView({
   locale,
   onChangeModelProtocols,
   onOpenModelTest,
+  onRemoveModel,
   canTestModel,
   testingDisabled,
 }: {
@@ -21,6 +23,7 @@ export function SiteModelAggregateView({
     nextProtocols: ProtocolKind[],
   ) => void;
   onOpenModelTest?: (modelKey: string) => void;
+  onRemoveModel?: (modelKey: string) => void;
   canTestModel?: (modelKey: string) => boolean;
   testingDisabled?: boolean;
 }) {
@@ -34,38 +37,53 @@ export function SiteModelAggregateView({
     );
   }
   return (
-    <div className="flex flex-col gap-2">
+    <div className="grid min-w-0">
       {models.map(({ key: modelKey, modelName, protocols, sources }) => {
         const testable = Boolean(canTestModel?.(modelKey));
         return (
           <div
             key={modelKey}
-            className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border bg-background px-3 py-2"
+            className="grid min-w-0 gap-2 border-b py-2 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(180px,0.34fr)_minmax(200px,0.42fr)_auto] md:items-center"
           >
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">
-              {modelName}
-            </span>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium">{modelName}</div>
+              <div className="truncate text-xs text-muted-foreground md:hidden">
+                {sources.join(", ")}
+              </div>
+            </div>
             <ProtocolMultiSelect
               value={protocols}
               onChange={(next) => onChangeModelProtocols?.(modelKey, next)}
               locale={locale}
-              className="w-auto min-w-[180px]"
               invalid={protocols.length === 0}
               requireAtLeastOne
             />
-            <span className="text-xs text-muted-foreground">
+            <span className="hidden truncate text-xs text-muted-foreground md:block">
               {sources.join(", ")}
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => onOpenModelTest?.(modelKey)}
-              disabled={!testable || testingDisabled}
-            >
-              {locale === "zh-CN" ? "测试" : "Test"}
-            </Button>
+            <div className="flex items-center justify-end gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => onOpenModelTest?.(modelKey)}
+                disabled={!testable || testingDisabled}
+              >
+                {locale === "zh-CN" ? "测试" : "Test"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                aria-label={locale === "zh-CN" ? "删除模型" : "Delete model"}
+                title={locale === "zh-CN" ? "删除模型" : "Delete model"}
+                onClick={() => onRemoveModel?.(modelKey)}
+              >
+                <Trash2 size={15} />
+              </Button>
+            </div>
           </div>
         );
       })}

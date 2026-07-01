@@ -1,12 +1,7 @@
 "use client";
 
-import type {
-  Dispatch,
-  FormEvent,
-  FormEventHandler,
-  SetStateAction,
-} from "react";
-import { FolderPlus, Plus, RefreshCcw, X } from "lucide-react";
+import type { Dispatch, FormEventHandler, SetStateAction } from "react";
+import { FolderPlus, Plus, RefreshCcw, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -37,8 +32,6 @@ export function ChannelEditorDialog({
   editingSiteId,
   locale,
   form,
-  newProtocolConfigName,
-  protocolConfigNameDialogOpen,
   fetchingProtocolConfigIndex,
   duplicatedProtocolConfigKeys,
   batchTestOptions,
@@ -50,8 +43,6 @@ export function ChannelEditorDialog({
   setDialogOpen,
   setEditingSiteId,
   setForm,
-  setNewProtocolConfigName,
-  setProtocolConfigNameDialogOpen,
   setAdvancedProtocolConfigIndex,
   submit,
   addBaseUrl,
@@ -59,8 +50,7 @@ export function ChannelEditorDialog({
   removeBaseUrl,
   updateCredential,
   removeCredential,
-  openAddProtocolConfigDialog,
-  addProtocolConfigWithName,
+  addProtocolConfig,
   updateProtocolConfig,
   addManualProtocolConfigModel,
   fetchProtocolModels,
@@ -68,6 +58,8 @@ export function ChannelEditorDialog({
   openBatchModelTestDialog,
   updateModelProtocols,
   openAggregateModelTest,
+  removeAggregateModel,
+  clearAggregateModels,
   closeEditor,
 }: {
   dialogOpen: boolean;
@@ -75,8 +67,6 @@ export function ChannelEditorDialog({
   editingSiteId: string | null;
   locale: Locale;
   form: FormState;
-  newProtocolConfigName: string;
-  protocolConfigNameDialogOpen: boolean;
   fetchingProtocolConfigIndex: number | null;
   duplicatedProtocolConfigKeys: Set<string>;
   batchTestOptions: BatchModelTestOption[];
@@ -88,8 +78,6 @@ export function ChannelEditorDialog({
   setDialogOpen: Dispatch<SetStateAction<boolean>>;
   setEditingSiteId: Dispatch<SetStateAction<string | null>>;
   setForm: Dispatch<SetStateAction<FormState>>;
-  setNewProtocolConfigName: Dispatch<SetStateAction<string>>;
-  setProtocolConfigNameDialogOpen: Dispatch<SetStateAction<boolean>>;
   setAdvancedProtocolConfigIndex: Dispatch<SetStateAction<number | null>>;
   submit: FormEventHandler<HTMLFormElement>;
   addBaseUrl: () => void;
@@ -97,16 +85,12 @@ export function ChannelEditorDialog({
   removeBaseUrl: (index: number) => void;
   updateCredential: (index: number, patch: Partial<FormCredential>) => void;
   removeCredential: (index: number) => void;
-  openAddProtocolConfigDialog: () => void;
-  addProtocolConfigWithName: (event: FormEvent<HTMLFormElement>) => void;
+  addProtocolConfig: () => void;
   updateProtocolConfig: (
     index: number,
     patch: Partial<FormProtocolConfig>,
   ) => void;
-  addManualProtocolConfigModel: (
-    protocolConfigIndex: number,
-    credentialIds: string[],
-  ) => void;
+  addManualProtocolConfigModel: (protocolConfigIndex: number) => void;
   fetchProtocolModels: (protocolConfigIndex: number) => void;
   openModelGroupEnsureDialog: () => void;
   openBatchModelTestDialog: () => void;
@@ -115,6 +99,8 @@ export function ChannelEditorDialog({
     nextProtocols: ProtocolKind[],
   ) => void;
   openAggregateModelTest: (modelKey: string) => void;
+  removeAggregateModel: (modelKey: string) => void;
+  clearAggregateModels: () => void;
   closeEditor: () => void;
 }) {
   return (
@@ -360,13 +346,13 @@ export function ChannelEditorDialog({
                     type="button"
                     variant="outline"
                     className="justify-start border-dashed"
-                    onClick={openAddProtocolConfigDialog}
+                    onClick={addProtocolConfig}
                   >
                     <Plus data-icon="inline-start" />
                     {locale === "zh-CN" ? "增加一个组合" : "Add combination"}
                   </Button>
                 </div>
-                <div className="flex flex-col gap-4">
+                <div className="grid gap-3">
                   {form.protocolConfigs.map(
                     (protocolConfig, protocolConfigIndex) => (
                       <ProtocolConfigItem
@@ -388,8 +374,8 @@ export function ChannelEditorDialog({
                             protocolConfigs:
                               current.protocolConfigs.length > 1
                                 ? current.protocolConfigs.filter(
-                                  (_, currentIndex) => currentIndex !== index,
-                                )
+                                    (_, currentIndex) => currentIndex !== index,
+                                  )
                                 : current.protocolConfigs,
                           }))
                         }
@@ -402,10 +388,21 @@ export function ChannelEditorDialog({
                 </div>
                 <div className="mt-4">
                   <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-sm font-medium text-foreground">
+                    <div className="text-base font-semibold text-foreground">
                       {locale === "zh-CN" ? "模型总览" : "Model Overview"}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={clearAggregateModels}
+                        disabled={!overviewModels.length}
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        {locale === "zh-CN" ? "清空" : "Clear"}
+                      </Button>
                       <Button
                         type="button"
                         variant="outline"
@@ -460,6 +457,7 @@ export function ChannelEditorDialog({
                     locale={locale}
                     onChangeModelProtocols={updateModelProtocols}
                     onOpenModelTest={openAggregateModelTest}
+                    onRemoveModel={removeAggregateModel}
                     canTestModel={(modelKey) =>
                       modelTestOptionByKey.has(modelKey)
                     }
@@ -480,43 +478,6 @@ export function ChannelEditorDialog({
                   : locale === "zh-CN"
                     ? "创建渠道"
                     : "Create channel"}
-              </Button>
-            </div>
-          </form>
-        </AppDialogContent>
-      </Dialog>
-      <Dialog
-        open={protocolConfigNameDialogOpen}
-        onOpenChange={setProtocolConfigNameDialogOpen}
-      >
-        <AppDialogContent
-          className="max-w-md"
-          title={locale === "zh-CN" ? "命名组合" : "Name combination"}
-        >
-          <form className="grid gap-4" onSubmit={addProtocolConfigWithName}>
-            <Field>
-              <FieldLabel htmlFor="new-protocol-config-name">
-                {locale === "zh-CN" ? "组合名称" : "Combination name"}
-              </FieldLabel>
-              <Input
-                id="new-protocol-config-name"
-                value={newProtocolConfigName}
-                autoFocus
-                onChange={(event) =>
-                  setNewProtocolConfigName(event.target.value)
-                }
-              />
-            </Field>
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setProtocolConfigNameDialogOpen(false)}
-              >
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button type="submit">
-                {locale === "zh-CN" ? "创建组合" : "Create combination"}
               </Button>
             </div>
           </form>
