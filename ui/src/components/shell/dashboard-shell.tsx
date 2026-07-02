@@ -173,7 +173,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     staleTime: 5 * 60_000,
   });
   useEffect(() => {
-    hydrateProtocolConversions(appInfo?.protocol_conversions);
+    if (appInfo?.protocol_conversions) {
+      hydrateProtocolConversions(appInfo.protocol_conversions);
+    }
   }, [appInfo?.protocol_conversions]);
   const { data: versionCheck } = useQuery({
     queryKey: ["version-check"],
