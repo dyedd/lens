@@ -1,21 +1,25 @@
 from __future__ import annotations
 
-from .runtime_context import (
-    Any,
+from time import perf_counter
+from typing import Any
+
+import httpx
+from fastapi import HTTPException
+
+from ...core.config import settings
+from ...models import (
     ChannelConfig,
-    HTTPException,
     ProtocolKind,
     SiteModelTestRequest,
     SiteModelTestResult,
-    UpstreamRequest,
-    UpstreamRequestError,
-    app_state,
-    build_upstream_request,
-    httpx,
-    perf_counter,
-    resolve_upstream_proxy_url,
-    settings,
 )
+from ..upstreams import (
+    UpstreamRequest,
+    build_upstream_request,
+    resolve_upstream_proxy_url,
+)
+from .runtime_types import UpstreamRequestError
+from .state import app_state
 from .upstream_http import (
     _default_lens_user_agent,
     _format_channel_error,

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from .runtime_context import (
-    Any,
-    Mapping,
-    ProtocolKind,
-    StreamCapture,
-    httpx,
-    json,
-)
+import json
+from collections.abc import Mapping
+from typing import Any
+
+import httpx
+
+from ...models import ProtocolKind
+from .runtime_types import StreamCapture
 
 
 def _usage_mapping(value: Any, key: str = "usage") -> Mapping[str, Any]:

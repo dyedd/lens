@@ -1,28 +1,31 @@
 from __future__ import annotations
 
-from .runtime_context import (
-    Any,
-    Depends,
-    GatewayApiKey,
-    HTTPException,
-    ModelGroup,
-    ProtocolKind,
-    Request,
-    Response,
-    UploadFile,
-    app_state,
-    can_reach_protocol,
-)
-from .auth import _gateway_key_allows_model
+from typing import Any
+
+from fastapi import Depends, HTTPException, Request, Response, UploadFile
+
+from ...models import GatewayApiKey, ModelGroup, ProtocolKind
+from ..converters import can_reach_protocol
+from .state import app_state
+from .auth import _gateway_key_allows_model, get_current_gateway_key
 from .upstream_http import _forward_anthropic_headers
 from .proxy_flow import _proxy_protocol
-from .auth import get_current_gateway_key
+
+
+async def _read_json_object(request: Request, body_name: str) -> dict[str, Any]:
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{body_name} request body must be a JSON object",
+        )
+    return body
 
 
 async def proxy_openai_chat(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
-    body = await request.json()
+    body = await _read_json_object(request, "Chat completion")
     return await _proxy_protocol(
         ProtocolKind.OPENAI_CHAT,
         body,
@@ -34,7 +37,7 @@ async def proxy_openai_chat(
 async def proxy_openai_responses(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
-    body = await request.json()
+    body = await _read_json_object(request, "Responses")
     return await _proxy_protocol(
         ProtocolKind.OPENAI_RESPONSES,
         body,
@@ -46,7 +49,7 @@ async def proxy_openai_responses(
 async def proxy_anthropic_messages(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
-    body = await request.json()
+    body = await _read_json_object(request, "Anthropic messages")
     return await _proxy_protocol(
         ProtocolKind.ANTHROPIC,
         body,
@@ -59,12 +62,7 @@ async def proxy_anthropic_messages(
 async def proxy_openai_embeddings(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPException(
-            status_code=400,
-            detail="Embeddings request body must be a JSON object",
-        )
+    body = await _read_json_object(request, "Embeddings")
     body.pop("stream", None)
     return await _proxy_protocol(
         ProtocolKind.OPENAI_EMBEDDING,
@@ -77,12 +75,7 @@ async def proxy_openai_embeddings(
 async def proxy_rerank(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPException(
-            status_code=400,
-            detail="Rerank request body must be a JSON object",
-        )
+    body = await _read_json_object(request, "Rerank")
     body.pop("stream", None)
     return await _proxy_protocol(
         ProtocolKind.RERANK,
@@ -95,7 +88,7 @@ async def proxy_rerank(
 async def proxy_openai_image_generations(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
-    body = await request.json()
+    body = await _read_json_object(request, "Image generations")
     return await _proxy_protocol(
         ProtocolKind.OPENAI_IMAGE,
         body,
@@ -275,7 +268,7 @@ async def proxy_gemini_generate_content(
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> Response:
-    body = await request.json()
+    body = await _read_json_object(request, "Gemini generateContent")
     body = {**body, "model": model_name, "stream": False}
     return await _proxy_protocol(
         ProtocolKind.GEMINI,
@@ -290,7 +283,7 @@ async def proxy_gemini_stream_generate_content(
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> Response:
-    body = await request.json()
+    body = await _read_json_object(request, "Gemini streamGenerateContent")
     body = {**body, "model": model_name, "stream": True}
     return await _proxy_protocol(
         ProtocolKind.GEMINI,

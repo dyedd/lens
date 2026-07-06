@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-from .runtime_context import (
+import asyncio
+from time import perf_counter
+
+from fastapi import HTTPException
+from starlette.background import BackgroundTask
+
+from ...core.config import settings
+from ...models import ProtocolKind, RequestLogLifecycleStatus
+from ..converters import convert_request, needs_conversion
+from .runtime_types import (
     AttemptLog,
-    BackgroundTask,
-    HTTPException,
-    ProtocolKind,
-    RequestLogLifecycleStatus,
     UpstreamRequestError,
     _RequestDeadline,
     _attempt_logs_to_dicts,
-    app_state,
-    asyncio,
-    convert_request,
-    logger,
-    needs_conversion,
-    perf_counter,
-    settings,
 )
+from .state import app_state, logger
 from .auth import _gateway_key_allows_model
 from .errors import (
     _apply_router_runtime_settings,
@@ -33,7 +32,7 @@ from .proxy_upstream import (
     _prepare_channel_request,
     _record_target_failure,
 )
-from .request_logger import _RequestLogger, _update_request_log
+from .request_logger import _RequestLogger
 from .routing_plan import (
     _apply_deepseek_thinking_compat,
     _apply_global_param_override,
@@ -77,36 +76,28 @@ async def _proxy_protocol(
     is_stream_body = bool(body.get("stream"))
     requested_model = body.get("model")
     if not isinstance(requested_model, str) or not requested_model.strip():
-        request_log = await app_state.request_log_store.create_pending_request_log(
-            protocol=protocol.value,
+        log_ctx = await _create_pending_proxy_log_context(
+            protocol=protocol,
             user_agent=upstream_user_agent,
+            gateway_key=gateway_key,
+            started_at=started_at,
+            body=body,
             requested_group_name=None,
-            resolved_group_name=None,
-            upstream_model_name=None,
-            channel_id=None,
-            channel_name=None,
-            gateway_key_id=gateway_key.id,
             is_stream=is_stream_body,
             request_content=request_content,
         )
-        await _update_request_log(
-            request_log.id,
-            protocol=protocol,
+        await log_ctx.update(
             requested_group_name=None,
             resolved_group_name=None,
             upstream_model_name=None,
-            channel_id=None,
-            channel_name=None,
-            gateway_key=gateway_key,
+            channel=None,
             user_agent=upstream_user_agent,
             lifecycle_status=RequestLogLifecycleStatus.FAILED,
             status_code=400,
             success=False,
             is_stream=is_stream_body,
             first_token_latency_ms=0,
-            latency_ms=_elapsed_ms(started_at),
             request_content=request_content,
-            attempts=[],
             error_message="Request model is required",
         )
         return _protocol_error_response(
@@ -116,35 +107,39 @@ async def _proxy_protocol(
             message="Request model is required",
         )
     requested_model = requested_model.strip()
+    plan: RoutingPlan | None = None
+    log_ctx = await _create_pending_proxy_log_context(
+        protocol=protocol,
+        user_agent=upstream_user_agent,
+        gateway_key=gateway_key,
+        started_at=started_at,
+        body=body,
+        requested_group_name=requested_model,
+        is_stream=is_stream_body,
+        request_content=request_content,
+    )
     if not _gateway_key_allows_model(gateway_key, requested_model):
+        error_message = "Gateway API key is not allowed to use this model"
+        await log_ctx.update(
+            requested_group_name=requested_model,
+            resolved_group_name=None,
+            upstream_model_name=None,
+            channel=None,
+            user_agent=upstream_user_agent,
+            lifecycle_status=RequestLogLifecycleStatus.FAILED,
+            status_code=403,
+            success=False,
+            is_stream=is_stream_body,
+            first_token_latency_ms=0,
+            request_content=request_content,
+            error_message=error_message,
+        )
         return _protocol_error_response(
             protocol=protocol,
             status_code=403,
             error_type="forbidden_model",
-            message="Gateway API key is not allowed to use this model",
+            message=error_message,
         )
-    plan: RoutingPlan | None = None
-    request_log = await app_state.request_log_store.create_pending_request_log(
-        protocol=protocol.value,
-        user_agent=upstream_user_agent,
-        requested_group_name=requested_model,
-        resolved_group_name=None,
-        upstream_model_name=None,
-        channel_id=None,
-        channel_name=None,
-        gateway_key_id=gateway_key.id,
-        is_stream=is_stream_body,
-        request_content=request_content,
-    )
-    log_ctx = _RequestLogger(
-        request_log_id=request_log.id,
-        protocol=protocol,
-        gateway_key=gateway_key,
-        started_at=started_at,
-        body=body,
-        request_content=request_content,
-        attempts=[],
-    )
     try:
         plan, selection, routing_error = await _resolve_proxy_route(
             channels=channels,
@@ -226,6 +221,40 @@ async def _proxy_protocol(
             error_message=f"Unexpected proxy error: {type(exc).__name__}: {exc}",
         )
         raise
+
+
+async def _create_pending_proxy_log_context(
+    *,
+    protocol: ProtocolKind,
+    user_agent: str,
+    gateway_key: GatewayApiKey,
+    started_at: float,
+    body: dict[str, Any],
+    requested_group_name: str | None,
+    is_stream: bool,
+    request_content: str | None,
+) -> _RequestLogger:
+    request_log = await app_state.request_log_store.create_pending_request_log(
+        protocol=protocol.value,
+        user_agent=user_agent,
+        requested_group_name=requested_group_name,
+        resolved_group_name=None,
+        upstream_model_name=None,
+        channel_id=None,
+        channel_name=None,
+        gateway_key_id=gateway_key.id,
+        is_stream=is_stream,
+        request_content=request_content,
+    )
+    return _RequestLogger(
+        request_log_id=request_log.id,
+        protocol=protocol,
+        gateway_key=gateway_key,
+        started_at=started_at,
+        body=body,
+        request_content=request_content,
+        attempts=[],
+    )
 
 
 async def _resolve_proxy_route(
