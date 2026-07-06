@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from .runtime_context import (
-    Any,
-    ProtocolKind,
-    deepcopy,
-    json,
-)
+import json
+from copy import deepcopy
+from typing import Any
+
+from ...models import ProtocolKind
 from .payload_serialization import _dump_log_json
 from .usage import _parse_sse_payloads
 

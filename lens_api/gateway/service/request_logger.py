@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from .runtime_context import (
-    Any,
-    AttemptLog,
+from dataclasses import dataclass
+from typing import Any
+
+from ...models import (
     ChannelConfig,
     GatewayApiKey,
     ProtocolKind,
     RequestLogLifecycleStatus,
+)
+from .runtime_types import (
+    AttemptLog,
     UpstreamResult,
     _attempt_logs_to_dicts,
-    app_state,
-    dataclass,
 )
+from .state import app_state
 from .routing_plan import _elapsed_ms
 
 

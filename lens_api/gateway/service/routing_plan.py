@@ -1,25 +1,21 @@
 from __future__ import annotations
 
-from .runtime_context import (
-    Any,
-    AsyncIterator,
-    ChannelConfig,
-    Mapping,
-    ProtocolKind,
-    RouteTarget,
-    RoutingPlan,
-    UpstreamRequestError,
-    _RequestDeadline,
-    app_state,
-    asynccontextmanager,
-    asyncio,
-    can_reach_protocol,
-    deepcopy,
-    json,
-    perf_counter,
-    re,
-    urlsplit,
-)
+import json
+import re
+import asyncio
+from contextlib import asynccontextmanager
+from collections.abc import Mapping
+from collections.abc import AsyncIterator
+from copy import deepcopy
+from time import perf_counter
+from typing import Any
+from urllib.parse import urlsplit
+
+from ...models import ChannelConfig, ProtocolKind
+from ..converters import can_reach_protocol
+from ..router import RouteTarget
+from .runtime_types import RoutingPlan, UpstreamRequestError, _RequestDeadline
+from .state import app_state
 
 
 async def _resolve_routing_plan(

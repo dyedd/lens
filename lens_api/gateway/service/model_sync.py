@@ -4,8 +4,11 @@ import re
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
+from fastapi import HTTPException
+
 from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from ...models import (
+    ChannelConfig,
     ChannelModelSyncGroupChange,
     ChannelModelSyncResponse,
     ChannelModelSyncResultItem,
@@ -17,11 +20,11 @@ from ...models import (
     SiteConfig,
     SiteProtocolConfig,
 )
-from .runtime_context import ChannelConfig, HTTPException, logger
+from .state import logger
 from .upstream_http import _fetch_upstream_models
 
 if TYPE_CHECKING:
-    from .runtime_context import AppState
+    from .state import AppState
 
 
 def _compile_sync_filter_regex(query: str) -> re.Pattern[str] | None:

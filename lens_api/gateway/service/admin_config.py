@@ -1,22 +1,22 @@
 from __future__ import annotations
 
-from .runtime_context import (
-    Any,
-    BOOLEAN_SETTING_KEYS,
-    BackupStore,
+import json
+from datetime import datetime
+from typing import Any
+
+from fastapi import Depends, File, Response, UploadFile
+from fastapi.responses import JSONResponse
+
+from ...core.time_zone import resolve_time_zone
+from ...models import (
     ConfigBackupDump,
     ConfigImportResult,
     CronjobItem,
     CronjobRunResult,
     CronjobUpdate,
-    Depends,
-    FLOAT_SETTING_KEYS,
-    File,
     GatewayApiKey,
     GatewayApiKeyCreate,
     GatewayApiKeyUpdate,
-    INTEGER_SETTING_KEYS,
-    JSONResponse,
     ModelGroup,
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
@@ -27,25 +27,41 @@ from .runtime_context import (
     ModelPriceItem,
     ModelPriceListResponse,
     ModelPriceUpdate,
-    Response,
+    SettingItem,
+    SettingsUpdate,
+    normalize_upstream_headers_config_json,
+    normalize_upstream_param_override_config_json,
+)
+from ...persistence.backup_store import BackupStore
+from ...persistence.shared import (
+    SETTING_CIRCUIT_BREAKER_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_THRESHOLD,
+    SETTING_HEALTH_MIN_SAMPLES,
+    SETTING_HEALTH_PENALTY_WEIGHT,
+    SETTING_HEALTH_WINDOW_SECONDS,
+    SETTING_RELAY_LOG_BODY_ENABLED,
+    SETTING_RELAY_LOG_KEEP_PERIOD,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
     SETTING_UPSTREAM_HEADERS_CONFIG,
     SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
-    SettingItem,
-    SettingsUpdate,
-    UploadFile,
-    _read_system_version,
-    app_state,
-    datetime,
-    json,
-    normalize_upstream_headers_config_json,
-    normalize_upstream_param_override_config_json,
-    resolve_time_zone,
 )
+from .state import _read_system_version, app_state
 from .tasks import _sync_group_prices
 from .auth import get_current_admin
+
+INTEGER_SETTING_KEYS = {
+    SETTING_RELAY_LOG_KEEP_PERIOD,
+    SETTING_CIRCUIT_BREAKER_THRESHOLD,
+    SETTING_CIRCUIT_BREAKER_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
+    SETTING_HEALTH_WINDOW_SECONDS,
+    SETTING_HEALTH_MIN_SAMPLES,
+}
+FLOAT_SETTING_KEYS = {SETTING_HEALTH_PENALTY_WEIGHT}
+BOOLEAN_SETTING_KEYS = {SETTING_RELAY_LOG_BODY_ENABLED}
 
 
 async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGroup]:

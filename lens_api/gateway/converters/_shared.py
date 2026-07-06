@@ -20,20 +20,25 @@ async def _parse_chat_sse_stream(
     raw_iterator: AsyncIterator[bytes],
 ) -> AsyncIterator[dict[str, Any]]:
     buffer = b""
-    async for chunk in raw_iterator:
-        buffer += chunk
-        while b"\n" in buffer:
-            line, buffer = buffer.split(b"\n", 1)
-            line_str = line.decode("utf-8", errors="replace").strip()
-            if not line_str.startswith("data:"):
-                continue
-            data_str = line_str[5:].strip()
-            if data_str == "[DONE]":
-                return
-            try:
-                yield json.loads(data_str)
-            except json.JSONDecodeError as exc:
-                raise ValueError("Invalid stream JSON") from exc
+    try:
+        async for chunk in raw_iterator:
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                line_str = line.decode("utf-8", errors="replace").strip()
+                if not line_str.startswith("data:"):
+                    continue
+                data_str = line_str[5:].strip()
+                if data_str == "[DONE]":
+                    return
+                try:
+                    yield json.loads(data_str)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("Invalid stream JSON") from exc
+    finally:
+        aclose = getattr(raw_iterator, "aclose", None)
+        if aclose is not None:
+            await aclose()
 
 
 def _build_chat_tool_call(call_id: str, name: str, arguments: str) -> dict[str, Any]:

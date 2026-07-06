@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from .runtime_context import (
-    AppState,
-    UTC,
+from datetime import UTC, datetime
+
+from ...core.model_prices import (
     build_group_price_payloads,
     build_models_dev_price_index,
-    datetime,
 )
+from .state import AppState
 
 
 async def _sync_group_prices(state: AppState, overwrite_existing: bool = False) -> None:

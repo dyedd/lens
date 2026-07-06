@@ -5,7 +5,6 @@ from sqlalchemy import update
 from ...core.runtime_channel_ids import compose_runtime_channel_id
 from .shared import (
     AsyncSession,
-    ModelGroupEntity,
     ModelGroupItemEntity,
     ProtocolKind,
     SiteBaseUrl,
