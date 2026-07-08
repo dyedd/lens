@@ -8,7 +8,6 @@ class Settings(BaseSettings):
     auth_secret_key: str = ""
     auth_access_token_minutes: int = 60 * 12
     request_timeout_seconds: float = 180.0
-    connect_timeout_seconds: float = 10.0
     max_request_body_bytes: int = 32_000_000
     max_connections: int = 200
     max_keepalive_connections: int = 50
