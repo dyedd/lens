@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import Depends, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, HTTPException, Request, Response
+from starlette.datastructures import UploadFile
 
 from ...models import GatewayApiKey, ModelGroup, ProtocolKind
 from ..converters import can_reach_protocol
