@@ -26,15 +26,6 @@ export function credentialDisplayLabel(
   return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
 }
 
-/** Format a localized credential number label. */
-export function credentialNumberLabel(
-  item: Pick<FormItem | ModelGroupCandidateItem, "credential_number">,
-  locale: "zh-CN" | "en-US",
-) {
-  const number = item.credential_number > 0 ? item.credential_number : 1;
-  return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
-}
-
 /** Format the source channel label for a folded member. */
 export function foldedMemberSourceLabel(
   member: FoldedMember,
@@ -43,7 +34,7 @@ export function foldedMemberSourceLabel(
   const channelNames = Array.from(
     new Set(member.subItems.map((item) => item.channel_name).filter(Boolean)),
   );
-  const credentialLabel = credentialNumberLabel(member, locale);
+  const credentialLabel = credentialDisplayLabel(member, locale);
   return [...channelNames, credentialLabel].join(" · ");
 }
 

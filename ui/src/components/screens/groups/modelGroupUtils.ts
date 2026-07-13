@@ -77,6 +77,7 @@ export type GroupSort =
   | "name-asc"
   | "name-desc";
 export type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, "">;
+export type MemberStatusFilter = "all" | "enabled" | "disabled";
 
 export type GroupRow = ModelGroup & {
   member_count: number;
@@ -110,7 +111,17 @@ export function buildCandidateHaystack(
   const channel = channelMap.get(item.channel_id);
   const channelName = channel?.name || item.channel_name;
   const endpoint = item.base_url || channelEndpoint(channel);
-  return `${item.model_name} ${channelName} ${protocolLabel(item.protocol, locale)} ${credentialDisplayLabel(item, locale)} ${item.credential_name} ${endpoint}`;
+  const credentialNumber =
+    channel?.credential_number_by_id.get(item.credential_id) ??
+    item.credential_number;
+  const credentialLabel = credentialDisplayLabel(
+    {
+      credential_name: item.credential_name,
+      credential_number: credentialNumber,
+    },
+    locale,
+  );
+  return `${item.model_name} ${channelName} ${protocolLabel(item.protocol, locale)} ${credentialLabel} ${item.credential_name} ${endpoint}`;
 }
 
 /** Compile a case-insensitive candidate search pattern when valid. */
@@ -173,8 +184,8 @@ export function candidatePayloadToFormItems(
   channelMap?: Map<string, ProtocolMeta>,
 ): FormItem[] {
   return candidate.items.map((payloadItem) => {
-    const channelName =
-      channelMap?.get(payloadItem.channel_id)?.name || candidate.channel_name;
+    const channel = channelMap?.get(payloadItem.channel_id);
+    const channelName = channel?.name || candidate.channel_name;
     return {
       channel_id: payloadItem.channel_id,
       channel_name: channelName,
@@ -185,7 +196,9 @@ export function candidatePayloadToFormItems(
       ),
       credential_id: payloadItem.credential_id,
       credential_name: candidate.credential_name,
-      credential_number: candidate.credential_number,
+      credential_number:
+        channel?.credential_number_by_id.get(payloadItem.credential_id) ??
+        candidate.credential_number,
       model_name: payloadItem.model_name,
       enabled: true,
     };
@@ -200,6 +213,7 @@ export type ProtocolMeta = {
   protocol: ProtocolKind;
   enabled: boolean;
   credential_enabled_by_id: Map<string, boolean>;
+  credential_number_by_id: Map<string, number>;
   model_enabled_by_key: Map<string, boolean>;
 };
 

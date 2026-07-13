@@ -36,7 +36,7 @@ export function GroupsScreen() {
   const members = useGroupMembers(
     editor.form,
     editor.setForm,
-    editor.showEnabledOnly,
+    editor.memberStatusFilter,
   );
   const candidates = useGroupCandidates({
     candidateResponse: queries.candidateQuery.data,
@@ -137,9 +137,11 @@ export function GroupsScreen() {
             candidateListError={candidateListError}
             invalidSelectedMemberCount={members.invalidSelectedMemberCount}
             removeInvalidItems={members.removeInvalidItems}
+            removeDisabledMembers={members.removeDisabledMembers}
+            clearMembers={members.clearMembers}
             setAllMembersEnabled={members.setAllMembersEnabled}
-            showEnabledOnly={editor.showEnabledOnly}
-            setShowEnabledOnly={editor.setShowEnabledOnly}
+            memberStatusFilter={editor.memberStatusFilter}
+            setMemberStatusFilter={editor.setMemberStatusFilter}
             visibleFoldedMembers={members.visibleFoldedMembers}
             draggingIndex={editor.draggingIndex}
             toggleFoldedMember={members.toggleFoldedMember}

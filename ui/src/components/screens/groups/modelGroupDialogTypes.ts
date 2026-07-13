@@ -9,6 +9,7 @@ import type {
   CandidateSearchMode,
   FoldedMember,
   FormState,
+  MemberStatusFilter,
 } from "./modelGroupUtils";
 
 export interface GroupEditorDialogProps {
@@ -43,9 +44,11 @@ export interface GroupEditorDialogProps {
   candidateListError: unknown;
   invalidSelectedMemberCount: number;
   removeInvalidItems: () => void;
+  removeDisabledMembers: () => void;
+  clearMembers: () => void;
   setAllMembersEnabled: (enabled: boolean) => void;
-  showEnabledOnly: boolean;
-  setShowEnabledOnly: Dispatch<SetStateAction<boolean>>;
+  memberStatusFilter: MemberStatusFilter;
+  setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
   visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
   draggingIndex: number | null;
   toggleFoldedMember: (foldKey: string, enabled: boolean) => void;

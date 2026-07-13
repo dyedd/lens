@@ -31,6 +31,11 @@ export function buildGroupChannelMap(sites: Site[]) {
           ] as const,
       ),
     );
+    const credentialNumberById = new Map(
+      site.credentials.map(
+        (credential, index) => [credential.id, index + 1] as const,
+      ),
+    );
     for (const protocolConfig of site.protocols) {
       const baseUrl = site.base_urls.find(
         (item) => item.id === protocolConfig.base_url_id,
@@ -56,6 +61,7 @@ export function buildGroupChannelMap(sites: Site[]) {
           protocol,
           enabled: isChannelEnabled,
           credential_enabled_by_id: credentialEnabledById,
+          credential_number_by_id: credentialNumberById,
           model_enabled_by_key: modelEnabledByKey,
         });
       }
