@@ -9,26 +9,28 @@ import {
   protocolConfigIdFromChannelId,
   type FormItem,
   type FormState,
+  type MemberStatusFilter,
 } from "./modelGroupUtils";
 
 /** Derive folded members and manage editor member operations. */
 export function useGroupMembers(
   form: FormState,
   setForm: Dispatch<SetStateAction<FormState>>,
-  showEnabledOnly: boolean,
+  memberStatusFilter: MemberStatusFilter,
 ) {
   const foldedMembers = useMemo(
     () => foldGroupMembers(form.items, form.protocols),
     [form.items, form.protocols],
   );
   const visibleFoldedMembers = useMemo(() => {
-    if (!showEnabledOnly) {
-      return foldedMembers.map((member, index) => ({ member, index }));
-    }
-    return foldedMembers.flatMap((member, index) =>
-      member.enabled ? [{ member, index }] : [],
-    );
-  }, [foldedMembers, showEnabledOnly]);
+    return foldedMembers.flatMap((member, index) => {
+      const isVisible =
+        memberStatusFilter === "all" ||
+        (memberStatusFilter === "enabled" && member.enabled) ||
+        (memberStatusFilter === "disabled" && !member.enabled);
+      return isVisible ? [{ member, index }] : [];
+    });
+  }, [foldedMembers, memberStatusFilter]);
   const invalidSelectedMemberCount = useMemo(
     () => foldedMembers.filter((member) => member.invalid).length,
     [foldedMembers],
@@ -100,10 +102,39 @@ export function useGroupMembers(
     });
   }
 
+  function clearMembers() {
+    setForm((current) =>
+      current.items.length ? { ...current, items: [] } : current,
+    );
+  }
+
   function setAllMembersEnabled(enabled: boolean) {
+    setForm((current) => {
+      if (!current.items.some((item) => item.enabled !== enabled)) {
+        return current;
+      }
+      return {
+        ...current,
+        items: current.items.map((item) => ({ ...item, enabled })),
+      };
+    });
+  }
+
+  function removeDisabledMembers() {
+    const disabledKeys = new Set(
+      foldedMembers
+        .filter((member) => !member.enabled)
+        .map((member) => member.key),
+    );
+    if (!disabledKeys.size) return;
     setForm((current) => ({
       ...current,
-      items: current.items.map((item) => ({ ...item, enabled })),
+      items: current.items.filter((item) => {
+        const protocolConfigId = protocolConfigIdFromChannelId(item.channel_id);
+        return !disabledKeys.has(
+          modelFoldKey(protocolConfigId, item.credential_id, item.model_name),
+        );
+      }),
     }));
   }
 
@@ -125,9 +156,11 @@ export function useGroupMembers(
   }
 
   return {
+    clearMembers,
     foldedMembers,
     invalidSelectedMemberCount,
     moveFoldedMember,
+    removeDisabledMembers,
     removeFoldedMember,
     removeInvalidItems,
     setAllMembersEnabled,
