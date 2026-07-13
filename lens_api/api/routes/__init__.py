@@ -22,6 +22,7 @@ from . import (
 
 
 def include_routes(app: FastAPI, service_module: ModuleType) -> None:
+    """Register all public, administrative, proxy, and UI routes on the app."""
     for module in (
         public,
         admin_auth,

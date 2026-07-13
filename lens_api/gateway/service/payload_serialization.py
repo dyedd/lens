@@ -31,8 +31,8 @@ def _dump_json(value: Any) -> str | None:
 
 
 def _dump_log_json(value: Any) -> str | None:
-    sanitized, changed = _sanitize_log_payload(value)
-    return _dump_json(sanitized if changed else value)
+    sanitized, has_changed = _sanitize_log_payload(value)
+    return _dump_json(sanitized if has_changed else value)
 
 
 def _decode_content_bytes(content: bytes | None) -> str | None:
@@ -85,13 +85,13 @@ def _sanitize_log_payload(
         )
         result: dict[Any, Any] | None = None
         for item_key, item_value in value.items():
-            sanitized_value, changed = _sanitize_log_payload(
+            sanitized_value, has_changed = _sanitize_log_payload(
                 item_value,
                 key=str(item_key),
                 parent_type=next_parent_type,
                 parent_has_mime_key=next_parent_has_mime_key,
             )
-            if result is None and changed:
+            if result is None and has_changed:
                 result = dict(value)
             if result is not None:
                 result[item_key] = sanitized_value
@@ -101,13 +101,13 @@ def _sanitize_log_payload(
     if isinstance(value, list):
         result: list[Any] | None = None
         for index, item in enumerate(value):
-            sanitized_item, changed = _sanitize_log_payload(
+            sanitized_item, has_changed = _sanitize_log_payload(
                 item,
                 key=key,
                 parent_type=parent_type,
                 parent_has_mime_key=parent_has_mime_key,
             )
-            if result is None and changed:
+            if result is None and has_changed:
                 result = list(value)
             if result is not None:
                 result[index] = sanitized_item

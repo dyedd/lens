@@ -6,6 +6,7 @@ from .routes import include_routes
 
 
 def create_app(service_module: ModuleType) -> FastAPI:
+    """Create and configure the Lens FastAPI application."""
     app = FastAPI(
         title=service_module.settings.app_name, lifespan=service_module.lifespan
     )

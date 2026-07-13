@@ -13,6 +13,7 @@ JWT_ALGORITHM = "HS256"
 
 
 def hash_password(password: str) -> str:
+    """Hash a password using the configured PBKDF2 format."""
     salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac(
         "sha256",
@@ -24,10 +25,11 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    try:
-        algorithm, iterations_text, salt, digest = hashed_password.split("$", 3)
-    except ValueError:
+    """Return whether a password matches a stored PBKDF2 hash."""
+    parts = hashed_password.split("$", 3)
+    if len(parts) != 4:
         return False
+    algorithm, iterations_text, salt, digest = parts
 
     if algorithm != "pbkdf2_sha256":
         return False
@@ -42,6 +44,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(subject: str, settings: Settings) -> tuple[str, int]:
+    """Create a signed access token and return it with its lifetime."""
     if not settings.auth_secret_key.strip():
         raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
     expires_in = settings.auth_access_token_minutes * 60
@@ -58,6 +61,7 @@ def create_access_token(subject: str, settings: Settings) -> tuple[str, int]:
 
 
 def decode_access_token(token: str, settings: Settings) -> dict[str, Any]:
+    """Decode and validate a signed access token."""
     if not settings.auth_secret_key.strip():
         raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
     return jwt.decode(token, settings.auth_secret_key, algorithms=[JWT_ALGORITHM])

@@ -15,6 +15,7 @@ class Base(DeclarativeBase):
 
 
 def normalize_async_database_url(database_url: str) -> str:
+    """Normalize a database URL for the asynchronous SQLAlchemy engine."""
     normalized = database_url.strip()
     if normalized.startswith("sqlite://") and not normalized.startswith("sqlite+"):
         return normalized.replace("sqlite://", "sqlite+aiosqlite://", 1)
@@ -26,6 +27,7 @@ def normalize_async_database_url(database_url: str) -> str:
 
 
 def normalize_sync_database_url(database_url: str) -> str:
+    """Normalize a database URL for synchronous database clients."""
     normalized = normalize_async_database_url(database_url)
     if normalized.startswith("sqlite+"):
         return "sqlite://" + normalized.split("://", 1)[1]
@@ -35,6 +37,7 @@ def normalize_sync_database_url(database_url: str) -> str:
 
 
 def create_engine(database_url: str) -> AsyncEngine:
+    """Create an asynchronous database engine for the configured URL."""
     database_url = normalize_async_database_url(database_url)
     is_sqlite = database_url.startswith("sqlite")
     connect_args: dict[str, object] = {"timeout": 30} if is_sqlite else {}
@@ -57,4 +60,5 @@ def create_engine(database_url: str) -> AsyncEngine:
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Create an asynchronous session factory for an engine."""
     return async_sessionmaker(engine, expire_on_commit=False)

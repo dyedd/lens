@@ -26,6 +26,7 @@ class GatewayApiKeyRepository:
         self._session_factory = session_factory
 
     async def list_gateway_api_keys(self) -> list[GatewayApiKey]:
+        """List gateway API keys in creation order."""
         async with self._session_factory() as session:
             rows = (
                 (
@@ -41,7 +42,10 @@ class GatewayApiKeyRepository:
             )
             return [self._to_gateway_api_key(row) for row in rows]
 
-    async def get_gateway_api_key_by_secret(self, secret: str) -> GatewayApiKey | None:
+    async def find_gateway_api_key_by_secret(
+        self, secret: str
+    ) -> GatewayApiKey | None:
+        """Find a gateway API key by its secret value."""
         normalized = secret.strip()
         if not normalized:
             return None
@@ -60,6 +64,7 @@ class GatewayApiKeyRepository:
     async def create_gateway_api_key(
         self, payload: GatewayApiKeyCreate
     ) -> GatewayApiKey:
+        """Create and persist a gateway API key."""
         now = datetime.now(UTC).replace(tzinfo=None)
         async with self._session_factory() as session:
             secret = await self._generate_unique_gateway_api_key(session)
@@ -85,6 +90,7 @@ class GatewayApiKeyRepository:
     async def update_gateway_api_key(
         self, key_id: str, payload: GatewayApiKeyUpdate
     ) -> GatewayApiKey:
+        """Update a persisted gateway API key."""
         async with self._session_factory() as session:
             entity = await session.get(GatewayApiKeyEntity, key_id)
             if entity is None:
@@ -102,6 +108,7 @@ class GatewayApiKeyRepository:
             return self._to_gateway_api_key(entity)
 
     async def delete_gateway_api_key(self, key_id: str) -> None:
+        """Delete a gateway API key by identifier."""
         async with self._session_factory() as session:
             entity = await session.get(GatewayApiKeyEntity, key_id)
             if entity is None:
@@ -142,14 +149,14 @@ class GatewayApiKeyRepository:
     async def _generate_unique_gateway_api_key(cls, session: AsyncSession) -> str:
         for _ in range(10):
             secret = cls._generate_gateway_api_key()
-            exists = (
+            existing_key_id = (
                 await session.execute(
                     select(GatewayApiKeyEntity.id)
                     .where(GatewayApiKeyEntity.api_key == secret)
                     .limit(1)
                 )
             ).scalar_one_or_none()
-            if exists is None:
+            if existing_key_id is None:
                 return secret
         raise RuntimeError("Unable to generate unique gateway API key")
 

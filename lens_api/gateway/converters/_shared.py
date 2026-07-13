@@ -1,44 +1,5 @@
 import json
-from typing import Any, AsyncIterator
-
-FINISH_REASON_CHAT_TO_ANTHROPIC: dict[str | None, str] = {
-    "stop": "end_turn",
-    "length": "max_tokens",
-    "tool_calls": "tool_use",
-    "content_filter": "end_turn",
-}
-
-FINISH_REASON_CHAT_TO_RESPONSES: dict[str | None, str] = {
-    "stop": "completed",
-    "length": "incomplete",
-    "tool_calls": "completed",
-    "content_filter": "failed",
-}
-
-
-async def _parse_chat_sse_stream(
-    raw_iterator: AsyncIterator[bytes],
-) -> AsyncIterator[dict[str, Any]]:
-    buffer = b""
-    try:
-        async for chunk in raw_iterator:
-            buffer += chunk
-            while b"\n" in buffer:
-                line, buffer = buffer.split(b"\n", 1)
-                line_str = line.decode("utf-8", errors="replace").strip()
-                if not line_str.startswith("data:"):
-                    continue
-                data_str = line_str[5:].strip()
-                if data_str == "[DONE]":
-                    return
-                try:
-                    yield json.loads(data_str)
-                except json.JSONDecodeError as exc:
-                    raise ValueError("Invalid stream JSON") from exc
-    finally:
-        aclose = getattr(raw_iterator, "aclose", None)
-        if aclose is not None:
-            await aclose()
+from typing import Any
 
 
 def _build_chat_tool_call(call_id: str, name: str, arguments: str) -> dict[str, Any]:
@@ -70,10 +31,11 @@ def anthropic_content_to_chat_messages(
     *,
     preserve_thinking: bool = False,
 ) -> list[dict[str, Any]]:
+    """Convert Anthropic message content into chat messages."""
     result: list[dict[str, Any]] = []
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content")
+    for message in messages:
+        role = message.get("role", "user")
+        content = message.get("content")
 
         if not isinstance(content, list):
             result.append({"role": role, "content": content})
@@ -89,24 +51,24 @@ def anthropic_content_to_chat_messages(
         for block in content:
             if not isinstance(block, dict):
                 continue
-            bt = block.get("type")
-            if bt == "text":
+            block_type = block.get("type")
+            if block_type == "text":
                 text_parts.append(block.get("text", ""))
-            elif bt == "thinking":
+            elif block_type == "thinking":
                 has_thinking = True
                 thinking = block.get("thinking")
                 thinking_parts.append(thinking if isinstance(thinking, str) else "")
-            elif bt == "image":
+            elif block_type == "image":
                 source = block.get("source", {})
                 if source.get("type") == "base64":
-                    mt = source.get("media_type", "image/png")
+                    media_type = source.get("media_type", "image/png")
                     data = source.get("data", "")
                     image_parts.append(
-                        _build_chat_image_part(f"data:{mt};base64,{data}")
+                        _build_chat_image_part(f"data:{media_type};base64,{data}")
                     )
                 elif source.get("type") == "url":
                     image_parts.append(_build_chat_image_part(source.get("url", "")))
-            elif bt == "tool_use":
+            elif block_type == "tool_use":
                 tool_calls.append(
                     _build_chat_tool_call(
                         block.get("id", ""),
@@ -114,19 +76,19 @@ def anthropic_content_to_chat_messages(
                         json.dumps(block.get("input", {}), ensure_ascii=False),
                     )
                 )
-            elif bt == "tool_result":
-                trc = block.get("content", "")
-                if isinstance(trc, list):
-                    trc = "\n".join(
+            elif block_type == "tool_result":
+                tool_result_content = block.get("content", "")
+                if isinstance(tool_result_content, list):
+                    tool_result_content = "\n".join(
                         p.get("text", "")
-                        for p in trc
+                        for p in tool_result_content
                         if isinstance(p, dict) and p.get("type") == "text"
                     )
                 tool_results.append(
                     {
                         "role": "tool",
                         "tool_call_id": block.get("tool_use_id", ""),
-                        "content": str(trc),
+                        "content": str(tool_result_content),
                     }
                 )
 
@@ -155,37 +117,39 @@ def anthropic_content_to_chat_messages(
                 }
             )
 
-        for tr in tool_results:
-            result.append(tr)
+        for tool_result in tool_results:
+            result.append(tool_result)
 
     return result
 
 
 def anthropic_tools_to_chat_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert Anthropic tool definitions into chat tool definitions."""
     return [
         {
             "type": "function",
             "function": {
-                "name": t.get("name", ""),
-                "description": t.get("description", ""),
-                "parameters": t.get("input_schema", {}),
+                "name": tool.get("name", ""),
+                "description": tool.get("description", ""),
+                "parameters": tool.get("input_schema", {}),
             },
         }
-        for t in tools
+        for tool in tools
     ]
 
 
 def anthropic_tool_choice_to_chat(tool_choice: Any) -> Any:
+    """Convert an Anthropic tool choice into the chat format."""
     if not isinstance(tool_choice, dict):
         return None
-    ct = tool_choice.get("type", "auto")
-    if ct == "auto":
+    choice_type = tool_choice.get("type", "auto")
+    if choice_type == "auto":
         return "auto"
-    if ct == "any":
+    if choice_type == "any":
         return "required"
-    if ct == "tool":
+    if choice_type == "tool":
         return {"type": "function", "function": {"name": tool_choice.get("name", "")}}
-    if ct == "none":
+    if choice_type == "none":
         return "none"
     return "auto"
 
@@ -193,9 +157,10 @@ def anthropic_tool_choice_to_chat(tool_choice: Any) -> Any:
 def chat_tool_calls_to_anthropic_content(
     tool_calls: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Convert chat tool calls into Anthropic content blocks."""
     blocks: list[dict[str, Any]] = []
-    for tc in tool_calls:
-        func = tc.get("function", {})
+    for tool_call in tool_calls:
+        func = tool_call.get("function", {})
         try:
             parsed_input = json.loads(func.get("arguments", "{}"))
         except (json.JSONDecodeError, TypeError) as exc:
@@ -203,7 +168,7 @@ def chat_tool_calls_to_anthropic_content(
         blocks.append(
             {
                 "type": "tool_use",
-                "id": tc.get("id", ""),
+                "id": tool_call.get("id", ""),
                 "name": func.get("name", ""),
                 "input": parsed_input,
             }
@@ -214,6 +179,7 @@ def chat_tool_calls_to_anthropic_content(
 def responses_input_to_chat_messages(
     input_items: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Convert Responses API input items into chat messages."""
     result: list[dict[str, Any]] = []
     for item in input_items:
         role = item.get("role", "user")
@@ -278,6 +244,7 @@ def responses_input_to_chat_messages(
 
 
 def responses_tools_to_chat_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert Responses API tools into chat tool definitions."""
     result: list[dict[str, Any]] = []
     for tool in tools:
         if tool.get("type") != "function":
@@ -292,16 +259,3 @@ def responses_tools_to_chat_tools(tools: list[dict[str, Any]]) -> list[dict[str,
             entry["function"]["strict"] = tool["strict"]
         result.append(entry)
     return result
-
-
-def format_sse_event(event: str | None, data: dict[str, Any] | str) -> bytes:
-    lines: list[str] = []
-    if event:
-        lines.append(f"event: {event}")
-    if isinstance(data, dict):
-        lines.append(f"data: {json.dumps(data, ensure_ascii=False)}")
-    else:
-        lines.append(f"data: {data}")
-    lines.append("")
-    lines.append("")
-    return "\n".join(lines).encode("utf-8")

@@ -9,8 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ...models import CronjobItem, CronjobStatus
 from ..entities import CronjobEntity
+from .records import (
+    _apply_schedule,
+    _entity_schedule,
+    _to_item,
+    _to_record,
+    _update_run_state,
+)
 from .scheduling import (
-    decode_weekdays,
     encode_weekdays,
     next_cronjob_run_at,
     normalize_cronjob_schedule,
@@ -29,6 +35,7 @@ class CronjobStore:
         self._session_factory = session_factory
 
     async def ensure_cronjobs(self, specs: Sequence[CronjobSpec]) -> None:
+        """Create persisted records for cronjob specifications that are missing."""
         now = self._utc_now()
         async with self._session_factory() as session:
             result = await session.execute(select(CronjobEntity.id))
@@ -63,6 +70,7 @@ class CronjobStore:
     async def list_records(
         self, specs: Sequence[CronjobSpec]
     ) -> dict[str, CronjobRecord]:
+        """Return persisted cronjob records keyed by specification identifier."""
         spec_ids = [spec.id for spec in specs]
         if not spec_ids:
             return {}
@@ -71,16 +79,15 @@ class CronjobStore:
             result = await session.execute(
                 select(CronjobEntity).where(CronjobEntity.id.in_(spec_ids))
             )
-            return {
-                entity.id: self._to_record(entity) for entity in result.scalars().all()
-            }
+            return {entity.id: _to_record(entity) for entity in result.scalars().all()}
 
-    async def get_record(self, task_id: str) -> CronjobRecord | None:
+    async def find_record(self, task_id: str) -> CronjobRecord | None:
+        """Return a cronjob record by identifier when it exists."""
         async with self._session_factory() as session:
             entity = await session.get(CronjobEntity, task_id)
             if entity is None:
                 return None
-            return self._to_record(entity)
+            return _to_record(entity)
 
     async def update_cronjob(
         self,
@@ -93,6 +100,7 @@ class CronjobStore:
         weekdays: Sequence[int] | None,
         time_zone: ZoneInfo,
     ) -> CronjobRecord:
+        """Update a cronjob schedule and return its persisted record."""
         now = self._utc_now()
         async with self._session_factory() as session:
             entity = await session.get(CronjobEntity, task_id)
@@ -100,7 +108,7 @@ class CronjobStore:
                 raise KeyError(task_id)
 
             was_enabled = bool(entity.enabled)
-            current_schedule = self._entity_schedule(entity)
+            current_schedule = _entity_schedule(entity)
             next_schedule = normalize_cronjob_schedule(
                 schedule_type=schedule_type or current_schedule.schedule_type,
                 interval_hours=(
@@ -117,14 +125,14 @@ class CronjobStore:
                     weekdays if weekdays is not None else current_schedule.weekdays
                 ),
             )
-            self._apply_schedule(entity, next_schedule)
+            _apply_schedule(entity, next_schedule)
             if enabled is not None:
                 entity.enabled = 1 if enabled else 0
 
-            self._update_run_state(
+            _update_run_state(
                 entity,
                 next_schedule=next_schedule,
-                schedule_changed=next_schedule != current_schedule,
+                has_schedule_changed=next_schedule != current_schedule,
                 was_enabled=was_enabled,
                 now=now,
                 time_zone=time_zone,
@@ -132,41 +140,7 @@ class CronjobStore:
             entity.updated_at = now
             await session.commit()
             await session.refresh(entity)
-            return self._to_record(entity)
-
-    @staticmethod
-    def _apply_schedule(entity: CronjobEntity, schedule: CronjobSchedule) -> None:
-        entity.schedule_type = schedule.schedule_type
-        entity.interval_hours = schedule.interval_hours
-        entity.run_at_time = schedule.run_at_time
-        entity.weekdays_json = encode_weekdays(schedule.weekdays)
-
-    @staticmethod
-    def _update_run_state(
-        entity: CronjobEntity,
-        *,
-        next_schedule: CronjobSchedule,
-        schedule_changed: bool,
-        was_enabled: bool,
-        now: datetime,
-        time_zone: ZoneInfo,
-    ) -> None:
-        lease_active = (
-            bool(entity.lease_owner)
-            and entity.lease_until is not None
-            and entity.lease_until > now
-        )
-        if not entity.enabled:
-            entity.next_run_at = None
-            if not lease_active:
-                entity.status = CronjobStatus.DISABLED.value
-            return
-        if not was_enabled or schedule_changed or entity.next_run_at is None:
-            entity.next_run_at = next_cronjob_run_at(
-                next_schedule, now=now, time_zone=time_zone
-            )
-            if entity.status == CronjobStatus.DISABLED.value:
-                entity.status = CronjobStatus.IDLE.value
+            return _to_record(entity)
 
     async def reschedule_cronjobs(
         self,
@@ -174,6 +148,7 @@ class CronjobStore:
         *,
         time_zone: ZoneInfo,
     ) -> None:
+        """Recalculate next run times for enabled calendar cronjobs."""
         if not task_ids:
             return
         now = self._utc_now()
@@ -187,7 +162,7 @@ class CronjobStore:
             )
             for entity in result.scalars().all():
                 entity.next_run_at = next_cronjob_run_at(
-                    self._entity_schedule(entity),
+                    _entity_schedule(entity),
                     now=now,
                     time_zone=time_zone,
                 )
@@ -195,6 +170,7 @@ class CronjobStore:
             await session.commit()
 
     async def list_due_cronjob_ids(self, task_ids: Sequence[str]) -> list[str]:
+        """Return identifiers for enabled, unleased cronjobs that are due."""
         if not task_ids:
             return []
         now = self._utc_now()
@@ -226,6 +202,7 @@ class CronjobStore:
         require_enabled: bool,
         require_due: bool,
     ) -> bool:
+        """Acquire a cronjob lease when the requested conditions are satisfied."""
         now = self._utc_now()
         conditions = [
             CronjobEntity.id == task_id,
@@ -272,6 +249,7 @@ class CronjobStore:
         error: str,
         time_zone: ZoneInfo,
     ) -> CronjobRecord | None:
+        """Finish an owned cronjob lease and schedule its next run."""
         now = self._utc_now()
         async with self._session_factory() as session:
             entity = await session.get(CronjobEntity, task_id)
@@ -286,7 +264,7 @@ class CronjobStore:
             entity.last_error = error[:2000]
             entity.next_run_at = (
                 next_cronjob_run_at(
-                    self._entity_schedule(entity),
+                    _entity_schedule(entity),
                     now=now,
                     time_zone=time_zone,
                 )
@@ -298,77 +276,11 @@ class CronjobStore:
             entity.updated_at = now
             await session.commit()
             await session.refresh(entity)
-            return self._to_record(entity)
+            return _to_record(entity)
 
     def to_item(self, spec: CronjobSpec, record: CronjobRecord) -> CronjobItem:
-        now = self._utc_now()
-        lease_active = (
-            bool(record.lease_owner)
-            and record.lease_until is not None
-            and record.lease_until > now
-        )
-        if lease_active:
-            status = CronjobStatus.RUNNING
-        elif not record.enabled:
-            status = CronjobStatus.DISABLED
-        elif record.status == CronjobStatus.SUCCEEDED.value:
-            status = CronjobStatus.SUCCEEDED
-        elif record.status in (CronjobStatus.FAILED.value, CronjobStatus.RUNNING.value):
-            status = CronjobStatus.FAILED
-        else:
-            status = CronjobStatus.IDLE
-        next_run_at = None if status == CronjobStatus.DISABLED else record.next_run_at
-        return CronjobItem(
-            id=spec.id,
-            name=spec.name,
-            description=spec.description,
-            enabled=record.enabled,
-            schedule_type=record.schedule_type,
-            interval_hours=record.interval_hours,
-            run_at_time=record.run_at_time,
-            weekdays=list(record.weekdays),
-            status=status,
-            last_started_at=self._format_datetime(record.last_started_at),
-            last_finished_at=self._format_datetime(record.last_finished_at),
-            last_error=record.last_error or None,
-            next_run_at=self._format_datetime(next_run_at),
-        )
-
-    @staticmethod
-    def _to_record(entity: CronjobEntity) -> CronjobRecord:
-        schedule = CronjobStore._entity_schedule(entity)
-        return CronjobRecord(
-            id=entity.id,
-            enabled=bool(entity.enabled),
-            schedule_type=schedule.schedule_type,
-            interval_hours=schedule.interval_hours,
-            run_at_time=schedule.run_at_time,
-            weekdays=schedule.weekdays,
-            status=entity.status,
-            last_started_at=entity.last_started_at,
-            last_finished_at=entity.last_finished_at,
-            last_error=entity.last_error,
-            next_run_at=entity.next_run_at,
-            lease_owner=entity.lease_owner,
-            lease_until=entity.lease_until,
-        )
-
-    @staticmethod
-    def _entity_schedule(entity: CronjobEntity) -> CronjobSchedule:
-        return normalize_cronjob_schedule(
-            schedule_type=entity.schedule_type,
-            interval_hours=entity.interval_hours,
-            run_at_time=entity.run_at_time,
-            weekdays=decode_weekdays(entity.weekdays_json),
-        )
-
-    @staticmethod
-    def _format_datetime(value: datetime | None) -> str | None:
-        if value is None:
-            return None
-        if value.tzinfo is None:
-            return value.replace(tzinfo=UTC).isoformat()
-        return value.astimezone(UTC).isoformat()
+        """Build the API cronjob representation from a specification and record."""
+        return _to_item(spec, record, now=self._utc_now())
 
     @staticmethod
     def _utc_now() -> datetime:

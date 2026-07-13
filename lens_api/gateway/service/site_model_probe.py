@@ -13,26 +13,26 @@ from ...models import (
     SiteModelTestRequest,
     SiteModelTestResult,
 )
-from ..upstreams import (
+from ..upstream_request import (
     UpstreamRequest,
     build_upstream_request,
     resolve_upstream_proxy_url,
 )
+from .app_state import app_state
+from .payload_serialization import _decode_content_bytes
+from .routing_plan import _apply_param_override, _elapsed_ms
 from .runtime_types import UpstreamRequestError
-from .state import app_state
-from .upstream_http import (
+from .site_model_output import (
+    extract_site_model_output,
+    extract_site_model_stream_output,
+)
+from .upstream_support import (
     _default_lens_user_agent,
     _format_channel_error,
     _format_http_response_error,
     _format_transport_error,
     _resolve_http_client,
 )
-from .routing_plan import (
-    _apply_param_override,
-    _elapsed_ms,
-)
-from .usage import _parse_sse_payloads
-from .payload_serialization import _decode_content_bytes, _stringify_text_content
 
 
 def _site_model_probe_channel(payload: SiteModelTestRequest) -> ChannelConfig:
@@ -77,7 +77,7 @@ async def _call_site_model_probe_channel(
         upstream_headers_config=runtime["upstream_headers_config"],
     )
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
-    client, close_client = _resolve_http_client(proxy_url)
+    client, should_close_client = _resolve_http_client(proxy_url)
 
     started_at = perf_counter()
     try:
@@ -90,7 +90,7 @@ async def _call_site_model_probe_channel(
             started_at=started_at,
         )
     finally:
-        if close_client:
+        if should_close_client:
             await client.aclose()
 
 
@@ -115,24 +115,22 @@ async def _run_site_model_probe_request(
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             await exc.response.aread()
-            detail = _format_http_response_error(exc.response)
             return SiteModelTestResult(
                 success=False,
                 status_code=exc.response.status_code,
                 latency_ms=latency_ms,
                 model_name=model_name,
                 credential_id=credential_id,
-                error_message=detail,
+                error_message=_format_http_response_error(exc.response),
             )
         content_type = (response.headers.get("content-type") or "").lower()
         if "text/event-stream" in content_type:
             raw_content = _decode_content_bytes(response.content) or ""
-            output_text = _site_model_probe_stream_output_text(
+            output_text = extract_site_model_stream_output(
                 channel.protocol, raw_content
             )
         else:
-            raw_payload = response.json()
-            output_text = _site_model_probe_output_text(channel.protocol, raw_payload)
+            output_text = extract_site_model_output(channel.protocol, response.json())
         return SiteModelTestResult(
             success=True,
             status_code=response.status_code,
@@ -161,123 +159,6 @@ async def _run_site_model_probe_request(
         )
 
 
-def _site_model_probe_output_text(protocol: ProtocolKind, raw_payload: Any) -> str:
-    output_text = ""
-    if protocol == ProtocolKind.OPENAI_CHAT:
-        choices = raw_payload.get("choices")
-        if isinstance(choices, list):
-            for choice in choices:
-                if not isinstance(choice, dict):
-                    continue
-                message = choice.get("message")
-                if not isinstance(message, dict):
-                    continue
-                text = _stringify_text_content(message.get("content")).strip()
-                if text:
-                    output_text = text
-                    break
-    elif protocol == ProtocolKind.OPENAI_RESPONSES:
-        output_text_raw = raw_payload.get("output_text")
-        if isinstance(output_text_raw, str) and output_text_raw.strip():
-            output_text = output_text_raw.strip()
-        else:
-            output = raw_payload.get("output")
-            if isinstance(output, list):
-                parts: list[str] = []
-                for item in output:
-                    if not isinstance(item, dict):
-                        continue
-                    content = item.get("content")
-                    if not isinstance(content, list):
-                        continue
-                    for part in content:
-                        if isinstance(part, dict) and part.get("type") == "output_text":
-                            text = part.get("text")
-                            if isinstance(text, str) and text.strip():
-                                parts.append(text.strip())
-                output_text = "\n".join(parts)
-    elif protocol == ProtocolKind.OPENAI_EMBEDDING:
-        data = raw_payload.get("data")
-        if isinstance(data, list):
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                vector = item.get("embedding")
-                if isinstance(vector, list):
-                    output_text = f"<vector dim={len(vector)}>"
-                    break
-                if isinstance(vector, str) and vector:
-                    output_text = f"<vector base64 len={len(vector)}>"
-                    break
-    elif protocol == ProtocolKind.RERANK:
-        output_text = _summarize_rerank_result(raw_payload)
-    elif protocol == ProtocolKind.ANTHROPIC:
-        content = raw_payload.get("content")
-        if isinstance(content, list):
-            parts = [
-                str(item.get("text")).strip()
-                for item in content
-                if isinstance(item, dict)
-                and item.get("type") == "text"
-                and item.get("text")
-            ]
-            output_text = "\n".join(parts)
-    elif protocol == ProtocolKind.GEMINI:
-        candidates = raw_payload.get("candidates")
-        if isinstance(candidates, list):
-            for candidate in candidates:
-                if not isinstance(candidate, dict):
-                    continue
-                content = candidate.get("content")
-                if not isinstance(content, dict):
-                    continue
-                parts_list = content.get("parts")
-                if not isinstance(parts_list, list):
-                    continue
-                parts = [
-                    str(part.get("text")).strip()
-                    for part in parts_list
-                    if isinstance(part, dict) and part.get("text")
-                ]
-                if parts:
-                    output_text = "\n".join(parts)
-                    break
-    elif protocol == ProtocolKind.OPENAI_IMAGE:
-        data = raw_payload.get("data")
-        if isinstance(data, list):
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                revised = item.get("revised_prompt")
-                if isinstance(revised, str) and revised.strip():
-                    output_text = revised.strip()
-                    break
-    return output_text
-
-
-def _site_model_probe_stream_output_text(
-    protocol: ProtocolKind, raw_content: str
-) -> str:
-    if protocol != ProtocolKind.OPENAI_CHAT:
-        return ""
-
-    parts: list[str] = []
-    for payload in _parse_sse_payloads(raw_content):
-        choices = payload.get("choices")
-        if not isinstance(choices, list):
-            continue
-        for choice in choices:
-            if not isinstance(choice, dict):
-                continue
-            delta = choice.get("delta")
-            if not isinstance(delta, dict):
-                continue
-            text = _stringify_text_content(delta.get("content"))
-            if text:
-                parts.append(text)
-    return "".join(parts).strip()
-
-
 def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
     text = payload.prompt.strip()
     if payload.protocol == ProtocolKind.OPENAI_CHAT:
@@ -295,10 +176,7 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
             "stream": False,
         }
     if payload.protocol == ProtocolKind.OPENAI_EMBEDDING:
-        return {
-            "model": payload.model_name,
-            "input": text,
-        }
+        return {"model": payload.model_name, "input": text}
     if payload.protocol == ProtocolKind.OPENAI_IMAGE:
         return {
             "model": payload.model_name,
@@ -353,49 +231,6 @@ def _apply_site_model_probe_param_override(
     else:
         prepared_body["stream"] = False
     return prepared_body
-
-
-def _summarize_rerank_result(payload: Any) -> str:
-    if not isinstance(payload, dict):
-        return ""
-    results = payload.get("results")
-    if not isinstance(results, list) or not results:
-        return ""
-    top = max(
-        (item for item in results if isinstance(item, dict)),
-        key=lambda item: _coerce_relevance_score(item.get("relevance_score")),
-        default=None,
-    )
-    if top is None:
-        return ""
-    score = _coerce_relevance_score(top.get("relevance_score"))
-    index = top.get("index")
-    document = top.get("document")
-    document_text = ""
-    if isinstance(document, dict):
-        text_value = document.get("text")
-        if isinstance(text_value, str):
-            document_text = text_value
-    elif isinstance(document, str):
-        document_text = document
-    snippet = document_text.strip().replace("\n", " ")
-    if len(snippet) > 120:
-        snippet = snippet[:117] + "..."
-    parts: list[str] = [f"top score={score:.4f}"]
-    if isinstance(index, int):
-        parts.append(f"index={index}")
-    if snippet:
-        parts.append(f"document={snippet}")
-    return "; ".join(parts)
-
-
-def _coerce_relevance_score(value: Any) -> float:
-    try:
-        if value is None:
-            return float("-inf")
-        return float(value)
-    except (TypeError, ValueError):
-        return float("-inf")
 
 
 def _rerank_test_prompt(text: str) -> tuple[str, list[str]]:

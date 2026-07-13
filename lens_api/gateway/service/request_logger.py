@@ -14,7 +14,7 @@ from .runtime_types import (
     UpstreamResult,
     _attempt_logs_to_dicts,
 )
-from .state import app_state
+from .app_state import app_state
 from .routing_plan import _elapsed_ms
 
 

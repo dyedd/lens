@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,21 +14,25 @@ from .entities import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class SiteRows:
+    sites: list[SiteEntity]
+    base_urls: list[SiteBaseUrlEntity]
+    credentials: list[SiteCredentialEntity]
+    protocol_configs: list[SiteProtocolConfigEntity]
+    discovered_models: list[SiteDiscoveredModelEntity]
+
+
 async def fetch_site_rows(
     session: AsyncSession, site_ids: list[str] | None = None
-) -> tuple[
-    list[SiteEntity],
-    list[SiteBaseUrlEntity],
-    list[SiteCredentialEntity],
-    list[SiteProtocolConfigEntity],
-    list[SiteDiscoveredModelEntity],
-]:
+) -> SiteRows:
+    """Load sites and their related configuration rows in stable order."""
     site_query = select(SiteEntity).order_by(SiteEntity.name.asc())
     if site_ids is not None:
         site_query = site_query.where(SiteEntity.id.in_(site_ids))
     site_rows = (await session.execute(site_query)).scalars().all()
     if not site_rows:
-        return [], [], [], [], []
+        return SiteRows([], [], [], [], [])
 
     ids = [item.id for item in site_rows]
     base_url_rows = (
@@ -96,4 +102,10 @@ async def fetch_site_rows(
             .all()
         )
 
-    return site_rows, base_url_rows, credential_rows, protocol_rows, model_rows
+    return SiteRows(
+        sites=site_rows,
+        base_urls=base_url_rows,
+        credentials=credential_rows,
+        protocol_configs=protocol_rows,
+        discovered_models=model_rows,
+    )

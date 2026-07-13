@@ -9,7 +9,7 @@ from fastapi.security import HTTPBearer
 
 from ...core.config import settings
 from ...core.time_zone import resolve_time_zone
-from .state import AppState, app_state
+from .app_state import AppState, app_state
 
 
 async def _startup_app_state(state: AppState) -> None:

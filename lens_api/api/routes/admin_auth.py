@@ -12,7 +12,7 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
     )
     app.add_api_route(
         "/api/admin/session",
-        service_module.current_admin,
+        service_module.get_current_admin_profile,
         methods=["GET"],
         response_model=service_module.AdminProfile,
     )

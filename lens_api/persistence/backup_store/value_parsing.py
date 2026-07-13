@@ -8,6 +8,7 @@ from ..cronjob_store import decode_weekdays
 
 
 def parse_backup_datetime(value: str) -> datetime:
+    """Parse a backup timestamp into a naive UTC datetime."""
     normalized = value.strip()
     if normalized.endswith("Z"):
         normalized = normalized[:-1] + "+00:00"
@@ -18,18 +19,21 @@ def parse_backup_datetime(value: str) -> datetime:
 
 
 def parse_optional_datetime(value: str | None) -> datetime | None:
+    """Parse an optional backup timestamp."""
     if value is None or not value.strip():
         return None
     return parse_backup_datetime(value)
 
 
 def format_optional_datetime(value: datetime | None) -> str | None:
+    """Format an optional datetime as a UTC timestamp."""
     if value is None:
         return None
     return value.replace(tzinfo=UTC).isoformat()
 
 
 def load_allowed_models(raw_value: str | None) -> list[str]:
+    """Load and normalize allowed model names from stored JSON."""
     if not raw_value:
         return []
     payload = json.loads(raw_value)
@@ -47,10 +51,12 @@ def load_allowed_models(raw_value: str | None) -> list[str]:
 
 
 def load_weekdays(raw_value: str | None) -> list[int]:
+    """Load normalized cron job weekdays from stored JSON."""
     return list(decode_weekdays(raw_value))
 
 
 def parse_attempts(raw_value: str | None) -> list[RequestLogAttempt]:
+    """Parse request log attempts from stored JSON."""
     if not raw_value:
         return []
     payload = json.loads(raw_value)

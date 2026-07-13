@@ -7,7 +7,7 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route("/api/admin/sites", service_module.list_sites, methods=["GET"])
     app.add_api_route(
         "/api/admin/sites/runtime",
-        service_module.site_runtime_summaries,
+        service_module.list_site_runtime_summaries,
         methods=["GET"],
         response_model=list[service_module.SiteRuntimeSummary],
     )

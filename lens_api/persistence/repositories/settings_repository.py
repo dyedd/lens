@@ -3,8 +3,6 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 
-from pydantic import ValidationError
-
 from ...models import UpstreamHeadersConfig, UpstreamParamOverrideConfig
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -35,6 +33,21 @@ from ..shared import (
 )
 
 
+def _parse_upstream_config(
+    value: str | None,
+    config_type: type[UpstreamHeadersConfig] | type[UpstreamParamOverrideConfig],
+) -> dict[str, Any]:
+    raw_value = (value or "").strip()
+    if not raw_value:
+        config = config_type()
+    else:
+        try:
+            config = config_type.model_validate(json.loads(raw_value))
+        except (TypeError, ValueError):
+            config = config_type()
+    return config.model_dump(mode="json", by_alias=True)
+
+
 class SettingsRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         import asyncio
@@ -58,6 +71,7 @@ class SettingsRepository:
         return self._clone_settings_items(items)
 
     def invalidate_settings_cache(self) -> None:
+        """Clear cached persisted and runtime settings."""
         self._settings_cache = None
         self._settings_cache_at = 0.0
         self._runtime_settings_cache = None
@@ -77,32 +91,6 @@ class SettingsRepository:
                 upstream_param_override_config
             )
         return cloned
-
-    @staticmethod
-    def _parse_upstream_headers_config(value: str | None) -> dict[str, Any]:
-        raw_value = (value or "").strip()
-        if not raw_value:
-            config = UpstreamHeadersConfig()
-        else:
-            try:
-                payload = json.loads(raw_value)
-                config = UpstreamHeadersConfig.model_validate(payload)
-            except (TypeError, ValueError, json.JSONDecodeError, ValidationError):
-                config = UpstreamHeadersConfig()
-        return config.model_dump(mode="json", by_alias=True)
-
-    @staticmethod
-    def _parse_upstream_param_override_config(value: str | None) -> dict[str, Any]:
-        raw_value = (value or "").strip()
-        if not raw_value:
-            config = UpstreamParamOverrideConfig()
-        else:
-            try:
-                payload = json.loads(raw_value)
-                config = UpstreamParamOverrideConfig.model_validate(payload)
-            except (TypeError, ValueError, json.JSONDecodeError, ValidationError):
-                config = UpstreamParamOverrideConfig()
-        return config.model_dump(mode="json", by_alias=True)
 
     @staticmethod
     def _split_comma_lines(raw_value: str) -> list[str]:
@@ -136,6 +124,7 @@ class SettingsRepository:
         return float(value.strip())
 
     async def get_runtime_settings(self) -> dict[str, Any]:
+        """Return normalized runtime settings with short-lived caching."""
         cached = self._runtime_settings_cache
         if (
             cached is not None
@@ -184,11 +173,12 @@ class SettingsRepository:
             "model_list_compat_mode_enabled": self._parse_bool(
                 mapping.get(SETTING_MODEL_LIST_COMPAT_MODE_ENABLED), default=False
             ),
-            "upstream_headers_config": self._parse_upstream_headers_config(
-                mapping.get(SETTING_UPSTREAM_HEADERS_CONFIG)
+            "upstream_headers_config": _parse_upstream_config(
+                mapping.get(SETTING_UPSTREAM_HEADERS_CONFIG), UpstreamHeadersConfig
             ),
-            "upstream_param_override_config": self._parse_upstream_param_override_config(
-                mapping.get(SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG)
+            "upstream_param_override_config": _parse_upstream_config(
+                mapping.get(SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG),
+                UpstreamParamOverrideConfig,
             ),
             "site_name": mapping.get(SETTING_SITE_NAME, "Lens").strip() or "Lens",
             "site_logo_url": mapping.get(SETTING_SITE_LOGO_URL, "").strip(),
@@ -198,6 +188,7 @@ class SettingsRepository:
         return self._clone_runtime_settings(runtime)
 
     async def get_branding_settings(self) -> dict[str, str]:
+        """Return the public branding subset of runtime settings."""
         runtime = await self.get_runtime_settings()
         return {
             "site_name": str(runtime["site_name"]),
@@ -205,6 +196,7 @@ class SettingsRepository:
         }
 
     async def list_settings(self) -> list[SettingItem]:
+        """List persisted settings with short-lived caching."""
         cached = self._settings_cache
         if (
             cached is not None
@@ -233,6 +225,7 @@ class SettingsRepository:
             return self._store_settings_cache(items)
 
     async def upsert_settings(self, items: list[SettingItem]) -> list[SettingItem]:
+        """Create or update settings and refresh the cache."""
         if not items:
             return await self.list_settings()
         keys = [item.key for item in items]

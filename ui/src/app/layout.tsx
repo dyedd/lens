@@ -1,4 +1,4 @@
-import { AppProviders } from "@/app/providers";
+import { AppProviders } from "@/app/AppProviders";
 import { getThemeBootstrapScript } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { Metadata } from "next";

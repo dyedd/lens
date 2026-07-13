@@ -41,6 +41,7 @@ class GeminiStreamCandidate:
 
 
 def parse_chat_stream_payload(payload: dict[str, Any]) -> list[ChatStreamChoice]:
+    """Parse valid chat choices from a streaming payload."""
     choices_raw = payload.get("choices")
     if not isinstance(choices_raw, list):
         return []
@@ -84,6 +85,7 @@ def parse_chat_stream_payload(payload: dict[str, Any]) -> list[ChatStreamChoice]
 def parse_anthropic_stream_payload(
     payload: dict[str, Any],
 ) -> AnthropicStreamBlock | None:
+    """Parse an Anthropic stream block when the payload declares an event type."""
     payload_type = payload.get("type")
     if not isinstance(payload_type, str):
         return None

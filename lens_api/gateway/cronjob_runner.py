@@ -39,11 +39,13 @@ class CronjobRunner:
         self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        """Ensure cron jobs exist and start the polling loop."""
         await self._store.ensure_cronjobs(self._specs)
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
+        """Stop the polling loop if it is running."""
         if self._task is None:
             return
         self._task.cancel()
@@ -54,6 +56,7 @@ class CronjobRunner:
         self._task = None
 
     async def list_cronjobs(self) -> list[CronjobItem]:
+        """List configured cron jobs with their persisted state."""
         await self._store.ensure_cronjobs(self._specs)
         records = await self._store.list_records(self._specs)
         return [
@@ -72,6 +75,7 @@ class CronjobRunner:
         run_at_time: str | None,
         weekdays: Sequence[int] | None,
     ) -> CronjobItem:
+        """Update a cron job schedule and return its current state."""
         spec = self._specs_by_id.get(task_id)
         if spec is None:
             raise KeyError(task_id)
@@ -87,9 +91,11 @@ class CronjobRunner:
         return self._store.to_item(spec, record)
 
     async def run_cronjob_now(self, task_id: str) -> CronjobItem:
+        """Run a cron job immediately and return its resulting state."""
         return await self._run_cronjob(task_id, manual=True)
 
     async def reschedule_cronjobs(self, time_zone: ZoneInfo) -> None:
+        """Reschedule all cron jobs for a time zone."""
         await self._store.reschedule_cronjobs(
             [spec.id for spec in self._specs],
             time_zone=time_zone,
@@ -124,14 +130,14 @@ class CronjobRunner:
 
         record = await self._get_or_ensure_record(task_id)
 
-        acquired = await self._store.acquire_cronjob(
+        has_acquired_lease = await self._store.acquire_cronjob(
             task_id,
             owner=self._owner,
             lease_seconds=record.interval_hours * 60 * 60,
             require_enabled=not manual,
             require_due=not manual,
         )
-        if not acquired:
+        if not has_acquired_lease:
             raise CronjobAlreadyRunningError(task_id)
 
         error = ""
@@ -161,10 +167,10 @@ class CronjobRunner:
         return self._store.to_item(spec, finished_record)
 
     async def _get_or_ensure_record(self, task_id: str) -> CronjobRecord:
-        record = await self._store.get_record(task_id)
+        record = await self._store.find_record(task_id)
         if record is None:
             await self._store.ensure_cronjobs(self._specs)
-            record = await self._store.get_record(task_id)
+            record = await self._store.find_record(task_id)
         if record is None:
             raise KeyError(task_id)
         return record

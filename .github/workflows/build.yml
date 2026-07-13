@@ -22,7 +22,13 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .
+          python -m pip install -e ".[dev]"
+
+      - name: Compile backend
+        run: python -m compileall -q lens_api scripts migrations
+
+      - name: Test backend
+        run: python -m pytest tests -q --confcutdir=tests
 
       - name: Validate backend migrations
         env:
@@ -60,6 +66,9 @@ jobs:
 
       - name: Type check frontend
         run: pnpm exec tsc --noEmit
+
+      - name: Build frontend
+        run: pnpm build
 
   containers:
     name: Build app image (${{ matrix.platform }})

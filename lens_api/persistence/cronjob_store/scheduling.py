@@ -23,6 +23,7 @@ def normalize_cronjob_schedule(
     run_at_time: str | None,
     weekdays: Sequence[int] | None,
 ) -> CronjobSchedule:
+    """Normalize and validate a cron job schedule."""
     schedule_type_value = (schedule_type or SCHEDULE_TYPE_INTERVAL).strip()
     if schedule_type_value not in SCHEDULE_TYPES:
         raise ValueError(f"Invalid cron job type: {schedule_type_value}")
@@ -63,6 +64,7 @@ def next_cronjob_run_at(
     now: datetime,
     time_zone: ZoneInfo,
 ) -> datetime:
+    """Calculate the next UTC run time for a cron job schedule."""
     if schedule.schedule_type == SCHEDULE_TYPE_INTERVAL:
         return now + timedelta(hours=schedule.interval_hours)
 
@@ -87,6 +89,7 @@ def next_cronjob_run_at(
 
 
 def normalize_weekdays(weekdays: Sequence[int]) -> tuple[int, ...]:
+    """Normalize weekday values into a sorted unique tuple."""
     normalized: list[int] = []
     seen: set[int] = set()
     for item in weekdays:
@@ -101,10 +104,12 @@ def normalize_weekdays(weekdays: Sequence[int]) -> tuple[int, ...]:
 
 
 def encode_weekdays(weekdays: Sequence[int]) -> str:
+    """Encode normalized weekdays as compact JSON."""
     return json.dumps(list(normalize_weekdays(weekdays)), separators=(",", ":"))
 
 
 def decode_weekdays(value: str | None) -> tuple[int, ...]:
+    """Decode and normalize weekdays from stored JSON."""
     if not value:
         return ()
     try:

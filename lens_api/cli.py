@@ -15,7 +15,7 @@ from .core.config import settings
 from .core.db import create_engine, create_session_factory
 
 SOURCE_PROJECT_DIR = Path(__file__).resolve().parent.parent
-APP_IMPORT_PATH = "lens_api.gateway.service:app"
+APP_IMPORT_PATH = "lens_api.app:app"
 
 
 def _configure_asyncio_event_loop_policy() -> None:
@@ -52,14 +52,17 @@ def _alembic_cfg() -> Config:
 
 
 def db_upgrade(args: argparse.Namespace) -> None:
+    """Upgrade the database to the requested Alembic revision."""
     command.upgrade(_alembic_cfg(), args.revision)
 
 
 def db_downgrade(args: argparse.Namespace) -> None:
+    """Downgrade the database to the requested Alembic revision."""
     command.downgrade(_alembic_cfg(), args.revision)
 
 
 def db_revision(args: argparse.Namespace) -> None:
+    """Create a new Alembic migration revision."""
     command.revision(
         _alembic_cfg(),
         message=args.message,
@@ -68,18 +71,22 @@ def db_revision(args: argparse.Namespace) -> None:
 
 
 def db_current(_args: argparse.Namespace) -> None:
+    """Display the current database revision."""
     command.current(_alembic_cfg(), verbose=True)
 
 
 def db_history(_args: argparse.Namespace) -> None:
+    """Display the database migration history."""
     command.history(_alembic_cfg(), verbose=True)
 
 
 def db_stamp(args: argparse.Namespace) -> None:
+    """Stamp the database with the requested Alembic revision."""
     command.stamp(_alembic_cfg(), args.revision)
 
 
 def serve(args: argparse.Namespace) -> None:
+    """Start the Lens API server."""
     import uvicorn
 
     uvicorn.run(
@@ -91,6 +98,7 @@ def serve(args: argparse.Namespace) -> None:
 
 
 def dev(_args: argparse.Namespace) -> None:
+    """Start the API and UI development servers together."""
     project_dir = _project_dir()
     ui_dir = project_dir / "ui"
     if not ui_dir.is_dir():
@@ -169,7 +177,8 @@ def dev(_args: argparse.Namespace) -> None:
 
 
 def seed_admin(args: argparse.Namespace) -> None:
-    from .persistence.admin_repository import AdminRepository
+    """Create the initial administrator when none exists."""
+    from .persistence.repositories import AdminRepository
 
     async def _run() -> None:
         engine = create_engine(settings.database_url)
@@ -186,57 +195,66 @@ def seed_admin(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse CLI arguments and dispatch the selected Lens command."""
     _configure_asyncio_event_loop_policy()
 
     parser = argparse.ArgumentParser(prog="lens", description="Lens CLI")
-    sub = parser.add_subparsers(dest="group")
+    subparsers = parser.add_subparsers(dest="group")
 
-    db_parser = sub.add_parser("db", help="Database migration commands")
+    db_parser = subparsers.add_parser("db", help="Database migration commands")
     db_sub = db_parser.add_subparsers(dest="command")
 
-    up = db_sub.add_parser("upgrade", help="Upgrade database to a revision")
-    up.add_argument("revision", nargs="?", default="head")
-    up.set_defaults(func=db_upgrade)
+    upgrade_parser = db_sub.add_parser("upgrade", help="Upgrade database to a revision")
+    upgrade_parser.add_argument("revision", nargs="?", default="head")
+    upgrade_parser.set_defaults(func=db_upgrade)
 
     down = db_sub.add_parser("downgrade", help="Downgrade database by a revision")
     down.add_argument("revision", nargs="?", default="-1")
     down.set_defaults(func=db_downgrade)
 
-    rev = db_sub.add_parser("revision", help="Create a new migration revision")
-    rev.add_argument("-m", "--message", required=True, help="Revision message")
-    rev.add_argument(
+    revision_parser = db_sub.add_parser(
+        "revision", help="Create a new migration revision"
+    )
+    revision_parser.add_argument(
+        "-m", "--message", required=True, help="Revision message"
+    )
+    revision_parser.add_argument(
         "--autogenerate",
         action="store_true",
         default=True,
         help="Auto-detect changes (default)",
     )
-    rev.add_argument("--no-autogenerate", dest="autogenerate", action="store_false")
-    rev.set_defaults(func=db_revision)
+    revision_parser.add_argument(
+        "--no-autogenerate", dest="autogenerate", action="store_false"
+    )
+    revision_parser.set_defaults(func=db_revision)
 
-    cur = db_sub.add_parser("current", help="Show current revision")
-    cur.set_defaults(func=db_current)
+    current_parser = db_sub.add_parser("current", help="Show current revision")
+    current_parser.set_defaults(func=db_current)
 
-    hist = db_sub.add_parser("history", help="Show revision history")
-    hist.set_defaults(func=db_history)
+    history_parser = db_sub.add_parser("history", help="Show revision history")
+    history_parser.set_defaults(func=db_history)
 
-    stmp = db_sub.add_parser(
+    stamp_parser = db_sub.add_parser(
         "stamp", help="Stamp database with a revision without running migrations"
     )
-    stmp.add_argument("revision", nargs="?", default="head")
-    stmp.set_defaults(func=db_stamp)
+    stamp_parser.add_argument("revision", nargs="?", default="head")
+    stamp_parser.set_defaults(func=db_stamp)
 
-    srv = sub.add_parser("serve", help="Start the API server")
-    srv.set_defaults(func=serve)
+    serve_parser = subparsers.add_parser("serve", help="Start the API server")
+    serve_parser.set_defaults(func=serve)
 
-    dev_parser = sub.add_parser("dev", help="Start API and UI development servers")
+    dev_parser = subparsers.add_parser(
+        "dev", help="Start API and UI development servers"
+    )
     dev_parser.set_defaults(func=dev)
 
-    seed = sub.add_parser(
+    seed_admin_parser = subparsers.add_parser(
         "seed-admin", help="Create an initial admin user when none exists"
     )
-    seed.add_argument("--username", required=True, help="Admin username")
-    seed.add_argument("--password", required=True, help="Admin password")
-    seed.set_defaults(func=seed_admin)
+    seed_admin_parser.add_argument("--username", required=True, help="Admin username")
+    seed_admin_parser.add_argument("--password", required=True, help="Admin password")
+    seed_admin_parser.set_defaults(func=seed_admin)
 
     args = parser.parse_args(argv)
 
