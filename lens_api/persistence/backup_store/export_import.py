@@ -17,11 +17,9 @@ from .shared import (
 class BackupExportImportMixin:
     @staticmethod
     def parse_dump(payload: bytes) -> "ConfigBackupDump":
+        """Parse and validate a serialized configuration backup."""
         try:
             data = json.loads(payload)
-        except json.JSONDecodeError as exc:
-            raise ValueError("Invalid backup file") from exc
-        try:
             return ConfigBackupDump.model_validate(data)
         except ValueError as exc:
             raise ValueError("Invalid backup file") from exc
@@ -33,6 +31,7 @@ class BackupExportImportMixin:
         include_request_logs: bool,
         include_gateway_api_keys: bool,
     ) -> ConfigBackupDump:
+        """Export the selected persisted configuration to a backup model."""
         async with self._session_factory() as session:
             settings_rows = (
                 (
@@ -78,6 +77,7 @@ class BackupExportImportMixin:
         )
 
     async def import_dump(self, dump: ConfigBackupDump) -> ConfigImportResult:
+        """Replace persisted configuration with a validated backup."""
         if dump.version != BACKUP_DUMP_VERSION:
             raise ValueError(f"Unsupported backup version: {dump.version}")
 

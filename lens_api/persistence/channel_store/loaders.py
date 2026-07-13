@@ -13,23 +13,19 @@ class ChannelLoadersMixin:
     async def _load_sites(
         self, session: AsyncSession, site_ids: list[str] | None = None
     ) -> list[SiteConfig]:
-        (
-            site_rows,
-            base_url_rows,
-            credential_rows,
-            protocol_rows,
-            model_rows,
-        ) = await fetch_site_rows(session, site_ids=site_ids)
-        if not site_rows:
+        rows = await fetch_site_rows(session, site_ids=site_ids)
+        if not rows.sites:
             return []
 
-        base_urls_by_site = self._group_base_urls(base_url_rows)
+        base_urls_by_site = self._group_base_urls(rows.base_urls)
         credentials_by_site, credentials_by_id = self._group_credentials(
-            credential_rows
+            rows.credentials
         )
-        models_by_protocol_config = self._group_models(model_rows, credentials_by_id)
+        models_by_protocol_config = self._group_models(
+            rows.discovered_models, credentials_by_id
+        )
         protocols_by_site = self._group_protocols(
-            protocol_rows, models_by_protocol_config
+            rows.protocol_configs, models_by_protocol_config
         )
 
         return [
@@ -40,7 +36,7 @@ class ChannelLoadersMixin:
                 credentials=credentials_by_site.get(row.id, []),
                 protocols=protocols_by_site.get(row.id, []),
             )
-            for row in site_rows
+            for row in rows.sites
         ]
 
     async def _load_sites_by_ids(self, site_ids: list[str]) -> list[SiteConfig]:

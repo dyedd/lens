@@ -1,0 +1,199 @@
+import Image from "next/image";
+import { cn } from "@/lib/utils";
+
+type AvatarProps = {
+  size?: number;
+};
+
+type AvatarComponent = (props: AvatarProps) => React.JSX.Element;
+
+type BrandIconDefinition = {
+  key: string;
+  label: string;
+  prefixes: string[];
+  src: string;
+  imageClassName?: string;
+  shouldInvertInDark?: boolean;
+};
+
+const BRAND_ICONS: BrandIconDefinition[] = [
+  {
+    key: "openai",
+    label: "OpenAI",
+    prefixes: ["gpt-", "o1", "o3", "o4", "chatgpt", "openai", "text-embedding"],
+    src: "/brand-icons/gpt.svg",
+    imageClassName: "scale-[0.94]",
+    shouldInvertInDark: true,
+  },
+  {
+    key: "claude",
+    label: "Claude",
+    prefixes: ["claude", "anthropic"],
+    src: "/brand-icons/claude.svg",
+    imageClassName: "scale-[0.96]",
+    shouldInvertInDark: true,
+  },
+  {
+    key: "gemini",
+    label: "Gemini",
+    prefixes: ["gemini", "gemma", "google"],
+    src: "/brand-icons/gemini.svg",
+    imageClassName: "scale-[0.94]",
+  },
+  {
+    key: "grok",
+    label: "Grok",
+    prefixes: ["grok", "xai", "x-ai"],
+    src: "/brand-icons/grok.svg",
+    imageClassName: "scale-[0.9]",
+    shouldInvertInDark: true,
+  },
+  {
+    key: "deepseek",
+    label: "DeepSeek",
+    prefixes: ["deepseek"],
+    src: "/brand-icons/deepseek.svg",
+    imageClassName: "scale-[0.94]",
+  },
+  {
+    key: "agnes",
+    label: "Agnes",
+    prefixes: ["agnes"],
+    src: "/brand-icons/agnes.svg",
+    imageClassName: "scale-[0.94]",
+    shouldInvertInDark: true,
+  },
+  {
+    key: "qwen",
+    label: "Qwen",
+    prefixes: ["qwen", "qwq", "alibaba"],
+    src: "/brand-icons/qwen.svg",
+    imageClassName: "scale-[0.94]",
+  },
+  {
+    key: "kimi",
+    label: "Kimi",
+    prefixes: ["moonshot", "kimi"],
+    src: "/brand-icons/kimi.svg",
+    imageClassName: "scale-[0.94]",
+    shouldInvertInDark: true,
+  },
+  {
+    key: "longcat",
+    label: "LongCat",
+    prefixes: ["longcat"],
+    src: "/brand-icons/longcat.svg",
+    imageClassName: "scale-[0.94]",
+  },
+  {
+    key: "glm",
+    label: "GLM",
+    prefixes: ["glm", "chatglm", "zhipu", "z-ai", "zai-org"],
+    src: "/brand-icons/glm.svg",
+    imageClassName: "scale-[0.94]",
+    shouldInvertInDark: true,
+  },
+  {
+    key: "minimax",
+    label: "MiniMax",
+    prefixes: ["minimax", "abab", "minmax"],
+    src: "/brand-icons/minmax.svg",
+    imageClassName: "scale-[0.92]",
+  },
+  {
+    key: "mimo",
+    label: "MiMo",
+    prefixes: ["mimo", "mi-mo", "xiaomi"],
+    src: "/brand-icons/mimo.svg",
+    imageClassName: "scale-[0.92]",
+    shouldInvertInDark: true,
+  },
+];
+
+const FALLBACK_ICON: BrandIconDefinition = {
+  key: "fallback",
+  label: "",
+  prefixes: [],
+  src: "/logo.svg",
+  imageClassName: "scale-[0.72]",
+};
+
+function createAvatar(definition: BrandIconDefinition): AvatarComponent {
+  return function BrandAvatar({ size = 40 }: AvatarProps) {
+    return (
+      <span
+        className="inline-flex shrink-0 items-center justify-center"
+        style={{ width: size, height: size }}
+      >
+        <Image
+          src={definition.src}
+          alt=""
+          width={size}
+          height={size}
+          className={cn(
+            "h-full w-full object-contain",
+            definition.imageClassName,
+            definition.shouldInvertInDark && "dark:invert",
+          )}
+        />
+      </span>
+    );
+  };
+}
+
+const ICON_ENTRIES = BRAND_ICONS.map((item) => ({
+  key: item.key,
+  label: item.label,
+  prefixes: item.prefixes,
+  Avatar: createAvatar(item),
+}));
+
+const FALLBACK_AVATAR = createAvatar(FALLBACK_ICON);
+
+function normalizeModelNameForFamily(name: string) {
+  return (name.includes("/") ? name.split("/")[1] : name).trim().toLowerCase();
+}
+
+function getRawModelPrefix(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const match = /^[a-z0-9]+/.exec(normalized);
+  return match?.[0] || normalized;
+}
+
+function getModelFamilyDefinition(name: string) {
+  const normalized = normalizeModelNameForFamily(name);
+  for (const item of ICON_ENTRIES) {
+    if (item.prefixes.some((prefix) => normalized.startsWith(prefix))) {
+      return item;
+    }
+  }
+  return null;
+}
+
+/** Resolves a stable family key for a model name. */
+export function getModelFamilyKey(name: string) {
+  return getModelFamilyDefinition(name)?.key || getRawModelPrefix(name);
+}
+
+/** Resolves a display label for a model family. */
+export function getModelFamilyLabel(name: string) {
+  const definition = getModelFamilyDefinition(name);
+  if (definition) return definition.label;
+  const prefix = getRawModelPrefix(name);
+  return prefix ? prefix[0].toUpperCase() + prefix.slice(1) : prefix;
+}
+
+/** Returns the avatar component associated with a model family. */
+export function getModelGroupAvatar(name: string): AvatarComponent {
+  const definition = getModelFamilyDefinition(name);
+  if (definition) {
+    return definition.Avatar;
+  }
+  return FALLBACK_AVATAR;
+}
+
+/** Renders the family avatar for a model name. */
+export function ModelAvatar({ name, size }: { name: string; size?: number }) {
+  const avatarFn = getModelGroupAvatar(name);
+  return avatarFn({ size });
+}

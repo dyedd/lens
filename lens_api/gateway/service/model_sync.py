@@ -20,11 +20,11 @@ from ...models import (
     SiteConfig,
     SiteProtocolConfig,
 )
-from .state import logger
-from .upstream_http import _fetch_upstream_models
+from .app_state import logger
+from .model_discovery import _fetch_upstream_models
 
 if TYPE_CHECKING:
-    from .state import AppState
+    from .app_state import AppState
 
 
 def _compile_sync_filter_regex(query: str) -> re.Pattern[str] | None:
@@ -111,6 +111,7 @@ def _skipped_item(
 async def sync_channel_models(
     state: "AppState", *, dry_run: bool
 ) -> ChannelModelSyncResponse:
+    """Synchronize configured channel models and report the resulting changes."""
     sites = await state.channel_store.list_sites()
     groups = await state.group_repo.list_groups()
     items: list[ChannelModelSyncResultItem] = []
@@ -203,9 +204,7 @@ async def sync_channel_models(
             synced += 1
             warning = ""
             if suspect_protocols:
-                protocols_label = ", ".join(
-                    sorted(p.value for p in suspect_protocols)
-                )
+                protocols_label = ", ".join(sorted(p.value for p in suspect_protocols))
                 warning = (
                     "upstream returned no models for "
                     f"[{protocols_label}]; kept existing models to avoid data loss"

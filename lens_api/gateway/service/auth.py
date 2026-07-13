@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ...core.auth import create_access_token, decode_access_token
 from ...core.config import settings
-from ...core.protocol_reachability import conversion_matrix
+from ...core.protocol_reachability import build_protocol_conversion_matrix
 from ...models import (
     AdminLoginRequest,
     AdminPasswordChangeRequest,
@@ -29,13 +29,14 @@ from ...persistence.shared import (
     SETTING_LATEST_VERSION_URL,
     SETTING_VERSION_CHECK_AT,
 )
-from .state import _read_system_version, app_state, logger
+from .app_state import _read_system_version, app_state, logger
 from .lifecycle import auth_scheme
 
 
 async def get_current_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(auth_scheme),
 ) -> AdminUserEntity:
+    """Authenticate and return the active administrative user."""
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
@@ -51,7 +52,7 @@ async def get_current_admin(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
 
-    admin = await app_state.admin_repo.get_by_username(username)
+    admin = await app_state.admin_repo.find_by_username(username)
     if admin is None or admin.is_active != 1:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found"
@@ -61,6 +62,7 @@ async def get_current_admin(
 
 
 async def get_current_gateway_key(request: Request) -> GatewayApiKey:
+    """Authenticate and return the gateway API key for a request."""
     authorization = request.headers.get("authorization", "")
     x_api_key = request.headers.get("x-api-key", "")
     x_goog_api_key = request.headers.get("x-goog-api-key", "")
@@ -78,7 +80,7 @@ async def get_current_gateway_key(request: Request) -> GatewayApiKey:
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing gateway API key"
         )
 
-    gateway_key = await app_state.gateway_api_key_repo.get_gateway_api_key_by_secret(
+    gateway_key = await app_state.gateway_api_key_repo.find_gateway_api_key_by_secret(
         secret
     )
 
@@ -152,29 +154,32 @@ def _has_version_update(latest_version: str, current_version: str) -> bool:
         return False
 
 
-async def public_branding() -> PublicBranding:
+async def get_public_branding() -> PublicBranding:
+    """Return public site branding settings."""
     branding = await app_state.settings_repo.get_branding_settings()
     return PublicBranding(
         site_name=branding["site_name"], logo_url=branding["site_logo_url"]
     )
 
 
-async def app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
+async def get_app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
+    """Return administrative application metadata and capabilities."""
     runtime = await app_state.settings_repo.get_runtime_settings()
     return AppInfo(
         system_version=_read_system_version(),
         site_name=str(runtime["site_name"]),
         logo_url=str(runtime["site_logo_url"]),
         time_zone=str(runtime["time_zone"]),
-        protocol_conversions=conversion_matrix(),
+        protocol_conversions=build_protocol_conversion_matrix(),
     )
 
 
 async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResult:
+    """Return the latest stored application update status."""
     current_version = _read_system_version()
 
     settings = await app_state.settings_repo.list_settings()
-    settings_dict = {s.key: s.value for s in settings}
+    settings_dict = {setting.key: setting.value for setting in settings}
 
     latest_version = settings_dict.get(SETTING_LATEST_VERSION, "")
     latest_url = settings_dict.get(SETTING_LATEST_VERSION_URL, "")
@@ -192,6 +197,7 @@ async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResu
 
 
 async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
+    """Authenticate an administrator and issue an access token."""
     user = await app_state.admin_repo.authenticate(payload.username, payload.password)
     if user is None:
         raise HTTPException(
@@ -205,9 +211,10 @@ async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
     return AuthTokenResponse(access_token=access_token, expires_in=expires_in)
 
 
-async def current_admin(
+async def get_current_admin_profile(
     admin: AdminUserEntity = Depends(get_current_admin),
 ) -> AdminProfile:
+    """Return the authenticated administrator profile."""
     return AdminProfile(id=admin.id, username=admin.username)
 
 
@@ -215,6 +222,7 @@ async def update_profile(
     payload: AdminProfileUpdateRequest,
     admin: AdminUserEntity = Depends(get_current_admin),
 ) -> AdminProfileUpdateResponse:
+    """Update the administrator profile and issue a replacement token."""
     normalized_username = payload.username.strip()
     if not normalized_username:
         raise HTTPException(status_code=400, detail="Username is required")
@@ -240,6 +248,7 @@ async def change_password(
     payload: AdminPasswordChangeRequest,
     admin: AdminUserEntity = Depends(get_current_admin),
 ) -> Response:
+    """Change the authenticated administrator password."""
     await app_state.admin_repo.update_password(
         admin.username, payload.current_password, payload.new_password
     )

@@ -2,19 +2,22 @@ import uuid
 from typing import Any, AsyncIterator
 
 from ._shared import (
-    FINISH_REASON_CHAT_TO_ANTHROPIC,
-    _parse_chat_sse_stream,
     anthropic_content_to_chat_messages,
     anthropic_tool_choice_to_chat,
     anthropic_tools_to_chat_tools,
     chat_tool_calls_to_anthropic_content,
+)
+from ._sse import (
+    FINISH_REASON_CHAT_TO_ANTHROPIC,
     format_sse_event,
+    parse_chat_sse_stream,
 )
 
 
 def anthropic_request_to_chat(
     body: dict[str, Any], *, preserve_thinking: bool = False
 ) -> dict[str, Any]:
+    """Convert an Anthropic request into a chat request."""
     chat: dict[str, Any] = {}
 
     messages: list[dict[str, Any]] = []
@@ -46,9 +49,9 @@ def anthropic_request_to_chat(
     if "tools" in body:
         chat["tools"] = anthropic_tools_to_chat_tools(body["tools"])
     if "tool_choice" in body:
-        tc = anthropic_tool_choice_to_chat(body["tool_choice"])
-        if tc is not None:
-            chat["tool_choice"] = tc
+        tool_choice = anthropic_tool_choice_to_chat(body["tool_choice"])
+        if tool_choice is not None:
+            chat["tool_choice"] = tool_choice
 
     return chat
 
@@ -56,6 +59,7 @@ def anthropic_request_to_chat(
 def chat_response_to_anthropic(
     chat_body: dict[str, Any], original_model: str
 ) -> dict[str, Any]:
+    """Convert a chat response into an Anthropic response."""
     choice = (chat_body.get("choices") or [{}])[0]
     message = choice.get("message", {})
     finish_reason = choice.get("finish_reason")
@@ -92,9 +96,10 @@ async def chat_stream_to_anthropic_stream(
     raw_iterator: AsyncIterator[bytes],
     original_model: str,
 ) -> AsyncIterator[bytes]:
+    """Convert a chat SSE stream into an Anthropic SSE stream."""
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
     output_tokens = 0
-    text_started = False
+    has_text_started = False
     thinking_index: int | None = None
     tool_index: dict[str, int] = {}
     next_block_index = 0
@@ -118,7 +123,7 @@ async def chat_stream_to_anthropic_stream(
     )
     yield format_sse_event("ping", {"type": "ping"})
 
-    async for payload in _parse_chat_sse_stream(raw_iterator):
+    async for payload in parse_chat_sse_stream(raw_iterator):
         usage = payload.get("usage") or {}
         if usage.get("completion_tokens"):
             output_tokens = usage["completion_tokens"]
@@ -156,8 +161,8 @@ async def chat_stream_to_anthropic_stream(
                     )
 
             if text_delta:
-                if not text_started:
-                    text_started = True
+                if not has_text_started:
+                    has_text_started = True
                     yield format_sse_event(
                         "content_block_start",
                         {
@@ -177,12 +182,12 @@ async def chat_stream_to_anthropic_stream(
                 )
 
             if tc_deltas:
-                for tc in tc_deltas:
-                    call_id = tc.get("id") or ""
-                    tc_idx = tc.get("index", 0)
+                for tool_call in tc_deltas:
+                    call_id = tool_call.get("id") or ""
+                    tc_idx = tool_call.get("index", 0)
                     key = call_id or str(tc_idx)
                     if key not in tool_index:
-                        func = tc.get("function", {})
+                        func = tool_call.get("function", {})
                         tool_index[key] = next_block_index
                         next_block_index += 1
                         yield format_sse_event(
@@ -198,7 +203,7 @@ async def chat_stream_to_anthropic_stream(
                                 },
                             },
                         )
-                    args_delta = (tc.get("function") or {}).get("arguments", "")
+                    args_delta = (tool_call.get("function") or {}).get("arguments", "")
                     if args_delta:
                         yield format_sse_event(
                             "content_block_delta",

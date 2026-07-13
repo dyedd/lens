@@ -2,16 +2,16 @@ import time
 import uuid
 from typing import Any, AsyncIterator
 
-from ._shared import (
+from ._shared import responses_input_to_chat_messages, responses_tools_to_chat_tools
+from ._sse import (
     FINISH_REASON_CHAT_TO_RESPONSES,
-    _parse_chat_sse_stream,
     format_sse_event,
-    responses_input_to_chat_messages,
-    responses_tools_to_chat_tools,
+    parse_chat_sse_stream,
 )
 
 
 def responses_request_to_chat(body: dict[str, Any]) -> dict[str, Any]:
+    """Convert a Responses API request into a chat request."""
     chat: dict[str, Any] = {}
 
     messages: list[dict[str, Any]] = []
@@ -43,6 +43,7 @@ def responses_request_to_chat(body: dict[str, Any]) -> dict[str, Any]:
 def chat_response_to_responses(
     chat_body: dict[str, Any], original_model: str
 ) -> dict[str, Any]:
+    """Convert a chat response into a Responses API response."""
     choice = (chat_body.get("choices") or [{}])[0]
     message = choice.get("message", {})
     finish_reason = choice.get("finish_reason")
@@ -69,8 +70,8 @@ def chat_response_to_responses(
 
     tool_calls = message.get("tool_calls")
     if tool_calls:
-        for tc in tool_calls:
-            func = tc.get("function", {})
+        for tool_call in tool_calls:
+            func = tool_call.get("function", {})
             output.append(
                 {
                     "id": f"fc_{uuid.uuid4().hex[:24]}",
@@ -78,13 +79,13 @@ def chat_response_to_responses(
                     "status": "completed",
                     "name": func.get("name", ""),
                     "arguments": func.get("arguments", "{}"),
-                    "call_id": tc.get("id", ""),
+                    "call_id": tool_call.get("id", ""),
                 }
             )
 
     usage = chat_body.get("usage", {})
-    inp = usage.get("prompt_tokens", 0)
-    out = usage.get("completion_tokens", 0)
+    input_tokens = usage.get("prompt_tokens", 0)
+    output_tokens = usage.get("completion_tokens", 0)
     return {
         "id": chat_body.get("id", f"resp_{uuid.uuid4().hex[:24]}"),
         "object": "response",
@@ -93,9 +94,9 @@ def chat_response_to_responses(
         "status": status,
         "output": output,
         "usage": {
-            "input_tokens": inp,
-            "output_tokens": out,
-            "total_tokens": inp + out,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
         },
     }
 
@@ -104,12 +105,13 @@ async def chat_stream_to_responses_stream(
     raw_iterator: AsyncIterator[bytes],
     original_model: str,
 ) -> AsyncIterator[bytes]:
+    """Convert a chat SSE stream into a Responses API SSE stream."""
     resp_id = f"resp_{uuid.uuid4().hex[:24]}"
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
     resolved_model = original_model
     input_tokens = 0
     output_tokens = 0
-    text_started = False
+    has_text_started = False
     text_output_index: int | None = None
     tool_calls_by_idx: dict[int, int] = {}
     next_output_index = 0
@@ -131,7 +133,7 @@ async def chat_stream_to_responses_stream(
         },
     )
 
-    async for payload in _parse_chat_sse_stream(raw_iterator):
+    async for payload in parse_chat_sse_stream(raw_iterator):
         if payload.get("model"):
             resolved_model = payload["model"]
         usage = payload.get("usage") or {}
@@ -147,16 +149,16 @@ async def chat_stream_to_responses_stream(
             tc_deltas = delta.get("tool_calls")
 
             if text_delta:
-                if not text_started:
-                    text_started = True
+                if not has_text_started:
+                    has_text_started = True
                     text_output_index = next_output_index
-                    oi = text_output_index
+                    output_index = text_output_index
                     next_output_index += 1
                     yield format_sse_event(
                         "response.output_item.added",
                         {
                             "type": "response.output_item.added",
-                            "output_index": oi,
+                            "output_index": output_index,
                             "item": {
                                 "id": msg_id,
                                 "type": "message",
@@ -170,7 +172,7 @@ async def chat_stream_to_responses_stream(
                         "response.content_part.added",
                         {
                             "type": "response.content_part.added",
-                            "output_index": oi,
+                            "output_index": output_index,
                             "content_index": 0,
                             "part": {
                                 "type": "output_text",
@@ -190,19 +192,19 @@ async def chat_stream_to_responses_stream(
                 )
 
             if tc_deltas:
-                for tc in tc_deltas:
-                    tc_idx = tc.get("index", 0)
+                for tool_call in tc_deltas:
+                    tc_idx = tool_call.get("index", 0)
                     if tc_idx not in tool_calls_by_idx:
-                        func = tc.get("function", {})
-                        call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:24]}"
-                        oi = next_output_index
+                        func = tool_call.get("function", {})
+                        call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:24]}"
+                        output_index = next_output_index
                         next_output_index += 1
-                        tool_calls_by_idx[tc_idx] = oi
+                        tool_calls_by_idx[tc_idx] = output_index
                         yield format_sse_event(
                             "response.output_item.added",
                             {
                                 "type": "response.output_item.added",
-                                "output_index": oi,
+                                "output_index": output_index,
                                 "item": {
                                     "id": f"fc_{uuid.uuid4().hex[:24]}",
                                     "type": "function_call",
@@ -213,7 +215,7 @@ async def chat_stream_to_responses_stream(
                                 },
                             },
                         )
-                    args_delta = (tc.get("function") or {}).get("arguments", "")
+                    args_delta = (tool_call.get("function") or {}).get("arguments", "")
                     if args_delta:
                         yield format_sse_event(
                             "response.function_call_arguments.delta",

@@ -13,7 +13,7 @@ from ...core.config import settings
 from ...models import ChannelConfig, ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_response, convert_stream_iterator, needs_conversion
 from ..router import RouteTarget
-from ..upstreams import build_upstream_request, resolve_upstream_proxy_url
+from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
 from .runtime_types import (
     AttemptLog,
     RoutingPlan,
@@ -22,9 +22,9 @@ from .runtime_types import (
     UpstreamResult,
     _RequestDeadline,
 )
-from .state import app_state
+from .app_state import app_state
 from .errors import _protocol_error_response
-from .upstream_http import (
+from .upstream_support import (
     _format_channel_error,
     _format_http_response_error,
     _format_transport_error,
@@ -45,7 +45,8 @@ from .stream_logging import (
     _stream_upstream_iterator,
 )
 from .stream_restore import _distill_stream_response_content
-from .usage import _extract_response_usage, _extract_stream_usage
+from .response_usage import _extract_response_usage
+from .usage import _extract_stream_usage
 from .routing_plan import (
     _deadline_scope,
     _elapsed_ms,
@@ -190,16 +191,16 @@ async def _stream_client_iterator(
     stream: AsyncIterator[bytes],
     capture: StreamCapture,
 ) -> AsyncIterator[bytes]:
-    finished = False
+    is_finished = False
     try:
         async for chunk in stream:
             yield chunk
-        finished = True
+        is_finished = True
     except asyncio.CancelledError:
         await _cancel_stream_capture(capture, "client disconnected")
         raise
     finally:
-        if not finished and not capture.client_disconnected:
+        if not is_finished and not capture.is_client_disconnected:
             await _cancel_stream_capture(capture, "client disconnected")
 
 
@@ -264,243 +265,5 @@ async def _build_json_result(
     )
 
 
-async def _record_target_failure(
-    *,
-    target: RouteTarget,
-    channel: ChannelConfig,
-    runtime: dict[str, Any],
-    log_ctx: _RequestLogger,
-    plan: RoutingPlan,
-    errors: list[str],
-    failure_status_codes: list[int | None],
-    attempt_started_at: float,
-    effective_user_agent: str,
-    upstream_body: dict[str, Any],
-    request_content: str | None = None,
-    exc: UpstreamRequestError,
-) -> Response | None:
-    message = _format_channel_error(exc.detail)
-    log_body_enabled = bool(runtime["relay_log_body_enabled"])
-    if not exc.skip_route_failure and not _is_request_too_large_error(
-        exc.status_code, message
-    ):
-        app_state.router.record_failure(
-            channel.id,
-            message,
-            status_code=exc.router_status_code,
-            credential_id=target.credential_id,
-            channel_keys=channel.keys,
-            threshold=int(runtime["circuit_breaker_threshold"]),
-            cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
-            max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
-        )
-    errors.append(message)
-    failure_status_codes.append(exc.status_code)
-    log_ctx.attempts.append(
-        AttemptLog(
-            channel_id=channel.id,
-            channel_name=channel.name,
-            credential_id=target.credential_id,
-            credential_name=target.credential_name or "",
-            model_name=target.model_name,
-            status_code=exc.status_code,
-            success=False,
-            duration_ms=_elapsed_ms(attempt_started_at),
-            error_message=message,
-            reasoning_effort=_extract_request_reasoning_effort(
-                log_ctx.body, upstream_body
-            ),
-        )
-    )
-    await log_ctx.update(
-        requested_group_name=plan.requested_group_name,
-        resolved_group_name=plan.resolved_group_name,
-        upstream_model_name=None,
-        channel=channel,
-        user_agent=effective_user_agent,
-        lifecycle_status=RequestLogLifecycleStatus.FAILED,
-        status_code=exc.status_code,
-        success=False,
-        is_stream=bool(upstream_body.get("stream")),
-        request_content=(
-            exc.request_content
-            if exc.request_content is not None
-            else (
-                request_content
-                if request_content is not None
-                else (_dump_log_json(upstream_body) if log_body_enabled else None)
-            )
-        ),
-        error_message=message,
-    )
-    if exc.stop_fallback:
-        return _protocol_error_response(
-            protocol=log_ctx.protocol,
-            status_code=exc.status_code,
-            error_type=exc.error_type,
-            message=message,
-        )
-    return None
-
-
-def _prepare_channel_request(
-    channel: ChannelConfig,
-    body: dict[str, Any],
-    *,
-    credential_id: str | None,
-    user_agent: str | None,
-    forwarded_headers: Mapping[str, str] | None,
-    upstream_headers_config: Mapping[str, Any] | None,
-    log_body_enabled: bool,
-    path_suffix: str | None = None,
-    multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
-) -> tuple[Any, bytes, str | None]:
-    upstream = build_upstream_request(
-        channel,
-        body,
-        settings,
-        credential_id=credential_id,
-        user_agent=user_agent,
-        forwarded_headers=forwarded_headers,
-        upstream_headers_config=upstream_headers_config,
-        path_suffix=path_suffix,
-    )
-    if multipart_files is not None:
-        multipart_request = httpx.Request(
-            "POST",
-            upstream.url,
-            data=upstream.json_body,
-            files=multipart_files,
-        )
-        body_bytes = multipart_request.read()
-        upstream.headers["content-type"] = multipart_request.headers["content-type"]
-    else:
-        body_bytes = _json_body_bytes(upstream.json_body)
-    request_content = _dump_log_json(upstream.json_body) if log_body_enabled else None
-    too_large_message = _request_body_too_large_message(
-        len(body_bytes), settings.max_request_body_bytes
-    )
-    if too_large_message is not None:
-        raise UpstreamRequestError(
-            status_code=413,
-            detail=too_large_message,
-            router_status_code=None,
-            error_type="request_too_large",
-            skip_route_failure=True,
-            stop_fallback=True,
-            request_content=request_content,
-        )
-    return upstream, body_bytes, request_content
-
-
-async def _call_channel(
-    channel: ChannelConfig,
-    body: dict[str, Any],
-    upstream: Any,
-    body_bytes: bytes,
-    request_content: str | None,
-    deadline: _RequestDeadline,
-    *,
-    credential_id: str | None,
-    pricing_group_name: str | None = None,
-    client_protocol: ProtocolKind | None = None,
-    log_body_enabled: bool = False,
-    global_proxy_url: str | None = None,
-) -> UpstreamResult:
-    proxy_url = resolve_upstream_proxy_url(channel, global_proxy_url)
-    client, close_client = _resolve_http_client(proxy_url)
-    is_stream_request = bool(body.get("stream"))
-
-    try:
-        stream_started_at = perf_counter()
-        async with _deadline_scope(deadline):
-            response = await _send_upstream(
-                client, upstream, stream=is_stream_request, body_bytes=body_bytes
-            )
-        response.raise_for_status()
-
-        is_event_stream = (
-            "text/event-stream" in (response.headers.get("content-type") or "").lower()
-        )
-        if (
-            is_event_stream
-            and not is_stream_request
-            and channel.protocol == ProtocolKind.ANTHROPIC
-        ):
-            result = await _build_anthropic_sse_to_json_result(
-                response,
-                channel,
-                pricing_group_name,
-                request_content,
-                log_body_enabled,
-            )
-        elif is_event_stream:
-            result = await _build_stream_result(
-                response,
-                channel,
-                client_protocol,
-                body,
-                request_content,
-                stream_started_at,
-                log_body_enabled,
-                deadline=deadline,
-                client_to_close=client if close_client else None,
-            )
-            if close_client:
-                close_client = False
-        else:
-            result = await _build_json_result(
-                response,
-                channel,
-                client_protocol,
-                body,
-                pricing_group_name,
-                request_content,
-                log_body_enabled,
-            )
-        if not result.is_stream:
-            app_state.router.record_success(channel.id, credential_id=credential_id)
-        return result
-    except httpx.HTTPStatusError as exc:
-        await exc.response.aread()
-        detail = _format_http_response_error(exc.response)
-        raise UpstreamRequestError(
-            status_code=exc.response.status_code,
-            detail=detail,
-            router_status_code=exc.response.status_code,
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise UpstreamRequestError(
-            status_code=502,
-            detail=_format_transport_error(exc, upstream.url),
-            router_status_code=None,
-        ) from exc
-    except TimeoutError as exc:
-        raise UpstreamRequestError(
-            status_code=504,
-            detail=deadline.message(),
-            router_status_code=None,
-            error_type="gateway_timeout",
-        ) from exc
-    finally:
-        if close_client:
-            await client.aclose()
-
-
-async def _send_upstream(
-    client: httpx.AsyncClient, upstream: Any, *, stream: bool, body_bytes: bytes
-) -> httpx.Response:
-    if stream:
-        request = client.build_request(
-            upstream.method,
-            upstream.url,
-            headers=upstream.headers,
-            content=body_bytes,
-        )
-        return await client.send(request, stream=True)
-    return await client.request(
-        upstream.method,
-        upstream.url,
-        headers=upstream.headers,
-        content=body_bytes,
-    )
+from .target_failure import _record_target_failure
+from .upstream_execution import _call_channel, _prepare_channel_request

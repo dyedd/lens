@@ -6,7 +6,7 @@ from fastapi import FastAPI
 def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route(
         "/api/admin/request-logs/page",
-        service_module.request_log_page,
+        service_module.list_request_logs,
         methods=["GET"],
         response_model=service_module.RequestLogPage,
     )
@@ -18,7 +18,7 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
     )
     app.add_api_route(
         "/api/admin/request-logs/{log_id}",
-        service_module.request_log_detail,
+        service_module.get_request_log_detail,
         methods=["GET"],
         response_model=service_module.RequestLogDetail,
     )

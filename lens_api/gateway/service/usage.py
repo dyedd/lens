@@ -191,52 +191,11 @@ def _extract_stream_usage(
     return merged
 
 
-def _parse_sse_payloads(
-    raw_content: str, *, errors: list[str] | None = None
-) -> list[dict[str, Any]]:
-    normalized = _normalize_event_stream_newlines(raw_content)
-    payloads: list[dict[str, Any]] = []
-    for block in normalized.split("\n\n"):
-        data_lines = [
-            line[5:].strip() for line in block.splitlines() if line.startswith("data:")
-        ]
-        if not data_lines:
-            continue
-        joined = "\n".join(line for line in data_lines if line and line != "[DONE]")
-        if not joined:
-            continue
-        try:
-            payload = json.loads(joined)
-        except json.JSONDecodeError as exc:
-            if errors is not None:
-                errors.append(f"invalid SSE JSON: {exc.msg}")
-            continue
-        if isinstance(payload, dict):
-            payloads.append(payload)
-    return payloads
-
-
-def _parse_ndjson_payloads(
-    raw_content: str, *, errors: list[str] | None = None
-) -> list[dict[str, Any]]:
-    payloads: list[dict[str, Any]] = []
-    for line in _normalize_event_stream_newlines(raw_content).splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError as exc:
-            if errors is not None:
-                errors.append(f"invalid NDJSON: {exc.msg}")
-            continue
-        if isinstance(payload, dict):
-            payloads.append(payload)
-    return payloads
-
-
-def _normalize_event_stream_newlines(raw_content: str) -> str:
-    return raw_content.replace("\r\n", "\n").replace("\r", "\n")
+from .stream_parsing import (
+    _normalize_event_stream_newlines,
+    _parse_ndjson_payloads,
+    _parse_sse_payloads,
+)
 
 
 def _describe_stream_capture_issue(
@@ -246,9 +205,9 @@ def _describe_stream_capture_issue(
 ) -> str | None:
     issues: list[str] = []
 
-    client_disconnect_after_chat_finish = (
+    did_client_disconnect_after_chat_finish = (
         capture is not None
-        and capture.client_disconnected
+        and capture.is_client_disconnected
         and protocol == ProtocolKind.OPENAI_CHAT
         and len(capture.chat_finished_choices) >= capture.chat_expected_choices
     )
@@ -257,7 +216,7 @@ def _describe_stream_capture_issue(
         for error in capture.errors:
             if error:
                 if (
-                    client_disconnect_after_chat_finish
+                    did_client_disconnect_after_chat_finish
                     and error == "client disconnected"
                 ):
                     continue
@@ -275,13 +234,13 @@ def _describe_stream_capture_issue(
             if not has_completed:
                 issues.append("stream ended before response.completed")
 
-    if capture is not None and not capture.completed:
-        if not client_disconnect_after_chat_finish:
+    if capture is not None and not capture.is_completed:
+        if not did_client_disconnect_after_chat_finish:
             issues.append("stream did not drain to completion")
     if (
         capture is not None
-        and capture.completed
-        and not capture.saw_first_chunk
+        and capture.is_completed
+        and not capture.has_seen_first_chunk
         and protocol not in (ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK)
     ):
         issues.append("stream ended before first token")
@@ -315,32 +274,6 @@ def _extract_usage_from_payload(
             )
         if payload.get("type") == "message_delta":
             return _anthropic_usage(_usage_mapping(payload.get("usage")), model=None)
-        return _anthropic_usage(
-            _usage_mapping(payload.get("usage")), model=payload.get("model")
-        )
-    return _gemini_usage(payload)
-
-
-def _extract_response_usage(
-    protocol: ProtocolKind, response: httpx.Response, fallback_model: Any = None
-) -> dict[str, int | str | None]:
-    if protocol == ProtocolKind.RERANK:
-        empty = dict(_EMPTY_USAGE)
-        if isinstance(fallback_model, str) and fallback_model.strip():
-            empty["resolved_model"] = fallback_model.strip()
-        return empty
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise ValueError("Upstream response JSON must be an object")
-    if protocol == ProtocolKind.OPENAI_CHAT:
-        return _openai_chat_usage(payload)
-    if protocol == ProtocolKind.OPENAI_RESPONSES:
-        return _openai_responses_usage(payload, model=payload.get("model"))
-    if protocol == ProtocolKind.OPENAI_IMAGE:
-        return _openai_image_usage(payload, model=fallback_model)
-    if protocol == ProtocolKind.OPENAI_EMBEDDING:
-        return _openai_embedding_usage(payload)
-    if protocol == ProtocolKind.ANTHROPIC:
         return _anthropic_usage(
             _usage_mapping(payload.get("usage")), model=payload.get("model")
         )

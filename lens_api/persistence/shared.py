@@ -80,6 +80,7 @@ from .entities import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_PROTOCOL_KIND_BY_VALUE = {protocol.value: protocol for protocol in ProtocolKind}
 
 
 def _parse_supported_protocols_json(raw: str | None) -> list[ProtocolKind]:
@@ -92,9 +93,8 @@ def _parse_supported_protocols_json(raw: str | None) -> list[ProtocolKind]:
 
     protocols: list[ProtocolKind] = []
     for value in values:
-        try:
-            protocol = ProtocolKind(str(value))
-        except ValueError:
+        protocol = _PROTOCOL_KIND_BY_VALUE.get(str(value))
+        if protocol is None:
             continue
         if protocol not in protocols:
             protocols.append(protocol)
@@ -114,7 +114,7 @@ def _parse_group_protocols(
         if not isinstance(raw_protocols, list):
             raise ValueError("protocols_json must be a list")
         return [ProtocolKind(str(protocol)) for protocol in raw_protocols]
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+    except (TypeError, ValueError) as exc:
         _LOGGER.warning("Invalid model group protocols_json: %s", exc)
         return []
 
@@ -143,11 +143,12 @@ def _group_supports_protocol(
     entity: ModelGroupEntity | ModelGroup,
     protocol: ProtocolKind | str,
 ) -> bool:
-    try:
-        protocol_kind = (
-            protocol if isinstance(protocol, ProtocolKind) else ProtocolKind(protocol)
-        )
-    except ValueError:
+    protocol_kind = (
+        protocol
+        if isinstance(protocol, ProtocolKind)
+        else _PROTOCOL_KIND_BY_VALUE.get(protocol)
+    )
+    if protocol_kind is None:
         return False
     protocols = (
         entity.protocols

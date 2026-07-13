@@ -68,11 +68,11 @@ class _RequestDeadline:
             return None
         return max(self.timeout_seconds - (perf_counter() - self.started_at), 0.0)
 
-    def expired(self) -> bool:
+    def is_expired(self) -> bool:
         remaining = self.remaining_seconds()
         return remaining is not None and remaining <= 0
 
-    def message(self) -> str:
+    def timeout_message(self) -> str:
         timeout_seconds = float(max(self.timeout_seconds, 0))
         if timeout_seconds.is_integer():
             timeout_label = str(int(timeout_seconds))
@@ -124,7 +124,7 @@ def _attempt_logs_to_dicts(attempts: list[AttemptLog]) -> list[dict[str, Any]]:
 @dataclass(slots=True)
 class StreamCapture:
     capture_body: bool
-    saw_first_chunk: bool = False
+    has_seen_first_chunk: bool = False
     chat_expected_choices: int = 1
     chat_finished_choices: set[int] = field(default_factory=set)
     first_token_latency_ms: int = 0
@@ -132,8 +132,8 @@ class StreamCapture:
     client_response_content_chunks: list[str] = field(default_factory=list)
     event_buffer: str = ""
     event_format: str | None = None
-    completed: bool = False
-    client_disconnected: bool = False
+    is_completed: bool = False
+    is_client_disconnected: bool = False
     first_token_update_task: asyncio.Task[None] | None = None
     parse_errors: list[str] = field(default_factory=list)
     input_tokens: int = 0
