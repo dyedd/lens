@@ -5,12 +5,17 @@ from typing import Any
 from fastapi import Depends, HTTPException, Request, Response
 from starlette.datastructures import UploadFile
 
-from ...models import GatewayApiKey, ModelGroup, ProtocolKind
-from ..converters import can_reach_protocol
-from .state import app_state
-from .auth import _gateway_key_allows_model, get_current_gateway_key
-from .upstream_http import _forward_anthropic_headers
+from ...models import GatewayApiKey, ProtocolKind
+from .app_state import app_state
+from .auth import get_current_gateway_key
+from .model_list_payloads import (
+    ALL_MODEL_LIST_PROTOCOLS,
+    build_anthropic_models_payload,
+    build_gemini_models_payload,
+    build_openai_models_payload,
+)
 from .proxy_flow import _proxy_protocol
+from .upstream_support import _forward_anthropic_headers
 
 
 async def _read_json_object(request: Request, body_name: str) -> dict[str, Any]:
@@ -26,6 +31,7 @@ async def _read_json_object(request: Request, body_name: str) -> dict[str, Any]:
 async def proxy_openai_chat(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
+    """Proxy an authenticated OpenAI chat completion request."""
     body = await _read_json_object(request, "Chat completion")
     return await _proxy_protocol(
         ProtocolKind.OPENAI_CHAT,
@@ -38,6 +44,7 @@ async def proxy_openai_chat(
 async def proxy_openai_responses(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
+    """Proxy an authenticated OpenAI Responses request."""
     body = await _read_json_object(request, "Responses")
     return await _proxy_protocol(
         ProtocolKind.OPENAI_RESPONSES,
@@ -50,6 +57,7 @@ async def proxy_openai_responses(
 async def proxy_anthropic_messages(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
+    """Proxy an authenticated Anthropic Messages request."""
     body = await _read_json_object(request, "Anthropic messages")
     return await _proxy_protocol(
         ProtocolKind.ANTHROPIC,
@@ -63,6 +71,7 @@ async def proxy_anthropic_messages(
 async def proxy_openai_embeddings(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
+    """Proxy an authenticated OpenAI embeddings request without streaming."""
     body = await _read_json_object(request, "Embeddings")
     body.pop("stream", None)
     return await _proxy_protocol(
@@ -76,6 +85,7 @@ async def proxy_openai_embeddings(
 async def proxy_rerank(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
+    """Proxy an authenticated rerank request without streaming."""
     body = await _read_json_object(request, "Rerank")
     body.pop("stream", None)
     return await _proxy_protocol(
@@ -89,6 +99,7 @@ async def proxy_rerank(
 async def proxy_openai_image_generations(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
+    """Proxy an authenticated OpenAI image generation request."""
     body = await _read_json_object(request, "Image generations")
     return await _proxy_protocol(
         ProtocolKind.OPENAI_IMAGE,
@@ -102,6 +113,7 @@ async def proxy_openai_image_generations(
 async def proxy_openai_image_edits(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
+    """Proxy an authenticated multipart OpenAI image edit request."""
     form = await request.form()
     fields: dict[str, str] = {}
     files: list[tuple[str, tuple[str, bytes, str]]] = []
@@ -129,139 +141,28 @@ async def proxy_openai_image_edits(
     )
 
 
-_OPENAI_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
-    {
-        ProtocolKind.OPENAI_CHAT,
-        ProtocolKind.OPENAI_RESPONSES,
-        ProtocolKind.OPENAI_EMBEDDING,
-        ProtocolKind.OPENAI_IMAGE,
-        ProtocolKind.RERANK,
-    }
-)
-
-_ALL_MODEL_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(ProtocolKind)
-
-
-def _filtered_group_names(
-    groups: list[ModelGroup],
-    gateway_key: GatewayApiKey,
-    protocols: frozenset[ProtocolKind] | set[ProtocolKind],
-) -> list[str]:
-    group_by_id = {group.id: group for group in groups}
-    requested_protocols = frozenset(protocols)
-
-    def has_enabled_item(group: ModelGroup) -> bool:
-        target = (
-            group_by_id.get(group.route_group_id) if group.route_group_id else group
-        )
-        return bool(
-            target
-            and any(
-                item.enabled
-                and item.protocol is not None
-                and any(
-                    can_reach_protocol(item.protocol, protocol)
-                    for protocol in requested_protocols
-                )
-                for item in target.items
-            )
-        )
-
-    return sorted(
-        {
-            group.name.strip()
-            for group in groups
-            if group.name.strip()
-            and set(group.protocols) & requested_protocols
-            and has_enabled_item(group)
-            and _gateway_key_allows_model(gateway_key, group.name)
-        }
-    )
-
-
-def _build_openai_models_payload(
-    groups: list[ModelGroup],
-    gateway_key: GatewayApiKey,
-    protocols: frozenset[ProtocolKind] | set[ProtocolKind] = _OPENAI_LIST_PROTOCOLS,
-) -> dict[str, Any]:
-    names = _filtered_group_names(groups, gateway_key, protocols)
-    return {
-        "object": "list",
-        "data": [
-            {
-                "id": name,
-                "object": "model",
-                "created": 0,
-                "owned_by": "lens",
-            }
-            for name in names
-        ],
-    }
-
-
-def _build_anthropic_models_payload(
-    groups: list[ModelGroup], gateway_key: GatewayApiKey
-) -> dict[str, Any]:
-    names = _filtered_group_names(
-        groups, gateway_key, frozenset({ProtocolKind.ANTHROPIC})
-    )
-    return {
-        "data": [
-            {
-                "id": name,
-                "type": "model",
-                "display_name": name,
-                "created_at": "1970-01-01T00:00:00Z",
-            }
-            for name in names
-        ],
-        "first_id": names[0] if names else None,
-        "last_id": names[-1] if names else None,
-        "has_more": False,
-    }
-
-
-def _build_gemini_models_payload(
-    groups: list[ModelGroup], gateway_key: GatewayApiKey
-) -> dict[str, Any]:
-    names = _filtered_group_names(groups, gateway_key, frozenset({ProtocolKind.GEMINI}))
-    return {
-        "models": [
-            {
-                "name": f"models/{name}",
-                "baseModelId": name,
-                "version": "001",
-                "displayName": name,
-                "supportedGenerationMethods": [
-                    "generateContent",
-                    "streamGenerateContent",
-                ],
-            }
-            for name in names
-        ]
-    }
-
-
 async def list_gateway_models(
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
+    """List model groups visible to the gateway key in the requested API format."""
     groups = await app_state.group_repo.list_groups()
     runtime = await app_state.settings_repo.get_runtime_settings()
     if runtime["model_list_compat_mode_enabled"]:
-        return _build_openai_models_payload(
-            groups, gateway_key, _ALL_MODEL_LIST_PROTOCOLS
+        return build_openai_models_payload(
+            groups, gateway_key, ALL_MODEL_LIST_PROTOCOLS
         )
     if request.headers.get("anthropic-version"):
-        return _build_anthropic_models_payload(groups, gateway_key)
-    return _build_openai_models_payload(groups, gateway_key)
+        return build_anthropic_models_payload(groups, gateway_key)
+    return build_openai_models_payload(groups, gateway_key)
 
 
 async def list_gemini_models(
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
+    """List Gemini-compatible model groups visible to the gateway key."""
     groups = await app_state.group_repo.list_groups()
-    return _build_gemini_models_payload(groups, gateway_key)
+    return build_gemini_models_payload(groups, gateway_key)
 
 
 async def proxy_gemini_generate_content(
@@ -269,6 +170,7 @@ async def proxy_gemini_generate_content(
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> Response:
+    """Proxy an authenticated non-streaming Gemini content request."""
     body = await _read_json_object(request, "Gemini generateContent")
     body = {**body, "model": model_name, "stream": False}
     return await _proxy_protocol(
@@ -284,6 +186,7 @@ async def proxy_gemini_stream_generate_content(
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> Response:
+    """Proxy an authenticated streaming Gemini content request."""
     body = await _read_json_object(request, "Gemini streamGenerateContent")
     body = {**body, "model": model_name, "stream": True}
     return await _proxy_protocol(

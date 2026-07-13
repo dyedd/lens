@@ -32,12 +32,17 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
             "/brand-icons", StaticFiles(directory=brand_icons_dir), name="brand-icons"
         )
 
-    async def ui_entry(path: str = "") -> FileResponse:
+    async def serve_ui_entry(path: str = "") -> FileResponse:
         return await run_in_threadpool(_resolve_ui_entry, static_dir, static_root, path)
 
-    app.add_api_route("/", ui_entry, methods=["GET", "HEAD"], include_in_schema=False)
     app.add_api_route(
-        "/{path:path}", ui_entry, methods=["GET", "HEAD"], include_in_schema=False
+        "/", serve_ui_entry, methods=["GET", "HEAD"], include_in_schema=False
+    )
+    app.add_api_route(
+        "/{path:path}",
+        serve_ui_entry,
+        methods=["GET", "HEAD"],
+        include_in_schema=False,
     )
 
 

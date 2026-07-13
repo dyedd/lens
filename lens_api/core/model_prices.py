@@ -9,6 +9,7 @@ PRICE_PAYLOAD_FIELDS = (
 
 
 def normalize_model_key(value: str | None) -> str:
+    """Normalize a model identifier for price lookup."""
     return (value or "").strip().lower()
 
 
@@ -19,6 +20,7 @@ def _has_price_value(price_payload: dict[str, float]) -> bool:
 def build_models_dev_price_index(
     payload: dict[str, Any],
 ) -> dict[str, dict[str, float]]:
+    """Build a normalized model price index from a models.dev payload."""
     index: dict[str, dict[str, float]] = {}
     for provider_id, provider_payload in payload.items():
         if not isinstance(provider_payload, dict):
@@ -67,6 +69,7 @@ def build_models_dev_price_index(
 def build_group_price_payloads(
     group_names: list[str], price_index: dict[str, dict[str, float]]
 ) -> list[dict[str, float | str]]:
+    """Build price payloads for model groups present in a price index."""
     payloads: list[dict[str, float | str]] = []
     seen: set[str] = set()
 

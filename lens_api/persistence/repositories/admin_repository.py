@@ -1,0 +1,127 @@
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from starlette.concurrency import run_in_threadpool
+
+from ...core.auth import hash_password, verify_password
+from ..entities import AdminUserEntity
+
+
+class AdminRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def ensure_default_admin(self, username: str, password: str) -> bool:
+        """Create the initial administrator when no account exists."""
+        async with self._session_factory() as session:
+            result = await session.execute(select(AdminUserEntity.id).limit(1))
+            existing = result.scalar_one_or_none()
+            if existing is not None:
+                return False
+
+            session.add(
+                AdminUserEntity(
+                    username=username,
+                    password_hash=await run_in_threadpool(hash_password, password),
+                    is_active=1,
+                )
+            )
+            await session.commit()
+            return True
+
+    async def authenticate(
+        self, username: str, password: str
+    ) -> AdminUserEntity | None:
+        """Authenticate an active administrator by username and password."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(AdminUserEntity)
+                .where(AdminUserEntity.username == username)
+                .limit(1)
+            )
+            user = result.scalar_one_or_none()
+            if user is None or user.is_active != 1:
+                return None
+            if not await run_in_threadpool(
+                verify_password, password, user.password_hash
+            ):
+                return None
+            return user
+
+    async def find_by_username(self, username: str) -> AdminUserEntity | None:
+        """Return an administrator by username when present."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(AdminUserEntity)
+                .where(AdminUserEntity.username == username)
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
+
+    async def update_password(
+        self, username: str, current_password: str, new_password: str
+    ) -> None:
+        """Change an administrator password after verifying the current one."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(AdminUserEntity)
+                .where(AdminUserEntity.username == username)
+                .limit(1)
+            )
+            user = result.scalar_one_or_none()
+            if user is None or user.is_active != 1:
+                raise KeyError(username)
+            if not await run_in_threadpool(
+                verify_password, current_password, user.password_hash
+            ):
+                raise ValueError("Current password is incorrect")
+            user.password_hash = await run_in_threadpool(hash_password, new_password)
+            await session.commit()
+
+    async def update_profile(
+        self,
+        current_username: str,
+        next_username: str,
+        current_password: str,
+        new_password: str,
+    ) -> AdminUserEntity:
+        """Update an administrator username and optional password."""
+        normalized_username = next_username.strip()
+        normalized_new_password = new_password.strip()
+
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(AdminUserEntity)
+                .where(AdminUserEntity.username == current_username)
+                .limit(1)
+            )
+            user = result.scalar_one_or_none()
+            if user is None or user.is_active != 1:
+                raise KeyError(current_username)
+
+            if normalized_username != user.username:
+                duplicate = await session.execute(
+                    select(AdminUserEntity.id)
+                    .where(
+                        AdminUserEntity.username == normalized_username,
+                        AdminUserEntity.id != user.id,
+                    )
+                    .limit(1)
+                )
+                if duplicate.scalar_one_or_none() is not None:
+                    raise ValueError("Username already exists")
+                user.username = normalized_username
+
+            if normalized_new_password:
+                if not current_password:
+                    raise ValueError("Current password is required")
+                if not await run_in_threadpool(
+                    verify_password, current_password, user.password_hash
+                ):
+                    raise ValueError("Current password is incorrect")
+                user.password_hash = await run_in_threadpool(
+                    hash_password, normalized_new_password
+                )
+
+            await session.commit()
+            await session.refresh(user)
+            return user

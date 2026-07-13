@@ -2,6 +2,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 
 
 def normalize_base_url(value: str) -> str:
+    """Normalize an upstream base URL by removing API version suffixes."""
     text = str(value).strip()
     parsed = urlsplit(text)
     path = parsed.path.rstrip("/")
@@ -26,6 +27,7 @@ def append_url_path(
     *segments: str,
     query_params: dict[str, str] | None = None,
 ) -> str:
+    """Append path segments and query parameters to a base URL."""
     parsed = urlsplit(base_url)
     path_parts = [parsed.path.rstrip("/")]
     path_parts.extend(segment.strip("/") for segment in segments if segment.strip("/"))

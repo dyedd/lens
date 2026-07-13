@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from lens_api.core.db import create_engine, normalize_async_database_url
@@ -17,6 +18,7 @@ TIMEOUT_SECONDS = 10.0
 
 
 def load_database_url() -> str:
+    """Load the configured database URL from the project environment file."""
     if not ENV_FILE.exists():
         raise ValueError(f"{ENV_FILE} does not exist")
 
@@ -28,6 +30,7 @@ def load_database_url() -> str:
 
 
 def mask_error_message(message: str, database_url: str) -> str:
+    """Remove database URLs and credentials from an error message."""
     masked = message
     normalized_url = normalize_async_database_url(database_url)
     for secret in {database_url, normalized_url}:
@@ -35,7 +38,7 @@ def mask_error_message(message: str, database_url: str) -> str:
 
     try:
         parsed_url = make_url(normalized_url)
-    except Exception:
+    except ArgumentError:
         return masked
 
     for secret in (parsed_url.username, parsed_url.password):
@@ -46,11 +49,13 @@ def mask_error_message(message: str, database_url: str) -> str:
 
 
 async def ping_database(engine: AsyncEngine) -> None:
+    """Execute a minimal query against a database engine."""
     async with engine.connect() as connection:
         await connection.execute(text("SELECT 1"))
 
 
 async def check_database_url(database_url: str) -> None:
+    """Verify that a database URL can be reached within the timeout."""
     engine = create_engine(database_url)
     try:
         await asyncio.wait_for(ping_database(engine), timeout=TIMEOUT_SECONDS)
@@ -59,6 +64,7 @@ async def check_database_url(database_url: str) -> None:
 
 
 def main() -> int:
+    """Run the database connectivity check and return a process exit code."""
     database_url = ""
     try:
         if sys.platform == "win32":

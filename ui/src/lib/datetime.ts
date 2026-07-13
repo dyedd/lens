@@ -1,5 +1,6 @@
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/I18nContext";
 
+/** Formats a log timestamp for the selected locale and time zone. */
 export function formatLogDateTime(
   value: string,
   locale: Locale,
@@ -19,6 +20,7 @@ export function formatLogDateTime(
   );
 }
 
+/** Builds the current YYYYMMDD date bucket in the selected time zone. */
 export function getDateBucketPrefix(timeZone?: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
     year: "numeric",

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route(
         "/api/admin/model-group-candidates",
-        service_module.model_group_candidates,
+        service_module.list_model_group_candidates,
         methods=["POST"],
         response_model=service_module.ModelGroupCandidatesResponse,
     )

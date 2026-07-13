@@ -2,6 +2,7 @@ export type Theme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "lens_theme";
 
+/** Persists and applies the selected color theme. */
 export function setTheme(theme: Theme) {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
@@ -13,6 +14,7 @@ export function setTheme(theme: Theme) {
   root.style.colorScheme = theme;
 }
 
+/** Builds the inline bootstrap script that applies the initial color theme. */
 export function getThemeBootstrapScript() {
   const storageKey = JSON.stringify(THEME_STORAGE_KEY);
 

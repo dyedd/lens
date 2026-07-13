@@ -30,6 +30,7 @@ def convert_request(
     target_model: str | None = None,
     preserve_reasoning: bool = False,
 ) -> dict[str, Any]:
+    """Convert a client request into the selected upstream protocol."""
     if (
         client_protocol == ProtocolKind.ANTHROPIC
         and channel_protocol == ProtocolKind.OPENAI_CHAT
@@ -55,6 +56,7 @@ def convert_response(
     response_body: bytes,
     original_model: str = "",
 ) -> bytes:
+    """Convert an upstream response into the client protocol."""
     chat_data = json.loads(response_body)
     if (
         client_protocol == ProtocolKind.ANTHROPIC
@@ -79,6 +81,7 @@ async def convert_stream_iterator(
     raw_iterator: AsyncIterator[bytes],
     original_model: str = "",
 ) -> AsyncIterator[bytes]:
+    """Convert an upstream byte stream into the client protocol stream."""
     if (
         client_protocol == ProtocolKind.ANTHROPIC
         and channel_protocol == ProtocolKind.OPENAI_CHAT
