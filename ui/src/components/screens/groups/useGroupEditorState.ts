@@ -7,6 +7,7 @@ import {
   toForm,
   type CandidateSearchMode,
   type FormState,
+  type MemberStatusFilter,
 } from "./modelGroupUtils";
 
 /** Manage model group dialog state and direct form interactions. */
@@ -21,7 +22,8 @@ export function useGroupEditorState() {
     useState(true);
   const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const [showEnabledOnly, setShowEnabledOnly] = useState(false);
+  const [memberStatusFilter, setMemberStatusFilter] =
+    useState<MemberStatusFilter>("all");
 
   const candidateSearch =
     candidateSearchMode === "contains" && candidateSearchUsesGroupName
@@ -112,6 +114,7 @@ export function useGroupEditorState() {
     editingId,
     expandedChannels,
     form,
+    memberStatusFilter,
     openCreate,
     openEdit,
     setDialogOpen,
@@ -119,8 +122,7 @@ export function useGroupEditorState() {
     setEditingId,
     setExpandedChannels,
     setForm,
-    setShowEnabledOnly,
-    showEnabledOnly,
+    setMemberStatusFilter,
     toggleProtocol,
   };
 }

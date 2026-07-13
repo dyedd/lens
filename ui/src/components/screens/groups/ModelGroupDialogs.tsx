@@ -93,9 +93,11 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                       props.invalidSelectedMemberCount
                     }
                     removeInvalidItems={props.removeInvalidItems}
+                    removeDisabledMembers={props.removeDisabledMembers}
+                    clearMembers={props.clearMembers}
                     setAllMembersEnabled={props.setAllMembersEnabled}
-                    showEnabledOnly={props.showEnabledOnly}
-                    setShowEnabledOnly={props.setShowEnabledOnly}
+                    memberStatusFilter={props.memberStatusFilter}
+                    setMemberStatusFilter={props.setMemberStatusFilter}
                     visibleFoldedMembers={props.visibleFoldedMembers}
                     draggingIndex={props.draggingIndex}
                     toggleFoldedMember={props.toggleFoldedMember}

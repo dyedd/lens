@@ -83,6 +83,7 @@ export function FoldedMemberRow({
   index,
   isDragging,
   isBusy,
+  canReorder,
   onToggle,
   onRemove,
   onDragStart,
@@ -94,6 +95,7 @@ export function FoldedMemberRow({
   index: number;
   isDragging: boolean;
   isBusy: boolean;
+  canReorder: boolean;
   onToggle: () => void;
   onRemove: () => void;
   onDragStart: () => void;
@@ -105,11 +107,11 @@ export function FoldedMemberRow({
 
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnter={onDragEnter}
-      onDragOver={(event) => event.preventDefault()}
-      onDragEnd={onDragEnd}
+      draggable={canReorder}
+      onDragStart={canReorder ? onDragStart : undefined}
+      onDragEnter={canReorder ? onDragEnter : undefined}
+      onDragOver={canReorder ? (event) => event.preventDefault() : undefined}
+      onDragEnd={canReorder ? onDragEnd : undefined}
       className={cn(
         "flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0",
         isDragging && "opacity-60 shadow-sm",
@@ -120,7 +122,12 @@ export function FoldedMemberRow({
       <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
         {index + 1}
       </span>
-      <span className="cursor-grab text-muted-foreground active:cursor-grabbing">
+      <span
+        className={cn(
+          "text-muted-foreground",
+          canReorder ? "cursor-grab active:cursor-grabbing" : "opacity-30",
+        )}
+      >
         <GripVertical size={14} />
       </span>
       <div className="min-w-0 flex-1">

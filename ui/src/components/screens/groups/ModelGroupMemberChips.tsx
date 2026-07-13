@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/utils";
 import type { GroupCardDragging } from "./groupOverviewTypes";
-import { credentialNumberLabel, type GroupRow } from "./modelGroupUtils";
+import { credentialDisplayLabel, type GroupRow } from "./modelGroupUtils";
 
 interface ModelGroupMemberChipsProps {
   group: GroupRow;
@@ -58,7 +58,7 @@ export function ModelGroupMemberChips({
 
   return group.display_members.map((member, index) => {
     const channelName = member.channel_names.slice(0, 2).join(" · ") || "n/a";
-    const sourceLabel = `${channelName} · ${credentialNumberLabel(member, locale)}`;
+    const sourceLabel = `${channelName} · ${credentialDisplayLabel(member, locale)}`;
     return (
       <div
         key={`${member.key}::${index}`}
