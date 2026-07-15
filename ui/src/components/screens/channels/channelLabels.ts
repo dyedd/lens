@@ -1,6 +1,6 @@
 import type { Site } from "@/lib/api";
 import type { Locale } from "@/lib/I18nContext";
-import { isGeneratedCredentialName } from "@/lib/utils";
+import { formatCredentialDisplayName } from "@/lib/utils";
 import { protocolConfigAutoSyncActive, safeText } from "./channelFormUtils";
 import type { FormProtocolConfig } from "./channelTypes";
 
@@ -20,9 +20,7 @@ export function credentialLabel(
   index: number,
   locale: string,
 ) {
-  const name = item.name.trim();
-  if (name) return name;
-  return credentialIndexLabel(index, locale);
+  return formatCredentialDisplayName(item.name, index + 1, locale);
 }
 
 /** Formats a positional base URL label for the requested locale. */
@@ -87,13 +85,7 @@ export function credentialDisplayName(
   index: number,
   locale: Locale,
 ) {
-  if (!credential) {
-    return locale === "zh-CN" ? `密钥 ${index + 1}` : `Key ${index + 1}`;
-  }
-  if (!credential.name.trim() || isGeneratedCredentialName(credential.name)) {
-    return locale === "zh-CN" ? `密钥 ${index + 1}` : `Key ${index + 1}`;
-  }
-  return credential.name.trim();
+  return formatCredentialDisplayName(credential?.name, index + 1, locale);
 }
 
 /** Formats the synchronization mode of a protocol configuration. */

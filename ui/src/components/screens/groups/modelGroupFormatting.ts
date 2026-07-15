@@ -1,6 +1,12 @@
-import type { ModelGroupCandidateItem, RoutingStrategy } from "@/lib/api";
-import { isGeneratedCredentialName } from "@/lib/utils";
-import type { FoldedMember, FormItem, GroupRow } from "./modelGroupUtils";
+import type {
+  ModelGroup,
+  ModelGroupCandidateItem,
+  ModelGroupItemReason,
+  ModelGroupItemState,
+  RoutingStrategy,
+} from "@/lib/api";
+import { formatCredentialDisplayName } from "@/lib/utils";
+import type { FoldedMember, FormItem } from "./modelGroupUtils";
 
 export const STRATEGY_OPTIONS: Array<{
   value: RoutingStrategy;
@@ -11,6 +17,42 @@ export const STRATEGY_OPTIONS: Array<{
   { value: "failover", zh: "故障转移", en: "Failover" },
 ];
 
+export function modelGroupReasonsForState(
+  items: Array<{
+    state: ModelGroupItemState | null;
+    reasons: ModelGroupItemReason[];
+  }>,
+  state: ModelGroupItemState,
+) {
+  return Array.from(
+    new Set(
+      items
+        .filter((item) => item.state === state)
+        .flatMap((item) => item.reasons),
+    ),
+  );
+}
+
+export function modelGroupItemReasonLabel(
+  reason: ModelGroupItemReason,
+  locale: "zh-CN" | "en-US",
+) {
+  const labels: Record<ModelGroupItemReason, { zh: string; en: string }> = {
+    manual_disabled: { zh: "成员已关闭", en: "Member disabled" },
+    channel_not_found: { zh: "渠道不存在", en: "Channel not found" },
+    protocol_unreachable: {
+      zh: "无法服务所选协议",
+      en: "Cannot serve selected protocols",
+    },
+    channel_disabled: { zh: "渠道不可用", en: "Channel unavailable" },
+    credential_not_found: { zh: "密钥不存在", en: "Key not found" },
+    credential_disabled: { zh: "密钥不可用", en: "Key unavailable" },
+    model_not_found: { zh: "模型不存在", en: "Model not found" },
+    model_disabled: { zh: "模型不可用", en: "Model unavailable" },
+  };
+  return labels[reason][locale === "zh-CN" ? "zh" : "en"];
+}
+
 export function credentialDisplayLabel(
   item: Pick<
     FormItem | ModelGroupCandidateItem,
@@ -18,12 +60,11 @@ export function credentialDisplayLabel(
   >,
   locale: "zh-CN" | "en-US",
 ) {
-  const name = item.credential_name.trim();
-  if (name && !isGeneratedCredentialName(name)) {
-    return name;
-  }
-  const number = item.credential_number > 0 ? item.credential_number : 1;
-  return locale === "zh-CN" ? `密钥 ${number}` : `Key ${number}`;
+  return formatCredentialDisplayName(
+    item.credential_name,
+    item.credential_number,
+    locale,
+  );
 }
 
 /** Format the source channel label for a folded member. */
@@ -78,8 +119,8 @@ export function itemKey(
 }
 
 /** Return whether a group has at least one enabled member. */
-export function isGroupEnabled(group: Pick<GroupRow, "enabled_member_count">) {
-  return group.enabled_member_count > 0;
+export function isGroupEnabled(group: Pick<ModelGroup, "items">) {
+  return group.items.some((item) => item.enabled);
 }
 
 /** Return a copy with one item moved between valid indexes. */

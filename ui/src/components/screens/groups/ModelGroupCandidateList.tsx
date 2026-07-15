@@ -15,7 +15,6 @@ interface ModelGroupCandidateListProps {
   existingItemKeys: Set<string>;
   toggleChannel: (channelId: string) => void;
   addCandidate: (candidate: ModelGroupCandidateItem) => void;
-  sitesIsError: boolean;
   candidateIsError: boolean;
   candidateListError: unknown;
 }
@@ -29,7 +28,6 @@ export function ModelGroupCandidateList({
   existingItemKeys,
   toggleChannel,
   addCandidate,
-  sitesIsError,
   candidateIsError,
   candidateListError,
 }: ModelGroupCandidateListProps) {
@@ -72,7 +70,6 @@ export function ModelGroupCandidateList({
                       active={candidate.items.every((item) =>
                         existingItemKeys.has(itemKey(item)),
                       )}
-                      selectedProtocols={protocols}
                       locale={locale}
                       onClick={() => addCandidate(candidate)}
                     />
@@ -82,17 +79,13 @@ export function ModelGroupCandidateList({
             </div>
           );
         })}
-        {sitesIsError || candidateIsError ? (
+        {candidateIsError ? (
           <Alert variant="destructive" className="my-2">
             <AlertCircle />
             <AlertTitle>
-              {candidateIsError
-                ? locale === "zh-CN"
-                  ? "候选模型加载失败"
-                  : "Failed to load candidates"
-                : locale === "zh-CN"
-                  ? "渠道加载失败"
-                  : "Failed to load channels"}
+              {locale === "zh-CN"
+                ? "候选模型加载失败"
+                : "Failed to load candidates"}
             </AlertTitle>
             <AlertDescription>
               {candidateListError instanceof Error

@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import perf_counter
 
-from ...models import ChannelConfig, ProtocolKind
+from ...models import ChannelConfig, ModelGroupItemState, ProtocolKind
 from ..converters import can_reach_protocol
 from ..router import RouteTarget
 from .app_state import app_state
@@ -24,7 +24,7 @@ async def _resolve_routing_plan(
     protocol: ProtocolKind, requested_model: str, channels: list[ChannelConfig]
 ) -> RoutingPlan:
     matched_group = await app_state.group_repo.find_group_by_name(
-        protocol.value, requested_model
+        protocol.value, requested_model, channels=channels
     )
     if matched_group is None or protocol not in matched_group.protocols:
         raise LookupError(f"No model group matched {requested_model}")
@@ -33,7 +33,7 @@ async def _resolve_routing_plan(
     if matched_group.route_group_id.strip():
         try:
             resolved_group = await app_state.group_repo.get_group(
-                matched_group.route_group_id
+                matched_group.route_group_id, channels=channels
             )
         except KeyError as exc:
             raise LookupError(
@@ -47,18 +47,25 @@ async def _resolve_routing_plan(
             raise LookupError(f"No model group matched {requested_model}")
 
     channel_map = {channel.id: channel for channel in channels}
-    route_targets = [
-        RouteTarget(
-            channel=channel_map[item.channel_id],
-            model_name=item.model_name,
-            credential_id=item.credential_id,
-            credential_name=item.credential_name or None,
+    route_targets: list[RouteTarget] = []
+    for item in resolved_group.items:
+        if (
+            item.state != ModelGroupItemState.READY
+            or item.protocol is None
+            or not can_reach_protocol(item.protocol, protocol)
+        ):
+            continue
+        channel = channel_map.get(item.channel_id)
+        if channel is None:
+            continue
+        route_targets.append(
+            RouteTarget(
+                channel=channel,
+                model_name=item.model_name,
+                credential_id=item.credential_id,
+                credential_name=item.credential_name or None,
+            )
         )
-        for item in resolved_group.items
-        if item.enabled
-        and item.channel_id in channel_map
-        and can_reach_protocol(channel_map[item.channel_id].protocol, protocol)
-    ]
     return RoutingPlan(
         requested_group_name=matched_group.name,
         resolved_group_name=resolved_group.name,

@@ -33,6 +33,7 @@ from ...models import (
     SiteUpdate,
 )
 from ..entities import (
+    ModelGroupEntity,
     ModelGroupItemEntity,
     SiteBaseUrlEntity,
     SiteCredentialEntity,
@@ -51,13 +52,6 @@ def _dump_protocols_json(protocols: list[ProtocolKind]) -> str:
         [p.value for p in _deduplicate_protocols(protocols)],
         ensure_ascii=True,
     )
-
-
-def _channel_id_matches_protocol_config(column, protocol_config_id: str):
-    escaped = (
-        protocol_config_id.replace("\\", "\\\\").replace("_", "\\_").replace("%", "\\%")
-    )
-    return column.like(f"{escaped}\\_%", escape="\\")
 
 
 def _deduplicate_protocol_config_models(

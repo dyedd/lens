@@ -1,11 +1,12 @@
 import type {
   ModelGroup,
   ModelGroupCandidateItem,
+  ModelGroupItemReason,
+  ModelGroupItemState,
   ModelGroupPayload,
   ModelGroupSyncFilterMode,
   ProtocolKind,
   RoutingStrategy,
-  Site,
 } from "@/lib/api";
 import { protocolLabel } from "@/lib/protocols";
 import { credentialDisplayLabel } from "./modelGroupFormatting";
@@ -15,6 +16,7 @@ export * from "./modelGroupMembers";
 
 export type FormItem = {
   channel_id: string;
+  protocol_config_id: string;
   channel_name: string;
   protocol?: ProtocolKind | null;
   credential_id: string;
@@ -22,7 +24,11 @@ export type FormItem = {
   credential_number: number;
   model_name: string;
   enabled: boolean;
+  state: ModelGroupItemState | null;
+  reasons: ModelGroupItemReason[];
 };
+
+export type EvaluatedFormItem = FormItem;
 
 export type FormState = {
   name: string;
@@ -53,9 +59,13 @@ export type FoldedMember = {
   credential_name: string;
   credential_number: number;
   protocols: ProtocolKind[];
-  subItems: FormItem[];
-  enabled: boolean;
-  invalid: boolean;
+  subItems: EvaluatedFormItem[];
+  enabled_item_count: number;
+  disabled_item_count: number;
+  ready_item_count: number;
+  invalid_item_count: number;
+  unavailable_item_count: number;
+  pending_item_count: number;
 };
 
 export type GroupDisplayMember = {
@@ -66,9 +76,11 @@ export type GroupDisplayMember = {
   channel_names: string[];
   protocols: ProtocolKind[];
   items: ModelGroup["items"];
-  enabled: boolean;
-  isRoutable: boolean;
-  isUnavailable: boolean;
+  enabled_item_count: number;
+  disabled_item_count: number;
+  ready_item_count: number;
+  invalid_item_count: number;
+  unavailable_item_count: number;
 };
 
 export type GroupSort =
@@ -77,12 +89,12 @@ export type GroupSort =
   | "name-asc"
   | "name-desc";
 export type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, "">;
-export type MemberStatusFilter = "all" | "enabled" | "disabled";
+export type MemberStatusFilter = "all" | "enabled" | "disabled" | "problem";
 
 export type GroupRow = ModelGroup & {
   member_count: number;
   enabled_member_count: number;
-  unavailable_member_count: number;
+  problem_member_count: number;
   channel_summary: string;
   channel_names: string[];
   display_members: GroupDisplayMember[];
@@ -105,23 +117,19 @@ export const EMPTY_FORM: FormState = {
 
 export function buildCandidateHaystack(
   item: ModelGroupCandidateItem,
-  channelMap: Map<string, ProtocolMeta>,
   locale: "zh-CN" | "en-US",
 ) {
-  const channel = channelMap.get(item.channel_id);
-  const channelName = channel?.name || item.channel_name;
-  const endpoint = item.base_url || channelEndpoint(channel);
-  const credentialNumber =
-    channel?.credential_number_by_id.get(item.credential_id) ??
-    item.credential_number;
   const credentialLabel = credentialDisplayLabel(
     {
       credential_name: item.credential_name,
-      credential_number: credentialNumber,
+      credential_number: item.credential_number,
     },
     locale,
   );
-  return `${item.model_name} ${channelName} ${protocolLabel(item.protocol, locale)} ${credentialLabel} ${item.credential_name} ${endpoint}`;
+  const protocols = item.protocols
+    .map((protocol) => protocolLabel(protocol, locale))
+    .join(" ");
+  return `${item.model_name} ${item.channel_name} ${protocols} ${credentialLabel} ${item.credential_name} ${item.base_url}`;
 }
 
 /** Compile a case-insensitive candidate search pattern when valid. */
@@ -142,7 +150,6 @@ export function matchesCandidateSearch(
   item: ModelGroupCandidateItem,
   mode: CandidateSearchMode,
   query: string,
-  channelMap: Map<string, ProtocolMeta>,
   locale: "zh-CN" | "en-US",
 ) {
   const normalizedQuery = query.trim();
@@ -156,76 +163,29 @@ export function matchesCandidateSearch(
     }
     return regex.test(item.model_name);
   }
-  const haystack = buildCandidateHaystack(item, channelMap, locale);
+  const haystack = buildCandidateHaystack(item, locale);
   return haystack.toLowerCase().includes(normalizedQuery.toLowerCase());
-}
-
-export function candidatePayloadItemProtocol(
-  candidate: ModelGroupCandidateItem,
-  channelId: string,
-  channelMap?: Map<string, ProtocolMeta>,
-): ProtocolKind | undefined {
-  const channelProtocol = channelMap?.get(channelId)?.protocol;
-  if (channelProtocol) {
-    return channelProtocol;
-  }
-  const protocolEntry = Object.entries(candidate.protocol_channels).find(
-    ([, candidateChannelId]) => candidateChannelId === channelId,
-  );
-  if (protocolEntry) {
-    return protocolEntry[0] as ProtocolKind;
-  }
-  return channelId === candidate.channel_id ? candidate.protocol : undefined;
 }
 
 /** Convert candidate payload items into editable model group members. */
 export function candidatePayloadToFormItems(
   candidate: ModelGroupCandidateItem,
-  channelMap?: Map<string, ProtocolMeta>,
 ): FormItem[] {
   return candidate.items.map((payloadItem) => {
-    const channel = channelMap?.get(payloadItem.channel_id);
-    const channelName = channel?.name || candidate.channel_name;
     return {
       channel_id: payloadItem.channel_id,
-      channel_name: channelName,
-      protocol: candidatePayloadItemProtocol(
-        candidate,
-        payloadItem.channel_id,
-        channelMap,
-      ),
+      protocol_config_id: payloadItem.protocol_config_id,
+      channel_name: candidate.channel_name,
+      protocol: payloadItem.protocol,
       credential_id: payloadItem.credential_id,
       credential_name: candidate.credential_name,
-      credential_number:
-        channel?.credential_number_by_id.get(payloadItem.credential_id) ??
-        candidate.credential_number,
+      credential_number: candidate.credential_number,
       model_name: payloadItem.model_name,
       enabled: true,
+      state: null,
+      reasons: [],
     };
   });
-}
-
-export type ProtocolMeta = {
-  id: string;
-  site_id: string;
-  name: string;
-  base_url: string;
-  protocol: ProtocolKind;
-  enabled: boolean;
-  credential_enabled_by_id: Map<string, boolean>;
-  credential_number_by_id: Map<string, number>;
-  model_enabled_by_key: Map<string, boolean>;
-};
-
-export function channelEndpoint(channel?: ProtocolMeta) {
-  if (!channel) return "";
-  return channel.base_url || "";
-}
-
-/** Resolve a site's base URL by identifier. */
-export function protocolBaseUrl(site: Site, baseUrlId: string) {
-  const bound = site.base_urls.find((item) => item.id === baseUrlId);
-  return bound?.url || "";
 }
 
 /** Convert a persisted model group into editor form state. */
@@ -246,6 +206,7 @@ export function toForm(group: ModelGroup): FormState {
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((item) => ({
         channel_id: item.channel_id,
+        protocol_config_id: item.protocol_config_id,
         channel_name: item.channel_name,
         protocol: item.protocol,
         credential_id: item.credential_id,
@@ -253,6 +214,8 @@ export function toForm(group: ModelGroup): FormState {
         credential_number: item.credential_number,
         model_name: item.model_name,
         enabled: item.enabled,
+        state: item.state,
+        reasons: item.reasons,
       })),
   };
 }

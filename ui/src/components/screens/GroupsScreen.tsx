@@ -35,6 +35,7 @@ export function GroupsScreen() {
   const filters = useGroupFilters(queries.groupRows, locale);
   const members = useGroupMembers(
     editor.form,
+    queries.evaluatedItems,
     editor.setForm,
     editor.memberStatusFilter,
   );
@@ -42,7 +43,6 @@ export function GroupsScreen() {
     candidateResponse: queries.candidateQuery.data,
     candidateSearch: editor.candidateSearch,
     candidateSearchMode: editor.candidateSearchMode,
-    channelMap: queries.channelMap,
     expandedChannels: editor.expandedChannels,
     form: editor.form,
     locale,
@@ -52,7 +52,6 @@ export function GroupsScreen() {
   const commands = useGroupCommands({
     editingId: editor.editingId,
     form: editor.form,
-    invalidSelectedMemberCount: members.invalidSelectedMemberCount,
     invalidateGroupData: queries.invalidateGroupData,
     locale,
     queryClient: queries.queryClient,
@@ -60,9 +59,7 @@ export function GroupsScreen() {
     setEditingId: editor.setEditingId,
     setForm: editor.setForm,
   });
-  const candidateListError = queries.candidateQuery.isError
-    ? queries.candidateQuery.error
-    : queries.sitesError;
+  const candidateListError = queries.candidateQuery.error;
 
   return (
     <>
@@ -132,11 +129,13 @@ export function GroupsScreen() {
             toggleChannel={candidates.toggleChannel}
             foldedMembers={members.foldedMembers}
             addCandidate={candidates.addCandidate}
-            sitesIsError={queries.sitesIsError}
             candidateIsError={queries.candidateQuery.isError}
             candidateListError={candidateListError}
-            invalidSelectedMemberCount={members.invalidSelectedMemberCount}
+            disabledItemCount={members.disabledItemCount}
+            invalidItemCount={members.invalidItemCount}
+            unavailableItemCount={members.unavailableItemCount}
             removeInvalidItems={members.removeInvalidItems}
+            removeUnavailableItems={members.removeUnavailableItems}
             removeDisabledMembers={members.removeDisabledMembers}
             clearMembers={members.clearMembers}
             setAllMembersEnabled={members.setAllMembersEnabled}

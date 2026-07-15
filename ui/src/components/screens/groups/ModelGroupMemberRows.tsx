@@ -1,6 +1,14 @@
 "use client";
 
-import { AlertCircle, Check, GripVertical, Plus, X } from "lucide-react";
+import {
+  AlertCircle,
+  Ban,
+  Check,
+  Clock3,
+  GripVertical,
+  Plus,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
@@ -9,23 +17,25 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
-import type { ModelGroupCandidateItem, ProtocolKind } from "@/lib/api";
-import { isItemValidForProtocols } from "@/lib/api";
+import type { ModelGroupCandidateItem } from "@/lib/api";
 import { protocolBadgeClassName, protocolLabel } from "@/lib/protocols";
 import { cn } from "@/lib/utils";
-import { foldedMemberSourceLabel, type FoldedMember } from "./modelGroupUtils";
+import {
+  foldedMemberSourceLabel,
+  modelGroupReasonsForState,
+  modelGroupItemReasonLabel,
+  type FoldedMember,
+} from "./modelGroupUtils";
 
 /** Render a selectable model group candidate. */
 export function CandidateRow({
   candidate,
   active,
-  selectedProtocols,
   locale,
   onClick,
 }: {
   candidate: ModelGroupCandidateItem;
   active: boolean;
-  selectedProtocols: ProtocolKind[];
   locale: "zh-CN" | "en-US";
   onClick: () => void;
 }) {
@@ -48,23 +58,18 @@ export function CandidateRow({
         </div>
       </div>
       <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5">
-        {nativeProtocols.map((protocol) => {
-          const isUsable = isItemValidForProtocols(protocol, selectedProtocols);
-          return (
-            <Badge
-              key={protocol}
-              variant="outline"
-              className={cn(
-                "px-1.5 py-0 text-[10px] font-normal",
-                isUsable
-                  ? protocolBadgeClassName(protocol)
-                  : "border-transparent bg-muted/50 text-muted-foreground/50",
-              )}
-            >
-              {protocolLabel(protocol, locale)}
-            </Badge>
-          );
-        })}
+        {nativeProtocols.map((protocol) => (
+          <Badge
+            key={protocol}
+            variant="outline"
+            className={cn(
+              "px-1.5 py-0 text-[10px] font-normal",
+              protocolBadgeClassName(protocol),
+            )}
+          >
+            {protocolLabel(protocol, locale)}
+          </Badge>
+        ))}
         <span className="text-muted-foreground">
           {active ? (
             <Check size={15} className="text-primary" />
@@ -104,6 +109,29 @@ export function FoldedMemberRow({
   locale: "zh-CN" | "en-US";
 }) {
   const sourceLabel = foldedMemberSourceLabel(member, locale);
+  const enabled = member.enabled_item_count > 0;
+  const partiallyEnabled = enabled && member.disabled_item_count > 0;
+  const invalidReasons = modelGroupReasonsForState(member.subItems, "invalid");
+  const unavailableReasons = modelGroupReasonsForState(
+    member.subItems,
+    "unavailable",
+  );
+  const invalidLabel =
+    member.invalid_item_count < member.subItems.length
+      ? locale === "zh-CN"
+        ? `部分配置错误 ${member.invalid_item_count}`
+        : `Partly invalid ${member.invalid_item_count}`
+      : locale === "zh-CN"
+        ? "配置错误"
+        : "Invalid";
+  const unavailableLabel =
+    member.unavailable_item_count < member.subItems.length
+      ? locale === "zh-CN"
+        ? `部分不可用 ${member.unavailable_item_count}`
+        : `Partly unavailable ${member.unavailable_item_count}`
+      : locale === "zh-CN"
+        ? "不可用"
+        : "Unavailable";
 
   return (
     <div
@@ -115,8 +143,9 @@ export function FoldedMemberRow({
       className={cn(
         "flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0",
         isDragging && "opacity-60 shadow-sm",
-        !member.enabled && "opacity-55",
-        member.invalid && "border border-destructive bg-destructive/10",
+        !enabled && "opacity-55",
+        (member.invalid_item_count > 0 || member.unavailable_item_count > 0) &&
+          "border border-destructive bg-destructive/10",
       )}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
@@ -136,29 +165,65 @@ export function FoldedMemberRow({
         </div>
         <div className="truncate text-xs text-muted-foreground">
           {sourceLabel}
-          {!member.enabled
-            ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
-            : ""}
+          {partiallyEnabled
+            ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
+            : !enabled
+              ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
+              : ""}
         </div>
       </div>
       <div className="flex h-8 w-8 items-center justify-center">
         <Switch
-          checked={member.enabled}
+          checked={enabled}
           disabled={isBusy}
           onCheckedChange={onToggle}
+          aria-label={
+            locale === "zh-CN" ? "切换成员启用状态" : "Toggle member status"
+          }
         />
       </div>
-      {member.invalid ? (
+      {member.pending_item_count > 0 ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="grid h-8 w-8 shrink-0 place-items-center text-destructive">
-              <AlertCircle size={15} />
-            </span>
+            <Badge variant="outline" tabIndex={0}>
+              <Clock3 data-icon="inline-start" />
+              {locale === "zh-CN" ? "检查中" : "Checking"}
+            </Badge>
           </TooltipTrigger>
           <TooltipContent>
             {locale === "zh-CN"
-              ? "不适用于当前所选的对外协议"
-              : "Invalid for current protocols"}
+              ? "等待后端返回最新状态"
+              : "Waiting for the latest backend evaluation"}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
+      {member.invalid_item_count > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="destructive" tabIndex={0}>
+              <AlertCircle data-icon="inline-start" />
+              {invalidLabel}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            {invalidReasons
+              .map((reason) => modelGroupItemReasonLabel(reason, locale))
+              .join(locale === "zh-CN" ? "、" : ", ")}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
+      {member.unavailable_item_count > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="outline" tabIndex={0}>
+              <Ban data-icon="inline-start" />
+              {unavailableLabel}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            {unavailableReasons
+              .map((reason) => modelGroupItemReasonLabel(reason, locale))
+              .join(locale === "zh-CN" ? "、" : ", ")}
           </TooltipContent>
         </Tooltip>
       ) : null}

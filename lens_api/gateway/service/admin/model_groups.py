@@ -5,26 +5,28 @@ from typing import Any
 from fastapi import Depends, Response
 
 from ....models import (
-    ModelGroup,
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
     ModelGroupEnsureFromSiteRequest,
     ModelGroupEnsureFromSiteResponse,
     ModelGroupUpdate,
+    ModelGroupView,
 )
 from ..auth import get_current_admin
 from ..app_state import app_state
 
 
-async def list_model_groups(_: Any = Depends(get_current_admin)) -> list[ModelGroup]:
+async def list_model_groups(
+    _: Any = Depends(get_current_admin),
+) -> list[ModelGroupView]:
     """List all configured model groups."""
     return await app_state.group_repo.list_groups()
 
 
 async def get_model_group(
     group_id: str, _: Any = Depends(get_current_admin)
-) -> ModelGroup:
+) -> ModelGroupView:
     """Return one model group by identifier."""
     return await app_state.group_repo.get_group(group_id)
 
@@ -45,14 +47,14 @@ async def ensure_model_groups_from_site(
 
 async def create_model_group(
     payload: ModelGroupCreate, _: Any = Depends(get_current_admin)
-) -> ModelGroup:
+) -> ModelGroupView:
     """Create a model group."""
     return await app_state.group_repo.create_group(payload)
 
 
 async def update_model_group(
     group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)
-) -> ModelGroup:
+) -> ModelGroupView:
     """Update a model group."""
     return await app_state.group_repo.update_group(group_id, payload)
 

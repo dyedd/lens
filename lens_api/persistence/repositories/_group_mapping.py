@@ -1,42 +1,42 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from ...core.model_group_status import (
+    build_model_group_channel_lookups,
+    evaluate_model_group_item,
+)
 from ..shared import (
     AsyncSession,
-    ModelGroup,
+    ChannelConfig,
     ModelGroupEntity,
-    ModelGroupItem,
     ModelGroupItemEntity,
     ModelGroupItemInput,
+    ModelGroupItemView,
+    ModelGroupView,
     ModelPriceEntity,
     ProtocolKind,
-    SiteCredentialEntity,
-    SiteEntity,
-    SiteProtocolConfigEntity,
-    _channel_ids_by_protocol_config,
     _parse_group_protocols,
     normalize_model_key,
     select,
 )
 
 
-@dataclass
-class _GroupItemChannelLookups:
-    channel_site_names: dict[str, str]
-    protocol_by_channel_id: dict[str, ProtocolKind]
-    credential_names_by_channel: dict[str, dict[str, str]]
-    credential_numbers_by_channel: dict[str, dict[str, int]]
-
-
 class _GroupMappingMixin:
     async def _hydrate_groups(
-        self, session: AsyncSession, entities: list[ModelGroupEntity]
-    ) -> list[ModelGroup]:
+        self,
+        session: AsyncSession,
+        entities: list[ModelGroupEntity],
+        channels: list[ChannelConfig],
+    ) -> list[ModelGroupView]:
         if not entities:
             return []
+        protocols_by_group = {
+            item.id: _parse_group_protocols(item) for item in entities
+        }
         items_by_group = await self._load_group_items(
-            session, [item.id for item in entities]
+            session,
+            [item.id for item in entities],
+            protocols_by_group,
+            channels,
         )
         route_group_ids = [
             item.route_group_id for item in entities if item.route_group_id.strip()
@@ -87,8 +87,12 @@ class _GroupMappingMixin:
         return {row.model_key: row for row in rows}
 
     async def _load_group_items(
-        self, session: AsyncSession, group_ids: list[str]
-    ) -> dict[str, list[ModelGroupItem]]:
+        self,
+        session: AsyncSession,
+        group_ids: list[str],
+        protocols_by_group: dict[str, list[ProtocolKind]],
+        channels: list[ChannelConfig],
+    ) -> dict[str, list[ModelGroupItemView]]:
         if not group_ids:
             return {}
 
@@ -108,27 +112,45 @@ class _GroupMappingMixin:
             .all()
         )
 
-        items_by_group: dict[str, list[ModelGroupItem]] = {
+        items_by_group: dict[str, list[ModelGroupItemView]] = {
             group_id: [] for group_id in group_ids
         }
-        channel_ids = list({row.channel_id for row in rows})
-        lookups = await self._load_group_item_channel_lookups(session, channel_ids)
+        channels_by_id = build_model_group_channel_lookups(channels)
         for row in rows:
+            item = ModelGroupItemInput(
+                channel_id=row.channel_id,
+                credential_id=row.credential_id,
+                model_name=row.model_name,
+                enabled=bool(row.enabled),
+            )
+            evaluation = evaluate_model_group_item(
+                item,
+                channels_by_id,
+                protocols_by_group.get(row.group_id, []),
+            )
+            channel_lookup = channels_by_id.get(row.channel_id)
+            channel = channel_lookup.channel if channel_lookup is not None else None
+            credential = (
+                channel_lookup.credentials_by_id.get(row.credential_id)
+                if channel_lookup is not None
+                else None
+            )
             items_by_group.setdefault(row.group_id, []).append(
-                ModelGroupItem(
+                ModelGroupItemView(
                     channel_id=row.channel_id,
-                    channel_name=lookups.channel_site_names.get(row.channel_id, ""),
-                    protocol=lookups.protocol_by_channel_id.get(row.channel_id),
+                    channel_name=channel.name if channel is not None else "",
+                    protocol=evaluation.protocol,
+                    protocol_config_id=evaluation.protocol_config_id,
                     credential_id=row.credential_id,
-                    credential_name=lookups.credential_names_by_channel.get(
-                        row.channel_id, {}
-                    ).get(row.credential_id, ""),
-                    credential_number=lookups.credential_numbers_by_channel.get(
-                        row.channel_id, {}
-                    ).get(row.credential_id, 0),
+                    credential_name=credential.remark if credential is not None else "",
+                    credential_number=(
+                        credential.number if credential is not None else 0
+                    ),
                     model_name=row.model_name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,
+                    state=evaluation.state,
+                    reasons=list(evaluation.reasons),
                 )
             )
         return items_by_group
@@ -151,103 +173,14 @@ class _GroupMappingMixin:
                 )
             )
 
-    async def _load_group_item_channel_lookups(
-        self, session: AsyncSession, channel_ids: list[str]
-    ) -> _GroupItemChannelLookups:
-        (
-            channels_by_protocol_config,
-            protocol_by_channel_id,
-        ) = _channel_ids_by_protocol_config(channel_ids)
-        if not channels_by_protocol_config:
-            return _GroupItemChannelLookups({}, {}, {}, {})
-
-        protocol_config_ids = list(channels_by_protocol_config.keys())
-        site_rows = (
-            await session.execute(
-                select(
-                    SiteProtocolConfigEntity.id,
-                    SiteEntity.name,
-                )
-                .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
-                .where(SiteProtocolConfigEntity.id.in_(protocol_config_ids))
-            )
-        ).all()
-        site_names_by_protocol_config: dict[str, str] = {
-            str(protocol_config_id): str(site_name)
-            for protocol_config_id, site_name in site_rows
-        }
-        credential_rows = await session.execute(
-            select(
-                SiteProtocolConfigEntity.id,
-                SiteCredentialEntity.id,
-                SiteCredentialEntity.name,
-                SiteCredentialEntity.sort_order,
-            )
-            .join(
-                SiteCredentialEntity,
-                SiteCredentialEntity.site_id == SiteProtocolConfigEntity.site_id,
-            )
-            .where(SiteProtocolConfigEntity.id.in_(protocol_config_ids))
-            .order_by(
-                SiteProtocolConfigEntity.id.asc(),
-                SiteCredentialEntity.sort_order.asc(),
-                SiteCredentialEntity.id.asc(),
-            )
-        )
-        credential_names_by_protocol_config: dict[str, dict[str, str]] = {}
-        credential_numbers_by_protocol_config: dict[str, dict[str, int]] = {}
-        credential_counts_by_protocol_config: dict[str, int] = {}
-        for (
-            protocol_config_id,
-            credential_id,
-            credential_name,
-            _sort_order,
-        ) in credential_rows.all():
-            protocol_config_id = str(protocol_config_id)
-            credential_id = str(credential_id)
-            credential_names_by_protocol_config.setdefault(protocol_config_id, {})[
-                credential_id
-            ] = str(credential_name)
-            credential_counts_by_protocol_config[protocol_config_id] = (
-                credential_counts_by_protocol_config.get(protocol_config_id, 0) + 1
-            )
-            credential_numbers_by_protocol_config.setdefault(protocol_config_id, {})[
-                credential_id
-            ] = credential_counts_by_protocol_config[protocol_config_id]
-
-        channel_site_names: dict[str, str] = {}
-        credential_names_by_channel: dict[str, dict[str, str]] = {}
-        credential_numbers_by_channel: dict[str, dict[str, int]] = {}
-        for (
-            protocol_config_id,
-            channel_ids_for_config,
-        ) in channels_by_protocol_config.items():
-            site_name = site_names_by_protocol_config.get(protocol_config_id, "")
-            credential_names = credential_names_by_protocol_config.get(
-                protocol_config_id, {}
-            )
-            credential_numbers = credential_numbers_by_protocol_config.get(
-                protocol_config_id, {}
-            )
-            for channel_id in channel_ids_for_config:
-                channel_site_names[channel_id] = site_name
-                credential_names_by_channel[channel_id] = credential_names
-                credential_numbers_by_channel[channel_id] = credential_numbers
-        return _GroupItemChannelLookups(
-            channel_site_names=channel_site_names,
-            protocol_by_channel_id=protocol_by_channel_id,
-            credential_names_by_channel=credential_names_by_channel,
-            credential_numbers_by_channel=credential_numbers_by_channel,
-        )
-
     @staticmethod
     def _to_group(
         entity: ModelGroupEntity,
-        items: list[ModelGroupItem],
+        items: list[ModelGroupItemView],
         price: ModelPriceEntity | None = None,
         route_group_name: str = "",
-    ) -> ModelGroup:
-        return ModelGroup(
+    ) -> ModelGroupView:
+        return ModelGroupView(
             id=entity.id,
             name=entity.name,
             protocols=_parse_group_protocols(entity),

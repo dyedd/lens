@@ -21,12 +21,14 @@ from ..core.runtime_channel_ids import (
 )
 from ..core.time_zone import normalize_time_zone, resolve_time_zone
 from ..models import (
+    ChannelConfig,
     ChannelStatus,
     GatewayApiKey,
     GatewayApiKeyCreate,
     GatewayApiKeyUpdate,
     ModelGroup,
     ModelGroupCandidateItem,
+    ModelGroupCandidateSubitem,
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
@@ -36,7 +38,9 @@ from ..models import (
     ModelGroupEnsureResultItem,
     ModelGroupItem,
     ModelGroupItemInput,
+    ModelGroupItemView,
     ModelGroupUpdate,
+    ModelGroupView,
     ModelPriceItem,
     ModelPriceListResponse,
     ModelPriceUpdate,

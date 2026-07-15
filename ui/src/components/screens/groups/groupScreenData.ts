@@ -1,108 +1,35 @@
-import {
-  isItemValidForProtocols,
-  type ModelGroup,
-  type ModelGroupCandidateItem,
-  type ProtocolKind,
-  type Site,
-} from "@/lib/api";
+import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api";
 import {
   buildGroupDisplayMembers,
-  modelAvailabilityKey,
+  itemKey,
   modelFoldKey,
-  protocolBaseUrl,
-  protocolConfigIdFromChannelId,
   type CandidateChannelGroup,
+  type EvaluatedFormItem,
   type FoldedMember,
   type FormItem,
   type GroupRow,
-  type ProtocolMeta,
 } from "./modelGroupUtils";
 
-/** Build runtime channel metadata used by group availability checks. */
-export function buildGroupChannelMap(sites: Site[]) {
-  const channelMap = new Map<string, ProtocolMeta>();
-  for (const site of sites) {
-    const credentialEnabledById = new Map(
-      site.credentials.map(
-        (credential) =>
-          [
-            credential.id,
-            credential.enabled && Boolean(credential.api_key.trim()),
-          ] as const,
-      ),
-    );
-    const credentialNumberById = new Map(
-      site.credentials.map(
-        (credential, index) => [credential.id, index + 1] as const,
-      ),
-    );
-    for (const protocolConfig of site.protocols) {
-      const baseUrl = site.base_urls.find(
-        (item) => item.id === protocolConfig.base_url_id,
-      );
-      const baseUrlValue =
-        baseUrl?.url ?? protocolBaseUrl(site, protocolConfig.base_url_id);
-      const isChannelEnabled =
-        protocolConfig.enabled && Boolean(baseUrl?.enabled);
-      for (const protocol of protocolConfig.protocols) {
-        const runtimeChannelId = `${protocolConfig.id}_${protocol}`;
-        const modelEnabledByKey = new Map(
-          protocolConfig.models
-            .filter((model) => model.protocol === protocol)
-            .map(
-              (model) => [modelAvailabilityKey(model), model.enabled] as const,
-            ),
-        );
-        channelMap.set(runtimeChannelId, {
-          id: runtimeChannelId,
-          site_id: site.id,
-          name: site.name,
-          base_url: baseUrlValue,
-          protocol,
-          enabled: isChannelEnabled,
-          credential_enabled_by_id: credentialEnabledById,
-          credential_number_by_id: credentialNumberById,
-          model_enabled_by_key: modelEnabledByKey,
-        });
-      }
-    }
-  }
-  return channelMap;
-}
-
-function buildExecutionRow(
-  group: ModelGroup,
-  channelMap: Map<string, ProtocolMeta>,
-  isAvailabilityReady: boolean,
-): GroupRow {
+function buildExecutionRow(group: ModelGroup): GroupRow {
   const items = group.items
     .slice()
     .sort((left, right) => left.sort_order - right.sort_order);
-  const displayMembers = buildGroupDisplayMembers(
-    items,
-    channelMap,
-    isAvailabilityReady,
-  );
+  const displayMembers = buildGroupDisplayMembers(items);
   const channelNames = [
     ...new Set(
-      items
-        .map(
-          (item) =>
-            channelMap.get(item.channel_id)?.name ||
-            item.channel_name ||
-            item.channel_id,
-        )
-        .filter(Boolean),
+      items.map((item) => item.channel_name || item.channel_id).filter(Boolean),
     ),
   ];
   return {
     ...group,
     items,
     member_count: displayMembers.length,
-    enabled_member_count: displayMembers.filter((member) => member.isRoutable)
-      .length,
-    unavailable_member_count: displayMembers.filter(
-      (member) => member.isUnavailable,
+    enabled_member_count: displayMembers.filter(
+      (member) => member.enabled_item_count > 0,
+    ).length,
+    problem_member_count: displayMembers.filter(
+      (member) =>
+        member.invalid_item_count > 0 || member.unavailable_item_count > 0,
     ).length,
     channel_summary: channelNames.slice(0, 2).join(" · "),
     channel_names: channelNames,
@@ -112,15 +39,11 @@ function buildExecutionRow(
 }
 
 /** Derive display rows for execution groups and route groups. */
-export function buildGroupRows(
-  groups: ModelGroup[],
-  channelMap: Map<string, ProtocolMeta>,
-  isAvailabilityReady: boolean,
-) {
+export function buildGroupRows(groups: ModelGroup[]) {
   const executionRowsById = new Map<string, GroupRow>();
   for (const group of groups) {
     if (!group.route_group_id?.trim()) {
-      const row = buildExecutionRow(group, channelMap, isAvailabilityReady);
+      const row = buildExecutionRow(group);
       executionRowsById.set(group.id, row);
     }
   }
@@ -137,8 +60,7 @@ export function buildGroupRows(
       items,
       member_count: 1,
       enabled_member_count: targetRow?.enabled_member_count ?? 0,
-      unavailable_member_count:
-        targetRow?.unavailable_member_count ?? (isAvailabilityReady ? 1 : 0),
+      problem_member_count: targetRow?.problem_member_count ?? 1,
       channel_summary: channelNames.slice(0, 2).join(" · "),
       channel_names: channelNames,
       display_members: [],
@@ -150,23 +72,17 @@ export function buildGroupRows(
 /** Group candidate models by their site or protocol configuration. */
 export function groupModelCandidates(
   candidates: ModelGroupCandidateItem[],
-  channelMap: Map<string, ProtocolMeta>,
   locale: "zh-CN" | "en-US",
 ) {
   const candidatesBySite = new Map<string, CandidateChannelGroup>();
   for (const candidate of candidates) {
-    const channel = channelMap.get(candidate.channel_id);
-    const groupKey =
-      candidate.protocol_config_id ||
-      channel?.site_id ||
-      candidate.site_id ||
-      candidate.channel_id;
+    const groupKey = candidate.protocol_config_id;
     let group = candidatesBySite.get(groupKey);
     if (!group) {
       group = {
         key: groupKey,
-        site_id: channel?.site_id || candidate.site_id,
-        channel_name: channel?.name || candidate.channel_name,
+        site_id: candidate.site_id,
+        channel_name: candidate.channel_name,
         candidates: [],
       };
       candidatesBySite.set(groupKey, group);
@@ -178,48 +94,79 @@ export function groupModelCandidates(
   );
 }
 
-/** Fold protocol-specific form items into editable model members. */
+/** Fold protocol-specific form items using the latest backend evaluation. */
 export function foldGroupMembers(
   formItems: FormItem[],
-  protocols: ProtocolKind[],
+  evaluatedItems: ModelGroup["items"],
 ) {
+  const evaluatedItemsByKey = new Map(
+    evaluatedItems.map((item) => [itemKey(item), item]),
+  );
   const memberOrder = new Map<string, number>();
   const membersByKey = new Map<string, FoldedMember>();
+
   for (const item of formItems) {
-    const protocolConfigId = protocolConfigIdFromChannelId(item.channel_id);
+    const evaluation = evaluatedItemsByKey.get(itemKey(item));
+    const evaluatedItem: EvaluatedFormItem = {
+      ...item,
+      protocol_config_id: evaluation
+        ? evaluation.protocol_config_id
+        : item.protocol_config_id,
+      channel_name: evaluation ? evaluation.channel_name : item.channel_name,
+      protocol: evaluation ? evaluation.protocol : item.protocol,
+      credential_name: evaluation
+        ? evaluation.credential_name
+        : item.credential_name,
+      credential_number: evaluation
+        ? evaluation.credential_number
+        : item.credential_number,
+      state: evaluation ? evaluation.state : item.state,
+      reasons: evaluation ? evaluation.reasons : item.reasons,
+    };
     const key = modelFoldKey(
-      protocolConfigId,
-      item.credential_id,
-      item.model_name,
+      evaluatedItem.protocol_config_id,
+      evaluatedItem.credential_id,
+      evaluatedItem.model_name,
     );
     if (!membersByKey.has(key)) {
       memberOrder.set(key, memberOrder.size);
       membersByKey.set(key, {
         key,
-        protocolConfigId,
-        model_name: item.model_name,
-        credential_id: item.credential_id,
-        credential_name: item.credential_name,
-        credential_number: item.credential_number,
+        protocolConfigId: evaluatedItem.protocol_config_id,
+        model_name: evaluatedItem.model_name,
+        credential_id: evaluatedItem.credential_id,
+        credential_name: evaluatedItem.credential_name,
+        credential_number: evaluatedItem.credential_number,
         protocols: [],
         subItems: [],
-        enabled: false,
-        invalid: false,
+        enabled_item_count: 0,
+        disabled_item_count: 0,
+        ready_item_count: 0,
+        invalid_item_count: 0,
+        unavailable_item_count: 0,
+        pending_item_count: 0,
       });
     }
     const member = membersByKey.get(key)!;
-    member.subItems.push(item);
-    if (item.enabled) member.enabled = true;
-    if (item.protocol && !member.protocols.includes(item.protocol)) {
-      member.protocols.push(item.protocol);
+    member.subItems.push(evaluatedItem);
+    if (evaluatedItem.enabled) member.enabled_item_count += 1;
+    else member.disabled_item_count += 1;
+    if (evaluatedItem.state === null) member.pending_item_count += 1;
+    if (evaluatedItem.state === "ready") member.ready_item_count += 1;
+    if (evaluatedItem.state === "invalid") {
+      member.invalid_item_count += 1;
+    }
+    if (evaluatedItem.state === "unavailable") {
+      member.unavailable_item_count += 1;
+    }
+    if (
+      evaluatedItem.protocol &&
+      !member.protocols.includes(evaluatedItem.protocol)
+    ) {
+      member.protocols.push(evaluatedItem.protocol);
     }
   }
-  for (const member of membersByKey.values()) {
-    member.invalid = member.subItems.every(
-      (item) =>
-        !item.protocol || !isItemValidForProtocols(item.protocol, protocols),
-    );
-  }
+
   return Array.from(memberOrder.entries())
     .sort((left, right) => left[1] - right[1])
     .map(([key]) => membersByKey.get(key)!);

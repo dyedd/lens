@@ -22,9 +22,6 @@ from ..shared import (
 _EnsureStatus = Literal["create", "update", "unchanged", "skipped"]
 
 
-_EnsureStatus = Literal["create", "update", "unchanged", "skipped"]
-
-
 @dataclass
 class _EnsurePreparedItem:
     group_name: str

@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import {
   AlertCircle,
+  Ban,
   ChevronDown,
   Eraser,
   Power,
@@ -9,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,8 +26,11 @@ import type { FoldedMember, MemberStatusFilter } from "./modelGroupUtils";
 interface ModelGroupSelectedMembersProps {
   locale: "zh-CN" | "en-US";
   foldedMembers: FoldedMember[];
-  invalidSelectedMemberCount: number;
+  disabledItemCount: number;
+  invalidItemCount: number;
+  unavailableItemCount: number;
   removeInvalidItems: () => void;
+  removeUnavailableItems: () => void;
   removeDisabledMembers: () => void;
   clearMembers: () => void;
   setAllMembersEnabled: (enabled: boolean) => void;
@@ -43,8 +48,11 @@ interface ModelGroupSelectedMembersProps {
 export function ModelGroupSelectedMembers({
   locale,
   foldedMembers,
-  invalidSelectedMemberCount,
+  disabledItemCount,
+  invalidItemCount,
+  unavailableItemCount,
   removeInvalidItems,
+  removeUnavailableItems,
   removeDisabledMembers,
   clearMembers,
   setAllMembersEnabled,
@@ -57,10 +65,11 @@ export function ModelGroupSelectedMembers({
   setDraggingIndex,
   moveFoldedMember,
 }: ModelGroupSelectedMembersProps) {
-  const enabledMemberCount = foldedMembers.filter(
-    (member) => member.enabled,
-  ).length;
-  const disabledMemberCount = foldedMembers.length - enabledMemberCount;
+  const itemCount = foldedMembers.reduce(
+    (count, member) => count + member.subItems.length,
+    0,
+  );
+  const enabledItemCount = itemCount - disabledItemCount;
   const emptyMessage =
     memberStatusFilter === "all"
       ? locale === "zh-CN"
@@ -68,11 +77,15 @@ export function ModelGroupSelectedMembers({
         : "No selected models"
       : memberStatusFilter === "enabled"
         ? locale === "zh-CN"
-          ? "没有已启用模型"
-          : "No enabled models"
-        : locale === "zh-CN"
-          ? "没有已关闭模型"
-          : "No disabled models";
+          ? "没有包含启用项的模型"
+          : "No models with enabled items"
+        : memberStatusFilter === "disabled"
+          ? locale === "zh-CN"
+            ? "没有包含关闭项的模型"
+            : "No models with disabled items"
+          : locale === "zh-CN"
+            ? "没有异常模型"
+            : "No problematic models";
 
   return (
     <section className="flex flex-col rounded-lg bg-muted/10">
@@ -106,13 +119,19 @@ export function ModelGroupSelectedMembers({
               value="enabled"
               aria-label={locale === "zh-CN" ? "显示已启用" : "Show enabled"}
             >
-              {locale === "zh-CN" ? "已启用" : "Enabled"}
+              {locale === "zh-CN" ? "含启用" : "Has enabled"}
             </ToggleGroupItem>
             <ToggleGroupItem
               value="disabled"
               aria-label={locale === "zh-CN" ? "显示已关闭" : "Show disabled"}
             >
-              {locale === "zh-CN" ? "已关闭" : "Disabled"}
+              {locale === "zh-CN" ? "含关闭" : "Has disabled"}
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="problem"
+              aria-label={locale === "zh-CN" ? "显示异常" : "Show problems"}
+            >
+              {locale === "zh-CN" ? "异常" : "Problems"}
             </ToggleGroupItem>
           </ToggleGroup>
           <DropdownMenu>
@@ -132,14 +151,14 @@ export function ModelGroupSelectedMembers({
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   onSelect={() => setAllMembersEnabled(true)}
-                  disabled={disabledMemberCount === 0}
+                  disabled={disabledItemCount === 0}
                 >
                   <Power />
                   {locale === "zh-CN" ? "全部启用" : "Enable all"}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={() => setAllMembersEnabled(false)}
-                  disabled={enabledMemberCount === 0}
+                  disabled={enabledItemCount === 0}
                 >
                   <PowerOff />
                   {locale === "zh-CN" ? "全部关闭" : "Disable all"}
@@ -150,22 +169,32 @@ export function ModelGroupSelectedMembers({
                 <DropdownMenuItem
                   variant="destructive"
                   onSelect={removeDisabledMembers}
-                  disabled={disabledMemberCount === 0}
+                  disabled={disabledItemCount === 0}
                 >
                   <Trash2 />
                   {locale === "zh-CN"
-                    ? `移除已关闭 (${disabledMemberCount})`
-                    : `Remove disabled (${disabledMemberCount})`}
+                    ? `移除已关闭项 (${disabledItemCount})`
+                    : `Remove disabled (${disabledItemCount})`}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"
                   onSelect={removeInvalidItems}
-                  disabled={invalidSelectedMemberCount === 0}
+                  disabled={invalidItemCount === 0}
                 >
                   <AlertCircle />
                   {locale === "zh-CN"
-                    ? `移除失效节点 (${invalidSelectedMemberCount})`
-                    : `Remove invalid (${invalidSelectedMemberCount})`}
+                    ? `移除配置错误 (${invalidItemCount})`
+                    : `Remove invalid (${invalidItemCount})`}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={removeUnavailableItems}
+                  disabled={unavailableItemCount === 0}
+                >
+                  <Ban />
+                  {locale === "zh-CN"
+                    ? `移除当前不可用 (${unavailableItemCount})`
+                    : `Remove unavailable (${unavailableItemCount})`}
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
@@ -179,9 +208,9 @@ export function ModelGroupSelectedMembers({
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+          <Badge variant="secondary">
             {visibleFoldedMembers.length}/{foldedMembers.length}
-          </span>
+          </Badge>
         </div>
       </div>
       <div className="px-2 pb-2 pt-1">
@@ -195,7 +224,12 @@ export function ModelGroupSelectedMembers({
                 isDragging={draggingIndex === index}
                 isBusy={false}
                 canReorder={memberStatusFilter === "all"}
-                onToggle={() => toggleFoldedMember(member.key, !member.enabled)}
+                onToggle={() =>
+                  toggleFoldedMember(
+                    member.key,
+                    member.enabled_item_count === 0,
+                  )
+                }
                 onRemove={() => removeFoldedMember(member.key)}
                 onDragStart={() => setDraggingIndex(index)}
                 onDragEnter={() => {

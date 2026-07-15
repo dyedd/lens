@@ -62,16 +62,11 @@ export function ModelGroupCard({
 }: ModelGroupCardProps) {
   const copyModelNameLabel =
     locale === "zh-CN" ? "复制模型名称" : "Copy model name";
-  const unavailableMemberStatusLabel = locale === "zh-CN" ? "失效" : "Invalid";
-  const unavailableMemberTooltip =
+  const problemMembersLabel =
     locale === "zh-CN"
-      ? "成员关联的目标模型组、渠道、Base URL、密钥或模型不可用"
-      : "Member references an unavailable route target, channel, base URL, key, or model";
-  const unavailableMembersLabel =
-    locale === "zh-CN"
-      ? `包含 ${group.unavailable_member_count} 个失效成员`
-      : `${group.unavailable_member_count} invalid ${
-          group.unavailable_member_count === 1 ? "member" : "members"
+      ? `包含 ${group.problem_member_count} 个异常成员`
+      : `${group.problem_member_count} problematic ${
+          group.problem_member_count === 1 ? "member" : "members"
         }`;
 
   return (
@@ -138,7 +133,7 @@ export function ModelGroupCard({
                 {locale === "zh-CN" ? "路由组" : "Route group"}
               </Badge>
             ) : null}
-            {group.unavailable_member_count > 0 ? (
+            {group.problem_member_count > 0 ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge
@@ -147,11 +142,13 @@ export function ModelGroupCard({
                     tabIndex={0}
                   >
                     <TriangleAlert data-icon="inline-start" />
-                    {unavailableMembersLabel}
+                    {problemMembersLabel}
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" align="start">
-                  {unavailableMemberTooltip}
+                  {locale === "zh-CN"
+                    ? "成员存在配置错误或当前不可用，具体原因见成员状态"
+                    : "Members have configuration errors or are currently unavailable; see member status for details"}
                 </TooltipContent>
               </Tooltip>
             ) : null}
@@ -199,8 +196,6 @@ export function ModelGroupCard({
             setCardDragging={setCardDragging}
             reorderGroupMembers={reorderGroupMembers}
             removeGroupMember={removeGroupMember}
-            unavailableMemberStatusLabel={unavailableMemberStatusLabel}
-            unavailableMemberTooltip={unavailableMemberTooltip}
           />
         </div>
       </ItemContent>

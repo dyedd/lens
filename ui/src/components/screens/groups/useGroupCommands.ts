@@ -24,7 +24,6 @@ import {
 type GroupCommandOptions = {
   editingId: string | null;
   form: FormState;
-  invalidSelectedMemberCount: number;
   invalidateGroupData: () => Promise<void>;
   locale: "zh-CN" | "en-US";
   queryClient: QueryClient;
@@ -37,7 +36,6 @@ type GroupCommandOptions = {
 export function useGroupCommands({
   editingId,
   form,
-  invalidSelectedMemberCount,
   invalidateGroupData,
   locale,
   queryClient,
@@ -102,14 +100,6 @@ export function useGroupCommands({
         locale === "zh-CN"
           ? "至少需要选择一项协议。"
           : "At least one protocol is required.",
-      );
-      return;
-    }
-    if (!form.route_group_id && invalidSelectedMemberCount > 0) {
-      toast.error(
-        locale === "zh-CN"
-          ? "请先移除不适用于所选协议的失效节点"
-          : "Please remove invalid nodes invalid for the selected protocols",
       );
       return;
     }
@@ -217,6 +207,7 @@ export function useGroupCommands({
       items: nextMembers.flatMap((member) =>
         member.items.map((item) => ({
           channel_id: item.channel_id,
+          protocol_config_id: item.protocol_config_id,
           channel_name: item.channel_name,
           protocol: item.protocol,
           credential_id: item.credential_id,
@@ -224,6 +215,8 @@ export function useGroupCommands({
           credential_number: item.credential_number,
           model_name: item.model_name,
           enabled: item.enabled,
+          state: item.state,
+          reasons: item.reasons,
         })),
       ),
     });

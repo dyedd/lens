@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Float, Integer, String, Text
+from sqlalchemy import CheckConstraint, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
@@ -145,6 +145,13 @@ class ModelGroupItemEntity(Base):
         CheckConstraint(
             "credential_id <> ''",
             name="ck_model_group_items_credential_id_not_empty",
+        ),
+        UniqueConstraint(
+            "group_id",
+            "channel_id",
+            "credential_id",
+            "model_name",
+            name="uq_model_group_items_target",
         ),
     )
 

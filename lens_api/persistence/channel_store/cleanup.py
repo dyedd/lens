@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from ...core.runtime_channel_ids import compose_runtime_channel_id
 from .shared import (
     AsyncSession,
+    ModelGroupEntity,
     ModelGroupItemEntity,
+    ProtocolKind,
     SiteCredentialEntity,
     SiteDiscoveredModelEntity,
     SiteProtocolConfigEntity,
-    _channel_id_matches_protocol_config,
     delete,
-    or_,
     select,
 )
 
@@ -19,19 +20,6 @@ class ChannelCleanupMixin:
     ) -> None:
         if not protocol_config_ids:
             return
-        await session.execute(
-            delete(ModelGroupItemEntity).where(
-                or_(
-                    *[
-                        _channel_id_matches_protocol_config(
-                            ModelGroupItemEntity.channel_id,
-                            protocol_config_id,
-                        )
-                        for protocol_config_id in protocol_config_ids
-                    ]
-                )
-            )
-        )
         await session.execute(
             delete(SiteDiscoveredModelEntity).where(
                 SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_config_ids)
@@ -54,7 +42,7 @@ class ChannelCleanupMixin:
             )
         )
 
-    async def _cleanup_invalid_group_items(
+    async def _cleanup_invalid_synced_group_items(
         self, session: AsyncSession, protocol_config_ids: set[str]
     ) -> None:
         if not protocol_config_ids:
@@ -74,21 +62,22 @@ class ChannelCleanupMixin:
             .where(
                 SiteDiscoveredModelEntity.model_name == ModelGroupItemEntity.model_name
             )
-            .where(SiteDiscoveredModelEntity.enabled == 1)
             .exists()
         )
+        synced_group = (
+            select(ModelGroupEntity.id)
+            .where(ModelGroupEntity.id == ModelGroupItemEntity.group_id)
+            .where(ModelGroupEntity.sync_filter_mode != "")
+            .exists()
+        )
+        runtime_channel_ids = {
+            compose_runtime_channel_id(protocol_config_id, protocol)
+            for protocol_config_id in protocol_config_ids
+            for protocol in ProtocolKind
+        }
         await session.execute(
             delete(ModelGroupItemEntity)
-            .where(
-                or_(
-                    *[
-                        _channel_id_matches_protocol_config(
-                            ModelGroupItemEntity.channel_id,
-                            protocol_config_id,
-                        )
-                        for protocol_config_id in protocol_config_ids
-                    ]
-                )
-            )
+            .where(ModelGroupItemEntity.channel_id.in_(runtime_channel_ids))
+            .where(synced_group)
             .where(~matching_model)
         )

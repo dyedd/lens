@@ -54,6 +54,7 @@ class ChannelNormalizationMixin(ChannelLoadNormalizationMixin):
                 items.append(
                     ChannelConfig(
                         id=compose_runtime_channel_id(protocol_config.id, protocol),
+                        site_id=site.id,
                         name=site.name,
                         protocol=protocol,
                         base_url=bound_base_url.url,
@@ -93,6 +94,10 @@ class ChannelNormalizationMixin(ChannelLoadNormalizationMixin):
         protocol_config: SiteProtocolConfig,
         credentials_by_id: dict[str, SiteCredential],
     ) -> list[ChannelKeyItem]:
+        credential_numbers = {
+            credential_id: index + 1
+            for index, credential_id in enumerate(credentials_by_id)
+        }
         credential_ids = list(
             dict.fromkeys(
                 [protocol_config.credential_id]
@@ -104,6 +109,7 @@ class ChannelNormalizationMixin(ChannelLoadNormalizationMixin):
                 id=credential.id,
                 key=credential.api_key,
                 remark=credential.name,
+                number=credential_numbers[credential.id],
                 enabled=credential.enabled,
             )
             for credential_id in credential_ids

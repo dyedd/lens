@@ -3,10 +3,12 @@ from pydantic import Field, HttpUrl, field_validator
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
 from .protocols import ChannelProxyMode, ChannelStatus, ProtocolKind
 
+
 class ChannelKeyItem(StrictBaseModel):
     id: str = ""
     key: str = Field(min_length=1)
     remark: str = ""
+    number: int = Field(default=0, ge=0)
     enabled: bool = True
 
 
@@ -21,6 +23,7 @@ class ChannelDiscoveredModel(StrictBaseModel):
 
 class ChannelConfig(StrictBaseModel):
     id: str
+    site_id: str = ""
     name: str
     protocol: ProtocolKind
     base_url: HttpUrl
@@ -36,7 +39,6 @@ class ChannelConfig(StrictBaseModel):
     match_regex: str = ""
 
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
-
 
 
 class ChannelModelSyncRequest(StrictBaseModel):
@@ -64,4 +66,3 @@ class ChannelModelSyncResponse(StrictBaseModel):
     synced_channel_count: int = Field(default=0, ge=0)
     skipped_channel_count: int = Field(default=0, ge=0)
     items: list[ChannelModelSyncResultItem] = Field(default_factory=list)
-

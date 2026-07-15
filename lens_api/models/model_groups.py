@@ -1,6 +1,7 @@
+from enum import Enum
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, model_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern
 from .protocols import (
@@ -8,6 +9,25 @@ from .protocols import (
     ProtocolKind,
     RoutingStrategy,
 )
+
+
+class ModelGroupItemState(str, Enum):
+    READY = "ready"
+    DISABLED = "disabled"
+    INVALID = "invalid"
+    UNAVAILABLE = "unavailable"
+
+
+class ModelGroupItemReason(str, Enum):
+    MANUAL_DISABLED = "manual_disabled"
+    CHANNEL_NOT_FOUND = "channel_not_found"
+    PROTOCOL_UNREACHABLE = "protocol_unreachable"
+    CHANNEL_DISABLED = "channel_disabled"
+    CREDENTIAL_NOT_FOUND = "credential_not_found"
+    CREDENTIAL_DISABLED = "credential_disabled"
+    MODEL_NOT_FOUND = "model_not_found"
+    MODEL_DISABLED = "model_disabled"
+
 
 class ModelGroup(StrictBaseModel):
     id: str
@@ -46,6 +66,16 @@ class ModelGroupItem(StrictBaseModel):
     model_name: str
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
+
+
+class ModelGroupItemView(ModelGroupItem):
+    protocol_config_id: str
+    state: ModelGroupItemState
+    reasons: list[ModelGroupItemReason] = Field(default_factory=list)
+
+
+class ModelGroupView(ModelGroup):
+    items: list[ModelGroupItemView] = Field(default_factory=list)
 
 
 class ModelGroupItemInput(StrictBaseModel):
@@ -118,36 +148,36 @@ def normalize_model_group_sync_filter(
     if mode == ModelGroupSyncFilterMode.NONE:
         return ModelGroupSyncFilterMode.NONE, ""
     if mode == ModelGroupSyncFilterMode.REGEX:
-        _validate_regex_pattern(
-            normalized_query, error_label="model group sync regex"
-        )
+        _validate_regex_pattern(normalized_query, error_label="model group sync regex")
     return mode, normalized_query
 
 
+class ModelGroupCandidateSubitem(ModelGroupItemInput):
+    protocol_config_id: str
+    protocol: ProtocolKind
+
 
 class ModelGroupCandidateItem(StrictBaseModel):
-    site_id: str = ""
-    channel_id: str
+    site_id: str
     channel_name: str
-    protocol: ProtocolKind
     credential_id: str = Field(min_length=1)
     credential_name: str = ""
     credential_number: int = Field(default=0, ge=0)
     base_url: str
     model_name: str
-    protocol_config_id: str = ""
+    protocol_config_id: str
     protocols: list[ProtocolKind] = Field(default_factory=list)
-    protocol_channels: dict[ProtocolKind, str] = Field(default_factory=dict)
-    items: list[ModelGroupItemInput] = Field(default_factory=list)
+    items: list[ModelGroupCandidateSubitem] = Field(default_factory=list)
 
 
 class ModelGroupCandidatesRequest(StrictBaseModel):
-    protocols: list[ProtocolKind] = Field(default_factory=list)
-    exclude_items: list[ModelGroupItemInput] = Field(default_factory=list)
+    protocols: list[ProtocolKind] = Field(min_length=1)
+    items: list[ModelGroupItemInput] = Field(default_factory=list)
 
 
 class ModelGroupCandidatesResponse(StrictBaseModel):
     candidates: list[ModelGroupCandidateItem] = Field(default_factory=list)
+    evaluated_items: list[ModelGroupItemView] = Field(default_factory=list)
 
 
 class ModelGroupEnsureModelInput(StrictBaseModel):

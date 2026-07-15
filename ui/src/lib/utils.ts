@@ -15,3 +15,15 @@ export function isGeneratedCredentialName(value: string) {
     /^密钥\s*\d+$/.test(value.trim())
   );
 }
+
+/** Returns a credential remark or its localized positional fallback. */
+export function formatCredentialDisplayName(
+  value: string | undefined,
+  number: number,
+  locale: string,
+) {
+  const name = value?.trim() ?? "";
+  if (name && !isGeneratedCredentialName(name)) return name;
+  const position = number > 0 ? number : 1;
+  return locale === "zh-CN" ? `密钥 ${position}` : `Key ${position}`;
+}
