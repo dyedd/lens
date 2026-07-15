@@ -81,7 +81,6 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                       existingItemKeys={existingItemKeys}
                       toggleChannel={props.toggleChannel}
                       addCandidate={props.addCandidate}
-                      sitesIsError={props.sitesIsError}
                       candidateIsError={props.candidateIsError}
                       candidateListError={props.candidateListError}
                     />
@@ -89,10 +88,11 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                   <ModelGroupSelectedMembers
                     locale={locale}
                     foldedMembers={props.foldedMembers}
-                    invalidSelectedMemberCount={
-                      props.invalidSelectedMemberCount
-                    }
+                    disabledItemCount={props.disabledItemCount}
+                    invalidItemCount={props.invalidItemCount}
+                    unavailableItemCount={props.unavailableItemCount}
                     removeInvalidItems={props.removeInvalidItems}
+                    removeUnavailableItems={props.removeUnavailableItems}
                     removeDisabledMembers={props.removeDisabledMembers}
                     clearMembers={props.clearMembers}
                     setAllMembersEnabled={props.setAllMembersEnabled}

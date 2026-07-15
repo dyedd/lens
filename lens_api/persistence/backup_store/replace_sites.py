@@ -69,7 +69,7 @@ async def _replace_sites(
     protocol_config_ids: set[str] = set()
     protocols_by_config_id: dict[str, list[ProtocolKind]] = {}
     credential_ids: set[str] = set()
-    available_model_keys: set[tuple[str, str, str]] = set()
+    model_keys: set[tuple[str, str, str]] = set()
     base_url_ids: set[str] = set()
     model_ids: set[str] = set()
 
@@ -194,18 +194,13 @@ async def _replace_sites(
                         f"protocol config {protocol_config.id}: "
                         f"{model.protocol.value}"
                     )
-                if model.enabled:
-                    for protocol_kind in protocols_by_config_id[protocol_config.id]:
-                        if model.protocol == protocol_kind:
-                            available_model_keys.add(
-                                (
-                                    _runtime_channel_id(
-                                        protocol_config.id, protocol_kind
-                                    ),
-                                    model.credential_id,
-                                    model.model_name,
-                                )
-                            )
+                model_keys.add(
+                    (
+                        _runtime_channel_id(protocol_config.id, model.protocol),
+                        model.credential_id,
+                        model.model_name,
+                    )
+                )
                 session.add(
                     SiteDiscoveredModelEntity(
                         id=model.id,
@@ -218,4 +213,4 @@ async def _replace_sites(
                     )
                 )
 
-    return protocol_config_ids, protocols_by_config_id, available_model_keys
+    return protocol_config_ids, protocols_by_config_id, model_keys

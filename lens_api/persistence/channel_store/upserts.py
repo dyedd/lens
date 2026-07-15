@@ -1,33 +1,19 @@
 from __future__ import annotations
 
-from sqlalchemy import update
-
-from ...core.runtime_channel_ids import compose_runtime_channel_id
 from .cleanup import ChannelCleanupMixin
 from .protocol_upserts import ChannelProtocolUpsertsMixin
 from .shared import (
     AsyncSession,
-    ModelGroupItemEntity,
-    ProtocolKind,
     SiteBaseUrl,
     SiteBaseUrlEntity,
     SiteBaseUrlInput,
     SiteCredential,
     SiteCredentialEntity,
     SiteCredentialInput,
-    SiteDiscoveredModelEntity,
     SiteEntity,
-    SiteProtocolConfigEntity,
     SiteProtocolConfigInput,
-    _channel_id_matches_protocol_config,
-    _deduplicate_protocols,
-    _deduplicate_protocol_config_models,
     _dump_protocols_json,
     delete,
-    json,
-    or_,
-    select,
-    uuid,
 )
 
 
@@ -51,12 +37,6 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
         normalized_credentials = self._normalize_credentials(credentials)
         credential_ids = {item.id for item in normalized_credentials}
         base_url_ids = {item.id for item in normalized_base_urls}
-        disabled_base_url_ids = {
-            item.id for item in normalized_base_urls if not item.enabled
-        }
-        disabled_credential_ids = {
-            item.id for item in normalized_credentials if not item.enabled
-        }
 
         site = await session.get(SiteEntity, site_id)
         if site is None:
@@ -77,8 +57,6 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
             protocols,
             credential_ids,
             base_url_ids,
-            disabled_base_url_ids,
-            disabled_credential_ids,
         )
 
         await self._cleanup_deleted_protocol_configs(
@@ -87,7 +65,9 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
         await self._cleanup_deleted_credentials(
             session, current_credential_ids - credential_ids
         )
-        await self._cleanup_invalid_group_items(session, next_protocol_config_ids)
+        await self._cleanup_invalid_synced_group_items(
+            session, current_protocol_config_ids | next_protocol_config_ids
+        )
 
     async def _upsert_base_urls(
         self, session: AsyncSession, site_id: str, items: list[SiteBaseUrl]

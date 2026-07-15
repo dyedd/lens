@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...models import GatewayApiKey, ModelGroup, ProtocolKind
+from ...models import (
+    GatewayApiKey,
+    ModelGroupItemState,
+    ModelGroupView,
+    ProtocolKind,
+)
 from ..converters import can_reach_protocol
 from .auth import _gateway_key_allows_model
 
@@ -20,7 +25,7 @@ ALL_MODEL_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(ProtocolKind)
 
 
 def build_openai_models_payload(
-    groups: list[ModelGroup],
+    groups: list[ModelGroupView],
     gateway_key: GatewayApiKey,
     protocols: frozenset[ProtocolKind] | set[ProtocolKind] = OPENAI_LIST_PROTOCOLS,
 ) -> dict[str, Any]:
@@ -41,7 +46,7 @@ def build_openai_models_payload(
 
 
 def build_anthropic_models_payload(
-    groups: list[ModelGroup], gateway_key: GatewayApiKey
+    groups: list[ModelGroupView], gateway_key: GatewayApiKey
 ) -> dict[str, Any]:
     """Build an Anthropic-compatible model list from visible groups."""
     names = _filtered_group_names(
@@ -64,7 +69,7 @@ def build_anthropic_models_payload(
 
 
 def build_gemini_models_payload(
-    groups: list[ModelGroup], gateway_key: GatewayApiKey
+    groups: list[ModelGroupView], gateway_key: GatewayApiKey
 ) -> dict[str, Any]:
     """Build a Gemini-compatible model list from visible groups."""
     names = _filtered_group_names(groups, gateway_key, {ProtocolKind.GEMINI})
@@ -86,21 +91,21 @@ def build_gemini_models_payload(
 
 
 def _filtered_group_names(
-    groups: list[ModelGroup],
+    groups: list[ModelGroupView],
     gateway_key: GatewayApiKey,
     protocols: frozenset[ProtocolKind] | set[ProtocolKind],
 ) -> list[str]:
     group_by_id = {group.id: group for group in groups}
     requested_protocols = frozenset(protocols)
 
-    def has_enabled_item(group: ModelGroup) -> bool:
+    def has_ready_item(group: ModelGroupView) -> bool:
         target = (
             group_by_id.get(group.route_group_id) if group.route_group_id else group
         )
         return bool(
             target
             and any(
-                item.enabled
+                item.state == ModelGroupItemState.READY
                 and item.protocol is not None
                 and any(
                     can_reach_protocol(item.protocol, protocol)
@@ -116,7 +121,7 @@ def _filtered_group_names(
             for group in groups
             if group.name.strip()
             and set(group.protocols) & requested_protocols
-            and has_enabled_item(group)
+            and has_ready_item(group)
             and _gateway_key_allows_model(gateway_key, group.name)
         }
     )

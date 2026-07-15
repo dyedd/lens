@@ -8,10 +8,9 @@ import {
   type ModelGroup,
   type ModelGroupCandidatesPayload,
   type ModelGroupCandidatesResponse,
-  type Site,
 } from "@/lib/api";
-import { buildGroupChannelMap, buildGroupRows } from "./groupScreenData";
-import type { FormState } from "./modelGroupUtils";
+import { buildGroupRows } from "./groupScreenData";
+import { itemKey, type FormState } from "./modelGroupUtils";
 
 type GroupsQueryOptions = {
   dialogOpen: boolean;
@@ -33,20 +32,17 @@ export function useGroupsQueries({
     queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
     staleTime: 2 * 60_000,
   });
-  const sitesQuery = useQuery({
-    queryKey: ["sites"],
-    queryFn: () => apiRequest<Site[]>("/admin/sites"),
-    staleTime: 2 * 60_000,
-  });
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(
     () => ({
       protocols: form.protocols,
-      exclude_items: form.items.map((item) => ({
-        channel_id: item.channel_id,
-        credential_id: item.credential_id,
-        model_name: item.model_name,
-        enabled: item.enabled,
-      })),
+      items: form.items
+        .map((item) => ({
+          channel_id: item.channel_id,
+          credential_id: item.credential_id,
+          model_name: item.model_name,
+          enabled: item.enabled,
+        }))
+        .sort((left, right) => itemKey(left).localeCompare(itemKey(right))),
     }),
     [form.items, form.protocols],
   );
@@ -62,16 +58,9 @@ export function useGroupsQueries({
       ),
     enabled: dialogOpen && !form.route_group_id && form.protocols.length > 0,
   });
-  const isAvailabilityReady =
-    sitesQuery.data !== undefined && !sitesQuery.isError;
-  const channelMap = useMemo(
-    () => buildGroupChannelMap(sitesQuery.data ?? []),
-    [sitesQuery.data],
-  );
   const groupRows = useMemo(
-    () =>
-      buildGroupRows(groupsQuery.data ?? [], channelMap, isAvailabilityReady),
-    [channelMap, groupsQuery.data, isAvailabilityReady],
+    () => buildGroupRows(groupsQuery.data ?? []),
+    [groupsQuery.data],
   );
   const routeTargetOptions = useMemo(
     () =>
@@ -107,14 +96,13 @@ export function useGroupsQueries({
   async function invalidateGroupData() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["groups"] }),
-      queryClient.invalidateQueries({ queryKey: ["sites"] }),
       queryClient.invalidateQueries({ queryKey: ["group-candidates"] }),
     ]);
   }
 
   return {
     candidateQuery,
-    channelMap,
+    evaluatedItems: candidateQuery.data?.evaluated_items ?? [],
     groupRows,
     groups: groupsQuery.data,
     groupsIsError: groupsQuery.isError,
@@ -122,7 +110,5 @@ export function useGroupsQueries({
     isLoading: groupsQuery.isLoading,
     queryClient,
     routeTargetOptions,
-    sitesError: sitesQuery.error,
-    sitesIsError: sitesQuery.isError,
   };
 }

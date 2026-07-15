@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from .shared import (
-    ModelGroupItemEntity,
     ProtocolKind,
     SiteBaseUrlEntity,
     SiteCredential,
@@ -12,9 +11,7 @@ from .shared import (
     SiteModelInput,
     SiteProtocolConfigEntity,
     SiteProtocolConfigInput,
-    _channel_id_matches_protocol_config,
     delete,
-    or_,
     select,
     uuid,
 )
@@ -32,19 +29,6 @@ class ChannelSiteOperationsMixin:
             protocol_config_ids = await self._site_protocol_config_ids(session, site_id)
             credential_ids = await self._site_credential_ids(session, site_id)
             if protocol_config_ids:
-                await session.execute(
-                    delete(ModelGroupItemEntity).where(
-                        or_(
-                            *[
-                                _channel_id_matches_protocol_config(
-                                    ModelGroupItemEntity.channel_id,
-                                    protocol_config_id,
-                                )
-                                for protocol_config_id in protocol_config_ids
-                            ]
-                        )
-                    )
-                )
                 await session.execute(
                     delete(SiteDiscoveredModelEntity).where(
                         SiteDiscoveredModelEntity.protocol_config_id.in_(
@@ -67,6 +51,9 @@ class ChannelSiteOperationsMixin:
                 delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id)
             )
             await session.delete(site)
+            await self._cleanup_invalid_synced_group_items(
+                session, set(protocol_config_ids)
+            )
             await session.commit()
 
     async def fetch_models_preview(
@@ -162,5 +149,7 @@ class ChannelSiteOperationsMixin:
                 protocol_config,
                 {credential_id},
             )
-            await self._cleanup_invalid_group_items(session, {protocol_config_id})
+            await self._cleanup_invalid_synced_group_items(
+                session, {protocol_config_id}
+            )
             await session.commit()

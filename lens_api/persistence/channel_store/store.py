@@ -21,7 +21,6 @@ from .shared import (
     SiteProtocolConfigEntity,
     SiteProtocolConfigInput,
     SiteUpdate,
-    _channel_id_matches_protocol_config,
     async_sessionmaker,
     delete,
     or_,

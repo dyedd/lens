@@ -26,6 +26,7 @@ from ...models import (
     ConfigBackupStatsSnapshot,
     ConfigImportResult,
     ModelGroup,
+    ModelGroupItem,
     ModelPriceItem,
     ProtocolKind,
     RequestLogLifecycleStatus,

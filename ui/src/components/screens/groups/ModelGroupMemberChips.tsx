@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { GripVertical, TriangleAlert, X } from "lucide-react";
+import { AlertCircle, Ban, GripVertical, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ItemDescription } from "@/components/ui/Item";
@@ -10,7 +10,12 @@ import {
 } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/utils";
 import type { GroupCardDragging } from "./groupOverviewTypes";
-import { credentialDisplayLabel, type GroupRow } from "./modelGroupUtils";
+import {
+  credentialDisplayLabel,
+  modelGroupReasonsForState,
+  modelGroupItemReasonLabel,
+  type GroupRow,
+} from "./modelGroupUtils";
 
 interface ModelGroupMemberChipsProps {
   group: GroupRow;
@@ -24,8 +29,6 @@ interface ModelGroupMemberChipsProps {
     toIndex: number,
   ) => void;
   removeGroupMember: (group: GroupRow, memberKey: string) => void;
-  unavailableMemberStatusLabel: string;
-  unavailableMemberTooltip: string;
 }
 
 /** Render route targets or draggable members for a model group card. */
@@ -37,8 +40,6 @@ export function ModelGroupMemberChips({
   setCardDragging,
   reorderGroupMembers,
   removeGroupMember,
-  unavailableMemberStatusLabel,
-  unavailableMemberTooltip,
 }: ModelGroupMemberChipsProps) {
   if (group.is_route_group) {
     return (
@@ -59,19 +60,28 @@ export function ModelGroupMemberChips({
   return group.display_members.map((member, index) => {
     const channelName = member.channel_names.slice(0, 2).join(" · ") || "n/a";
     const sourceLabel = `${channelName} · ${credentialDisplayLabel(member, locale)}`;
+    const enabled = member.enabled_item_count > 0;
+    const invalidReasons = modelGroupReasonsForState(member.items, "invalid");
+    const unavailableReasons = modelGroupReasonsForState(
+      member.items,
+      "unavailable",
+    );
+    const problemLabels = [...invalidReasons, ...unavailableReasons].map(
+      (reason) => modelGroupItemReasonLabel(reason, locale),
+    );
     return (
       <div
         key={`${member.key}::${index}`}
         className={cn(
           "flex min-w-0 max-w-full items-center rounded-full border bg-background",
-          !member.enabled && !member.isUnavailable && "opacity-55",
-          member.isUnavailable && "border-destructive/30 bg-destructive/5",
+          !enabled && !problemLabels.length && "opacity-55",
+          problemLabels.length > 0 && "border-destructive/30 bg-destructive/5",
           cardDragging?.groupId === group.id &&
             cardDragging.index === index &&
             "opacity-60",
         )}
         title={`${sourceLabel} · ${member.model_name}${
-          member.isUnavailable ? ` · ${unavailableMemberStatusLabel}` : ""
+          problemLabels.length ? ` · ${problemLabels.join(" · ")}` : ""
         }`}
       >
         <Button
@@ -94,16 +104,33 @@ export function ModelGroupMemberChips({
             · {sourceLabel}
           </span>
         </Button>
-        {member.isUnavailable ? (
+        {invalidReasons.length ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <Badge variant="destructive" className="mr-1" tabIndex={0}>
-                <TriangleAlert data-icon="inline-start" />
-                {unavailableMemberStatusLabel}
+                <AlertCircle data-icon="inline-start" />
+                {locale === "zh-CN" ? "配置错误" : "Invalid"}
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {unavailableMemberTooltip}
+              {invalidReasons
+                .map((reason) => modelGroupItemReasonLabel(reason, locale))
+                .join(locale === "zh-CN" ? "、" : ", ")}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        {unavailableReasons.length ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="outline" className="mr-1" tabIndex={0}>
+                <Ban data-icon="inline-start" />
+                {locale === "zh-CN" ? "不可用" : "Unavailable"}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {unavailableReasons
+                .map((reason) => modelGroupItemReasonLabel(reason, locale))
+                .join(locale === "zh-CN" ? "、" : ", ")}
             </TooltipContent>
           </Tooltip>
         ) : null}

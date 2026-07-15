@@ -2,15 +2,34 @@ import type { ProtocolKind } from "./protocols";
 
 export type RoutingStrategy = "round_robin" | "failover";
 export type ModelGroupSyncFilterMode = "" | "contains" | "regex";
-export type ModelGroupItem = {
+export type ModelGroupItemState =
+  | "ready"
+  | "disabled"
+  | "invalid"
+  | "unavailable";
+export type ModelGroupItemReason =
+  | "manual_disabled"
+  | "channel_not_found"
+  | "protocol_unreachable"
+  | "channel_disabled"
+  | "credential_not_found"
+  | "credential_disabled"
+  | "model_not_found"
+  | "model_disabled";
+export type ModelGroupItemPayload = {
   channel_id: string;
-  channel_name: string;
-  protocol?: ProtocolKind | null;
   credential_id: string;
-  credential_name: string;
-  credential_number: number;
   model_name: string;
   enabled: boolean;
+};
+export type ModelGroupItem = ModelGroupItemPayload & {
+  channel_name: string;
+  protocol_config_id: string;
+  protocol?: ProtocolKind | null;
+  credential_name: string;
+  credential_number: number;
+  state: ModelGroupItemState;
+  reasons: ModelGroupItemReason[];
   sort_order: number;
 };
 export type ModelGroup = {
@@ -28,12 +47,6 @@ export type ModelGroup = {
   cache_write_price_per_million: number;
   items: ModelGroupItem[];
 };
-export type ModelGroupItemPayload = {
-  channel_id: string;
-  credential_id: string;
-  model_name: string;
-  enabled: boolean;
-};
 export type ModelGroupPayload = {
   name: string;
   protocols: ProtocolKind[];
@@ -43,11 +56,13 @@ export type ModelGroupPayload = {
   sync_filter_query: string;
   items: ModelGroupItemPayload[];
 };
+export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {
+  protocol_config_id: string;
+  protocol: ProtocolKind;
+};
 export type ModelGroupCandidateItem = {
   site_id: string;
-  channel_id: string;
   channel_name: string;
-  protocol: ProtocolKind;
   credential_id: string;
   credential_name: string;
   credential_number: number;
@@ -55,15 +70,15 @@ export type ModelGroupCandidateItem = {
   model_name: string;
   protocol_config_id: string;
   protocols: ProtocolKind[];
-  protocol_channels: Partial<Record<ProtocolKind, string>>;
-  items: ModelGroupItemPayload[];
+  items: ModelGroupCandidateSubitem[];
 };
 export type ModelGroupCandidatesPayload = {
   protocols?: ProtocolKind[];
-  exclude_items: ModelGroupItemPayload[];
+  items: ModelGroupItemPayload[];
 };
 export type ModelGroupCandidatesResponse = {
   candidates: ModelGroupCandidateItem[];
+  evaluated_items: ModelGroupItem[];
 };
 export type ModelGroupEnsureStatus =
   | "create"
