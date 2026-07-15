@@ -39,11 +39,13 @@ export interface GroupEditorDialogProps {
   toggleChannel: (channelId: string) => void;
   foldedMembers: FoldedMember[];
   addCandidate: (candidate: ModelGroupCandidateItem) => void;
-  sitesIsError: boolean;
   candidateIsError: boolean;
   candidateListError: unknown;
-  invalidSelectedMemberCount: number;
+  disabledItemCount: number;
+  invalidItemCount: number;
+  unavailableItemCount: number;
   removeInvalidItems: () => void;
+  removeUnavailableItems: () => void;
   removeDisabledMembers: () => void;
   clearMembers: () => void;
   setAllMembersEnabled: (enabled: boolean) => void;

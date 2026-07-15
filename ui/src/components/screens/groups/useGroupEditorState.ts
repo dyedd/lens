@@ -90,6 +90,11 @@ export function useGroupEditorState() {
       protocols: current.protocols.includes(protocol)
         ? current.protocols.filter((item) => item !== protocol)
         : [...current.protocols, protocol],
+      items: current.items.map((item) => ({
+        ...item,
+        state: null,
+        reasons: [],
+      })),
     }));
   }
 

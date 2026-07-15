@@ -84,7 +84,7 @@ class BackupExportImportMixin:
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 
-            protocol_config_ids, protocols_by_config_id, available_model_keys = (
+            protocol_config_ids, protocols_by_config_id, model_keys = (
                 await self._replace_sites(session, dump.sites)
             )
             rows_affected["sites"] = len(dump.sites)
@@ -108,7 +108,7 @@ class BackupExportImportMixin:
                 dump.groups,
                 available_protocol_config_ids=protocol_config_ids,
                 protocols_by_config_id=protocols_by_config_id,
-                available_model_keys=available_model_keys,
+                model_keys=model_keys,
             )
             rows_affected["model_groups"] = len(dump.groups)
             rows_affected["model_group_items"] = sum(

@@ -18,14 +18,12 @@ import {
   type CandidateSearchMode,
   type FormItem,
   type FormState,
-  type ProtocolMeta,
 } from "./modelGroupUtils";
 
 type GroupCandidateOptions = {
   candidateResponse?: ModelGroupCandidatesResponse;
   candidateSearch: string;
   candidateSearchMode: CandidateSearchMode;
-  channelMap: Map<string, ProtocolMeta>;
   expandedChannels: string[];
   form: FormState;
   locale: "zh-CN" | "en-US";
@@ -38,7 +36,6 @@ export function useGroupCandidates({
   candidateResponse,
   candidateSearch,
   candidateSearchMode,
-  channelMap,
   expandedChannels,
   form,
   locale,
@@ -56,21 +53,14 @@ export function useGroupCandidates({
           candidate,
           candidateSearchMode,
           candidateSearch,
-          channelMap,
           locale,
         ),
       ),
-    [
-      candidateResponse,
-      candidateSearch,
-      candidateSearchMode,
-      channelMap,
-      locale,
-    ],
+    [candidateResponse, candidateSearch, candidateSearchMode, locale],
   );
   const groupedCandidates = useMemo(
-    () => groupModelCandidates(filteredCandidates, channelMap, locale),
-    [channelMap, filteredCandidates, locale],
+    () => groupModelCandidates(filteredCandidates, locale),
+    [filteredCandidates, locale],
   );
   const availableGroupKeys = new Set(
     groupedCandidates.map((candidateGroup) => candidateGroup.key),
@@ -110,7 +100,7 @@ export function useGroupCandidates({
   }
 
   function addCandidate(candidate: ModelGroupCandidateItem) {
-    const newFormItems = candidatePayloadToFormItems(candidate, channelMap);
+    const newFormItems = candidatePayloadToFormItems(candidate);
     setForm((current) => {
       const existingKeys = new Set(current.items.map((item) => itemKey(item)));
       const itemsToAdd = newFormItems.filter(
@@ -127,7 +117,7 @@ export function useGroupCandidates({
     setForm((current) => {
       const existingKeys = new Set(current.items.map((item) => itemKey(item)));
       const additions = filteredCandidates.flatMap((candidate) =>
-        candidatePayloadToFormItems(candidate, channelMap).filter(
+        candidatePayloadToFormItems(candidate).filter(
           (item) => !existingKeys.has(itemKey(item)),
         ),
       );
@@ -160,7 +150,7 @@ export function useGroupCandidates({
           method: "POST",
           body: JSON.stringify({
             protocols: form.protocols,
-            exclude_items: [],
+            items: [],
           } satisfies ModelGroupCandidatesPayload),
         },
       );
@@ -175,13 +165,12 @@ export function useGroupCandidates({
             candidate,
             form.sync_filter_mode as CandidateSearchMode,
             form.sync_filter_query,
-            channelMap,
             locale,
           )
         ) {
           continue;
         }
-        for (const item of candidatePayloadToFormItems(candidate, channelMap)) {
+        for (const item of candidatePayloadToFormItems(candidate)) {
           const key = itemKey(item);
           if (matchedKeys.has(key)) continue;
           matchedKeys.add(key);

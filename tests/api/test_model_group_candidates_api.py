@@ -13,9 +13,9 @@ def test_model_group_candidates_return_site_models(
     exclude,
 ) -> None:
     create_site(valid_site_payload(model_name="gpt-4o-mini"))
-    exclude_items = []
+    items = []
     if exclude:
-        exclude_items.append(
+        items.append(
             {
                 "channel_id": openai_chat_channel_id(),
                 "credential_id": "cred-1",
@@ -26,7 +26,7 @@ def test_model_group_candidates_return_site_models(
     response = client.post(
         "/api/admin/model-group-candidates",
         headers=admin_headers,
-        json={"protocols": ["openai_chat"], "exclude_items": exclude_items},
+        json={"protocols": ["openai_chat"], "items": items},
     )
 
     assert response.status_code == 200
@@ -36,5 +36,6 @@ def test_model_group_candidates_return_site_models(
         return
     assert len(candidates) == 1
     assert candidates[0]["model_name"] == "gpt-4o-mini"
-    assert candidates[0]["channel_id"] == openai_chat_channel_id()
-    assert candidates[0]["items"][0]["credential_id"] == "cred-1"
+    candidate_item = candidates[0]["items"][0]
+    assert candidate_item["channel_id"] == openai_chat_channel_id()
+    assert candidate_item["credential_id"] == "cred-1"

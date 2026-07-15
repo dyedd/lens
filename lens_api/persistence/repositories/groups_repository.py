@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from ..channel_store import ChannelStore
 from ..shared import (
     AsyncSession,
-    ModelGroup,
+    ChannelConfig,
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
@@ -14,6 +15,7 @@ from ..shared import (
     ModelGroupItemEntity,
     ModelGroupItemInput,
     ModelGroupUpdate,
+    ModelGroupView,
     _dump_group_protocols,
     _group_supports_protocol,
     _normalize_group_protocols,
@@ -36,9 +38,17 @@ class GroupRepository(
 ):
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+        self._channel_store = ChannelStore(session_factory)
 
-    async def list_groups(self) -> list[ModelGroup]:
+    async def list_groups(
+        self, *, channels: list[ChannelConfig] | None = None
+    ) -> list[ModelGroupView]:
         """Return all model groups with hydrated members and pricing."""
+        effective_channels = (
+            channels
+            if channels is not None
+            else await self._channel_store.list_channels()
+        )
         async with self._session_factory() as session:
             entities = (
                 (
@@ -49,25 +59,41 @@ class GroupRepository(
                 .scalars()
                 .all()
             )
-            return await self._hydrate_groups(session, entities)
+            return await self._hydrate_groups(session, entities, effective_channels)
 
-    async def get_group(self, group_id: str) -> ModelGroup:
+    async def get_group(
+        self, group_id: str, *, channels: list[ChannelConfig] | None = None
+    ) -> ModelGroupView:
         """Return a model group by identifier or raise when it does not exist."""
+        effective_channels = (
+            channels
+            if channels is not None
+            else await self._channel_store.list_channels()
+        )
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
                 raise KeyError(group_id)
-            hydrated = await self._hydrate_groups(session, [entity])
+            hydrated = await self._hydrate_groups(session, [entity], effective_channels)
             return hydrated[0]
 
     async def find_group_by_name(
-        self, protocol: str, name: str | None
-    ) -> ModelGroup | None:
+        self,
+        protocol: str,
+        name: str | None,
+        *,
+        channels: list[ChannelConfig] | None = None,
+    ) -> ModelGroupView | None:
         """Return a named model group when it supports the requested protocol."""
         normalized_name = (name or "").strip()
         if not normalized_name:
             return None
 
+        effective_channels = (
+            channels
+            if channels is not None
+            else await self._channel_store.list_channels()
+        )
         async with self._session_factory() as session:
             result = await session.execute(
                 select(ModelGroupEntity)
@@ -77,7 +103,7 @@ class GroupRepository(
             entity = result.scalar_one_or_none()
             if entity is None or not _group_supports_protocol(entity, protocol):
                 return None
-            hydrated = await self._hydrate_groups(session, [entity])
+            hydrated = await self._hydrate_groups(session, [entity], effective_channels)
             return hydrated[0]
 
     async def list_group_candidates(
@@ -92,8 +118,9 @@ class GroupRepository(
         """Plan or apply model group changes from selected site models."""
         return await self._ensure_groups_from_site(payload)
 
-    async def create_group(self, payload: ModelGroupCreate) -> ModelGroup:
+    async def create_group(self, payload: ModelGroupCreate) -> ModelGroupView:
         """Create and return a validated model group."""
+        channels = await self._channel_store.list_channels()
         async with self._session_factory() as session:
             protocols = _normalize_group_protocols(payload.protocols)
             route_group = await self._validate_group_payload(
@@ -102,6 +129,7 @@ class GroupRepository(
                 protocols,
                 payload.route_group_id,
                 payload.items,
+                channels=channels,
             )
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
@@ -117,13 +145,14 @@ class GroupRepository(
             self._replace_group_items(session, entity.id, payload.items)
             await session.commit()
             await session.refresh(entity)
-            hydrated = await self._hydrate_groups(session, [entity])
+            hydrated = await self._hydrate_groups(session, [entity], channels)
             return hydrated[0]
 
     async def update_group(
         self, group_id: str, payload: ModelGroupUpdate
-    ) -> ModelGroup:
+    ) -> ModelGroupView:
         """Update and return an existing model group."""
+        channels = await self._channel_store.list_channels()
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
@@ -162,27 +191,37 @@ class GroupRepository(
                 raise ValueError(
                     "Execution groups referenced by route groups cannot become route groups"
                 )
-            current_items = await self._load_group_items(session, [group_id])
-            next_items = (
-                payload.items
-                if payload.items is not None
-                else [
+            validates_items = payload.items is not None or payload.protocols is not None
+            current_item_views = []
+            if validates_items:
+                current_items = await self._load_group_items(
+                    session,
+                    [group_id],
+                    {group_id: current_protocols},
+                    channels,
+                )
+                current_item_views = current_items.get(group_id, [])
+            next_items = payload.items
+            if next_items is None and validates_items:
+                next_items = [
                     ModelGroupItemInput(
                         channel_id=item.channel_id,
                         credential_id=item.credential_id,
                         model_name=item.model_name,
                         enabled=item.enabled,
                     )
-                    for item in current_items.get(group_id, [])
+                    for item in current_item_views
                 ]
-            )
             route_group = await self._validate_group_payload(
                 session,
                 next_name,
                 next_protocols,
                 next_route_group_id,
-                next_items,
+                next_items if validates_items else None,
                 exclude_group_id=group_id,
+                channels=channels,
+                existing_items=current_item_views,
+                existing_protocols=current_protocols,
             )
 
             changes = payload.model_dump(exclude_unset=True)
@@ -217,11 +256,11 @@ class GroupRepository(
                         ModelGroupItemEntity.group_id == group_id
                     )
                 )
-                self._replace_group_items(session, group_id, next_items)
+                self._replace_group_items(session, group_id, next_items or [])
 
             await session.commit()
             await session.refresh(entity)
-            hydrated = await self._hydrate_groups(session, [entity])
+            hydrated = await self._hydrate_groups(session, [entity], channels)
             return hydrated[0]
 
     async def delete_group(self, group_id: str) -> None:

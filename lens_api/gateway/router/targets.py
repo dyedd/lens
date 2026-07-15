@@ -3,10 +3,16 @@ from __future__ import annotations
 from functools import lru_cache
 import re
 
+from ...core.model_group_status import (
+    build_model_group_channel_lookups,
+    evaluate_model_group_item,
+)
 from ...models import (
     ChannelConfig,
     ChannelKeyItem,
     ChannelStatus,
+    ModelGroupItemInput,
+    ModelGroupItemState,
     ProtocolKind,
 )
 from ..converters import can_reach_protocol
@@ -97,11 +103,26 @@ def filter_enabled_targets(
     route_targets: list[RouteTarget] | None,
 ) -> list[RouteTarget]:
     if route_targets is not None:
+        channel_lookups = build_model_group_channel_lookups(channels)
         active: list[RouteTarget] = []
         for target in route_targets:
-            if target.channel.status != ChannelStatus.ENABLED:
-                continue
-            if not can_reach_protocol(target.channel.protocol, protocol):
+            if target.credential_id and target.model_name:
+                evaluation = evaluate_model_group_item(
+                    ModelGroupItemInput(
+                        channel_id=target.channel.id,
+                        credential_id=target.credential_id,
+                        model_name=target.model_name,
+                        enabled=True,
+                    ),
+                    channel_lookups,
+                    [protocol],
+                )
+                if evaluation.state != ModelGroupItemState.READY:
+                    continue
+            elif (
+                target.channel.status != ChannelStatus.ENABLED
+                or not can_reach_protocol(target.channel.protocol, protocol)
+            ):
                 continue
             if (
                 allowed_channel_ids is not None

@@ -13,6 +13,7 @@ from .shared import (
     ImportedStatsTotalEntity,
     ModelGroup,
     ModelGroupEntity,
+    ModelGroupItem,
     ModelGroupItemEntity,
     ModelPriceEntity,
     ModelPriceItem,
@@ -62,7 +63,7 @@ async def _replace_groups(
     *,
     available_protocol_config_ids: set[str],
     protocols_by_config_id: dict[str, list[ProtocolKind]],
-    available_model_keys: set[tuple[str, str, str]],
+    model_keys: set[tuple[str, str, str]],
 ) -> None:
     await session.execute(delete(ModelGroupItemEntity))
     await session.execute(delete(ModelGroupEntity))
@@ -73,6 +74,7 @@ async def _replace_groups(
 
     groups_by_id = {group.id: group for group in groups}
     for group in groups:
+        is_synced_group = bool(group.sync_filter_mode.value)
         if group.id in seen_group_ids:
             raise ValueError(f"Duplicate group id in backup: {group.id}")
         seen_group_ids.add(group.id)
@@ -106,20 +108,28 @@ async def _replace_groups(
                     f"Route target must be an execution group: {route_group.name}"
                 )
 
-        resolved_items: list[tuple[int, object, str, ProtocolKind]] = []
+        resolved_items: list[tuple[int, ModelGroupItem, str, ProtocolKind]] = []
+        resolved_item_keys: set[tuple[str, str, str]] = set()
 
         for index, item in enumerate(group.items):
             protocol_config_id = _extract_protocol_config_id(
                 item.channel_id, available_protocol_config_ids
             )
-            if protocol_config_id not in available_protocol_config_ids:
+            if (
+                is_synced_group
+                and protocol_config_id not in available_protocol_config_ids
+            ):
                 raise ValueError(
                     f"Model group channel not found in backup sites: {item.channel_id}"
                 )
-            resolved_channel_id = _resolve_group_item_channel_id(
-                item.channel_id,
-                known_protocol_config_ids=available_protocol_config_ids,
-                protocols_by_config_id=protocols_by_config_id,
+            resolved_channel_id = (
+                _resolve_group_item_channel_id(
+                    item.channel_id,
+                    known_protocol_config_ids=available_protocol_config_ids,
+                    protocols_by_config_id=protocols_by_config_id,
+                )
+                if protocol_config_id in available_protocol_config_ids
+                else item.channel_id
             )
             resolved_protocol = _parse_runtime_channel_protocol(resolved_channel_id)
             if resolved_protocol is None:
@@ -127,17 +137,29 @@ async def _replace_groups(
                     f"Model group channel not found in backup sites: {item.channel_id}"
                 )
             target = (resolved_channel_id, item.credential_id, item.model_name)
-            if target not in available_model_keys:
+            if target in resolved_item_keys:
+                raise ValueError(
+                    "Duplicate model group member in backup "
+                    f"{group.name}: channel={resolved_channel_id} "
+                    f"credential={item.credential_id} model={item.model_name}"
+                )
+            resolved_item_keys.add(target)
+            if is_synced_group and target not in model_keys:
                 raise ValueError(
                     f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
                 )
             resolved_items.append((index, item, resolved_channel_id, resolved_protocol))
 
-        if group.items and not group.route_group_id:
+        enabled_resolved_items = [
+            resolved_item
+            for resolved_item in resolved_items
+            if resolved_item[1].enabled
+        ]
+        if enabled_resolved_items and not group.route_group_id:
             for protocol in group.protocols:
                 if not any(
                     can_reach_protocol(item_protocol, protocol)
-                    for _, _, _, item_protocol in resolved_items
+                    for _, _, _, item_protocol in enabled_resolved_items
                 ):
                     raise ValueError(
                         f"Protocol {protocol.value} has no reachable channel in group items"

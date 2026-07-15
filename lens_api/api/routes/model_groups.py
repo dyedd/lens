@@ -14,13 +14,13 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         "/api/admin/model-groups",
         service_module.list_model_groups,
         methods=["GET"],
-        response_model=list[service_module.ModelGroup],
+        response_model=list[service_module.ModelGroupView],
     )
     app.add_api_route(
         "/api/admin/model-groups",
         service_module.create_model_group,
         methods=["POST"],
-        response_model=service_module.ModelGroup,
+        response_model=service_module.ModelGroupView,
         status_code=201,
     )
     app.add_api_route(
@@ -33,13 +33,13 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         "/api/admin/model-groups/{group_id}",
         service_module.get_model_group,
         methods=["GET"],
-        response_model=service_module.ModelGroup,
+        response_model=service_module.ModelGroupView,
     )
     app.add_api_route(
         "/api/admin/model-groups/{group_id}",
         service_module.update_model_group,
         methods=["PUT"],
-        response_model=service_module.ModelGroup,
+        response_model=service_module.ModelGroupView,
     )
     app.add_api_route(
         "/api/admin/model-groups/{group_id}",
