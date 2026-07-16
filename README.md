@@ -126,12 +126,9 @@
 
 ```bash
 mkdir lens && cd lens
-curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/docker-compose.yml
-curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/.env.example
-cp .env.example .env
+curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/scripts/docker/deploy.sh
+sh deploy.sh
 ```
-
-编辑 `.env`，根据需要修改配置项。必须设置 `LENS_AUTH_SECRET_KEY`。
 
 如需修改数据目录，只改 `volumes` 左侧的宿主机路径，右侧 `/app/data` 保持不变：
 
@@ -148,18 +145,6 @@ docker compose up -d
 ```
 
 访问 `http://127.0.0.1:3000`，默认账号 `admin/admin`。首次登录后请立即修改默认管理员密码。
-
-### Docker Run
-
-```bash
-mkdir -p data
-
-docker run -d --name lens \
-  --env-file .env \
-  -p 3000:3000 \
-  -v "$(pwd)/data:/app/data" \
-  ghcr.io/dyedd/lens:latest
-```
 
 ### 本地构建镜像
 
@@ -184,20 +169,6 @@ services:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
-```
-
-也可以手动构建后直接运行：
-
-```bash
-docker build -t lens:local .
-
-mkdir -p data
-
-docker run -d --name lens \
-  --env-file .env \
-  -p 3000:3000 \
-  -v "$(pwd)/data:/app/data" \
-  lens:local
 ```
 
 ### 本地开发
@@ -269,17 +240,33 @@ pnpm dev
 | 后端 | Python 3.11+、FastAPI、SQLAlchemy、Alembic、SQLite / PostgreSQL |
 | 前端 | Next.js 16、React 19、TypeScript、TanStack Query、shadcn/ui     |
 
-## 环境变量
+## 配置
 
-核心变量：
+### 后端环境变量
 
-| 变量                           | 默认值                               | 说明                                             |
-| ------------------------------ | ------------------------------------ | ------------------------------------------------ |
-| `LENS_HOST`                    | `127.0.0.1`                          | 后端监听地址；Docker 中设为 `0.0.0.0`            |
-| `LENS_PORT`                    | `18080`                              | 后端监听端口；Docker 中设为 `3000`               |
-| `LENS_DATABASE_URL`            | `sqlite+aiosqlite:///./data/data.db` | 数据库连接；默认 SQLite，也可指向外部 PostgreSQL |
-| `LENS_AUTH_SECRET_KEY`         | 必填                                 | JWT 签名密钥                                     |
-| `LENS_REQUEST_TIMEOUT_SECONDS` | `180`                                | 上游请求超时                                     |
+| 变量                             | 默认值                               | 说明                                                 |
+| -------------------------------- | ------------------------------------ | ---------------------------------------------------- |
+| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db` | 数据库连接；Docker 镜像使用 `/app/data/data.db`      |
+| `LENS_AUTH_SECRET_KEY`           | 无（必填）                           | JWT 签名密钥；Docker 部署脚本写入 `.env`             |
+| `LENS_MAX_CONNECTIONS`           | `200`                                | 每个直连或代理连接池的最大连接数，修改后需要重启     |
+| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                 | 每个直连或代理连接池的最大空闲连接数，修改后需要重启 |
+
+### 网关设置
+
+在 `/settings` 页面修改：
+
+| 设置键                      | 默认值     | 说明                                                       |
+| --------------------------- | ---------- | ---------------------------------------------------------- |
+| `auth_access_token_minutes` | `720` 分钟 | 新签发登录令牌的有效期；范围 `1`–`525600`                  |
+| `request_timeout_seconds`   | `180` 秒   | 单次网关请求总时限（含回退）；范围 `0`–`86400`，`0` 不限制 |
+| `max_request_body_bytes`    | `32000000` | 发送到上游的请求体上限；`0` 不限制                         |
+
+### Docker Compose
+
+| 变量                   | 默认值 | 说明                                                          |
+| ---------------------- | ------ | ------------------------------------------------------------- |
+| `LENS_HOST_PORT`       | `3000` | 宿主机访问端口                                                |
+| `LENS_SKIP_DB_UPGRADE` | `0`    | 容器启动时设为 `1` 可跳过自动数据库迁移；需自行确保结构已升级 |
 
 ### PostgreSQL 配置
 

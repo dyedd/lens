@@ -2,18 +2,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Lens"
-    host: str = "127.0.0.1"
-    port: int = 18080
     auth_secret_key: str = ""
-    auth_access_token_minutes: int = 60 * 12
-    request_timeout_seconds: float = 180.0
-    max_request_body_bytes: int = 32_000_000
     max_connections: int = 200
     max_keepalive_connections: int = 50
     database_url: str = "sqlite+aiosqlite:///./data/data.db"
-    anthropic_version: str = "2023-06-01"
-    ui_static_dir: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="LENS_",

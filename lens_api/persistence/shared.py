@@ -187,6 +187,7 @@ def _channel_ids_by_protocol_config(
 
 
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
+SETTING_AUTH_ACCESS_TOKEN_MINUTES = "auth_access_token_minutes"
 SETTING_PROXY_URL = "proxy_url"
 SETTING_STATS_TIME_ZONE = "stats_time_zone"
 SETTING_TIME_ZONE = "time_zone"
@@ -201,6 +202,9 @@ SETTING_HEALTH_WINDOW_SECONDS = "health_window_seconds"
 SETTING_HEALTH_PENALTY_WEIGHT = "health_penalty_weight"
 SETTING_HEALTH_MIN_SAMPLES = "health_min_samples"
 SETTING_MODEL_LIST_COMPAT_MODE_ENABLED = "model_list_compat_mode_enabled"
+SETTING_REQUEST_TIMEOUT_SECONDS = "request_timeout_seconds"
+SETTING_MAX_REQUEST_BODY_BYTES = "max_request_body_bytes"
+SETTING_MODEL_TEST_PROMPTS = "model_test_prompts"
 SETTING_UPSTREAM_HEADERS_CONFIG = "upstream_headers_config"
 SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG = "upstream_param_override_config"
 SETTING_SITE_NAME = "site_name"

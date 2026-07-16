@@ -10,6 +10,10 @@ import {
   createSettingItems,
   createSettingsDraft,
 } from "./settingsDraft";
+import {
+  validateNumericSettings,
+  type NumericSettingErrors,
+} from "./numericSettingsValidation";
 import { validateUpstreamHeadersConfig } from "./upstreamHeaderConfig";
 import { validateUpstreamParamOverrideConfig } from "./upstreamParamOverride";
 import { useSettingsDraftActions } from "./useSettingsDraftActions";
@@ -34,11 +38,17 @@ export function useSettingsDraft(locale: Locale) {
   });
   const [draft, setDraft] = useState(createEmptySettingsDraft);
   const [isSaving, setIsSaving] = useState(false);
+  const [isNumericValidationVisible, setIsNumericValidationVisible] =
+    useState(false);
   const actions = useSettingsDraftActions(setDraft);
+  const numericSettingErrors: NumericSettingErrors = isNumericValidationVisible
+    ? validateNumericSettings(draft, locale)
+    : {};
 
   useEffect(() => {
     if (settingsQuery.isSuccess) {
       setDraft(createSettingsDraft(settingsQuery.data));
+      setIsNumericValidationVisible(false);
     }
   }, [settingsQuery.data, settingsQuery.isSuccess]);
 
@@ -72,6 +82,13 @@ export function useSettingsDraft(locale: Locale) {
 
   const submitSettings = useCallback(async () => {
     if (!settingsQuery.isSuccess) {
+      return;
+    }
+    const numericErrors = validateNumericSettings(draft, locale);
+    setIsNumericValidationVisible(true);
+    const numericError = Object.values(numericErrors).find(Boolean);
+    if (numericError) {
+      toast.error(numericError);
       return;
     }
     const upstreamHeadersError = validateUpstreamHeadersConfig(
@@ -112,6 +129,7 @@ export function useSettingsDraft(locale: Locale) {
 
   return {
     draft,
+    numericSettingErrors,
     isSaving,
     isSettingsReady: settingsQuery.isSuccess,
     refresh,

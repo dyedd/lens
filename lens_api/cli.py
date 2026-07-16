@@ -15,7 +15,6 @@ from .core.config import settings
 from .core.db import create_engine, create_session_factory
 
 SOURCE_PROJECT_DIR = Path(__file__).resolve().parent.parent
-APP_IMPORT_PATH = "lens_api.app:app"
 
 
 def _configure_asyncio_event_loop_policy() -> None:
@@ -34,10 +33,6 @@ def _uvicorn_loop_factory_path() -> str:
 
 
 def _project_dir() -> Path:
-    env_project_dir = os.environ.get("LENS_PROJECT_DIR", "").strip()
-    if env_project_dir:
-        return Path(env_project_dir)
-
     cwd = Path.cwd()
     if (cwd / "alembic.ini").is_file():
         return cwd
@@ -89,10 +84,13 @@ def serve(args: argparse.Namespace) -> None:
     """Start the Lens API server."""
     import uvicorn
 
+    from .api import create_app
+    from .gateway import service
+
     uvicorn.run(
-        APP_IMPORT_PATH,
-        host=settings.host,
-        port=settings.port,
+        create_app(service, ui_static_dir=args.ui_static_dir),
+        host=args.host,
+        port=args.port,
         loop=_uvicorn_loop_factory_path(),
     )
 
@@ -106,16 +104,6 @@ def dev(_args: argparse.Namespace) -> None:
 
     backend_host = "127.0.0.1"
     backend_port = "18080"
-    backend_url = f"http://{backend_host}:{backend_port}"
-
-    backend_env = os.environ.copy()
-    backend_env["LENS_HOST"] = backend_host
-    backend_env["LENS_PORT"] = backend_port
-    backend_env.pop("LENS_UI_STATIC_DIR", None)
-
-    frontend_env = os.environ.copy()
-    frontend_env["LENS_UI_BACKEND_BASE_URL"] = backend_url
-    frontend_env.pop("LENS_UI_STATIC_EXPORT", None)
 
     backend = subprocess.Popen(
         [
@@ -123,14 +111,15 @@ def dev(_args: argparse.Namespace) -> None:
             "-m",
             "lens_api.cli",
             "serve",
+            "--host",
+            backend_host,
+            "--port",
+            backend_port,
         ],
         cwd=project_dir,
-        env=backend_env,
     )
     frontend_command = "pnpm dev" if os.name == "nt" else ["pnpm", "dev"]
-    frontend = subprocess.Popen(
-        frontend_command, cwd=ui_dir, env=frontend_env, shell=os.name == "nt"
-    )
+    frontend = subprocess.Popen(frontend_command, cwd=ui_dir, shell=os.name == "nt")
 
     processes = (backend, frontend)
 
@@ -242,6 +231,13 @@ def main(argv: list[str] | None = None) -> None:
     stamp_parser.set_defaults(func=db_stamp)
 
     serve_parser = subparsers.add_parser("serve", help="Start the API server")
+    serve_parser.add_argument("--host", default="127.0.0.1", help="Listen host")
+    serve_parser.add_argument("--port", type=int, default=18080, help="Listen port")
+    serve_parser.add_argument(
+        "--ui-static-dir",
+        default="",
+        help="Serve the built UI from this directory",
+    )
     serve_parser.set_defaults(func=serve)
 
     dev_parser = subparsers.add_parser(

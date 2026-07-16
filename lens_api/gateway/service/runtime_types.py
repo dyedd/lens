@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any
 
-import httpx
 from fastapi import HTTPException, Response
 
 from ...models import ModelGroup, RoutingStrategy
@@ -145,6 +144,5 @@ class StreamCapture:
     errors: list[str] = field(default_factory=list)
     request_log_id: int | None = None
     stream_started_at: float = 0.0
-    client_to_close: httpx.AsyncClient | None = None
     deadline: _RequestDeadline | None = None
     error_status_code: int | None = None

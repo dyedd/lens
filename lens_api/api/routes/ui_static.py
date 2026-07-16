@@ -1,5 +1,4 @@
 from pathlib import Path
-from types import ModuleType
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -9,14 +8,14 @@ from starlette.staticfiles import StaticFiles
 RESERVED_PREFIXES = ("api", "v1", "v1beta", "docs", "redoc", "openapi.json")
 
 
-def register(app: FastAPI, service_module: ModuleType) -> None:
-    static_dir_value = service_module.settings.ui_static_dir.strip()
+def register(app: FastAPI, static_dir_value: str) -> None:
+    static_dir_value = static_dir_value.strip()
     if not static_dir_value:
         return
 
     static_dir = Path(static_dir_value)
     if not static_dir.is_dir():
-        raise RuntimeError(f"LENS_UI_STATIC_DIR does not exist: {static_dir}")
+        raise RuntimeError(f"UI static directory does not exist: {static_dir}")
     static_root = static_dir.resolve()
 
     assets_dir = static_dir / "_next"

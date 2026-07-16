@@ -9,7 +9,6 @@ import httpx
 from fastapi import Response
 from fastapi.responses import StreamingResponse
 
-from ...core.config import settings
 from ...models import ChannelConfig, ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_response, convert_stream_iterator, needs_conversion
 from ..router import RouteTarget
@@ -29,7 +28,6 @@ from .upstream_support import (
     _format_http_response_error,
     _format_transport_error,
     _passthrough_headers,
-    _resolve_http_client,
 )
 from .payload_serialization import (
     _decode_content_bytes,

@@ -6,8 +6,10 @@ import json
 from ...models import UpstreamHeadersConfig, UpstreamParamOverrideConfig
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ..editable_settings import effective_editable_setting_items
 from ..shared import (
     Any,
+    SETTING_AUTH_ACCESS_TOKEN_MINUTES,
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_THRESHOLD,
@@ -15,11 +17,13 @@ from ..shared import (
     SETTING_HEALTH_MIN_SAMPLES,
     SETTING_HEALTH_PENALTY_WEIGHT,
     SETTING_HEALTH_WINDOW_SECONDS,
+    SETTING_MAX_REQUEST_BODY_BYTES,
     SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
     SETTING_PROXY_URL,
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_ENABLED,
     SETTING_RELAY_LOG_KEEP_PERIOD,
+    SETTING_REQUEST_TIMEOUT_SECONDS,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
@@ -105,24 +109,6 @@ class SettingsRepository:
                 items.append(normalized)
         return items
 
-    @staticmethod
-    def _parse_bool(value: str | None, *, default: bool) -> bool:
-        if value is None:
-            return default
-        return value.strip().lower() not in {"0", "false", "no", "off"}
-
-    @staticmethod
-    def _parse_int(value: str | None, *, default: int) -> int:
-        if value is None:
-            return default
-        return int(value.strip())
-
-    @staticmethod
-    def _parse_float(value: str | None, *, default: float) -> float:
-        if value is None:
-            return default
-        return float(value.strip())
-
     async def get_runtime_settings(self) -> dict[str, Any]:
         """Return normalized runtime settings with short-lived caching."""
         cached = self._runtime_settings_cache
@@ -133,7 +119,7 @@ class SettingsRepository:
         ):
             return self._clone_runtime_settings(cached)
 
-        items = await self.list_settings()
+        items = effective_editable_setting_items(await self.list_settings())
         mapping = {item.key: item.value for item in items}
         cors_allow_origins = self._split_comma_lines(
             mapping.get(SETTING_CORS_ALLOW_ORIGINS, "")
@@ -141,38 +127,30 @@ class SettingsRepository:
         time_zone = normalize_time_zone(mapping.get(SETTING_TIME_ZONE))
         runtime = {
             "proxy_url": mapping.get(SETTING_PROXY_URL, "").strip(),
+            "auth_access_token_minutes": int(
+                mapping[SETTING_AUTH_ACCESS_TOKEN_MINUTES]
+            ),
+            "request_timeout_seconds": float(mapping[SETTING_REQUEST_TIMEOUT_SECONDS]),
+            "max_request_body_bytes": int(mapping[SETTING_MAX_REQUEST_BODY_BYTES]),
             "time_zone": time_zone,
             "cors_allow_origins": cors_allow_origins or ["*"],
-            "relay_log_body_enabled": self._parse_bool(
-                mapping.get(SETTING_RELAY_LOG_BODY_ENABLED), default=False
+            "relay_log_body_enabled": mapping[SETTING_RELAY_LOG_BODY_ENABLED] == "true",
+            "relay_log_keep_enabled": mapping[SETTING_RELAY_LOG_KEEP_ENABLED] == "true",
+            "relay_log_keep_period": int(mapping[SETTING_RELAY_LOG_KEEP_PERIOD]),
+            "circuit_breaker_threshold": int(
+                mapping[SETTING_CIRCUIT_BREAKER_THRESHOLD]
             ),
-            "relay_log_keep_enabled": self._parse_bool(
-                mapping.get(SETTING_RELAY_LOG_KEEP_ENABLED), default=True
+            "circuit_breaker_cooldown": int(mapping[SETTING_CIRCUIT_BREAKER_COOLDOWN]),
+            "circuit_breaker_max_cooldown": int(
+                mapping[SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN]
             ),
-            "relay_log_keep_period": self._parse_int(
-                mapping.get(SETTING_RELAY_LOG_KEEP_PERIOD), default=7
-            ),
-            "circuit_breaker_threshold": self._parse_int(
-                mapping.get(SETTING_CIRCUIT_BREAKER_THRESHOLD), default=3
-            ),
-            "circuit_breaker_cooldown": self._parse_int(
-                mapping.get(SETTING_CIRCUIT_BREAKER_COOLDOWN), default=60
-            ),
-            "circuit_breaker_max_cooldown": self._parse_int(
-                mapping.get(SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN), default=600
-            ),
-            "health_window_seconds": self._parse_int(
-                mapping.get(SETTING_HEALTH_WINDOW_SECONDS), default=300
-            ),
-            "health_penalty_weight": self._parse_float(
-                mapping.get(SETTING_HEALTH_PENALTY_WEIGHT), default=0.5
-            ),
-            "health_min_samples": self._parse_int(
-                mapping.get(SETTING_HEALTH_MIN_SAMPLES), default=10
-            ),
-            "model_list_compat_mode_enabled": self._parse_bool(
-                mapping.get(SETTING_MODEL_LIST_COMPAT_MODE_ENABLED), default=False
-            ),
+            "health_window_seconds": int(mapping[SETTING_HEALTH_WINDOW_SECONDS]),
+            "health_penalty_weight": float(mapping[SETTING_HEALTH_PENALTY_WEIGHT]),
+            "health_min_samples": int(mapping[SETTING_HEALTH_MIN_SAMPLES]),
+            "model_list_compat_mode_enabled": mapping[
+                SETTING_MODEL_LIST_COMPAT_MODE_ENABLED
+            ]
+            == "true",
             "upstream_headers_config": _parse_upstream_config(
                 mapping.get(SETTING_UPSTREAM_HEADERS_CONFIG), UpstreamHeadersConfig
             ),
@@ -194,6 +172,10 @@ class SettingsRepository:
             "site_name": str(runtime["site_name"]),
             "site_logo_url": str(runtime["site_logo_url"]),
         }
+
+    async def list_editable_settings(self) -> list[SettingItem]:
+        """List normalized administrator-editable settings with defaults."""
+        return effective_editable_setting_items(await self.list_settings())
 
     async def list_settings(self) -> list[SettingItem]:
         """List persisted settings with short-lived caching."""

@@ -84,6 +84,7 @@ def _read_system_version() -> str:
 class AppState:
     def __init__(self) -> None:
         self.http = self._create_http_client()
+        self._proxy_http_clients: dict[str, httpx.AsyncClient] = {}
         self.engine = create_engine(settings.database_url)
         self.session_factory = create_session_factory(self.engine)
         self.admin_repo = AdminRepository(self.session_factory)
@@ -116,12 +117,37 @@ class AppState:
         )
 
     @staticmethod
-    def _create_http_client() -> httpx.AsyncClient:
+    def _create_http_client(proxy_url: str | None = None) -> httpx.AsyncClient:
         limits = httpx.Limits(
             max_connections=settings.max_connections,
             max_keepalive_connections=settings.max_keepalive_connections,
         )
-        return httpx.AsyncClient(timeout=None, limits=limits)
+        if proxy_url:
+            return httpx.AsyncClient(
+                proxy=proxy_url,
+                timeout=None,
+                limits=limits,
+                trust_env=False,
+            )
+        return httpx.AsyncClient(timeout=None, limits=limits, trust_env=False)
+
+    def get_http_client(self, proxy_url: str | None) -> httpx.AsyncClient:
+        normalized_proxy_url = (proxy_url or "").strip()
+        if not normalized_proxy_url:
+            return self.http
+
+        client = self._proxy_http_clients.get(normalized_proxy_url)
+        if client is None or client.is_closed:
+            client = self._create_http_client(normalized_proxy_url)
+            self._proxy_http_clients[normalized_proxy_url] = client
+        return client
+
+    async def close_http_clients(self) -> None:
+        clients = (self.http, *self._proxy_http_clients.values())
+        self._proxy_http_clients.clear()
+        for client in clients:
+            if not client.is_closed:
+                await client.aclose()
 
     async def _runtime_time_zone(self) -> ZoneInfo:
         runtime = await self.settings_repo.get_runtime_settings()

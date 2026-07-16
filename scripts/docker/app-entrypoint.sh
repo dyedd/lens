@@ -9,4 +9,4 @@ fi
 
 lens seed-admin --username admin --password admin
 
-exec lens serve
+exec lens serve --host 0.0.0.0 --port 3000 --ui-static-dir /app/ui
