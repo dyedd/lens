@@ -6,7 +6,6 @@ from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 
-from ..core.config import Settings
 from ..core.url_utils import normalize_base_url, append_url_path
 from ..models import ChannelConfig, ChannelProxyMode, ProtocolKind
 
@@ -39,12 +38,12 @@ _OPENAI_COMPATIBLE_PROTOCOLS = frozenset(
 )
 _GLM_HOSTS = frozenset({"open.bigmodel.cn", "api.z.ai"})
 _GLM_OPENAI_VERSIONED_PATHS = frozenset({"/api/paas/v4", "/api/coding/paas/v4"})
+ANTHROPIC_VERSION = "2023-06-01"
 
 
 def build_upstream_request(
     channel: ChannelConfig,
     body: dict[str, Any],
-    settings: Settings,
     credential_id: str | None = None,
     user_agent: str | None = None,
     forwarded_headers: Mapping[str, str] | None = None,
@@ -90,7 +89,7 @@ def build_upstream_request(
     if channel.protocol == ProtocolKind.ANTHROPIC:
         default_headers = {
             "x-api-key": api_key,
-            "anthropic-version": settings.anthropic_version,
+            "anthropic-version": ANTHROPIC_VERSION,
             "content-type": "application/json",
         }
         if forwarded_headers:

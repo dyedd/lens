@@ -22,10 +22,7 @@ from .shared import (
     RequestLogEntity,
     RequestLogLifecycleStatus,
     SETTING_MODEL_PRICE_LAST_SYNC_AT,
-    SETTING_STATS_LAST_PERSIST_AT,
     SETTING_TIME_ZONE,
-    SETTING_UPSTREAM_HEADERS_CONFIG,
-    SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
     SettingEntity,
     SettingItem,
     SiteBaseUrlEntity,
@@ -43,13 +40,12 @@ from .shared import (
     datetime,
     delete,
     encode_weekdays,
+    effective_editable_setting_items,
     json,
     next_cronjob_run_at,
     normalize_cronjob_schedule,
     normalize_model_key,
-    normalize_time_zone,
-    normalize_upstream_headers_config_json,
-    normalize_upstream_param_override_config_json,
+    normalize_editable_setting_items,
     resolve_time_zone,
 )
 from .value_parsing import parse_backup_datetime, parse_optional_datetime
@@ -57,31 +53,24 @@ from .value_parsing import parse_backup_datetime, parse_optional_datetime
 
 async def _replace_settings(
     self, session: AsyncSession, settings: list[SettingItem]
-) -> None:
+) -> int:
     await session.execute(
         delete(SettingEntity).where(SettingEntity.key.in_(EXPORTABLE_SETTING_KEYS))
     )
     setting_keys: set[str] = set()
+    imported_settings: list[SettingItem] = []
     for item in settings:
         if item.key not in EXPORTABLE_SETTING_KEYS:
             continue
         if item.key in setting_keys:
             raise ValueError(f"Duplicate setting key in backup: {item.key}")
         setting_keys.add(item.key)
-        value = (
-            normalize_time_zone(item.value)
-            if item.key == SETTING_TIME_ZONE
-            else (
-                normalize_upstream_headers_config_json(item.value)
-                if item.key == SETTING_UPSTREAM_HEADERS_CONFIG
-                else (
-                    normalize_upstream_param_override_config_json(item.value)
-                    if item.key == SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG
-                    else item.value
-                )
-            )
-        )
-        session.add(SettingEntity(key=item.key, value=value))
+        imported_settings.append(item)
+    normalized_items = normalize_editable_setting_items(imported_settings)
+    effective_items = effective_editable_setting_items(normalized_items)
+    for item in effective_items:
+        session.add(SettingEntity(key=item.key, value=item.value))
+    return len(effective_items)
 
 
 async def _replace_cronjobs(

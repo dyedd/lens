@@ -6,7 +6,6 @@ from time import perf_counter
 from fastapi import HTTPException
 from starlette.background import BackgroundTask
 
-from ...core.config import settings
 from ...models import ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_request, needs_conversion
 from .runtime_types import (
@@ -59,11 +58,11 @@ async def _proxy_protocol(
     multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
 ) -> Response:
     started_at = perf_counter()
-    deadline = _RequestDeadline(started_at, settings.request_timeout_seconds)
     channels, runtime = await asyncio.gather(
         app_state.channel_store.list_channels(),
         app_state.settings_repo.get_runtime_settings(),
     )
+    deadline = _RequestDeadline(started_at, float(runtime["request_timeout_seconds"]))
     _apply_router_runtime_settings(runtime)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
     request_content = _dump_log_json(body) if log_body_enabled else None

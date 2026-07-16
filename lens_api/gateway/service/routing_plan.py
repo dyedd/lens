@@ -101,7 +101,7 @@ def _request_body_too_large_message(size: int, limit: int) -> str | None:
     return (
         f"Request body is {size} bytes, exceeds Lens limit "
         f"{normalized_limit} bytes. Split the context or increase "
-        "LENS_MAX_REQUEST_BODY_BYTES."
+        "the maximum request body size in Settings."
     )
 
 

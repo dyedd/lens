@@ -18,19 +18,23 @@ async def _startup_app_state(state: AppState) -> None:
     resolve_time_zone(None)
     if state.http.is_closed:
         state.http = state._create_http_client()
+    runtime = await state.settings_repo.get_runtime_settings()
     await state.request_log_store.fail_running_request_logs(
-        interrupted_latency_cap_ms=_running_request_latency_cap_ms()
+        interrupted_latency_cap_ms=_running_request_latency_cap_ms(
+            float(runtime["request_timeout_seconds"])
+        )
     )
 
 
 async def _close_app_state(state: AppState) -> None:
-    if not state.http.is_closed:
-        await state.http.aclose()
+    await state.close_http_clients()
     await state.engine.dispose()
 
 
-def _running_request_latency_cap_ms() -> int:
-    return int(max(settings.request_timeout_seconds, 0) * 1000)
+def _running_request_latency_cap_ms(request_timeout_seconds: float) -> int | None:
+    if request_timeout_seconds <= 0:
+        return None
+    return int(request_timeout_seconds * 1000)
 
 
 @asynccontextmanager

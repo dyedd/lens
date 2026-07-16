@@ -7,7 +7,6 @@ from typing import Any
 
 import httpx
 
-from ...core.config import settings
 from .app_state import _read_system_version, app_state
 
 GENERIC_USER_AGENT_TOKENS = (
@@ -178,16 +177,5 @@ def _forward_anthropic_headers(headers: Mapping[str, str]) -> dict[str, str]:
     return forwarded
 
 
-def _resolve_http_client(proxy_url: str | None) -> tuple[httpx.AsyncClient, bool]:
-    if not proxy_url:
-        return app_state.http, False
-    client = httpx.AsyncClient(
-        proxy=proxy_url,
-        timeout=app_state.http.timeout,
-        limits=httpx.Limits(
-            max_connections=settings.max_connections,
-            max_keepalive_connections=settings.max_keepalive_connections,
-        ),
-        trust_env=False,
-    )
-    return client, True
+def _resolve_http_client(proxy_url: str | None) -> httpx.AsyncClient:
+    return app_state.get_http_client(proxy_url)

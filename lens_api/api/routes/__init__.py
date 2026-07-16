@@ -21,7 +21,9 @@ from . import (
 )
 
 
-def include_routes(app: FastAPI, service_module: ModuleType) -> None:
+def include_routes(
+    app: FastAPI, service_module: ModuleType, *, ui_static_dir: str = ""
+) -> None:
     """Register all public, administrative, proxy, and UI routes on the app."""
     for module in (
         public,
@@ -38,6 +40,6 @@ def include_routes(app: FastAPI, service_module: ModuleType) -> None:
         backups,
         settings,
         proxy,
-        ui_static,
     ):
         module.register(app, service_module)
+    ui_static.register(app, ui_static_dir)

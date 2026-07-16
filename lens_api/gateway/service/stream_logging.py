@@ -7,7 +7,6 @@ from typing import Any
 
 import httpx
 
-from ...core.config import settings
 from ...models import (
     ChannelConfig,
     GatewayApiKey,

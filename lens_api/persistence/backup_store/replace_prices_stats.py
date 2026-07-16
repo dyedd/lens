@@ -22,10 +22,7 @@ from .shared import (
     RequestLogEntity,
     RequestLogLifecycleStatus,
     SETTING_MODEL_PRICE_LAST_SYNC_AT,
-    SETTING_STATS_LAST_PERSIST_AT,
     SETTING_TIME_ZONE,
-    SETTING_UPSTREAM_HEADERS_CONFIG,
-    SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
     SettingEntity,
     SettingItem,
     SiteBaseUrlEntity,
@@ -47,9 +44,6 @@ from .shared import (
     next_cronjob_run_at,
     normalize_cronjob_schedule,
     normalize_model_key,
-    normalize_time_zone,
-    normalize_upstream_headers_config_json,
-    normalize_upstream_param_override_config_json,
     resolve_time_zone,
 )
 from .value_parsing import parse_backup_datetime, parse_optional_datetime
@@ -91,10 +85,6 @@ async def _replace_stats(
     await session.execute(delete(ImportedStatsTotalEntity))
     await session.execute(delete(RequestLogDailyStatsEntity))
     await session.execute(delete(OverviewModelDailyStatsEntity))
-    await session.execute(
-        delete(SettingEntity).where(SettingEntity.key == SETTING_STATS_LAST_PERSIST_AT)
-    )
-
     if stats.imported_total is not None:
         session.add(
             ImportedStatsTotalEntity(

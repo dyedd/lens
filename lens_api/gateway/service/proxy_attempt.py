@@ -6,7 +6,6 @@ from time import perf_counter
 from fastapi import HTTPException
 from starlette.background import BackgroundTask
 
-from ...core.config import settings
 from ...models import ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_request, needs_conversion
 from .runtime_types import (
@@ -135,6 +134,7 @@ async def _try_target(
             forwarded_headers=inbound_headers,
             upstream_headers_config=runtime["upstream_headers_config"],
             log_body_enabled=log_body_enabled,
+            max_request_body_bytes=int(runtime["max_request_body_bytes"]),
             path_suffix=path_suffix,
             multipart_files=multipart_files,
         )

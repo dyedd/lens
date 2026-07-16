@@ -28,6 +28,18 @@ export function GatewaySettingsSection({
         <GatewaySettings
           proxyUrl={draft.proxyUrl}
           corsAllowOrigins={draft.corsAllowOrigins}
+          authAccessTokenMinutes={draft.authAccessTokenMinutes}
+          requestTimeoutSeconds={draft.requestTimeoutSeconds}
+          maxRequestBodyBytes={draft.maxRequestBodyBytes}
+          authAccessTokenMinutesError={
+            settings.numericSettingErrors.authAccessTokenMinutes
+          }
+          requestTimeoutSecondsError={
+            settings.numericSettingErrors.requestTimeoutSeconds
+          }
+          maxRequestBodyBytesError={
+            settings.numericSettingErrors.maxRequestBodyBytes
+          }
           isRelayLogBodyEnabled={draft.isRelayLogBodyEnabled}
           isModelListCompatModeEnabled={draft.isModelListCompatModeEnabled}
           upstreamHeadersConfig={draft.upstreamHeadersConfig}
@@ -36,6 +48,15 @@ export function GatewaySettingsSection({
           }
           onCorsAllowOriginsChange={(value) =>
             settings.setDraftValue("corsAllowOrigins", value)
+          }
+          onAuthAccessTokenMinutesChange={(value) =>
+            settings.setDraftValue("authAccessTokenMinutes", value)
+          }
+          onRequestTimeoutSecondsChange={(value) =>
+            settings.setDraftValue("requestTimeoutSeconds", value)
+          }
+          onMaxRequestBodyBytesChange={(value) =>
+            settings.setDraftValue("maxRequestBodyBytes", value)
           }
           onRelayLogBodyEnabledChange={(isEnabled) =>
             settings.setDraftValue("isRelayLogBodyEnabled", isEnabled)

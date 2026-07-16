@@ -6,7 +6,6 @@ from time import perf_counter
 from fastapi import HTTPException
 from starlette.background import BackgroundTask
 
-from ...core.config import settings
 from ...models import ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_request, needs_conversion
 from .runtime_types import (

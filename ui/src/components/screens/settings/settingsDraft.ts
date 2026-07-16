@@ -21,6 +21,9 @@ import {
 
 const PROXY_URL = "proxy_url";
 const CORS_ALLOW_ORIGINS = "cors_allow_origins";
+const AUTH_ACCESS_TOKEN_MINUTES = "auth_access_token_minutes";
+const REQUEST_TIMEOUT_SECONDS = "request_timeout_seconds";
+const MAX_REQUEST_BODY_BYTES = "max_request_body_bytes";
 const CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold";
 const CIRCUIT_BREAKER_COOLDOWN = "circuit_breaker_cooldown";
 const CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown";
@@ -46,6 +49,9 @@ export const TIME_ZONE_OPTIONS = [
 export interface SettingsDraft {
   proxyUrl: string;
   corsAllowOrigins: string;
+  authAccessTokenMinutes: string;
+  requestTimeoutSeconds: string;
+  maxRequestBodyBytes: string;
   circuitBreakerThreshold: string;
   circuitBreakerCooldown: string;
   circuitBreakerMaxCooldown: string;
@@ -86,6 +92,9 @@ export function createEmptySettingsDraft(): SettingsDraft {
   return {
     proxyUrl: "",
     corsAllowOrigins: "*",
+    authAccessTokenMinutes: "",
+    requestTimeoutSeconds: "",
+    maxRequestBodyBytes: "",
     circuitBreakerThreshold: "3",
     circuitBreakerCooldown: "60",
     circuitBreakerMaxCooldown: "600",
@@ -111,6 +120,9 @@ export function createSettingsDraft(
   return {
     proxyUrl: mapping.get(PROXY_URL) ?? "",
     corsAllowOrigins: mapping.get(CORS_ALLOW_ORIGINS) ?? "*",
+    authAccessTokenMinutes: mapping.get(AUTH_ACCESS_TOKEN_MINUTES) ?? "",
+    requestTimeoutSeconds: mapping.get(REQUEST_TIMEOUT_SECONDS) ?? "",
+    maxRequestBodyBytes: mapping.get(MAX_REQUEST_BODY_BYTES) ?? "",
     circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
     circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
     circuitBreakerMaxCooldown:
@@ -147,6 +159,18 @@ export function createSettingItems(draft: SettingsDraft): SettingItem[] {
     {
       key: CORS_ALLOW_ORIGINS,
       value: _normalizeOriginList(draft.corsAllowOrigins) || "*",
+    },
+    {
+      key: AUTH_ACCESS_TOKEN_MINUTES,
+      value: draft.authAccessTokenMinutes.trim(),
+    },
+    {
+      key: REQUEST_TIMEOUT_SECONDS,
+      value: draft.requestTimeoutSeconds.trim(),
+    },
+    {
+      key: MAX_REQUEST_BODY_BYTES,
+      value: draft.maxRequestBodyBytes.trim(),
     },
     {
       key: CIRCUIT_BREAKER_THRESHOLD,

@@ -43,7 +43,7 @@ async def get_current_admin(
         )
 
     payload = await run_in_threadpool(
-        decode_access_token, credentials.credentials, settings
+        decode_access_token, credentials.credentials, settings.auth_secret_key
     )
     username = payload.get("sub")
 
@@ -205,9 +205,7 @@ async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
             detail="Incorrect username or password",
         )
 
-    access_token, expires_in = await run_in_threadpool(
-        create_access_token, user.username, settings
-    )
+    access_token, expires_in = await _create_admin_access_token(user.username)
     return AuthTokenResponse(access_token=access_token, expires_in=expires_in)
 
 
@@ -234,9 +232,7 @@ async def update_profile(
         payload.new_password,
     )
 
-    access_token, expires_in = await run_in_threadpool(
-        create_access_token, updated_admin.username, settings
-    )
+    access_token, expires_in = await _create_admin_access_token(updated_admin.username)
     return AdminProfileUpdateResponse(
         access_token=access_token,
         expires_in=expires_in,
@@ -253,3 +249,13 @@ async def change_password(
         admin.username, payload.current_password, payload.new_password
     )
     return Response(status_code=204)
+
+
+async def _create_admin_access_token(username: str) -> tuple[str, int]:
+    runtime = await app_state.settings_repo.get_runtime_settings()
+    return await run_in_threadpool(
+        create_access_token,
+        username,
+        settings.auth_secret_key,
+        int(runtime["auth_access_token_minutes"]),
+    )

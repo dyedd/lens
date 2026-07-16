@@ -158,6 +158,7 @@ export function RetentionEditor({
           className="w-20"
           type="number"
           min="1"
+          max="36500"
           step="1"
           value={draft.period}
           aria-invalid={invalid}

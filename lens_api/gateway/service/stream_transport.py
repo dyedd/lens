@@ -48,8 +48,6 @@ async def _stream_upstream_iterator(
         capture.errors.append(f"stream failed: {type(exc).__name__}: {exc}")
     finally:
         await response.aclose()
-        if capture.client_to_close is not None:
-            await capture.client_to_close.aclose()
 
 
 async def _next_stream_chunk(

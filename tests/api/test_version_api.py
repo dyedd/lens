@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from conftest import assert_error
+from conftest import assert_error, run_async
+from lens_api.models import SettingItem
 from lens_api.persistence.shared import (
     SETTING_LATEST_VERSION,
     SETTING_LATEST_VERSION_URL,
@@ -27,24 +28,26 @@ def test_version_check_returns_no_update_by_default(client, admin_headers) -> No
 def test_version_check_reports_stored_newer_release(
     client,
     admin_headers,
+    app_state,
     monkeypatch,
 ) -> None:
     import lens_api.gateway.service.auth as auth_mod
 
     monkeypatch.setattr(auth_mod, "_read_system_version", lambda: "1.0.0")
-    client.put(
-        "/api/admin/settings",
-        headers=admin_headers,
-        json={
-            "items": [
-                {"key": SETTING_LATEST_VERSION, "value": "1.2.0"},
-                {
-                    "key": SETTING_LATEST_VERSION_URL,
-                    "value": "https://example.test/releases/1.2.0",
-                },
-                {"key": SETTING_VERSION_CHECK_AT, "value": "2026-01-01T00:00:00Z"},
+    run_async(
+        app_state.settings_repo.upsert_settings(
+            [
+                SettingItem(key=SETTING_LATEST_VERSION, value="1.2.0"),
+                SettingItem(
+                    key=SETTING_LATEST_VERSION_URL,
+                    value="https://example.test/releases/1.2.0",
+                ),
+                SettingItem(
+                    key=SETTING_VERSION_CHECK_AT,
+                    value="2026-01-01T00:00:00Z",
+                ),
             ]
-        },
+        )
     )
 
     response = client.get("/api/admin/version-check", headers=admin_headers)

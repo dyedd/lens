@@ -5,12 +5,8 @@ services:
     restart: unless-stopped
     env_file:
       - path: .env
-        required: false
-    environment:
-      - LENS_HOST=0.0.0.0
-      - LENS_PORT=3000
-      - LENS_UI_STATIC_DIR=/app/ui
+        required: true
     ports:
-      - "3000:3000"
+      - "${LENS_HOST_PORT:-3000}:3000"
     volumes:
       - ./data:/app/data

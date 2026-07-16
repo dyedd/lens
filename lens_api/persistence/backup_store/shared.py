@@ -13,7 +13,7 @@ from ...core.runtime_channel_ids import (
     resolve_group_item_runtime_channel_id as _resolve_group_item_channel_id,
     runtime_channel_protocol as _parse_runtime_channel_protocol,
 )
-from ...core.time_zone import normalize_time_zone, resolve_time_zone
+from ...core.time_zone import resolve_time_zone
 from ...models import (
     ConfigBackupDump,
     ConfigBackupGatewayApiKey,
@@ -32,28 +32,13 @@ from ...models import (
     RequestLogLifecycleStatus,
     SettingItem,
     SiteConfig,
-    normalize_upstream_headers_config_json,
-    normalize_upstream_param_override_config_json,
 )
-from ..shared import (
-    SETTING_CIRCUIT_BREAKER_COOLDOWN,
-    SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
-    SETTING_CIRCUIT_BREAKER_THRESHOLD,
-    SETTING_CORS_ALLOW_ORIGINS,
-    SETTING_HEALTH_MIN_SAMPLES,
-    SETTING_HEALTH_PENALTY_WEIGHT,
-    SETTING_HEALTH_WINDOW_SECONDS,
-    SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
-    SETTING_PROXY_URL,
-    SETTING_RELAY_LOG_KEEP_ENABLED,
-    SETTING_RELAY_LOG_KEEP_PERIOD,
-    SETTING_SITE_LOGO_URL,
-    SETTING_SITE_NAME,
-    SETTING_TIME_ZONE,
-    SETTING_MODEL_PRICE_LAST_SYNC_AT,
-    SETTING_UPSTREAM_HEADERS_CONFIG,
-    SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
+from ..editable_settings import (
+    EDITABLE_SETTING_KEYS,
+    effective_editable_setting_items,
+    normalize_editable_setting_items,
 )
+from ..shared import SETTING_MODEL_PRICE_LAST_SYNC_AT, SETTING_TIME_ZONE
 from ..entities import (
     GatewayApiKeyEntity,
     ImportedStatsDailyEntity,
@@ -79,24 +64,4 @@ from ..cronjob_store import (
 )
 
 BACKUP_DUMP_VERSION = 2
-SETTING_STATS_LAST_PERSIST_AT = "stats_last_persist_at"
-
-
-EXPORTABLE_SETTING_KEYS = (
-    SETTING_PROXY_URL,
-    SETTING_CORS_ALLOW_ORIGINS,
-    SETTING_RELAY_LOG_KEEP_ENABLED,
-    SETTING_RELAY_LOG_KEEP_PERIOD,
-    SETTING_CIRCUIT_BREAKER_THRESHOLD,
-    SETTING_CIRCUIT_BREAKER_COOLDOWN,
-    SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
-    SETTING_HEALTH_WINDOW_SECONDS,
-    SETTING_HEALTH_PENALTY_WEIGHT,
-    SETTING_HEALTH_MIN_SAMPLES,
-    SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
-    SETTING_UPSTREAM_HEADERS_CONFIG,
-    SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
-    SETTING_SITE_NAME,
-    SETTING_SITE_LOGO_URL,
-    SETTING_TIME_ZONE,
-)
+EXPORTABLE_SETTING_KEYS = EDITABLE_SETTING_KEYS

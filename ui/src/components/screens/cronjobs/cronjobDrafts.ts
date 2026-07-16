@@ -71,7 +71,18 @@ export function parseRetentionSettings(
 }
 
 function normalizeRetentionDraft(draft: RetentionDraft) {
-  return { enabled: draft.enabled, period: Number(draft.period) };
+  return {
+    enabled: draft.enabled,
+    period: normalizeRetentionPeriod(draft.period),
+  };
+}
+
+/** Normalize a retention period to a backend-safe value. */
+export function normalizeRetentionPeriod(value: string) {
+  const days = Number(value);
+  return Number.isInteger(days) && days >= 1 && days <= 36_500
+    ? String(days)
+    : "7";
 }
 
 /** Check whether retention settings have changed. */
@@ -85,11 +96,11 @@ export function isRetentionDraftChanged(
   );
 }
 
-/** Check whether enabled retention settings are invalid. */
+/** Check whether retention settings are invalid. */
 export function isRetentionDraftInvalid(draft: RetentionDraft) {
   if (!draft.enabled) return false;
   const days = Number(draft.period);
-  return !Number.isInteger(days) || days < 1;
+  return !Number.isInteger(days) || days < 1 || days > 36_500;
 }
 
 function normalizeDraftForCompare(draft: TaskDraft) {

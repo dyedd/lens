@@ -25,8 +25,7 @@ FROM ui-base AS ui-builder
 COPY --from=ui-deps /app/ui/node_modules ./node_modules
 COPY ui ./
 
-ENV NODE_ENV=production \
-    LENS_UI_STATIC_EXPORT=1
+ENV NODE_ENV=production
 
 RUN pnpm build
 
@@ -37,10 +36,7 @@ LABEL org.opencontainers.image.source="https://github.com/dyedd/lens"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    LENS_HOST=0.0.0.0 \
-    LENS_PORT=3000 \
-    LENS_DATABASE_URL=sqlite+aiosqlite:////app/data/data.db \
-    LENS_UI_STATIC_DIR=/app/ui
+    LENS_DATABASE_URL=sqlite+aiosqlite:////app/data/data.db
 
 WORKDIR /app
 
