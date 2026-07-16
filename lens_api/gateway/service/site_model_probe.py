@@ -6,7 +6,6 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
-from ...core.config import settings
 from ...models import (
     ChannelConfig,
     ProtocolKind,
@@ -71,27 +70,22 @@ async def _call_site_model_probe_channel(
     upstream = build_upstream_request(
         channel,
         body,
-        settings,
         credential_id=credential_id,
         user_agent=_default_lens_user_agent(),
         upstream_headers_config=runtime["upstream_headers_config"],
     )
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
-    client, should_close_client = _resolve_http_client(proxy_url)
+    client = _resolve_http_client(proxy_url)
 
     started_at = perf_counter()
-    try:
-        return await _run_site_model_probe_request(
-            client=client,
-            upstream=upstream,
-            channel=channel,
-            model_name=model_name,
-            credential_id=credential_id,
-            started_at=started_at,
-        )
-    finally:
-        if should_close_client:
-            await client.aclose()
+    return await _run_site_model_probe_request(
+        client=client,
+        upstream=upstream,
+        channel=channel,
+        model_name=model_name,
+        credential_id=credential_id,
+        started_at=started_at,
+    )
 
 
 async def _run_site_model_probe_request(

@@ -1,37 +1,35 @@
 import type { NextConfig } from "next";
+import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
-const backendBaseUrl =
-  process.env.LENS_UI_BACKEND_BASE_URL || "http://127.0.0.1:18080";
-const staticExportEnabled = process.env.LENS_UI_STATIC_EXPORT === "1";
+const BACKEND_BASE_URL = "http://127.0.0.1:18080";
 
-const nextConfig: NextConfig = {
-  ...(staticExportEnabled
-    ? {
-        output: "export" as const,
-        trailingSlash: true,
-        images: {
-          unoptimized: true,
-        },
-      }
-    : {
-        output: "standalone" as const,
-        async rewrites() {
-          return [
-            {
-              source: "/api/:path*",
-              destination: `${backendBaseUrl}/api/:path*`,
-            },
-            {
-              source: "/v1/:path*",
-              destination: `${backendBaseUrl}/v1/:path*`,
-            },
-            {
-              source: "/v1beta/:path*",
-              destination: `${backendBaseUrl}/v1beta/:path*`,
-            },
-          ];
-        },
-      }),
-};
+export default function nextConfig(phase: string): NextConfig {
+  if (phase === PHASE_DEVELOPMENT_SERVER) {
+    return {
+      async rewrites() {
+        return [
+          {
+            source: "/api/:path*",
+            destination: `${BACKEND_BASE_URL}/api/:path*`,
+          },
+          {
+            source: "/v1/:path*",
+            destination: `${BACKEND_BASE_URL}/v1/:path*`,
+          },
+          {
+            source: "/v1beta/:path*",
+            destination: `${BACKEND_BASE_URL}/v1beta/:path*`,
+          },
+        ];
+      },
+    };
+  }
 
-export default nextConfig;
+  return {
+    output: "export",
+    trailingSlash: true,
+    images: {
+      unoptimized: true,
+    },
+  };
+}

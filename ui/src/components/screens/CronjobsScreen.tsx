@@ -25,6 +25,7 @@ import { titleForLocale, useI18n } from "@/lib/I18nContext";
 import { CronjobsTable } from "./cronjobs/CronjobsTable";
 import {
   intervalHours,
+  normalizeRetentionPeriod,
   parseRetentionSettings,
   RELAY_LOG_KEEP_ENABLED,
   RELAY_LOG_KEEP_PERIOD,
@@ -87,7 +88,7 @@ export function CronjobsScreen() {
             },
             {
               key: RELAY_LOG_KEEP_PERIOD,
-              value: retentionDraft.period.trim() || "7",
+              value: normalizeRetentionPeriod(retentionDraft.period),
             },
           ],
         }),

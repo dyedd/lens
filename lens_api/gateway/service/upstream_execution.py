@@ -9,7 +9,6 @@ import httpx
 from fastapi import Response
 from fastapi.responses import StreamingResponse
 
-from ...core.config import settings
 from ...models import ChannelConfig, ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_response, convert_stream_iterator, needs_conversion
 from ..router import RouteTarget
@@ -65,13 +64,13 @@ def _prepare_channel_request(
     forwarded_headers: Mapping[str, str] | None,
     upstream_headers_config: Mapping[str, Any] | None,
     log_body_enabled: bool,
+    max_request_body_bytes: int,
     path_suffix: str | None = None,
     multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
 ) -> tuple[Any, bytes, str | None]:
     upstream = build_upstream_request(
         channel,
         body,
-        settings,
         credential_id=credential_id,
         user_agent=user_agent,
         forwarded_headers=forwarded_headers,
@@ -91,7 +90,7 @@ def _prepare_channel_request(
         body_bytes = _json_body_bytes(upstream.json_body)
     request_content = _dump_log_json(upstream.json_body) if log_body_enabled else None
     too_large_message = _request_body_too_large_message(
-        len(body_bytes), settings.max_request_body_bytes
+        len(body_bytes), max_request_body_bytes
     )
     if too_large_message is not None:
         raise UpstreamRequestError(
@@ -121,7 +120,7 @@ async def _call_channel(
     global_proxy_url: str | None = None,
 ) -> UpstreamResult:
     proxy_url = resolve_upstream_proxy_url(channel, global_proxy_url)
-    client, should_close_client = _resolve_http_client(proxy_url)
+    client = _resolve_http_client(proxy_url)
     is_stream_request = bool(body.get("stream"))
 
     try:
@@ -157,10 +156,7 @@ async def _call_channel(
                 stream_started_at,
                 log_body_enabled,
                 deadline=deadline,
-                client_to_close=client if should_close_client else None,
             )
-            if should_close_client:
-                should_close_client = False
         else:
             result = await _build_json_result(
                 response,
@@ -195,9 +191,6 @@ async def _call_channel(
             router_status_code=None,
             error_type="gateway_timeout",
         ) from exc
-    finally:
-        if should_close_client:
-            await client.aclose()
 
 
 async def _send_upstream(

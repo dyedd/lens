@@ -129,12 +129,9 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 
 ```bash
 mkdir lens && cd lens
-curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/docker-compose.yml
-curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/.env.example
-cp .env.example .env
+curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/scripts/docker/deploy.sh
+sh deploy.sh
 ```
-
-Edit `.env` and configure as needed. `LENS_AUTH_SECRET_KEY` is required.
 
 To change the data directory, edit only the host path on the left side of `volumes`; keep `/app/data` unchanged:
 
@@ -151,18 +148,6 @@ docker compose up -d
 ```
 
 Visit `http://127.0.0.1:3000`, default credentials `admin/admin`. Change the default administrator password immediately after first login.
-
-### Docker Run
-
-```bash
-mkdir -p data
-
-docker run -d --name lens \
-  --env-file .env \
-  -p 3000:3000 \
-  -v "$(pwd)/data:/app/data" \
-  ghcr.io/dyedd/lens:latest
-```
 
 ### Build Locally
 
@@ -187,20 +172,6 @@ Put the project source tree in the same directory, then run:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
-```
-
-You can also build manually and run without Compose:
-
-```bash
-docker build -t lens:local .
-
-mkdir -p data
-
-docker run -d --name lens \
-  --env-file .env \
-  -p 3000:3000 \
-  -v "$(pwd)/data:/app/data" \
-  lens:local
 ```
 
 ### Local Development
@@ -272,17 +243,33 @@ Clients only need: Lens Base URL + Gateway API Key + Model group name.
 | Backend  | Python 3.11+, FastAPI, SQLAlchemy, Alembic, SQLite / PostgreSQL |
 | Frontend | Next.js 16, React 19, TypeScript, TanStack Query, shadcn/ui     |
 
-## Environment Variables
+## Configuration
 
-Core variables:
+### Backend Environment Variables
 
-| Variable                       | Default                              | Description                                                        |
-| ------------------------------ | ------------------------------------ | ------------------------------------------------------------------ |
-| `LENS_HOST`                    | `127.0.0.1`                          | Backend listen host; Docker sets it to `0.0.0.0`                   |
-| `LENS_PORT`                    | `18080`                              | Backend listen port; Docker sets it to `3000`                      |
-| `LENS_DATABASE_URL`            | `sqlite+aiosqlite:///./data/data.db` | Database URL; defaults to SQLite, can point to external PostgreSQL |
-| `LENS_AUTH_SECRET_KEY`         | Required                             | JWT signing key                                                    |
-| `LENS_REQUEST_TIMEOUT_SECONDS` | `180`                                | Upstream request timeout                                           |
+| Variable                         | Default                              | Description                                                           |
+| -------------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
+| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db` | Database URL; the Docker image uses `/app/data/data.db`               |
+| `LENS_AUTH_SECRET_KEY`           | None (required)                      | JWT signing key; the Docker deployment script writes it to `.env`     |
+| `LENS_MAX_CONNECTIONS`           | `200`                                | Maximum connections per direct or proxy pool; requires a restart      |
+| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                 | Maximum idle connections per direct or proxy pool; requires a restart |
+
+### Gateway Settings
+
+Configure these values on `/settings`:
+
+| Setting key                 | Default     | Description                                                                                    |
+| --------------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
+| `auth_access_token_minutes` | 720 minutes | Lifetime of newly issued login access tokens; range `1`–`525600`                               |
+| `request_timeout_seconds`   | 180 seconds | Total gateway-request deadline, including fallbacks; range `0`–`86400`, where `0` is unlimited |
+| `max_request_body_bytes`    | `32000000`  | Maximum request body sent upstream; `0` is unlimited                                           |
+
+### Docker Compose
+
+| Variable               | Default | Description                                                               |
+| ---------------------- | ------- | ------------------------------------------------------------------------- |
+| `LENS_HOST_PORT`       | `3000`  | Host port                                                                 |
+| `LENS_SKIP_DB_UPGRADE` | `0`     | Set to `1` to skip container startup migrations; upgrade the schema first |
 
 ### PostgreSQL Configuration
 

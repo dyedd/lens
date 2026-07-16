@@ -33,7 +33,7 @@ class _ModelListItem:
 async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
     runtime = await app_state.settings_repo.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
-    client, should_close_client = _resolve_http_client(proxy_url)
+    client = _resolve_http_client(proxy_url)
 
     try:
         response = await client.request(
@@ -50,9 +50,6 @@ async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
         raise HTTPException(status_code=502, detail=f"Transport error: {exc}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    finally:
-        if should_close_client:
-            await client.aclose()
 
 
 def _model_list_request(

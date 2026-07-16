@@ -4,6 +4,7 @@ from .shared import (
     BACKUP_DUMP_VERSION,
     ConfigBackupDump,
     ConfigImportResult,
+    effective_editable_setting_items,
     EXPORTABLE_SETTING_KEYS,
     SettingEntity,
     SettingItem,
@@ -64,9 +65,9 @@ class BackupExportImportMixin:
             lens_version=lens_version,
             include_request_logs=include_request_logs,
             include_gateway_api_keys=include_gateway_api_keys,
-            settings=[
-                SettingItem(key=item.key, value=item.value) for item in settings_rows
-            ],
+            settings=effective_editable_setting_items(
+                [SettingItem(key=item.key, value=item.value) for item in settings_rows]
+            ),
             sites=sites,
             groups=groups,
             model_prices=model_prices,
@@ -118,8 +119,9 @@ class BackupExportImportMixin:
             await self._replace_model_prices(session, dump.model_prices)
             rows_affected["model_prices"] = len(dump.model_prices)
 
-            await self._replace_settings(session, dump.settings)
-            rows_affected["settings"] = len(dump.settings)
+            rows_affected["settings"] = await self._replace_settings(
+                session, dump.settings
+            )
 
             await self._replace_cronjobs(session, dump.cronjobs)
             rows_affected["cronjobs"] = len(dump.cronjobs)

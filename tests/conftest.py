@@ -30,8 +30,7 @@ async def _noop_lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 async def _close_state(state: Any) -> None:
-    if not state.http.is_closed:
-        await state.http.aclose()
+    await state.close_http_clients()
     await state.engine.dispose()
 
 
@@ -85,13 +84,9 @@ def app_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> Iterator[Any]:
 
     db_path = tmp_path / "lens-test.db"
     monkeypatch.setattr(settings, "auth_secret_key", "test-secret")
-    monkeypatch.setattr(settings, "auth_access_token_minutes", 60)
     monkeypatch.setattr(
         settings, "database_url", f"sqlite+aiosqlite:///{db_path.as_posix()}"
     )
-    monkeypatch.setattr(settings, "ui_static_dir", "")
-    monkeypatch.setattr(settings, "request_timeout_seconds", 3.0)
-
     import lens_api.gateway.service as service
     import lens_api.gateway.service.app_state as state_mod
 
