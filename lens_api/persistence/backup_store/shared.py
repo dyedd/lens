@@ -41,13 +41,9 @@ from ..editable_settings import (
 from ..shared import SETTING_MODEL_PRICE_LAST_SYNC_AT, SETTING_TIME_ZONE
 from ..entities import (
     GatewayApiKeyEntity,
-    ImportedStatsDailyEntity,
-    ImportedStatsTotalEntity,
     ModelGroupEntity,
     ModelGroupItemEntity,
     ModelPriceEntity,
-    OverviewModelDailyStatsEntity,
-    RequestLogDailyStatsEntity,
     RequestLogEntity,
     CronjobEntity,
     SettingEntity,
@@ -56,6 +52,12 @@ from ..entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+)
+from ..stats_entities import (
+    ImportedStatsDailyEntity,
+    ImportedStatsTotalEntity,
+    OverviewModelDailyStatsEntity,
+    RequestLogDailyStatsEntity,
 )
 from ..cronjob_store import (
     encode_weekdays,

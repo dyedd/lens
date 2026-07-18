@@ -14,7 +14,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from ..cronjob_runner import CronjobAlreadyRunningError
 from .app_state import app_state, logger
 from .error_responses import (
-    _protocol_error_response,
     build_database_error_response,
     build_error_response,
     detail_message,
@@ -66,7 +65,7 @@ async def handle_validation_error(
 ) -> JSONResponse:
     """Convert request validation failures into a stable error response."""
     return build_error_response(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         error_type="validation_error",
         message="Request validation failed",
         details=exc.errors(),

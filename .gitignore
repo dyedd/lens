@@ -10,4 +10,3 @@ build/
 data/
 *.tsbuildinfo
 .ccg/
-uv.lock

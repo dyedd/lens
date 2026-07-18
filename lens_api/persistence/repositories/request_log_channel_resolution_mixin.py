@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..shared import (
     GatewayApiKeyEntity,
@@ -11,13 +11,9 @@ from ..shared import (
     _channel_ids_by_protocol_config,
     select,
 )
-from ._request_log_serialization import _RequestLogSerializationMixin
 
 
-class RequestLogChannelResolutionMixin(_RequestLogSerializationMixin):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
-        self._session_factory = session_factory
-
+class RequestLogChannelResolutionMixin:
     async def _hydrate_request_logs(
         self,
         session: AsyncSession,
