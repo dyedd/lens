@@ -1,17 +1,82 @@
 "use client";
 
+import type { Dispatch, FormEventHandler, SetStateAction } from "react";
+
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
 import { Separator } from "@/components/ui/Separator";
+import type {
+  ModelGroup,
+  ModelGroupCandidateItem,
+  ProtocolKind,
+} from "@/lib/api";
 import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
 import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
 import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
 import { ModelGroupSettings } from "./ModelGroupSettings";
-import type {
-  DeleteGroupDialogProps,
-  GroupEditorDialogProps,
-} from "./modelGroupDialogTypes";
-import { itemKey } from "./modelGroupUtils";
+import {
+  itemKey,
+  type CandidateChannelGroup,
+  type CandidateSearchMode,
+  type FoldedMember,
+  type FormState,
+  type MemberStatusFilter,
+} from "./modelGroupUtils";
+
+interface GroupEditorDialogProps {
+  dialogOpen: boolean;
+  setDialogOpen: Dispatch<SetStateAction<boolean>>;
+  editingId: string | null;
+  locale: "zh-CN" | "en-US";
+  submit: FormEventHandler<HTMLFormElement>;
+  form: FormState;
+  setForm: Dispatch<SetStateAction<FormState>>;
+  toggleProtocol: (protocol: ProtocolKind) => void;
+  routeTargetOptions: ModelGroup[];
+  changeRouteTarget: (routeGroupId: string) => void;
+  candidateSearchMode: CandidateSearchMode;
+  changeCandidateSearchMode: (mode: CandidateSearchMode) => void;
+  candidateSearch: string;
+  changeCandidateSearch: (value: string) => void;
+  addMatchedItems: () => void;
+  candidateRegexInvalid: boolean;
+  filteredCandidates: ModelGroupCandidateItem[];
+  refetchCandidates: () => unknown;
+  isFetchingCandidates: boolean;
+  applySavedFilter: () => void;
+  clearSavedFilter: () => void;
+  groupedCandidates: CandidateChannelGroup[];
+  expandedChannels: string[];
+  toggleChannel: (channelId: string) => void;
+  foldedMembers: FoldedMember[];
+  addCandidate: (candidate: ModelGroupCandidateItem) => void;
+  candidateIsError: boolean;
+  candidateListError: unknown;
+  disabledItemCount: number;
+  invalidItemCount: number;
+  unavailableItemCount: number;
+  removeInvalidItems: () => void;
+  removeUnavailableItems: () => void;
+  removeDisabledMembers: () => void;
+  clearMembers: () => void;
+  setAllMembersEnabled: (enabled: boolean) => void;
+  memberStatusFilter: MemberStatusFilter;
+  setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
+  visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
+  draggingIndex: number | null;
+  toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
+  removeFoldedMember: (foldKey: string) => void;
+  setDraggingIndex: Dispatch<SetStateAction<number | null>>;
+  moveFoldedMember: (fromIndex: number, toIndex: number) => void;
+}
+
+interface DeleteGroupDialogProps {
+  deleteTarget: ModelGroup | null;
+  locale: "zh-CN" | "en-US";
+  busyId: string | null;
+  setDeleteTarget: Dispatch<SetStateAction<ModelGroup | null>>;
+  remove: (item: ModelGroup) => void;
+}
 
 /** Render the create or edit dialog for a model group. */
 export function GroupEditorDialog(props: GroupEditorDialogProps) {

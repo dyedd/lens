@@ -12,7 +12,7 @@ import {
 import { titleForLocale, type Locale } from "@/lib/I18nContext";
 import { cn } from "@/lib/utils";
 
-import { formatDateLabel } from "./gatewayApiKeyUtils";
+import { formatDateLabel } from "./gatewayDateTime";
 
 type GatewayApiKeyExpiryFieldProps = {
   locale: Locale;

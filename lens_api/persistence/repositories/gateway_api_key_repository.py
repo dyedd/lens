@@ -5,7 +5,6 @@ from sqlalchemy import case
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..shared import (
-    AsyncSession,
     GATEWAY_API_KEY_CHARS,
     GatewayApiKey,
     GatewayApiKeyCreate,
@@ -42,9 +41,7 @@ class GatewayApiKeyRepository:
             )
             return [self._to_gateway_api_key(row) for row in rows]
 
-    async def find_gateway_api_key_by_secret(
-        self, secret: str
-    ) -> GatewayApiKey | None:
+    async def find_gateway_api_key_by_secret(self, secret: str) -> GatewayApiKey | None:
         """Find a gateway API key by its secret value."""
         normalized = secret.strip()
         if not normalized:

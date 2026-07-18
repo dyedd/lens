@@ -8,6 +8,15 @@ import jwt
 
 PBKDF2_ITERATIONS = 600_000
 JWT_ALGORITHM = "HS256"
+_MIN_AUTH_SECRET_BYTES = 32
+
+
+def validate_auth_secret_key(secret_key: str) -> None:
+    """Require enough key material for HS256 signing."""
+    if not secret_key.strip():
+        raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
+    if len(secret_key.encode("utf-8")) < _MIN_AUTH_SECRET_BYTES:
+        raise RuntimeError("LENS_AUTH_SECRET_KEY must be at least 32 bytes")
 
 
 def hash_password(password: str) -> str:
@@ -45,8 +54,7 @@ def create_access_token(
     subject: str, secret_key: str, access_token_minutes: int
 ) -> tuple[str, int]:
     """Create a signed access token and return it with its lifetime."""
-    if not secret_key.strip():
-        raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
+    validate_auth_secret_key(secret_key)
     expires_in = access_token_minutes * 60
     expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
     token = jwt.encode(
@@ -62,6 +70,5 @@ def create_access_token(
 
 def decode_access_token(token: str, secret_key: str) -> dict[str, Any]:
     """Decode and validate a signed access token."""
-    if not secret_key.strip():
-        raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
+    validate_auth_secret_key(secret_key)
     return jwt.decode(token, secret_key, algorithms=[JWT_ALGORITHM])

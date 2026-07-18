@@ -288,6 +288,3 @@ class _HealthTracker:
         if until <= now:
             return 0
         return max(int(until - now), 0)
-
-
-__all__ = ["ErrorCategory", "classify_error"]

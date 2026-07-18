@@ -67,13 +67,9 @@ from ..models import (
 from ..core.protocol_reachability import can_reach_protocol
 from .entities import (
     GatewayApiKeyEntity,
-    ImportedStatsDailyEntity,
-    ImportedStatsTotalEntity,
     ModelGroupEntity,
     ModelGroupItemEntity,
     ModelPriceEntity,
-    OverviewModelDailyStatsEntity,
-    RequestLogDailyStatsEntity,
     RequestLogEntity,
     SettingEntity,
     SiteBaseUrlEntity,
@@ -81,6 +77,12 @@ from .entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+)
+from .stats_entities import (
+    ImportedStatsDailyEntity,
+    ImportedStatsTotalEntity,
+    OverviewModelDailyStatsEntity,
+    RequestLogDailyStatsEntity,
 )
 
 _LOGGER = logging.getLogger(__name__)

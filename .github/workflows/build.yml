@@ -19,24 +19,27 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+
       - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+        run: uv sync --extra dev --locked --python 3.11
 
       - name: Compile backend
         run: python -m compileall -q lens_api scripts migrations
 
       - name: Test backend
-        run: python -m pytest tests -q --confcutdir=tests
+        run: uv run --no-sync python -m pytest tests -q --confcutdir=tests
 
       - name: Validate backend migrations
         env:
           LENS_DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/lens-ci.db
         run: |
-          python -m lens_api.cli db upgrade
-          python -m alembic check
-          python -m lens_api.cli db current
+          uv run --no-sync python -m lens_api.cli db upgrade
+          uv run --no-sync python -m alembic check
+          uv run --no-sync python -m lens_api.cli db current
 
   frontend:
     runs-on: ubuntu-latest

@@ -148,4 +148,4 @@ class GatewayRouter:
             return self._health.is_target_available(target, now=monotonic())
 
 
-__all__ = ["GatewayRouter", "RouteSelection", "RouteTarget"]
+__all__ = ["GatewayRouter"]

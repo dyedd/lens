@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/Item";
 import type { ConfigBackupDump } from "@/lib/api";
 import { titleForLocale, type Locale } from "@/lib/I18nContext";
-import { ConfigPreviewMeta } from "./ConfigPreviewMeta";
 import { formatExportedAt } from "./configTransferUtils";
 
 export type ConfigPreviewSection = {
@@ -22,6 +21,20 @@ export type ConfigPreviewSection = {
   label: string;
   count: number;
 };
+
+/** Render a compact backup preview metadata item. */
+function ConfigPreviewMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <Item variant="muted" size="sm">
+      <ItemContent>
+        <ItemDescription className="text-[11px] uppercase tracking-[0.08em]">
+          {label}
+        </ItemDescription>
+        <ItemTitle>{value}</ItemTitle>
+      </ItemContent>
+    </Item>
+  );
+}
 
 /** Render the selected backup file and parsed preview. */
 export function ConfigImportPreview({
