@@ -173,12 +173,14 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 ### 本地开发
 
+需要 Python 3.11+、uv 和 pnpm。
+
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev --locked
 cd ui && pnpm install && cd ..
-lens db upgrade
-lens seed-admin --username admin --password admin
-lens dev
+uv run lens db upgrade
+uv run lens seed-admin --username admin --password admin
+uv run lens dev
 ```
 
 本地开发默认端口：
@@ -189,7 +191,7 @@ lens dev
 也可以分开启动：
 
 ```bash
-lens serve
+uv run lens serve
 
 cd ui
 pnpm dev
@@ -244,12 +246,12 @@ pnpm dev
 
 ### 后端环境变量
 
-| 变量                             | 默认值                               | 说明                                                 |
-| -------------------------------- | ------------------------------------ | ---------------------------------------------------- |
-| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db` | 数据库连接；Docker 镜像使用 `/app/data/data.db`      |
-| `LENS_AUTH_SECRET_KEY`           | 无（必填）                           | JWT 签名密钥；Docker 部署脚本写入 `.env`             |
-| `LENS_MAX_CONNECTIONS`           | `200`                                | 每个直连或代理连接池的最大连接数，修改后需要重启     |
-| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                 | 每个直连或代理连接池的最大空闲连接数，修改后需要重启 |
+| 变量                             | 默认值                               | 说明                                                               |
+| -------------------------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db` | 数据库连接；Docker 镜像使用 `/app/data/data.db`                    |
+| `LENS_AUTH_SECRET_KEY`           | 无（必填）                           | JWT 签名密钥，UTF-8 编码后至少 32 字节；Docker 部署脚本写入 `.env` |
+| `LENS_MAX_CONNECTIONS`           | `200`                                | 每个直连或代理连接池的最大连接数，修改后需要重启                   |
+| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                 | 每个直连或代理连接池的最大空闲连接数，修改后需要重启               |
 
 ### 网关设置
 
@@ -297,9 +299,9 @@ LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgresql:5432/lens
 ## 数据库迁移
 
 ```bash
-lens db upgrade                               # 升级到最新
-lens db downgrade                             # 回退一步
-lens db revision -m "describe your change"    # 生成新迁移
+uv run lens db upgrade  # 升级到最新
+uv run lens db downgrade  # 回退一步
+uv run lens db revision -m "describe your change"  # 生成新迁移
 ```
 
 从 SQLite 切换到 PostgreSQL：在 `/backups` 导出配置 → 修改 `LENS_DATABASE_URL` → 启动 Lens → 导入配置。

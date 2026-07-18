@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from functools import lru_cache
 from html.parser import HTMLParser
@@ -154,6 +155,15 @@ def _normalize_user_agent(value: str | None) -> str:
     return "".join(char for char in normalized if ord(char) >= 32 and ord(char) != 127)[
         :300
     ].strip()
+
+
+def _effective_user_agent_from_headers(
+    headers: Mapping[str, str], fallback: str
+) -> str:
+    for name, value in headers.items():
+        if name.lower() == "user-agent":
+            return _normalize_user_agent(value)
+    return fallback
 
 
 def _is_generic_user_agent(value: str) -> bool:

@@ -27,21 +27,23 @@ const BatchImportDialog = dynamic(() =>
   import("./BatchImportDialog").then((module) => module.BatchImportDialog),
 );
 const BatchModelTestDialog = dynamic(() =>
-  import("./ChannelModelDialogs").then((module) => module.BatchModelTestDialog),
+  import("./BatchModelTestDialog").then(
+    (module) => module.BatchModelTestDialog,
+  ),
 );
 const ModelGroupEnsureDialog = dynamic(() =>
-  import("./ChannelModelDialogs").then(
+  import("./ModelGroupEnsureDialog").then(
     (module) => module.ModelGroupEnsureDialog,
   ),
 );
 const ModelTestDialog = dynamic(() =>
-  import("./ChannelModelDialogs").then((module) => module.ModelTestDialog),
+  import("./ModelTestDialog").then((module) => module.ModelTestDialog),
 );
 const ModelPickerDialog = dynamic(() =>
-  import("./ChannelModelDialogs").then((module) => module.ModelPickerDialog),
+  import("./ModelPickerDialog").then((module) => module.ModelPickerDialog),
 );
 const ChannelModelSyncDialog = dynamic(() =>
-  import("./ChannelModelDialogs").then(
+  import("./ChannelModelSyncDialog").then(
     (module) => module.ChannelModelSyncDialog,
   ),
 );

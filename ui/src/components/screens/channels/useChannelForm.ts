@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { ProtocolKind, Site } from "@/lib/api";
 import {
@@ -10,6 +10,8 @@ import {
   emptyForm,
   emptyProtocolConfig,
   formBaseUrlsForPayload,
+  invalidModelProtocolCount,
+  invalidProtocolBaseUrlCount,
   nextProtocolConfigName,
   protocolConfigModelKey,
   protocolConfigSelectedCredentialIds,
@@ -23,8 +25,84 @@ import {
   type HeaderItem,
   type Locale,
 } from "./channelShared";
-import { validateChannelForm } from "./channelFormValidation";
-import { useChannelFormEffects } from "./useChannelFormEffects";
+
+function validateChannelForm(
+  form: FormState,
+  duplicatedConfigCount: number,
+  locale: Locale,
+) {
+  if (invalidProtocolBaseUrlCount(form)) {
+    toast.error(
+      locale === "zh-CN"
+        ? "组合地址来源无效"
+        : "Combination Base URL is invalid",
+    );
+    return false;
+  }
+  if (duplicatedConfigCount) {
+    toast.error(
+      locale === "zh-CN"
+        ? "同一个渠道内不允许重复地址来源、密钥和协议"
+        : "Duplicate Base URL, key, and protocol sets are not allowed in one channel",
+    );
+    return false;
+  }
+  if (invalidModelProtocolCount(form)) {
+    toast.error(
+      locale === "zh-CN"
+        ? "请为每个模型选择至少一个有效协议"
+        : "Select at least one valid protocol for every model",
+    );
+    return false;
+  }
+  return true;
+}
+
+/** Protects unsaved edits and focuses a newly added protocol configuration. */
+function useChannelFormEffects({
+  isDialogOpen,
+  hasUnsavedChanges,
+  shouldFocusAddedConfig,
+  protocolConfigCount,
+  finishAddedConfigFocus,
+}: {
+  isDialogOpen: boolean;
+  hasUnsavedChanges: boolean;
+  shouldFocusAddedConfig: boolean;
+  protocolConfigCount: number;
+  finishAddedConfigFocus: () => void;
+}) {
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges, isDialogOpen]);
+
+  useEffect(() => {
+    if (!shouldFocusAddedConfig || !isDialogOpen) return;
+    const index = protocolConfigCount - 1;
+    if (index < 0) return;
+    const section = document.querySelector<HTMLElement>(
+      `[data-protocol-config-index="${index}"]`,
+    );
+    if (!section) return;
+    section.scrollIntoView({ behavior: "smooth", block: "center" });
+    (section.querySelector<HTMLInputElement>("input") ?? section).focus({
+      preventScroll: true,
+    });
+    finishAddedConfigFocus();
+  }, [
+    finishAddedConfigFocus,
+    isDialogOpen,
+    protocolConfigCount,
+    shouldFocusAddedConfig,
+  ]);
+}
 
 /** Owns the channel editor form and its local mutations. */
 export function useChannelForm(locale: Locale) {

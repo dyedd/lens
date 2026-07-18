@@ -83,7 +83,7 @@ def app_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> Iterator[Any]:
     global _INITIAL_SERVICE_STATE_CLOSED
 
     db_path = tmp_path / "lens-test.db"
-    monkeypatch.setattr(settings, "auth_secret_key", "test-secret")
+    monkeypatch.setattr(settings, "auth_secret_key", "x" * 32)
     monkeypatch.setattr(
         settings, "database_url", f"sqlite+aiosqlite:///{db_path.as_posix()}"
     )

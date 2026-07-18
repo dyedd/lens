@@ -1,9 +1,14 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import CheckConstraint, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
+
+
+def _utc_now() -> datetime:
+    """Return naive UTC for timezone-free database columns."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def enabled_column() -> Mapped[int]:
@@ -18,14 +23,12 @@ def sort_order_column() -> Mapped[int]:
 
 def timestamp_column() -> Mapped[datetime]:
     """Create a mapped creation timestamp column."""
-    return mapped_column(default=datetime.utcnow, nullable=False)
+    return mapped_column(default=_utc_now, nullable=False)
 
 
 def auto_timestamp_column() -> Mapped[datetime]:
     """Create a mapped timestamp column that updates automatically."""
-    return mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    return mapped_column(default=_utc_now, onupdate=_utc_now, nullable=False)
 
 
 class AdminUserEntity(Base):
@@ -232,7 +235,7 @@ class RequestLogEntity(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     stats_archived: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, nullable=False, index=True
+        default=_utc_now, nullable=False, index=True
     )
 
 
@@ -279,11 +282,3 @@ class CronjobEntity(Base):
     lease_until: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
     created_at: Mapped[datetime] = timestamp_column()
     updated_at: Mapped[datetime] = auto_timestamp_column()
-
-
-from .stats_entities import (
-    ImportedStatsDailyEntity,
-    ImportedStatsTotalEntity,
-    OverviewModelDailyStatsEntity,
-    RequestLogDailyStatsEntity,
-)

@@ -8,17 +8,6 @@ import { PROTOCOL_LABELS } from "@/lib/protocols";
 import { titleForLocale, type Locale } from "@/lib/I18nContext";
 import { formatExpiresAt, parseGatewayExpiresAt } from "./gatewayDateTime";
 
-export {
-  formatDateLabel,
-  formatDateOnly,
-  formatDateTime,
-  formatExpiresAt,
-  getTimeInZone,
-  getTimeZoneDateParts,
-  getTimeZoneOffsetMs,
-  parseGatewayExpiresAt,
-} from "./gatewayDateTime";
-
 export type GatewayApiKeyForm = {
   remark: string;
   enabled: boolean;

@@ -3,12 +3,12 @@ from __future__ import annotations
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lens_api.persistence.entities import (
+from lens_api.persistence.entities import RequestLogEntity
+from lens_api.persistence.stats_entities import (
     ImportedStatsDailyEntity,
     ImportedStatsTotalEntity,
     OverviewModelDailyStatsEntity,
     RequestLogDailyStatsEntity,
-    RequestLogEntity,
 )
 
 

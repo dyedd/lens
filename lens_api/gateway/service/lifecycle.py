@@ -7,14 +7,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.security import HTTPBearer
 
+from ...core.auth import validate_auth_secret_key
 from ...core.config import settings
 from ...core.time_zone import resolve_time_zone
 from .app_state import AppState, app_state
 
 
 async def _startup_app_state(state: AppState) -> None:
-    if not settings.auth_secret_key.strip():
-        raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
+    validate_auth_secret_key(settings.auth_secret_key)
     resolve_time_zone(None)
     if state.http.is_closed:
         state.http = state._create_http_client()

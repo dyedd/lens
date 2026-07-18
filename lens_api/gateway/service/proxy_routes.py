@@ -114,23 +114,23 @@ async def proxy_openai_image_edits(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
     """Proxy an authenticated multipart OpenAI image edit request."""
-    form = await request.form()
-    fields: dict[str, str] = {}
-    files: list[tuple[str, tuple[str, bytes, str]]] = []
-    for field_name, value in form.multi_items():
-        if isinstance(value, UploadFile):
-            files.append(
-                (
-                    field_name,
+    async with request.form() as form:
+        fields: dict[str, str] = {}
+        files: list[tuple[str, tuple[str, bytes, str]]] = []
+        for field_name, value in form.multi_items():
+            if isinstance(value, UploadFile):
+                files.append(
                     (
-                        value.filename or field_name,
-                        await value.read(),
-                        value.content_type or "application/octet-stream",
-                    ),
+                        field_name,
+                        (
+                            value.filename or field_name,
+                            await value.read(),
+                            value.content_type or "application/octet-stream",
+                        ),
+                    )
                 )
-            )
-        else:
-            fields[field_name] = value
+            else:
+                fields[field_name] = value
     return await _proxy_protocol(
         ProtocolKind.OPENAI_IMAGE,
         dict(fields),

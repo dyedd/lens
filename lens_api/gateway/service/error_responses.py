@@ -72,7 +72,7 @@ def status_error_type(status_code: int) -> str:
         return "not_found"
     if status_code == status.HTTP_409_CONFLICT:
         return "conflict"
-    if status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+    if status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
         return "validation_error"
     if status_code >= 500:
         return "server_error"
@@ -186,7 +186,7 @@ def _anthropic_error_type(status_code: int, error_type: str) -> str:
         return "not_found_error"
     if status_code == status.HTTP_429_TOO_MANY_REQUESTS:
         return "rate_limit_error"
-    if status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+    if status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
         return "invalid_request_error"
     if status_code >= 500:
         return "api_error"

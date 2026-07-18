@@ -176,12 +176,14 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 ### Local Development
 
+Requires Python 3.11+, uv, and pnpm.
+
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev --locked
 cd ui && pnpm install && cd ..
-lens db upgrade
-lens seed-admin --username admin --password admin
-lens dev
+uv run lens db upgrade
+uv run lens seed-admin --username admin --password admin
+uv run lens dev
 ```
 
 Default local development ports:
@@ -192,7 +194,7 @@ Default local development ports:
 You can also run them separately:
 
 ```bash
-lens serve
+uv run lens serve
 
 cd ui
 pnpm dev
@@ -247,12 +249,12 @@ Clients only need: Lens Base URL + Gateway API Key + Model group name.
 
 ### Backend Environment Variables
 
-| Variable                         | Default                              | Description                                                           |
-| -------------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
-| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db` | Database URL; the Docker image uses `/app/data/data.db`               |
-| `LENS_AUTH_SECRET_KEY`           | None (required)                      | JWT signing key; the Docker deployment script writes it to `.env`     |
-| `LENS_MAX_CONNECTIONS`           | `200`                                | Maximum connections per direct or proxy pool; requires a restart      |
-| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                 | Maximum idle connections per direct or proxy pool; requires a restart |
+| Variable                         | Default                              | Description                                                                                             |
+| -------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db` | Database URL; the Docker image uses `/app/data/data.db`                                                 |
+| `LENS_AUTH_SECRET_KEY`           | None (required)                      | JWT signing key, at least 32 bytes when UTF-8 encoded; the Docker deployment script writes it to `.env` |
+| `LENS_MAX_CONNECTIONS`           | `200`                                | Maximum connections per direct or proxy pool; requires a restart                                        |
+| `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                 | Maximum idle connections per direct or proxy pool; requires a restart                                   |
 
 ### Gateway Settings
 
@@ -300,9 +302,9 @@ The first `lens` is the database username, the last `lens` is the database name,
 ## Database Migrations
 
 ```bash
-lens db upgrade                               # upgrade to latest
-lens db downgrade                             # downgrade one revision
-lens db revision -m "describe your change"    # create a migration
+uv run lens db upgrade  # upgrade to latest
+uv run lens db downgrade  # downgrade one revision
+uv run lens db revision -m "describe your change"  # create a migration
 ```
 
 To move from SQLite to PostgreSQL: export config at `/backups` → change `LENS_DATABASE_URL` → start Lens → import config.
