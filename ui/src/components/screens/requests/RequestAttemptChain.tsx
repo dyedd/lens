@@ -4,7 +4,11 @@ import { Badge } from "@/components/ui/Badge";
 import type { RequestLogDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { RequestOutcomeBadge } from "./RequestSummaryFields";
-import { formatErrorDisplay, formatMs } from "./requestLogUtils";
+import {
+  formatErrorDisplay,
+  formatInternalCredentialLabel,
+  formatMs,
+} from "./requestLogUtils";
 
 /** Render the ordered upstream attempts for a request. */
 export function AttemptChain({
@@ -20,8 +24,11 @@ export function AttemptChain({
         {
           channel_id: detail.channel_id || "n/a",
           channel_name: detail.channel_name || detail.channel_id || "n/a",
-          credential_id: null,
-          credential_name: "",
+          credential_id: detail.credential_id,
+          credential_name: detail.credential_name,
+          credential_number: detail.credential_number,
+          channel_has_multiple_credentials:
+            detail.channel_has_multiple_credentials,
           model_name:
             detail.upstream_model_name ||
             detail.resolved_group_name ||
@@ -38,6 +45,9 @@ export function AttemptChain({
     <div className="overflow-hidden rounded-xl bg-muted/20">
       {attempts.map((attempt, index) => {
         const errorDisplay = formatErrorDisplay(attempt.error_message);
+        const credentialLabel = attempt.channel_has_multiple_credentials
+          ? formatInternalCredentialLabel(attempt, locale)
+          : null;
         return (
           <div
             key={`${attempt.channel_id}-${index}`}
@@ -54,9 +64,9 @@ export function AttemptChain({
                 <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
                   {attempt.channel_name}
                 </span>
-                {attempt.credential_name || attempt.credential_id ? (
+                {credentialLabel ? (
                   <Badge variant="secondary" className="max-w-[160px] truncate">
-                    {attempt.credential_name || attempt.credential_id}
+                    {credentialLabel}
                   </Badge>
                 ) : null}
                 {attempt.model_name ? (

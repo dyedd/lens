@@ -162,7 +162,7 @@ export function RequestCard({
               />
               <RequestMeta
                 icon={<Waypoints size={13} />}
-                value={formatChannelCredentialLabel(item)}
+                value={formatChannelCredentialLabel(item, locale)}
               />
               {item.gateway_key_id && item.gateway_has_multiple_keys ? (
                 <RequestMeta

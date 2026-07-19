@@ -3,7 +3,7 @@ import type { CronjobScheduleType } from "./cronjobs";
 import type { ModelGroup } from "./groups";
 import type { ModelPriceItem } from "./modelPrices";
 import type { ProtocolKind } from "./protocols";
-import type { RequestLogAttempt, RequestLogLifecycleStatus } from "./requests";
+import type { RequestLogLifecycleStatus } from "./requests";
 import type { SettingItem } from "./settings";
 import type { Site } from "./sites";
 
@@ -59,6 +59,18 @@ export type ConfigBackupGatewayApiKey = {
   created_at?: string | null;
   updated_at?: string | null;
 };
+export type ConfigBackupRequestLogAttempt = {
+  channel_id: string;
+  channel_name: string;
+  credential_id?: string | null;
+  credential_name: string;
+  model_name?: string | null;
+  status_code?: number | null;
+  success: boolean;
+  duration_ms: number;
+  error_message?: string | null;
+  reasoning_effort?: string | null;
+};
 export type ConfigBackupRequestLog = {
   protocol: ProtocolKind;
   user_agent: string;
@@ -87,7 +99,7 @@ export type ConfigBackupRequestLog = {
   stats_archived: boolean;
   request_content?: string | null;
   response_content?: string | null;
-  attempts: RequestLogAttempt[];
+  attempts: ConfigBackupRequestLogAttempt[];
 };
 export type ConfigBackupDump = {
   version: number;

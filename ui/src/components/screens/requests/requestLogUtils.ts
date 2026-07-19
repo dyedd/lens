@@ -4,6 +4,7 @@ import type {
   SettingItem,
 } from "@/lib/api";
 import { titleForLocale } from "@/lib/I18nContext";
+import { formatCredentialDisplayName } from "@/lib/utils";
 
 export const PAGE_SIZE = 20;
 export const REQUEST_LOG_DETAIL_GC_TIME = 60_000;
@@ -90,11 +91,21 @@ export function formatGatewayKeyLabel(
 }
 
 export function formatInternalCredentialLabel(
-  item: Pick<RequestLogItem, "credential_id" | "credential_name">,
+  item: Pick<
+    RequestLogItem,
+    "credential_id" | "credential_name" | "credential_number"
+  >,
+  locale: "zh-CN" | "en-US",
 ) {
-  return (
-    item.credential_name?.trim() || shortenGatewayKeyId(item.credential_id)
-  );
+  const credentialName = item.credential_name?.trim();
+  if (item.credential_number > 0 || credentialName) {
+    return formatCredentialDisplayName(
+      credentialName,
+      item.credential_number,
+      locale,
+    );
+  }
+  return credentialName || shortenGatewayKeyId(item.credential_id);
 }
 
 /** Format a channel credential label for a request log. */
@@ -105,14 +116,16 @@ export function formatChannelCredentialLabel(
     | "channel_name"
     | "credential_id"
     | "credential_name"
+    | "credential_number"
     | "channel_has_multiple_credentials"
   >,
+  locale: "zh-CN" | "en-US",
 ) {
   const channelLabel = item.channel_name || item.channel_id || "n/a";
   if (!item.channel_has_multiple_credentials) {
     return channelLabel;
   }
-  const credentialLabel = formatInternalCredentialLabel(item);
+  const credentialLabel = formatInternalCredentialLabel(item, locale);
   return credentialLabel
     ? `${channelLabel} | ${credentialLabel}`
     : channelLabel;

@@ -144,11 +144,18 @@ docker compose pull
 docker compose up -d
 ```
 
-访问 `http://127.0.0.1:3000`，默认账号 `admin/admin`。首次登录后请立即修改默认管理员密码。
+首次启动会创建管理员账号 `admin`，随机密码保存在容器数据目录的 `admin-password` 文件中。读取初始密码：
+
+```bash
+docker compose exec app cat /app/data/admin-password
+```
+
+访问 `http://127.0.0.1:3000`，登录后立即修改管理员密码，并删除数据目录中的 `admin-password` 文件。
 
 ### 本地构建镜像
 
 ```bash
+sh scripts/docker/deploy.sh
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
@@ -174,13 +181,15 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ### 本地开发
 
 需要 Python 3.11+、uv 和 pnpm。
+下面的命令只在 `.env` 不存在时生成随机签名密钥，不会覆盖已有配置。
 
 ```bash
 uv sync --extra dev --locked
 cd ui && pnpm install && cd ..
-uv run lens db upgrade
-uv run lens seed-admin --username admin --password admin
-uv run lens dev
+uv run --no-sync python -c "import os, secrets; from pathlib import Path; path = Path('.env'); os.umask(0o077); path.exists() or path.write_text(f'LENS_AUTH_SECRET_KEY={secrets.token_hex(32)}\n', encoding='utf-8')"
+uv run --no-sync lens db upgrade
+uv run --no-sync lens seed-admin --username admin --generate-password
+uv run --no-sync lens dev
 ```
 
 本地开发默认端口：
@@ -191,7 +200,7 @@ uv run lens dev
 也可以分开启动：
 
 ```bash
-uv run lens serve
+uv run --no-sync lens serve
 
 cd ui
 pnpm dev

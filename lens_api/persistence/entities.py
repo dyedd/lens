@@ -39,6 +39,7 @@ class AdminUserEntity(Base):
         String(80), unique=True, nullable=False, index=True
     )
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    auth_token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = timestamp_column()
     updated_at: Mapped[datetime] = auto_timestamp_column()

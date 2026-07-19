@@ -1,4 +1,6 @@
 import type { ProtocolKind } from "./protocols";
+
+export const ADMIN_PASSWORD_MIN_LENGTH = 12;
 export type PublicBranding = { site_name: string; logo_url: string };
 export type AppInfo = {
   system_version: string;

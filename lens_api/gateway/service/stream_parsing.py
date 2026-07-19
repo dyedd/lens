@@ -3,6 +3,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+_STREAM_PARSE_ERROR_SAMPLE_LIMIT = 20
+
+
+def _append_parse_error(errors: list[str] | None, message: str) -> None:
+    if errors is None or message in errors:
+        return
+    if len(errors) < _STREAM_PARSE_ERROR_SAMPLE_LIMIT:
+        errors.append(message)
+
 
 def _parse_sse_payloads(
     raw_content: str, *, errors: list[str] | None = None
@@ -21,8 +30,7 @@ def _parse_sse_payloads(
         try:
             payload = json.loads(joined)
         except json.JSONDecodeError as exc:
-            if errors is not None:
-                errors.append(f"invalid SSE JSON: {exc.msg}")
+            _append_parse_error(errors, f"invalid SSE JSON: {exc.msg}")
             continue
         if isinstance(payload, dict):
             payloads.append(payload)
@@ -40,8 +48,7 @@ def _parse_ndjson_payloads(
         try:
             payload = json.loads(line)
         except json.JSONDecodeError as exc:
-            if errors is not None:
-                errors.append(f"invalid NDJSON: {exc.msg}")
+            _append_parse_error(errors, f"invalid NDJSON: {exc.msg}")
             continue
         if isinstance(payload, dict):
             payloads.append(payload)
