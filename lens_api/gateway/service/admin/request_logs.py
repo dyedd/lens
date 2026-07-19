@@ -16,8 +16,8 @@ from ..app_state import app_state
 
 
 async def list_request_logs(
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     gateway_key_id: str | None = None,
     model_prefix: str | None = None,
     status_filter: RequestLogStatusFilter | None = Query(default=None, alias="status"),

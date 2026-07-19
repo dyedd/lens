@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from ...models import RequestLogAttempt
+from ...models import ConfigBackupRequestLogAttempt
 from ..cronjob_store import decode_weekdays
 
 
@@ -55,14 +55,14 @@ def load_weekdays(raw_value: str | None) -> list[int]:
     return list(decode_weekdays(raw_value))
 
 
-def parse_attempts(raw_value: str | None) -> list[RequestLogAttempt]:
+def parse_attempts(raw_value: str | None) -> list[ConfigBackupRequestLogAttempt]:
     """Parse request log attempts from stored JSON."""
     if not raw_value:
         return []
     payload = json.loads(raw_value)
     if not isinstance(payload, list):
         raise ValueError("Invalid request log attempts JSON")
-    attempts: list[RequestLogAttempt] = []
+    attempts: list[ConfigBackupRequestLogAttempt] = []
     for item in payload:
-        attempts.append(RequestLogAttempt.model_validate(item))
+        attempts.append(ConfigBackupRequestLogAttempt.model_validate(item))
     return attempts
