@@ -64,7 +64,7 @@ export function GroupsFilterPanel({
   ];
 
   return (
-    <aside className="order-1 xl:order-2">
+    <aside className="order-1 min-w-0 xl:order-2">
       <div className="rounded-2xl border bg-card p-4 xl:sticky xl:top-4">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">

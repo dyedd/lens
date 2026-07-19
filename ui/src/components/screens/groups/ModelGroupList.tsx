@@ -50,8 +50,8 @@ export function ModelGroupList(props: ModelGroupListProps) {
   }
 
   return (
-    <Card className="overflow-hidden py-0 xl:min-h-[calc(100dvh-18rem)]">
-      <CardContent className="px-3 py-3 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
+    <Card className="min-w-0 overflow-hidden py-0 xl:min-h-[calc(100dvh-18rem)]">
+      <CardContent className="min-w-0 px-3 py-3 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
         {isLoading || groupsIsError ? null : visibleGroups.length ? (
           <ItemGroup className="gap-3">
             {visibleGroups.map((group) => (

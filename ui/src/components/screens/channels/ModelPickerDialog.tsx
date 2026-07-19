@@ -133,7 +133,7 @@ export function ModelPickerDialog({
                     disabled={
                       searchTargetsModels && !filteredModelGroups.length
                     }
-                    className="h-9 max-w-full"
+                    className="h-8 max-w-full"
                     placeholder={
                       searchTargetsModels
                         ? locale === "zh-CN"
