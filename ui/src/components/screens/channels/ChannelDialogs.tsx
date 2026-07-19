@@ -128,7 +128,21 @@ export function ChannelEditorDialog({
               : "Create channel"
         }
       >
-        <form className="grid gap-5" onSubmit={submit}>
+        <form
+          className="grid gap-5"
+          onSubmit={submit}
+          onKeyDown={(event) => {
+            // Toolbar search is live-filter; Enter must not save/close the channel dialog.
+            if (
+              event.key === "Enter" &&
+              !event.nativeEvent.isComposing &&
+              event.target instanceof HTMLElement &&
+              event.target.closest("[data-toolbar-search]")
+            ) {
+              event.preventDefault();
+            }
+          }}
+        >
           <div className="grid gap-4">
             <ChannelBasicInfoSection
               form={form}

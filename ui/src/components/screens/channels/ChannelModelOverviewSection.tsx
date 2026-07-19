@@ -1,5 +1,9 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import { FolderPlus, RefreshCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import type { ProtocolKind } from "@/lib/api";
 import { SiteModelAggregateView } from "./SiteModelAggregateView";
 import type { AggregatedModel } from "./useAggregatedModels";
@@ -41,11 +45,51 @@ export function ChannelModelOverviewSection({
   onRemoveModel,
   onClearModels,
 }: Props) {
+  const [search, setSearch] = useState("");
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredModels = useMemo(() => {
+    if (!normalizedSearch) return overviewModels;
+    return overviewModels.filter(
+      (model) =>
+        model.modelName.toLowerCase().includes(normalizedSearch) ||
+        model.sources.some((source) =>
+          source.toLowerCase().includes(normalizedSearch),
+        ),
+    );
+  }, [normalizedSearch, overviewModels]);
+  const hasSearch = normalizedSearch.length > 0;
+
   return (
     <div className="mt-4">
-      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-base font-semibold text-foreground">
-          {locale === "zh-CN" ? "模型总览" : "Model Overview"}
+      <div className="mb-2 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="shrink-0 text-base font-semibold text-foreground">
+            {locale === "zh-CN" ? "模型总览" : "Model Overview"}
+          </div>
+          {overviewModels.length ? (
+            <>
+              <ToolbarSearchInput
+                value={search}
+                onChange={setSearch}
+                onClear={() => setSearch("")}
+                placeholder={
+                  locale === "zh-CN"
+                    ? "搜索模型或来源"
+                    : "Search models or sources"
+                }
+                className="max-w-none sm:max-w-sm"
+              />
+              <div className="shrink-0 text-xs text-muted-foreground">
+                {hasSearch
+                  ? locale === "zh-CN"
+                    ? `找到 ${filteredModels.length}/${overviewModels.length} 个模型`
+                    : `${filteredModels.length}/${overviewModels.length} matched`
+                  : locale === "zh-CN"
+                    ? `共 ${overviewModels.length} 个模型`
+                    : `${overviewModels.length} models`}
+              </div>
+            </>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -104,8 +148,15 @@ export function ChannelModelOverviewSection({
         </div>
       </div>
       <SiteModelAggregateView
-        models={overviewModels}
+        models={filteredModels}
         locale={locale}
+        emptyLabel={
+          hasSearch
+            ? locale === "zh-CN"
+              ? "没有匹配的模型"
+              : "No matching models"
+            : undefined
+        }
         onChangeModelProtocols={onUpdateModelProtocols}
         onOpenModelTest={onOpenModelTest}
         onRemoveModel={onRemoveModel}
