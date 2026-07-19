@@ -9,7 +9,7 @@ import { ModelSeriesSelector } from "./ModelSeriesSelector";
 export function GroupsOverview(props: GroupsOverviewProps) {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_320px]">
-      <div className="order-2 grid gap-4 xl:order-1">
+      <div className="order-2 grid min-w-0 gap-4 xl:order-1">
         {props.hasModelPrefixOptions ? (
           <ModelSeriesSelector
             locale={props.locale}

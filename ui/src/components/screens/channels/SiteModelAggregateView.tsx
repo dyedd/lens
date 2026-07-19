@@ -11,6 +11,7 @@ import type { Locale } from "./channelShared";
 export function SiteModelAggregateView({
   models,
   locale,
+  emptyLabel,
   onChangeModelProtocols,
   onOpenModelTest,
   onRemoveModel,
@@ -19,6 +20,7 @@ export function SiteModelAggregateView({
 }: {
   models: AggregatedModel[];
   locale: Locale;
+  emptyLabel?: string;
   onChangeModelProtocols?: (
     modelKey: string,
     nextProtocols: ProtocolKind[],
@@ -31,14 +33,15 @@ export function SiteModelAggregateView({
   if (!models.length) {
     return (
       <div className="py-4 text-sm text-muted-foreground">
-        {locale === "zh-CN"
-          ? "暂无模型，请先添加或获取模型"
-          : "No models yet. Add or fetch models first."}
+        {emptyLabel ||
+          (locale === "zh-CN"
+            ? "暂无模型，请先添加或获取模型"
+            : "No models yet. Add or fetch models first.")}
       </div>
     );
   }
   return (
-    <div className="grid min-w-0">
+    <div className="grid min-w-0 max-h-[min(52dvh,28rem)] overflow-y-auto">
       {models.map(({ key: modelKey, modelName, protocols, sources }) => {
         const testable = Boolean(canTestModel?.(modelKey));
         return (
