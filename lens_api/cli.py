@@ -293,7 +293,12 @@ def main(argv: list[str] | None = None) -> None:
 
     serve_parser = subparsers.add_parser("serve", help="Start the API server")
     serve_parser.add_argument("--host", default="127.0.0.1", help="Listen host")
-    serve_parser.add_argument("--port", type=int, default=18080, help="Listen port")
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=settings.port,
+        help="Listen port (default from LENS_PORT or 18080)",
+    )
     serve_parser.add_argument(
         "--ui-static-dir",
         default="",
