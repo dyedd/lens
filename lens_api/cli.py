@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+import secrets
 import signal
 import subprocess
 import sys
@@ -11,10 +12,49 @@ from types import FrameType
 from alembic import command
 from alembic.config import Config
 
+from .core.auth import validate_admin_password
 from .core.config import settings
 from .core.db import create_engine, create_session_factory
 
 SOURCE_PROJECT_DIR = Path(__file__).resolve().parent.parent
+
+
+def _admin_password_argument(value: str) -> str:
+    try:
+        return validate_admin_password(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _write_private_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    descriptor = os.open(
+        temporary_path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            descriptor = -1
+            output.write(value)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary_path, path)
+        os.chmod(path, 0o600)
+        if os.name != "nt":
+            directory_descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _configure_asyncio_event_loop_policy() -> None:
@@ -169,14 +209,35 @@ def seed_admin(args: argparse.Namespace) -> None:
     """Create the initial administrator when none exists."""
     from .persistence.repositories import AdminRepository
 
+    password_file = Path(args.password_file) if args.password_file is not None else None
+    password = secrets.token_urlsafe(24) if args.generate_password else args.password
+    assert isinstance(password, str)
+
+    def publish_initial_password() -> None:
+        assert password_file is not None
+        _write_private_text(password_file, f"{password}\n")
+
     async def _run() -> None:
         engine = create_engine(settings.database_url)
         session_factory = create_session_factory(engine)
         store = AdminRepository(session_factory)
-        created = await store.ensure_default_admin(args.username, args.password)
-        await engine.dispose()
+        try:
+            created = await store.ensure_default_admin(
+                args.username,
+                password,
+                publish_initial_password=(
+                    publish_initial_password if password_file is not None else None
+                ),
+            )
+        finally:
+            await engine.dispose()
         if created:
             print(f"seeded admin: {args.username}")
+            if args.generate_password:
+                if password_file is not None:
+                    print(f"generated admin password written to: {password_file}")
+                else:
+                    print(f"generated admin password: {password}")
         else:
             print("admin user already exists; skipped seed")
 
@@ -249,10 +310,31 @@ def main(argv: list[str] | None = None) -> None:
         "seed-admin", help="Create an initial admin user when none exists"
     )
     seed_admin_parser.add_argument("--username", required=True, help="Admin username")
-    seed_admin_parser.add_argument("--password", required=True, help="Admin password")
+    password_group = seed_admin_parser.add_mutually_exclusive_group(required=True)
+    password_group.add_argument(
+        "--password",
+        type=_admin_password_argument,
+        help="Administrator password",
+    )
+    password_group.add_argument(
+        "--generate-password",
+        action="store_true",
+        help="Generate a secure random password for the initial admin",
+    )
+    seed_admin_parser.add_argument(
+        "--password-file",
+        help="Write a generated password to this file instead of standard output",
+    )
     seed_admin_parser.set_defaults(func=seed_admin)
 
     args = parser.parse_args(argv)
+
+    if (
+        args.group == "seed-admin"
+        and args.password_file is not None
+        and not args.generate_password
+    ):
+        seed_admin_parser.error("--password-file requires --generate-password")
 
     if not hasattr(args, "func"):
         if args.group == "db":

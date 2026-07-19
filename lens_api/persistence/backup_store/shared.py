@@ -20,6 +20,7 @@ from ...models import (
     ConfigBackupImportedStatsDaily,
     ConfigBackupImportedStatsTotal,
     ConfigBackupOverviewModelDailyStat,
+    ConfigBackupRequestLogAttempt,
     ConfigBackupRequestLog,
     ConfigBackupRequestLogDailyStat,
     ConfigBackupCronjob,

@@ -4,8 +4,7 @@ services:
     container_name: lens
     restart: unless-stopped
     env_file:
-      - path: .env
-        required: true
+      - .env
     ports:
       - "${LENS_HOST_PORT:-3000}:3000"
     volumes:

@@ -9,6 +9,7 @@ import jwt
 PBKDF2_ITERATIONS = 600_000
 JWT_ALGORITHM = "HS256"
 _MIN_AUTH_SECRET_BYTES = 32
+MIN_ADMIN_PASSWORD_LENGTH = 12
 
 
 def validate_auth_secret_key(secret_key: str) -> None:
@@ -17,6 +18,17 @@ def validate_auth_secret_key(secret_key: str) -> None:
         raise RuntimeError("LENS_AUTH_SECRET_KEY is required")
     if len(secret_key.encode("utf-8")) < _MIN_AUTH_SECRET_BYTES:
         raise RuntimeError("LENS_AUTH_SECRET_KEY must be at least 32 bytes")
+
+
+def validate_admin_password(password: str) -> str:
+    """Validate a newly supplied administrator password."""
+    if len(password) < MIN_ADMIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"Administrator passwords must be at least {MIN_ADMIN_PASSWORD_LENGTH} characters"
+        )
+    if not password.strip():
+        raise ValueError("Administrator password cannot contain only whitespace")
+    return password
 
 
 def hash_password(password: str) -> str:
@@ -51,7 +63,10 @@ def verify_password(password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(
-    subject: str, secret_key: str, access_token_minutes: int
+    subject: str,
+    secret_key: str,
+    access_token_minutes: int,
+    token_version: int,
 ) -> tuple[str, int]:
     """Create a signed access token and return it with its lifetime."""
     validate_auth_secret_key(secret_key)
@@ -60,6 +75,7 @@ def create_access_token(
     token = jwt.encode(
         {
             "sub": subject,
+            "ver": token_version,
             "exp": expires_at,
         },
         secret_key,

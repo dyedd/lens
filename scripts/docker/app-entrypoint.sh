@@ -7,6 +7,9 @@ if [ "${LENS_SKIP_DB_UPGRADE:-0}" != "1" ]; then
   lens db upgrade
 fi
 
-lens seed-admin --username admin --password admin
+lens seed-admin \
+  --username admin \
+  --generate-password \
+  --password-file /app/data/admin-password
 
 exec lens serve --host 0.0.0.0 --port 3000 --ui-static-dir /app/ui

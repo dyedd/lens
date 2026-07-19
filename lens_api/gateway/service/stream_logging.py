@@ -14,7 +14,12 @@ from ...models import (
     RequestLogLifecycleStatus,
 )
 from ..converters import needs_conversion
-from .runtime_types import StreamCapture, UpstreamResult, _RequestDeadline
+from .runtime_types import (
+    StreamCapture,
+    UpstreamResult,
+    _RequestDeadline,
+    _record_stream_parse_error,
+)
 from .app_state import app_state, logger
 from .upstream_support import _format_channel_error
 from .routing_plan import _elapsed_ms
@@ -94,25 +99,35 @@ async def _record_stream_request_log(
     ):
         response_protocol = protocol
         response_raw_content = client_response_content
-    parse_errors = capture.parse_errors if capture is not None else None
-    if raw_content:
+    parse_errors: list[str] = []
+    if raw_content and not (
+        capture is not None and capture.is_response_content_truncated
+    ):
         try:
             parsed = _extract_stream_usage(
                 channel.protocol, raw_content, parse_errors=parse_errors
             )
         except ValueError as exc:
-            if capture is not None:
-                capture.parse_errors.append(str(exc))
+            parse_errors.append(str(exc))
             parsed = _stream_capture_usage(capture)
     else:
         parsed = _stream_capture_usage(capture)
+    if capture is not None:
+        for error in parse_errors:
+            _record_stream_parse_error(capture, error)
     try:
-        distilled_content = _distill_stream_response_content(
-            response_protocol, response_raw_content
-        )
+        if capture is not None and (
+            capture.is_response_content_truncated
+            or capture.is_client_response_content_truncated
+        ):
+            distilled_content = response_raw_content
+        else:
+            distilled_content = _distill_stream_response_content(
+                response_protocol, response_raw_content
+            )
     except ValueError as exc:
         if capture is not None:
-            capture.parse_errors.append(str(exc))
+            _record_stream_parse_error(capture, str(exc))
         distilled_content = response_raw_content
     capture_issue = _describe_stream_capture_issue(
         channel.protocol, capture, raw_content
@@ -200,10 +215,10 @@ async def _record_stream_route_health(
     attempts: list[dict[str, Any]],
 ) -> None:
     credential_id = _last_attempt_credential_id(attempts)
+    if _is_client_stream_disconnect(capture):
+        return
     if capture_issue is None:
         app_state.router.record_success(channel.id, credential_id=credential_id)
-        return
-    if _is_client_stream_disconnect(capture):
         return
 
     try:
@@ -230,12 +245,12 @@ def _last_attempt_credential_id(attempts: list[dict[str, Any]]) -> str | None:
 
 
 def _is_client_stream_disconnect(capture: StreamCapture | None) -> bool:
-    if capture is None or not capture.is_client_disconnected:
-        return False
-    upstream_errors = [
-        error for error in capture.errors if error and error != "client disconnected"
-    ]
-    return not upstream_errors and not capture.parse_errors
+    return (
+        capture is not None
+        and capture.is_client_disconnected
+        and not capture.errors
+        and not capture.parse_errors
+    )
 
 
 def _stream_log_status_code(

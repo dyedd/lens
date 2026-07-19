@@ -461,8 +461,13 @@ class RequestLogReadMixin:
                 session, [entity.gateway_key_id]
             )
             gateway_has_multiple_keys = await self._gateway_has_multiple_keys(session)
-            credential_counts = await self._request_log_channel_credential_counts(
-                session, [entity.channel_id]
+            channel_ids = [entity.channel_id]
+            for attempt in self._parse_attempts_json(entity.attempts_json):
+                attempt_channel_id = attempt.get("channel_id")
+                if isinstance(attempt_channel_id, str):
+                    channel_ids.append(attempt_channel_id)
+            credential_counts, credential_metadata = (
+                await self._request_log_channel_credentials(session, channel_ids)
             )
             return self._to_request_log_detail(
                 entity,
@@ -471,4 +476,6 @@ class RequestLogReadMixin:
                 channel_has_multiple_credentials=(
                     credential_counts.get(entity.channel_id or "", 0) > 1
                 ),
+                credential_metadata=credential_metadata,
+                channel_credential_counts=credential_counts,
             )

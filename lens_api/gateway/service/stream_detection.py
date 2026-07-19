@@ -57,7 +57,44 @@ def _record_chat_stream_finish_reasons(
         index = choice.get("index", 0)
         if isinstance(index, bool) or not isinstance(index, int):
             index = 0
-        capture.chat_finished_choices.add(index)
+        if 0 <= index < capture.chat_expected_choices:
+            capture.chat_finished_choices.add(index)
+
+
+def _record_stream_completion(
+    protocol: ProtocolKind, capture: StreamCapture, payload: dict[str, Any]
+) -> None:
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        _record_chat_stream_finish_reasons(capture, payload)
+        capture.protocol_completed = (
+            len(capture.chat_finished_choices) >= capture.chat_expected_choices
+        )
+        return
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        if payload.get("type") == "response.completed":
+            capture.protocol_completed = True
+        return
+    if protocol == ProtocolKind.ANTHROPIC:
+        if payload.get("type") == "message_stop":
+            capture.protocol_completed = True
+        return
+    if protocol != ProtocolKind.GEMINI:
+        return
+
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return
+    for index, candidate in enumerate(candidates):
+        if not isinstance(candidate, dict) or candidate.get("finishReason") is None:
+            continue
+        candidate_index = candidate.get("index", index)
+        if isinstance(candidate_index, bool) or not isinstance(candidate_index, int):
+            candidate_index = index
+        if 0 <= candidate_index < capture.gemini_expected_candidates:
+            capture.gemini_finished_candidates.add(candidate_index)
+    capture.protocol_completed = (
+        len(capture.gemini_finished_candidates) >= capture.gemini_expected_candidates
+    )
 
 
 def _chat_function_delta_has_output(value: dict[str, Any]) -> bool:
@@ -183,11 +220,5 @@ async def _persist_stream_first_token_latency(
         logger.warning("Failed to update stream first token latency", exc_info=True)
 
 
-async def _cancel_stream_capture(
-    capture: StreamCapture, reason: str | None = None
-) -> None:
-    if capture.is_completed:
-        return
+async def _cancel_stream_capture(capture: StreamCapture) -> None:
     capture.is_client_disconnected = True
-    if reason and reason not in capture.errors:
-        capture.errors.append(reason)

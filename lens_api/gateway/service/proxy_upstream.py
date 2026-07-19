@@ -7,7 +7,6 @@ from typing import Any
 
 import httpx
 from fastapi import Response
-from fastapi.responses import StreamingResponse
 
 from ...models import ChannelConfig, ProtocolKind
 from ..converters import convert_response, convert_stream_iterator, needs_conversion
@@ -17,6 +16,7 @@ from .runtime_types import (
     UpstreamRequestError,
     UpstreamResult,
     _RequestDeadline,
+    _record_stream_error,
 )
 from .app_state import app_state
 from .upstream_support import (
@@ -37,6 +37,7 @@ from .stream_logging import (
     _safe_estimate_cost,
     _stream_upstream_iterator,
 )
+from .stream_transport import _FinalizingStreamingResponse
 from .stream_restore import _distill_stream_response_content
 from .response_usage import _extract_response_usage
 from .usage import _extract_stream_usage
@@ -133,9 +134,20 @@ async def _build_stream_result(
         or chat_expected_choices < 1
     ):
         chat_expected_choices = 1
+    gemini_expected_candidates = 1
+    generation_config = body.get("generationConfig")
+    if isinstance(generation_config, dict):
+        candidate_count = generation_config.get("candidateCount")
+        if (
+            isinstance(candidate_count, int)
+            and not isinstance(candidate_count, bool)
+            and candidate_count > 0
+        ):
+            gemini_expected_candidates = candidate_count
     capture = StreamCapture(
         capture_body=log_body_enabled,
         chat_expected_choices=chat_expected_choices,
+        gemini_expected_candidates=gemini_expected_candidates,
         deadline=deadline,
     )
     raw_iter = _stream_upstream_iterator(
@@ -160,8 +172,10 @@ async def _build_stream_result(
     converted_iter = _stream_client_iterator(converted_iter, capture)
 
     return UpstreamResult(
-        response=StreamingResponse(
+        response=_FinalizingStreamingResponse(
             converted_iter,
+            stream_capture=capture,
+            upstream_response=response,
             status_code=response.status_code,
             media_type=stream_media,
             headers=_passthrough_headers(response.headers),
@@ -184,12 +198,21 @@ async def _stream_client_iterator(
         async for chunk in stream:
             yield chunk
         is_finished = True
+        capture.is_client_stream_completed = True
     except asyncio.CancelledError:
-        await _cancel_stream_capture(capture, "client disconnected")
+        await _cancel_stream_capture(capture)
+        raise
+    except Exception as exc:
+        if not capture.errors:
+            _record_stream_error(
+                capture,
+                f"stream failed: {type(exc).__name__}: {exc}",
+                status_code=502,
+            )
         raise
     finally:
-        if not is_finished and not capture.is_client_disconnected:
-            await _cancel_stream_capture(capture, "client disconnected")
+        if not is_finished and not capture.errors:
+            await _cancel_stream_capture(capture)
 
 
 async def _build_json_result(

@@ -79,7 +79,7 @@ def test_update_profile_requires_current_password_when_changing_password(
     response = client.put(
         "/api/admin/profile",
         headers=admin_headers,
-        json={"username": "admin", "new_password": "changed"},
+        json={"username": "admin", "new_password": "changed-password"},
     )
 
     assert_error(response, 400, "Current password is required")
@@ -89,7 +89,7 @@ def test_change_password_rejects_wrong_current_password(client, admin_headers) -
     response = client.put(
         "/api/admin/password",
         headers=admin_headers,
-        json={"current_password": "wrong", "new_password": "changed"},
+        json={"current_password": "wrong", "new_password": "changed-password"},
     )
 
     assert_error(response, 400, "Current password is incorrect")
@@ -99,7 +99,7 @@ def test_change_password_updates_admin_password(client, admin_headers) -> None:
     response = client.put(
         "/api/admin/password",
         headers=admin_headers,
-        json={"current_password": "password", "new_password": "changed"},
+        json={"current_password": "password", "new_password": "changed-password"},
     )
 
     assert response.status_code == 204
@@ -109,7 +109,7 @@ def test_change_password_updates_admin_password(client, admin_headers) -> None:
     )
     new_login = client.post(
         "/api/admin/session",
-        json={"username": "admin", "password": "changed"},
+        json={"username": "admin", "password": "changed-password"},
     )
     assert old_login.status_code == 401
     assert new_login.status_code == 200

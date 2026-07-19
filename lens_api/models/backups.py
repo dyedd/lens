@@ -6,9 +6,9 @@ from .gateway_keys import GatewayApiKeyBase
 from .model_groups import ModelGroup
 from .model_prices import ModelPriceItem
 from .protocols import CronjobScheduleType, ProtocolKind, RequestLogLifecycleStatus
-from .request_logs import RequestLogAttempt
 from .settings import SettingItem
 from .sites import SiteConfig
+
 
 class ConfigBackupImportedStatsTotal(StrictBaseModel):
     input_token: int = 0
@@ -91,6 +91,19 @@ class ConfigBackupCronjob(StrictBaseModel):
         return self
 
 
+class ConfigBackupRequestLogAttempt(StrictBaseModel):
+    channel_id: str
+    channel_name: str
+    credential_id: str | None = None
+    credential_name: str = ""
+    model_name: str | None = None
+    status_code: int | None = None
+    success: bool
+    duration_ms: int = 0
+    error_message: str | None = None
+    reasoning_effort: str | None = None
+
+
 class ConfigBackupRequestLog(StrictBaseModel):
     protocol: ProtocolKind
     user_agent: str = ""
@@ -119,7 +132,7 @@ class ConfigBackupRequestLog(StrictBaseModel):
     stats_archived: bool = False
     request_content: str | None = None
     response_content: str | None = None
-    attempts: list["RequestLogAttempt"] = Field(default_factory=list)
+    attempts: list[ConfigBackupRequestLogAttempt] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def infer_lifecycle_status(self) -> "ConfigBackupRequestLog":

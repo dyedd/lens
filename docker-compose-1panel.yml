@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/dyedd/lens:dev
+    image: ghcr.io/dyedd/lens:latest
     container_name: lens
     restart: unless-stopped
     env_file:
@@ -8,7 +8,7 @@ services:
     ports:
       - "${LENS_HOST_PORT:-3000}:3000"
     volumes:
-      - /opt/1panel/www/sites/lens/index:/app/data
+      - /opt/1panel/apps/lens/data:/app/data
     networks:
       - 1panel-network
 

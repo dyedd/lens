@@ -3,6 +3,7 @@ from pydantic import Field
 from .common import StrictBaseModel
 from .protocols import ProtocolKind, RequestLogLifecycleStatus
 
+
 class RequestLogItem(StrictBaseModel):
     id: int
     protocol: ProtocolKind
@@ -14,6 +15,7 @@ class RequestLogItem(StrictBaseModel):
     channel_name: str | None = None
     credential_id: str | None = None
     credential_name: str = ""
+    credential_number: int = Field(default=0, ge=0)
     channel_has_multiple_credentials: bool = False
     gateway_key_id: str | None = None
     gateway_key_remark: str | None = None
@@ -43,6 +45,8 @@ class RequestLogAttempt(StrictBaseModel):
     channel_name: str
     credential_id: str | None = None
     credential_name: str = ""
+    credential_number: int = Field(default=0, ge=0)
+    channel_has_multiple_credentials: bool = False
     model_name: str | None = None
     status_code: int | None = None
     success: bool

@@ -6,6 +6,7 @@ import {
   type AdminProfile,
   type AdminProfileUpdatePayload,
   type AdminProfileUpdateResponse,
+  ADMIN_PASSWORD_MIN_LENGTH,
   apiRequest,
   getApiErrorMessage,
 } from "@/lib/api";
@@ -108,6 +109,21 @@ export function useAccountSettings(locale: Locale) {
             locale,
             "两次新密码不一致",
             "The new passwords do not match",
+          ),
+        );
+        return;
+      }
+      if (
+        wantsPasswordUpdate &&
+        (Array.from(accountForm.newPassword).length <
+          ADMIN_PASSWORD_MIN_LENGTH ||
+          !accountForm.newPassword.trim())
+      ) {
+        toast.error(
+          titleForLocale(
+            locale,
+            `新密码至少需要 ${ADMIN_PASSWORD_MIN_LENGTH} 个字符`,
+            `The new password must contain at least ${ADMIN_PASSWORD_MIN_LENGTH} characters`,
           ),
         );
         return;

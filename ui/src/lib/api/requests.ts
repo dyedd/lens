@@ -9,11 +9,14 @@ export type RequestLogAttempt = {
   channel_name: string;
   credential_id?: string | null;
   credential_name: string;
+  credential_number: number;
+  channel_has_multiple_credentials: boolean;
   model_name?: string | null;
   status_code?: number | null;
   success: boolean;
   duration_ms: number;
   error_message?: string | null;
+  reasoning_effort?: string | null;
 };
 export type RequestLogItem = {
   id: number;
@@ -26,6 +29,7 @@ export type RequestLogItem = {
   channel_name?: string | null;
   credential_id?: string | null;
   credential_name: string;
+  credential_number: number;
   channel_has_multiple_credentials: boolean;
   gateway_key_id?: string | null;
   gateway_key_remark?: string | null;

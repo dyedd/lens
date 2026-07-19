@@ -72,6 +72,27 @@ class RequestLogStore(
         return attempts[-1] if attempts else {}
 
     @staticmethod
+    def _request_log_credential_values(
+        channel_id: str | None,
+        credential_id: Any,
+        credential_name: Any,
+        credential_metadata: dict[tuple[str, str], tuple[str, int]],
+    ) -> tuple[str | None, str, int]:
+        normalized_id = (
+            credential_id.strip() if isinstance(credential_id, str) else None
+        )
+        snapshot_name = (
+            credential_name.strip() if isinstance(credential_name, str) else ""
+        )
+        current = credential_metadata.get(
+            ((channel_id or "").strip(), normalized_id or "")
+        )
+        if current is None:
+            return normalized_id, snapshot_name, 0
+        current_name, current_number = current
+        return normalized_id, current_name.strip(), current_number
+
+    @staticmethod
     def _clean_reasoning_effort(value: Any) -> str | None:
         if isinstance(value, int) and value > 0:
             return str(value)
@@ -151,11 +172,18 @@ class RequestLogStore(
         gateway_key_remark: str | None = None,
         gateway_has_multiple_keys: bool = False,
         channel_has_multiple_credentials: bool = False,
+        credential_metadata: dict[tuple[str, str], tuple[str, int]] | None = None,
     ) -> RequestLogItem:
         attempts = cls._parse_attempts_json(entity.attempts_json)
         primary_attempt = cls._request_log_primary_attempt(attempts, entity.channel_id)
-        credential_id = primary_attempt.get("credential_id")
-        credential_name = primary_attempt.get("credential_name")
+        credential_id, credential_name, credential_number = (
+            cls._request_log_credential_values(
+                entity.channel_id,
+                primary_attempt.get("credential_id"),
+                primary_attempt.get("credential_name"),
+                credential_metadata or {},
+            )
+        )
         reasoning_effort = cls._extract_reasoning_effort(
             entity.request_content
         ) or cls._clean_reasoning_effort(primary_attempt.get("reasoning_effort"))
@@ -168,12 +196,9 @@ class RequestLogStore(
             upstream_model_name=entity.upstream_model_name,
             channel_id=entity.channel_id,
             channel_name=entity.channel_name,
-            credential_id=(
-                credential_id.strip() if isinstance(credential_id, str) else None
-            ),
-            credential_name=(
-                credential_name.strip() if isinstance(credential_name, str) else ""
-            ),
+            credential_id=credential_id,
+            credential_name=credential_name,
+            credential_number=credential_number,
             channel_has_multiple_credentials=channel_has_multiple_credentials,
             gateway_key_id=entity.gateway_key_id,
             gateway_key_remark=gateway_key_remark or None,
@@ -215,21 +240,54 @@ class RequestLogStore(
         gateway_key_remark: str | None = None,
         gateway_has_multiple_keys: bool = False,
         channel_has_multiple_credentials: bool = False,
+        credential_metadata: dict[tuple[str, str], tuple[str, int]] | None = None,
+        channel_credential_counts: dict[str, int] | None = None,
     ) -> RequestLogDetail:
+        resolved_credential_metadata = credential_metadata or {}
+        resolved_credential_counts = channel_credential_counts or {}
         return RequestLogDetail(
             **cls._to_request_log(
                 entity,
                 gateway_key_remark=gateway_key_remark,
                 gateway_has_multiple_keys=gateway_has_multiple_keys,
                 channel_has_multiple_credentials=channel_has_multiple_credentials,
+                credential_metadata=resolved_credential_metadata,
             ).model_dump(),
             request_content=entity.request_content,
             response_content=entity.response_content,
             attempts=[
-                RequestLogAttempt(**item)
+                cls._to_request_log_attempt(
+                    item,
+                    resolved_credential_metadata,
+                    resolved_credential_counts,
+                )
                 for item in cls._parse_attempts_json(entity.attempts_json)
             ],
         )
+
+    @classmethod
+    def _to_request_log_attempt(
+        cls,
+        item: dict[str, Any],
+        credential_metadata: dict[tuple[str, str], tuple[str, int]],
+        channel_credential_counts: dict[str, int],
+    ) -> RequestLogAttempt:
+        payload = dict(item)
+        credential_id, credential_name, credential_number = (
+            cls._request_log_credential_values(
+                str(item.get("channel_id") or ""),
+                item.get("credential_id"),
+                item.get("credential_name"),
+                credential_metadata,
+            )
+        )
+        payload["credential_id"] = credential_id
+        payload["credential_name"] = credential_name
+        payload["credential_number"] = credential_number
+        payload["channel_has_multiple_credentials"] = (
+            channel_credential_counts.get(str(item.get("channel_id") or ""), 0) > 1
+        )
+        return RequestLogAttempt(**payload)
 
     @staticmethod
     def _parse_attempts_json(raw_value: str | None) -> list[dict[str, Any]]:

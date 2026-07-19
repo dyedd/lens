@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from collections import OrderedDict, deque
 from datetime import UTC, datetime
+from math import ceil
+from threading import BoundedSemaphore, Lock
+from time import monotonic
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -32,6 +36,45 @@ from ...persistence.shared import (
 from .app_state import _read_system_version, app_state, logger
 from .lifecycle import auth_scheme
 
+_LOGIN_FAILURE_LIMIT = 5
+_LOGIN_FAILURE_WINDOW_SECONDS = 60
+_LOGIN_TRACKED_CLIENTS_MAX = 10_000
+_LOGIN_CONCURRENT_VERIFICATIONS = 4
+_login_attempts_by_client: OrderedDict[str, deque[float]] = OrderedDict()
+_login_attempts_lock = Lock()
+_login_verification_slots = BoundedSemaphore(_LOGIN_CONCURRENT_VERIFICATIONS)
+
+
+def _login_client_key(request: Request) -> str:
+    return request.client.host if request.client is not None else "unknown"
+
+
+def _reserve_login_attempt(client_key: str) -> int:
+    now = monotonic()
+    with _login_attempts_lock:
+        attempts = _login_attempts_by_client.get(client_key)
+        if attempts is None:
+            if len(_login_attempts_by_client) >= _LOGIN_TRACKED_CLIENTS_MAX:
+                _login_attempts_by_client.popitem(last=False)
+            attempts = deque()
+            _login_attempts_by_client[client_key] = attempts
+        else:
+            _login_attempts_by_client.move_to_end(client_key)
+            while attempts and now - attempts[0] >= _LOGIN_FAILURE_WINDOW_SECONDS:
+                attempts.popleft()
+        if len(attempts) >= _LOGIN_FAILURE_LIMIT:
+            return max(
+                1,
+                ceil(_LOGIN_FAILURE_WINDOW_SECONDS - (now - attempts[0])),
+            )
+        attempts.append(now)
+        return 0
+
+
+def _clear_login_attempts(client_key: str) -> None:
+    with _login_attempts_lock:
+        _login_attempts_by_client.pop(client_key, None)
+
 
 async def get_current_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(auth_scheme),
@@ -46,8 +89,9 @@ async def get_current_admin(
         decode_access_token, credentials.credentials, settings.auth_secret_key
     )
     username = payload.get("sub")
+    token_version = payload.get("ver")
 
-    if not username:
+    if not isinstance(username, str) or not username:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
@@ -56,6 +100,15 @@ async def get_current_admin(
     if admin is None or admin.is_active != 1:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found"
+        )
+
+    if (
+        not isinstance(token_version, int)
+        or isinstance(token_version, bool)
+        or token_version != admin.auth_token_version
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
 
     return admin
@@ -196,16 +249,37 @@ async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResu
     )
 
 
-async def login(payload: AdminLoginRequest) -> AuthTokenResponse:
+async def login(payload: AdminLoginRequest, request: Request) -> AuthTokenResponse:
     """Authenticate an administrator and issue an access token."""
-    user = await app_state.admin_repo.authenticate(payload.username, payload.password)
+    client_key = _login_client_key(request)
+    retry_after = _reserve_login_attempt(client_key)
+    if retry_after:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if not _login_verification_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts",
+            headers={"Retry-After": "1"},
+        )
+    try:
+        user = await app_state.admin_repo.authenticate(
+            payload.username, payload.password
+        )
+    finally:
+        _login_verification_slots.release()
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
 
-    access_token, expires_in = await _create_admin_access_token(user.username)
+    _clear_login_attempts(client_key)
+    access_token, expires_in = await _create_admin_access_token(user)
     return AuthTokenResponse(access_token=access_token, expires_in=expires_in)
 
 
@@ -232,7 +306,7 @@ async def update_profile(
         payload.new_password,
     )
 
-    access_token, expires_in = await _create_admin_access_token(updated_admin.username)
+    access_token, expires_in = await _create_admin_access_token(updated_admin)
     return AdminProfileUpdateResponse(
         access_token=access_token,
         expires_in=expires_in,
@@ -251,11 +325,12 @@ async def change_password(
     return Response(status_code=204)
 
 
-async def _create_admin_access_token(username: str) -> tuple[str, int]:
+async def _create_admin_access_token(admin: AdminUserEntity) -> tuple[str, int]:
     runtime = await app_state.settings_repo.get_runtime_settings()
     return await run_in_threadpool(
         create_access_token,
-        username,
+        admin.username,
         settings.auth_secret_key,
         int(runtime["auth_access_token_minutes"]),
+        admin.auth_token_version,
     )

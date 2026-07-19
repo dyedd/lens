@@ -1,8 +1,10 @@
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
+from ..core.auth import validate_admin_password
 from .common import StrictBaseModel
+
 
 class ErrorResponse(StrictBaseModel):
     error: dict[str, Any]
@@ -26,13 +28,23 @@ class AdminProfile(StrictBaseModel):
 
 class AdminPasswordChangeRequest(StrictBaseModel):
     current_password: str = Field(min_length=1)
-    new_password: str = Field(min_length=1)
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        return validate_admin_password(value)
 
 
 class AdminProfileUpdateRequest(StrictBaseModel):
     username: str = Field(min_length=1)
     current_password: str = ""
     new_password: str = ""
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        return validate_admin_password(value) if value else value
 
 
 class AdminProfileUpdateResponse(StrictBaseModel):

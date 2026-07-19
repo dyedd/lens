@@ -205,37 +205,18 @@ def _describe_stream_capture_issue(
 ) -> str | None:
     issues: list[str] = []
 
-    did_client_disconnect_after_chat_finish = (
-        capture is not None
-        and capture.is_client_disconnected
-        and protocol == ProtocolKind.OPENAI_CHAT
-        and len(capture.chat_finished_choices) >= capture.chat_expected_choices
-    )
-
     if capture is not None:
-        for error in capture.errors:
-            if error:
-                if (
-                    did_client_disconnect_after_chat_finish
-                    and error == "client disconnected"
-                ):
-                    continue
-                issues.append(error)
+        issues.extend(error for error in capture.errors if error)
         issues.extend(error for error in capture.parse_errors if error)
 
     if capture is None or capture.capture_body:
-        if not raw_content:
+        if not raw_content and not (capture is not None and capture.protocol_completed):
             issues.append("no stream content captured")
-        elif protocol == ProtocolKind.OPENAI_RESPONSES:
-            payloads = _parse_sse_payloads(raw_content)
-            has_completed = any(
-                payload.get("type") == "response.completed" for payload in payloads
-            )
-            if not has_completed:
-                issues.append("stream ended before response.completed")
 
-    if capture is not None and not capture.is_completed:
-        if not did_client_disconnect_after_chat_finish:
+    if capture is not None and not capture.errors and not capture.protocol_completed:
+        if _stream_requires_protocol_completion(protocol):
+            issues.append(_stream_completion_message(protocol))
+        elif not capture.is_completed:
             issues.append("stream did not drain to completion")
     if (
         capture is not None
@@ -249,6 +230,25 @@ def _describe_stream_capture_issue(
         return None
 
     return "; ".join(dict.fromkeys(issues))
+
+
+def _stream_requires_protocol_completion(protocol: ProtocolKind) -> bool:
+    return protocol in {
+        ProtocolKind.OPENAI_CHAT,
+        ProtocolKind.OPENAI_RESPONSES,
+        ProtocolKind.ANTHROPIC,
+        ProtocolKind.GEMINI,
+    }
+
+
+def _stream_completion_message(protocol: ProtocolKind) -> str:
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        return "stream ended before finish_reason"
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        return "stream ended before response.completed"
+    if protocol == ProtocolKind.ANTHROPIC:
+        return "stream ended before message_stop"
+    return "stream ended before finishReason"
 
 
 def _extract_usage_from_payload(

@@ -147,11 +147,18 @@ docker compose pull
 docker compose up -d
 ```
 
-Visit `http://127.0.0.1:3000`, default credentials `admin/admin`. Change the default administrator password immediately after first login.
+The first startup creates the `admin` account and stores its random password in `admin-password` under the container data directory. Read the initial password with:
+
+```bash
+docker compose exec app cat /app/data/admin-password
+```
+
+Visit `http://127.0.0.1:3000`, change the administrator password immediately after signing in, and delete `admin-password` from the data directory.
 
 ### Build Locally
 
 ```bash
+sh scripts/docker/deploy.sh
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
@@ -177,13 +184,15 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ### Local Development
 
 Requires Python 3.11+, uv, and pnpm.
+The command below generates a random signing key only when `.env` does not exist and does not overwrite existing configuration.
 
 ```bash
 uv sync --extra dev --locked
 cd ui && pnpm install && cd ..
-uv run lens db upgrade
-uv run lens seed-admin --username admin --password admin
-uv run lens dev
+uv run --no-sync python -c "import os, secrets; from pathlib import Path; path = Path('.env'); os.umask(0o077); path.exists() or path.write_text(f'LENS_AUTH_SECRET_KEY={secrets.token_hex(32)}\n', encoding='utf-8')"
+uv run --no-sync lens db upgrade
+uv run --no-sync lens seed-admin --username admin --generate-password
+uv run --no-sync lens dev
 ```
 
 Default local development ports:
@@ -194,7 +203,7 @@ Default local development ports:
 You can also run them separately:
 
 ```bash
-uv run lens serve
+uv run --no-sync lens serve
 
 cd ui
 pnpm dev
