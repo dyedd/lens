@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     ports:
-      - "${LENS_HOST_PORT:-3000}:3000"
+      - "${LENS_PORT:-3000}:${LENS_PORT:-3000}"
     volumes:
       - /opt/1panel/apps/lens/data:/app/data
     networks:

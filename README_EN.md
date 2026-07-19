@@ -262,6 +262,7 @@ Clients only need: Lens Base URL + Gateway API Key + Model group name.
 | -------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db` | Database URL; the Docker image uses `/app/data/data.db`                                                 |
 | `LENS_AUTH_SECRET_KEY`           | None (required)                      | JWT signing key, at least 32 bytes when UTF-8 encoded; the Docker deployment script writes it to `.env` |
+| `LENS_PORT`                      | Local `18080` / Docker `3000`        | Listen port; Docker Compose also maps host and container ports from this value                          |
 | `LENS_MAX_CONNECTIONS`           | `200`                                | Maximum connections per direct or proxy pool; requires a restart                                        |
 | `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                 | Maximum idle connections per direct or proxy pool; requires a restart                                   |
 
@@ -277,9 +278,9 @@ Configure these values on `/settings`:
 
 ### Docker Compose
 
-| Variable               | Default | Description                                                               |
-| ---------------------- | ------- | ------------------------------------------------------------------------- |
-| `LENS_HOST_PORT`       | `3000`  | Host port                                                                 |
+| Variable               | Default | Description                                                        |
+| ---------------------- | ------- | ------------------------------------------------------------------ |
+| `LENS_PORT`            | `3000`  | Container listen port and host port mapping (same value)           |
 | `LENS_SKIP_DB_UPGRADE` | `0`     | Set to `1` to skip container startup migrations; upgrade the schema first |
 
 ### PostgreSQL Configuration
