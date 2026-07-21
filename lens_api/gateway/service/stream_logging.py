@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-import asyncio
-import json
-from collections.abc import AsyncIterator
 from typing import Any
-
-import httpx
 
 from ...models import (
     ChannelConfig,
@@ -17,7 +12,6 @@ from ..converters import needs_conversion
 from .runtime_types import (
     StreamCapture,
     UpstreamResult,
-    _RequestDeadline,
     _record_stream_parse_error,
 )
 from .app_state import app_state, logger
@@ -37,7 +31,7 @@ from .request_logger import _update_request_log
 from .stream_types import parse_chat_stream_payload, parse_anthropic_stream_payload
 
 
-from .stream_detection import _cancel_stream_capture, _mark_stream_first_chunk
+from .stream_detection import _mark_stream_first_chunk
 
 
 async def _safe_estimate_cost(
@@ -147,9 +141,8 @@ async def _record_stream_request_log(
     status_code = _stream_log_status_code(result, capture, capture_issue)
     attempt_logs = [dict(item) for item in attempts]
     if attempt_logs and attempt_logs[-1].get("success"):
-        attempt_logs[-1]["duration_ms"] = (
-            latency_ms if capture_issue is not None else first_token_latency_ms
-        )
+        # Prefer full stream duration for attempt timing; first-token is tracked separately.
+        attempt_logs[-1]["duration_ms"] = latency_ms
         if capture_issue is not None:
             attempt_logs[-1]["success"] = False
             attempt_logs[-1]["error_message"] = capture_issue

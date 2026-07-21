@@ -164,7 +164,11 @@ async def _proxy_protocol(
         app_state.channel_store.list_channels(),
         app_state.settings_repo.get_runtime_settings(),
     )
-    deadline = _RequestDeadline(started_at, float(runtime["request_timeout_seconds"]))
+    deadline = _RequestDeadline(
+        started_at,
+        float(runtime["first_token_timeout_seconds"]),
+        float(runtime["stream_idle_timeout_seconds"]),
+    )
     _apply_router_runtime_settings(runtime)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
     request_content = _dump_log_json(body) if log_body_enabled else None
@@ -258,8 +262,8 @@ async def _proxy_protocol(
         errors: list[str] = []
         failure_status_codes: list[int | None] = []
         for target in [selection.primary, *selection.fallbacks]:
-            if deadline.is_expired():
-                timeout_message = deadline.timeout_message()
+            if deadline.is_first_token_expired():
+                timeout_message = deadline.timeout_message(kind="first_token")
                 await log_ctx.update(
                     requested_group_name=plan.requested_group_name,
                     resolved_group_name=plan.resolved_group_name,

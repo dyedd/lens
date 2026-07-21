@@ -218,7 +218,3 @@ async def _persist_stream_first_token_latency(
         )
     except Exception:
         logger.warning("Failed to update stream first token latency", exc_info=True)
-
-
-async def _cancel_stream_capture(capture: StreamCapture) -> None:
-    capture.is_client_disconnected = True
