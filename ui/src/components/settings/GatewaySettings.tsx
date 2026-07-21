@@ -20,10 +20,12 @@ interface GatewaySettingsProps {
   proxyUrl: string;
   corsAllowOrigins: string;
   authAccessTokenMinutes: string;
-  requestTimeoutSeconds: string;
+  firstTokenTimeoutSeconds: string;
+  streamIdleTimeoutSeconds: string;
   maxRequestBodyBytes: string;
   authAccessTokenMinutesError?: string;
-  requestTimeoutSecondsError?: string;
+  firstTokenTimeoutSecondsError?: string;
+  streamIdleTimeoutSecondsError?: string;
   maxRequestBodyBytesError?: string;
   isRelayLogBodyEnabled: boolean;
   isModelListCompatModeEnabled: boolean;
@@ -32,7 +34,8 @@ interface GatewaySettingsProps {
   onProxyUrlChange: (value: string) => void;
   onCorsAllowOriginsChange: (value: string) => void;
   onAuthAccessTokenMinutesChange: (value: string) => void;
-  onRequestTimeoutSecondsChange: (value: string) => void;
+  onFirstTokenTimeoutSecondsChange: (value: string) => void;
+  onStreamIdleTimeoutSecondsChange: (value: string) => void;
   onMaxRequestBodyBytesChange: (value: string) => void;
   onRelayLogBodyEnabledChange: (checked: boolean) => void;
   onModelListCompatModeEnabledChange: (checked: boolean) => void;
@@ -68,10 +71,12 @@ export function GatewaySettings({
   proxyUrl,
   corsAllowOrigins,
   authAccessTokenMinutes,
-  requestTimeoutSeconds,
+  firstTokenTimeoutSeconds,
+  streamIdleTimeoutSeconds,
   maxRequestBodyBytes,
   authAccessTokenMinutesError,
-  requestTimeoutSecondsError,
+  firstTokenTimeoutSecondsError,
+  streamIdleTimeoutSecondsError,
   maxRequestBodyBytesError,
   isRelayLogBodyEnabled,
   isModelListCompatModeEnabled,
@@ -80,7 +85,8 @@ export function GatewaySettings({
   onProxyUrlChange,
   onCorsAllowOriginsChange,
   onAuthAccessTokenMinutesChange,
-  onRequestTimeoutSecondsChange,
+  onFirstTokenTimeoutSecondsChange,
+  onStreamIdleTimeoutSecondsChange,
   onMaxRequestBodyBytesChange,
   onRelayLogBodyEnabledChange,
   onModelListCompatModeEnabledChange,
@@ -109,17 +115,20 @@ export function GatewaySettings({
         proxyUrl={proxyUrl}
         corsAllowOrigins={corsAllowOrigins}
         authAccessTokenMinutes={authAccessTokenMinutes}
-        requestTimeoutSeconds={requestTimeoutSeconds}
+        firstTokenTimeoutSeconds={firstTokenTimeoutSeconds}
+        streamIdleTimeoutSeconds={streamIdleTimeoutSeconds}
         maxRequestBodyBytes={maxRequestBodyBytes}
         authAccessTokenMinutesError={authAccessTokenMinutesError}
-        requestTimeoutSecondsError={requestTimeoutSecondsError}
+        firstTokenTimeoutSecondsError={firstTokenTimeoutSecondsError}
+        streamIdleTimeoutSecondsError={streamIdleTimeoutSecondsError}
         maxRequestBodyBytesError={maxRequestBodyBytesError}
         isRelayLogBodyEnabled={isRelayLogBodyEnabled}
         isModelListCompatModeEnabled={isModelListCompatModeEnabled}
         onProxyUrlChange={onProxyUrlChange}
         onCorsAllowOriginsChange={onCorsAllowOriginsChange}
         onAuthAccessTokenMinutesChange={onAuthAccessTokenMinutesChange}
-        onRequestTimeoutSecondsChange={onRequestTimeoutSecondsChange}
+        onFirstTokenTimeoutSecondsChange={onFirstTokenTimeoutSecondsChange}
+        onStreamIdleTimeoutSecondsChange={onStreamIdleTimeoutSecondsChange}
         onMaxRequestBodyBytesChange={onMaxRequestBodyBytesChange}
         onRelayLogBodyEnabledChange={onRelayLogBodyEnabledChange}
         onModelListCompatModeEnabledChange={onModelListCompatModeEnabledChange}

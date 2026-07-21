@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException, Response
 
@@ -12,6 +12,8 @@ from ..router import RouteTarget
 
 _STREAM_CONTENT_CAPTURE_LIMIT_BYTES = 1_000_000
 _STREAM_ERROR_SAMPLE_LIMIT = 20
+
+_TimeoutKind = Literal["first_token", "stream_idle"]
 
 
 @dataclass(slots=True)
@@ -63,24 +65,49 @@ class AttemptLog:
 @dataclass(frozen=True, slots=True)
 class _RequestDeadline:
     started_at: float
-    timeout_seconds: float
+    first_token_timeout_seconds: float
+    stream_idle_timeout_seconds: float
 
-    def remaining_seconds(self) -> float | None:
-        if self.timeout_seconds <= 0:
+    def first_token_remaining_seconds(self) -> float | None:
+        """Remaining first-token budget from started_at; None means unlimited."""
+        if self.first_token_timeout_seconds <= 0:
             return None
-        return max(self.timeout_seconds - (perf_counter() - self.started_at), 0.0)
+        return max(
+            self.first_token_timeout_seconds - (perf_counter() - self.started_at),
+            0.0,
+        )
 
-    def is_expired(self) -> bool:
-        remaining = self.remaining_seconds()
+    def is_first_token_expired(self) -> bool:
+        remaining = self.first_token_remaining_seconds()
         return remaining is not None and remaining <= 0
 
-    def timeout_message(self) -> str:
-        timeout_seconds = float(max(self.timeout_seconds, 0))
+    def stream_chunk_wait_seconds(self, *, has_seen_first_chunk: bool) -> float | None:
+        if not has_seen_first_chunk:
+            return self.first_token_remaining_seconds()
+        return (
+            self.stream_idle_timeout_seconds
+            if self.stream_idle_timeout_seconds > 0
+            else None
+        )
+
+    def timeout_message(self, *, kind: _TimeoutKind) -> str:
+        if kind == "first_token":
+            timeout_seconds = self.first_token_timeout_seconds
+            label = self._format_timeout_label(timeout_seconds)
+            return f"Gateway first-token timed out after {label}s"
+        timeout_seconds = self.stream_idle_timeout_seconds
+        label = self._format_timeout_label(timeout_seconds)
+        return f"Gateway stream idle timed out after {label}s"
+
+    @staticmethod
+    def _format_timeout_label(timeout_seconds: float) -> str:
         if timeout_seconds.is_integer():
-            timeout_label = str(int(timeout_seconds))
-        else:
-            timeout_label = f"{timeout_seconds:.3f}".rstrip("0").rstrip(".")
-        return f"Gateway request timed out after {timeout_label}s"
+            return str(int(timeout_seconds))
+        return f"{timeout_seconds:.3f}".rstrip("0").rstrip(".")
+
+
+class _GatewayTimeoutError(TimeoutError):
+    """Raised only when a Lens-managed gateway timeout expires."""
 
 
 class UpstreamRequestError(HTTPException):
@@ -126,6 +153,7 @@ def _attempt_logs_to_dicts(attempts: list[AttemptLog]) -> list[dict[str, Any]]:
 @dataclass(slots=True)
 class StreamCapture:
     capture_body: bool
+    deadline: _RequestDeadline
     has_seen_first_chunk: bool = False
     chat_expected_choices: int = 1
     chat_finished_choices: set[int] = field(default_factory=set)
@@ -157,7 +185,6 @@ class StreamCapture:
     errors: list[str] = field(default_factory=list)
     request_log_id: int | None = None
     stream_started_at: float = 0.0
-    deadline: _RequestDeadline | None = None
     error_status_code: int | None = None
 
 

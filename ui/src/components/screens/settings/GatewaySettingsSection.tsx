@@ -29,13 +29,17 @@ export function GatewaySettingsSection({
           proxyUrl={draft.proxyUrl}
           corsAllowOrigins={draft.corsAllowOrigins}
           authAccessTokenMinutes={draft.authAccessTokenMinutes}
-          requestTimeoutSeconds={draft.requestTimeoutSeconds}
+          firstTokenTimeoutSeconds={draft.firstTokenTimeoutSeconds}
+          streamIdleTimeoutSeconds={draft.streamIdleTimeoutSeconds}
           maxRequestBodyBytes={draft.maxRequestBodyBytes}
           authAccessTokenMinutesError={
             settings.numericSettingErrors.authAccessTokenMinutes
           }
-          requestTimeoutSecondsError={
-            settings.numericSettingErrors.requestTimeoutSeconds
+          firstTokenTimeoutSecondsError={
+            settings.numericSettingErrors.firstTokenTimeoutSeconds
+          }
+          streamIdleTimeoutSecondsError={
+            settings.numericSettingErrors.streamIdleTimeoutSeconds
           }
           maxRequestBodyBytesError={
             settings.numericSettingErrors.maxRequestBodyBytes
@@ -52,8 +56,11 @@ export function GatewaySettingsSection({
           onAuthAccessTokenMinutesChange={(value) =>
             settings.setDraftValue("authAccessTokenMinutes", value)
           }
-          onRequestTimeoutSecondsChange={(value) =>
-            settings.setDraftValue("requestTimeoutSeconds", value)
+          onFirstTokenTimeoutSecondsChange={(value) =>
+            settings.setDraftValue("firstTokenTimeoutSeconds", value)
+          }
+          onStreamIdleTimeoutSecondsChange={(value) =>
+            settings.setDraftValue("streamIdleTimeoutSeconds", value)
           }
           onMaxRequestBodyBytesChange={(value) =>
             settings.setDraftValue("maxRequestBodyBytes", value)

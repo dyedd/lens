@@ -22,7 +22,8 @@ import {
 const PROXY_URL = "proxy_url";
 const CORS_ALLOW_ORIGINS = "cors_allow_origins";
 const AUTH_ACCESS_TOKEN_MINUTES = "auth_access_token_minutes";
-const REQUEST_TIMEOUT_SECONDS = "request_timeout_seconds";
+const FIRST_TOKEN_TIMEOUT_SECONDS = "first_token_timeout_seconds";
+const STREAM_IDLE_TIMEOUT_SECONDS = "stream_idle_timeout_seconds";
 const MAX_REQUEST_BODY_BYTES = "max_request_body_bytes";
 const CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold";
 const CIRCUIT_BREAKER_COOLDOWN = "circuit_breaker_cooldown";
@@ -50,7 +51,8 @@ export interface SettingsDraft {
   proxyUrl: string;
   corsAllowOrigins: string;
   authAccessTokenMinutes: string;
-  requestTimeoutSeconds: string;
+  firstTokenTimeoutSeconds: string;
+  streamIdleTimeoutSeconds: string;
   maxRequestBodyBytes: string;
   circuitBreakerThreshold: string;
   circuitBreakerCooldown: string;
@@ -93,7 +95,8 @@ export function createEmptySettingsDraft(): SettingsDraft {
     proxyUrl: "",
     corsAllowOrigins: "*",
     authAccessTokenMinutes: "",
-    requestTimeoutSeconds: "",
+    firstTokenTimeoutSeconds: "180",
+    streamIdleTimeoutSeconds: "180",
     maxRequestBodyBytes: "",
     circuitBreakerThreshold: "3",
     circuitBreakerCooldown: "60",
@@ -121,7 +124,8 @@ export function createSettingsDraft(
     proxyUrl: mapping.get(PROXY_URL) ?? "",
     corsAllowOrigins: mapping.get(CORS_ALLOW_ORIGINS) ?? "*",
     authAccessTokenMinutes: mapping.get(AUTH_ACCESS_TOKEN_MINUTES) ?? "",
-    requestTimeoutSeconds: mapping.get(REQUEST_TIMEOUT_SECONDS) ?? "",
+    firstTokenTimeoutSeconds: mapping.get(FIRST_TOKEN_TIMEOUT_SECONDS) ?? "180",
+    streamIdleTimeoutSeconds: mapping.get(STREAM_IDLE_TIMEOUT_SECONDS) ?? "180",
     maxRequestBodyBytes: mapping.get(MAX_REQUEST_BODY_BYTES) ?? "",
     circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
     circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
@@ -165,8 +169,12 @@ export function createSettingItems(draft: SettingsDraft): SettingItem[] {
       value: draft.authAccessTokenMinutes.trim(),
     },
     {
-      key: REQUEST_TIMEOUT_SECONDS,
-      value: draft.requestTimeoutSeconds.trim(),
+      key: FIRST_TOKEN_TIMEOUT_SECONDS,
+      value: draft.firstTokenTimeoutSeconds.trim(),
+    },
+    {
+      key: STREAM_IDLE_TIMEOUT_SECONDS,
+      value: draft.streamIdleTimeoutSeconds.trim(),
     },
     {
       key: MAX_REQUEST_BODY_BYTES,

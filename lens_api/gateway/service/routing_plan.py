@@ -17,7 +17,7 @@ from .routing_request import (
     _is_deepseek_thinking_target,
     _prepare_upstream_body,
 )
-from .runtime_types import RoutingPlan, _RequestDeadline
+from .runtime_types import RoutingPlan, _GatewayTimeoutError
 
 
 async def _resolve_routing_plan(
@@ -83,15 +83,23 @@ def _elapsed_ms(started_at: float) -> int:
 
 
 @asynccontextmanager
-async def _deadline_scope(deadline: _RequestDeadline) -> AsyncIterator[None]:
-    remaining = deadline.remaining_seconds()
-    if remaining is None:
+async def _gateway_timeout_scope(
+    wait: float | None, *, timeout_message: str
+) -> AsyncIterator[None]:
+    """Bound a critical section without rewriting unrelated TimeoutError values."""
+    if wait is None:
         yield
         return
-    if remaining <= 0:
-        raise TimeoutError(deadline.timeout_message())
-    async with asyncio.timeout(remaining):
-        yield
+    if wait <= 0:
+        raise _GatewayTimeoutError(timeout_message)
+    timeout_scope = asyncio.timeout(wait)
+    try:
+        async with timeout_scope:
+            yield
+    except TimeoutError as exc:
+        if not timeout_scope.expired():
+            raise
+        raise _GatewayTimeoutError(timeout_message) from exc
 
 
 def _request_body_too_large_message(size: int, limit: int) -> str | None:

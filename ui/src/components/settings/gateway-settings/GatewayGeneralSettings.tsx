@@ -18,17 +18,20 @@ export function GatewayGeneralSettings({
   proxyUrl,
   corsAllowOrigins,
   authAccessTokenMinutes,
-  requestTimeoutSeconds,
+  firstTokenTimeoutSeconds,
+  streamIdleTimeoutSeconds,
   maxRequestBodyBytes,
   authAccessTokenMinutesError,
-  requestTimeoutSecondsError,
+  firstTokenTimeoutSecondsError,
+  streamIdleTimeoutSecondsError,
   maxRequestBodyBytesError,
   isRelayLogBodyEnabled,
   isModelListCompatModeEnabled,
   onProxyUrlChange,
   onCorsAllowOriginsChange,
   onAuthAccessTokenMinutesChange,
-  onRequestTimeoutSecondsChange,
+  onFirstTokenTimeoutSecondsChange,
+  onStreamIdleTimeoutSecondsChange,
   onMaxRequestBodyBytesChange,
   onRelayLogBodyEnabledChange,
   onModelListCompatModeEnabledChange,
@@ -95,42 +98,81 @@ export function GatewayGeneralSettings({
           </FieldError>
         ) : null}
       </Field>
-      <Field data-invalid={Boolean(requestTimeoutSecondsError)}>
-        <FieldLabel htmlFor="gateway-request-timeout-seconds">
+      <Field data-invalid={Boolean(firstTokenTimeoutSecondsError)}>
+        <FieldLabel htmlFor="gateway-first-token-timeout-seconds">
           {titleForLocale(
             locale,
-            "请求超时（秒）",
-            "Request timeout (seconds)",
+            "首字超时（秒）",
+            "First-token timeout (seconds)",
           )}
         </FieldLabel>
         <Input
-          id="gateway-request-timeout-seconds"
+          id="gateway-first-token-timeout-seconds"
           type="number"
           required
           min="0"
           max="86400"
           step="any"
-          value={requestTimeoutSeconds}
-          aria-invalid={Boolean(requestTimeoutSecondsError)}
+          value={firstTokenTimeoutSeconds}
+          aria-invalid={Boolean(firstTokenTimeoutSecondsError)}
           aria-describedby={
-            requestTimeoutSecondsError
-              ? "gateway-request-timeout-seconds-description gateway-request-timeout-seconds-error"
-              : "gateway-request-timeout-seconds-description"
+            firstTokenTimeoutSecondsError
+              ? "gateway-first-token-timeout-seconds-description gateway-first-token-timeout-seconds-error"
+              : "gateway-first-token-timeout-seconds-description"
           }
           onChange={(event) =>
-            onRequestTimeoutSecondsChange(event.target.value)
+            onFirstTokenTimeoutSecondsChange(event.target.value)
           }
         />
-        <FieldDescription id="gateway-request-timeout-seconds-description">
+        <FieldDescription id="gateway-first-token-timeout-seconds-description">
           {titleForLocale(
             locale,
-            "限制单次网关请求（含回退）的总时长；设为 0 时不限制。",
-            "Limits the total duration of a gateway request, including fallbacks; set to 0 for no limit.",
+            "限制首个可交付响应：流式请求须在预算内产生首个有效协议输出，非流式请求须在预算内读完完整响应；路由和回退共享该预算，设为 0 时不限制。",
+            "Limits the first deliverable response: streaming requests must produce meaningful protocol output within the shared routing and fallback budget, while non-streaming requests must finish reading the full response; set to 0 for no limit.",
           )}
         </FieldDescription>
-        {requestTimeoutSecondsError ? (
-          <FieldError id="gateway-request-timeout-seconds-error">
-            {requestTimeoutSecondsError}
+        {firstTokenTimeoutSecondsError ? (
+          <FieldError id="gateway-first-token-timeout-seconds-error">
+            {firstTokenTimeoutSecondsError}
+          </FieldError>
+        ) : null}
+      </Field>
+      <Field data-invalid={Boolean(streamIdleTimeoutSecondsError)}>
+        <FieldLabel htmlFor="gateway-stream-idle-timeout-seconds">
+          {titleForLocale(
+            locale,
+            "流空闲超时（秒）",
+            "Stream idle timeout (seconds)",
+          )}
+        </FieldLabel>
+        <Input
+          id="gateway-stream-idle-timeout-seconds"
+          type="number"
+          required
+          min="0"
+          max="86400"
+          step="any"
+          value={streamIdleTimeoutSeconds}
+          aria-invalid={Boolean(streamIdleTimeoutSecondsError)}
+          aria-describedby={
+            streamIdleTimeoutSecondsError
+              ? "gateway-stream-idle-timeout-seconds-description gateway-stream-idle-timeout-seconds-error"
+              : "gateway-stream-idle-timeout-seconds-description"
+          }
+          onChange={(event) =>
+            onStreamIdleTimeoutSecondsChange(event.target.value)
+          }
+        />
+        <FieldDescription id="gateway-stream-idle-timeout-seconds-description">
+          {titleForLocale(
+            locale,
+            "首个有效输出之后，相邻上游数据块之间的最长滚动等待；设为 0 时禁用流空闲限制。",
+            "Sets the rolling maximum wait between upstream chunks after the first meaningful output; set to 0 to disable this limit.",
+          )}
+        </FieldDescription>
+        {streamIdleTimeoutSecondsError ? (
+          <FieldError id="gateway-stream-idle-timeout-seconds-error">
+            {streamIdleTimeoutSecondsError}
           </FieldError>
         ) : null}
       </Field>

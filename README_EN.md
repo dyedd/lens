@@ -270,11 +270,12 @@ Clients only need: Lens Base URL + Gateway API Key + Model group name.
 
 Configure these values on `/settings`:
 
-| Setting key                 | Default     | Description                                                                                    |
-| --------------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
-| `auth_access_token_minutes` | 720 minutes | Lifetime of newly issued login access tokens; range `1`–`525600`                               |
-| `request_timeout_seconds`   | 180 seconds | Total gateway-request deadline, including fallbacks; range `0`–`86400`, where `0` is unlimited |
-| `max_request_body_bytes`    | `32000000`  | Maximum request body sent upstream; `0` is unlimited                                           |
+| Setting key                   | Default     | Description                                                                                                                                                                      |
+| ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth_access_token_minutes`   | 720 minutes | Lifetime of newly issued login access tokens; range `1`–`525600`                                                                                                                  |
+| `first_token_timeout_seconds` | 180 seconds | Shared budget for the first deliverable response: first meaningful output for streaming requests, or the full response for non-streaming requests; range `0`–`86400`, where `0` is unlimited |
+| `stream_idle_timeout_seconds` | 180 seconds | Maximum wait between upstream chunks after the first meaningful streaming output; range `0`–`86400`, where `0` is unlimited                                                    |
+| `max_request_body_bytes`      | `32000000`  | Maximum request body sent upstream; `0` is unlimited                                                                                                                             |
 
 ### Docker Compose
 

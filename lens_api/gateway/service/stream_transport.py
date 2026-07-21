@@ -1,21 +1,22 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncIterator
 
 import httpx
 from fastapi.responses import StreamingResponse
-from starlette.requests import ClientDisconnect
+from starlette.background import BackgroundTask
 from starlette.types import Receive, Scope, Send
 
 from ...models import ProtocolKind
+from .app_state import logger
 from .runtime_types import (
     StreamCapture,
+    _GatewayTimeoutError,
     _RequestDeadline,
     _capture_stream_content,
     _record_stream_error,
 )
-from .stream_detection import _cancel_stream_capture
+from .routing_plan import _gateway_timeout_scope
 from .stream_events import _capture_stream_event_chunk, _flush_stream_event_buffer
 
 
@@ -46,25 +47,30 @@ class _FinalizingStreamingResponse(StreamingResponse):
         self.background = None
         try:
             await super().__call__(scope, receive, send)
-            if (
-                not self._stream_capture.is_client_stream_completed
-                and not self._stream_capture.errors
-            ):
-                await _cancel_stream_capture(self._stream_capture)
-        except ClientDisconnect:
-            await _cancel_stream_capture(self._stream_capture)
+        except BaseException:
+            try:
+                await self._finalize(background)
+            except BaseException:
+                logger.exception("Failed to finalize streaming response")
             raise
+        await self._finalize(background)
+
+    async def _finalize(self, background: BackgroundTask | None) -> None:
+        if (
+            not self._stream_capture.is_client_stream_completed
+            and not self._stream_capture.errors
+        ):
+            self._stream_capture.is_client_disconnected = True
+        try:
+            close_iterator = getattr(self.body_iterator, "aclose", None)
+            if close_iterator is not None:
+                await close_iterator()
         finally:
             try:
-                close_iterator = getattr(self.body_iterator, "aclose", None)
-                if close_iterator is not None:
-                    await close_iterator()
+                await self._upstream_response.aclose()
             finally:
-                try:
-                    await self._upstream_response.aclose()
-                finally:
-                    if background is not None:
-                        await background()
+                if background is not None:
+                    await background()
 
 
 async def _stream_upstream_iterator(
@@ -74,12 +80,15 @@ async def _stream_upstream_iterator(
     stream_started_at: float,
 ) -> AsyncIterator[bytes]:
     deadline = capture.deadline
-    assert deadline is not None
     try:
         iterator = response.aiter_bytes().__aiter__()
         while True:
             try:
-                chunk = await _next_stream_chunk(iterator, deadline)
+                chunk = await _next_stream_chunk(
+                    iterator,
+                    deadline,
+                    has_seen_first_chunk=capture.has_seen_first_chunk,
+                )
             except StopAsyncIteration:
                 break
             if not chunk:
@@ -91,11 +100,12 @@ async def _stream_upstream_iterator(
             yield chunk
         _flush_stream_event_buffer(protocol, capture, stream_started_at)
         capture.is_completed = True
-    except asyncio.CancelledError:
-        await _cancel_stream_capture(capture)
-        raise
-    except TimeoutError:
-        _record_stream_error(capture, deadline.timeout_message(), status_code=504)
+    except _GatewayTimeoutError as exc:
+        _record_stream_error(
+            capture,
+            str(exc),
+            status_code=504,
+        )
         raise
     except httpx.HTTPError as exc:
         _record_stream_error(
@@ -104,19 +114,20 @@ async def _stream_upstream_iterator(
             status_code=502,
         )
         raise
-    finally:
-        await response.aclose()
 
 
 async def _next_stream_chunk(
-    iterator: AsyncIterator[bytes], deadline: _RequestDeadline
+    iterator: AsyncIterator[bytes],
+    deadline: _RequestDeadline,
+    *,
+    has_seen_first_chunk: bool,
 ) -> bytes:
-    remaining = deadline.remaining_seconds()
-    if remaining is None:
-        return await iterator.__anext__()
-    if remaining <= 0:
-        raise TimeoutError(deadline.timeout_message())
-    async with asyncio.timeout(remaining):
+    wait = deadline.stream_chunk_wait_seconds(has_seen_first_chunk=has_seen_first_chunk)
+    kind = "stream_idle" if has_seen_first_chunk else "first_token"
+    async with _gateway_timeout_scope(
+        wait,
+        timeout_message=deadline.timeout_message(kind=kind),
+    ):
         return await iterator.__anext__()
 
 
@@ -128,9 +139,6 @@ async def _capture_converted_stream_iterator(
             text = chunk.decode("utf-8", errors="replace")
             _capture_stream_content(capture, text, client_response=True)
             yield chunk
-    except asyncio.CancelledError:
-        await _cancel_stream_capture(capture)
-        raise
     except ValueError as exc:
         _record_stream_error(
             capture,

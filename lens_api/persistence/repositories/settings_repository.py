@@ -23,7 +23,8 @@ from ..shared import (
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_ENABLED,
     SETTING_RELAY_LOG_KEEP_PERIOD,
-    SETTING_REQUEST_TIMEOUT_SECONDS,
+    SETTING_FIRST_TOKEN_TIMEOUT_SECONDS,
+    SETTING_STREAM_IDLE_TIMEOUT_SECONDS,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
     SETTING_TIME_ZONE,
@@ -130,7 +131,12 @@ class SettingsRepository:
             "auth_access_token_minutes": int(
                 mapping[SETTING_AUTH_ACCESS_TOKEN_MINUTES]
             ),
-            "request_timeout_seconds": float(mapping[SETTING_REQUEST_TIMEOUT_SECONDS]),
+            "first_token_timeout_seconds": float(
+                mapping[SETTING_FIRST_TOKEN_TIMEOUT_SECONDS]
+            ),
+            "stream_idle_timeout_seconds": float(
+                mapping[SETTING_STREAM_IDLE_TIMEOUT_SECONDS]
+            ),
             "max_request_body_bytes": int(mapping[SETTING_MAX_REQUEST_BODY_BYTES]),
             "time_zone": time_zone,
             "cors_allow_origins": cors_allow_origins or ["*"],
