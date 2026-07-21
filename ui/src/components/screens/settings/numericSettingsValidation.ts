@@ -4,7 +4,8 @@ import type { SettingsDraft } from "./settingsDraft";
 
 export type NumericSettingKey =
   | "authAccessTokenMinutes"
-  | "requestTimeoutSeconds"
+  | "firstTokenTimeoutSeconds"
+  | "streamIdleTimeoutSeconds"
   | "maxRequestBodyBytes"
   | "circuitBreakerThreshold"
   | "circuitBreakerCooldown"
@@ -35,9 +36,17 @@ const NUMERIC_SETTING_RULES: ReadonlyArray<{
     max: 525_600,
   },
   {
-    key: "requestTimeoutSeconds",
-    labelZh: "请求超时",
-    labelEn: "Request timeout",
+    key: "firstTokenTimeoutSeconds",
+    labelZh: "首字超时",
+    labelEn: "First-token timeout",
+    type: "number",
+    min: 0,
+    max: 86_400,
+  },
+  {
+    key: "streamIdleTimeoutSeconds",
+    labelZh: "流空闲超时",
+    labelEn: "Stream idle timeout",
     type: "number",
     min: 0,
     max: 86_400,
