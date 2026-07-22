@@ -10,12 +10,22 @@ from ..editable_settings import effective_editable_setting_items
 from ..shared import (
     Any,
     SETTING_AUTH_ACCESS_TOKEN_MINUTES,
+    SETTING_CIRCUIT_BREAKER_AUTH_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER,
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_FAILURE_WINDOW,
     SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_NETWORK_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_NETWORK_THRESHOLD,
+    SETTING_CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_THRESHOLD,
+    SETTING_CIRCUIT_BREAKER_TIMEOUT_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_TIMEOUT_THRESHOLD,
     SETTING_CORS_ALLOW_ORIGINS,
     SETTING_HEALTH_MIN_SAMPLES,
     SETTING_HEALTH_PENALTY_WEIGHT,
+    SETTING_HEALTH_SCORING_ENABLED,
     SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_MAX_REQUEST_BODY_BYTES,
     SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
@@ -146,10 +156,38 @@ class SettingsRepository:
             "circuit_breaker_threshold": int(
                 mapping[SETTING_CIRCUIT_BREAKER_THRESHOLD]
             ),
+            "circuit_breaker_failure_window_seconds": int(
+                mapping[SETTING_CIRCUIT_BREAKER_FAILURE_WINDOW]
+            ),
+            "circuit_breaker_timeout_threshold": int(
+                mapping[SETTING_CIRCUIT_BREAKER_TIMEOUT_THRESHOLD]
+            ),
+            "circuit_breaker_network_threshold": int(
+                mapping[SETTING_CIRCUIT_BREAKER_NETWORK_THRESHOLD]
+            ),
             "circuit_breaker_cooldown": int(mapping[SETTING_CIRCUIT_BREAKER_COOLDOWN]),
+            "circuit_breaker_auth_cooldown": int(
+                mapping[SETTING_CIRCUIT_BREAKER_AUTH_COOLDOWN]
+            ),
+            "circuit_breaker_not_found_cooldown": int(
+                mapping[SETTING_CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN]
+            ),
+            "circuit_breaker_rate_limit_cooldown": int(
+                mapping[SETTING_CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN]
+            ),
+            "circuit_breaker_timeout_cooldown": int(
+                mapping[SETTING_CIRCUIT_BREAKER_TIMEOUT_COOLDOWN]
+            ),
+            "circuit_breaker_network_cooldown": int(
+                mapping[SETTING_CIRCUIT_BREAKER_NETWORK_COOLDOWN]
+            ),
+            "circuit_breaker_backoff_multiplier": float(
+                mapping[SETTING_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER]
+            ),
             "circuit_breaker_max_cooldown": int(
                 mapping[SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN]
             ),
+            "health_scoring_enabled": mapping[SETTING_HEALTH_SCORING_ENABLED] == "true",
             "health_window_seconds": int(mapping[SETTING_HEALTH_WINDOW_SECONDS]),
             "health_penalty_weight": float(mapping[SETTING_HEALTH_PENALTY_WEIGHT]),
             "health_min_samples": int(mapping[SETTING_HEALTH_MIN_SAMPLES]),

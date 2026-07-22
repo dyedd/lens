@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..cronjob_runner import CronjobAlreadyRunningError
+from ..router.cooldown import CooldownPolicy
 from .app_state import app_state, logger
 from .error_responses import (
     build_database_error_response,
@@ -160,10 +161,40 @@ async def handle_operational_error(
 
 
 def _apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
-    app_state.router.configure_health_scoring(
+    app_state.router.configure(
+        health_scoring_enabled=bool(runtime["health_scoring_enabled"]),
         health_window_seconds=int(runtime["health_window_seconds"]),
         health_penalty_weight=float(runtime["health_penalty_weight"]),
         health_min_samples=int(runtime["health_min_samples"]),
+        routing_environment_signature=(
+            str(runtime["proxy_url"]),
+            json.dumps(
+                runtime["upstream_headers_config"],
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        ),
+        cooldown_policy=CooldownPolicy(
+            failure_threshold=int(runtime["circuit_breaker_threshold"]),
+            failure_window_seconds=int(
+                runtime["circuit_breaker_failure_window_seconds"]
+            ),
+            timeout_threshold=int(runtime["circuit_breaker_timeout_threshold"]),
+            network_threshold=int(runtime["circuit_breaker_network_threshold"]),
+            server_cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
+            auth_cooldown_seconds=int(runtime["circuit_breaker_auth_cooldown"]),
+            not_found_cooldown_seconds=int(
+                runtime["circuit_breaker_not_found_cooldown"]
+            ),
+            rate_limit_cooldown_seconds=int(
+                runtime["circuit_breaker_rate_limit_cooldown"]
+            ),
+            timeout_cooldown_seconds=int(runtime["circuit_breaker_timeout_cooldown"]),
+            network_cooldown_seconds=int(runtime["circuit_breaker_network_cooldown"]),
+            backoff_multiplier=float(runtime["circuit_breaker_backoff_multiplier"]),
+            max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+        ),
     )
 
 

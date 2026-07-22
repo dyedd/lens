@@ -90,7 +90,13 @@ from .request_logs import (
     RequestLogItem,
     RequestLogPage,
 )
-from .routing import ChannelHealth, ChannelKeyHealth, RouteState, RouterSnapshot
+from .routing import (
+    ChannelHealth,
+    ChannelKeyHealth,
+    ModelHealth,
+    RouteState,
+    RouterSnapshot,
+)
 from .settings import SettingItem, SettingsUpdate
 from .sites import (
     SiteBaseUrl,
@@ -179,6 +185,7 @@ __all__ = [
     "SiteModelTestResult",
     "ChannelKeyHealth",
     "ChannelHealth",
+    "ModelHealth",
     "RouteState",
     "RouterSnapshot",
     "ErrorResponse",
