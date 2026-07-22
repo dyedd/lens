@@ -8,7 +8,16 @@ export type NumericSettingKey =
   | "streamIdleTimeoutSeconds"
   | "maxRequestBodyBytes"
   | "circuitBreakerThreshold"
+  | "circuitBreakerFailureWindowSeconds"
+  | "circuitBreakerTimeoutThreshold"
+  | "circuitBreakerNetworkThreshold"
   | "circuitBreakerCooldown"
+  | "circuitBreakerAuthCooldown"
+  | "circuitBreakerNotFoundCooldown"
+  | "circuitBreakerRateLimitCooldown"
+  | "circuitBreakerTimeoutCooldown"
+  | "circuitBreakerNetworkCooldown"
+  | "circuitBreakerBackoffMultiplier"
   | "circuitBreakerMaxCooldown"
   | "healthWindowSeconds"
   | "healthPenaltyWeight"
@@ -60,18 +69,88 @@ const NUMERIC_SETTING_RULES: ReadonlyArray<{
   },
   {
     key: "circuitBreakerThreshold",
-    labelZh: "失败阈值",
-    labelEn: "Failure threshold",
+    labelZh: "5xx 失败阈值",
+    labelEn: "5xx failure threshold",
+    type: "integer",
+    min: 1,
+  },
+  {
+    key: "circuitBreakerFailureWindowSeconds",
+    labelZh: "连续失败窗口",
+    labelEn: "Consecutive-failure window",
+    type: "integer",
+    min: 1,
+    max: 604_800,
+  },
+  {
+    key: "circuitBreakerTimeoutThreshold",
+    labelZh: "超时失败阈值",
+    labelEn: "Timeout failure threshold",
+    type: "integer",
+    min: 1,
+  },
+  {
+    key: "circuitBreakerNetworkThreshold",
+    labelZh: "网络失败阈值",
+    labelEn: "Network failure threshold",
     type: "integer",
     min: 1,
   },
   {
     key: "circuitBreakerCooldown",
-    labelZh: "基础冷却秒数",
-    labelEn: "Cooldown seconds",
+    labelZh: "5xx 初始冷却",
+    labelEn: "5xx initial cooldown",
     type: "integer",
     min: 0,
     max: 604_800,
+  },
+  {
+    key: "circuitBreakerAuthCooldown",
+    labelZh: "认证错误初始冷却",
+    labelEn: "Authentication initial cooldown",
+    type: "integer",
+    min: 0,
+    max: 604_800,
+  },
+  {
+    key: "circuitBreakerNotFoundCooldown",
+    labelZh: "404 初始冷却",
+    labelEn: "404 initial cooldown",
+    type: "integer",
+    min: 0,
+    max: 604_800,
+  },
+  {
+    key: "circuitBreakerRateLimitCooldown",
+    labelZh: "限流初始冷却",
+    labelEn: "Rate-limit initial cooldown",
+    type: "integer",
+    min: 0,
+    max: 604_800,
+  },
+  {
+    key: "circuitBreakerTimeoutCooldown",
+    labelZh: "超时初始冷却",
+    labelEn: "Timeout initial cooldown",
+    type: "integer",
+    min: 0,
+    max: 604_800,
+  },
+  {
+    key: "circuitBreakerNetworkCooldown",
+    labelZh: "网络错误初始冷却",
+    labelEn: "Network initial cooldown",
+    type: "integer",
+    min: 0,
+    max: 604_800,
+  },
+  {
+    key: "circuitBreakerBackoffMultiplier",
+    labelZh: "冷却退避倍率",
+    labelEn: "Cooldown backoff multiplier",
+    type: "number",
+    min: 1,
+    max: 10,
   },
   {
     key: "circuitBreakerMaxCooldown",
@@ -87,6 +166,7 @@ const NUMERIC_SETTING_RULES: ReadonlyArray<{
     labelEn: "Health window seconds",
     type: "integer",
     min: 1,
+    max: 604_800,
   },
   {
     key: "healthPenaltyWeight",
@@ -94,11 +174,12 @@ const NUMERIC_SETTING_RULES: ReadonlyArray<{
     labelEn: "Health penalty weight",
     type: "number",
     min: 0,
+    max: 1,
   },
   {
     key: "healthMinSamples",
-    labelZh: "健康最小样本数",
-    labelEn: "Health min samples",
+    labelZh: "完整置信样本数",
+    labelEn: "Full-confidence sample count",
     type: "integer",
     min: 1,
   },

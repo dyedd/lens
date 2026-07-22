@@ -26,8 +26,19 @@ const FIRST_TOKEN_TIMEOUT_SECONDS = "first_token_timeout_seconds";
 const STREAM_IDLE_TIMEOUT_SECONDS = "stream_idle_timeout_seconds";
 const MAX_REQUEST_BODY_BYTES = "max_request_body_bytes";
 const CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold";
+const CIRCUIT_BREAKER_FAILURE_WINDOW = "circuit_breaker_failure_window_seconds";
+const CIRCUIT_BREAKER_TIMEOUT_THRESHOLD = "circuit_breaker_timeout_threshold";
+const CIRCUIT_BREAKER_NETWORK_THRESHOLD = "circuit_breaker_network_threshold";
 const CIRCUIT_BREAKER_COOLDOWN = "circuit_breaker_cooldown";
+const CIRCUIT_BREAKER_AUTH_COOLDOWN = "circuit_breaker_auth_cooldown";
+const CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN = "circuit_breaker_not_found_cooldown";
+const CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN =
+  "circuit_breaker_rate_limit_cooldown";
+const CIRCUIT_BREAKER_TIMEOUT_COOLDOWN = "circuit_breaker_timeout_cooldown";
+const CIRCUIT_BREAKER_NETWORK_COOLDOWN = "circuit_breaker_network_cooldown";
+const CIRCUIT_BREAKER_BACKOFF_MULTIPLIER = "circuit_breaker_backoff_multiplier";
 const CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown";
+const HEALTH_SCORING_ENABLED = "health_scoring_enabled";
 const HEALTH_WINDOW_SECONDS = "health_window_seconds";
 const HEALTH_PENALTY_WEIGHT = "health_penalty_weight";
 const HEALTH_MIN_SAMPLES = "health_min_samples";
@@ -55,8 +66,18 @@ export interface SettingsDraft {
   streamIdleTimeoutSeconds: string;
   maxRequestBodyBytes: string;
   circuitBreakerThreshold: string;
+  circuitBreakerFailureWindowSeconds: string;
+  circuitBreakerTimeoutThreshold: string;
+  circuitBreakerNetworkThreshold: string;
   circuitBreakerCooldown: string;
+  circuitBreakerAuthCooldown: string;
+  circuitBreakerNotFoundCooldown: string;
+  circuitBreakerRateLimitCooldown: string;
+  circuitBreakerTimeoutCooldown: string;
+  circuitBreakerNetworkCooldown: string;
+  circuitBreakerBackoffMultiplier: string;
   circuitBreakerMaxCooldown: string;
+  isHealthScoringEnabled: boolean;
   healthWindowSeconds: string;
   healthPenaltyWeight: string;
   healthMinSamples: string;
@@ -99,8 +120,18 @@ export function createEmptySettingsDraft(): SettingsDraft {
     streamIdleTimeoutSeconds: "180",
     maxRequestBodyBytes: "",
     circuitBreakerThreshold: "3",
+    circuitBreakerFailureWindowSeconds: "300",
+    circuitBreakerTimeoutThreshold: "2",
+    circuitBreakerNetworkThreshold: "2",
     circuitBreakerCooldown: "60",
+    circuitBreakerAuthCooldown: "300",
+    circuitBreakerNotFoundCooldown: "300",
+    circuitBreakerRateLimitCooldown: "60",
+    circuitBreakerTimeoutCooldown: "60",
+    circuitBreakerNetworkCooldown: "60",
+    circuitBreakerBackoffMultiplier: "2",
     circuitBreakerMaxCooldown: "600",
+    isHealthScoringEnabled: true,
     healthWindowSeconds: "300",
     healthPenaltyWeight: "0.5",
     healthMinSamples: "10",
@@ -128,9 +159,30 @@ export function createSettingsDraft(
     streamIdleTimeoutSeconds: mapping.get(STREAM_IDLE_TIMEOUT_SECONDS) ?? "180",
     maxRequestBodyBytes: mapping.get(MAX_REQUEST_BODY_BYTES) ?? "",
     circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
+    circuitBreakerFailureWindowSeconds:
+      mapping.get(CIRCUIT_BREAKER_FAILURE_WINDOW) ?? "300",
+    circuitBreakerTimeoutThreshold:
+      mapping.get(CIRCUIT_BREAKER_TIMEOUT_THRESHOLD) ?? "2",
+    circuitBreakerNetworkThreshold:
+      mapping.get(CIRCUIT_BREAKER_NETWORK_THRESHOLD) ?? "2",
     circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
+    circuitBreakerAuthCooldown:
+      mapping.get(CIRCUIT_BREAKER_AUTH_COOLDOWN) ?? "300",
+    circuitBreakerNotFoundCooldown:
+      mapping.get(CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN) ?? "300",
+    circuitBreakerRateLimitCooldown:
+      mapping.get(CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN) ?? "60",
+    circuitBreakerTimeoutCooldown:
+      mapping.get(CIRCUIT_BREAKER_TIMEOUT_COOLDOWN) ?? "60",
+    circuitBreakerNetworkCooldown:
+      mapping.get(CIRCUIT_BREAKER_NETWORK_COOLDOWN) ?? "60",
+    circuitBreakerBackoffMultiplier:
+      mapping.get(CIRCUIT_BREAKER_BACKOFF_MULTIPLIER) ?? "2",
     circuitBreakerMaxCooldown:
       mapping.get(CIRCUIT_BREAKER_MAX_COOLDOWN) ?? "600",
+    isHealthScoringEnabled:
+      (mapping.get(HEALTH_SCORING_ENABLED) ?? "true").trim().toLowerCase() ===
+      "true",
     healthWindowSeconds: mapping.get(HEALTH_WINDOW_SECONDS) ?? "300",
     healthPenaltyWeight: mapping.get(HEALTH_PENALTY_WEIGHT) ?? "0.5",
     healthMinSamples: mapping.get(HEALTH_MIN_SAMPLES) ?? "10",
@@ -185,12 +237,52 @@ export function createSettingItems(draft: SettingsDraft): SettingItem[] {
       value: draft.circuitBreakerThreshold.trim() || "3",
     },
     {
+      key: CIRCUIT_BREAKER_FAILURE_WINDOW,
+      value: draft.circuitBreakerFailureWindowSeconds.trim() || "300",
+    },
+    {
+      key: CIRCUIT_BREAKER_TIMEOUT_THRESHOLD,
+      value: draft.circuitBreakerTimeoutThreshold.trim() || "2",
+    },
+    {
+      key: CIRCUIT_BREAKER_NETWORK_THRESHOLD,
+      value: draft.circuitBreakerNetworkThreshold.trim() || "2",
+    },
+    {
       key: CIRCUIT_BREAKER_COOLDOWN,
       value: draft.circuitBreakerCooldown.trim() || "60",
     },
     {
+      key: CIRCUIT_BREAKER_AUTH_COOLDOWN,
+      value: draft.circuitBreakerAuthCooldown.trim() || "300",
+    },
+    {
+      key: CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN,
+      value: draft.circuitBreakerNotFoundCooldown.trim() || "300",
+    },
+    {
+      key: CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN,
+      value: draft.circuitBreakerRateLimitCooldown.trim() || "60",
+    },
+    {
+      key: CIRCUIT_BREAKER_TIMEOUT_COOLDOWN,
+      value: draft.circuitBreakerTimeoutCooldown.trim() || "60",
+    },
+    {
+      key: CIRCUIT_BREAKER_NETWORK_COOLDOWN,
+      value: draft.circuitBreakerNetworkCooldown.trim() || "60",
+    },
+    {
+      key: CIRCUIT_BREAKER_BACKOFF_MULTIPLIER,
+      value: draft.circuitBreakerBackoffMultiplier.trim() || "2",
+    },
+    {
       key: CIRCUIT_BREAKER_MAX_COOLDOWN,
       value: draft.circuitBreakerMaxCooldown.trim() || "600",
+    },
+    {
+      key: HEALTH_SCORING_ENABLED,
+      value: draft.isHealthScoringEnabled ? "true" : "false",
     },
     {
       key: HEALTH_WINDOW_SECONDS,

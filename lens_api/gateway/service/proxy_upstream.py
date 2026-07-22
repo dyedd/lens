@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from time import perf_counter
 from typing import Any
 
@@ -10,6 +12,7 @@ from fastapi import Response
 from ...models import ChannelConfig, ProtocolKind
 from ..converters import convert_response, convert_stream_iterator, needs_conversion
 from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
+from ..router.cooldown import ErrorCategory
 from .runtime_types import (
     StreamCapture,
     _GatewayTimeoutError,
@@ -18,7 +21,6 @@ from .runtime_types import (
     _RequestDeadline,
     _record_stream_error,
 )
-from .app_state import app_state
 from .upstream_support import (
     _format_http_response_error,
     _format_transport_error,
@@ -45,6 +47,30 @@ from .routing_plan import (
     _gateway_timeout_scope,
     _request_body_too_large_message,
 )
+
+_NDJSON_MEDIA_TYPES = {"application/x-ndjson", "application/ndjson"}
+
+
+def _response_media_type(response: httpx.Response) -> str:
+    content_type = response.headers.get("content-type") or ""
+    return content_type.lower().partition(";")[0].strip()
+
+
+def _parse_retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    try:
+        seconds = float(normalized)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(normalized)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max((retry_at - datetime.now(UTC)).total_seconds(), 0.0)
+    return seconds if seconds >= 0 else None
 
 
 async def _build_anthropic_sse_to_json_result(
@@ -147,6 +173,9 @@ async def _build_stream_result(
         chat_expected_choices=chat_expected_choices,
         gemini_expected_candidates=gemini_expected_candidates,
         deadline=deadline,
+        event_format=(
+            "ndjson" if _response_media_type(response) in _NDJSON_MEDIA_TYPES else None
+        ),
     )
     raw_iter = _stream_upstream_iterator(
         response,
@@ -348,9 +377,9 @@ async def _call_channel(
             )
         response.raise_for_status()
 
-        is_event_stream = (
-            "text/event-stream" in (response.headers.get("content-type") or "").lower()
-        )
+        media_type = _response_media_type(response)
+        is_event_stream = media_type == "text/event-stream"
+        is_ndjson_stream = is_stream_request and media_type in _NDJSON_MEDIA_TYPES
         if (
             is_event_stream
             and not is_stream_request
@@ -364,7 +393,7 @@ async def _call_channel(
                 log_body_enabled,
             )
             result.first_token_latency_ms = _elapsed_ms(stream_started_at)
-        elif is_event_stream:
+        elif is_event_stream or is_ndjson_stream:
             result = await _build_stream_result(
                 response,
                 channel,
@@ -396,8 +425,6 @@ async def _call_channel(
                 log_body_enabled,
             )
             result.first_token_latency_ms = _elapsed_ms(stream_started_at)
-        if not result.is_stream:
-            app_state.router.record_success(channel.id, credential_id=credential_id)
         return result
     except httpx.HTTPStatusError as exc:
         detail = (
@@ -405,22 +432,30 @@ async def _call_channel(
             if exc.response.is_stream_consumed
             else f"HTTP {exc.response.status_code}"
         )
+        retry_after_seconds = (
+            _parse_retry_after_seconds(exc.response.headers.get("retry-after"))
+            if exc.response.status_code in (429, 503)
+            else None
+        )
         raise UpstreamRequestError(
             status_code=exc.response.status_code,
             detail=detail,
             router_status_code=exc.response.status_code,
+            router_cooldown_seconds=retry_after_seconds,
         ) from exc
     except httpx.HTTPError as exc:
         raise UpstreamRequestError(
             status_code=502,
             detail=_format_transport_error(exc, upstream.url),
             router_status_code=None,
+            router_error_category=ErrorCategory.NETWORK,
         ) from exc
     except _GatewayTimeoutError as exc:
         raise UpstreamRequestError(
             status_code=504,
             detail=str(exc),
             router_status_code=None,
+            router_error_category=ErrorCategory.TIMEOUT,
             error_type="gateway_timeout",
         ) from exc
     finally:

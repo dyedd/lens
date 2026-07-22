@@ -5,11 +5,11 @@ from time import monotonic
 
 from ...models import (
     ChannelConfig,
-    ChannelKeyItem,
     ProtocolKind,
     RouterSnapshot,
     RoutingStrategy,
 )
+from .cooldown import CooldownPolicy, ErrorCategory
 from .health import _HealthTracker
 from .routing import _RoutePlanner
 from .types import RouteSelection, RouteTarget
@@ -21,32 +21,41 @@ class GatewayRouter:
     def __init__(
         self,
         *,
+        health_scoring_enabled: bool = True,
         health_window_seconds: int = 300,
         health_penalty_weight: float = 0.5,
         health_min_samples: int = 10,
     ) -> None:
         self._lock = Lock()
         self._health = _HealthTracker(
+            health_scoring_enabled=health_scoring_enabled,
             health_window_seconds=health_window_seconds,
             health_penalty_weight=health_penalty_weight,
             health_min_samples=health_min_samples,
         )
         self._routes = _RoutePlanner(self._health)
 
-    def configure_health_scoring(
+    def configure(
         self,
         *,
+        health_scoring_enabled: bool,
         health_window_seconds: int,
         health_penalty_weight: float,
         health_min_samples: int,
+        cooldown_policy: CooldownPolicy,
+        routing_environment_signature: tuple[str, str],
     ) -> None:
-        """Configure the health scoring window and penalty settings."""
+        """Apply runtime cooldown and health-scoring settings."""
         with self._lock:
-            self._health.configure(
+            if self._health.configure(
+                health_scoring_enabled=health_scoring_enabled,
                 health_window_seconds=health_window_seconds,
                 health_penalty_weight=health_penalty_weight,
                 health_min_samples=health_min_samples,
-            )
+                cooldown_policy=cooldown_policy,
+                routing_environment_signature=routing_environment_signature,
+            ):
+                self._routes.reset_weights()
 
     def select(
         self,
@@ -61,6 +70,7 @@ class GatewayRouter:
     ) -> RouteSelection:
         """Select a primary route and ordered fallbacks."""
         with self._lock:
+            self._routes.discard_channels(self._health.sync_channels(channels))
             return self._routes.select(
                 channels,
                 protocol,
@@ -75,6 +85,7 @@ class GatewayRouter:
     def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:
         """Build a snapshot of route ordering and channel health."""
         with self._lock:
+            self._routes.discard_channels(self._health.sync_channels(channels))
             now = monotonic()
             routes = [
                 self._routes.build_route_state(channels, protocol, now=now)
@@ -87,60 +98,47 @@ class GatewayRouter:
         return RouterSnapshot(routes=routes, health=health)
 
     def record_success(
-        self, channel_id: str, *, credential_id: str | None = None
+        self,
+        channel_id: str,
+        *,
+        credential_id: str | None = None,
+        model_name: str | None = None,
+        started_revision: int | None = None,
     ) -> None:
-        """Record a successful channel or credential request."""
+        """Record success for exactly one executed route target."""
         with self._lock:
-            self._health.record_success(channel_id, credential_id=credential_id)
+            self._health.record_success(
+                channel_id,
+                credential_id=credential_id,
+                model_name=model_name,
+                started_revision=started_revision,
+            )
+
+    def current_failure_revision(self) -> int:
+        """Return a stable marker for failures observed before an attempt starts."""
+        with self._lock:
+            return self._health.failure_revision
 
     def record_failure(
         self,
         channel_id: str,
         error: str,
         *,
-        status_code: int | None = None,
+        category: ErrorCategory,
         credential_id: str | None = None,
-        channel_keys: list[ChannelKeyItem] | None = None,
-        threshold: int = 0,
-        cooldown_seconds: int = 0,
-        max_cooldown_seconds: int = 0,
+        model_name: str | None = None,
+        cooldown_seconds: float | None = None,
     ) -> None:
-        """Record a failed request and apply any required cooldown."""
+        """Record failure for its target or credential fault domain."""
         with self._lock:
             self._health.record_failure(
                 channel_id,
                 error,
-                status_code=status_code,
+                category=category,
                 credential_id=credential_id,
-                channel_keys=channel_keys,
-                threshold=threshold,
+                model_name=model_name,
                 cooldown_seconds=cooldown_seconds,
-                max_cooldown_seconds=max_cooldown_seconds,
             )
-
-    def record_key_failure(
-        self,
-        channel_id: str,
-        key_id: str,
-        status_code: int | None = None,
-        *,
-        max_cooldown_seconds: int = 0,
-    ) -> None:
-        """Record a credential failure and apply its cooldown."""
-        with self._lock:
-            self._health.record_key_failure(
-                channel_id, key_id, status_code, max_cooldown_seconds
-            )
-
-    def record_key_success(self, channel_id: str, key_id: str) -> None:
-        """Clear the recorded cooldown state for a credential."""
-        with self._lock:
-            self._health.record_key_success(channel_id, key_id)
-
-    def is_channel_available(self, channel_id: str) -> bool:
-        """Return whether a channel is currently available."""
-        with self._lock:
-            return self._health.is_channel_available(channel_id)
 
     def is_target_available(self, target: RouteTarget) -> bool:
         """Return whether a route target is currently available."""

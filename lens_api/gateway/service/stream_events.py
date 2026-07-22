@@ -73,10 +73,10 @@ def _flush_stream_event_buffer(
 def _stream_event_format(
     protocol: ProtocolKind, capture: StreamCapture, pending_text: str
 ) -> str:
-    if protocol != ProtocolKind.GEMINI:
-        return "sse"
     if capture.event_format is not None:
         return capture.event_format
+    if protocol != ProtocolKind.GEMINI:
+        return "sse"
     normalized = f"{capture.event_buffer}{pending_text}".lstrip()
     if not normalized:
         return "sse"

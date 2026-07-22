@@ -156,16 +156,34 @@ export function SiteHealthPreview({
 
             <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:shrink-0">
               {coolingBadge ? (
-                <Badge
-                  variant="outline"
-                  title={coolingBadge.title}
-                  className={cn(
-                    "max-w-full truncate px-2.5 py-1 text-xs",
-                    coolingBadge.className,
-                  )}
-                >
-                  {coolingBadge.label}
-                </Badge>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="max-w-full rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-1"
+                      aria-label={coolingBadge.title.replaceAll("\n", ", ")}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "max-w-full truncate px-2.5 py-1 text-xs",
+                          coolingBadge.className,
+                        )}
+                      >
+                        {coolingBadge.label}
+                      </Badge>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    sideOffset={8}
+                    collisionPadding={12}
+                    className="whitespace-pre-line text-left"
+                  >
+                    {coolingBadge.title}
+                  </TooltipContent>
+                </Tooltip>
               ) : null}
             </div>
           </div>

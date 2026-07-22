@@ -18,7 +18,17 @@ class _SWRRNode:
 class _RoutePlanner:
     def __init__(self, health: _HealthTracker) -> None:
         self._health = health
-        self._swrr_nodes: dict[tuple[str, str, str], _SWRRNode] = {}
+        self._swrr_nodes: dict[tuple[str, str, str, str], _SWRRNode] = {}
+
+    def reset_weights(self) -> None:
+        self._swrr_nodes.clear()
+
+    def discard_channels(self, channel_ids: set[str]) -> None:
+        if not channel_ids:
+            return
+        for node_key in list(self._swrr_nodes):
+            if node_key[1] in channel_ids:
+                self._swrr_nodes.pop(node_key, None)
 
     def select(
         self,
@@ -64,7 +74,13 @@ class _RoutePlanner:
             else self._swrr_pick_index(active, route_key, mutate=True)
         )
         primary = active[primary_index]
-        fallbacks = active[primary_index + 1 :] + active[:primary_index]
+        if strategy == RoutingStrategy.FAILOVER:
+            fallbacks = active[1:]
+        else:
+            fallbacks = [
+                target for index, target in enumerate(active) if index != primary_index
+            ]
+            fallbacks.sort(key=self._health.score, reverse=True)
         return RouteSelection(primary=primary, fallbacks=fallbacks)
 
     def build_route_state(
@@ -131,10 +147,6 @@ class _RoutePlanner:
             if self._health.is_target_available(target, now=now)
         ]
         active = self._prefer_native_targets(active, protocol)
-        if len(active) > 1:
-            active.sort(
-                key=lambda target: self._health.score(target.channel.id), reverse=True
-            )
         return active
 
     @staticmethod
@@ -172,26 +184,34 @@ class _RoutePlanner:
         total_weight = 0
         best_index = 0
         next_weights: list[int] = []
+        node_keys: list[tuple[str, str, str, str]] = []
 
         for index, target in enumerate(active):
-            node_key = (route_key, target.channel.id, target.credential_id or "")
+            node_key = (
+                route_key,
+                target.channel.id,
+                target.credential_id or "",
+                target.model_name or "",
+            )
+            node_keys.append(node_key)
             node = self._swrr_nodes.get(node_key)
             current_weight = node.current_weight if node is not None else 0
-            next_weight = current_weight + 1
+            effective_weight = max(int(self._health.score(target) * 1000), 1)
+            next_weight = current_weight + effective_weight
             next_weights.append(next_weight)
-            total_weight += 1
+            total_weight += effective_weight
             if next_weight > next_weights[best_index]:
                 best_index = index
 
         if mutate:
-            for index, target in enumerate(active):
-                node_key = (route_key, target.channel.id, target.credential_id or "")
+            active_node_keys = set(node_keys)
+            for node_key in list(self._swrr_nodes):
+                if node_key[0] == route_key and node_key not in active_node_keys:
+                    self._swrr_nodes.pop(node_key, None)
+            for index, node_key in enumerate(node_keys):
                 node = self._swrr_nodes.setdefault(node_key, _SWRRNode())
                 node.current_weight = next_weights[index]
-            best = active[best_index]
-            self._swrr_nodes[
-                (route_key, best.channel.id, best.credential_id or "")
-            ].current_weight -= total_weight
+            self._swrr_nodes[node_keys[best_index]].current_weight -= total_weight
         return best_index
 
     def _prepare_diagnostic_targets(
@@ -213,13 +233,6 @@ class _RoutePlanner:
                 if self._health.is_target_available(target, now=now)
                 else cooled
             ).append(target)
-        available.sort(
-            key=lambda target: self._health.score(target.channel.id), reverse=True
-        )
-        cooled.sort(
-            key=lambda target: self._health.score(target.channel.id), reverse=True
-        )
-
         if not available:
             return cooled, None
 
@@ -229,5 +242,11 @@ class _RoutePlanner:
             if strategy == RoutingStrategy.FAILOVER
             else self._swrr_pick_index(available, route_key, mutate=False)
         )
-        ordered_available = available[primary_index:] + available[:primary_index]
+        primary = available[primary_index]
+        remaining = [
+            target for index, target in enumerate(available) if index != primary_index
+        ]
+        if strategy != RoutingStrategy.FAILOVER:
+            remaining.sort(key=self._health.score, reverse=True)
+        ordered_available = [primary, *remaining]
         return ordered_available + cooled, ordered_available[0].channel.id

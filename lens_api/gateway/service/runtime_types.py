@@ -9,6 +9,7 @@ from fastapi import HTTPException, Response
 
 from ...models import ModelGroup, RoutingStrategy
 from ..router import RouteTarget
+from ..router.cooldown import ErrorCategory
 
 _STREAM_CONTENT_CAPTURE_LIMIT_BYTES = 1_000_000
 _STREAM_ERROR_SAMPLE_LIMIT = 20
@@ -117,6 +118,8 @@ class UpstreamRequestError(HTTPException):
         detail: Any,
         *,
         router_status_code: int | None,
+        router_error_category: ErrorCategory | None = None,
+        router_cooldown_seconds: float | None = None,
         error_type: str = "upstream_error",
         skip_route_failure: bool = False,
         stop_fallback: bool = False,
@@ -124,6 +127,8 @@ class UpstreamRequestError(HTTPException):
     ) -> None:
         super().__init__(status_code=status_code, detail=detail)
         self.router_status_code = router_status_code
+        self.router_error_category = router_error_category
+        self.router_cooldown_seconds = router_cooldown_seconds
         self.error_type = error_type
         self.skip_route_failure = skip_route_failure
         self.stop_fallback = stop_fallback
@@ -185,7 +190,10 @@ class StreamCapture:
     errors: list[str] = field(default_factory=list)
     request_log_id: int | None = None
     stream_started_at: float = 0.0
+    route_started_revision: int = -1
     error_status_code: int | None = None
+    error_category: ErrorCategory | None = None
+    skip_route_failure: bool = False
 
 
 def _capture_stream_content(
@@ -225,10 +233,19 @@ def _capture_stream_content(
 
 
 def _record_stream_error(
-    capture: StreamCapture, message: str, *, status_code: int | None = None
+    capture: StreamCapture,
+    message: str,
+    *,
+    status_code: int | None = None,
+    category: ErrorCategory | None = None,
+    skip_route_failure: bool = False,
 ) -> None:
     if status_code is not None:
         capture.error_status_code = status_code
+    if category is not None and capture.error_category is None:
+        capture.error_category = category
+    if skip_route_failure:
+        capture.skip_route_failure = True
     if not message or message in capture.errors:
         return
     if len(capture.errors) < _STREAM_ERROR_SAMPLE_LIMIT:

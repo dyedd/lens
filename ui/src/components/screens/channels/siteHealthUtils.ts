@@ -30,6 +30,15 @@ export type HealthPreviewChannel = {
 
 export const CHANNEL_HEALTH_BUCKET_COUNT = 12;
 
+function credentialNamesById(site: SiteRow, locale: Locale) {
+  return new Map(
+    site.credentials.map(
+      (item, index) =>
+        [item.id, credentialDisplayName(item, index, locale)] as const,
+    ),
+  );
+}
+
 function maxKeyCooldownSeconds(health: ChannelHealthRow | undefined) {
   if (!health?.key_health?.length) {
     return 0;
@@ -40,17 +49,22 @@ function maxKeyCooldownSeconds(health: ChannelHealthRow | undefined) {
   );
 }
 
+function maxModelCooldownSeconds(health: ChannelHealthRow | undefined) {
+  if (!health?.model_health?.length) {
+    return 0;
+  }
+  return Math.max(
+    0,
+    ...health.model_health.map((item) => item.cooldown_remaining_seconds),
+  );
+}
+
 function keyCooldownDetails(
   site: SiteRow,
   health: ChannelHealthRow,
   locale: Locale,
 ) {
-  const credentialById = new Map(
-    site.credentials.map((item) => [item.id, item] as const),
-  );
-  const credentialIndexById = new Map(
-    site.credentials.map((item, index) => [item.id, index] as const),
-  );
+  const credentialNameById = credentialNamesById(site, locale);
 
   return health.key_health
     .filter((item) => !item.available && item.cooldown_remaining_seconds > 0)
@@ -59,14 +73,28 @@ function keyCooldownDetails(
         right.cooldown_remaining_seconds - left.cooldown_remaining_seconds,
     )
     .map((item) => {
-      const credentialIndex = credentialIndexById.get(item.credential_id) ?? 0;
-      const credentialName = credentialDisplayName(
-        credentialById.get(item.credential_id),
-        credentialIndex,
-        locale,
-      );
+      const credentialName =
+        credentialNameById.get(item.credential_id) ??
+        (item.credential_id ||
+          (locale === "zh-CN" ? "默认凭证" : "Default credential"));
       const duration = formatCooldownDuration(item.cooldown_remaining_seconds);
       return `${credentialName} ${locale === "zh-CN" ? "冷却剩余" : "cooldown remaining"} ${duration}`;
+    });
+}
+
+function modelCooldownDetails(health: ChannelHealthRow, locale: Locale) {
+  return health.model_health
+    .filter((item) => !item.available && item.cooldown_remaining_seconds > 0)
+    .sort(
+      (left, right) =>
+        right.cooldown_remaining_seconds - left.cooldown_remaining_seconds,
+    )
+    .map((item) => {
+      const duration = formatCooldownDuration(item.cooldown_remaining_seconds);
+      const modelName =
+        item.model_name ||
+        (locale === "zh-CN" ? "未指定模型" : "Unspecified model");
+      return `${modelName} ${locale === "zh-CN" ? "冷却剩余" : "cooldown remaining"} ${duration}`;
     });
 }
 
@@ -81,19 +109,65 @@ export function resolveCoolingBadge(
   }
   if (health.cooldown_remaining_seconds > 0) {
     const duration = formatCooldownDuration(health.cooldown_remaining_seconds);
+    const details = [
+      ...modelCooldownDetails(health, locale),
+      ...keyCooldownDetails(site, health, locale),
+    ];
     return locale === "zh-CN"
       ? {
-          label: `冷却 ${duration}`,
-          title: `渠道冷却剩余 ${duration}`,
+          label: `渠道暂不可用 ${duration}`,
+          title: [
+            `没有可用的 Key + 模型绑定，最早恢复还需 ${duration}`,
+            ...details,
+          ].join("\n"),
           className: "border-transparent bg-destructive/12 text-destructive",
         }
       : {
-          label: `Cooling ${duration}`,
-          title: `Channel cooldown remaining ${duration}`,
+          label: `Channel unavailable ${duration}`,
+          title: [
+            `No key-model binding is available; earliest recovery in ${duration}`,
+            ...details,
+          ].join("\n"),
           className: "border-transparent bg-destructive/12 text-destructive",
         };
   }
+  const modelCooldownSeconds = maxModelCooldownSeconds(health);
   const keyCooldownSeconds = maxKeyCooldownSeconds(health);
+  if (modelCooldownSeconds > 0 && keyCooldownSeconds > 0) {
+    const duration = formatCooldownDuration(
+      Math.max(modelCooldownSeconds, keyCooldownSeconds),
+    );
+    const details = [
+      ...modelCooldownDetails(health, locale),
+      ...keyCooldownDetails(site, health, locale),
+    ].join("\n");
+    return locale === "zh-CN"
+      ? {
+          label: `模型与 Key 冷却 ${duration}`,
+          title: details,
+          className: "border-transparent bg-amber-500/12 text-amber-700",
+        }
+      : {
+          label: `Model & key cooling ${duration}`,
+          title: details,
+          className: "border-transparent bg-amber-500/12 text-amber-700",
+        };
+  }
+  if (modelCooldownSeconds > 0) {
+    const duration = formatCooldownDuration(modelCooldownSeconds);
+    const details = modelCooldownDetails(health, locale).join("\n");
+    return locale === "zh-CN"
+      ? {
+          label: `模型冷却 ${duration}`,
+          title: details || `模型冷却剩余 ${duration}`,
+          className: "border-transparent bg-amber-500/12 text-amber-700",
+        }
+      : {
+          label: `Model cooling ${duration}`,
+          title: details || `Model cooldown remaining ${duration}`,
+          className: "border-transparent bg-amber-500/12 text-amber-700",
+        };
+  }
   if (keyCooldownSeconds <= 0) {
     return null;
   }

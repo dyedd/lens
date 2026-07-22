@@ -10,6 +10,7 @@ from starlette.background import BackgroundTask
 from ...models import ChannelConfig, ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_request, needs_conversion
 from ..router import RouteTarget
+from ..router.cooldown import classify_error
 from .runtime_types import (
     AttemptLog,
     RoutingPlan,
@@ -59,18 +60,19 @@ async def _record_target_failure(
 ) -> Response | None:
     message = _format_channel_error(exc.detail)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
-    if not exc.skip_route_failure and not _is_request_too_large_error(
-        exc.status_code, message
+    category = exc.router_error_category or classify_error(exc.router_status_code)
+    if (
+        category is not None
+        and not exc.skip_route_failure
+        and not _is_request_too_large_error(exc.status_code, message)
     ):
         app_state.router.record_failure(
             channel.id,
             message,
-            status_code=exc.router_status_code,
+            category=category,
             credential_id=target.credential_id,
-            channel_keys=channel.keys,
-            threshold=int(runtime["circuit_breaker_threshold"]),
-            cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
-            max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+            model_name=target.model_name,
+            cooldown_seconds=exc.router_cooldown_seconds,
         )
     errors.append(message)
     failure_status_codes.append(exc.status_code)
@@ -139,6 +141,7 @@ async def _try_target(
 ) -> Response | None:
     channel = target.channel
     attempt_started_at = perf_counter()
+    route_started_revision = app_state.router.current_failure_revision()
 
     if needs_conversion(protocol, channel.protocol):
         try:
@@ -167,6 +170,7 @@ async def _try_target(
                     status_code=400,
                     detail=str(exc),
                     router_status_code=None,
+                    skip_route_failure=True,
                 ),
             )
     else:
@@ -245,6 +249,7 @@ async def _try_target(
                 status_code=exc.status_code,
                 detail=exc.detail,
                 router_status_code=exc.status_code,
+                skip_route_failure=True,
             ),
         )
     await log_ctx.update(
@@ -303,11 +308,20 @@ async def _try_target(
         )
     )
 
+    if not result.is_stream:
+        app_state.router.record_success(
+            channel.id,
+            credential_id=target.credential_id,
+            model_name=target.model_name,
+            started_revision=route_started_revision,
+        )
+
     merged_request_content = result.request_content or upstream_request_content
     if result.is_stream:
         if result.stream_capture is not None:
             result.stream_capture.request_log_id = log_ctx.request_log_id
             result.stream_capture.stream_started_at = log_ctx.started_at
+            result.stream_capture.route_started_revision = route_started_revision
         first_token_latency_ms = (
             result.stream_capture.first_token_latency_ms
             if result.stream_capture is not None
