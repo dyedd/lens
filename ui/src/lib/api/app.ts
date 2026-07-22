@@ -51,8 +51,21 @@ export type RouteSnapshot = {
     last_cooldown_seconds: number;
     score: number;
     available: boolean;
+    available_model_count: number;
+    cooled_model_count: number;
     available_key_count: number;
     cooled_key_count: number;
+    model_health: Array<{
+      model_name?: string | null;
+      consecutive_failures: number;
+      last_error?: string | null;
+      last_error_category?: string | null;
+      cooled_until: number;
+      cooldown_remaining_seconds: number;
+      last_cooldown_seconds: number;
+      score: number;
+      available: boolean;
+    }>;
     key_health: Array<{
       credential_id: string;
       consecutive_failures: number;

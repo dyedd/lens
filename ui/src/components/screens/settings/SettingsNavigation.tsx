@@ -81,11 +81,11 @@ export function createSettingsTabs(
     },
     {
       value: "circuit-breaker",
-      label: titleForLocale(locale, "熔断器", "Circuit breaker"),
+      label: titleForLocale(locale, "冷却与健康", "Cooldown and health"),
       description: titleForLocale(
         locale,
-        "失败阈值、冷却时间和健康评分参数。",
-        "Failure threshold, cooldown, and health scoring parameters.",
+        "模型与 Key 冷却、渠道可用性和健康排序参数。",
+        "Model and key cooldown, channel availability, and health ranking parameters.",
       ),
       icon: ShieldAlert,
     },

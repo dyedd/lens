@@ -8,6 +8,7 @@ from ...models import (
     ProtocolKind,
     RequestLogLifecycleStatus,
 )
+from ..router.cooldown import ErrorCategory, classify_error
 from ..converters import needs_conversion
 from .runtime_types import (
     StreamCapture,
@@ -17,21 +18,10 @@ from .runtime_types import (
 from .app_state import app_state, logger
 from .upstream_support import _format_channel_error
 from .routing_plan import _elapsed_ms
+from .stream_events import _join_stream_chunks, _stream_capture_usage
 from .stream_restore import _distill_stream_response_content
-from .usage import (
-    _EMPTY_USAGE,
-    _describe_stream_capture_issue,
-    _extract_stream_usage,
-    _extract_usage_from_payload,
-    _normalize_event_stream_newlines,
-    _parse_sse_payloads,
-)
-from .payload_serialization import _stringify_text_content
+from .usage import _describe_stream_capture_issue, _extract_stream_usage
 from .request_logger import _update_request_log
-from .stream_types import parse_chat_stream_payload, parse_anthropic_stream_payload
-
-
-from .stream_detection import _mark_stream_first_chunk
 
 
 async def _safe_estimate_cost(
@@ -207,34 +197,48 @@ async def _record_stream_route_health(
     capture_issue: str | None,
     attempts: list[dict[str, Any]],
 ) -> None:
-    credential_id = _last_attempt_credential_id(attempts)
+    credential_id, model_name = _last_attempt_target(attempts)
     if _is_client_stream_disconnect(capture):
         return
     if capture_issue is None:
-        app_state.router.record_success(channel.id, credential_id=credential_id)
+        app_state.router.record_success(
+            channel.id,
+            credential_id=credential_id,
+            model_name=model_name,
+            started_revision=(
+                capture.route_started_revision
+                if capture is not None and capture.route_started_revision >= 0
+                else None
+            ),
+        )
+        return
+    if capture is not None and capture.skip_route_failure:
         return
 
-    try:
-        runtime = await app_state.settings_repo.get_runtime_settings()
-        app_state.router.record_failure(
-            channel.id,
-            _format_channel_error(capture_issue),
-            status_code=capture.error_status_code if capture is not None else None,
-            credential_id=credential_id,
-            channel_keys=channel.keys,
-            threshold=int(runtime["circuit_breaker_threshold"]),
-            cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
-            max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
-        )
-    except Exception:
-        logger.warning("Failed to update stream route health", exc_info=True)
+    status_code = capture.error_status_code if capture is not None else None
+    category = capture.error_category if capture is not None else None
+    category = category or classify_error(status_code) or ErrorCategory.SERVER
+    app_state.router.record_failure(
+        channel.id,
+        _format_channel_error(capture_issue),
+        category=category,
+        credential_id=credential_id,
+        model_name=model_name,
+    )
 
 
-def _last_attempt_credential_id(attempts: list[dict[str, Any]]) -> str | None:
+def _last_attempt_target(
+    attempts: list[dict[str, Any]],
+) -> tuple[str | None, str | None]:
     if not attempts:
-        return None
-    credential_id = attempts[-1].get("credential_id")
-    return credential_id if isinstance(credential_id, str) and credential_id else None
+        return None, None
+    attempt = attempts[-1]
+    credential_id = attempt.get("credential_id")
+    model_name = attempt.get("model_name")
+    return (
+        credential_id if isinstance(credential_id, str) and credential_id else None,
+        model_name if isinstance(model_name, str) and model_name else None,
+    )
 
 
 def _is_client_stream_disconnect(capture: StreamCapture | None) -> bool:
@@ -254,15 +258,3 @@ def _stream_log_status_code(
     if capture is not None and capture.error_status_code is not None:
         return capture.error_status_code
     return result.status_code
-
-
-from .stream_transport import (
-    _capture_converted_stream_iterator,
-    _stream_upstream_iterator,
-)
-from .stream_events import (
-    _capture_stream_event_chunk,
-    _flush_stream_event_buffer,
-    _join_stream_chunks,
-    _stream_capture_usage,
-)

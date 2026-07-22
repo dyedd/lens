@@ -81,8 +81,8 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  channel                                                             │
 │                                                                      │
 │  Cooldown scope                                                      │
-│  401 / 403 / 429: cool down one credential, prefer same-site targets │
-│  5xx / timeout / network error: cool down the channel, switch target │
+│  401 / 403 cool the key; model faults cool only the upstream model    │
+│  The channel is unavailable only when no key-model binding remains   │
 │                                                                      │
 │  Request logs                                                        │
 │  Record lifecycle, tokens, cost, User-Agent, attempt chain, errors   │
@@ -276,6 +276,59 @@ Configure these values on `/settings`:
 | `first_token_timeout_seconds` | 180 seconds | Shared budget for the first deliverable response: first meaningful output for streaming requests, or the full response for non-streaming requests; range `0`–`86400`, where `0` is unlimited |
 | `stream_idle_timeout_seconds` | 180 seconds | Maximum wait between upstream chunks after the first meaningful streaming output; range `0`–`86400`, where `0` is unlimited                                                    |
 | `max_request_body_bytes`      | `32000000`  | Maximum request body sent upstream; `0` is unlimited                                                                                                                             |
+
+#### Cooldown and Health Scoring
+
+Cooldown is applied first to the smallest resource identified by the error. `401` / `403` cool the current key; `404`, `429`, `5xx`, upstream `408`, gateway timeouts, and network errors cool the actual upstream model. Other models and keys on the same channel remain routable. Ordinary `4xx` responses other than `401` / `403` / `404` / `408` / `429` usually describe the current request and do not affect cooldown. Standard `Retry-After` on `429` / `503` immediately cools the current model and takes precedence over category defaults within the maximum cooldown cap; `0` means immediate recovery.
+
+Channels do not maintain a separate cooldown timer. For every enabled key-model binding:
+
+```text
+binding available at = max(key cooldown deadline, model cooldown deadline)
+channel available     = any binding is available now
+channel recovers at   = min(all binding availability times)
+```
+
+The channel becomes unavailable only when no enabled key-model binding remains usable. Every configured model cooling and every enabled key cooling are two common cases; sparse bindings can also be exhausted by a combination of model and key cooldowns. The channel recovers as soon as one binding becomes usable, without an additional channel-level cooldown.
+
+After a category reaches its failure threshold, cooldown uses exponential backoff. Concurrent failures that finish during the same cooldown do not amplify the backoff again:
+
+```text
+first cooldown = min(category initial cooldown, maximum cooldown)
+next cooldown  = min(previous cooldown × backoff multiplier, maximum cooldown)
+```
+
+Before a category triggers cooldown, the failure window measures the gap between consecutive failures. After cooldown completes, the window starts when the target becomes available again. Failure counts and backoff state restart only after the target remains free of new failures for the full window, so an immediate post-cooldown failure correctly increases backoff instead of treating the cooldown wait itself as a stable period.
+
+An initial cooldown of `0` disables that category and clears its consecutive-failure count and backoff state. A maximum cooldown of `0` disables all automatic cooldown. A successful request resets only the current model and the key that actually succeeded; an older in-flight success that started before a newer failure cannot clear the newer cooldown. Concurrent failures during the same cooldown do not extend cooldown or amplify backoff, but they still prevent an older in-flight success from clearing newer failure evidence. Targets become eligible directly when cooldown expires; there is no separate half-open probe.
+
+Health scores use a sliding window keyed by channel and actual model. `ROUND_ROBIN` uses the score as a smooth weighted-round-robin weight and prefers healthier fallbacks, while `FAILOVER` preserves the configured model-group order:
+
+```text
+confidence   = min(1, window samples / full-confidence samples)
+health score = 1 - failure rate × maximum penalty ratio × confidence
+```
+
+Cooldown and health windows are runtime state in the current Lens process. They reset on restart and are not shared across workers or instances. Updating the contents of an existing key clears that key's old state; changing a channel endpoint, protocol, or request-affecting channel configuration clears that channel's state; changing the global proxy or upstream header rules clears all runtime cooldown and health windows.
+
+| Setting key                                  | Default | Description |
+| -------------------------------------------- | ------- | ----------- |
+| `circuit_breaker_threshold`                  | `3`     | Consecutive `5xx` failure threshold; positive integer; `503` with `Retry-After` triggers cooldown immediately |
+| `circuit_breaker_failure_window_seconds`     | `300`   | Same-category failure gap before cooldown and failure-free stability period after recovery, range `1`–`604800`, independent of health scoring |
+| `circuit_breaker_timeout_threshold`          | `2`     | Consecutive upstream `408` or gateway-timeout threshold; positive integer |
+| `circuit_breaker_network_threshold`          | `2`     | Consecutive network-error threshold; positive integer |
+| `circuit_breaker_cooldown`                   | `60`    | Initial `5xx` cooldown, range `0`–`604800` seconds |
+| `circuit_breaker_auth_cooldown`              | `300`   | Initial key cooldown for `401` / `403`, range `0`–`604800` seconds |
+| `circuit_breaker_not_found_cooldown`         | `300`   | Initial model cooldown for `404`, range `0`–`604800` seconds; affects only the current model when no broader fault domain is proven |
+| `circuit_breaker_rate_limit_cooldown`        | `60`    | Initial model cooldown for `429`, range `0`–`604800` seconds |
+| `circuit_breaker_timeout_cooldown`           | `60`    | Initial model cooldown for upstream `408` or gateway timeouts, range `0`–`604800` seconds |
+| `circuit_breaker_network_cooldown`           | `60`    | Initial model cooldown for network errors, range `0`–`604800` seconds |
+| `circuit_breaker_backoff_multiplier`         | `2`     | Subsequent cooldown multiplier, range `1`–`10` |
+| `circuit_breaker_max_cooldown`               | `600`   | Hard cap for all automatic cooldowns, range `0`–`604800` seconds; `0` disables them |
+| `health_scoring_enabled`                     | `true`  | Enables health-based ordering |
+| `health_window_seconds`                      | `300`   | Per-model sliding-window duration, range `1`–`604800` seconds |
+| `health_penalty_weight`                      | `0.5`   | Maximum health penalty ratio, range `0`–`1` |
+| `health_min_samples`                         | `10`    | Samples required for full confidence; positive integer |
 
 ### Docker Compose
 

@@ -8,6 +8,7 @@ from starlette.background import BackgroundTask
 from starlette.types import Receive, Scope, Send
 
 from ...models import ProtocolKind
+from ..router.cooldown import ErrorCategory
 from .app_state import logger
 from .runtime_types import (
     StreamCapture,
@@ -105,6 +106,7 @@ async def _stream_upstream_iterator(
             capture,
             str(exc),
             status_code=504,
+            category=ErrorCategory.TIMEOUT,
         )
         raise
     except httpx.HTTPError as exc:
@@ -112,6 +114,7 @@ async def _stream_upstream_iterator(
             capture,
             f"stream failed: {type(exc).__name__}: {exc}",
             status_code=502,
+            category=ErrorCategory.NETWORK,
         )
         raise
 
@@ -144,5 +147,6 @@ async def _capture_converted_stream_iterator(
             capture,
             f"stream conversion failed: {exc}",
             status_code=502,
+            skip_route_failure=True,
         )
         raise
