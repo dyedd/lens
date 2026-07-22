@@ -6,6 +6,7 @@ const BACKEND_BASE_URL = "http://127.0.0.1:18080";
 export default function nextConfig(phase: string): NextConfig {
   if (phase === PHASE_DEVELOPMENT_SERVER) {
     return {
+      allowedDevOrigins: ["127.0.0.1"],
       async rewrites() {
         return [
           {
