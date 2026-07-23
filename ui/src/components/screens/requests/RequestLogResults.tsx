@@ -40,7 +40,7 @@ export function RequestLogResults(props: RequestLogResultsProps) {
     onOpenDetail,
   } = props;
   return (
-    <div className="order-2 grid gap-4 xl:order-1">
+    <div className="order-2 flex min-w-0 flex-col gap-4 xl:order-1">
       {showModelPrefixFilter ? (
         <div className="rounded-2xl border bg-card px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex items-center justify-between gap-3 sm:mb-3">
