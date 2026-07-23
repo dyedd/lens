@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
 import httpx
 from fastapi import HTTPException
 
-from ...models import ChannelConfig, ProtocolKind
+from ...models import ChannelConfig
 from ..upstream_request import (
     build_upstream_headers,
     resolve_channel_api_key,
@@ -22,12 +21,6 @@ from .upstream_support import (
     _format_http_response_error,
     _resolve_http_client,
 )
-
-
-@dataclass(slots=True)
-class _ModelListItem:
-    model_name: str
-    protocols: list[ProtocolKind]
 
 
 async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
@@ -76,14 +69,8 @@ def _compile_model_list_pattern(match_regex: str) -> re.Pattern[str]:
 
 
 def _parse_model_list(payload: dict[str, Any], match_regex: str) -> list[str]:
-    return [item.model_name for item in _parse_model_items(payload, match_regex)]
-
-
-def _parse_model_items(
-    payload: dict[str, Any], match_regex: str
-) -> list[_ModelListItem]:
-    unique_items: dict[str, _ModelListItem] = {}
     names: list[str] = []
+    seen: set[str] = set()
     if "data" in payload:
         items = payload["data"]
     elif "models" in payload:
@@ -94,88 +81,18 @@ def _parse_model_items(
         raise ValueError("Model list response data/models must be a list")
     for item in items:
         if not isinstance(item, dict):
-            raise ValueError("Model list item must be an object")
-        value = str(item.get("id") or item.get("name") or "")
-        value = value.strip()
+            continue
+        value = str(item.get("id") or "").strip()
         if not value:
-            raise ValueError("Model list item missing model name")
-        if value not in unique_items:
+            value = str(item.get("name") or "").strip()
+        if not value:
+            continue
+        if value not in seen:
+            seen.add(value)
             names.append(value)
-            unique_items[value] = _ModelListItem(model_name=value, protocols=[])
-        existing = unique_items[value]
-        for protocol in _infer_model_protocols(item):
-            if protocol not in existing.protocols:
-                existing.protocols.append(protocol)
 
     if not match_regex.strip():
-        return [unique_items[name] for name in names]
+        return names
 
     pattern = _compile_model_list_pattern(match_regex)
-    return [unique_items[name] for name in names if pattern.search(name)]
-
-
-def _infer_model_protocols(item: Mapping[str, Any]) -> list[ProtocolKind]:
-    protocols: list[ProtocolKind] = []
-    for key in ("supported_protocols", "protocols"):
-        raw_values = item.get(key)
-        if isinstance(raw_values, list):
-            for raw_value in raw_values:
-                _append_inferred_protocol(protocols, raw_value)
-
-    capabilities = item.get("capabilities")
-    if isinstance(capabilities, Mapping):
-        if capabilities.get("chat") is True:
-            _append_inferred_protocol(protocols, ProtocolKind.OPENAI_CHAT)
-        if capabilities.get("responses") is True:
-            _append_inferred_protocol(protocols, ProtocolKind.OPENAI_RESPONSES)
-        if capabilities.get("embeddings") is True:
-            _append_inferred_protocol(protocols, ProtocolKind.OPENAI_EMBEDDING)
-        if capabilities.get("rerank") is True:
-            _append_inferred_protocol(protocols, ProtocolKind.RERANK)
-
-    for key in ("endpoint", "type"):
-        raw_value = item.get(key)
-        if isinstance(raw_value, str):
-            _append_inferred_protocol(protocols, raw_value)
-    return protocols
-
-
-def _append_inferred_protocol(protocols: list[ProtocolKind], raw_value: Any) -> None:
-    protocol = _coerce_model_protocol(raw_value)
-    if protocol is not None and protocol not in protocols:
-        protocols.append(protocol)
-
-
-def _coerce_model_protocol(raw_value: Any) -> ProtocolKind | None:
-    if isinstance(raw_value, ProtocolKind):
-        return raw_value
-    if not isinstance(raw_value, str):
-        return None
-    normalized = raw_value.strip().lower().replace("-", "_").replace(".", "_")
-    aliases = {
-        "chat": ProtocolKind.OPENAI_CHAT,
-        "chat_completions": ProtocolKind.OPENAI_CHAT,
-        "completions": ProtocolKind.OPENAI_CHAT,
-        "openai_chat": ProtocolKind.OPENAI_CHAT,
-        "responses": ProtocolKind.OPENAI_RESPONSES,
-        "response": ProtocolKind.OPENAI_RESPONSES,
-        "openai_responses": ProtocolKind.OPENAI_RESPONSES,
-        "embedding": ProtocolKind.OPENAI_EMBEDDING,
-        "embeddings": ProtocolKind.OPENAI_EMBEDDING,
-        "openai_embedding": ProtocolKind.OPENAI_EMBEDDING,
-        "image": ProtocolKind.OPENAI_IMAGE,
-        "images": ProtocolKind.OPENAI_IMAGE,
-        "openai_image": ProtocolKind.OPENAI_IMAGE,
-        "rerank": ProtocolKind.RERANK,
-        "reranking": ProtocolKind.RERANK,
-        "anthropic": ProtocolKind.ANTHROPIC,
-        "messages": ProtocolKind.ANTHROPIC,
-        "gemini": ProtocolKind.GEMINI,
-        "generate_content": ProtocolKind.GEMINI,
-    }
-    if normalized in aliases:
-        return aliases[normalized]
-    try:
-        return ProtocolKind(normalized)
-    except ValueError:
-        return None
+    return [name for name in names if pattern.search(name)]
