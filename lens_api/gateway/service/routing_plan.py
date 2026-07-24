@@ -9,14 +9,6 @@ from ...models import ChannelConfig, ModelGroupItemState, ProtocolKind
 from ..converters import can_reach_protocol
 from ..router import RouteTarget
 from .app_state import app_state
-from .routing_request import (
-    _apply_deepseek_thinking_compat,
-    _apply_global_param_override,
-    _apply_param_override,
-    _extract_request_reasoning_effort,
-    _is_deepseek_thinking_target,
-    _prepare_upstream_body,
-)
 from .runtime_types import RoutingPlan, _GatewayTimeoutError
 
 

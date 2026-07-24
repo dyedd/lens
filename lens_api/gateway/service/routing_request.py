@@ -11,19 +11,6 @@ from ...models import ChannelConfig, ProtocolKind
 from .runtime_types import UpstreamRequestError
 
 
-def _prepare_upstream_body(
-    protocol: ProtocolKind, body: dict[str, Any], target_model_name: str | None
-) -> dict[str, Any]:
-    """Prepare a request body for the selected upstream model."""
-    payload = deepcopy(body)
-    if protocol == ProtocolKind.OPENAI_RESPONSES and "input" in payload:
-        payload["input"] = _normalize_openai_responses_input(payload.get("input"))
-    if not target_model_name:
-        return payload
-    payload["model"] = target_model_name
-    return payload
-
-
 def _extract_request_reasoning_effort(
     *bodies: Mapping[str, Any] | None,
 ) -> str | None:
@@ -258,32 +245,3 @@ def _param_override_rule_matches(rule: Mapping[str, Any], model_name: str) -> bo
         except re.error:
             return False
     return model_name in rule.get("models", [])
-
-
-def _normalize_openai_responses_input(value: Any) -> Any:
-    if isinstance(value, str):
-        return [
-            {
-                "role": "user",
-                "content": [{"type": "input_text", "text": value.strip()}],
-            }
-        ]
-    if not isinstance(value, list):
-        return value
-
-    normalized_items: list[Any] = []
-    for item in value:
-        if isinstance(item, str):
-            normalized_items.append(
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": item.strip()}],
-                }
-            )
-        elif isinstance(item, dict) and isinstance(item.get("content"), str):
-            normalized = dict(item)
-            normalized["content"] = [{"type": "input_text", "text": item["content"]}]
-            normalized_items.append(normalized)
-        else:
-            normalized_items.append(item)
-    return normalized_items
