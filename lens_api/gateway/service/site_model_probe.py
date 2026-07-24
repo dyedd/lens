@@ -19,7 +19,8 @@ from ..upstream_request import (
 )
 from .app_state import app_state
 from .payload_serialization import _decode_content_bytes
-from .routing_plan import _apply_param_override, _elapsed_ms
+from .routing_plan import _elapsed_ms
+from .routing_request import _apply_param_override
 from .runtime_types import UpstreamRequestError
 from .site_model_output import (
     extract_site_model_output,

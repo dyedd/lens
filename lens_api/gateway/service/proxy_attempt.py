@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from time import perf_counter
 from typing import Any
 
@@ -11,19 +12,8 @@ from ...models import ChannelConfig, ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_request, needs_conversion
 from ..router import RouteTarget
 from ..router.cooldown import classify_error
-from .runtime_types import (
-    AttemptLog,
-    RoutingPlan,
-    UpstreamRequestError,
-    _RequestDeadline,
-    _attempt_logs_to_dicts,
-)
 from .app_state import app_state
 from .error_responses import _protocol_error_response
-from .upstream_support import (
-    _effective_user_agent_from_headers,
-    _format_channel_error,
-)
 from .payload_serialization import _dump_log_json
 from .proxy_upstream import (
     _call_channel,
@@ -31,16 +21,28 @@ from .proxy_upstream import (
 )
 from .request_logger import _RequestLogger
 from .routing_plan import (
+    _elapsed_ms,
+    _is_request_too_large_error,
+)
+from .routing_request import (
     _apply_deepseek_thinking_compat,
     _apply_global_param_override,
     _apply_param_override,
-    _elapsed_ms,
     _extract_request_reasoning_effort,
     _is_deepseek_thinking_target,
-    _is_request_too_large_error,
-    _prepare_upstream_body,
+)
+from .runtime_types import (
+    AttemptLog,
+    RoutingPlan,
+    UpstreamRequestError,
+    _attempt_logs_to_dicts,
+    _RequestDeadline,
 )
 from .stream_logging import _record_stream_request_log
+from .upstream_support import (
+    _effective_user_agent_from_headers,
+    _format_channel_error,
+)
 
 
 async def _record_target_failure(
@@ -174,7 +176,9 @@ async def _try_target(
                 ),
             )
     else:
-        upstream_body = _prepare_upstream_body(protocol, body, target.model_name)
+        upstream_body = deepcopy(body)
+        if target.model_name:
+            upstream_body["model"] = target.model_name
     try:
         upstream_body = _apply_global_param_override(
             upstream_body,
