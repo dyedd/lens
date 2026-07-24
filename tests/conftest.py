@@ -53,8 +53,11 @@ def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
     import lens_api.gateway.service.auth as auth_mod
     import lens_api.gateway.service.errors as errors_mod
     import lens_api.gateway.service.lifecycle as lifecycle_mod
+    import lens_api.gateway.service.proxy_attempt as proxy_attempt_mod
+    import lens_api.gateway.service.proxy_flow as proxy_flow_mod
     import lens_api.gateway.service.proxy_routes as proxy_routes_mod
     import lens_api.gateway.service.request_logger as request_logger_mod
+    import lens_api.gateway.service.routing_plan as routing_plan_mod
     import lens_api.gateway.service.app_state as state_mod
 
     for module in (
@@ -71,8 +74,11 @@ def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
         auth_mod,
         errors_mod,
         lifecycle_mod,
+        proxy_attempt_mod,
+        proxy_flow_mod,
         proxy_routes_mod,
         request_logger_mod,
+        routing_plan_mod,
         state_mod,
     ):
         monkeypatch.setattr(module, "app_state", state)

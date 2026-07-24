@@ -1,22 +1,21 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
+import httpx
 import pytest
-from fastapi.responses import JSONResponse
-
 from conftest import (
-    assert_error,
-    create_site_group_and_key,
     gateway_headers,
     json_response,
     run_async,
     valid_site_payload,
 )
+from fastapi.responses import JSONResponse
+
 from lens_api.core.runtime_channel_ids import compose_runtime_channel_id
 from lens_api.models import ProtocolKind
 from lens_api.persistence.entities import GatewayApiKeyEntity
-from lens_api.persistence.shared import SETTING_MODEL_LIST_COMPAT_MODE_ENABLED
 
 
 def _protocol_group_item(protocol: str, model_name: str) -> dict[str, Any]:
@@ -173,7 +172,7 @@ def test_proxy_json_endpoints_forward_expected_protocol_and_body(
         )
         return json_response({"ok": True, "protocol": protocol.value})
 
-    import lens_api.gateway.service.proxy_routes as proxy_routes
+    from lens_api.gateway.service import proxy_routes
 
     monkeypatch.setattr(proxy_routes, "_proxy_protocol", fake_proxy)
     headers = {**gateway_headers(key), "User-Agent": "lens-tests"}
@@ -247,3 +246,94 @@ def test_proxy_json_endpoints_forward_expected_protocol_and_body(
 
     image_call = next(item for item in calls if item["protocol"] == "openai_image")
     assert image_call["path_suffix"] == "images/generations"
+
+
+def test_responses_proxy_preserves_input_shape(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    captured_bodies: list[dict[str, Any]] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        captured_bodies.append(json.loads(body_bytes))
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_1",
+                "object": "response",
+                "model": "gpt-5.6-sol",
+                "output": [],
+                "usage": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_RESPONSES.value],
+            model_name="gpt-5.6-sol",
+        )
+    )
+    create_model_group(
+        name="response-model",
+        protocols=[ProtocolKind.OPENAI_RESPONSES.value],
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.OPENAI_RESPONSES
+                ),
+                "credential_id": "cred-1",
+                "model_name": "gpt-5.6-sol",
+                "enabled": True,
+            }
+        ],
+    )
+    key = create_gateway_key()
+    input_items = [
+        {"role": "user", "content": "Use the lookup tool."},
+        {
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "lookup",
+            "arguments": '{"query":"lens"}',
+        },
+        {"role": "assistant", "content": ""},
+        {
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": "result",
+        },
+    ]
+    request_bodies = [
+        {"model": "response-model", "input": "  Keep surrounding whitespace.  "},
+        {"model": "response-model", "input": input_items},
+    ]
+
+    for body in request_bodies:
+        response = client.post(
+            "/v1/responses",
+            headers=gateway_headers(key),
+            json=body,
+        )
+        assert response.status_code == 200, response.text
+
+    assert captured_bodies == [
+        {"model": "gpt-5.6-sol", "input": body["input"]} for body in request_bodies
+    ]
