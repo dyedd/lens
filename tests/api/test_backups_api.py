@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from conftest import assert_error, seed_request_log, valid_site_payload
 
 
@@ -86,3 +88,61 @@ def test_import_backup_accepts_exported_bundle(
 
     assert response.status_code == 200
     assert "rows_affected" in response.json()
+
+
+def test_backup_round_trip_preserves_site_master_enabled(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    site = create_site(valid_site_payload())
+    update_response = client.put(
+        f"/api/admin/sites/{site['id']}/enabled",
+        headers=admin_headers,
+        json={"enabled": False},
+    )
+    assert update_response.status_code == 200
+    exported = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert exported.status_code == 200
+    assert exported.json()["sites"][0]["enabled"] is False
+
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("backup.json", exported.content, "application/json")},
+    )
+
+    assert response.status_code == 200
+    restored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert restored_site["enabled"] is False
+    assert restored_site["protocols"][0]["enabled"] is True
+
+
+def test_import_legacy_backup_restores_protocols_under_disabled_site(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(valid_site_payload())
+    exported = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert exported.status_code == 200
+    payload = exported.json()
+    payload["sites"][0].pop("enabled")
+    payload["sites"][0]["protocols"][0]["enabled"] = False
+
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={
+            "file": (
+                "backup.json",
+                json.dumps(payload).encode(),
+                "application/json",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    restored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert restored_site["enabled"] is False
+    assert restored_site["protocols"][0]["enabled"] is True

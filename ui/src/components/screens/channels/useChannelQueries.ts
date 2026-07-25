@@ -10,7 +10,7 @@ import type {
 } from "@/lib/api";
 import { apiRequest } from "@/lib/api";
 import {
-  isSiteEnabled,
+  isSiteProtocolConfigEnabled,
   siteEndpointSummary,
   siteModelCount,
   siteSubtitle,
@@ -74,13 +74,15 @@ export function useChannelQueries(locale: Locale) {
       (sites ?? []).map((site) => ({
         ...site,
         subtitle: siteSubtitle(site, locale),
-        enabled_protocol_channel_count: site.protocols.reduce(
-          (total, protocolConfig) =>
-            protocolConfig.enabled
-              ? total + protocolConfig.protocols.length
-              : total,
-          0,
-        ),
+        enabled_protocol_channel_count: site.enabled
+          ? site.protocols.reduce(
+              (total, protocolConfig) =>
+                isSiteProtocolConfigEnabled(site, protocolConfig)
+                  ? total + protocolConfig.protocols.length
+                  : total,
+              0,
+            )
+          : 0,
         model_count: siteModelCount(site),
         endpoint_summary: siteEndpointSummary(site, locale),
       })),
@@ -89,13 +91,14 @@ export function useChannelQueries(locale: Locale) {
   const visibleSites = useMemo<SiteRow[]>(() => {
     const keyword = search.trim().toLowerCase();
     const filtered = siteRows.filter((site) => {
-      if (statusFilter === "enabled" && !isSiteEnabled(site)) return false;
-      if (statusFilter === "disabled" && isSiteEnabled(site)) return false;
+      if (statusFilter === "enabled" && !site.enabled) return false;
+      if (statusFilter === "disabled" && site.enabled) return false;
       if (
         protocolFilter !== "all" &&
         !site.protocols.some(
           (config) =>
-            config.enabled && config.protocols.includes(protocolFilter),
+            isSiteProtocolConfigEnabled(site, config) &&
+            config.protocols.includes(protocolFilter),
         )
       ) {
         return false;

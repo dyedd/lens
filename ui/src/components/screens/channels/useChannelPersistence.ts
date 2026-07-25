@@ -113,45 +113,13 @@ export function useChannelPersistence({
   async function toggleSiteEnabled(site: Site, enabled: boolean) {
     setBusyId(site.id);
     try {
-      const updatedSite = await apiRequest<Site>(`/admin/sites/${site.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          name: site.name,
-          base_urls: site.base_urls.map((item) => ({
-            id: item.id,
-            url: item.url,
-            name: item.name,
-            enabled: item.enabled,
-            supported_protocols: item.supported_protocols ?? [],
-          })),
-          credentials: site.credentials.map((item) => ({
-            id: item.id,
-            name: item.name,
-            api_key: item.api_key,
-            enabled: item.enabled,
-          })),
-          protocols: site.protocols.map((config) => ({
-            id: config.id,
-            name: config.name,
-            protocols: config.protocols,
-            enabled,
-            headers: config.headers,
-            proxy_mode: config.proxy_mode,
-            channel_proxy: config.channel_proxy,
-            param_override: config.param_override,
-            match_regex: config.match_regex,
-            base_url_id: config.base_url_id,
-            credential_id: config.credential_id,
-            models: config.models.map((model) => ({
-              id: model.id,
-              protocol: model.protocol,
-              credential_id: model.credential_id,
-              model_name: model.model_name,
-              enabled: model.enabled,
-            })),
-          })),
-        }),
-      });
+      const updatedSite = await apiRequest<Site>(
+        `/admin/sites/${site.id}/enabled`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ enabled }),
+        },
+      );
       queryClient.setQueryData<Site[]>(["sites"], (current) =>
         (current ?? []).map((item) =>
           item.id === updatedSite.id ? updatedSite : item,

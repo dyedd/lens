@@ -78,6 +78,7 @@ export type SiteProtocolConfigInput = {
 export type Site = {
   id: string;
   name: string;
+  enabled: boolean;
   base_urls: SiteBaseUrl[];
   credentials: SiteCredential[];
   protocols: SiteProtocolConfig[];

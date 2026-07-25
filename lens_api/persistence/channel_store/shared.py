@@ -23,6 +23,7 @@ from ...models import (
     SiteCreate,
     SiteCredential,
     SiteCredentialInput,
+    SiteEnabledUpdate,
     SiteImportItem,
     SiteImportModelInput,
     SiteModel,

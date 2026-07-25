@@ -52,6 +52,7 @@ class SiteEntity(Base):
     name: Mapped[str] = mapped_column(
         String(120), nullable=False, unique=True, index=True
     )
+    enabled: Mapped[int] = enabled_column()
 
 
 class SiteBaseUrlEntity(Base):

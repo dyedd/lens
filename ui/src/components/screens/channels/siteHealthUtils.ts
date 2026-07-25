@@ -7,6 +7,7 @@ import { compactProtocolLabel } from "@/lib/protocols";
 import {
   credentialDisplayName,
   formatCooldownDuration,
+  isSiteProtocolConfigEnabled,
   protocolConfigDisplayName,
   type Locale,
   type SiteRow,
@@ -191,7 +192,7 @@ export function siteHealthPreviewChannels(
   site: SiteRow,
 ): HealthPreviewChannel[] {
   return site.protocols.flatMap((protocolConfig, protocolConfigIndex) => {
-    if (!protocolConfig.enabled) {
+    if (!isSiteProtocolConfigEnabled(site, protocolConfig)) {
       return [];
     }
     return protocolConfig.protocols.map((protocol) => ({

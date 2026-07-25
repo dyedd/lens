@@ -38,6 +38,7 @@ from .sites import (
     sync_channel_models,
     test_site_model,
     update_site,
+    update_site_enabled,
 )
 
 __all__ = [
@@ -78,4 +79,5 @@ __all__ = [
     "update_model_price",
     "update_settings",
     "update_site",
+    "update_site_enabled",
 ]

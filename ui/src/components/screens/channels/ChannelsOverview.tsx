@@ -27,7 +27,6 @@ import { ChannelFiltersPanel } from "./ChannelFiltersPanel";
 import { SiteHealthPreview } from "./SiteHealthPreview";
 import { SiteFavicon } from "./SiteFavicon";
 import {
-  isSiteEnabled,
   siteProtocols,
   type ChannelSort,
   type ChannelStatusFilter,
@@ -154,7 +153,7 @@ export function ChannelsOverview({
                       onKeyDown={(event) => event.stopPropagation()}
                     >
                       <Switch
-                        checked={isSiteEnabled(site)}
+                        checked={site.enabled}
                         disabled={busyId === site.id}
                         onCheckedChange={(checked) =>
                           void onToggleSiteEnabled(site, checked)

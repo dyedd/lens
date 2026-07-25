@@ -1,4 +1,4 @@
-import type { Site } from "@/lib/api";
+import type { Site, SiteProtocolConfig } from "@/lib/api";
 import { protocolLabel } from "@/lib/protocols";
 
 /** Formats a cooldown duration as compact hours, minutes, and seconds. */
@@ -68,9 +68,12 @@ export function siteModelCount(site: Site) {
   );
 }
 
-/** Reports whether a site has at least one enabled protocol configuration. */
-export function isSiteEnabled(site: Site) {
-  return site.protocols.some((protocolConfig) => protocolConfig.enabled);
+/** Reports whether a protocol configuration is enabled at every owning level. */
+export function isSiteProtocolConfigEnabled(
+  site: Site,
+  protocolConfig: SiteProtocolConfig,
+) {
+  return site.enabled && protocolConfig.enabled;
 }
 
 /** Builds ordered favicon candidates for a valid site URL. */

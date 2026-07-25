@@ -13,6 +13,7 @@ from ....models import (
     SiteBatchImportResult,
     SiteConfig,
     SiteCreate,
+    SiteEnabledUpdate,
     SiteModelFetchItem,
     SiteModelFetchRequest,
     SiteModelTestRequest,
@@ -63,6 +64,15 @@ async def update_site(
 ) -> SiteConfig:
     """Update an upstream site."""
     return await app_state.channel_store.update_site(site_id, payload)
+
+
+async def update_site_enabled(
+    site_id: str,
+    payload: SiteEnabledUpdate,
+    _: Any = Depends(get_current_admin),
+) -> SiteConfig:
+    """Update an upstream site's master enabled state."""
+    return await app_state.channel_store.update_site_enabled(site_id, payload)
 
 
 async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Response:
