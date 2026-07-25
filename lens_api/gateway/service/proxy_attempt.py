@@ -17,6 +17,7 @@ from .error_responses import _protocol_error_response
 from .payload_serialization import _dump_log_json
 from .proxy_upstream import (
     _call_channel,
+    _client_stream_includes_usage,
     _prepare_channel_request,
 )
 from .request_logger import _RequestLogger
@@ -278,6 +279,7 @@ async def _try_target(
             credential_id=target.credential_id,
             pricing_group_name=plan.resolved_group_name,
             client_protocol=protocol,
+            include_stream_usage=_client_stream_includes_usage(protocol, body),
             log_body_enabled=log_body_enabled,
             deadline=deadline,
             global_proxy_url=str(runtime["proxy_url"]),

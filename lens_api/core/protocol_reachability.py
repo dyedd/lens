@@ -6,6 +6,7 @@ SUPPORTED_CONVERSIONS: frozenset[tuple[str, str]] = frozenset(
     {
         (ProtocolKind.OPENAI_CHAT.value, ProtocolKind.ANTHROPIC.value),
         (ProtocolKind.OPENAI_CHAT.value, ProtocolKind.OPENAI_RESPONSES.value),
+        (ProtocolKind.OPENAI_RESPONSES.value, ProtocolKind.OPENAI_CHAT.value),
     }
 )
 

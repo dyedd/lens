@@ -8,7 +8,11 @@ from .app_state import app_state, logger
 from .payload_serialization import _stringify_text_content
 from .routing_plan import _elapsed_ms
 from .runtime_types import StreamCapture
-from .stream_types import parse_chat_stream_payload, parse_anthropic_stream_payload
+from .stream_types import (
+    OPENAI_RESPONSES_TERMINAL_EVENTS,
+    parse_anthropic_stream_payload,
+    parse_chat_stream_payload,
+)
 
 
 def _stream_payload_has_output(protocol: ProtocolKind, payload: dict[str, Any]) -> bool:
@@ -71,7 +75,7 @@ def _record_stream_completion(
         )
         return
     if protocol == ProtocolKind.OPENAI_RESPONSES:
-        if payload.get("type") == "response.completed":
+        if payload.get("type") in OPENAI_RESPONSES_TERMINAL_EVENTS:
             capture.protocol_completed = True
         return
     if protocol == ProtocolKind.ANTHROPIC:
