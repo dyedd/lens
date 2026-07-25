@@ -6,7 +6,7 @@ from ._shared import responses_input_to_chat_messages, responses_tools_to_chat_t
 from ._sse import (
     FINISH_REASON_CHAT_TO_RESPONSES,
     format_sse_event,
-    parse_chat_sse_stream,
+    parse_sse_json_stream,
 )
 
 
@@ -133,7 +133,7 @@ async def chat_stream_to_responses_stream(
         },
     )
 
-    async for payload in parse_chat_sse_stream(raw_iterator):
+    async for payload in parse_sse_json_stream(raw_iterator):
         if payload.get("model"):
             resolved_model = payload["model"]
         usage = payload.get("usage") or {}

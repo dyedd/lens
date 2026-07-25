@@ -8,6 +8,7 @@ import httpx
 
 from ...models import ProtocolKind
 from .runtime_types import StreamCapture
+from .stream_types import OPENAI_RESPONSES_TERMINAL_EVENTS
 
 
 def _usage_mapping(value: Any, key: str = "usage") -> Mapping[str, Any]:
@@ -245,7 +246,7 @@ def _stream_completion_message(protocol: ProtocolKind) -> str:
     if protocol == ProtocolKind.OPENAI_CHAT:
         return "stream ended before finish_reason"
     if protocol == ProtocolKind.OPENAI_RESPONSES:
-        return "stream ended before response.completed"
+        return "stream ended before Responses terminal event"
     if protocol == ProtocolKind.ANTHROPIC:
         return "stream ended before message_stop"
     return "stream ended before finishReason"
@@ -257,7 +258,7 @@ def _extract_usage_from_payload(
     if protocol == ProtocolKind.OPENAI_CHAT:
         return _openai_chat_usage(payload)
     if protocol == ProtocolKind.OPENAI_RESPONSES:
-        if payload.get("type") == "response.completed":
+        if payload.get("type") in OPENAI_RESPONSES_TERMINAL_EVENTS:
             response_payload = _usage_mapping(payload.get("response"))
             return _openai_responses_usage(
                 response_payload,

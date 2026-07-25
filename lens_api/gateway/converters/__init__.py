@@ -13,6 +13,11 @@ from .chat_to_responses import (
     chat_stream_to_responses_stream,
     responses_request_to_chat,
 )
+from .chat_request_to_responses import chat_request_to_responses
+from .responses_to_chat import (
+    responses_response_to_chat,
+    responses_stream_to_chat_stream,
+)
 
 __all__ = [
     "can_reach_protocol",
@@ -41,6 +46,11 @@ def convert_request(
         and channel_protocol == ProtocolKind.OPENAI_CHAT
     ):
         result = responses_request_to_chat(body)
+    elif (
+        client_protocol == ProtocolKind.OPENAI_CHAT
+        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
+    ):
+        result = chat_request_to_responses(body)
     else:
         raise ValueError(
             f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
@@ -68,6 +78,11 @@ def convert_response(
         and channel_protocol == ProtocolKind.OPENAI_CHAT
     ):
         converted = chat_response_to_responses(chat_data, original_model)
+    elif (
+        client_protocol == ProtocolKind.OPENAI_CHAT
+        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
+    ):
+        converted = responses_response_to_chat(chat_data, original_model)
     else:
         raise ValueError(
             f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
@@ -80,6 +95,8 @@ async def convert_stream_iterator(
     channel_protocol: ProtocolKind,
     raw_iterator: AsyncIterator[bytes],
     original_model: str = "",
+    *,
+    include_usage: bool = False,
 ) -> AsyncIterator[bytes]:
     """Convert an upstream byte stream into the client protocol stream."""
     if (
@@ -96,6 +113,14 @@ async def convert_stream_iterator(
     ):
         async for chunk in chat_stream_to_responses_stream(
             raw_iterator, original_model
+        ):
+            yield chunk
+    elif (
+        client_protocol == ProtocolKind.OPENAI_CHAT
+        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
+    ):
+        async for chunk in responses_stream_to_chat_stream(
+            raw_iterator, original_model, include_usage=include_usage
         ):
             yield chunk
     else:

@@ -147,6 +147,5 @@ async def _capture_converted_stream_iterator(
             capture,
             f"stream conversion failed: {exc}",
             status_code=502,
-            skip_route_failure=True,
         )
         raise

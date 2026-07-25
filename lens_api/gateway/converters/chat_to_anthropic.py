@@ -10,7 +10,7 @@ from ._shared import (
 from ._sse import (
     FINISH_REASON_CHAT_TO_ANTHROPIC,
     format_sse_event,
-    parse_chat_sse_stream,
+    parse_sse_json_stream,
 )
 
 
@@ -123,7 +123,7 @@ async def chat_stream_to_anthropic_stream(
     )
     yield format_sse_event("ping", {"type": "ping"})
 
-    async for payload in parse_chat_sse_stream(raw_iterator):
+    async for payload in parse_sse_json_stream(raw_iterator):
         usage = payload.get("usage") or {}
         if usage.get("completion_tokens"):
             output_tokens = usage["completion_tokens"]
