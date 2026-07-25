@@ -49,17 +49,22 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml uv.lock README.md alembic.ini ./
-COPY lens_api ./lens_api
-COPY migrations ./migrations
-COPY scripts/docker/app-entrypoint.sh /usr/local/bin/app-entrypoint
-COPY --from=ui-builder /app/ui/out /app/ui
-
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --link-mode=copy \
-    && chmod +x /usr/local/bin/app-entrypoint \
+    uv sync --locked --no-dev --no-editable --no-install-project --link-mode=copy \
     && mkdir -p /app/data
+
+COPY README.md ./
+COPY lens_api ./lens_api
+RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable --link-mode=copy
+
+COPY alembic.ini ./
+COPY migrations ./migrations
+COPY --chmod=755 scripts/docker/app-entrypoint.sh /usr/local/bin/app-entrypoint
+COPY --from=ui-builder /app/ui/out /app/ui
 
 EXPOSE 3000
 
