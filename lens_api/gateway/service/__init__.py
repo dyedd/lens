@@ -68,6 +68,7 @@ from .admin import (
     update_model_price,
     update_settings,
     update_site,
+    update_site_enabled,
 )
 from .auth import (
     change_password,
@@ -186,4 +187,5 @@ __all__ = [
     "update_profile",
     "update_settings",
     "update_site",
+    "update_site_enabled",
 ]

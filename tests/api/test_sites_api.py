@@ -16,6 +16,12 @@ def test_list_sites_requires_admin(client) -> None:
     assert_error(response, 401, "Not authenticated")
 
 
+def test_update_site_enabled_requires_admin(client) -> None:
+    response = client.put("/api/admin/sites/missing/enabled", json={"enabled": False})
+
+    assert_error(response, 401, "Not authenticated")
+
+
 def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
@@ -37,6 +43,92 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     )
     assert delete_response.status_code == 204
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+
+
+def test_toggle_site_preserves_configured_states_and_restores_group_member(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    payload = valid_site_payload()
+    payload["protocols"].append(
+        {
+            "id": "pc-disabled",
+            "name": "disabled",
+            "protocols": ["openai_embedding"],
+            "enabled": False,
+            "base_url_id": "base-1",
+            "credential_id": "cred-1",
+            "models": [
+                {
+                    "credential_id": "cred-1",
+                    "model_name": "text-embedding-3-small",
+                    "enabled": False,
+                    "protocol": "openai_embedding",
+                }
+            ],
+        }
+    )
+    site = create_site(payload)
+    group_response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={
+            "name": "gpt-4o",
+            "protocols": ["openai_chat"],
+            "items": [
+                {
+                    "channel_id": openai_chat_channel_id(),
+                    "credential_id": "cred-1",
+                    "model_name": "gpt-4o",
+                    "enabled": True,
+                }
+            ],
+        },
+    )
+    assert group_response.status_code == 201
+
+    disabled_response = client.put(
+        f"/api/admin/sites/{site['id']}/enabled",
+        headers=admin_headers,
+        json={"enabled": False},
+    )
+
+    assert disabled_response.status_code == 200
+    disabled_site = disabled_response.json()
+    assert disabled_site["enabled"] is False
+    assert [item["enabled"] for item in disabled_site["protocols"]] == [True, False]
+    assert [item["models"][0]["enabled"] for item in disabled_site["protocols"]] == [
+        True,
+        False,
+    ]
+    disabled_group = client.get(
+        "/api/admin/model-groups", headers=admin_headers
+    ).json()[0]
+    assert disabled_group["items"][0]["enabled"] is True
+    assert disabled_group["items"][0]["state"] == "unavailable"
+    assert disabled_group["items"][0]["reasons"] == ["channel_disabled"]
+
+    enabled_response = client.put(
+        f"/api/admin/sites/{site['id']}/enabled",
+        headers=admin_headers,
+        json={"enabled": True},
+    )
+
+    assert enabled_response.status_code == 200
+    enabled_site = enabled_response.json()
+    assert enabled_site["enabled"] is True
+    assert [item["enabled"] for item in enabled_site["protocols"]] == [True, False]
+    assert [item["models"][0]["enabled"] for item in enabled_site["protocols"]] == [
+        True,
+        False,
+    ]
+    enabled_group = client.get("/api/admin/model-groups", headers=admin_headers).json()[
+        0
+    ]
+    assert enabled_group["items"][0]["enabled"] is True
+    assert enabled_group["items"][0]["state"] == "ready"
+    assert enabled_group["items"][0]["reasons"] == []
 
 
 @pytest.mark.parametrize(
@@ -167,13 +259,21 @@ def test_create_site_rejects_duplicate_protocol_config(client, admin_headers) ->
     assert_error(response, 400, "Duplicate protocol config")
 
 
-def test_update_and_delete_missing_site_return_not_found(client, admin_headers) -> None:
+def test_update_delete_and_toggle_missing_site_return_not_found(
+    client, admin_headers
+) -> None:
     update_response = client.put(
         "/api/admin/sites/missing",
         headers=admin_headers,
         json=valid_site_payload(name="Missing"),
     )
     delete_response = client.delete("/api/admin/sites/missing", headers=admin_headers)
+    enabled_response = client.put(
+        "/api/admin/sites/missing/enabled",
+        headers=admin_headers,
+        json={"enabled": False},
+    )
 
     assert_error(update_response, 404, "missing")
     assert_error(delete_response, 404, "missing")
+    assert_error(enabled_response, 404, "missing")

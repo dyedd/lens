@@ -15,6 +15,7 @@ from .shared import (
     SiteCredential,
     SiteCredentialEntity,
     SiteDiscoveredModelEntity,
+    SiteEnabledUpdate,
     SiteEntity,
     SiteModelFetchRequest,
     SiteModelInput,
@@ -101,5 +102,17 @@ class ChannelStore(
                 payload.credentials,
                 payload.protocols,
             )
+            await session.commit()
+        return await self.get_site(site_id)
+
+    async def update_site_enabled(
+        self, site_id: str, payload: SiteEnabledUpdate
+    ) -> SiteConfig:
+        """Update and return a site's master enabled state."""
+        async with self._session_factory() as session:
+            site = await session.get(SiteEntity, site_id)
+            if site is None:
+                raise KeyError(site_id)
+            site.enabled = int(payload.enabled)
             await session.commit()
         return await self.get_site(site_id)
