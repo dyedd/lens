@@ -97,6 +97,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
 class SiteConfig(StrictBaseModel):
     id: str
     name: str
+    enabled: bool = True
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -139,6 +140,10 @@ class SiteUpdate(StrictBaseModel):
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
+
+
+class SiteEnabledUpdate(StrictBaseModel):
+    enabled: bool
 
 
 class SiteImportBaseUrlInput(StrictBaseModel):

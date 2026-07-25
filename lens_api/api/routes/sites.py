@@ -27,6 +27,11 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         "/api/admin/sites/{site_id}", service_module.update_site, methods=["PUT"]
     )
     app.add_api_route(
+        "/api/admin/sites/{site_id}/enabled",
+        service_module.update_site_enabled,
+        methods=["PUT"],
+    )
+    app.add_api_route(
         "/api/admin/sites/{site_id}",
         service_module.delete_site,
         methods=["DELETE"],
