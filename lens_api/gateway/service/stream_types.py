@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from typing import Any
 
+OPENAI_RESPONSES_TERMINAL_EVENTS = frozenset(
+    {"response.completed", "response.incomplete"}
+)
+
 
 @dataclass
 class ChatStreamDelta:

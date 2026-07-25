@@ -145,6 +145,7 @@ async def _build_stream_result(
     channel: ChannelConfig,
     client_protocol: ProtocolKind | None,
     body: dict[str, Any],
+    include_stream_usage: bool,
     request_content: str | None,
     stream_started_at: float,
     log_body_enabled: bool,
@@ -188,7 +189,11 @@ async def _build_stream_result(
         client_protocol, channel.protocol
     ):
         converted_iter = convert_stream_iterator(
-            client_protocol, channel.protocol, raw_iter, body.get("model", "")
+            client_protocol,
+            channel.protocol,
+            raw_iter,
+            body.get("model", ""),
+            include_usage=include_stream_usage,
         )
         converted_iter = _capture_converted_stream_iterator(converted_iter, capture)
         stream_media = "text/event-stream"
@@ -258,9 +263,16 @@ async def _build_json_result(
     if client_protocol is not None and needs_conversion(
         client_protocol, channel.protocol
     ):
-        content = convert_response(
-            client_protocol, channel.protocol, content, body.get("model", "")
-        )
+        try:
+            content = convert_response(
+                client_protocol, channel.protocol, content, body.get("model", "")
+            )
+        except ValueError as exc:
+            raise UpstreamRequestError(
+                status_code=502,
+                detail=f"Invalid upstream response: {exc}",
+                router_status_code=502,
+            ) from exc
 
     cost = await _safe_estimate_cost(
         pricing_group_name,
@@ -353,6 +365,7 @@ async def _call_channel(
     deadline: _RequestDeadline,
     *,
     credential_id: str | None,
+    include_stream_usage: bool,
     pricing_group_name: str | None = None,
     client_protocol: ProtocolKind | None = None,
     log_body_enabled: bool = False,
@@ -399,6 +412,7 @@ async def _call_channel(
                 channel,
                 client_protocol,
                 body,
+                include_stream_usage,
                 request_content,
                 stream_started_at,
                 log_body_enabled,
@@ -483,4 +497,16 @@ async def _send_upstream(
         upstream.url,
         headers=upstream.headers,
         content=body_bytes,
+    )
+
+
+def _client_stream_includes_usage(
+    protocol: ProtocolKind, body: Mapping[str, Any]
+) -> bool:
+    if protocol != ProtocolKind.OPENAI_CHAT:
+        return False
+    stream_options = body.get("stream_options")
+    return (
+        isinstance(stream_options, Mapping)
+        and stream_options.get("include_usage") is True
     )

@@ -7,6 +7,7 @@ from typing import Any
 from ...models import ProtocolKind
 from .payload_serialization import _dump_log_json
 from .usage import _parse_sse_payloads
+from .stream_types import OPENAI_RESPONSES_TERMINAL_EVENTS
 
 
 def _distill_stream_response_content(
@@ -18,7 +19,7 @@ def _distill_stream_response_content(
     if protocol == ProtocolKind.OPENAI_RESPONSES:
         payloads = _parse_sse_payloads(raw_content)
         for payload in reversed(payloads):
-            if payload.get("type") != "response.completed":
+            if payload.get("type") not in OPENAI_RESPONSES_TERMINAL_EVENTS:
                 continue
             response_payload = payload.get("response")
             if isinstance(response_payload, dict):
