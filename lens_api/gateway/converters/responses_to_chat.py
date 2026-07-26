@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Mapping
+from typing import Any
 
+from ._responses import (
+    _raise_for_failed_response,
+    _usage_int,
+    _validate_terminal_response,
+)
 from ._shared import _required_string
 from ._sse import format_sse_event, parse_sse_json_stream
 
@@ -121,21 +127,6 @@ def _responses_usage_to_chat(usage: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _usage_int(usage: Mapping[str, Any], key: str) -> int:
-    value = usage.get(key)
-    if value is None:
-        return 0
-    if isinstance(value, bool):
-        raise ValueError(f"Invalid Responses usage value: {key}")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"Invalid Responses usage value: {key}") from None
-    if parsed < 0:
-        raise ValueError(f"Invalid negative Responses usage value: {key}")
-    return parsed
-
-
 def _responses_finish_reason(
     response: Mapping[str, Any], *, has_tool_calls: bool
 ) -> str:
@@ -144,31 +135,6 @@ def _responses_finish_reason(
         reason = details.get("reason") if isinstance(details, Mapping) else None
         return "content_filter" if reason == "content_filter" else "length"
     return "tool_calls" if has_tool_calls else "stop"
-
-
-def _raise_for_failed_response(response: Mapping[str, Any]) -> None:
-    status = response.get("status")
-    if status not in {"failed", "cancelled"}:
-        return
-    error = response.get("error")
-    message = error.get("message") if isinstance(error, Mapping) else None
-    raise ValueError(f"Responses upstream {status}: {message or 'unknown error'}")
-
-
-def _validate_terminal_response(
-    response: Mapping[str, Any], *, expected_status: str | None = None
-) -> list[Any]:
-    _raise_for_failed_response(response)
-    status = response.get("status")
-    valid_statuses = (
-        {expected_status} if expected_status else {"completed", "incomplete"}
-    )
-    if status not in valid_statuses:
-        raise ValueError(f"Responses upstream returned non-terminal status: {status}")
-    output = response.get("output")
-    if not isinstance(output, list):
-        raise ValueError("Responses upstream output must be an array")
-    return output
 
 
 @dataclass(slots=True)
