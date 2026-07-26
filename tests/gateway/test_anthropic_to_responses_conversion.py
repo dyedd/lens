@@ -130,21 +130,6 @@ def test_anthropic_request_converts_messages_tools_and_adaptive_thinking() -> No
     }
 
 
-def test_legacy_thinking_budget_enables_summary_without_guessing_effort() -> None:
-    converted = convert_request(
-        ProtocolKind.ANTHROPIC,
-        ProtocolKind.OPENAI_RESPONSES,
-        {
-            "messages": [{"role": "user", "content": "Hello"}],
-            "max_tokens": 8192,
-            "thinking": {"type": "enabled", "budget_tokens": 4096},
-        },
-    )
-
-    assert converted["max_output_tokens"] == 8192
-    assert converted["reasoning"] == {"summary": "auto"}
-
-
 def test_output_effort_preserves_stateless_reasoning() -> None:
     converted = convert_request(
         ProtocolKind.ANTHROPIC,

@@ -27,7 +27,7 @@ def chat_request_to_responses(body: dict[str, Any]) -> dict[str, Any]:
         if key in body:
             result[key] = body[key]
 
-    max_output_tokens = body.get("max_completion_tokens", body.get("max_tokens"))
+    max_output_tokens = body.get("max_completion_tokens")
     if max_output_tokens is not None:
         result["max_output_tokens"] = max_output_tokens
 

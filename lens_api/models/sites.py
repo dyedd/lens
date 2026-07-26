@@ -1,7 +1,41 @@
-from pydantic import Field, HttpUrl, field_validator
+import json
+from typing import Literal
+
+from pydantic import Field, HttpUrl, field_validator, model_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
+
+
+def _normalize_required_text(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("Value cannot be empty")
+    return normalized
+
+
+def _validate_param_override(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        return ""
+    try:
+        override = json.loads(normalized)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid param override JSON: {exc.msg} at line {exc.lineno} "
+            f"column {exc.colno}"
+        ) from exc
+    if not isinstance(override, dict):
+        raise ValueError("Param override must be a JSON object")
+    if "model" in override:
+        raise ValueError("Param override cannot override model")
+    return normalized
+
+
+def _require_auto_sync_pattern(auto_sync_enabled: bool, match_regex: str) -> None:
+    if auto_sync_enabled and not match_regex.strip():
+        raise ValueError("Auto sync requires a non-empty match regex")
+
 
 class SiteBaseUrl(StrictBaseModel):
     id: str
@@ -93,11 +127,20 @@ class SiteProtocolConfigInput(StrictBaseModel):
     def validate_match_regex(cls, pattern: str) -> str:
         return _validate_regex_pattern(pattern)
 
+    _normalize_param_override = field_validator("param_override")(
+        _validate_param_override
+    )
+
+    @model_validator(mode="after")
+    def validate_auto_sync(self) -> "SiteProtocolConfigInput":
+        _require_auto_sync_pattern(self.auto_sync_enabled, self.match_regex)
+        return self
+
 
 class SiteConfig(StrictBaseModel):
     id: str
     name: str
-    enabled: bool = True
+    enabled: bool
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -147,19 +190,22 @@ class SiteEnabledUpdate(StrictBaseModel):
 
 
 class SiteImportBaseUrlInput(StrictBaseModel):
-    ref: str = ""
+    ref: str
     url: HttpUrl
     name: str = ""
     enabled: bool = True
 
+    _normalize_ref = field_validator("ref")(_normalize_required_text)
     _normalize_url = field_validator("url", mode="before")(normalize_base_url)
 
 
 class SiteImportCredentialInput(StrictBaseModel):
-    ref: str = ""
+    ref: str
     name: str = ""
     api_key: str = Field(min_length=1)
     enabled: bool = True
+
+    _normalize_ref = field_validator("ref")(_normalize_required_text)
 
 
 class SiteImportModelInput(StrictBaseModel):
@@ -169,6 +215,7 @@ class SiteImportModelInput(StrictBaseModel):
 
 
 class SiteImportProtocolInput(StrictBaseModel):
+    name: str
     protocol: ProtocolKind
     enabled: bool = True
     headers: dict[str, str] = Field(default_factory=dict)
@@ -176,47 +223,65 @@ class SiteImportProtocolInput(StrictBaseModel):
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
-    base_url_ref: str = ""
-    credential_ref: str = ""
+    auto_sync_enabled: bool
+    base_url_ref: str
+    credential_ref: str
     models: list[SiteImportModelInput] = Field(default_factory=list)
+
+    _normalize_identifiers = field_validator(
+        "name",
+        "base_url_ref",
+        "credential_ref",
+    )(_normalize_required_text)
 
     @field_validator("match_regex")
     @classmethod
     def validate_match_regex(cls, pattern: str) -> str:
         return _validate_regex_pattern(pattern)
 
+    _normalize_param_override = field_validator("param_override")(
+        _validate_param_override
+    )
+
+    @model_validator(mode="after")
+    def validate_auto_sync(self) -> "SiteImportProtocolInput":
+        _require_auto_sync_pattern(self.auto_sync_enabled, self.match_regex)
+        return self
+
 
 class SiteImportItem(StrictBaseModel):
     name: str
+    enabled: bool
     base_urls: list[SiteImportBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteImportCredentialInput] = Field(default_factory=list)
     protocols: list[SiteImportProtocolInput] = Field(default_factory=list)
 
 
 class SiteBatchImportRequest(StrictBaseModel):
-    sites: list[SiteImportItem] = Field(default_factory=list)
+    sites: list[SiteImportItem] = Field(min_length=1)
 
 
-class SiteBatchImportSkipped(StrictBaseModel):
-    index: int = Field(ge=0)
-    name: str
-    reason: str
-
-
-class SiteBatchImportError(StrictBaseModel):
-    index: int = Field(ge=0)
+class SiteBatchImportFieldError(StrictBaseModel):
     field: str
     message: str
 
 
+class SiteBatchImportItemResult(StrictBaseModel):
+    index: int = Field(ge=0)
+    name: str
+    status: Literal["created", "skipped", "error", "not_committed"]
+    reason: str
+    site: SiteConfig | None
+    errors: list[SiteBatchImportFieldError]
+
+
 class SiteBatchImportResult(StrictBaseModel):
-    committed: bool = False
-    created_count: int = 0
-    skipped_count: int = 0
-    error_count: int = 0
-    created: list[SiteConfig] = Field(default_factory=list)
-    skipped: list[SiteBatchImportSkipped] = Field(default_factory=list)
-    errors: list[SiteBatchImportError] = Field(default_factory=list)
+    committed: bool
+    created_count: int
+    skipped_count: int
+    error_count: int
+    not_committed_count: int
+    items: list[SiteBatchImportItemResult]
 
 
 class SiteModelFetchRequest(StrictBaseModel):
@@ -225,9 +290,7 @@ class SiteModelFetchRequest(StrictBaseModel):
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     match_regex: str = ""
-    credentials: list[SiteCredentialInput] = Field(
-        default_factory=list, max_length=20
-    )
+    credentials: list[SiteCredentialInput] = Field(default_factory=list, max_length=20)
     credential_ids: list[str] = Field(default_factory=list, max_length=20)
 
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
@@ -262,14 +325,9 @@ class SiteModelTestRequest(StrictBaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
 
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
-
-    @field_validator("model_name", "prompt")
-    @classmethod
-    def validate_non_empty_text(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Value cannot be empty")
-        return normalized
+    _normalize_non_empty_text = field_validator("model_name", "prompt")(
+        _normalize_required_text
+    )
 
 
 class SiteModelTestResult(StrictBaseModel):
