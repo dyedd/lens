@@ -1,8 +1,11 @@
 import json
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from ...core.protocol_reachability import can_reach_protocol, needs_conversion
 from ...models import ProtocolKind
+from .anthropic_to_responses import anthropic_request_to_responses
+from .chat_request_to_responses import chat_request_to_responses
 from .chat_to_anthropic import (
     anthropic_request_to_chat,
     chat_response_to_anthropic,
@@ -13,7 +16,10 @@ from .chat_to_responses import (
     chat_stream_to_responses_stream,
     responses_request_to_chat,
 )
-from .chat_request_to_responses import chat_request_to_responses
+from .responses_to_anthropic import (
+    responses_response_to_anthropic,
+    responses_stream_to_anthropic_stream,
+)
 from .responses_to_chat import (
     responses_response_to_chat,
     responses_stream_to_chat_stream,
@@ -21,10 +27,10 @@ from .responses_to_chat import (
 
 __all__ = [
     "can_reach_protocol",
-    "needs_conversion",
     "convert_request",
     "convert_response",
     "convert_stream_iterator",
+    "needs_conversion",
 ]
 
 
@@ -51,6 +57,11 @@ def convert_request(
         and channel_protocol == ProtocolKind.OPENAI_RESPONSES
     ):
         result = chat_request_to_responses(body)
+    elif (
+        client_protocol == ProtocolKind.ANTHROPIC
+        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
+    ):
+        result = anthropic_request_to_responses(body)
     else:
         raise ValueError(
             f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
@@ -83,6 +94,11 @@ def convert_response(
         and channel_protocol == ProtocolKind.OPENAI_RESPONSES
     ):
         converted = responses_response_to_chat(chat_data, original_model)
+    elif (
+        client_protocol == ProtocolKind.ANTHROPIC
+        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
+    ):
+        converted = responses_response_to_anthropic(chat_data, original_model)
     else:
         raise ValueError(
             f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
@@ -121,6 +137,14 @@ async def convert_stream_iterator(
     ):
         async for chunk in responses_stream_to_chat_stream(
             raw_iterator, original_model, include_usage=include_usage
+        ):
+            yield chunk
+    elif (
+        client_protocol == ProtocolKind.ANTHROPIC
+        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
+    ):
+        async for chunk in responses_stream_to_anthropic_stream(
+            raw_iterator, original_model
         ):
             yield chunk
     else:
