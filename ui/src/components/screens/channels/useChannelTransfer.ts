@@ -109,14 +109,14 @@ export function useChannelTransfer({
         );
         return;
       }
-      if (result.created.length) {
+      const createdSites = result.items.flatMap((item) =>
+        item.status === "created" ? [item.site] : [],
+      );
+      if (createdSites.length) {
         queryClient.setQueryData<Site[]>(["sites"], (current) => {
           const rows = current ?? [];
           const ids = new Set(rows.map((site) => site.id));
-          return [
-            ...result.created.filter((site) => !ids.has(site.id)),
-            ...rows,
-          ];
+          return [...createdSites.filter((site) => !ids.has(site.id)), ...rows];
         });
         await invalidateChannelData();
         toast.success(

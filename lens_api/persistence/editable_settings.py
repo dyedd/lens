@@ -234,40 +234,7 @@ def _normalize_effective_setting(key: str, raw_value: str, default: str) -> str:
     try:
         return normalize_editable_setting(key, raw_value)
     except ValueError:
-        legacy_numeric_value = _normalize_legacy_numeric_setting(key, raw_value)
-        if legacy_numeric_value is not None:
-            return legacy_numeric_value
         return normalize_editable_setting(key, default)
-
-
-def _normalize_legacy_numeric_setting(key: str, raw_value: str) -> str | None:
-    value = raw_value.strip()
-    if key in _POSITIVE_INTEGER_SETTING_KEYS | _NONNEGATIVE_INTEGER_SETTING_KEYS:
-        try:
-            parsed: int | float = int(value)
-        except ValueError:
-            return None
-        minimum = 1 if key in _POSITIVE_INTEGER_SETTING_KEYS else 0
-    elif key in _NONNEGATIVE_FLOAT_SETTING_KEYS:
-        try:
-            parsed = float(value)
-        except ValueError:
-            return None
-        if not isfinite(parsed):
-            return None
-        minimum = 1 if key == SETTING_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER else 0
-    else:
-        return None
-
-    maximum = _INTEGER_SETTING_MAXIMUMS.get(key)
-    if maximum is None:
-        maximum = _FLOAT_SETTING_MAXIMUMS.get(key)
-    normalized = max(parsed, minimum)
-    if maximum is not None:
-        normalized = min(normalized, maximum)
-    if key in _NONNEGATIVE_FLOAT_SETTING_KEYS:
-        return str(float(normalized))
-    return str(int(normalized))
 
 
 def _validate_maximum(

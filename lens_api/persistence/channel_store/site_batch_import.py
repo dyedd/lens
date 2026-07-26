@@ -1,113 +1,109 @@
 from __future__ import annotations
 
-from .shared import (
-    SiteBatchImportError,
-    SiteBatchImportRequest,
+from dataclasses import dataclass
+
+from ...models import (
+    SiteBatchImportFieldError,
+    SiteBatchImportItemResult,
     SiteBatchImportResult,
-    SiteBatchImportSkipped,
-    SiteCreate,
-    uuid,
+    SiteImportItem,
 )
+from .site_import_normalization import PreparedSiteImport, prepare_site_import
 
 
-class ChannelSiteBatchImportMixin:
-    async def import_sites(
-        self, payload: SiteBatchImportRequest
-    ) -> SiteBatchImportResult:
-        """Validate and atomically import a batch of site configurations."""
-        skipped: list[SiteBatchImportSkipped] = []
-        errors: list[SiteBatchImportError] = []
-        prepared: list[SiteCreate] = []
+@dataclass
+class PreparedSiteBatch:
+    sites: dict[int, PreparedSiteImport]
+    item_results: dict[int, SiteBatchImportItemResult]
 
-        if not payload.sites:
-            errors.append(
-                SiteBatchImportError(
-                    index=0,
-                    field="sites",
-                    message="At least one site is required",
-                )
+
+def prepare_site_batch(
+    sites: list[SiteImportItem],
+    existing_names: set[str],
+) -> PreparedSiteBatch:
+    prepared_sites: dict[int, PreparedSiteImport] = {}
+    item_results: dict[int, SiteBatchImportItemResult] = {}
+    seen_names: set[str] = set()
+
+    for index, site in enumerate(sites):
+        name = site.name.strip()
+        if not name:
+            item_results[index] = SiteBatchImportItemResult(
+                index=index,
+                name=name,
+                status="error",
+                reason="",
+                site=None,
+                errors=[
+                    SiteBatchImportFieldError(
+                        field="name",
+                        message="Site name is required",
+                    )
+                ],
             )
-            return self._batch_import_result(
-                committed=False,
-                created=[],
-                skipped=skipped,
+            continue
+
+        name_key = name.lower()
+        if name_key in existing_names:
+            item_results[index] = SiteBatchImportItemResult(
+                index=index,
+                name=name,
+                status="skipped",
+                reason="duplicate_name",
+                site=None,
+                errors=[],
+            )
+            continue
+        if name_key in seen_names:
+            item_results[index] = SiteBatchImportItemResult(
+                index=index,
+                name=name,
+                status="skipped",
+                reason="duplicate_in_file",
+                site=None,
+                errors=[],
+            )
+            continue
+        seen_names.add(name_key)
+
+        prepared_site, errors = prepare_site_import(site)
+        if errors:
+            item_results[index] = SiteBatchImportItemResult(
+                index=index,
+                name=name,
+                status="error",
+                reason="",
+                site=None,
                 errors=errors,
             )
+            continue
+        assert prepared_site is not None
+        prepared_sites[index] = prepared_site
 
-        async with self._session_factory() as session:
-            existing_names = await self._site_name_keys(session)
-            seen_names: set[str] = set()
+    if any(result.status == "error" for result in item_results.values()):
+        for index, prepared_site in prepared_sites.items():
+            item_results[index] = SiteBatchImportItemResult(
+                index=index,
+                name=prepared_site.payload.name,
+                status="not_committed",
+                reason="batch_validation_failed",
+                site=None,
+                errors=[],
+            )
+        prepared_sites = {}
 
-            for index, item in enumerate(payload.sites):
-                name = item.name.strip()
-                if not name:
-                    errors.append(
-                        SiteBatchImportError(
-                            index=index,
-                            field="name",
-                            message="Site name is required",
-                        )
-                    )
-                    continue
+    return PreparedSiteBatch(sites=prepared_sites, item_results=item_results)
 
-                name_key = name.lower()
-                if name_key in existing_names:
-                    skipped.append(
-                        SiteBatchImportSkipped(
-                            index=index,
-                            name=name,
-                            reason="duplicate_name",
-                        )
-                    )
-                    continue
-                if name_key in seen_names:
-                    skipped.append(
-                        SiteBatchImportSkipped(
-                            index=index,
-                            name=name,
-                            reason="duplicate_in_file",
-                        )
-                    )
-                    continue
 
-                site_payload, site_errors = self._import_item_to_site_create(
-                    index, item
-                )
-                if site_errors:
-                    errors.extend(site_errors)
-                    continue
-
-                if site_payload is not None:
-                    prepared.append(site_payload)
-                    seen_names.add(name_key)
-
-            if errors or not prepared:
-                return self._batch_import_result(
-                    committed=False,
-                    created=[],
-                    skipped=skipped,
-                    errors=errors,
-                )
-
-            site_ids: list[str] = []
-            for site_payload in prepared:
-                site_id = str(uuid.uuid4())
-                await self._upsert_site_payload(
-                    session,
-                    site_id,
-                    site_payload.name,
-                    site_payload.base_urls,
-                    site_payload.credentials,
-                    site_payload.protocols,
-                )
-                site_ids.append(site_id)
-
-            await session.commit()
-
-        created = await self._load_sites_by_ids(site_ids)
-        return self._batch_import_result(
-            committed=bool(created),
-            created=created,
-            skipped=skipped,
-            errors=errors,
-        )
+def build_site_batch_import_result(
+    item_results: dict[int, SiteBatchImportItemResult],
+) -> SiteBatchImportResult:
+    items = [item_results[index] for index in sorted(item_results)]
+    return SiteBatchImportResult(
+        committed=any(item.status == "created" for item in items),
+        created_count=sum(item.status == "created" for item in items),
+        skipped_count=sum(item.status == "skipped" for item in items),
+        error_count=sum(item.status == "error" for item in items),
+        not_committed_count=sum(item.status == "not_committed" for item in items),
+        items=items,
+    )

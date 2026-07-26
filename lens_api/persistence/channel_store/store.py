@@ -6,10 +6,9 @@ from .shared import (
     ModelGroupItemEntity,
     ProtocolKind,
     SiteBaseUrlEntity,
-    SiteBatchImportError,
+    SiteBatchImportItemResult,
     SiteBatchImportRequest,
     SiteBatchImportResult,
-    SiteBatchImportSkipped,
     SiteConfig,
     SiteCreate,
     SiteCredential,
@@ -30,8 +29,10 @@ from .shared import (
 )
 from .loaders import ChannelLoadersMixin
 from .normalization import ChannelNormalizationMixin
-from .site_batch_import import ChannelSiteBatchImportMixin
-from .site_import_normalization import ChannelSiteImportNormalizationMixin
+from .site_batch_import import (
+    build_site_batch_import_result,
+    prepare_site_batch,
+)
 from .site_operations import ChannelSiteOperationsMixin
 from .upserts import ChannelUpsertsMixin
 from ..shared import _parse_supported_protocols_json
@@ -39,10 +40,8 @@ from ..shared import _parse_supported_protocols_json
 
 class ChannelStore(
     ChannelLoadersMixin,
-    ChannelSiteImportNormalizationMixin,
     ChannelNormalizationMixin,
     ChannelUpsertsMixin,
-    ChannelSiteBatchImportMixin,
     ChannelSiteOperationsMixin,
 ):
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -78,12 +77,54 @@ class ChannelStore(
                 session,
                 site_id,
                 payload.name,
+                True,
                 payload.base_urls,
                 payload.credentials,
                 payload.protocols,
             )
             await session.commit()
         return await self.get_site(site_id)
+
+    async def import_sites(
+        self, payload: SiteBatchImportRequest
+    ) -> SiteBatchImportResult:
+        """Validate and atomically import a batch of site configurations."""
+        site_ids: dict[int, str] = {}
+
+        async with self._session_factory() as session:
+            existing_names = await self._site_name_keys(session)
+            batch = prepare_site_batch(payload.sites, existing_names)
+            for index, prepared_item in batch.sites.items():
+                site_id = str(uuid.uuid4())
+                site_payload = prepared_item.payload
+                await self._upsert_site_payload(
+                    session,
+                    site_id,
+                    site_payload.name,
+                    prepared_item.enabled,
+                    site_payload.base_urls,
+                    site_payload.credentials,
+                    site_payload.protocols,
+                )
+                site_ids[index] = site_id
+            if site_ids:
+                await session.commit()
+
+        if site_ids:
+            created_sites = await self._load_sites_by_ids(list(site_ids.values()))
+            sites_by_id = {site.id: site for site in created_sites}
+            for index, site_id in site_ids.items():
+                site = sites_by_id[site_id]
+                batch.item_results[index] = SiteBatchImportItemResult(
+                    index=index,
+                    name=site.name,
+                    status="created",
+                    reason="",
+                    site=site,
+                    errors=[],
+                )
+
+        return build_site_batch_import_result(batch.item_results)
 
     async def update_site(self, site_id: str, payload: SiteUpdate) -> SiteConfig:
         """Replace and return an existing site configuration."""
@@ -98,6 +139,7 @@ class ChannelStore(
                 session,
                 site_id,
                 payload.name,
+                bool(site.enabled),
                 payload.base_urls,
                 payload.credentials,
                 payload.protocols,
