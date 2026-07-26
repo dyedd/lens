@@ -23,6 +23,7 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
         session: AsyncSession,
         site_id: str,
         name: str,
+        enabled: bool,
         base_urls: list[SiteBaseUrlInput],
         credentials: list[SiteCredentialInput],
         protocols: list[SiteProtocolConfigInput],
@@ -40,9 +41,16 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
 
         site = await session.get(SiteEntity, site_id)
         if site is None:
-            session.add(SiteEntity(id=site_id, name=normalized_name))
+            session.add(
+                SiteEntity(
+                    id=site_id,
+                    name=normalized_name,
+                    enabled=int(enabled),
+                )
+            )
         else:
             site.name = normalized_name
+            site.enabled = int(enabled)
 
         await self._upsert_base_urls(session, site_id, normalized_base_urls)
         current_protocol_config_ids = set(

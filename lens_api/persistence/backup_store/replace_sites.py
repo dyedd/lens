@@ -75,15 +75,11 @@ async def _replace_sites(
         site_ids.add(site.id)
         site_names.add(site.name)
 
-        # Older backups represented the site switch by disabling every protocol.
-        legacy_disabled = "enabled" not in site.model_fields_set and not any(
-            protocol.enabled for protocol in site.protocols
-        )
         session.add(
             SiteEntity(
                 id=site.id,
                 name=site.name,
-                enabled=0 if legacy_disabled else int(site.enabled),
+                enabled=int(site.enabled),
             )
         )
         site_base_url_ids: set[str] = set()
@@ -159,7 +155,7 @@ async def _replace_sites(
                         [p.value for p in protocol_kinds],
                         ensure_ascii=True,
                     ),
-                    enabled=1 if legacy_disabled or protocol_config.enabled else 0,
+                    enabled=1 if protocol_config.enabled else 0,
                     headers_json=json.dumps(protocol_config.headers, ensure_ascii=True),
                     proxy_mode=protocol_config.proxy_mode.value,
                     channel_proxy=protocol_config.channel_proxy,

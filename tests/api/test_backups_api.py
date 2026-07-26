@@ -118,7 +118,7 @@ def test_backup_round_trip_preserves_site_master_enabled(
     assert restored_site["protocols"][0]["enabled"] is True
 
 
-def test_import_legacy_backup_restores_protocols_under_disabled_site(
+def test_import_backup_rejects_missing_site_enabled(
     client,
     admin_headers,
     create_site,
@@ -142,7 +142,4 @@ def test_import_legacy_backup_restores_protocols_under_disabled_site(
         },
     )
 
-    assert response.status_code == 200
-    restored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
-    assert restored_site["enabled"] is False
-    assert restored_site["protocols"][0]["enabled"] is True
+    assert_error(response, 400, "Invalid backup file")

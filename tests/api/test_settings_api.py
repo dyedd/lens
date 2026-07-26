@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from conftest import assert_error
+from conftest import assert_error, run_async
+from lens_api.models import SettingItem
 from lens_api.persistence.shared import (
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_PERIOD,
@@ -71,6 +72,24 @@ def test_update_settings_rejects_invalid_known_values(
     assert_error(response, 400, message)
 
 
+def test_list_settings_uses_default_for_invalid_stored_value(
+    client,
+    admin_headers,
+    app_state,
+) -> None:
+    run_async(
+        app_state.settings_repo.upsert_settings(
+            [SettingItem(key=SETTING_RELAY_LOG_KEEP_PERIOD, value="0")]
+        )
+    )
+
+    response = client.get("/api/admin/settings", headers=admin_headers)
+
+    assert response.status_code == 200
+    settings = {item["key"]: item["value"] for item in response.json()}
+    assert settings[SETTING_RELAY_LOG_KEEP_PERIOD] == "7"
+
+
 def test_update_settings_normalizes_upstream_headers_config(
     client,
     admin_headers,
@@ -93,10 +112,11 @@ def test_update_settings_normalizes_upstream_headers_config(
     )
 
     assert response.status_code == 200
-    stored = json.loads({
-        item["key"]: item["value"]
-        for item in response.json()
-    }[SETTING_UPSTREAM_HEADERS_CONFIG])
+    stored = json.loads(
+        {item["key"]: item["value"] for item in response.json()}[
+            SETTING_UPSTREAM_HEADERS_CONFIG
+        ]
+    )
     assert stored["global"] == {"X-Test": "value"}
     assert stored["rules"][0]["models"] == ["gpt-4o"]
     assert stored["rules"][0]["headers"] == {"Authorization": "Bearer token"}

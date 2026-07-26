@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, type ChangeEvent } from "react";
+import { useRef, type ChangeEvent } from "react";
 import { Download, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -22,7 +22,7 @@ import {
 import { Textarea } from "@/components/ui/Textarea";
 import type { SiteBatchImportResult } from "@/lib/api";
 import {
-  importResultRows,
+  importReasonLabel,
   importStatusLabel,
   importStatusVariant,
   Locale,
@@ -55,10 +55,7 @@ export function BatchImportDialog({
   onImport: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const resultRows = useMemo(
-    () => (importResult ? importResultRows(importResult, locale) : []),
-    [importResult, locale],
-  );
+  const resultRows = importResult?.items ?? [];
 
   return (
     <Dialog
@@ -126,7 +123,7 @@ export function BatchImportDialog({
 
             {importResult ? (
               <div className="grid gap-3">
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <ImportSummaryMetric
                     label={locale === "zh-CN" ? "创建" : "Created"}
                     value={importResult.created_count}
@@ -138,6 +135,10 @@ export function BatchImportDialog({
                   <ImportSummaryMetric
                     label={locale === "zh-CN" ? "错误" : "Errors"}
                     value={importResult.error_count}
+                  />
+                  <ImportSummaryMetric
+                    label={locale === "zh-CN" ? "未提交" : "Not committed"}
+                    value={importResult.not_committed_count}
                   />
                 </div>
 
@@ -161,25 +162,33 @@ export function BatchImportDialog({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {resultRows.map((row) => (
-                          <TableRow key={row.key}>
-                            <TableCell>{row.index + 1}</TableCell>
-                            <TableCell className="max-w-[180px] truncate">
-                              {row.name}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={importStatusVariant(row.status)}>
-                                {importStatusLabel(row.status, locale)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell
-                              className="max-w-[260px] truncate"
-                              title={row.reason}
-                            >
-                              {row.reason || "-"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {resultRows.map((row) => {
+                          const reason = row.errors.length
+                            ? row.errors
+                                .map(
+                                  (error) => `${error.field}: ${error.message}`,
+                                )
+                                .join("; ")
+                            : importReasonLabel(row.reason, locale);
+                          return (
+                            <TableRow key={`${row.index}-${row.status}`}>
+                              <TableCell>{row.index + 1}</TableCell>
+                              <TableCell className="max-w-[180px] break-words">
+                                {row.name}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={importStatusVariant(row.status)}
+                                >
+                                  {importStatusLabel(row.status, locale)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[320px] whitespace-normal break-words">
+                                {reason || "-"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>

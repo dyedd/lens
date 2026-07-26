@@ -100,12 +100,4 @@ export type ChannelSort =
   | "models-desc"
   | "protocols-desc";
 
-export type ImportResultRow = {
-  key: string;
-  index: number;
-  name: string;
-  status: "created" | "skipped" | "error";
-  reason: string;
-};
-
 export type ModelQueryInputKind = "empty" | "plain" | "regex";

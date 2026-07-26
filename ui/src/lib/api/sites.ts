@@ -112,13 +112,13 @@ export type SitePayload = {
   protocols: SiteProtocolConfigInput[];
 };
 export type SiteBatchImportBaseUrlInput = {
-  ref?: string;
+  ref: string;
   url: string;
   name?: string;
   enabled?: boolean;
 };
 export type SiteBatchImportCredentialInput = {
-  ref?: string;
+  ref: string;
   name?: string;
   api_key: string;
   enabled?: boolean;
@@ -129,6 +129,7 @@ export type SiteBatchImportModelInput = {
   enabled?: boolean;
 };
 export type SiteBatchImportProtocolInput = {
+  name: string;
   protocol: ProtocolKind;
   enabled?: boolean;
   headers?: Record<string, string>;
@@ -136,35 +137,53 @@ export type SiteBatchImportProtocolInput = {
   channel_proxy?: string;
   param_override?: string;
   match_regex?: string;
-  base_url_ref?: string;
-  credential_ref?: string;
+  auto_sync_enabled: boolean;
+  base_url_ref: string;
+  credential_ref: string;
   models?: SiteBatchImportModelInput[];
 };
 export type SiteBatchImportItem = {
   name: string;
+  enabled: boolean;
   base_urls: SiteBatchImportBaseUrlInput[];
   credentials: SiteBatchImportCredentialInput[];
   protocols: SiteBatchImportProtocolInput[];
 };
 export type SiteBatchImportPayload = { sites: SiteBatchImportItem[] };
-export type SiteBatchImportSkipped = {
-  index: number;
-  name: string;
-  reason: string;
-};
-export type SiteBatchImportError = {
-  index: number;
+export type SiteBatchImportFieldError = {
   field: string;
   message: string;
 };
+type SiteBatchImportItemIdentity = { index: number; name: string };
+export type SiteBatchImportItemResult = SiteBatchImportItemIdentity &
+  (
+    | { status: "created"; reason: ""; site: Site; errors: [] }
+    | {
+        status: "skipped";
+        reason: "duplicate_name" | "duplicate_in_file";
+        site: null;
+        errors: [];
+      }
+    | {
+        status: "error";
+        reason: "";
+        site: null;
+        errors: SiteBatchImportFieldError[];
+      }
+    | {
+        status: "not_committed";
+        reason: "batch_validation_failed";
+        site: null;
+        errors: [];
+      }
+  );
 export type SiteBatchImportResult = {
   committed: boolean;
   created_count: number;
   skipped_count: number;
   error_count: number;
-  created: Site[];
-  skipped: SiteBatchImportSkipped[];
-  errors: SiteBatchImportError[];
+  not_committed_count: number;
+  items: SiteBatchImportItemResult[];
 };
 export type SiteModelFetchPayload = {
   base_url: string;

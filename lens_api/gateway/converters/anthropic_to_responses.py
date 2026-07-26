@@ -262,7 +262,7 @@ def _anthropic_reasoning_config(
         thinking_type = thinking.get("type")
         if thinking_type == "disabled":
             return {"effort": "none"}, False
-        if thinking_type in {"adaptive", "enabled"}:
+        if thinking_type == "adaptive":
             thinking_enabled = True
             if thinking.get("display", "summarized") != "omitted":
                 reasoning["summary"] = "auto"
