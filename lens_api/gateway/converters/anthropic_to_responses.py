@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._responses import _decode_reasoning_item
-from ._shared import _required_string
+from ._validation import _required_string
 
 
 def anthropic_request_to_responses(body: dict[str, Any]) -> dict[str, Any]:
@@ -134,6 +134,8 @@ def _anthropic_message_to_responses(
                     "output": _anthropic_tool_result_output(block.get("content")),
                 }
             )
+        else:
+            raise ValueError(f"Unsupported Anthropic content block type: {block_type}")
     flush_parts()
     if not result:
         result.append({"role": role, "content": []})
@@ -161,6 +163,8 @@ def _anthropic_content_to_responses(value: list[Any]) -> list[dict[str, Any]]:
             result.append(_anthropic_image_to_responses(block.get("source")))
         elif block_type == "document":
             result.extend(_anthropic_document_to_responses(block))
+        else:
+            raise ValueError(f"Unsupported Anthropic content block type: {block_type}")
     return result
 
 

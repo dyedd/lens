@@ -13,7 +13,7 @@ from ._responses import (
     _usage_int,
     _validate_terminal_response,
 )
-from ._shared import _required_string
+from ._validation import _required_string
 from ._sse import format_sse_event, parse_sse_json_stream
 
 _TERMINAL_EVENTS = {"response.completed", "response.incomplete"}

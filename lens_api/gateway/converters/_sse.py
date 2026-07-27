@@ -13,12 +13,14 @@ FINISH_REASON_CHAT_TO_RESPONSES: dict[str | None, str] = {
     "stop": "completed",
     "length": "incomplete",
     "tool_calls": "completed",
-    "content_filter": "failed",
+    "content_filter": "incomplete",
 }
 
 
 async def parse_sse_json_stream(
     raw_iterator: AsyncIterator[bytes],
+    *,
+    require_done: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
     """Parse JSON payloads from an OpenAI-compatible SSE byte stream."""
     buffer = b""
@@ -40,6 +42,8 @@ async def parse_sse_json_stream(
                 if not isinstance(payload, dict):
                     raise ValueError("Invalid stream JSON object")
                 yield payload
+        if require_done:
+            raise ValueError("Chat stream ended before [DONE]")
     finally:
         aclose = getattr(raw_iterator, "aclose", None)
         if aclose is not None:

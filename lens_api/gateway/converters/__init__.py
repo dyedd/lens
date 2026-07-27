@@ -4,18 +4,18 @@ from typing import Any
 
 from ...core.protocol_reachability import can_reach_protocol, needs_conversion
 from ...models import ProtocolKind
+from .anthropic_request_to_chat import anthropic_request_to_chat
 from .anthropic_to_responses import anthropic_request_to_responses
 from .chat_request_to_responses import chat_request_to_responses
 from .chat_to_anthropic import (
-    anthropic_request_to_chat,
     chat_response_to_anthropic,
     chat_stream_to_anthropic_stream,
 )
 from .chat_to_responses import (
     chat_response_to_responses,
     chat_stream_to_responses_stream,
-    responses_request_to_chat,
 )
+from .responses_request_to_chat import responses_request_to_chat
 from .responses_to_anthropic import (
     responses_response_to_anthropic,
     responses_stream_to_anthropic_stream,
