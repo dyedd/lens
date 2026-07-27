@@ -7,7 +7,9 @@ from .payload_serialization import _stringify_text_content
 from .usage import _parse_sse_payloads
 
 
-def extract_site_model_output(protocol: ProtocolKind, raw_payload: Any) -> str:
+def extract_site_model_output(
+    protocol: ProtocolKind, raw_payload: dict[str, Any]
+) -> str:
     """Extract a concise display value from a model-probe response."""
     if protocol == ProtocolKind.OPENAI_CHAT:
         return _extract_openai_chat_output(raw_payload)
@@ -48,7 +50,7 @@ def extract_site_model_stream_output(protocol: ProtocolKind, raw_content: str) -
     return "".join(parts).strip()
 
 
-def _extract_openai_chat_output(raw_payload: Any) -> str:
+def _extract_openai_chat_output(raw_payload: dict[str, Any]) -> str:
     choices = raw_payload.get("choices")
     if not isinstance(choices, list):
         return ""
@@ -64,7 +66,7 @@ def _extract_openai_chat_output(raw_payload: Any) -> str:
     return ""
 
 
-def _extract_openai_responses_output(raw_payload: Any) -> str:
+def _extract_openai_responses_output(raw_payload: dict[str, Any]) -> str:
     output_text = raw_payload.get("output_text")
     if isinstance(output_text, str) and output_text.strip():
         return output_text.strip()
@@ -86,7 +88,7 @@ def _extract_openai_responses_output(raw_payload: Any) -> str:
     return "\n".join(parts)
 
 
-def _extract_embedding_output(raw_payload: Any) -> str:
+def _extract_embedding_output(raw_payload: dict[str, Any]) -> str:
     data = raw_payload.get("data")
     if not isinstance(data, list):
         return ""
@@ -101,7 +103,7 @@ def _extract_embedding_output(raw_payload: Any) -> str:
     return ""
 
 
-def _extract_anthropic_output(raw_payload: Any) -> str:
+def _extract_anthropic_output(raw_payload: dict[str, Any]) -> str:
     content = raw_payload.get("content")
     if not isinstance(content, list):
         return ""
@@ -113,7 +115,7 @@ def _extract_anthropic_output(raw_payload: Any) -> str:
     return "\n".join(parts)
 
 
-def _extract_gemini_output(raw_payload: Any) -> str:
+def _extract_gemini_output(raw_payload: dict[str, Any]) -> str:
     candidates = raw_payload.get("candidates")
     if not isinstance(candidates, list):
         return ""
@@ -136,7 +138,7 @@ def _extract_gemini_output(raw_payload: Any) -> str:
     return ""
 
 
-def _extract_image_output(raw_payload: Any) -> str:
+def _extract_image_output(raw_payload: dict[str, Any]) -> str:
     data = raw_payload.get("data")
     if not isinstance(data, list):
         return ""
@@ -149,9 +151,7 @@ def _extract_image_output(raw_payload: Any) -> str:
     return ""
 
 
-def _summarize_rerank_result(payload: Any) -> str:
-    if not isinstance(payload, dict):
-        return ""
+def _summarize_rerank_result(payload: dict[str, Any]) -> str:
     results = payload.get("results")
     if not isinstance(results, list) or not results:
         return ""

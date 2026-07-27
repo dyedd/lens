@@ -9,13 +9,32 @@ import {
 } from "@/components/ui/Table";
 import { cn } from "@/lib/utils";
 import { compactProtocolLabel, protocolBadgeClassName } from "@/lib/protocols";
-import { batchTestStatusLabel, batchTestStatusVariant } from "./channelShared";
-import type { BatchModelTestRow, Locale } from "./channelShared";
+import type {
+  BatchModelTestRow,
+  BatchModelTestStatus,
+  Locale,
+} from "./channelShared";
 
 type Props = {
   rows: BatchModelTestRow[];
   locale: Locale;
 };
+
+function statusLabel(status: BatchModelTestStatus, locale: Locale) {
+  if (status === "pending") return locale === "zh-CN" ? "等待中" : "Pending";
+  if (status === "running") return locale === "zh-CN" ? "测试中" : "Running";
+  if (status === "success") return locale === "zh-CN" ? "成功" : "Success";
+  return locale === "zh-CN" ? "失败" : "Failed";
+}
+
+function statusVariant(
+  status: BatchModelTestStatus,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "success") return "default";
+  if (status === "failed") return "destructive";
+  if (status === "running") return "secondary";
+  return "outline";
+}
 
 /** Renders batch model test result rows. */
 export function BatchModelTestResults({ rows, locale }: Props) {
@@ -71,8 +90,8 @@ export function BatchModelTestResults({ rows, locale }: Props) {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={batchTestStatusVariant(row.status)}>
-                      {batchTestStatusLabel(row.status, locale)}
+                    <Badge variant={statusVariant(row.status)}>
+                      {statusLabel(row.status, locale)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
