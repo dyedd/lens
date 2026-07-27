@@ -73,13 +73,7 @@ export function BatchModelTestDialog({
     Boolean(batchTestPrompt.trim()) &&
     !isBatchModelTestRunning;
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen && isBatchModelTestRunning) return;
-        onOpenChange(nextOpen);
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
         <AppDialogContent
           className="max-w-4xl"
@@ -187,15 +181,7 @@ export function BatchModelTestDialog({
             ) : null}
 
             <BatchModelTestResults rows={batchTestRows} locale={locale} />
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isBatchModelTestRunning}
-              >
-                {locale === "zh-CN" ? "关闭" : "Close"}
-              </Button>
+            <div className="flex justify-end">
               <Button type="button" onClick={onRun} disabled={!canRun}>
                 <RefreshCcw
                   data-icon="inline-start"

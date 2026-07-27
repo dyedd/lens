@@ -19,9 +19,9 @@ from ..upstream_request import (
 )
 from .app_state import app_state
 from .payload_serialization import _decode_content_bytes
-from .routing_plan import _elapsed_ms
+from .routing_plan import _elapsed_ms, _gateway_timeout_scope
 from .routing_request import _apply_param_override
-from .runtime_types import UpstreamRequestError
+from .runtime_types import _GatewayTimeoutError, _RequestDeadline, UpstreamRequestError
 from .site_model_output import (
     extract_site_model_output,
     extract_site_model_stream_output,
@@ -79,14 +79,33 @@ async def _call_site_model_probe_channel(
     client = _resolve_http_client(proxy_url)
 
     started_at = perf_counter()
-    return await _run_site_model_probe_request(
-        client=client,
-        upstream=upstream,
-        channel=channel,
-        model_name=model_name,
-        credential_id=credential_id,
+    deadline = _RequestDeadline(
         started_at=started_at,
+        first_token_timeout_seconds=float(runtime["first_token_timeout_seconds"]),
+        stream_idle_timeout_seconds=float(runtime["stream_idle_timeout_seconds"]),
     )
+    try:
+        async with _gateway_timeout_scope(
+            deadline.first_token_remaining_seconds(),
+            timeout_message=deadline.timeout_message(kind="first_token"),
+        ):
+            return await _run_site_model_probe_request(
+                client=client,
+                upstream=upstream,
+                channel=channel,
+                model_name=model_name,
+                credential_id=credential_id,
+                started_at=started_at,
+            )
+    except _GatewayTimeoutError as exc:
+        return SiteModelTestResult(
+            success=False,
+            status_code=504,
+            latency_ms=_elapsed_ms(started_at),
+            model_name=model_name,
+            credential_id=credential_id,
+            error_message=str(exc),
+        )
 
 
 async def _run_site_model_probe_request(
@@ -125,7 +144,10 @@ async def _run_site_model_probe_request(
                 channel.protocol, raw_content
             )
         else:
-            output_text = extract_site_model_output(channel.protocol, response.json())
+            raw_payload = response.json()
+            if not isinstance(raw_payload, dict):
+                raise ValueError("Expected JSON object")
+            output_text = extract_site_model_output(channel.protocol, raw_payload)
         return SiteModelTestResult(
             success=True,
             status_code=response.status_code,
@@ -160,7 +182,6 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
         return {
             "model": payload.model_name,
             "messages": [{"role": "user", "content": text}],
-            "max_tokens": 64,
             "stream": False,
         }
     if payload.protocol == ProtocolKind.OPENAI_RESPONSES:
@@ -221,7 +242,11 @@ def _apply_site_model_probe_param_override(
             credential_id=payload.credential.id,
             error_message=_format_channel_error(exc.detail),
         )
-    if payload.protocol == ProtocolKind.RERANK:
+    if payload.protocol in (
+        ProtocolKind.OPENAI_EMBEDDING,
+        ProtocolKind.OPENAI_IMAGE,
+        ProtocolKind.RERANK,
+    ):
         prepared_body.pop("stream", None)
     else:
         prepared_body["stream"] = False

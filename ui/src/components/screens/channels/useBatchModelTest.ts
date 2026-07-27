@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   apiRequest,
@@ -44,6 +44,7 @@ export function useBatchModelTest({
     Record<string, ProtocolKind>
   >({});
   const [batchTestRows, setBatchTestRows] = useState<BatchModelTestRow[]>([]);
+  const batchTestAbortController = useRef<AbortController | null>(null);
   const batchTestOptions = useMemo<BatchModelTestOption[]>(() => {
     const options: BatchModelTestOption[] = [];
     for (const option of optionByKey.values()) {
@@ -56,12 +57,22 @@ export function useBatchModelTest({
     return options;
   }, [optionByKey, protocolByKey]);
 
+  function cancelBatchModelTests() {
+    batchTestAbortController.current?.abort();
+    batchTestAbortController.current = null;
+    setIsBatchModelTestRunning(false);
+  }
   function clearBatchModelTestResults() {
+    cancelBatchModelTests();
     setBatchModelTestOpen(false);
     setBatchTestPromptMode("0");
     setBatchTestPrompt("");
     setProtocolByKey({});
     setBatchTestRows([]);
+  }
+  function changeBatchModelTestOpen(open: boolean) {
+    if (!open) cancelBatchModelTests();
+    setBatchModelTestOpen(open);
   }
   function openBatchModelTestDialog() {
     setBatchTestPromptMode("0");
@@ -139,21 +150,28 @@ export function useBatchModelTest({
     let cursor = 0;
     let succeeded = 0;
     let failed = 0;
+    const controller = new AbortController();
+    batchTestAbortController.current?.abort();
+    batchTestAbortController.current = controller;
     setIsBatchModelTestRunning(true);
     try {
       await Promise.all(
         Array.from({ length: concurrency }, async () => {
-          while (cursor < entries.length) {
+          while (!controller.signal.aborted && cursor < entries.length) {
             const entry = entries[cursor++];
             updateRow(entry.key, { status: "running", message: "" });
             try {
               const result = await apiRequest<SiteModelTestResult>(
                 "/admin/site-model-tests",
-                { method: "POST", body: JSON.stringify(entry.payload) },
+                {
+                  method: "POST",
+                  body: JSON.stringify(entry.payload),
+                  signal: controller.signal,
+                },
               );
               updateRow(entry.key, {
                 status: result.success ? "success" : "failed",
-                statusCode: result.status_code ?? null,
+                statusCode: result.status_code,
                 latencyMs: result.latency_ms,
                 message: result.success
                   ? result.output_text ||
@@ -166,6 +184,7 @@ export function useBatchModelTest({
               if (result.success) succeeded += 1;
               else failed += 1;
             } catch (error) {
+              if (controller.signal.aborted) return;
               updateRow(entry.key, {
                 status: "failed",
                 statusCode: null,
@@ -182,18 +201,22 @@ export function useBatchModelTest({
           }
         }),
       );
+      if (controller.signal.aborted) return;
       const message =
         locale === "zh-CN"
           ? `批量测试完成：成功 ${succeeded}，失败 ${failed}`
           : `Batch test finished: ${succeeded} succeeded, ${failed} failed`;
       toast[failed ? "error" : "success"](message);
     } finally {
-      setIsBatchModelTestRunning(false);
+      if (batchTestAbortController.current === controller) {
+        batchTestAbortController.current = null;
+        setIsBatchModelTestRunning(false);
+      }
     }
   }
   return {
     batchModelTestOpen,
-    setBatchModelTestOpen,
+    changeBatchModelTestOpen,
     isBatchModelTestRunning,
     batchTestPromptMode,
     batchTestConcurrency,

@@ -140,6 +140,7 @@ export function ModelTestDialog({
                   <Select
                     value={modelTestPromptMode}
                     onValueChange={onPromptModeChange}
+                    disabled={testingModel}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -192,6 +193,7 @@ export function ModelTestDialog({
                   className="min-h-24"
                   value={modelTestPrompt}
                   onChange={(event) => onPromptChange(event.target.value)}
+                  disabled={testingModel}
                 />
               </Field>
             </div>
@@ -244,15 +246,7 @@ export function ModelTestDialog({
               </div>
             ) : null}
 
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onClose}
-                disabled={testingModel}
-              >
-                {locale === "zh-CN" ? "关闭" : "Close"}
-              </Button>
+            <div className="flex justify-end">
               <Button
                 type="button"
                 onClick={onRun}

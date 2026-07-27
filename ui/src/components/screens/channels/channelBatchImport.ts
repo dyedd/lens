@@ -3,7 +3,6 @@ import type {
   SiteBatchImportPayload,
 } from "@/lib/api";
 import type { Locale } from "@/lib/I18nContext";
-import type { BatchModelTestStatus } from "./channelTypes";
 
 export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
   sites: [
@@ -128,26 +127,5 @@ export function importStatusVariant(
   if (status === "created") return "default";
   if (status === "skipped") return "secondary";
   if (status === "error") return "destructive";
-  return "outline";
-}
-
-/** Formats a batch model-test status for the requested locale. */
-export function batchTestStatusLabel(
-  status: BatchModelTestStatus,
-  locale: Locale,
-) {
-  if (status === "pending") return locale === "zh-CN" ? "等待中" : "Pending";
-  if (status === "running") return locale === "zh-CN" ? "测试中" : "Running";
-  if (status === "success") return locale === "zh-CN" ? "成功" : "Success";
-  return locale === "zh-CN" ? "失败" : "Failed";
-}
-
-/** Maps a batch model-test status to its badge variant. */
-export function batchTestStatusVariant(
-  status: BatchModelTestStatus,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "success") return "default";
-  if (status === "failed") return "destructive";
-  if (status === "running") return "secondary";
   return "outline";
 }

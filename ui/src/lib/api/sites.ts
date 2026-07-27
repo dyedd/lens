@@ -212,7 +212,7 @@ export type SiteModelTestPayload = {
 };
 export type SiteModelTestResult = {
   success: boolean;
-  status_code?: number | null;
+  status_code: number | null;
   latency_ms: number;
   model_name: string;
   credential_id: string;

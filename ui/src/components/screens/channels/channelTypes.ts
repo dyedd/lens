@@ -66,7 +66,7 @@ export type BatchModelTestRow = {
   credentialName: string;
   protocol: ProtocolKind;
   status: BatchModelTestStatus;
-  statusCode?: number | null;
+  statusCode: number | null;
   latencyMs?: number;
   message: string;
 };
