@@ -9,7 +9,7 @@ from ._responses import (
     _usage_int,
     _validate_terminal_response,
 )
-from ._shared import _required_string
+from ._validation import _required_string
 from ._sse import format_sse_event, parse_sse_json_stream
 
 
@@ -225,6 +225,7 @@ async def responses_stream_to_chat_stream(
             message = error.get("message") if isinstance(error, Mapping) else None
             message = message or payload.get("message")
             raise ValueError(f"Responses stream failed: {message or event_type}")
+    raise ValueError("Responses stream ended before terminal event")
 
 
 def _response_tool_start_chunk(
