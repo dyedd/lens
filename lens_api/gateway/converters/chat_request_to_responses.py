@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
-from ._shared import _required_string
+from ._validation import _required_string
 
 
 def chat_request_to_responses(body: dict[str, Any]) -> dict[str, Any]:
@@ -27,7 +28,7 @@ def chat_request_to_responses(body: dict[str, Any]) -> dict[str, Any]:
         if key in body:
             result[key] = body[key]
 
-    max_output_tokens = body.get("max_completion_tokens")
+    max_output_tokens = body.get("max_completion_tokens", body.get("max_tokens"))
     if max_output_tokens is not None:
         result["max_output_tokens"] = max_output_tokens
 
@@ -68,7 +69,7 @@ def _chat_messages_to_responses_input(messages: list[Any]) -> list[dict[str, Any
             )
             continue
         if role not in {"developer", "system", "user", "assistant"}:
-            continue
+            raise ValueError(f"Unsupported Chat message role: {role}")
 
         content = _chat_content_to_responses(message.get("content"))
         raw_tool_calls = message.get("tool_calls") if role == "assistant" else None
@@ -119,6 +120,8 @@ def _chat_content_to_responses(content: Any) -> Any:
             if isinstance(detail, str) and detail in {"auto", "low", "high"}:
                 image_part["detail"] = detail
             parts.append(image_part)
+        else:
+            raise ValueError(f"Unsupported Chat content part type: {part_type}")
     return parts
 
 
@@ -141,6 +144,10 @@ def _chat_tool_output(content: Any) -> str:
                     allow_empty=True,
                 )
             )
+        else:
+            raise ValueError(
+                f"Unsupported Chat tool content part type: {part.get('type')}"
+            )
     return "".join(text_parts)
 
 
@@ -150,7 +157,7 @@ def _chat_tool_calls_to_responses(tool_calls: list[Any]) -> list[dict[str, Any]]
         if not isinstance(tool_call, dict):
             raise ValueError("Chat assistant tool_calls must contain objects")
         if tool_call.get("type") != "function":
-            continue
+            raise ValueError("Unsupported Chat tool call type")
         function = tool_call.get("function")
         if not isinstance(function, dict):
             raise ValueError("Chat function tool call must contain a function object")
@@ -184,7 +191,7 @@ def _chat_tools_to_responses(value: Any) -> list[dict[str, Any]]:
         if not isinstance(tool, dict):
             raise ValueError("Chat tools must contain objects")
         if tool.get("type") != "function":
-            continue
+            raise ValueError("Unsupported Chat tool type")
         function = tool.get("function")
         if not isinstance(function, dict):
             raise ValueError("Chat function tools must contain a function object")
@@ -207,7 +214,7 @@ def _chat_tool_choice_to_responses(value: Any) -> Any:
     if value is None:
         return None
     if not isinstance(value, dict) or value.get("type") != "function":
-        return None
+        raise ValueError("Unsupported Chat tool_choice")
     function = value.get("function")
     if not isinstance(function, dict):
         raise ValueError("Chat function tool_choice must contain a function object")

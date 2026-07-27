@@ -5,7 +5,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from ._shared import _required_string
+from ._validation import _required_string
 
 _REASONING_ENVELOPE_PREFIX = "lens-responses-reasoning-v1:"
 
