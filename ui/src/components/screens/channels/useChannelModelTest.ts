@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -40,6 +40,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
   const [modelTestResult, setModelTestResult] =
     useState<SiteModelTestResult | null>(null);
   const [testingModel, setTestingModel] = useState(false);
+  const modelTestAbortController = useRef<AbortController | null>(null);
   const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
@@ -158,7 +159,9 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     openModelTest(option.target.protocolConfigIndex, option.target.modelIndex);
   }
   function closeModelTest() {
-    if (testingModel) return;
+    modelTestAbortController.current?.abort();
+    modelTestAbortController.current = null;
+    setTestingModel(false);
     setModelTestTarget(null);
     setModelTestProtocol(null);
     setModelTestResult(null);
@@ -188,12 +191,19 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       );
       return;
     }
+    const controller = new AbortController();
+    modelTestAbortController.current?.abort();
+    modelTestAbortController.current = controller;
     setTestingModel(true);
     setModelTestResult(null);
     try {
       const result = await apiRequest<SiteModelTestResult>(
         "/admin/site-model-tests",
-        { method: "POST", body: JSON.stringify(payload) },
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        },
       );
       setModelTestResult(result);
       toast[result.success ? "success" : "error"](
@@ -206,6 +216,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
             : "Model test failed",
       );
     } catch (error) {
+      if (controller.signal.aborted) return;
       const message = getApiErrorMessage(
         error,
         locale === "zh-CN" ? "模型测试失败" : "Model test failed",
@@ -220,7 +231,10 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
         error_message: message,
       });
     } finally {
-      setTestingModel(false);
+      if (modelTestAbortController.current === controller) {
+        modelTestAbortController.current = null;
+        setTestingModel(false);
+      }
     }
   }
   return {

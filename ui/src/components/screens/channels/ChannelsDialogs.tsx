@@ -172,7 +172,7 @@ export function ChannelsDialogs({
           batchTestOptions={batchTest.batchTestOptions}
           batchTestRows={batchTest.batchTestRows}
           isBatchModelTestRunning={batchTest.isBatchModelTestRunning}
-          onOpenChange={batchTest.setBatchModelTestOpen}
+          onOpenChange={batchTest.changeBatchModelTestOpen}
           onPromptModeChange={batchTest.changeBatchTestPromptMode}
           onPromptChange={batchTest.changeBatchTestPrompt}
           onConcurrencyChange={batchTest.setBatchTestConcurrency}

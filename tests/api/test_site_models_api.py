@@ -1,12 +1,43 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
+import httpx
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
-from conftest import assert_error, openai_chat_channel_id, seed_request_log
-from lens_api.models import ChannelModelSyncResponse, SiteModelTestResult
+from conftest import (
+    assert_error,
+    openai_chat_channel_id,
+    run_async,
+    seed_request_log,
+)
+from lens_api.models import (
+    ChannelModelSyncResponse,
+    ProtocolKind,
+    SiteModelTestRequest,
+    SiteModelTestResult,
+)
+from lens_api.persistence.shared import (
+    SETTING_FIRST_TOKEN_TIMEOUT_SECONDS,
+    SettingItem,
+)
+
+
+def _model_test_payload(protocol: ProtocolKind) -> dict[str, Any]:
+    return {
+        "protocol": protocol.value,
+        "base_url": "https://upstream.example/v1",
+        "credential": {
+            "id": "cred-a",
+            "name": "primary",
+            "api_key": "upstream-secret",
+        },
+        "model_name": "test-model",
+        "prompt": "ping",
+    }
 
 
 def test_site_runtime_summaries_include_recent_request_log(
@@ -159,21 +190,156 @@ def test_test_site_model_returns_probe_result(
     response = client.post(
         "/api/admin/site-model-tests",
         headers=admin_headers,
-        json={
-            "protocol": "openai_chat",
-            "base_url": "https://upstream.example/v1",
-            "credential": {
-                "id": "cred-a",
-                "name": "primary",
-                "api_key": "upstream-secret",
-            },
-            "model_name": "gpt-4o",
-            "prompt": "ping",
-        },
+        json=_model_test_payload(ProtocolKind.OPENAI_CHAT),
     )
 
     assert response.status_code == 200
     assert response.json()["output_text"] == "pong"
+
+
+def test_test_site_model_returns_timeout_result(
+    client,
+    admin_headers,
+    app_state,
+    monkeypatch,
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(60)
+        return httpx.Response(200, json={}, request=request)
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    import lens_api.gateway.service.site_model_probe as probe
+
+    monkeypatch.setattr(probe, "app_state", app_state)
+    monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)
+    run_async(
+        app_state.settings_repo.upsert_settings(
+            [SettingItem(key=SETTING_FIRST_TOKEN_TIMEOUT_SECONDS, value="0.01")]
+        )
+    )
+
+    try:
+        response = client.post(
+            "/api/admin/site-model-tests",
+            headers=admin_headers,
+            json=_model_test_payload(ProtocolKind.OPENAI_CHAT),
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    assert response.json()["status_code"] == 504
+    assert "timed out after 0.01s" in response.json()["error_message"]
+
+
+def test_test_site_model_cancels_upstream_on_client_disconnect(monkeypatch) -> None:
+    async def run_test() -> bool:
+        probe_started = asyncio.Event()
+        probe_cancelled = False
+
+        async def hanging_probe(**_kwargs: Any) -> SiteModelTestResult:
+            nonlocal probe_cancelled
+            probe_started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                probe_cancelled = True
+                raise
+
+        async def receive() -> dict[str, str]:
+            await probe_started.wait()
+            return {"type": "http.disconnect"}
+
+        import lens_api.gateway.service.admin.sites as sites
+
+        monkeypatch.setattr(sites, "_call_site_model_probe_channel", hanging_probe)
+        await sites.test_site_model(
+            SiteModelTestRequest.model_validate(
+                _model_test_payload(ProtocolKind.OPENAI_CHAT)
+            ),
+            Request({"type": "http"}, receive),
+            None,
+        )
+        return probe_cancelled
+
+    assert run_async(run_test()) is True
+
+
+@pytest.mark.parametrize(
+    ("protocol", "forbidden_fields"),
+    [
+        (ProtocolKind.OPENAI_EMBEDDING, ("stream",)),
+        (ProtocolKind.OPENAI_IMAGE, ("stream",)),
+        (ProtocolKind.RERANK, ("stream",)),
+        (
+            ProtocolKind.OPENAI_CHAT,
+            ("max_tokens", "max_completion_tokens"),
+        ),
+    ],
+)
+def test_test_site_model_omits_unsupported_upstream_fields(
+    client,
+    admin_headers,
+    monkeypatch,
+    protocol: ProtocolKind,
+    forbidden_fields: tuple[str, ...],
+) -> None:
+    captured_body: dict[str, Any] = {}
+
+    async def fake_probe(**kwargs: Any) -> SiteModelTestResult:
+        captured_body.update(kwargs["body"])
+        return SiteModelTestResult(
+            success=True,
+            status_code=200,
+            latency_ms=1,
+            model_name=kwargs["model_name"],
+            credential_id=kwargs["credential_id"],
+        )
+
+    import lens_api.gateway.service.admin.sites as sites
+
+    monkeypatch.setattr(sites, "_call_site_model_probe_channel", fake_probe)
+
+    response = client.post(
+        "/api/admin/site-model-tests",
+        headers=admin_headers,
+        json=_model_test_payload(protocol),
+    )
+
+    assert response.status_code == 200
+    assert all(field not in captured_body for field in forbidden_fields)
+
+
+def test_test_site_model_rejects_non_object_success_payload(
+    client,
+    admin_headers,
+    app_state,
+    monkeypatch,
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[], request=request)
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    import lens_api.gateway.service.site_model_probe as probe
+
+    monkeypatch.setattr(probe, "app_state", app_state)
+    monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)
+    try:
+        response = client.post(
+            "/api/admin/site-model-tests",
+            headers=admin_headers,
+            json=_model_test_payload(ProtocolKind.OPENAI_CHAT),
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    assert response.json()["status_code"] == 502
+    assert response.json()["error_message"] == (
+        "Invalid upstream response: Expected JSON object"
+    )
 
 
 def test_sync_channel_models_uses_service_task(
