@@ -7,7 +7,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import OverviewSummary, OverviewSummaryMetric
+from ...models import (
+    OverviewSummary,
+    OverviewSummaryMetric,
+    RequestLogLifecycleStatus,
+)
 from ..entities import RequestLogEntity
 from ..stats_entities import (
     ImportedStatsDailyEntity,
@@ -196,7 +200,7 @@ class OverviewMixin(
     ) -> dict[str, float]:
         stmt = select(
             RequestLogEntity.created_at,
-            RequestLogEntity.success,
+            RequestLogEntity.lifecycle_status,
             RequestLogEntity.latency_ms,
             RequestLogEntity.input_tokens,
             RequestLogEntity.cache_read_input_tokens,
@@ -418,7 +422,7 @@ class OverviewMixin(
         for row in rows:
             (
                 created_at,
-                success,
+                lifecycle_status,
                 latency_ms,
                 input_tokens,
                 cache_read_input_tokens,
@@ -450,10 +454,17 @@ class OverviewMixin(
                     "total_cost_usd": 0.0,
                 },
             )
-            success_value = 1.0 if int(success) else 0.0
+            success_value = float(
+                lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value
+            )
+            failed_value = (
+                1.0
+                if lifecycle_status == RequestLogLifecycleStatus.FAILED.value
+                else 0.0
+            )
             current["request_count"] += 1.0
             current["successful_requests"] += success_value
-            current["failed_requests"] += 0.0 if success_value else 1.0
+            current["failed_requests"] += failed_value
             current["wait_time_ms"] += float(latency_ms)
             current["input_tokens"] += float(input_tokens)
             current["cache_read_input_tokens"] += float(cache_read_input_tokens)

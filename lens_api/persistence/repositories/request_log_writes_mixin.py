@@ -5,15 +5,16 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, func, select, update
+
 from ..shared import (
-    OverviewModelDailyStatsEntity,
     REQUEST_LOG_RUNNING_STATUSES,
     REQUEST_LOG_TERMINAL_STATUSES,
+    SETTING_STATS_TIME_ZONE,
+    OverviewModelDailyStatsEntity,
     RequestLogDailyStatsEntity,
     RequestLogEntity,
     RequestLogItem,
     RequestLogLifecycleStatus,
-    SETTING_STATS_TIME_ZONE,
     SettingEntity,
 )
 
@@ -376,7 +377,7 @@ class RequestLogWriteMixin:
             unarchived_stmt = (
                 select(
                     RequestLogEntity.created_at,
-                    RequestLogEntity.success,
+                    RequestLogEntity.lifecycle_status,
                     RequestLogEntity.latency_ms,
                     RequestLogEntity.input_tokens,
                     RequestLogEntity.cache_read_input_tokens,
@@ -412,9 +413,9 @@ class RequestLogWriteMixin:
                 )
                 .where(RequestLogEntity.stats_archived == 0)
                 .where(
-                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
+                    RequestLogEntity.lifecycle_status
+                    == RequestLogLifecycleStatus.SUCCEEDED.value
                 )
-                .where(RequestLogEntity.success == 1)
                 .where(model_expr.is_not(None))
                 .order_by(RequestLogEntity.created_at.asc())
             )

@@ -8,20 +8,24 @@ from ...models import (
     ProtocolKind,
     RequestLogLifecycleStatus,
 )
-from ..router.cooldown import ErrorCategory, classify_error
 from ..converters import needs_conversion
+from ..router.cooldown import ErrorCategory, classify_error
+from .app_state import app_state, logger
+from .request_logger import _update_request_log
+from .routing_plan import _elapsed_ms
 from .runtime_types import (
     StreamCapture,
     UpstreamResult,
     _record_stream_parse_error,
 )
-from .app_state import app_state, logger
-from .upstream_support import _format_channel_error
-from .routing_plan import _elapsed_ms
 from .stream_events import _join_stream_chunks, _stream_capture_usage
 from .stream_restore import _distill_stream_response_content
-from .usage import _describe_stream_capture_issue, _extract_stream_usage
-from .request_logger import _update_request_log
+from .upstream_support import _format_channel_error
+from .usage import (
+    _describe_stream_capture_issue,
+    _extract_stream_usage,
+    _is_pure_client_stream_disconnect,
+)
 
 
 async def _safe_estimate_cost(
@@ -113,9 +117,8 @@ async def _record_stream_request_log(
         if capture is not None:
             _record_stream_parse_error(capture, str(exc))
         distilled_content = response_raw_content
-    capture_issue = _describe_stream_capture_issue(
-        channel.protocol, capture, raw_content
-    )
+    capture_issue = _describe_stream_capture_issue(capture)
+    lifecycle_status = _stream_log_lifecycle_status(capture, capture_issue)
     upstream_model_name = parsed["resolved_model"] or result.upstream_model_name
     input_tokens = parsed["input_tokens"]
     cache_read_input_tokens = parsed["cache_read_input_tokens"]
@@ -142,6 +145,7 @@ async def _record_stream_request_log(
         channel=channel,
         capture=capture,
         capture_issue=capture_issue,
+        lifecycle_status=lifecycle_status,
         attempts=attempt_logs,
     )
     (
@@ -165,13 +169,9 @@ async def _record_stream_request_log(
         channel_name=channel.name,
         gateway_key=gateway_key,
         user_agent=user_agent,
-        lifecycle_status=(
-            RequestLogLifecycleStatus.FAILED
-            if capture_issue is not None
-            else RequestLogLifecycleStatus.SUCCEEDED
-        ),
+        lifecycle_status=lifecycle_status,
         status_code=status_code,
-        success=capture_issue is None,
+        success=lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED,
         is_stream=True,
         first_token_latency_ms=first_token_latency_ms,
         latency_ms=latency_ms,
@@ -195,10 +195,11 @@ async def _record_stream_route_health(
     channel: ChannelConfig,
     capture: StreamCapture | None,
     capture_issue: str | None,
+    lifecycle_status: RequestLogLifecycleStatus,
     attempts: list[dict[str, Any]],
 ) -> None:
     credential_id, model_name = _last_attempt_target(attempts)
-    if _is_client_stream_disconnect(capture):
+    if lifecycle_status == RequestLogLifecycleStatus.CANCELLED:
         return
     if capture_issue is None:
         app_state.router.record_success(
@@ -241,13 +242,14 @@ def _last_attempt_target(
     )
 
 
-def _is_client_stream_disconnect(capture: StreamCapture | None) -> bool:
-    return (
-        capture is not None
-        and capture.is_client_disconnected
-        and not capture.errors
-        and not capture.parse_errors
-    )
+def _stream_log_lifecycle_status(
+    capture: StreamCapture | None, capture_issue: str | None
+) -> RequestLogLifecycleStatus:
+    if _is_pure_client_stream_disconnect(capture):
+        return RequestLogLifecycleStatus.CANCELLED
+    if capture_issue is not None:
+        return RequestLogLifecycleStatus.FAILED
+    return RequestLogLifecycleStatus.SUCCEEDED
 
 
 def _stream_log_status_code(

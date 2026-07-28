@@ -91,6 +91,7 @@ def seed_request_log(
     gateway_key_id: str | None = None,
     status_code: int | None = 200,
     success: bool = True,
+    lifecycle_status: RequestLogLifecycleStatus | None = None,
     error_message: str | None = None,
 ) -> Any:
     """Insert a representative request log through the current repository."""
@@ -106,7 +107,8 @@ def seed_request_log(
             gateway_key_id=gateway_key_id,
             status_code=status_code,
             success=success,
-            lifecycle_status=(
+            lifecycle_status=lifecycle_status
+            or (
                 RequestLogLifecycleStatus.SUCCEEDED
                 if success
                 else RequestLogLifecycleStatus.FAILED

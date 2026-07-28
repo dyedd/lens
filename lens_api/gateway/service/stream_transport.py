@@ -10,14 +10,14 @@ from starlette.types import Receive, Scope, Send
 from ...models import ProtocolKind
 from ..router.cooldown import ErrorCategory
 from .app_state import logger
+from .routing_plan import _gateway_timeout_scope
 from .runtime_types import (
     StreamCapture,
-    _GatewayTimeoutError,
-    _RequestDeadline,
     _capture_stream_content,
+    _GatewayTimeoutError,
     _record_stream_error,
+    _RequestDeadline,
 )
-from .routing_plan import _gateway_timeout_scope
 from .stream_events import _capture_stream_event_chunk, _flush_stream_event_buffer
 
 
@@ -91,16 +91,31 @@ async def _stream_upstream_iterator(
                     has_seen_first_chunk=capture.has_seen_first_chunk,
                 )
             except StopAsyncIteration:
+                _flush_stream_event_buffer(protocol, capture, stream_started_at)
                 break
             if not chunk:
                 continue
-            text = chunk.decode("utf-8", errors="replace")
+            text = chunk.decode("utf-8", errors="surrogateescape")
+            terminal_prefix_length: int | None = None
             if text:
-                _capture_stream_event_chunk(protocol, capture, text, stream_started_at)
-                _capture_stream_content(capture, text)
-            yield chunk
-        _flush_stream_event_buffer(protocol, capture, stream_started_at)
-        capture.is_completed = True
+                terminal_prefix_length = _capture_stream_event_chunk(
+                    protocol, capture, text, stream_started_at
+                )
+            if terminal_prefix_length is None or terminal_prefix_length >= len(text):
+                forwarded_chunk = chunk
+            else:
+                forwarded_chunk = text[:terminal_prefix_length].encode(
+                    "utf-8", errors="surrogateescape"
+                )
+            if terminal_prefix_length is not None:
+                await response.aclose()
+            if forwarded_chunk:
+                _capture_stream_content(
+                    capture, forwarded_chunk.decode("utf-8", errors="replace")
+                )
+                yield forwarded_chunk
+            if terminal_prefix_length is not None:
+                break
     except _GatewayTimeoutError as exc:
         _record_stream_error(
             capture,
@@ -143,9 +158,10 @@ async def _capture_converted_stream_iterator(
             _capture_stream_content(capture, text, client_response=True)
             yield chunk
     except ValueError as exc:
-        _record_stream_error(
-            capture,
-            f"stream conversion failed: {exc}",
-            status_code=502,
-        )
+        if not capture.errors:
+            _record_stream_error(
+                capture,
+                f"stream conversion failed: {exc}",
+                status_code=502,
+            )
         raise

@@ -67,23 +67,25 @@ def _record_chat_stream_finish_reasons(
 
 def _record_stream_completion(
     protocol: ProtocolKind, capture: StreamCapture, payload: dict[str, Any]
-) -> None:
+) -> bool:
     if protocol == ProtocolKind.OPENAI_CHAT:
         _record_chat_stream_finish_reasons(capture, payload)
         capture.protocol_completed = (
             len(capture.chat_finished_choices) >= capture.chat_expected_choices
         )
-        return
+        return False
     if protocol == ProtocolKind.OPENAI_RESPONSES:
-        if payload.get("type") in OPENAI_RESPONSES_TERMINAL_EVENTS:
+        is_terminal = payload.get("type") in OPENAI_RESPONSES_TERMINAL_EVENTS
+        if is_terminal:
             capture.protocol_completed = True
-        return
+        return is_terminal
     if protocol == ProtocolKind.ANTHROPIC:
-        if payload.get("type") == "message_stop":
+        is_terminal = payload.get("type") == "message_stop"
+        if is_terminal:
             capture.protocol_completed = True
-        return
+        return is_terminal
     if protocol != ProtocolKind.GEMINI:
-        return
+        return False
 
     candidates = payload.get("candidates")
     if not isinstance(candidates, list):
@@ -99,6 +101,7 @@ def _record_stream_completion(
     capture.protocol_completed = (
         len(capture.gemini_finished_candidates) >= capture.gemini_expected_candidates
     )
+    return False
 
 
 def _chat_function_delta_has_output(value: dict[str, Any]) -> bool:

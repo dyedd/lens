@@ -135,6 +135,10 @@ export function RequestFiltersPanel(props: RequestFiltersPanelProps) {
                     key: "failed" as const,
                     label: titleForLocale(locale, "失败", "Failed"),
                   },
+                  {
+                    key: "cancelled" as const,
+                    label: titleForLocale(locale, "已取消", "Cancelled"),
+                  },
                 ].map((option) => (
                   <Button
                     key={option.key}

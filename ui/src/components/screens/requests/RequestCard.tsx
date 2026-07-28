@@ -128,7 +128,6 @@ export function RequestCard({
               <ProtocolBadge protocol={item.protocol} />
               <RequestOutcomeBadge
                 status={item.lifecycle_status}
-                success={item.success}
                 statusCode={item.status_code}
                 locale={locale}
                 errorMessage={errorDisplay}

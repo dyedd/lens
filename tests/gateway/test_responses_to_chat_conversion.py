@@ -592,6 +592,43 @@ def test_responses_stream_rejects_non_object_sse_payload() -> None:
         run_async(collect())
 
 
+@pytest.mark.parametrize(
+    ("client_protocol", "channel_protocol"),
+    [
+        (ProtocolKind.ANTHROPIC, ProtocolKind.OPENAI_CHAT),
+        (ProtocolKind.OPENAI_RESPONSES, ProtocolKind.OPENAI_CHAT),
+        (ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES),
+        (ProtocolKind.ANTHROPIC, ProtocolKind.OPENAI_RESPONSES),
+    ],
+)
+def test_cross_protocol_stream_still_requires_upstream_terminal_event(
+    client_protocol: ProtocolKind,
+    channel_protocol: ProtocolKind,
+) -> None:
+    async def incomplete_stream() -> AsyncIterator[bytes]:
+        if channel_protocol == ProtocolKind.OPENAI_CHAT:
+            yield (
+                b'data: {"id":"chat_1","model":"test-model","choices":['
+                b'{"index":0,"delta":{"content":"hello"}}]}\n\n'
+            )
+            return
+        yield (
+            b'event: response.created\ndata: {"type":"response.created",'
+            b'"response":{"id":"resp_1","model":"test-model"}}\n\n'
+        )
+
+    async def collect() -> None:
+        async for _ in convert_stream_iterator(
+            client_protocol,
+            channel_protocol,
+            incomplete_stream(),
+        ):
+            pass
+
+    with pytest.raises(ValueError, match="ended before"):
+        run_async(collect())
+
+
 def test_terminal_event_remains_successful_after_client_disconnect() -> None:
     deadline = _RequestDeadline(0.0, 0.0, 0.0)
     for protocol, payload in (
@@ -605,7 +642,7 @@ def test_terminal_event_remains_successful_after_client_disconnect() -> None:
         _record_stream_completion(protocol, capture, payload)
         capture.is_client_disconnected = True
 
-        assert _describe_stream_capture_issue(protocol, capture, None) is None
+        assert _describe_stream_capture_issue(capture) is None
 
 
 def test_incomplete_responses_event_is_terminal_and_preserves_usage() -> None:
@@ -633,10 +670,7 @@ def test_incomplete_responses_event_is_terminal_and_preserves_usage() -> None:
     )
 
     assert capture.protocol_completed is True
-    assert (
-        _describe_stream_capture_issue(ProtocolKind.OPENAI_RESPONSES, capture, None)
-        is None
-    )
+    assert _describe_stream_capture_issue(capture) is None
     assert usage == {
         "resolved_model": "gpt-test",
         "input_tokens": 7,
@@ -647,14 +681,11 @@ def test_incomplete_responses_event_is_terminal_and_preserves_usage() -> None:
     }
 
 
-def test_disconnect_before_responses_terminal_event_remains_incomplete() -> None:
+def test_disconnect_before_responses_terminal_event_is_not_an_upstream_error() -> None:
     capture = StreamCapture(
         capture_body=False,
         deadline=_RequestDeadline(0.0, 0.0, 0.0),
         is_client_disconnected=True,
     )
 
-    assert (
-        _describe_stream_capture_issue(ProtocolKind.OPENAI_RESPONSES, capture, None)
-        == "stream ended before Responses terminal event"
-    )
+    assert _describe_stream_capture_issue(capture) is None

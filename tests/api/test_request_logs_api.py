@@ -104,6 +104,34 @@ def test_request_log_page_filters_failed_logs_with_na_options(
     assert payload["gateway_keys"][0]["id"] == "n/a"
 
 
+def test_request_log_page_filters_cancelled_logs(
+    client,
+    admin_headers,
+    app_state,
+) -> None:
+    cancelled_log = seed_request_log(
+        app_state,
+        status_code=200,
+        success=False,
+        lifecycle_status=RequestLogLifecycleStatus.CANCELLED,
+    )
+    seed_request_log(app_state)
+
+    response = client.get(
+        "/api/admin/request-logs/page",
+        headers=admin_headers,
+        params={"status": "cancelled"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["id"] == cancelled_log.id
+    assert payload["items"][0]["lifecycle_status"] == "cancelled"
+    assert payload["items"][0]["status_code"] == 200
+    assert payload["items"][0]["error_message"] is None
+
+
 def test_request_log_detail_returns_body_and_attempts(
     client,
     admin_headers,
@@ -111,9 +139,7 @@ def test_request_log_detail_returns_body_and_attempts(
 ) -> None:
     log = seed_request_log(app_state)
 
-    response = client.get(
-        f"/api/admin/request-logs/{log.id}", headers=admin_headers
-    )
+    response = client.get(f"/api/admin/request-logs/{log.id}", headers=admin_headers)
 
     assert response.status_code == 200
     payload = response.json()
@@ -123,7 +149,9 @@ def test_request_log_detail_returns_body_and_attempts(
     assert payload["attempts"][0]["success"] is True
 
 
-def test_request_log_detail_missing_log_returns_not_found(client, admin_headers) -> None:
+def test_request_log_detail_missing_log_returns_not_found(
+    client, admin_headers
+) -> None:
     response = client.get("/api/admin/request-logs/999", headers=admin_headers)
 
     assert_error(response, 404, "999")

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Any
-
-import httpx
 
 from ...models import ProtocolKind
 from .runtime_types import StreamCapture
@@ -193,63 +190,26 @@ def _extract_stream_usage(
 
 
 from .stream_parsing import (
-    _normalize_event_stream_newlines,
     _parse_ndjson_payloads,
     _parse_sse_payloads,
 )
 
 
-def _describe_stream_capture_issue(
-    protocol: ProtocolKind,
-    capture: StreamCapture | None,
-    raw_content: str | None,
-) -> str | None:
-    issues: list[str] = []
-
-    if capture is not None:
-        issues.extend(error for error in capture.errors if error)
-        issues.extend(error for error in capture.parse_errors if error)
-
-    if capture is None or capture.capture_body:
-        if not raw_content and not (capture is not None and capture.protocol_completed):
-            issues.append("no stream content captured")
-
-    if capture is not None and not capture.errors and not capture.protocol_completed:
-        if _stream_requires_protocol_completion(protocol):
-            issues.append(_stream_completion_message(protocol))
-        elif not capture.is_completed:
-            issues.append("stream did not drain to completion")
-    if (
-        capture is not None
-        and capture.is_completed
-        and not capture.has_seen_first_chunk
-        and protocol not in (ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK)
-    ):
-        issues.append("stream ended before first token")
-
-    if not issues:
+def _describe_stream_capture_issue(capture: StreamCapture | None) -> str | None:
+    if capture is None:
         return None
-
-    return "; ".join(dict.fromkeys(issues))
-
-
-def _stream_requires_protocol_completion(protocol: ProtocolKind) -> bool:
-    return protocol in {
-        ProtocolKind.OPENAI_CHAT,
-        ProtocolKind.OPENAI_RESPONSES,
-        ProtocolKind.ANTHROPIC,
-        ProtocolKind.GEMINI,
-    }
+    issues = [*capture.errors, *capture.parse_errors]
+    return "; ".join(dict.fromkeys(issues)) or None
 
 
-def _stream_completion_message(protocol: ProtocolKind) -> str:
-    if protocol == ProtocolKind.OPENAI_CHAT:
-        return "stream ended before finish_reason"
-    if protocol == ProtocolKind.OPENAI_RESPONSES:
-        return "stream ended before Responses terminal event"
-    if protocol == ProtocolKind.ANTHROPIC:
-        return "stream ended before message_stop"
-    return "stream ended before finishReason"
+def _is_pure_client_stream_disconnect(capture: StreamCapture | None) -> bool:
+    return (
+        capture is not None
+        and capture.is_client_disconnected
+        and not capture.protocol_completed
+        and not capture.errors
+        and not capture.parse_errors
+    )
 
 
 def _extract_usage_from_payload(
