@@ -175,7 +175,6 @@ class StreamCapture:
     event_format: str | None = None
     event_pending_carriage_return: bool = False
     is_discarding_oversized_event: bool = False
-    is_completed: bool = False
     is_client_stream_completed: bool = False
     protocol_completed: bool = False
     is_client_disconnected: bool = False

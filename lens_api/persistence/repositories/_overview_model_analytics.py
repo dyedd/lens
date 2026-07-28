@@ -220,7 +220,6 @@ class _OverviewModelAnalyticsMixin:
                 RequestLogEntity.total_tokens,
                 RequestLogEntity.total_cost_usd,
             )
-            .where(RequestLogEntity.success == 1)
             .where(
                 RequestLogEntity.lifecycle_status
                 == RequestLogLifecycleStatus.SUCCEEDED.value
@@ -257,7 +256,6 @@ class _OverviewModelAnalyticsMixin:
                 RequestLogEntity.total_tokens,
                 RequestLogEntity.total_cost_usd,
             )
-            .where(RequestLogEntity.success == 1)
             .where(
                 RequestLogEntity.lifecycle_status
                 == RequestLogLifecycleStatus.SUCCEEDED.value

@@ -3,14 +3,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, literal, select
+
 from ..shared import (
     CHANNEL_HEALTH_BUCKET_COUNT,
     CHANNEL_HEALTH_BUCKET_SECONDS,
+    REQUEST_LOG_HEALTH_STATUSES,
     REQUEST_LOG_TERMINAL_STATUSES,
     ProtocolKind,
     RequestLogDetail,
     RequestLogEntity,
     RequestLogFilterOption,
+    RequestLogLifecycleStatus,
     RequestLogPage,
     RequestLogSortMode,
     RequestLogStatusFilter,
@@ -280,7 +283,7 @@ class RequestLogReadMixin:
                     RequestLogEntity.channel_id.label("channel_id"),
                     RequestLogEntity.channel_name.label("channel_name"),
                     RequestLogEntity.status_code.label("status_code"),
-                    RequestLogEntity.success.label("success"),
+                    RequestLogEntity.lifecycle_status.label("lifecycle_status"),
                     RequestLogEntity.error_message.label("error_message"),
                     RequestLogEntity.created_at.label("created_at"),
                     func.row_number()
@@ -300,7 +303,7 @@ class RequestLogReadMixin:
                     ),
                 )
                 .where(
-                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_HEALTH_STATUSES)
                 )
                 .subquery()
             )
@@ -311,7 +314,7 @@ class RequestLogReadMixin:
                     ranked_logs.c.channel_id,
                     ranked_logs.c.channel_name,
                     ranked_logs.c.status_code,
-                    ranked_logs.c.success,
+                    ranked_logs.c.lifecycle_status,
                     ranked_logs.c.error_message,
                     ranked_logs.c.created_at,
                 ).where(ranked_logs.c.row_number == 1)
@@ -347,14 +350,12 @@ class RequestLogReadMixin:
             bucket_rows = await session.execute(
                 select(
                     RequestLogEntity.channel_id.label("channel_id"),
-                    RequestLogEntity.success.label("success"),
+                    RequestLogEntity.lifecycle_status.label("lifecycle_status"),
                     RequestLogEntity.created_at.label("created_at"),
                 )
                 .where(
                     RequestLogEntity.channel_id.is_not(None),
-                    RequestLogEntity.lifecycle_status.in_(
-                        REQUEST_LOG_TERMINAL_STATUSES
-                    ),
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_HEALTH_STATUSES),
                     RequestLogEntity.created_at >= bucket_start.replace(tzinfo=None),
                     RequestLogEntity.created_at < bucket_end.replace(tzinfo=None),
                 )
@@ -383,7 +384,7 @@ class RequestLogReadMixin:
                     continue
 
                 counts[bucket_index]["total_count"] += 1
-                if row.success:
+                if row.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value:
                     counts[bucket_index]["success_count"] += 1
 
             items: list[SiteRuntimeSummary] = []
@@ -422,8 +423,9 @@ class RequestLogReadMixin:
                             else None
                         ),
                         latest_success=(
-                            bool(latest.success)
-                            if latest is not None and latest.success is not None
+                            latest.lifecycle_status
+                            == RequestLogLifecycleStatus.SUCCEEDED.value
+                            if latest is not None
                             else None
                         ),
                         latest_status_code=(

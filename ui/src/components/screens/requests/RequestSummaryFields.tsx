@@ -14,24 +14,25 @@ import { cn } from "@/lib/utils";
 /** Render the localized lifecycle outcome badge for a request. */
 export function RequestOutcomeBadge({
   status,
-  success,
   statusCode,
   locale,
   errorMessage,
 }: {
   status: RequestLogItem["lifecycle_status"];
-  success: boolean;
   statusCode: number | null | undefined;
   locale: "zh-CN" | "en-US";
   errorMessage?: string | null;
 }) {
   const running = status === "connecting" || status === "streaming";
+  const succeeded = status === "succeeded";
+  const cancelled = status === "cancelled";
   const labelMap: Record<RequestLogItem["lifecycle_status"], [string, string]> =
     {
       connecting: ["连接中", "Connecting"],
       streaming: ["响应中", "Streaming"],
       succeeded: ["成功", "Success"],
       failed: ["失败", "Failed"],
+      cancelled: ["已取消", "Cancelled"],
     };
   const label = titleForLocale(locale, ...labelMap[status]);
   const text =
@@ -44,9 +45,9 @@ export function RequestOutcomeBadge({
       variant="outline"
       className={cn(
         "rounded-full border-0 px-3 py-1 text-xs font-medium",
-        running
+        running || cancelled
           ? "bg-muted text-muted-foreground"
-          : success
+          : succeeded
             ? "bg-primary/10 text-primary"
             : "bg-destructive/12 text-destructive",
       )}
@@ -55,7 +56,7 @@ export function RequestOutcomeBadge({
     </Badge>
   );
 
-  if (success || running || !errorMessage?.trim()) {
+  if (succeeded || running || cancelled || !errorMessage?.trim()) {
     return content;
   }
 

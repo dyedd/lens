@@ -76,7 +76,6 @@ export function AttemptChain({
                 ) : null}
                 <RequestOutcomeBadge
                   status={attempt.success ? "succeeded" : "failed"}
-                  success={attempt.success}
                   statusCode={attempt.status_code}
                   locale={locale}
                   errorMessage={errorDisplay}

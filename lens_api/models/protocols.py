@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class ProtocolKind(str, Enum):
     OPENAI_CHAT = "openai_chat"
     OPENAI_RESPONSES = "openai_responses"
@@ -20,6 +21,7 @@ class RequestLogStatusFilter(str, Enum):
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class RequestLogLifecycleStatus(str, Enum):
@@ -27,6 +29,7 @@ class RequestLogLifecycleStatus(str, Enum):
     STREAMING = "streaming"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class RequestLogSortMode(str, Enum):
@@ -74,5 +77,3 @@ class CronjobScheduleType(str, Enum):
     INTERVAL = "interval"
     DAILY = "daily"
     WEEKLY = "weekly"
-
-

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from ..shared import (
+    REQUEST_LOG_MODEL_FAMILY_PREFIXES,
+    REQUEST_LOG_RUNNING_STATUSES,
+    UTC,
     Any,
     GatewayApiKeyEntity,
     ProtocolKind,
-    REQUEST_LOG_MODEL_FAMILY_PREFIXES,
-    REQUEST_LOG_RUNNING_STATUSES,
     RequestLogEntity,
     RequestLogLifecycleStatus,
     RequestLogSortMode,
     RequestLogStatusFilter,
     String,
-    UTC,
     ZoneInfo,
     cast,
     datetime,
@@ -167,13 +167,16 @@ class RequestLogFilterMixin:
                 RequestLogEntity.lifecycle_status
                 == RequestLogLifecycleStatus.SUCCEEDED.value
             )
-            stmt = stmt.where(RequestLogEntity.success == 1)
         elif status_filter == RequestLogStatusFilter.FAILED:
             stmt = stmt.where(
                 RequestLogEntity.lifecycle_status
                 == RequestLogLifecycleStatus.FAILED.value
             )
-            stmt = stmt.where(RequestLogEntity.success == 0)
+        elif status_filter == RequestLogStatusFilter.CANCELLED:
+            stmt = stmt.where(
+                RequestLogEntity.lifecycle_status
+                == RequestLogLifecycleStatus.CANCELLED.value
+            )
         elif status_filter == RequestLogStatusFilter.RUNNING:
             stmt = stmt.where(
                 RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_RUNNING_STATUSES)
