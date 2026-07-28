@@ -95,8 +95,15 @@ export function OverviewScreen() {
   }, [pageError, isChineseLocale]);
 
   const allDaily = useMemo(() => dailyQuery.data ?? [], [dailyQuery.data]);
-  const successfulRequests = useMemo(
-    () => allDaily.reduce((sum, item) => sum + item.successful_requests, 0),
+  const completedRequestCounts = useMemo(
+    () =>
+      allDaily.reduce(
+        (totals, item) => ({
+          successful: totals.successful + item.successful_requests,
+          failed: totals.failed + item.failed_requests,
+        }),
+        { successful: 0, failed: 0 },
+      ),
     [allDaily],
   );
   const statTrends = useMemo(() => {
@@ -131,8 +138,12 @@ export function OverviewScreen() {
   const outputCost = summary?.output_cost_usd.value ?? 0;
   const cacheReadTokens = summary?.cache_read_input_tokens.value ?? 0;
   const cacheWriteTokens = summary?.cache_write_input_tokens.value ?? 0;
-  const successRate = requestCount
-    ? Math.round((successfulRequests / requestCount) * 100)
+  const completedRequestCount =
+    completedRequestCounts.successful + completedRequestCounts.failed;
+  const successRate = completedRequestCount
+    ? Math.round(
+        (completedRequestCounts.successful / completedRequestCount) * 100,
+      )
     : 0;
   const consumedTime = summary?.wait_time_ms.value ?? 0;
   const models = modelsQuery.data;

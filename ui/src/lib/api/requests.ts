@@ -3,7 +3,8 @@ export type RequestLogLifecycleStatus =
   | "connecting"
   | "streaming"
   | "succeeded"
-  | "failed";
+  | "failed"
+  | "cancelled";
 export type RequestLogAttempt = {
   channel_id: string;
   channel_name: string;

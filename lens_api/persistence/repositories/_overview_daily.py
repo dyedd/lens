@@ -158,7 +158,7 @@ class _OverviewDailyMixin:
         stmt = (
             select(
                 RequestLogEntity.created_at,
-                RequestLogEntity.success,
+                RequestLogEntity.lifecycle_status,
                 RequestLogEntity.latency_ms,
                 RequestLogEntity.input_tokens,
                 RequestLogEntity.cache_read_input_tokens,
@@ -196,7 +196,7 @@ class _OverviewDailyMixin:
                     total_cost_usd=float(values["total_cost_usd"]),
                     wait_time_ms=int(values["wait_time_ms"]),
                     successful_requests=success_value,
-                    failed_requests=max(total_value - success_value, 0),
+                    failed_requests=int(values["failed_requests"]),
                 )
             )
         return points
