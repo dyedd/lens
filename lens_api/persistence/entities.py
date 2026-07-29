@@ -53,6 +53,7 @@ class SiteEntity(Base):
         String(120), nullable=False, unique=True, index=True
     )
     enabled: Mapped[int] = enabled_column()
+    priority: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class SiteBaseUrlEntity(Base):

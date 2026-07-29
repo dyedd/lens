@@ -11,6 +11,7 @@ def valid_import_site(
     *,
     name: str = "Imported Site",
     enabled: bool = True,
+    priority: int = 0,
     protocol_name: str = "primary",
     auto_sync_enabled: bool = False,
     match_regex: str = "",
@@ -18,6 +19,7 @@ def valid_import_site(
     return {
         "name": name,
         "enabled": enabled,
+        "priority": priority,
         "base_urls": [
             {
                 "ref": "base",
@@ -65,6 +67,7 @@ def test_import_sites_rejects_empty_batch(client, admin_headers) -> None:
     ("target", "field"),
     [
         ("site", "enabled"),
+        ("site", "priority"),
         ("protocol", "name"),
         ("protocol", "auto_sync_enabled"),
     ],
@@ -307,6 +310,7 @@ def test_import_sites_persists_master_state_protocol_name_and_auto_sync(
             "sites": [
                 valid_import_site(
                     enabled=False,
+                    priority=8,
                     protocol_name="  Chat primary  ",
                     auto_sync_enabled=True,
                     match_regex="^gpt-",
@@ -321,11 +325,13 @@ def test_import_sites_persists_master_state_protocol_name_and_auto_sync(
     assert payload["items"][0]["status"] == "created"
     created = payload["items"][0]["site"]
     assert created["enabled"] is False
+    assert created["priority"] == 8
     assert created["protocols"][0]["name"] == "Chat primary"
     assert created["protocols"][0]["auto_sync_enabled"] is True
 
     stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert stored["enabled"] is False
+    assert stored["priority"] == 8
     assert stored["protocols"][0]["name"] == "Chat primary"
     assert stored["protocols"][0]["auto_sync_enabled"] is True
 
