@@ -18,7 +18,9 @@ def test_export_backup_returns_json_attachment(
     create_site,
 ) -> None:
     create_gateway_key(remark="backup-key")
-    create_site(valid_site_payload())
+    site_payload = valid_site_payload()
+    site_payload["priority"] = 5
+    create_site(site_payload)
 
     response = client.get(
         "/api/admin/backups/export",
@@ -29,9 +31,10 @@ def test_export_backup_returns_json_attachment(
     assert response.status_code == 200
     assert "lens-backup-" in response.headers["content-disposition"]
     payload = response.json()
-    assert payload["version"] == 2
+    assert payload["version"] == 3
     assert payload["include_gateway_api_keys"] is True
     assert len(payload["sites"]) == 1
+    assert payload["sites"][0]["priority"] == 5
     assert len(payload["gateway_api_keys"]) == 1
 
 
@@ -90,12 +93,14 @@ def test_import_backup_accepts_exported_bundle(
     assert "rows_affected" in response.json()
 
 
-def test_backup_round_trip_preserves_site_master_enabled(
+def test_backup_round_trip_preserves_site_master_enabled_and_priority(
     client,
     admin_headers,
     create_site,
 ) -> None:
-    site = create_site(valid_site_payload())
+    site_payload = valid_site_payload()
+    site_payload["priority"] = 9
+    site = create_site(site_payload)
     update_response = client.put(
         f"/api/admin/sites/{site['id']}/enabled",
         headers=admin_headers,
@@ -105,6 +110,7 @@ def test_backup_round_trip_preserves_site_master_enabled(
     exported = client.get("/api/admin/backups/export", headers=admin_headers)
     assert exported.status_code == 200
     assert exported.json()["sites"][0]["enabled"] is False
+    assert exported.json()["sites"][0]["priority"] == 9
 
     response = client.post(
         "/api/admin/backups/import",
@@ -115,7 +121,36 @@ def test_backup_round_trip_preserves_site_master_enabled(
     assert response.status_code == 200
     restored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert restored_site["enabled"] is False
+    assert restored_site["priority"] == 9
     assert restored_site["protocols"][0]["enabled"] is True
+
+
+def test_import_backup_rejects_missing_site_priority(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    site_payload = valid_site_payload()
+    site_payload["priority"] = 6
+    create_site(site_payload)
+    exported = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert exported.status_code == 200
+    payload = exported.json()
+    payload["sites"][0].pop("priority")
+
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={
+            "file": (
+                "backup.json",
+                json.dumps(payload).encode(),
+                "application/json",
+            )
+        },
+    )
+
+    assert_error(response, 400, "Invalid backup file")
 
 
 def test_import_backup_rejects_missing_site_enabled(

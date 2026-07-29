@@ -125,6 +125,11 @@ export function useChannelQueries(locale: Locale) {
         return left.name.localeCompare(right.name, locale);
       if (sortBy === "name-desc")
         return right.name.localeCompare(left.name, locale);
+      if (sortBy === "priority-desc")
+        return (
+          right.priority - left.priority ||
+          left.name.localeCompare(right.name, locale)
+        );
       if (sortBy === "models-desc")
         return (
           right.model_count - left.model_count ||

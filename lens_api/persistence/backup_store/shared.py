@@ -66,5 +66,5 @@ from ..cronjob_store import (
     normalize_cronjob_schedule,
 )
 
-BACKUP_DUMP_VERSION = 2
+BACKUP_DUMP_VERSION = 3
 EXPORTABLE_SETTING_KEYS = EDITABLE_SETTING_KEYS

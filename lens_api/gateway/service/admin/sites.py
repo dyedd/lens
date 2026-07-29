@@ -106,6 +106,7 @@ async def fetch_site_models(
         channel = ChannelConfig(
             id="preview",
             name=preview["credential_name"] or "preview",
+            priority=0,
             protocol=ProtocolKind.OPENAI_CHAT,
             base_url=payload.base_url,
             api_key=credential.api_key,

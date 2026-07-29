@@ -141,6 +141,7 @@ class SiteConfig(StrictBaseModel):
     id: str
     name: str
     enabled: bool
+    priority: int = Field(ge=0)
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -173,6 +174,7 @@ class SiteChannelHealthBucket(StrictBaseModel):
 
 class SiteCreate(StrictBaseModel):
     name: str
+    priority: int = Field(default=0, ge=0)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -180,6 +182,7 @@ class SiteCreate(StrictBaseModel):
 
 class SiteUpdate(StrictBaseModel):
     name: str
+    priority: int = Field(default=0, ge=0)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -252,6 +255,7 @@ class SiteImportProtocolInput(StrictBaseModel):
 class SiteImportItem(StrictBaseModel):
     name: str
     enabled: bool
+    priority: int = Field(ge=0)
     base_urls: list[SiteImportBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteImportCredentialInput] = Field(default_factory=list)
     protocols: list[SiteImportProtocolInput] = Field(default_factory=list)

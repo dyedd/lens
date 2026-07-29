@@ -25,6 +25,7 @@ class ChannelConfig(StrictBaseModel):
     id: str
     site_id: str = ""
     name: str
+    priority: int = Field(ge=0)
     protocol: ProtocolKind
     base_url: HttpUrl
     api_key: str = Field(min_length=1)

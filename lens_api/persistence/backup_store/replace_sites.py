@@ -80,6 +80,7 @@ async def _replace_sites(
                 id=site.id,
                 name=site.name,
                 enabled=int(site.enabled),
+                priority=site.priority,
             )
         )
         site_base_url_ids: set[str] = set()

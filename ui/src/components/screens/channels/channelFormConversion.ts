@@ -43,6 +43,7 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
   }));
   return {
     name: site.name,
+    priority: site.priority,
     base_urls: baseUrls,
     credentials,
     protocolConfigs: site.protocols.map(
@@ -149,6 +150,7 @@ export function toPayload(form: FormState): SitePayload {
   const baseUrls = formBaseUrlsForPayload(form);
   return {
     name: form.name.trim(),
+    priority: form.priority,
     base_urls: baseUrls,
     credentials: form.credentials
       .map((item, index) => ({
