@@ -52,7 +52,6 @@ def prepare_site_import(
             enabled=item.enabled,
             payload=SiteCreate(
                 name=item.name.strip(),
-                priority=item.priority,
                 base_urls=base_urls,
                 credentials=credentials,
                 protocols=protocols,

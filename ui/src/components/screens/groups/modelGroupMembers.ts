@@ -1,5 +1,8 @@
 import type { ModelGroup } from "@/lib/api";
-import type { GroupDisplayMember } from "./modelGroupUtils";
+import type {
+  GroupDisplayChannel,
+  GroupDisplayMember,
+} from "./modelGroupUtils";
 
 /** Build the stable key used to fold equivalent model members. */
 export function modelFoldKey(
@@ -10,11 +13,18 @@ export function modelFoldKey(
   return `${protocolConfigId}::${credentialId}::${modelName}`;
 }
 
+/** Build the shared channel identity used by failover ordering. */
+export function modelGroupChannelKey(
+  siteId: string | null,
+  channelId: string,
+): string {
+  return siteId ? `site:${siteId}` : `channel:${channelId}`;
+}
+
 /** Fold stored group items into display members with availability state. */
 export function buildGroupDisplayMembers(
   items: ModelGroup["items"],
 ): GroupDisplayMember[] {
-  const orderMap = new Map<string, number>();
   const memberMap = new Map<string, GroupDisplayMember>();
 
   for (const item of items) {
@@ -26,7 +36,6 @@ export function buildGroupDisplayMembers(
     const channelName = item.channel_name || item.channel_id;
 
     if (!memberMap.has(key)) {
-      orderMap.set(key, orderMap.size);
       memberMap.set(key, {
         key,
         model_name: item.model_name,
@@ -58,7 +67,29 @@ export function buildGroupDisplayMembers(
     }
   }
 
-  return Array.from(orderMap.entries())
-    .sort((a, b) => a[1] - b[1])
-    .map(([key]) => memberMap.get(key)!);
+  return Array.from(memberMap.values());
+}
+
+/** Group display members by their channel while preserving first appearance. */
+export function buildGroupDisplayChannels(
+  members: GroupDisplayMember[],
+): GroupDisplayChannel[] {
+  const channels = new Map<string, GroupDisplayChannel>();
+  for (const member of members) {
+    const firstItem = member.items[0];
+    if (!firstItem) continue;
+    const key = modelGroupChannelKey(firstItem.site_id, firstItem.channel_id);
+    let channel = channels.get(key);
+    if (!channel) {
+      channel = {
+        key,
+        channel_id: firstItem.channel_id,
+        channel_name: firstItem.channel_name,
+        members: [],
+      };
+      channels.set(key, channel);
+    }
+    channel.members.push(member);
+  }
+  return Array.from(channels.values());
 }

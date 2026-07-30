@@ -171,9 +171,6 @@ export function ChannelFiltersPanel({
                 <SelectItem value="requests-desc">
                   {locale === "zh-CN" ? "请求优先" : "Requests first"}
                 </SelectItem>
-                <SelectItem value="priority-desc">
-                  {locale === "zh-CN" ? "优先级优先" : "Priority first"}
-                </SelectItem>
                 <SelectItem value="models-desc">
                   {locale === "zh-CN" ? "模型优先" : "Models first"}
                 </SelectItem>

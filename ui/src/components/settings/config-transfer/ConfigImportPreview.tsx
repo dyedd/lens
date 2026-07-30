@@ -80,11 +80,7 @@ export function ConfigImportPreview({
       {preview ? (
         <Card className="py-0">
           <CardContent className="flex flex-col gap-3 p-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              <ConfigPreviewMeta
-                label={titleForLocale(locale, "版本", "Version")}
-                value={"v" + String(preview.version || 1)}
-              />
+            <div className="grid gap-3 md:grid-cols-2">
               <ConfigPreviewMeta
                 label={titleForLocale(locale, "系统版本", "Lens version")}
                 value={preview.lens_version || "n/a"}

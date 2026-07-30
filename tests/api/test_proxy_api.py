@@ -18,10 +18,18 @@ from lens_api.models import ProtocolKind
 from lens_api.persistence.entities import GatewayApiKeyEntity
 
 
-def _protocol_group_item(protocol: str, model_name: str) -> dict[str, Any]:
+def _protocol_group_item(
+    protocol: str,
+    model_name: str,
+    *,
+    protocol_config_id: str = "pc-1",
+    credential_id: str = "cred-1",
+) -> dict[str, Any]:
     return {
-        "channel_id": compose_runtime_channel_id("pc-1", ProtocolKind(protocol)),
-        "credential_id": "cred-1",
+        "channel_id": compose_runtime_channel_id(
+            protocol_config_id, ProtocolKind(protocol)
+        ),
+        "credential_id": credential_id,
         "model_name": model_name,
         "enabled": True,
     }
@@ -337,3 +345,123 @@ def test_responses_proxy_preserves_input_shape(
     assert captured_bodies == [
         {"model": "gpt-5.6-sol", "input": body["input"]} for body in request_bodies
     ]
+
+
+def test_failover_routes_all_models_in_a_channel_before_the_next_channel(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    first_site = valid_site_payload(
+        name="First site",
+        base_id="base-a",
+        credential_id="cred-a",
+        protocol_config_id="pc-a",
+        model_name="model-a1",
+    )
+    first_site["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-a",
+            "model_name": "model-a2",
+            "enabled": True,
+            "protocol": ProtocolKind.OPENAI_CHAT.value,
+        }
+    )
+    create_site(first_site)
+    create_site(
+        valid_site_payload(
+            name="Second site",
+            base_id="base-b",
+            credential_id="cred-b",
+            protocol_config_id="pc-b",
+            model_name="model-b",
+        )
+    )
+    group = create_model_group(
+        name="failover-group",
+        items=[
+            _protocol_group_item(
+                "openai_chat",
+                "model-a1",
+                protocol_config_id="pc-a",
+                credential_id="cred-a",
+            ),
+            _protocol_group_item(
+                "openai_chat",
+                "model-b",
+                protocol_config_id="pc-b",
+                credential_id="cred-b",
+            ),
+            _protocol_group_item(
+                "openai_chat",
+                "model-a2",
+                protocol_config_id="pc-a",
+                credential_id="cred-a",
+            ),
+        ],
+    )
+    update = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"strategy": "failover"},
+    )
+    assert update.status_code == 200, update.text
+
+    attempted_models: list[str] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        model_name = str(json.loads(body_bytes)["model"])
+        attempted_models.append(model_name)
+        request = httpx.Request("POST", upstream.url)
+        if model_name != "model-b":
+            return httpx.Response(
+                500,
+                json={"error": {"message": "failed"}},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 0,
+                "model": model_name,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "failover-group", "messages": []},
+    )
+
+    assert response.status_code == 200, response.text
+    assert attempted_models == ["model-a1", "model-a2", "model-b"]

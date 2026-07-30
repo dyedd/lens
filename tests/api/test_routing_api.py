@@ -14,12 +14,12 @@ from lens_api.persistence.shared import SETTING_CORS_ALLOW_ORIGINS
 def _routing_channel(
     channel_id: str,
     *,
-    priority: int,
+    site_id: str = "",
 ) -> ChannelConfig:
     return ChannelConfig(
         id=channel_id,
+        site_id=site_id,
         name=channel_id,
-        priority=priority,
         protocol=ProtocolKind.OPENAI_CHAT,
         base_url=f"https://{channel_id}.example/v1",
         api_key="secret",
@@ -37,7 +37,7 @@ def _select_targets(
         strategy=strategy,
         route_targets=[RouteTarget(channel=channel) for channel in channels],
         use_model_matching=False,
-        cursor_key="priority-test",
+        cursor_key="routing-test",
     )
 
 
@@ -73,51 +73,70 @@ def test_router_snapshot_returns_route_and_health_state(
     assert "health" in payload
 
 
-def test_failover_prefers_channel_priority_then_preserves_group_order() -> None:
-    low = _routing_channel("low", priority=0)
-    high_first = _routing_channel("high-first", priority=10)
-    high_second = _routing_channel("high-second", priority=10)
+def test_failover_preserves_route_target_order() -> None:
+    first_site_first = _routing_channel(
+        "first-site-first",
+        site_id="first-site",
+    )
+    second_site = _routing_channel(
+        "second-site",
+        site_id="second-site",
+    )
+    first_site_second = _routing_channel(
+        "first-site-second",
+        site_id="first-site",
+    )
 
     selection = _select_targets(
         GatewayRouter(health_scoring_enabled=False),
-        [low, high_first, high_second],
+        [first_site_first, second_site, first_site_second],
         RoutingStrategy.FAILOVER,
     )
 
-    assert selection.primary.channel.id == "high-first"
+    assert selection.primary.channel.id == "first-site-first"
     assert [target.channel.id for target in selection.fallbacks] == [
-        "high-second",
-        "low",
+        "second-site",
+        "first-site-second",
     ]
 
 
-def test_failover_uses_lower_priority_while_higher_priority_is_cooling() -> None:
-    high = _routing_channel("high", priority=10)
-    low = _routing_channel("low", priority=0)
+def test_failover_uses_next_model_group_target_while_first_is_cooling() -> None:
+    first = _routing_channel("first", site_id="first-site")
+    second_site = _routing_channel(
+        "second-site",
+        site_id="second-site",
+    )
+    same_site_fallback = _routing_channel(
+        "same-site-fallback",
+        site_id="first-site",
+    )
     router = GatewayRouter(health_scoring_enabled=False)
-    initial = _select_targets(router, [low, high], RoutingStrategy.FAILOVER)
-    assert initial.primary.channel.id == "high"
-    router.record_failure(high.id, "auth failed", category=ErrorCategory.AUTH)
+    channels = [first, second_site, same_site_fallback]
+    initial = _select_targets(router, channels, RoutingStrategy.FAILOVER)
+    assert initial.primary.channel.id == "first"
+    router.record_failure(first.id, "auth failed", category=ErrorCategory.AUTH)
 
-    selection = _select_targets(router, [low, high], RoutingStrategy.FAILOVER)
+    selection = _select_targets(router, channels, RoutingStrategy.FAILOVER)
 
-    assert selection.primary.channel.id == "low"
-    assert selection.fallbacks == []
+    assert selection.primary.channel.id == "second-site"
+    assert [target.channel.id for target in selection.fallbacks] == [
+        "same-site-fallback"
+    ]
 
 
-def test_round_robin_ignores_channel_priority() -> None:
-    low = _routing_channel("low", priority=0)
-    high = _routing_channel("high", priority=10)
+def test_round_robin_preserves_route_target_order() -> None:
+    first = _routing_channel("first")
+    second = _routing_channel("second")
     router = GatewayRouter(health_scoring_enabled=False)
 
     selected = [
         _select_targets(
-            router, [low, high], RoutingStrategy.ROUND_ROBIN
+            router, [first, second], RoutingStrategy.ROUND_ROBIN
         ).primary.channel.id
         for _ in range(2)
     ]
 
-    assert selected == ["low", "high"]
+    assert selected == ["first", "second"]
 
 
 def test_cors_preflight_allows_any_origin_by_default(client) -> None:

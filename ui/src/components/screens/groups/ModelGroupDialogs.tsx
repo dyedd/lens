@@ -2,8 +2,8 @@
 
 import type { Dispatch, FormEventHandler, SetStateAction } from "react";
 
-import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
+import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Separator } from "@/components/ui/Separator";
 import type {
   ModelGroup,
@@ -18,6 +18,7 @@ import {
   itemKey,
   type CandidateChannelGroup,
   type CandidateSearchMode,
+  type ChannelMemberGroup,
   type FoldedMember,
   type FormState,
   type MemberStatusFilter,
@@ -63,11 +64,16 @@ interface GroupEditorDialogProps {
   memberStatusFilter: MemberStatusFilter;
   setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
   visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
-  draggingIndex: number | null;
+  visibleChannelGroups: ChannelMemberGroup[];
   toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
   removeFoldedMember: (foldKey: string) => void;
-  setDraggingIndex: Dispatch<SetStateAction<number | null>>;
+  moveChannelGroup: (fromIndex: number, toIndex: number) => void;
   moveFoldedMember: (fromIndex: number, toIndex: number) => void;
+  moveFoldedMemberWithinChannel: (
+    channelKey: string,
+    fromIndex: number,
+    toIndex: number,
+  ) => void;
 }
 
 interface DeleteGroupDialogProps {
@@ -94,7 +100,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       <AppDialogContent
-        className="h-[92dvh] max-w-6xl sm:h-[88vh]"
+        className="h-[92dvh] max-w-5xl sm:h-[88vh]"
         title={
           editingId
             ? locale === "zh-CN"
@@ -119,7 +125,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
             {!form.route_group_id ? (
               <>
                 <Separator />
-                <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                <div className="grid gap-3 xl:grid-cols-2">
                   <section className="flex flex-col rounded-lg bg-muted/10">
                     <ModelGroupCandidateToolbar
                       locale={locale}
@@ -152,6 +158,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                   </section>
                   <ModelGroupSelectedMembers
                     locale={locale}
+                    strategy={form.strategy}
                     foldedMembers={props.foldedMembers}
                     disabledItemCount={props.disabledItemCount}
                     invalidItemCount={props.invalidItemCount}
@@ -164,11 +171,14 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                     memberStatusFilter={props.memberStatusFilter}
                     setMemberStatusFilter={props.setMemberStatusFilter}
                     visibleFoldedMembers={props.visibleFoldedMembers}
-                    draggingIndex={props.draggingIndex}
+                    visibleChannelGroups={props.visibleChannelGroups}
                     toggleFoldedMember={props.toggleFoldedMember}
                     removeFoldedMember={props.removeFoldedMember}
-                    setDraggingIndex={props.setDraggingIndex}
+                    moveChannelGroup={props.moveChannelGroup}
                     moveFoldedMember={props.moveFoldedMember}
+                    moveFoldedMemberWithinChannel={
+                      props.moveFoldedMemberWithinChannel
+                    }
                   />
                 </div>
               </>

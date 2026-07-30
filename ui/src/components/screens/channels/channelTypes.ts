@@ -42,7 +42,6 @@ export type FormProtocolConfig = {
 
 export type FormState = {
   name: string;
-  priority: number;
   base_urls: FormBaseUrl[];
   credentials: FormCredential[];
   protocolConfigs: FormProtocolConfig[];
@@ -96,7 +95,6 @@ export type SiteRow = Site & {
 export type ChannelStatusFilter = "all" | "enabled" | "disabled";
 export type ChannelSort =
   | "requests-desc"
-  | "priority-desc"
   | "name-asc"
   | "name-desc"
   | "models-desc"

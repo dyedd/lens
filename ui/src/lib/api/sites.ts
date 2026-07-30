@@ -79,7 +79,6 @@ export type Site = {
   id: string;
   name: string;
   enabled: boolean;
-  priority: number;
   base_urls: SiteBaseUrl[];
   credentials: SiteCredential[];
   protocols: SiteProtocolConfig[];
@@ -108,7 +107,6 @@ export type SiteRuntimeSummary = {
 };
 export type SitePayload = {
   name: string;
-  priority: number;
   base_urls: SiteBaseUrlInput[];
   credentials: SiteCredentialInput[];
   protocols: SiteProtocolConfigInput[];
@@ -147,7 +145,6 @@ export type SiteBatchImportProtocolInput = {
 export type SiteBatchImportItem = {
   name: string;
   enabled: boolean;
-  priority: number;
   base_urls: SiteBatchImportBaseUrlInput[];
   credentials: SiteBatchImportCredentialInput[];
   protocols: SiteBatchImportProtocolInput[];

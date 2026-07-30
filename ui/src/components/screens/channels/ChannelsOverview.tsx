@@ -119,13 +119,6 @@ export function ChannelsOverview({
                           <ItemTitle className="truncate text-base">
                             {site.name}
                           </ItemTitle>
-                          {site.priority > 0 ? (
-                            <Badge variant="secondary">
-                              {locale === "zh-CN"
-                                ? `优先级 ${site.priority}`
-                                : `Priority ${site.priority}`}
-                            </Badge>
-                          ) : null}
                           {siteProtocols(site).map((p) => (
                             <Badge
                               key={p}

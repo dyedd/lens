@@ -21,6 +21,7 @@ import type { ModelGroupCandidateItem } from "@/lib/api";
 import { protocolBadgeClassName, protocolLabel } from "@/lib/protocols";
 import { cn } from "@/lib/utils";
 import {
+  credentialDisplayLabel,
   foldedMemberSourceLabel,
   modelGroupReasonsForState,
   modelGroupItemReasonLabel,
@@ -94,6 +95,7 @@ export function FoldedMemberRow({
   onDragStart,
   onDragEnter,
   onDragEnd,
+  showChannelName = true,
   locale,
 }: {
   member: FoldedMember;
@@ -106,9 +108,12 @@ export function FoldedMemberRow({
   onDragStart: () => void;
   onDragEnter: () => void;
   onDragEnd: () => void;
+  showChannelName?: boolean;
   locale: "zh-CN" | "en-US";
 }) {
-  const sourceLabel = foldedMemberSourceLabel(member, locale);
+  const sourceLabel = showChannelName
+    ? foldedMemberSourceLabel(member, locale)
+    : credentialDisplayLabel(member, locale);
   const enabled = member.enabled_item_count > 0;
   const partiallyEnabled = enabled && member.disabled_item_count > 0;
   const invalidReasons = modelGroupReasonsForState(member.subItems, "invalid");
@@ -151,14 +156,11 @@ export function FoldedMemberRow({
       <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
         {index + 1}
       </span>
-      <span
-        className={cn(
-          "text-muted-foreground",
-          canReorder ? "cursor-grab active:cursor-grabbing" : "opacity-30",
-        )}
-      >
-        <GripVertical size={14} />
-      </span>
+      {canReorder ? (
+        <span className="cursor-grab text-muted-foreground active:cursor-grabbing">
+          <GripVertical size={14} />
+        </span>
+      ) : null}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">
           {member.model_name}

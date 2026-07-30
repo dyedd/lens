@@ -44,15 +44,15 @@ export function ModelGroupCandidateToolbar({
 }: ModelGroupCandidateToolbarProps) {
   return (
     <>
-      <div className="grid gap-3 py-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <div className="grid min-w-0 gap-2 sm:grid-cols-[128px_minmax(0,1fr)]">
+      <div className="flex flex-col gap-2 px-2 py-1 xl:flex-row xl:items-center">
+        <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[112px_minmax(0,1fr)] xl:grid-cols-[96px_minmax(0,1fr)]">
           <Select
             value={candidateSearchMode}
             onValueChange={(value) =>
               changeCandidateSearchMode(value as CandidateSearchMode)
             }
           >
-            <SelectTrigger className="h-7 w-full">
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -82,10 +82,11 @@ export function ModelGroupCandidateToolbar({
             />
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <Button
             type="button"
             variant="outline"
+            size="sm"
             onClick={addMatchedItems}
             disabled={
               form.protocols.length === 0 ||
@@ -93,7 +94,7 @@ export function ModelGroupCandidateToolbar({
               (!filteredCandidateCount && !candidateSearch.trim())
             }
           >
-            <Sparkles size={13} />
+            <Sparkles data-icon="inline-start" />
             {candidateSearch.trim()
               ? locale === "zh-CN"
                 ? `加入并保存筛选 ${filteredCandidateCount}`
@@ -105,11 +106,13 @@ export function ModelGroupCandidateToolbar({
           <Button
             type="button"
             variant="outline"
+            size="icon-sm"
+            aria-label={locale === "zh-CN" ? "刷新列表" : "Refresh list"}
+            title={locale === "zh-CN" ? "刷新列表" : "Refresh list"}
             onClick={() => void refetchCandidates()}
             disabled={isFetchingCandidates || form.protocols.length === 0}
           >
-            <RefreshCcw size={13} />
-            {locale === "zh-CN" ? "刷新列表" : "Refresh"}
+            <RefreshCcw />
           </Button>
         </div>
       </div>

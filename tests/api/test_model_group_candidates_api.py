@@ -12,7 +12,7 @@ def test_model_group_candidates_return_site_models(
     create_site,
     exclude,
 ) -> None:
-    create_site(valid_site_payload(model_name="gpt-4o-mini"))
+    site = create_site(valid_site_payload(model_name="gpt-4o-mini"))
     items = []
     if exclude:
         items.append(
@@ -30,11 +30,15 @@ def test_model_group_candidates_return_site_models(
     )
 
     assert response.status_code == 200
-    candidates = response.json()["candidates"]
+    payload = response.json()
+    candidates = payload["candidates"]
     if exclude:
         assert candidates == []
+        evaluated_item = payload["evaluated_items"][0]
+        assert evaluated_item["site_id"] == site["id"]
         return
     assert len(candidates) == 1
+    assert candidates[0]["site_id"] == site["id"]
     assert candidates[0]["model_name"] == "gpt-4o-mini"
     candidate_item = candidates[0]["items"][0]
     assert candidate_item["channel_id"] == openai_chat_channel_id()

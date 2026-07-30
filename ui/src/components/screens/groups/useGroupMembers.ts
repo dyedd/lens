@@ -2,9 +2,13 @@
 
 import { useMemo, type Dispatch, type SetStateAction } from "react";
 import type { ModelGroup } from "@/lib/api";
-import { foldGroupMembers } from "./groupScreenData";
+import {
+  foldGroupMembers,
+  groupFoldedMembersByChannel,
+} from "./groupScreenData";
 import {
   itemKey,
+  modelGroupChannelKey,
   modelFoldKey,
   moveItems,
   type FormItem,
@@ -18,6 +22,50 @@ function formItemMemberKey(item: FormItem) {
     item.credential_id,
     item.model_name,
   );
+}
+
+function formItemChannelKey(item: FormItem) {
+  return modelGroupChannelKey(item.site_id, item.channel_id);
+}
+
+type FormItemMember = {
+  key: string;
+  channelKey: string;
+  items: FormItem[];
+};
+
+function groupFormItemsByMember(items: FormItem[]): FormItemMember[] {
+  const membersByKey = new Map<string, FormItemMember>();
+  for (const item of items) {
+    const key = formItemMemberKey(item);
+    let member = membersByKey.get(key);
+    if (!member) {
+      member = {
+        key,
+        channelKey: formItemChannelKey(item),
+        items: [],
+      };
+      membersByKey.set(key, member);
+    }
+    member.items.push(item);
+  }
+  return Array.from(membersByKey.values());
+}
+
+function groupFormItemsByChannel(items: FormItem[]) {
+  const channels = new Map<
+    string,
+    { key: string; members: FormItemMember[] }
+  >();
+  for (const member of groupFormItemsByMember(items)) {
+    let channel = channels.get(member.channelKey);
+    if (!channel) {
+      channel = { key: member.channelKey, members: [] };
+      channels.set(member.channelKey, channel);
+    }
+    channel.members.push(member);
+  }
+  return Array.from(channels.values());
 }
 
 /** Derive folded members and manage editor member operations. */
@@ -43,6 +91,24 @@ export function useGroupMembers(
       return isVisible ? [{ member, index }] : [];
     });
   }, [foldedMembers, memberStatusFilter]);
+  const channelGroups = useMemo(
+    () =>
+      groupFoldedMembersByChannel(
+        foldedMembers.map((member, index) => ({ member, index })),
+      ),
+    [foldedMembers],
+  );
+  const visibleChannelGroups = useMemo(() => {
+    const visibleKeys = new Set(
+      visibleFoldedMembers.map(({ member }) => member.key),
+    );
+    return channelGroups.flatMap((channel) => {
+      const members = channel.members.filter(({ member }) =>
+        visibleKeys.has(member.key),
+      );
+      return members.length ? [{ ...channel, members }] : [];
+    });
+  }, [channelGroups, visibleFoldedMembers]);
   const disabledItemCount = foldedMembers.reduce(
     (count, member) => count + member.disabled_item_count,
     0,
@@ -78,24 +144,51 @@ export function useGroupMembers(
 
   function moveFoldedMember(fromIndex: number, toIndex: number) {
     setForm((current) => {
-      const memberOrder = new Map<string, number>();
-      const itemsByMember = new Map<string, FormItem[]>();
-      for (const item of current.items) {
-        const key = formItemMemberKey(item);
-        if (!itemsByMember.has(key)) {
-          memberOrder.set(key, memberOrder.size);
-          itemsByMember.set(key, []);
-        }
-        itemsByMember.get(key)!.push(item);
-      }
-      const orderedKeys = Array.from(memberOrder.entries())
-        .sort((left, right) => left[1] - right[1])
-        .map(([key]) => key);
-      const nextKeys = moveItems(orderedKeys, fromIndex, toIndex);
-      if (nextKeys === orderedKeys) return current;
+      const members = groupFormItemsByMember(current.items);
+      const nextMembers = moveItems(members, fromIndex, toIndex);
+      if (nextMembers === members) return current;
       return {
         ...current,
-        items: nextKeys.flatMap((key) => itemsByMember.get(key) ?? []),
+        items: nextMembers.flatMap((member) => member.items),
+      };
+    });
+  }
+
+  function moveChannelGroup(fromIndex: number, toIndex: number) {
+    setForm((current) => {
+      const channels = groupFormItemsByChannel(current.items);
+      const nextChannels = moveItems(channels, fromIndex, toIndex);
+      if (nextChannels === channels) return current;
+      return {
+        ...current,
+        items: nextChannels.flatMap((channel) =>
+          channel.members.flatMap((member) => member.items),
+        ),
+      };
+    });
+  }
+
+  function moveFoldedMemberWithinChannel(
+    channelKey: string,
+    fromIndex: number,
+    toIndex: number,
+  ) {
+    setForm((current) => {
+      const channels = groupFormItemsByChannel(current.items);
+      const channelIndex = channels.findIndex(
+        (channel) => channel.key === channelKey,
+      );
+      if (channelIndex < 0) return current;
+      const channel = channels[channelIndex];
+      const nextMembers = moveItems(channel.members, fromIndex, toIndex);
+      if (nextMembers === channel.members) return current;
+      const nextChannels = channels.slice();
+      nextChannels[channelIndex] = { ...channel, members: nextMembers };
+      return {
+        ...current,
+        items: nextChannels.flatMap((item) =>
+          item.members.flatMap((member) => member.items),
+        ),
       };
     });
   }
@@ -159,7 +252,9 @@ export function useGroupMembers(
     disabledItemCount,
     foldedMembers,
     invalidItemCount,
+    moveChannelGroup,
     moveFoldedMember,
+    moveFoldedMemberWithinChannel,
     removeDisabledMembers,
     removeFoldedMember,
     removeInvalidItems,
@@ -167,6 +262,7 @@ export function useGroupMembers(
     setAllMembersEnabled,
     toggleFoldedMember,
     unavailableItemCount,
+    visibleChannelGroups,
     visibleFoldedMembers,
   };
 }

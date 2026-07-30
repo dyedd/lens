@@ -1,7 +1,10 @@
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api";
 import {
+  buildGroupDisplayChannels,
   buildGroupDisplayMembers,
+  type ChannelMemberGroup,
   itemKey,
+  modelGroupChannelKey,
   modelFoldKey,
   type CandidateChannelGroup,
   type EvaluatedFormItem,
@@ -15,6 +18,7 @@ function buildExecutionRow(group: ModelGroup): GroupRow {
     .slice()
     .sort((left, right) => left.sort_order - right.sort_order);
   const displayMembers = buildGroupDisplayMembers(items);
+  const displayChannels = buildGroupDisplayChannels(displayMembers);
   const channelNames = [
     ...new Set(
       items.map((item) => item.channel_name || item.channel_id).filter(Boolean),
@@ -34,6 +38,7 @@ function buildExecutionRow(group: ModelGroup): GroupRow {
     channel_summary: channelNames.slice(0, 2).join(" · "),
     channel_names: channelNames,
     display_members: displayMembers,
+    display_channels: displayChannels,
     is_route_group: false,
   };
 }
@@ -64,6 +69,7 @@ export function buildGroupRows(groups: ModelGroup[]) {
       channel_summary: channelNames.slice(0, 2).join(" · "),
       channel_names: channelNames,
       display_members: [],
+      display_channels: [],
       is_route_group: true,
     };
   });
@@ -102,13 +108,13 @@ export function foldGroupMembers(
   const evaluatedItemsByKey = new Map(
     evaluatedItems.map((item) => [itemKey(item), item]),
   );
-  const memberOrder = new Map<string, number>();
   const membersByKey = new Map<string, FoldedMember>();
 
   for (const item of formItems) {
     const evaluation = evaluatedItemsByKey.get(itemKey(item));
     const evaluatedItem: EvaluatedFormItem = {
       ...item,
+      site_id: evaluation ? evaluation.site_id : item.site_id,
       protocol_config_id: evaluation
         ? evaluation.protocol_config_id
         : item.protocol_config_id,
@@ -129,10 +135,12 @@ export function foldGroupMembers(
       evaluatedItem.model_name,
     );
     if (!membersByKey.has(key)) {
-      memberOrder.set(key, memberOrder.size);
       membersByKey.set(key, {
         key,
         protocolConfigId: evaluatedItem.protocol_config_id,
+        siteId: evaluatedItem.site_id,
+        channel_id: evaluatedItem.channel_id,
+        channel_name: evaluatedItem.channel_name,
         model_name: evaluatedItem.model_name,
         credential_id: evaluatedItem.credential_id,
         credential_name: evaluatedItem.credential_name,
@@ -167,7 +175,34 @@ export function foldGroupMembers(
     }
   }
 
-  return Array.from(memberOrder.entries())
-    .sort((left, right) => left[1] - right[1])
-    .map(([key]) => membersByKey.get(key)!);
+  return Array.from(membersByKey.values());
+}
+
+/** Group visible members by site without changing their route indexes. */
+export function groupFoldedMembersByChannel(
+  visibleMembers: Array<{ member: FoldedMember; index: number }>,
+): ChannelMemberGroup[] {
+  const groupsByKey = new Map<string, Omit<ChannelMemberGroup, "priority">>();
+
+  for (const entry of visibleMembers) {
+    const { member } = entry;
+    const key = modelGroupChannelKey(member.siteId, member.channel_id);
+    let group = groupsByKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        channel_id: member.channel_id,
+        channel_name: member.channel_name,
+        members: [],
+      };
+      groupsByKey.set(key, group);
+    }
+    group.members.push(entry);
+  }
+
+  const groups = Array.from(groupsByKey.values());
+  return groups.map((group, index) => ({
+    ...group,
+    priority: index + 1,
+  }));
 }

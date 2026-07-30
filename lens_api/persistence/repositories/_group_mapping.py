@@ -138,6 +138,7 @@ class _GroupMappingMixin:
             items_by_group.setdefault(row.group_id, []).append(
                 ModelGroupItemView(
                     channel_id=row.channel_id,
+                    site_id=channel.site_id if channel is not None else None,
                     channel_name=channel.name if channel is not None else "",
                     protocol=evaluation.protocol,
                     protocol_config_id=evaluation.protocol_config_id,

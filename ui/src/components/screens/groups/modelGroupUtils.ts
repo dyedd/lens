@@ -16,6 +16,7 @@ export * from "./modelGroupMembers";
 
 export type FormItem = {
   channel_id: string;
+  site_id: string | null;
   protocol_config_id: string;
   channel_name: string;
   protocol?: ProtocolKind | null;
@@ -54,6 +55,9 @@ export type CandidateChannelGroup = {
 export type FoldedMember = {
   key: string;
   protocolConfigId: string;
+  siteId: string | null;
+  channel_id: string;
+  channel_name: string;
   model_name: string;
   credential_id: string;
   credential_name: string;
@@ -66,6 +70,21 @@ export type FoldedMember = {
   invalid_item_count: number;
   unavailable_item_count: number;
   pending_item_count: number;
+};
+
+export type ChannelMemberGroup = {
+  key: string;
+  channel_id: string;
+  channel_name: string;
+  priority: number;
+  members: Array<{ member: FoldedMember; index: number }>;
+};
+
+export type GroupDisplayChannel = {
+  key: string;
+  channel_id: string;
+  channel_name: string;
+  members: GroupDisplayMember[];
 };
 
 export type GroupDisplayMember = {
@@ -98,6 +117,7 @@ export type GroupRow = ModelGroup & {
   channel_summary: string;
   channel_names: string[];
   display_members: GroupDisplayMember[];
+  display_channels: GroupDisplayChannel[];
   is_route_group: boolean;
 };
 
@@ -174,6 +194,7 @@ export function candidatePayloadToFormItems(
   return candidate.items.map((payloadItem) => {
     return {
       channel_id: payloadItem.channel_id,
+      site_id: candidate.site_id,
       protocol_config_id: payloadItem.protocol_config_id,
       channel_name: candidate.channel_name,
       protocol: payloadItem.protocol,
@@ -206,6 +227,7 @@ export function toForm(group: ModelGroup): FormState {
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((item) => ({
         channel_id: item.channel_id,
+        site_id: item.site_id,
         protocol_config_id: item.protocol_config_id,
         channel_name: item.channel_name,
         protocol: item.protocol,

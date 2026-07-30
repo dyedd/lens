@@ -70,6 +70,7 @@ class ModelGroupItem(StrictBaseModel):
 
 class ModelGroupItemView(ModelGroupItem):
     protocol_config_id: str
+    site_id: str | None
     state: ModelGroupItemState
     reasons: list[ModelGroupItemReason] = Field(default_factory=list)
 
