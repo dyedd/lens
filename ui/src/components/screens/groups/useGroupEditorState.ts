@@ -21,7 +21,6 @@ export function useGroupEditorState() {
   const [candidateSearchUsesGroupName, setCandidateSearchUsesGroupName] =
     useState(true);
   const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [memberStatusFilter, setMemberStatusFilter] =
     useState<MemberStatusFilter>("all");
 
@@ -37,7 +36,6 @@ export function useGroupEditorState() {
       setCandidateSearchMode("contains");
       setCandidateSearchUsesGroupName(true);
       setExpandedChannels([]);
-      setDraggingIndex(null);
     }
     setDialogOpenState(isOpen);
   };
@@ -115,7 +113,6 @@ export function useGroupEditorState() {
     changeCandidateSearchMode,
     changeRouteTarget,
     dialogOpen,
-    draggingIndex,
     editingId,
     expandedChannels,
     form,
@@ -123,7 +120,6 @@ export function useGroupEditorState() {
     openCreate,
     openEdit,
     setDialogOpen,
-    setDraggingIndex,
     setEditingId,
     setExpandedChannels,
     setForm,

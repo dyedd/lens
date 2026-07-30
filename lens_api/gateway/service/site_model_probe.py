@@ -39,7 +39,6 @@ def _site_model_probe_channel(payload: SiteModelTestRequest) -> ChannelConfig:
     return ChannelConfig(
         id="model-test",
         name=payload.credential.name or "model-test",
-        priority=0,
         protocol=payload.protocol,
         base_url=payload.base_url,
         api_key=payload.credential.api_key,

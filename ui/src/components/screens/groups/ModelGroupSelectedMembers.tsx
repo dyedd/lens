@@ -1,3 +1,5 @@
+"use client";
+
 import type { Dispatch, SetStateAction } from "react";
 import {
   AlertCircle,
@@ -20,11 +22,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/ToggleGroup";
-import { FoldedMemberRow } from "./ModelGroupEditorFields";
-import type { FoldedMember, MemberStatusFilter } from "./modelGroupUtils";
+import type { RoutingStrategy } from "@/lib/api";
+import { ModelGroupSelectedMemberList } from "./ModelGroupSelectedMemberList";
+import type {
+  ChannelMemberGroup,
+  FoldedMember,
+  MemberStatusFilter,
+} from "./modelGroupUtils";
 
 interface ModelGroupSelectedMembersProps {
   locale: "zh-CN" | "en-US";
+  strategy: RoutingStrategy;
   foldedMembers: FoldedMember[];
   disabledItemCount: number;
   invalidItemCount: number;
@@ -37,16 +45,22 @@ interface ModelGroupSelectedMembersProps {
   memberStatusFilter: MemberStatusFilter;
   setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
   visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
-  draggingIndex: number | null;
+  visibleChannelGroups: ChannelMemberGroup[];
   toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
   removeFoldedMember: (foldKey: string) => void;
-  setDraggingIndex: Dispatch<SetStateAction<number | null>>;
+  moveChannelGroup: (fromIndex: number, toIndex: number) => void;
   moveFoldedMember: (fromIndex: number, toIndex: number) => void;
+  moveFoldedMemberWithinChannel: (
+    channelKey: string,
+    fromIndex: number,
+    toIndex: number,
+  ) => void;
 }
 
 /** Render selected model controls and draggable member rows. */
 export function ModelGroupSelectedMembers({
   locale,
+  strategy,
   foldedMembers,
   disabledItemCount,
   invalidItemCount,
@@ -59,41 +73,26 @@ export function ModelGroupSelectedMembers({
   memberStatusFilter,
   setMemberStatusFilter,
   visibleFoldedMembers,
-  draggingIndex,
+  visibleChannelGroups,
   toggleFoldedMember,
   removeFoldedMember,
-  setDraggingIndex,
+  moveChannelGroup,
   moveFoldedMember,
+  moveFoldedMemberWithinChannel,
 }: ModelGroupSelectedMembersProps) {
   const itemCount = foldedMembers.reduce(
     (count, member) => count + member.subItems.length,
     0,
   );
   const enabledItemCount = itemCount - disabledItemCount;
-  const emptyMessage =
-    memberStatusFilter === "all"
-      ? locale === "zh-CN"
-        ? "暂无已选模型"
-        : "No selected models"
-      : memberStatusFilter === "enabled"
-        ? locale === "zh-CN"
-          ? "没有包含启用项的模型"
-          : "No models with enabled items"
-        : memberStatusFilter === "disabled"
-          ? locale === "zh-CN"
-            ? "没有包含关闭项的模型"
-            : "No models with disabled items"
-          : locale === "zh-CN"
-            ? "没有异常模型"
-            : "No problematic models";
 
   return (
     <section className="flex flex-col rounded-lg bg-muted/10">
-      <div className="flex flex-col items-start justify-between gap-3 px-2 py-1 sm:flex-row sm:items-center">
+      <div className="flex flex-wrap items-center gap-2 px-2 py-1">
         <div className="text-sm font-medium text-foreground">
           {locale === "zh-CN" ? "已选模型" : "Selected models"}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <ToggleGroup
             type="single"
             value={memberStatusFilter}
@@ -214,39 +213,18 @@ export function ModelGroupSelectedMembers({
         </div>
       </div>
       <div className="px-2 pb-2 pt-1">
-        <div className="flex flex-col gap-1.5">
-          {visibleFoldedMembers.length ? (
-            visibleFoldedMembers.map(({ member, index }) => (
-              <FoldedMemberRow
-                key={member.key}
-                member={member}
-                index={index}
-                isDragging={draggingIndex === index}
-                isBusy={false}
-                canReorder={memberStatusFilter === "all"}
-                onToggle={() =>
-                  toggleFoldedMember(
-                    member.key,
-                    member.enabled_item_count === 0,
-                  )
-                }
-                onRemove={() => removeFoldedMember(member.key)}
-                onDragStart={() => setDraggingIndex(index)}
-                onDragEnter={() => {
-                  if (draggingIndex === null || draggingIndex === index) return;
-                  moveFoldedMember(draggingIndex, index);
-                  setDraggingIndex(index);
-                }}
-                onDragEnd={() => setDraggingIndex(null)}
-                locale={locale}
-              />
-            ))
-          ) : (
-            <p className="px-1 py-6 text-center text-sm text-muted-foreground">
-              {emptyMessage}
-            </p>
-          )}
-        </div>
+        <ModelGroupSelectedMemberList
+          locale={locale}
+          strategy={strategy}
+          memberStatusFilter={memberStatusFilter}
+          visibleFoldedMembers={visibleFoldedMembers}
+          visibleChannelGroups={visibleChannelGroups}
+          toggleFoldedMember={toggleFoldedMember}
+          removeFoldedMember={removeFoldedMember}
+          moveChannelGroup={moveChannelGroup}
+          moveFoldedMember={moveFoldedMember}
+          moveFoldedMemberWithinChannel={moveFoldedMemberWithinChannel}
+        />
       </div>
     </section>
   );

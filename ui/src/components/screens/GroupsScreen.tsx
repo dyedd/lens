@@ -96,6 +96,8 @@ export function GroupsScreen() {
           openEdit={editor.openEdit}
           changeStrategy={commands.changeStrategy}
           reorderGroupMembers={commands.reorderGroupMembers}
+          reorderGroupChannels={commands.reorderGroupChannels}
+          removeGroupChannel={commands.removeGroupChannel}
           removeGroupMember={commands.removeGroupMember}
           toggleGroupEnabled={commands.toggleGroupEnabled}
           setDeleteTarget={commands.setDeleteTarget}
@@ -142,11 +144,14 @@ export function GroupsScreen() {
             memberStatusFilter={editor.memberStatusFilter}
             setMemberStatusFilter={editor.setMemberStatusFilter}
             visibleFoldedMembers={members.visibleFoldedMembers}
-            draggingIndex={editor.draggingIndex}
+            visibleChannelGroups={members.visibleChannelGroups}
             toggleFoldedMember={members.toggleFoldedMember}
             removeFoldedMember={members.removeFoldedMember}
-            setDraggingIndex={editor.setDraggingIndex}
+            moveChannelGroup={members.moveChannelGroup}
             moveFoldedMember={members.moveFoldedMember}
+            moveFoldedMemberWithinChannel={
+              members.moveFoldedMemberWithinChannel
+            }
           />
         ) : null}
 

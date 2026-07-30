@@ -5,7 +5,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import perf_counter
 
-from ...models import ChannelConfig, ModelGroupItemState, ProtocolKind
+from ...models import (
+    ChannelConfig,
+    ModelGroupItemState,
+    ProtocolKind,
+    RoutingStrategy,
+)
 from ..converters import can_reach_protocol
 from ..router import RouteTarget
 from .app_state import app_state
@@ -58,6 +63,13 @@ async def _resolve_routing_plan(
                 credential_name=item.credential_name or None,
             )
         )
+    if resolved_group.strategy == RoutingStrategy.FAILOVER:
+        targets_by_site: dict[str, list[RouteTarget]] = {}
+        for target in route_targets:
+            targets_by_site.setdefault(target.channel.site_id, []).append(target)
+        route_targets = [
+            target for targets in targets_by_site.values() for target in targets
+        ]
     return RoutingPlan(
         requested_group_name=matched_group.name,
         resolved_group_name=resolved_group.name,

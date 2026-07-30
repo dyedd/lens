@@ -23,6 +23,7 @@ export type ModelGroupItemPayload = {
   enabled: boolean;
 };
 export type ModelGroupItem = ModelGroupItemPayload & {
+  site_id: string | null;
   channel_name: string;
   protocol_config_id: string;
   protocol?: ProtocolKind | null;

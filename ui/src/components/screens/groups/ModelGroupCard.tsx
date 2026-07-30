@@ -40,6 +40,12 @@ interface ModelGroupCardProps {
     fromIndex: number,
     toIndex: number,
   ) => void;
+  reorderGroupChannels: (
+    group: GroupRow,
+    fromIndex: number,
+    toIndex: number,
+  ) => void;
+  removeGroupChannel: (group: GroupRow, channelKey: string) => void;
   removeGroupMember: (group: GroupRow, memberKey: string) => void;
   toggleGroupEnabled: (group: GroupRow, enabled: boolean) => void;
   setDeleteTarget: Dispatch<SetStateAction<ModelGroup | null>>;
@@ -56,6 +62,8 @@ export function ModelGroupCard({
   copyGroupName,
   changeStrategy,
   reorderGroupMembers,
+  reorderGroupChannels,
+  removeGroupChannel,
   removeGroupMember,
   toggleGroupEnabled,
   setDeleteTarget,
@@ -195,6 +203,8 @@ export function ModelGroupCard({
             cardDragging={cardDragging}
             setCardDragging={setCardDragging}
             reorderGroupMembers={reorderGroupMembers}
+            reorderGroupChannels={reorderGroupChannels}
+            removeGroupChannel={removeGroupChannel}
             removeGroupMember={removeGroupMember}
           />
         </div>

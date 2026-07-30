@@ -102,7 +102,6 @@ export type ConfigBackupRequestLog = {
   attempts: ConfigBackupRequestLogAttempt[];
 };
 export type ConfigBackupDump = {
-  version: number;
   exported_at: string;
   lens_version: string;
   include_request_logs: boolean;

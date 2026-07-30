@@ -24,7 +24,6 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
         site_id: str,
         name: str,
         enabled: bool,
-        priority: int,
         base_urls: list[SiteBaseUrlInput],
         credentials: list[SiteCredentialInput],
         protocols: list[SiteProtocolConfigInput],
@@ -47,13 +46,11 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
                     id=site_id,
                     name=normalized_name,
                     enabled=int(enabled),
-                    priority=priority,
                 )
             )
         else:
             site.name = normalized_name
             site.enabled = int(enabled)
-            site.priority = priority
 
         await self._upsert_base_urls(session, site_id, normalized_base_urls)
         current_protocol_config_ids = set(

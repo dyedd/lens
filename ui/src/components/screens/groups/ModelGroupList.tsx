@@ -20,6 +20,8 @@ type ModelGroupListProps = Pick<
   | "openEdit"
   | "changeStrategy"
   | "reorderGroupMembers"
+  | "reorderGroupChannels"
+  | "removeGroupChannel"
   | "removeGroupMember"
   | "toggleGroupEnabled"
   | "setDeleteTarget"
@@ -66,6 +68,8 @@ export function ModelGroupList(props: ModelGroupListProps) {
                 copyGroupName={copyGroupName}
                 changeStrategy={props.changeStrategy}
                 reorderGroupMembers={props.reorderGroupMembers}
+                reorderGroupChannels={props.reorderGroupChannels}
+                removeGroupChannel={props.removeGroupChannel}
                 removeGroupMember={props.removeGroupMember}
                 toggleGroupEnabled={props.toggleGroupEnabled}
                 setDeleteTarget={props.setDeleteTarget}

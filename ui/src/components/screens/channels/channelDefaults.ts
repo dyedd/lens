@@ -43,7 +43,6 @@ export const emptyForm = (locale: Locale = "zh-CN"): FormState => {
   const credentialId = createLocalId("credential");
   return {
     name: "",
-    priority: 0,
     base_urls: [
       {
         id: baseUrlId,

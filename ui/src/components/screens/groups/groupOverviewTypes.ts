@@ -3,7 +3,11 @@ import type { ModelGroup, ProtocolKind, RoutingStrategy } from "@/lib/api";
 import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";
 import type { GroupRow, GroupSort } from "./modelGroupUtils";
 
-export type GroupCardDragging = { groupId: string; index: number } | null;
+export type GroupCardDragging = {
+  groupId: string;
+  kind: "channel" | "member";
+  index: number;
+} | null;
 
 export interface GroupsOverviewProps {
   locale: "zh-CN" | "en-US";
@@ -34,6 +38,12 @@ export interface GroupsOverviewProps {
     fromIndex: number,
     toIndex: number,
   ) => void;
+  reorderGroupChannels: (
+    group: GroupRow,
+    fromIndex: number,
+    toIndex: number,
+  ) => void;
+  removeGroupChannel: (group: GroupRow, channelKey: string) => void;
   removeGroupMember: (group: GroupRow, memberKey: string) => void;
   toggleGroupEnabled: (group: GroupRow, enabled: boolean) => void;
   setDeleteTarget: Dispatch<SetStateAction<ModelGroup | null>>;

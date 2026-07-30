@@ -52,6 +52,72 @@ def test_model_group_crud_round_trip(client, admin_headers, create_model_group) 
     assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
 
 
+def test_model_group_strategy_switch_preserves_shared_member_order(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    site_payload = valid_site_payload(model_name="model-a")
+    site_payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-1",
+            "model_name": "model-b",
+            "enabled": True,
+            "protocol": "openai_chat",
+        }
+    )
+    create_site(site_payload)
+    created = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={
+            "name": "ordered-group",
+            "protocols": ["openai_chat"],
+            "strategy": "round_robin",
+            "items": [
+                _member(model_name="model-a"),
+                _member(model_name="model-b"),
+            ],
+        },
+    )
+    assert created.status_code == 201
+    group_id = created.json()["id"]
+
+    failover = client.put(
+        f"/api/admin/model-groups/{group_id}",
+        headers=admin_headers,
+        json={"strategy": "failover"},
+    )
+    assert failover.status_code == 200
+    assert [item["model_name"] for item in failover.json()["items"]] == [
+        "model-a",
+        "model-b",
+    ]
+
+    reordered = client.put(
+        f"/api/admin/model-groups/{group_id}",
+        headers=admin_headers,
+        json={
+            "items": [
+                _member(model_name="model-b"),
+                _member(model_name="model-a"),
+            ]
+        },
+    )
+    assert reordered.status_code == 200
+
+    round_robin = client.put(
+        f"/api/admin/model-groups/{group_id}",
+        headers=admin_headers,
+        json={"strategy": "round_robin"},
+    )
+    assert round_robin.status_code == 200
+    assert [item["model_name"] for item in round_robin.json()["items"]] == [
+        "model-b",
+        "model-a",
+    ]
+
+
 def test_create_model_group_rejects_duplicate_names(
     client,
     admin_headers,
@@ -73,7 +139,7 @@ def test_create_model_group_with_site_member_hydrates_member_metadata(
     admin_headers,
     create_site,
 ) -> None:
-    create_site(valid_site_payload())
+    site = create_site(valid_site_payload())
 
     response = client.post(
         "/api/admin/model-groups",
@@ -88,6 +154,7 @@ def test_create_model_group_with_site_member_hydrates_member_metadata(
     assert response.status_code == 201
     item = response.json()["items"][0]
     assert item["channel_id"] == openai_chat_channel_id()
+    assert item["site_id"] == site["id"]
     assert item["channel_name"] == "OpenAI Site"
     assert item["protocol"] == "openai_chat"
     assert item["credential_id"] == "cred-1"

@@ -56,7 +56,6 @@ class ChannelNormalizationMixin(ChannelLoadNormalizationMixin):
                         id=compose_runtime_channel_id(protocol_config.id, protocol),
                         site_id=site.id,
                         name=site.name,
-                        priority=site.priority,
                         protocol=protocol,
                         base_url=bound_base_url.url,
                         api_key=active_key.key,

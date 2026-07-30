@@ -67,9 +67,6 @@ class _RoutePlanner:
                     detail = f"No enabled channels matched {requested_model}"
             raise LookupError(detail)
 
-        if strategy == RoutingStrategy.FAILOVER:
-            active.sort(key=lambda target: target.channel.priority, reverse=True)
-
         route_key = cursor_key or protocol.value
         primary_index = (
             0
