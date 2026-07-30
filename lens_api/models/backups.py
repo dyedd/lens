@@ -146,7 +146,6 @@ class ConfigBackupRequestLog(StrictBaseModel):
 
 
 class ConfigBackupDump(StrictBaseModel):
-    version: int = 1
     exported_at: str
     lens_version: str
     include_request_logs: bool = False

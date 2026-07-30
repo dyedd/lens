@@ -20,6 +20,7 @@ import {
   type FormState,
   type GroupRow,
 } from "./modelGroupUtils";
+import type { GroupCardDragging } from "./groupOverviewTypes";
 
 type GroupCommandOptions = {
   editingId: string | null;
@@ -45,10 +46,7 @@ export function useGroupCommands({
 }: GroupCommandOptions) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null);
-  const [cardDragging, setCardDragging] = useState<{
-    groupId: string;
-    index: number;
-  } | null>(null);
+  const [cardDragging, setCardDragging] = useState<GroupCardDragging>(null);
   const [syncingPrices, setSyncingPrices] = useState(false);
 
   async function saveGroup(payload: FormState, groupId: string | null) {
@@ -204,20 +202,23 @@ export function useGroupCommands({
     const nextMembers = moveItems(group.display_members, fromIndex, toIndex);
     if (nextMembers === group.display_members) return;
     await updateGroupPartial(group, {
-      items: nextMembers.flatMap((member) =>
-        member.items.map((item) => ({
-          channel_id: item.channel_id,
-          protocol_config_id: item.protocol_config_id,
-          channel_name: item.channel_name,
-          protocol: item.protocol,
-          credential_id: item.credential_id,
-          credential_name: item.credential_name,
-          credential_number: item.credential_number,
-          model_name: item.model_name,
-          enabled: item.enabled,
-          state: item.state,
-          reasons: item.reasons,
-        })),
+      items: nextMembers.flatMap((member) => member.items),
+    });
+  }
+
+  async function reorderGroupChannels(
+    group: GroupRow,
+    fromIndex: number,
+    toIndex: number,
+  ) {
+    if (group.is_route_group || fromIndex === toIndex || busyId === group.id) {
+      return;
+    }
+    const nextChannels = moveItems(group.display_channels, fromIndex, toIndex);
+    if (nextChannels === group.display_channels) return;
+    await updateGroupPartial(group, {
+      items: nextChannels.flatMap((channel) =>
+        channel.members.flatMap((member) => member.items),
       ),
     });
   }
@@ -271,13 +272,34 @@ export function useGroupCommands({
     }
   }
 
+  async function removeGroupChannel(group: GroupRow, channelKey: string) {
+    if (group.is_route_group || busyId === group.id) return;
+    const channel = group.display_channels.find(
+      (item) => item.key === channelKey,
+    );
+    if (!channel) return;
+    const removedKeys = new Set(
+      channel.members.flatMap((member) =>
+        member.items.map((item) => itemKey(item)),
+      ),
+    );
+    const items = toForm(group).items.filter(
+      (item) => !removedKeys.has(itemKey(item)),
+    );
+    if (await updateGroupPartial(group, { items })) {
+      toast.success(locale === "zh-CN" ? "渠道已移除" : "Channel removed");
+    }
+  }
+
   return {
     busyId,
     cardDragging,
     changeStrategy,
     deleteTarget,
     remove,
+    removeGroupChannel,
     removeGroupMember,
+    reorderGroupChannels,
     reorderGroupMembers,
     setCardDragging,
     setDeleteTarget,

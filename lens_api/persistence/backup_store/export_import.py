@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from .shared import (
-    BACKUP_DUMP_VERSION,
     ConfigBackupDump,
     ConfigImportResult,
     effective_editable_setting_items,
@@ -60,7 +59,6 @@ class BackupExportImportMixin:
             )
 
         return ConfigBackupDump(
-            version=BACKUP_DUMP_VERSION,
             exported_at=datetime.now(UTC).isoformat(),
             lens_version=lens_version,
             include_request_logs=include_request_logs,
@@ -79,9 +77,6 @@ class BackupExportImportMixin:
 
     async def import_dump(self, dump: ConfigBackupDump) -> ConfigImportResult:
         """Replace persisted configuration with a validated backup."""
-        if dump.version != BACKUP_DUMP_VERSION:
-            raise ValueError(f"Unsupported backup version: {dump.version}")
-
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 

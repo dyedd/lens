@@ -33,6 +33,8 @@ export function GroupsOverview(props: GroupsOverviewProps) {
           openEdit={props.openEdit}
           changeStrategy={props.changeStrategy}
           reorderGroupMembers={props.reorderGroupMembers}
+          reorderGroupChannels={props.reorderGroupChannels}
+          removeGroupChannel={props.removeGroupChannel}
           removeGroupMember={props.removeGroupMember}
           toggleGroupEnabled={props.toggleGroupEnabled}
           setDeleteTarget={props.setDeleteTarget}

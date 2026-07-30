@@ -28,6 +28,12 @@ interface ModelGroupMemberChipsProps {
     fromIndex: number,
     toIndex: number,
   ) => void;
+  reorderGroupChannels: (
+    group: GroupRow,
+    fromIndex: number,
+    toIndex: number,
+  ) => void;
+  removeGroupChannel: (group: GroupRow, channelKey: string) => void;
   removeGroupMember: (group: GroupRow, memberKey: string) => void;
 }
 
@@ -39,6 +45,8 @@ export function ModelGroupMemberChips({
   cardDragging,
   setCardDragging,
   reorderGroupMembers,
+  reorderGroupChannels,
+  removeGroupChannel,
   removeGroupMember,
 }: ModelGroupMemberChipsProps) {
   if (group.is_route_group) {
@@ -55,6 +63,77 @@ export function ModelGroupMemberChips({
         {locale === "zh-CN" ? "暂无成员" : "No members"}
       </ItemDescription>
     );
+  }
+
+  if (group.strategy === "failover") {
+    return group.display_channels.map((channel, index) => {
+      const hasEnabledMember = channel.members.some(
+        (member) => member.enabled_item_count > 0,
+      );
+      const hasProblem = channel.members.some(
+        (member) =>
+          member.invalid_item_count > 0 || member.unavailable_item_count > 0,
+      );
+      const modelNames = channel.members
+        .map((member) => member.model_name)
+        .join(" · ");
+      return (
+        <div
+          key={channel.key}
+          className={cn(
+            "flex min-w-0 max-w-full items-center rounded-full border bg-background",
+            !hasEnabledMember && !hasProblem && "opacity-55",
+            hasProblem && "border-destructive/30 bg-destructive/5",
+            cardDragging?.groupId === group.id &&
+              cardDragging.kind === "channel" &&
+              cardDragging.index === index &&
+              "opacity-60",
+          )}
+          title={`${channel.channel_name || channel.channel_id} · ${modelNames}`}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            draggable={busyId !== group.id}
+            className="h-auto min-w-0 max-w-full cursor-grab rounded-full rounded-r-none border-0 px-3 py-1.5 active:cursor-grabbing"
+            onDragStart={() =>
+              setCardDragging({ groupId: group.id, kind: "channel", index })
+            }
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => {
+              if (
+                !cardDragging ||
+                cardDragging.groupId !== group.id ||
+                cardDragging.kind !== "channel"
+              ) {
+                return;
+              }
+              void reorderGroupChannels(group, cardDragging.index, index);
+            }}
+            onDragEnd={() => setCardDragging(null)}
+          >
+            <GripVertical data-icon="inline-start" />
+            <span className="min-w-0 truncate">
+              {channel.channel_name || channel.channel_id || "n/a"}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+            disabled={busyId === group.id}
+            aria-label={
+              locale === "zh-CN" ? "移除整个渠道" : "Remove entire channel"
+            }
+            onClick={() => void removeGroupChannel(group, channel.key)}
+          >
+            <X />
+          </Button>
+        </div>
+      );
+    });
   }
 
   return group.display_members.map((member, index) => {
@@ -77,6 +156,7 @@ export function ModelGroupMemberChips({
           !enabled && !problemLabels.length && "opacity-55",
           problemLabels.length > 0 && "border-destructive/30 bg-destructive/5",
           cardDragging?.groupId === group.id &&
+            cardDragging.kind === "member" &&
             cardDragging.index === index &&
             "opacity-60",
         )}
@@ -90,10 +170,18 @@ export function ModelGroupMemberChips({
           size="sm"
           draggable={busyId !== group.id}
           className="h-auto min-w-0 max-w-full cursor-grab rounded-full rounded-r-none border-0 px-3 py-1.5 active:cursor-grabbing"
-          onDragStart={() => setCardDragging({ groupId: group.id, index })}
+          onDragStart={() =>
+            setCardDragging({ groupId: group.id, kind: "member", index })
+          }
           onDragOver={(event) => event.preventDefault()}
           onDrop={() => {
-            if (!cardDragging || cardDragging.groupId !== group.id) return;
+            if (
+              !cardDragging ||
+              cardDragging.groupId !== group.id ||
+              cardDragging.kind !== "member"
+            ) {
+              return;
+            }
             void reorderGroupMembers(group, cardDragging.index, index);
           }}
           onDragEnd={() => setCardDragging(null)}

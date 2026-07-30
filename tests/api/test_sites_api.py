@@ -26,15 +26,13 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
     create_payload = valid_site_payload()
-    create_payload["priority"] = 7
     site = create_site(create_payload)
     assert site["name"] == "OpenAI Site"
-    assert site["priority"] == 7
+    assert "priority" not in site
     assert site["base_urls"][0]["url"] == "https://upstream.example/"
     assert site["protocols"][0]["models"][0]["model_name"] == "gpt-4o"
 
     update_payload = valid_site_payload(name="Renamed Site", model_name="gpt-4.1")
-    update_payload["priority"] = 3
     update_response = client.put(
         f"/api/admin/sites/{site['id']}",
         headers=admin_headers,
@@ -42,7 +40,7 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     )
     assert update_response.status_code == 200
     assert update_response.json()["name"] == "Renamed Site"
-    assert update_response.json()["priority"] == 3
+    assert "priority" not in update_response.json()
 
     delete_response = client.delete(
         f"/api/admin/sites/{site['id']}", headers=admin_headers
@@ -51,9 +49,9 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
 
-def test_create_site_rejects_negative_priority(client, admin_headers) -> None:
+def test_create_site_rejects_obsolete_priority(client, admin_headers) -> None:
     payload = valid_site_payload()
-    payload["priority"] = -1
+    payload["priority"] = 1
 
     response = client.post("/api/admin/sites", headers=admin_headers, json=payload)
 

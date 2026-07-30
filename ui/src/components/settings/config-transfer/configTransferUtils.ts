@@ -36,7 +36,6 @@ export function parseBackupPreview(rawValue: string): ConfigBackupDump {
   }
 
   return {
-    version: typeof payload.version === "number" ? payload.version : 0,
     exported_at:
       typeof payload.exported_at === "string" ? payload.exported_at : "",
     lens_version:
