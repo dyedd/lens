@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from math import isfinite
+from urllib.parse import urlsplit
 
 from ..core.time_zone import normalize_time_zone
 from ..models import (
@@ -16,14 +17,15 @@ from .shared import (
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_FAILURE_WINDOW,
     SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
-    SETTING_CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_NETWORK_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_NETWORK_THRESHOLD,
+    SETTING_CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_THRESHOLD,
     SETTING_CIRCUIT_BREAKER_TIMEOUT_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_TIMEOUT_THRESHOLD,
     SETTING_CORS_ALLOW_ORIGINS,
+    SETTING_FIRST_TOKEN_TIMEOUT_SECONDS,
     SETTING_HEALTH_MIN_SAMPLES,
     SETTING_HEALTH_PENALTY_WEIGHT,
     SETTING_HEALTH_SCORING_ENABLED,
@@ -35,10 +37,9 @@ from .shared import (
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_ENABLED,
     SETTING_RELAY_LOG_KEEP_PERIOD,
-    SETTING_FIRST_TOKEN_TIMEOUT_SECONDS,
-    SETTING_STREAM_IDLE_TIMEOUT_SECONDS,
     SETTING_SITE_LOGO_URL,
     SETTING_SITE_NAME,
+    SETTING_STREAM_IDLE_TIMEOUT_SECONDS,
     SETTING_TIME_ZONE,
     SETTING_UPSTREAM_HEADERS_CONFIG,
     SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
@@ -191,6 +192,8 @@ def normalize_editable_setting(key: str, raw_value: str) -> str:
             raise ValueError(f"Setting must be at least one: {key}")
         _validate_maximum(key, parsed, _FLOAT_SETTING_MAXIMUMS)
         return str(parsed)
+    if key == SETTING_PROXY_URL:
+        return _normalize_http_proxy_url(value)
     if key == SETTING_TIME_ZONE:
         return normalize_time_zone(value)
     if key == SETTING_UPSTREAM_HEADERS_CONFIG:
@@ -228,6 +231,26 @@ def _parse_float(key: str, value: str) -> float:
     if not isfinite(parsed):
         raise ValueError(f"Invalid numeric setting: {key}")
     return parsed
+
+
+def _normalize_http_proxy_url(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Invalid HTTP proxy URL") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or port == 0
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("Invalid HTTP proxy URL")
+    return value
 
 
 def _normalize_effective_setting(key: str, raw_value: str, default: str) -> str:

@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from conftest import assert_error, run_async
+
 from lens_api.models import SettingItem
 from lens_api.persistence.shared import (
+    SETTING_PROXY_URL,
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_PERIOD,
     SETTING_SITE_NAME,
@@ -32,6 +33,7 @@ def test_update_settings_normalizes_known_values(client, admin_headers) -> None:
                 {"key": SETTING_TIME_ZONE, "value": "Asia/Shanghai"},
                 {"key": SETTING_RELAY_LOG_BODY_ENABLED, "value": "YES"},
                 {"key": SETTING_RELAY_LOG_KEEP_PERIOD, "value": " 14 "},
+                {"key": SETTING_PROXY_URL, "value": " http://proxy.example:8080 "},
             ]
         },
     )
@@ -42,6 +44,7 @@ def test_update_settings_normalizes_known_values(client, admin_headers) -> None:
     assert settings[SETTING_TIME_ZONE] == "Asia/Shanghai"
     assert settings[SETTING_RELAY_LOG_BODY_ENABLED] == "true"
     assert settings[SETTING_RELAY_LOG_KEEP_PERIOD] == "14"
+    assert settings[SETTING_PROXY_URL] == "http://proxy.example:8080"
 
     listed = client.get("/api/admin/settings", headers=admin_headers)
     assert listed.status_code == 200
@@ -54,6 +57,8 @@ def test_update_settings_normalizes_known_values(client, admin_headers) -> None:
         (SETTING_RELAY_LOG_KEEP_PERIOD, "abc", "Invalid integer setting"),
         (SETTING_RELAY_LOG_BODY_ENABLED, "maybe", "Invalid boolean setting"),
         (SETTING_TIME_ZONE, "Mars/Base", "Invalid IANA time zone"),
+        (SETTING_PROXY_URL, "invalid-proxy", "Invalid HTTP proxy URL"),
+        (SETTING_PROXY_URL, "socks5://proxy.example", "Invalid HTTP proxy URL"),
     ],
 )
 def test_update_settings_rejects_invalid_known_values(

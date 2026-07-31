@@ -12,11 +12,11 @@ from ...core.config import settings
 from ...core.db import create_engine, create_session_factory
 from ...core.time_zone import resolve_time_zone
 from ...models import SettingItem
-from ...persistence.repositories import AdminRepository
 from ...persistence.backup_store import BackupStore
 from ...persistence.channel_store import ChannelStore
 from ...persistence.cronjob_store import CronjobSpec, CronjobStore
 from ...persistence.repositories import (
+    AdminRepository,
     GatewayApiKeyRepository,
     GroupRepository,
     ModelPriceRepository,
@@ -156,7 +156,7 @@ class AppState:
     async def _sync_model_prices(self) -> None:
         from .model_price_tasks import _sync_group_prices
 
-        await _sync_group_prices(self, overwrite_existing=True)
+        await _sync_group_prices(self)
 
     async def _sync_channel_models(self) -> None:
         from .model_sync import sync_channel_models
