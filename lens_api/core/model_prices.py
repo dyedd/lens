@@ -1,3 +1,4 @@
+from math import isfinite
 from typing import Any
 
 PRICE_PAYLOAD_FIELDS = (
@@ -15,6 +16,18 @@ def normalize_model_key(value: str | None) -> str:
 
 def _has_price_value(price_payload: dict[str, float]) -> bool:
     return any(price_payload[field] > 0 for field in PRICE_PAYLOAD_FIELDS)
+
+
+def _models_dev_price(cost_payload: dict[str, Any], field: str) -> float:
+    if field not in cost_payload:
+        return 0.0
+    value = cost_payload[field]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"Invalid models.dev cost field: {field}")
+    price = float(value)
+    if not isfinite(price) or price < 0:
+        raise ValueError(f"Invalid models.dev cost field: {field}")
+    return price
 
 
 def build_models_dev_price_index(
@@ -46,13 +59,13 @@ def build_models_dev_price_index(
                 if tail:
                     aliases.add(normalize_model_key(tail))
             price_payload = {
-                "input_price_per_million": float(cost_payload.get("input") or 0.0),
-                "output_price_per_million": float(cost_payload.get("output") or 0.0),
-                "cache_read_price_per_million": float(
-                    cost_payload.get("cache_read") or 0.0
+                "input_price_per_million": _models_dev_price(cost_payload, "input"),
+                "output_price_per_million": _models_dev_price(cost_payload, "output"),
+                "cache_read_price_per_million": _models_dev_price(
+                    cost_payload, "cache_read"
                 ),
-                "cache_write_price_per_million": float(
-                    cost_payload.get("cache_write") or 0.0
+                "cache_write_price_per_million": _models_dev_price(
+                    cost_payload, "cache_write"
                 ),
             }
             for alias in aliases:
