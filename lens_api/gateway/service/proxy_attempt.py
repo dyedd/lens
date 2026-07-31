@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException, Response
 from starlette.background import BackgroundTask
 
-from ...models import ChannelConfig, ProtocolKind, RequestLogLifecycleStatus
+from ...models import ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_request, needs_conversion
 from ..router import RouteTarget
 from ..router.cooldown import classify_error
@@ -49,7 +49,6 @@ from .upstream_support import (
 async def _record_target_failure(
     *,
     target: RouteTarget,
-    channel: ChannelConfig,
     runtime: dict[str, Any],
     log_ctx: _RequestLogger,
     plan: RoutingPlan,
@@ -58,9 +57,11 @@ async def _record_target_failure(
     attempt_started_at: float,
     effective_user_agent: str,
     upstream_body: dict[str, Any],
-    request_content: str | None = None,
     exc: UpstreamRequestError,
+    attempt: AttemptLog,
+    request_content: str | None = None,
 ) -> Response | None:
+    channel = target.channel
     message = _format_channel_error(exc.detail)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
     category = exc.router_error_category or classify_error(exc.router_status_code)
@@ -79,22 +80,11 @@ async def _record_target_failure(
         )
     errors.append(message)
     failure_status_codes.append(exc.status_code)
-    log_ctx.attempts.append(
-        AttemptLog(
-            channel_id=channel.id,
-            channel_name=channel.name,
-            credential_id=target.credential_id,
-            credential_name=target.credential_name or "",
-            model_name=target.model_name,
-            status_code=exc.status_code,
-            success=False,
-            duration_ms=_elapsed_ms(attempt_started_at),
-            error_message=message,
-            reasoning_effort=_extract_request_reasoning_effort(
-                log_ctx.body, upstream_body
-            ),
-        )
-    )
+    reasoning_effort = _extract_request_reasoning_effort(log_ctx.body, upstream_body)
+    attempt.status_code = exc.status_code
+    attempt.duration_ms = _elapsed_ms(attempt_started_at)
+    attempt.error_message = message
+    attempt.reasoning_effort = reasoning_effort
     await log_ctx.update(
         requested_group_name=plan.requested_group_name,
         resolved_group_name=plan.resolved_group_name,
@@ -145,6 +135,17 @@ async def _try_target(
     channel = target.channel
     attempt_started_at = perf_counter()
     route_started_revision = app_state.router.current_failure_revision()
+    attempt = AttemptLog(
+        channel_id=channel.id,
+        channel_name=channel.name,
+        credential_id=target.credential_id,
+        credential_name=target.credential_name or "",
+        model_name=target.model_name,
+        status_code=None,
+        success=False,
+        duration_ms=0,
+    )
+    log_ctx.attempts.append(attempt)
 
     if needs_conversion(protocol, channel.protocol):
         try:
@@ -160,7 +161,6 @@ async def _try_target(
         except ValueError as exc:
             return await _record_target_failure(
                 target=target,
-                channel=channel,
                 runtime=runtime,
                 log_ctx=log_ctx,
                 plan=plan,
@@ -175,6 +175,7 @@ async def _try_target(
                     router_status_code=None,
                     skip_route_failure=True,
                 ),
+                attempt=attempt,
             )
     else:
         upstream_body = deepcopy(body)
@@ -191,7 +192,6 @@ async def _try_target(
     except UpstreamRequestError as exc:
         return await _record_target_failure(
             target=target,
-            channel=channel,
             runtime=runtime,
             log_ctx=log_ctx,
             plan=plan,
@@ -201,6 +201,7 @@ async def _try_target(
             effective_user_agent=upstream_user_agent,
             upstream_body=upstream_body,
             exc=exc,
+            attempt=attempt,
         )
     if protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
         upstream_body.pop("stream", None)
@@ -226,7 +227,6 @@ async def _try_target(
     except UpstreamRequestError as exc:
         return await _record_target_failure(
             target=target,
-            channel=channel,
             runtime=runtime,
             log_ctx=log_ctx,
             plan=plan,
@@ -237,11 +237,11 @@ async def _try_target(
             upstream_body=upstream_body,
             request_content=exc.request_content,
             exc=exc,
+            attempt=attempt,
         )
     except HTTPException as exc:
         return await _record_target_failure(
             target=target,
-            channel=channel,
             runtime=runtime,
             log_ctx=log_ctx,
             plan=plan,
@@ -256,7 +256,9 @@ async def _try_target(
                 router_status_code=exc.status_code,
                 skip_route_failure=True,
             ),
+            attempt=attempt,
         )
+    attempt.reasoning_effort = reasoning_effort
     await log_ctx.update(
         requested_group_name=plan.requested_group_name,
         resolved_group_name=plan.resolved_group_name,
@@ -287,7 +289,6 @@ async def _try_target(
     except UpstreamRequestError as exc:
         return await _record_target_failure(
             target=target,
-            channel=channel,
             runtime=runtime,
             log_ctx=log_ctx,
             plan=plan,
@@ -298,21 +299,12 @@ async def _try_target(
             upstream_body=upstream_body,
             request_content=upstream_request_content,
             exc=exc,
+            attempt=attempt,
         )
 
-    log_ctx.attempts.append(
-        AttemptLog(
-            channel_id=channel.id,
-            channel_name=channel.name,
-            credential_id=target.credential_id,
-            credential_name=target.credential_name or "",
-            model_name=target.model_name,
-            status_code=result.status_code,
-            success=True,
-            duration_ms=_elapsed_ms(attempt_started_at),
-            reasoning_effort=reasoning_effort,
-        )
-    )
+    attempt.status_code = result.status_code
+    attempt.success = True
+    attempt.duration_ms = _elapsed_ms(attempt_started_at)
 
     if not result.is_stream:
         app_state.router.record_success(

@@ -14,7 +14,7 @@ from conftest import (
 from fastapi.responses import JSONResponse
 
 from lens_api.core.runtime_channel_ids import compose_runtime_channel_id
-from lens_api.models import ProtocolKind
+from lens_api.models import ProtocolKind, RequestLogLifecycleStatus
 from lens_api.persistence.entities import GatewayApiKeyEntity
 
 
@@ -347,9 +347,10 @@ def test_responses_proxy_preserves_input_shape(
     ]
 
 
-def test_failover_routes_all_models_in_a_channel_before_the_next_channel(
+def test_failover_orders_targets_and_tracks_active_credential(
     client,
     admin_headers,
+    app_state,
     monkeypatch,
     create_site,
     create_model_group,
@@ -372,16 +373,33 @@ def test_failover_routes_all_models_in_a_channel_before_the_next_channel(
             "protocol": ProtocolKind.OPENAI_CHAT.value,
         }
     )
+    first_site["credentials"][0]["name"] = "l3"
     create_site(first_site)
-    create_site(
-        valid_site_payload(
-            name="Second site",
-            base_id="base-b",
-            credential_id="cred-b",
-            protocol_config_id="pc-b",
-            model_name="model-b",
-        )
+    second_site = valid_site_payload(
+        name="Second site",
+        base_id="base-b",
+        credential_id="cred-b",
+        protocol_config_id="pc-b",
+        model_name="model-b",
     )
+    second_site["credentials"][0]["name"] = "feng-key"
+    second_site["credentials"].append(
+        {
+            "id": "cred-b-alt",
+            "name": "feng-backup",
+            "api_key": "upstream-secret-alt",
+            "enabled": True,
+        }
+    )
+    second_site["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-b-alt",
+            "model_name": "model-b-alt",
+            "enabled": True,
+            "protocol": ProtocolKind.OPENAI_CHAT.value,
+        }
+    )
+    create_site(second_site)
     group = create_model_group(
         name="failover-group",
         items=[
@@ -431,6 +449,14 @@ def test_failover_routes_all_models_in_a_channel_before_the_next_channel(
                 json={"error": {"message": "failed"}},
                 request=request,
             )
+        page = await app_state.request_log_store.list_request_log_page()
+        active_log = page.items[0]
+        assert active_log.lifecycle_status == RequestLogLifecycleStatus.CONNECTING
+        assert active_log.channel_name == "Second site"
+        assert active_log.credential_id == "cred-b"
+        assert active_log.credential_name == "feng-key"
+        assert active_log.channel_has_multiple_credentials is True
+        assert active_log.attempt_count == 3
         return httpx.Response(
             200,
             json={
@@ -462,6 +488,25 @@ def test_failover_routes_all_models_in_a_channel_before_the_next_channel(
         headers=gateway_headers(key),
         json={"model": "failover-group", "messages": []},
     )
-
     assert response.status_code == 200, response.text
+
+    page_response = client.get("/api/admin/request-logs/page", headers=admin_headers)
+    assert page_response.status_code == 200, page_response.text
+    detail_response = client.get(
+        f"/api/admin/request-logs/{page_response.json()['items'][0]['id']}",
+        headers=admin_headers,
+    )
+    assert detail_response.status_code == 200, detail_response.text
+    detail = detail_response.json()
+
     assert attempted_models == ["model-a1", "model-a2", "model-b"]
+    assert [attempt["channel_name"] for attempt in detail["attempts"]] == [
+        "First site",
+        "First site",
+        "Second site",
+    ]
+    assert [attempt["success"] for attempt in detail["attempts"]] == [
+        False,
+        False,
+        True,
+    ]

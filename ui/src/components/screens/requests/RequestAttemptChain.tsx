@@ -45,6 +45,9 @@ export function AttemptChain({
     <div className="overflow-hidden rounded-xl bg-muted/20">
       {attempts.map((attempt, index) => {
         const errorDisplay = formatErrorDisplay(attempt.error_message);
+        const isConnectingAttempt =
+          detail.lifecycle_status === "connecting" &&
+          index === attempts.length - 1;
         const credentialLabel = attempt.channel_has_multiple_credentials
           ? formatInternalCredentialLabel(attempt, locale)
           : null;
@@ -75,7 +78,13 @@ export function AttemptChain({
                   </span>
                 ) : null}
                 <RequestOutcomeBadge
-                  status={attempt.success ? "succeeded" : "failed"}
+                  status={
+                    isConnectingAttempt
+                      ? "connecting"
+                      : attempt.success
+                        ? "succeeded"
+                        : "failed"
+                  }
                   statusCode={attempt.status_code}
                   locale={locale}
                   errorMessage={errorDisplay}

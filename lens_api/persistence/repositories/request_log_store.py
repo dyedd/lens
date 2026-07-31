@@ -69,6 +69,7 @@ class RequestLogStore(
             for attempt in reversed(attempts):
                 if str(attempt.get("channel_id") or "") == channel_id:
                     return attempt
+            return {}
         return attempts[-1] if attempts else {}
 
     @staticmethod

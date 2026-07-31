@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from conftest import assert_error, run_async, seed_request_log
+
 from lens_api.models import ProtocolKind, RequestLogLifecycleStatus
 
 
@@ -130,6 +131,58 @@ def test_request_log_page_filters_cancelled_logs(
     assert payload["items"][0]["lifecycle_status"] == "cancelled"
     assert payload["items"][0]["status_code"] == 200
     assert payload["items"][0]["error_message"] is None
+
+
+def test_request_log_page_does_not_mix_channel_with_previous_attempt_credential(
+    client,
+    admin_headers,
+    app_state,
+) -> None:
+    run_async(
+        app_state.request_log_store.create_request_log(
+            protocol=ProtocolKind.OPENAI_CHAT.value,
+            user_agent="pytest failover client",
+            requested_group_name="gpt-4o",
+            resolved_group_name="gpt-4o",
+            upstream_model_name="gpt-4o",
+            channel_id="current-channel",
+            channel_name="Current site",
+            gateway_key_id=None,
+            status_code=None,
+            success=False,
+            lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+            is_stream=False,
+            first_token_latency_ms=0,
+            latency_ms=10,
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0,
+            input_cost_usd=0,
+            output_cost_usd=0,
+            total_cost_usd=0,
+            attempts=[
+                {
+                    "channel_id": "previous-channel",
+                    "channel_name": "Previous site",
+                    "credential_id": "previous-credential",
+                    "credential_name": "l3",
+                    "model_name": "gpt-4o",
+                    "status_code": 500,
+                    "success": False,
+                    "duration_ms": 10,
+                    "error_message": "failed",
+                }
+            ],
+        )
+    )
+
+    response = client.get("/api/admin/request-logs/page", headers=admin_headers)
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["channel_name"] == "Current site"
+    assert item["credential_id"] is None
+    assert item["credential_name"] == ""
 
 
 def test_request_log_detail_returns_body_and_attempts(
