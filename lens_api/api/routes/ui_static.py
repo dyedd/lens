@@ -1,11 +1,21 @@
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 from starlette.staticfiles import StaticFiles
+from starlette.types import Scope
 
 RESERVED_PREFIXES = ("api", "v1", "v1beta", "docs", "redoc", "openapi.json")
+_IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+class _ImmutableStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code in (200, 304):
+            response.headers["Cache-Control"] = _IMMUTABLE_ASSET_CACHE_CONTROL
+        return response
 
 
 def register(app: FastAPI, static_dir_value: str) -> None:
@@ -18,9 +28,13 @@ def register(app: FastAPI, static_dir_value: str) -> None:
         raise RuntimeError(f"UI static directory does not exist: {static_dir}")
     static_root = static_dir.resolve()
 
-    assets_dir = static_dir / "_next"
+    assets_dir = static_dir / "_next" / "static"
     if assets_dir.is_dir():
-        app.mount("/_next", StaticFiles(directory=assets_dir), name="next-assets")
+        app.mount(
+            "/_next/static",
+            _ImmutableStaticFiles(directory=assets_dir),
+            name="next-assets",
+        )
 
     _add_file_route(app, "/favicon.ico", static_dir / "favicon.ico")
     _add_file_route(app, "/logo.svg", static_dir / "logo.svg")
