@@ -391,6 +391,7 @@ def test_failover_orders_targets_and_tracks_active_credential(
             "enabled": True,
         }
     )
+    second_site["protocols"][0]["credential_ids"].append("cred-b-alt")
     second_site["protocols"][0]["models"].append(
         {
             "credential_id": "cred-b-alt",
