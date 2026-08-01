@@ -1,6 +1,8 @@
 "use client";
 
-import { RefreshCcw } from "lucide-react";
+import { Info, RefreshCcw } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/Alert";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
@@ -11,7 +13,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
-import type { ChannelModelSyncResponse } from "@/lib/api";
+import type {
+  ChannelModelSyncResponse,
+  ChannelModelSyncResultItem,
+} from "@/lib/api";
 import type { Locale } from "./channelShared";
 
 type Props = {
@@ -22,6 +27,26 @@ type Props = {
   syncing: boolean;
   onConfirm: () => void;
 };
+
+function statusLabel(
+  locale: Locale,
+  status: ChannelModelSyncResultItem["status"],
+) {
+  const labels: Record<ChannelModelSyncResultItem["status"], [string, string]> =
+    {
+      updated: ["已更新", "Updated"],
+      unchanged: ["无变更", "Unchanged"],
+      failed: ["失败", "Failed"],
+    };
+  const [zh, en] = labels[status];
+  return locale === "zh-CN" ? zh : en;
+}
+
+function statusVariant(status: ChannelModelSyncResultItem["status"]) {
+  if (status === "failed") return "destructive" as const;
+  if (status === "updated") return "secondary" as const;
+  return "outline" as const;
+}
 
 /** Renders a channel model-sync preview and confirmation flow. */
 export function ChannelModelSyncDialog({
@@ -53,10 +78,29 @@ export function ChannelModelSyncDialog({
         >
           <div className="grid gap-4">
             {result ? (
-              <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                {locale === "zh-CN"
-                  ? `将同步 ${result.synced_channel_count} 个渠道，跳过 ${result.skipped_channel_count} 个`
-                  : `${result.synced_channel_count} channels to sync, ${result.skipped_channel_count} skipped`}
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">
+                  {locale === "zh-CN"
+                    ? `${result.eligible_target_count} 个目标`
+                    : `${result.eligible_target_count} targets`}
+                </Badge>
+                <Badge variant="secondary">
+                  {locale === "zh-CN"
+                    ? `${result.updated_target_count} 个更新`
+                    : `${result.updated_target_count} updated`}
+                </Badge>
+                <Badge variant="outline">
+                  {locale === "zh-CN"
+                    ? `${result.unchanged_target_count} 个无变更`
+                    : `${result.unchanged_target_count} unchanged`}
+                </Badge>
+                {result.failed_target_count ? (
+                  <Badge variant="destructive">
+                    {locale === "zh-CN"
+                      ? `${result.failed_target_count} 个失败`
+                      : `${result.failed_target_count} failed`}
+                  </Badge>
+                ) : null}
               </div>
             ) : null}
             {syncing && !result ? (
@@ -66,13 +110,31 @@ export function ChannelModelSyncDialog({
                   : "Generating preview..."}
               </div>
             ) : null}
-            {result ? (
+            {result?.eligible_target_count === 0 ? (
+              <Alert>
+                <Info />
+                <AlertTitle>
+                  {locale === "zh-CN"
+                    ? "没有可同步目标"
+                    : "No eligible sync targets"}
+                </AlertTitle>
+                <AlertDescription>
+                  {locale === "zh-CN"
+                    ? "请先在渠道组合中启用自动同步，并选择已启用的地址、密钥、客户端协议和有效同步正则。"
+                    : "Enable auto sync in a channel combination and select an enabled URL, key, client protocol, and valid sync regex."}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            {result?.eligible_target_count ? (
               <div className="max-h-[420px] overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>
-                        {locale === "zh-CN" ? "渠道" : "Channel"}
+                        {locale === "zh-CN" ? "同步目标" : "Sync target"}
+                      </TableHead>
+                      <TableHead>
+                        {locale === "zh-CN" ? "状态" : "Status"}
                       </TableHead>
                       <TableHead>
                         {locale === "zh-CN" ? "变更" : "Changes"}
@@ -81,49 +143,63 @@ export function ChannelModelSyncDialog({
                   </TableHeader>
                   <TableBody>
                     {result.items.map((item) => (
-                      <TableRow key={item.protocol_config_id}>
-                        <TableCell className="align-top font-medium">
-                          {item.channel_name}
+                      <TableRow
+                        key={`${item.protocol_config_id}:${item.credential_id}:${item.protocol}`}
+                      >
+                        <TableCell className="align-top">
+                          <div className="font-medium">{item.channel_name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {`${item.protocol_config_name} · ${item.credential_name || item.credential_id} · ${item.protocol}`}
+                          </div>
                         </TableCell>
-                        <TableCell className="space-y-1 text-xs">
-                          {!item.success ? (
-                            <div className="text-destructive">
-                              {(locale === "zh-CN" ? "失败：" : "Failed: ") +
-                                item.error}
-                            </div>
-                          ) : null}
-                          {item.success && item.warning ? (
-                            <div className="text-amber-600">
-                              {(locale === "zh-CN" ? "警告：" : "Warning: ") +
-                                item.warning}
-                            </div>
-                          ) : null}
-                          {item.added.map((name) => (
-                            <div key={`a-${name}`} className="text-emerald-600">
-                              {`+ ${name}`}
-                            </div>
-                          ))}
-                          {item.removed.map((name) => (
-                            <div key={`r-${name}`} className="text-destructive">
-                              {`- ${name}`}
-                            </div>
-                          ))}
-                          {item.group_added.map((change) => (
-                            <div
-                              key={`g-${change.group_name}-${change.model_name}`}
-                              className="text-muted-foreground"
-                            >
-                              {`↳ ${change.model_name} → ${change.group_name}`}
-                            </div>
-                          ))}
-                          {item.success &&
-                          !item.added.length &&
-                          !item.removed.length &&
-                          !item.warning ? (
-                            <div className="text-muted-foreground">
-                              {locale === "zh-CN" ? "无变更" : "No changes"}
-                            </div>
-                          ) : null}
+                        <TableCell className="align-top">
+                          <Badge variant={statusVariant(item.status)}>
+                            {statusLabel(locale, item.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-col gap-1">
+                            {item.status === "failed" ? (
+                              <div className="text-destructive">
+                                {(locale === "zh-CN" ? "失败：" : "Failed: ") +
+                                  item.error}
+                              </div>
+                            ) : null}
+                            {item.warning ? (
+                              <div className="text-muted-foreground">
+                                {(locale === "zh-CN" ? "警告：" : "Warning: ") +
+                                  item.warning}
+                              </div>
+                            ) : null}
+                            {item.added.map((name) => (
+                              <div key={`a-${name}`}>{`+ ${name}`}</div>
+                            ))}
+                            {item.removed.map((name) => (
+                              <div
+                                key={`r-${name}`}
+                                className="text-destructive"
+                              >
+                                {`- ${name}`}
+                              </div>
+                            ))}
+                            {item.group_added.map((change) => (
+                              <div
+                                key={`g-${change.group_name}-${change.model_name}`}
+                                className="text-muted-foreground"
+                              >
+                                {`↳ ${change.model_name} → ${change.group_name}`}
+                              </div>
+                            ))}
+                            {item.status !== "failed" &&
+                            !item.added.length &&
+                            !item.removed.length &&
+                            !item.group_added.length &&
+                            !item.warning ? (
+                              <div className="text-muted-foreground">
+                                {locale === "zh-CN" ? "无变更" : "No changes"}
+                              </div>
+                            ) : null}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -144,7 +220,12 @@ export function ChannelModelSyncDialog({
               <Button
                 type="button"
                 onClick={onConfirm}
-                disabled={syncing || !result || !hasChanges}
+                disabled={
+                  syncing ||
+                  !result ||
+                  result.eligible_target_count === 0 ||
+                  !hasChanges
+                }
               >
                 <RefreshCcw
                   data-icon="inline-start"

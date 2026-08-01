@@ -75,6 +75,7 @@ class ChannelLoadNormalizationMixin:
                         if row.protocol in valid_protocol_values
                         else None
                     ),
+                    source=row.source,
                 )
             )
         return result
@@ -83,6 +84,7 @@ class ChannelLoadNormalizationMixin:
         self,
         rows: list[SiteProtocolConfigEntity],
         models_by_protocol_config: dict[str, list[SiteModel]],
+        credential_ids_by_protocol_config: dict[str, list[str]],
     ) -> dict[str, list[SiteProtocolConfig]]:
         result: dict[str, list[SiteProtocolConfig]] = defaultdict(list)
         for row in rows:
@@ -98,7 +100,7 @@ class ChannelLoadNormalizationMixin:
                     param_override=row.param_override,
                     match_regex=row.match_regex,
                     base_url_id=row.base_url_id,
-                    credential_id=row.credential_id,
+                    credential_ids=credential_ids_by_protocol_config.get(row.id, []),
                     auto_sync_enabled=bool(row.auto_sync_enabled),
                     models=models_by_protocol_config.get(row.id, []),
                 )

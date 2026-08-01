@@ -59,7 +59,7 @@ type ChannelEditorDialogProps = {
   ) => void;
   openAggregateModelTest: (modelKey: string) => void;
   removeAggregateModel: (modelKey: string) => void;
-  clearAggregateModels: () => void;
+  clearManualModels: () => void;
   closeEditor: () => void;
 };
 
@@ -97,7 +97,7 @@ export function ChannelEditorDialog({
   updateModelProtocols,
   openAggregateModelTest,
   removeAggregateModel,
-  clearAggregateModels,
+  clearManualModels,
   closeEditor,
 }: ChannelEditorDialogProps) {
   return (
@@ -181,7 +181,7 @@ export function ChannelEditorDialog({
                 onUpdateModelProtocols={updateModelProtocols}
                 onOpenModelTest={openAggregateModelTest}
                 onRemoveModel={removeAggregateModel}
-                onClearModels={clearAggregateModels}
+                onClearManualModels={clearManualModels}
               />
             </section>
           </div>

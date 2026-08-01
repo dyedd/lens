@@ -183,11 +183,20 @@ export function useChannelTransfer({
         (sum, item) => sum + item.removed.length,
         0,
       );
-      toast.success(
+      const message =
         locale === "zh-CN"
-          ? `已同步 ${result.synced_channel_count} 个渠道，新增 ${added} 个，移除 ${removed} 个`
-          : `Synced ${result.synced_channel_count} channels, +${added} / -${removed}`,
-      );
+          ? `已处理 ${result.eligible_target_count} 个同步目标，更新 ${result.updated_target_count} 个，新增 ${added} 个，移除 ${removed} 个`
+          : `Processed ${result.eligible_target_count} sync targets, updated ${result.updated_target_count}, +${added} / -${removed}`;
+      if (result.failed_target_count) {
+        toast.warning(message, {
+          description:
+            locale === "zh-CN"
+              ? `${result.failed_target_count} 个目标同步失败`
+              : `${result.failed_target_count} targets failed`,
+        });
+      } else {
+        toast.success(message);
+      }
       setChannelSyncOpen(false);
     } catch (error) {
       toast.error(

@@ -48,5 +48,6 @@ export function buildManualModels(
       credential_id: credentialId,
       model_name: modelName,
       enabled: true,
+      source: "manual" as const,
     }));
 }

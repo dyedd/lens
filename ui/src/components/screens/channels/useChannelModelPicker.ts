@@ -103,8 +103,6 @@ export function useChannelModelPicker({
           ? {
               ...item,
               manual_model_name: "",
-              match_regex: "",
-              auto_sync_enabled: false,
               expanded: true,
               models: [...item.models, ...newModels],
             }
@@ -116,17 +114,8 @@ export function useChannelModelPicker({
     if (fetchingProtocolConfigIndex !== null) return;
     const config = form.protocolConfigs[configIndex];
     if (!config) return;
-    const query = config.manual_model_name.trim();
-    const kind = classifyModelQueryInput(query);
-    if (kind === "plain") {
-      toast.error(
-        locale === "zh-CN"
-          ? "普通模型名不能获取更多"
-          : "Plain model names cannot fetch more",
-      );
-      return;
-    }
-    if (kind === "regex" && !isValidModelQueryRegex(query)) {
+    const query = config.discovery_filter.trim();
+    if (query && !isValidModelQueryRegex(query)) {
       toast.error(locale === "zh-CN" ? "正则无效" : "Invalid regex");
       return;
     }
@@ -163,7 +152,7 @@ export function useChannelModelPicker({
         headers: formHeaders(config),
         proxy_mode: config.proxy_mode,
         channel_proxy: config.channel_proxy.trim(),
-        match_regex: kind === "regex" ? query : "",
+        match_regex: query,
         credentials: form.credentials
           .map((item, index) => ({
             id: item.id,
@@ -263,6 +252,7 @@ export function useChannelModelPicker({
                   credential_id: model.credential_id,
                   model_name: model.model_name,
                   enabled: true,
+                  source: "manual" as const,
                 })),
               ],
             },

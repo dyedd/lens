@@ -102,7 +102,7 @@ class ChannelNormalizationMixin(ChannelLoadNormalizationMixin):
         }
         credential_ids = list(
             dict.fromkeys(
-                [protocol_config.credential_id]
+                protocol_config.credential_ids
                 + [item.credential_id for item in protocol_config.models]
             )
         )

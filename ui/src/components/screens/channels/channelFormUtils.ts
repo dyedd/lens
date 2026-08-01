@@ -59,12 +59,9 @@ export function normalizeCredentialIds(values: string[]) {
 
 /** Returns the unique selected credential IDs for a protocol configuration. */
 export function protocolConfigSelectedCredentialIds(
-  protocolConfig: Pick<FormProtocolConfig, "credential_id" | "credential_ids">,
+  protocolConfig: Pick<FormProtocolConfig, "credential_ids">,
 ) {
-  const credentialIds = protocolConfig.credential_ids.length
-    ? protocolConfig.credential_ids
-    : [protocolConfig.credential_id];
-  return normalizeCredentialIds(credentialIds);
+  return normalizeCredentialIds(protocolConfig.credential_ids);
 }
 
 /** Classifies model query input as empty, plain text, or a regular expression. */
@@ -92,8 +89,10 @@ export function isValidModelQueryRegex(value: string) {
 export function protocolConfigAutoSyncActive(
   protocolConfig: Pick<FormProtocolConfig, "auto_sync_enabled" | "match_regex">,
 ) {
+  const matchRegex = safeText(protocolConfig.match_regex).trim();
   return (
     protocolConfig.auto_sync_enabled &&
-    classifyModelQueryInput(protocolConfig.match_regex) === "regex"
+    Boolean(matchRegex) &&
+    isValidModelQueryRegex(matchRegex)
   );
 }

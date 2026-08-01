@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .shared import (
+    ModelSource,
     ProtocolKind,
     SiteBaseUrlEntity,
     SiteCredential,
@@ -8,9 +9,8 @@ from .shared import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteModelFetchRequest,
-    SiteModelInput,
     SiteProtocolConfigEntity,
-    SiteProtocolConfigInput,
+    SiteProtocolConfigCredentialEntity,
     delete,
     select,
     uuid,
@@ -32,6 +32,13 @@ class ChannelSiteOperationsMixin:
                 await session.execute(
                     delete(SiteDiscoveredModelEntity).where(
                         SiteDiscoveredModelEntity.protocol_config_id.in_(
+                            protocol_config_ids
+                        )
+                    )
+                )
+                await session.execute(
+                    delete(SiteProtocolConfigCredentialEntity).where(
+                        SiteProtocolConfigCredentialEntity.protocol_config_id.in_(
                             protocol_config_ids
                         )
                     )
@@ -95,26 +102,80 @@ class ChannelSiteOperationsMixin:
             )
         return previews
 
-    async def replace_protocol_config_models(
+    async def replace_protocol_config_synced_models(
         self,
         protocol_config_id: str,
-        model_names_by_protocol: dict[ProtocolKind, list[str]],
+        credential_id: str,
+        protocol: ProtocolKind,
+        model_names: list[str],
     ) -> None:
-        """Replace discovered models for a protocol configuration."""
+        """Replace one credential/protocol target's synchronized models."""
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
                 raise KeyError(protocol_config_id)
-            credential_id = entity.credential_id
-            if not credential_id:
+            association = (
+                await session.execute(
+                    select(SiteProtocolConfigCredentialEntity.id).where(
+                        SiteProtocolConfigCredentialEntity.protocol_config_id
+                        == protocol_config_id,
+                        SiteProtocolConfigCredentialEntity.credential_id
+                        == credential_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if association is None:
                 raise ValueError(
-                    f"Protocol config has no bound credential: {protocol_config_id}"
+                    "Credential is not bound to protocol config "
+                    f"{protocol_config_id}: {credential_id}"
                 )
 
             protocols = _parse_supported_protocols_json(entity.protocols_json)
-            existing_enabled = {
-                (row.model_name, row.protocol): bool(row.enabled)
-                for row in (
+            if protocol not in protocols:
+                raise ValueError(
+                    "Protocol is not enabled in protocol config "
+                    f"{protocol_config_id}: {protocol.value}"
+                )
+
+            target_rows = (
+                (
+                    await session.execute(
+                        select(SiteDiscoveredModelEntity).where(
+                            SiteDiscoveredModelEntity.protocol_config_id
+                            == protocol_config_id,
+                            SiteDiscoveredModelEntity.credential_id == credential_id,
+                            SiteDiscoveredModelEntity.protocol == protocol.value,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            manual_names = {
+                row.model_name
+                for row in target_rows
+                if row.source == ModelSource.MANUAL.value
+            }
+            synced_by_name = {
+                row.model_name: row
+                for row in target_rows
+                if row.source == ModelSource.SYNCED.value
+            }
+            desired_names = set(model_names) - manual_names
+            stale_ids = [
+                row.id
+                for name, row in synced_by_name.items()
+                if name not in desired_names
+            ]
+            if stale_ids:
+                await session.execute(
+                    delete(SiteDiscoveredModelEntity).where(
+                        SiteDiscoveredModelEntity.id.in_(stale_ids)
+                    )
+                )
+
+            all_rows = (
+                (
                     await session.execute(
                         select(SiteDiscoveredModelEntity).where(
                             SiteDiscoveredModelEntity.protocol_config_id
@@ -124,31 +185,23 @@ class ChannelSiteOperationsMixin:
                 )
                 .scalars()
                 .all()
-            }
-            models = [
-                SiteModelInput(
-                    credential_id=credential_id,
-                    model_name=model_name,
-                    enabled=existing_enabled.get((model_name, protocol.value), True),
-                    protocol=protocol,
+            )
+            next_sort_order = max((row.sort_order for row in all_rows), default=-1) + 1
+            for model_name in sorted(desired_names - set(synced_by_name)):
+                session.add(
+                    SiteDiscoveredModelEntity(
+                        id=str(uuid.uuid4()),
+                        protocol_config_id=protocol_config_id,
+                        credential_id=credential_id,
+                        model_name=model_name,
+                        enabled=1,
+                        sort_order=next_sort_order,
+                        protocol=protocol.value,
+                        source=ModelSource.SYNCED.value,
+                    )
                 )
-                for protocol in protocols
-                for model_name in model_names_by_protocol.get(protocol, [])
-            ]
-            protocol_config = SiteProtocolConfigInput(
-                id=protocol_config_id,
-                protocols=protocols,
-                base_url_id=entity.base_url_id,
-                credential_id=credential_id,
-                models=models,
-            )
+                next_sort_order += 1
 
-            await self._upsert_protocol_config_models(
-                session,
-                protocol_config_id,
-                protocol_config,
-                {credential_id},
-            )
             await self._cleanup_invalid_synced_group_items(
                 session, {protocol_config_id}
             )

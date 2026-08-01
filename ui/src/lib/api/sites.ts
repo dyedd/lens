@@ -37,6 +37,7 @@ export type SiteModel = {
   model_name: string;
   enabled: boolean;
   sort_order: number;
+  source: "manual" | "synced";
 };
 export type SiteModelInput = {
   id?: string | null;
@@ -44,6 +45,7 @@ export type SiteModelInput = {
   credential_id: string;
   model_name: string;
   enabled: boolean;
+  source: "manual" | "synced";
 };
 export type SiteProtocolConfig = {
   id: string;
@@ -56,7 +58,7 @@ export type SiteProtocolConfig = {
   param_override: string;
   match_regex: string;
   base_url_id: string;
-  credential_id: string;
+  credential_ids: string[];
   auto_sync_enabled: boolean;
   models: SiteModel[];
 };
@@ -71,7 +73,7 @@ export type SiteProtocolConfigInput = {
   param_override: string;
   match_regex: string;
   base_url_id: string;
-  credential_id: string;
+  credential_ids: string[];
   auto_sync_enabled: boolean;
   models: SiteModelInput[];
 };
@@ -125,8 +127,9 @@ export type SiteBatchImportCredentialInput = {
 };
 export type SiteBatchImportModelInput = {
   model_name: string;
-  credential_ref?: string;
+  credential_ref: string;
   enabled?: boolean;
+  source?: "manual" | "synced";
 };
 export type SiteBatchImportProtocolInput = {
   name: string;
@@ -139,7 +142,7 @@ export type SiteBatchImportProtocolInput = {
   match_regex?: string;
   auto_sync_enabled: boolean;
   base_url_ref: string;
-  credential_ref: string;
+  credential_refs: string[];
   models?: SiteBatchImportModelInput[];
 };
 export type SiteBatchImportItem = {

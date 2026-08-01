@@ -1,15 +1,17 @@
 import { Plus, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { ProtocolMultiSelect } from "@/components/ui/ProtocolMultiSelect";
 import { Separator } from "@/components/ui/Separator";
 import { Switch } from "@/components/ui/Switch";
 import type { FormProtocolConfig, Locale } from "./channelShared";
-import {
-  classifyModelQueryInput,
-  isValidModelQueryRegex,
-} from "./channelShared";
+import { isValidModelQueryRegex } from "./channelShared";
 
 type Props = {
   protocolConfig: FormProtocolConfig;
@@ -35,57 +37,47 @@ export function ProtocolConfigModelActions({
   onAddManualModel,
   onFetchModels,
 }: Props) {
-  const modelQueryInput = protocolConfig.manual_model_name.trim();
-  const modelQueryKind = classifyModelQueryInput(modelQueryInput);
-  const isRegexQuery = modelQueryKind === "regex";
-  const isValidRegexQuery =
-    !isRegexQuery || isValidModelQueryRegex(modelQueryInput);
+  const manualModelName = protocolConfig.manual_model_name.trim();
+  const discoveryFilter = protocolConfig.discovery_filter.trim();
+  const isValidDiscoveryFilter =
+    !discoveryFilter || isValidModelQueryRegex(discoveryFilter);
+  const syncRegex = protocolConfig.match_regex.trim();
+  const isValidSyncRegex = Boolean(
+    syncRegex && isValidModelQueryRegex(syncRegex),
+  );
   const isAddModelDisabled =
     !hasActiveCredentials ||
-    modelQueryKind !== "plain" ||
+    !manualModelName ||
     !protocolConfig.manual_protocols.length;
   const isFetchModelsDisabled =
     fetchingProtocolConfigIndex === protocolConfigIndex ||
     !hasActiveBaseUrl ||
     !hasActiveCredentials ||
     !protocolConfig.manual_protocols.length ||
-    modelQueryKind === "plain" ||
-    !isValidRegexQuery;
+    !isValidDiscoveryFilter;
 
   return (
     <div className="grid gap-3 pt-1">
       <Separator />
       <FieldGroup className="gap-3">
-        <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(180px,0.42fr)_auto_auto] lg:items-end">
-          <Field data-invalid={isRegexQuery && !isValidRegexQuery}>
+        <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(180px,0.42fr)_auto] lg:items-end">
+          <Field>
             <FieldLabel>
               {locale === "zh-CN" ? "模型名称" : "Model name"}
             </FieldLabel>
             <Input
               className="w-full min-w-0"
               value={protocolConfig.manual_model_name}
-              aria-invalid={isRegexQuery && !isValidRegexQuery}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                const nextKind = classifyModelQueryInput(nextValue);
-                onUpdate({
-                  manual_model_name: nextValue,
-                  match_regex: nextKind === "plain" ? "" : nextValue,
-                  auto_sync_enabled:
-                    nextKind === "regex"
-                      ? protocolConfig.auto_sync_enabled
-                      : false,
-                });
-              }}
+              onChange={(event) =>
+                onUpdate({ manual_model_name: event.target.value })
+              }
               onKeyDown={(event) => {
                 if (event.key !== "Enter" || isAddModelDisabled) return;
                 event.preventDefault();
                 onAddManualModel();
               }}
               placeholder={
-                locale === "zh-CN"
-                  ? "模型名、正则，或留空"
-                  : "Model name, regex, or empty"
+                locale === "zh-CN" ? "输入模型名称" : "Enter a model name"
               }
             />
           </Field>
@@ -109,6 +101,25 @@ export function ProtocolConfigModelActions({
             <Plus data-icon="inline-start" />
             {locale === "zh-CN" ? "添加模型" : "Add model"}
           </Button>
+        </div>
+        <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <Field data-invalid={!isValidDiscoveryFilter}>
+            <FieldLabel>
+              {locale === "zh-CN" ? "上游筛选" : "Upstream filter"}
+            </FieldLabel>
+            <Input
+              value={protocolConfig.discovery_filter}
+              aria-invalid={!isValidDiscoveryFilter}
+              onChange={(event) =>
+                onUpdate({ discovery_filter: event.target.value })
+              }
+              placeholder={
+                locale === "zh-CN"
+                  ? "正则表达式，可留空"
+                  : "Regular expression, optional"
+              }
+            />
+          </Field>
           <Button
             type="button"
             onClick={onFetchModels}
@@ -122,26 +133,41 @@ export function ProtocolConfigModelActions({
                   : ""
               }
             />
-            {locale === "zh-CN" ? "获取更多" : "Fetch more"}
+            {locale === "zh-CN" ? "从上游选择" : "Select from upstream"}
           </Button>
         </div>
-        {isRegexQuery ? (
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm text-foreground">
-              {locale === "zh-CN" ? "自动同步" : "Auto sync"}
-            </div>
-            <Switch
-              checked={protocolConfig.auto_sync_enabled}
-              onCheckedChange={(checked) =>
-                onUpdate({
-                  auto_sync_enabled: checked,
-                  match_regex: protocolConfig.manual_model_name,
-                })
-              }
-              disabled={!isValidRegexQuery}
-            />
+        <Separator />
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-medium text-foreground">
+            {locale === "zh-CN" ? "自动同步" : "Auto sync"}
           </div>
-        ) : null}
+          <Switch
+            checked={protocolConfig.auto_sync_enabled}
+            onCheckedChange={(checked) =>
+              onUpdate({ auto_sync_enabled: checked })
+            }
+          />
+        </div>
+        <Field
+          data-invalid={protocolConfig.auto_sync_enabled && !isValidSyncRegex}
+          data-disabled={!protocolConfig.auto_sync_enabled}
+        >
+          <FieldLabel>
+            {locale === "zh-CN" ? "同步正则" : "Sync regex"}
+          </FieldLabel>
+          <Input
+            value={protocolConfig.match_regex}
+            aria-invalid={protocolConfig.auto_sync_enabled && !isValidSyncRegex}
+            disabled={!protocolConfig.auto_sync_enabled}
+            onChange={(event) => onUpdate({ match_regex: event.target.value })}
+            placeholder="^gpt-"
+          />
+          <FieldDescription>
+            {locale === "zh-CN"
+              ? "按每个已启用密钥分别同步匹配模型"
+              : "Sync matching models for every enabled key"}
+          </FieldDescription>
+        </Field>
       </FieldGroup>
     </div>
   );
