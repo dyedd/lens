@@ -112,7 +112,7 @@ export function ChannelsDialogs({
           updateModelProtocols={editor.updateModelProtocols}
           openAggregateModelTest={modelTest.openAggregateModelTest}
           removeAggregateModel={editor.removeAggregateModel}
-          clearAggregateModels={editor.clearAggregateModels}
+          clearManualModels={editor.clearManualModels}
           closeEditor={editor.closeEditor}
         />
       ) : null}

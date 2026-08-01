@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from .shared import (
     AsyncSession,
+    ModelSource,
     ProtocolKind,
     SiteDiscoveredModelEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigCredentialEntity,
     SiteProtocolConfigInput,
-    _deduplicate_protocol_config_models,
     _deduplicate_protocols,
     _dump_protocols_json,
     delete,
@@ -34,13 +35,13 @@ class ChannelProtocolUpsertsMixin:
                     "Base URL not found for protocol config "
                     f"{protocol_config_id}: {protocol_config.base_url_id}"
                 )
-            if (
-                protocol_config.credential_id
-                and protocol_config.credential_id not in credential_ids
-            ):
+            selected_credential_ids = protocol_config.credential_ids
+            missing_credential_ids = set(selected_credential_ids) - credential_ids
+            if missing_credential_ids:
+                missing_label = ", ".join(sorted(missing_credential_ids))
                 raise ValueError(
                     "Credential not found for protocol config "
-                    f"{protocol_config_id}: {protocol_config.credential_id}"
+                    f"{protocol_config_id}: {missing_label}"
                 )
             input_protocols = _deduplicate_protocols(protocol_config.protocols)
             if not input_protocols:
@@ -48,20 +49,21 @@ class ChannelProtocolUpsertsMixin:
                     "At least one upstream protocol is required for protocol config "
                     f"{protocol_config_id}"
                 )
-            for protocol in input_protocols:
-                protocol_config_key = (
-                    protocol_config.base_url_id,
-                    protocol_config.credential_id,
-                    protocol,
-                )
-                if protocol_config_key in protocol_config_keys:
-                    raise ValueError(
-                        "Duplicate protocol config for "
-                        f"base_url_id={protocol_config.base_url_id} "
-                        f"credential_id={protocol_config.credential_id} "
-                        f"protocol={protocol.value}"
+            for credential_id in selected_credential_ids:
+                for protocol in input_protocols:
+                    protocol_config_key = (
+                        protocol_config.base_url_id,
+                        credential_id,
+                        protocol,
                     )
-                protocol_config_keys.add(protocol_config_key)
+                    if protocol_config_key in protocol_config_keys:
+                        raise ValueError(
+                            "Duplicate protocol config for "
+                            f"base_url_id={protocol_config.base_url_id} "
+                            f"credential_id={credential_id} "
+                            f"protocol={protocol.value}"
+                        )
+                    protocol_config_keys.add(protocol_config_key)
 
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
@@ -77,14 +79,29 @@ class ChannelProtocolUpsertsMixin:
             entity.param_override = protocol_config.param_override
             entity.match_regex = protocol_config.match_regex
             entity.base_url_id = protocol_config.base_url_id
-            entity.credential_id = protocol_config.credential_id
             entity.auto_sync_enabled = int(protocol_config.auto_sync_enabled)
+
+            await session.execute(
+                delete(SiteProtocolConfigCredentialEntity).where(
+                    SiteProtocolConfigCredentialEntity.protocol_config_id
+                    == protocol_config_id
+                )
+            )
+            for sort_order, credential_id in enumerate(selected_credential_ids):
+                session.add(
+                    SiteProtocolConfigCredentialEntity(
+                        id=str(uuid.uuid4()),
+                        protocol_config_id=protocol_config_id,
+                        credential_id=credential_id,
+                        sort_order=sort_order,
+                    )
+                )
 
             await self._upsert_protocol_config_models(
                 session,
                 protocol_config_id,
                 protocol_config,
-                credential_ids,
+                set(selected_credential_ids),
             )
         return protocol_config_ids
 
@@ -100,12 +117,10 @@ class ChannelProtocolUpsertsMixin:
                 SiteDiscoveredModelEntity.protocol_config_id == protocol_config_id
             )
         )
-        seen_models: set[tuple[str, str, str | None]] = set()
+        seen_models: set[tuple[str, str, str]] = set()
         seen_row_ids: set[str] = set()
 
-        for model_index, model in enumerate(
-            _deduplicate_protocol_config_models(protocol_config.models)
-        ):
+        for model_index, model in enumerate(protocol_config.models):
             model_name = model.model_name.strip()
             if not model_name:
                 raise ValueError(
@@ -115,11 +130,6 @@ class ChannelProtocolUpsertsMixin:
                 raise ValueError(
                     "Model credential not found in protocol config "
                     f"{protocol_config_id}: {model.credential_id}"
-                )
-            if model.protocol is None:
-                raise ValueError(
-                    "Model protocol is required in protocol config "
-                    f"{protocol_config_id}: {model_name}"
                 )
             if model.protocol not in protocol_config.protocols:
                 raise ValueError(
@@ -149,5 +159,10 @@ class ChannelProtocolUpsertsMixin:
                     enabled=int(model.enabled),
                     sort_order=model_index,
                     protocol=protocol_value,
+                    source=(
+                        ModelSource.MANUAL.value
+                        if not protocol_config.auto_sync_enabled
+                        else model.source.value
+                    ),
                 )
             )

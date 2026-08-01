@@ -71,7 +71,7 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
             "protocols": ["openai_embedding"],
             "enabled": False,
             "base_url_id": "base-1",
-            "credential_id": "cred-1",
+            "credential_ids": ["cred-1"],
             "models": [
                 {
                     "credential_id": "cred-1",
@@ -239,8 +239,8 @@ def test_create_site_rejects_duplicate_credential_name(client, admin_headers) ->
         ),
         (
             "protocol",
-            "credential_id",
-            "missing",
+            "credential_ids",
+            ["missing"],
             "Credential not found for protocol config",
         ),
         ("model", "credential_id", "missing", "Model credential not found"),

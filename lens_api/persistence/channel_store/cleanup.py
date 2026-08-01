@@ -9,6 +9,7 @@ from .shared import (
     SiteCredentialEntity,
     SiteDiscoveredModelEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigCredentialEntity,
     delete,
     select,
 )
@@ -26,6 +27,13 @@ class ChannelCleanupMixin:
             )
         )
         await session.execute(
+            delete(SiteProtocolConfigCredentialEntity).where(
+                SiteProtocolConfigCredentialEntity.protocol_config_id.in_(
+                    protocol_config_ids
+                )
+            )
+        )
+        await session.execute(
             delete(SiteProtocolConfigEntity).where(
                 SiteProtocolConfigEntity.id.in_(protocol_config_ids)
             )
@@ -36,6 +44,11 @@ class ChannelCleanupMixin:
     ) -> None:
         if not credential_ids:
             return
+        await session.execute(
+            delete(SiteProtocolConfigCredentialEntity).where(
+                SiteProtocolConfigCredentialEntity.credential_id.in_(credential_ids)
+            )
+        )
         await session.execute(
             delete(SiteCredentialEntity).where(
                 SiteCredentialEntity.id.in_(credential_ids)

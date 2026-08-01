@@ -55,7 +55,7 @@ def valid_site_payload(
                 "protocols": protocol_values,
                 "enabled": protocol_enabled,
                 "base_url_id": base_id,
-                "credential_id": credential_id,
+                "credential_ids": [credential_id],
                 "models": [
                     {
                         "credential_id": credential_id,

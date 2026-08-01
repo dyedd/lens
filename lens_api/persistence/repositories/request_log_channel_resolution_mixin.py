@@ -7,8 +7,8 @@ from ..shared import (
     RequestLogEntity,
     RequestLogItem,
     SiteCredentialEntity,
-    SiteDiscoveredModelEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigCredentialEntity,
     _channel_ids_by_protocol_config,
     select,
 )
@@ -58,9 +58,7 @@ class RequestLogChannelResolutionMixin:
         dict[str, int],
         dict[tuple[str, str], tuple[str, int]],
     ]:
-        channels_by_protocol_config, protocol_by_channel_id = (
-            _channel_ids_by_protocol_config(channel_ids)
-        )
+        channels_by_protocol_config, _ = _channel_ids_by_protocol_config(channel_ids)
 
         if not channels_by_protocol_config:
             return {}, {}
@@ -71,12 +69,11 @@ class RequestLogChannelResolutionMixin:
                 select(
                     SiteProtocolConfigEntity.id,
                     SiteProtocolConfigEntity.site_id,
-                    SiteProtocolConfigEntity.credential_id,
                 ).where(SiteProtocolConfigEntity.id.in_(protocol_config_ids))
             )
         ).all()
         channels_by_site: dict[str, list[str]] = {}
-        for protocol_config_id, site_id, _ in protocol_config_rows:
+        for protocol_config_id, site_id in protocol_config_rows:
             channels_by_site.setdefault(str(site_id), []).extend(
                 channels_by_protocol_config.get(str(protocol_config_id), [])
             )
@@ -84,28 +81,22 @@ class RequestLogChannelResolutionMixin:
         if not channels_by_site:
             return {}, {}
 
-        model_rows = (
+        protocol_credential_rows = (
             await session.execute(
                 select(
-                    SiteDiscoveredModelEntity.protocol_config_id,
-                    SiteDiscoveredModelEntity.credential_id,
-                    SiteDiscoveredModelEntity.protocol,
+                    SiteProtocolConfigCredentialEntity.protocol_config_id,
+                    SiteProtocolConfigCredentialEntity.credential_id,
                 ).where(
-                    SiteDiscoveredModelEntity.protocol_config_id.in_(
+                    SiteProtocolConfigCredentialEntity.protocol_config_id.in_(
                         protocol_config_ids
                     )
                 )
             )
         ).all()
-        model_credentials_by_config: dict[str, list[tuple[str, str | None]]] = {}
-        for protocol_config_id, credential_id, protocol in model_rows:
-            if not credential_id:
-                continue
-            model_credentials_by_config.setdefault(str(protocol_config_id), []).append(
-                (
-                    str(credential_id),
-                    str(protocol) if protocol is not None else None,
-                )
+        credential_ids_by_config: dict[str, set[str]] = {}
+        for protocol_config_id, credential_id in protocol_credential_rows:
+            credential_ids_by_config.setdefault(str(protocol_config_id), set()).add(
+                str(credential_id)
             )
 
         credential_rows = (
@@ -139,35 +130,19 @@ class RequestLogChannelResolutionMixin:
 
         credential_counts: dict[str, int] = {}
         credential_metadata: dict[tuple[str, str], tuple[str, int]] = {}
-        for (
-            protocol_config_id,
-            site_id,
-            default_credential_id,
-        ) in protocol_config_rows:
+        for protocol_config_id, site_id in protocol_config_rows:
             normalized_site_id = str(site_id)
             site_credentials = credentials_by_site.get(normalized_site_id, {})
-            normalized_default_id = (
-                str(default_credential_id).strip() if default_credential_id else ""
-            )
             for channel_id in channels_by_protocol_config.get(
                 str(protocol_config_id), []
             ):
-                channel_protocol = protocol_by_channel_id.get(channel_id)
-                bound_credential_ids: set[str] = set()
-                default_credential = site_credentials.get(normalized_default_id)
-                if default_credential is not None:
-                    bound_credential_ids.add(normalized_default_id)
-                for credential_id, model_protocol in model_credentials_by_config.get(
-                    str(protocol_config_id), []
-                ):
-                    if (
-                        channel_protocol is not None
-                        and model_protocol != channel_protocol.value
-                    ):
-                        continue
-                    credential = site_credentials.get(credential_id)
-                    if credential is not None:
-                        bound_credential_ids.add(credential_id)
+                bound_credential_ids = {
+                    credential_id
+                    for credential_id in credential_ids_by_config.get(
+                        str(protocol_config_id), set()
+                    )
+                    if credential_id in site_credentials
+                }
 
                 credential_counts[channel_id] = len(bound_credential_ids)
                 for credential_id, (

@@ -10,6 +10,7 @@ import {
   emptyForm,
   emptyProtocolConfig,
   formBaseUrlsForPayload,
+  invalidAutoSyncConfigCount,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
   nextProtocolConfigName,
@@ -52,6 +53,14 @@ function validateChannelForm(
       locale === "zh-CN"
         ? "请为每个模型选择至少一个有效协议"
         : "Select at least one valid protocol for every model",
+    );
+    return false;
+  }
+  if (invalidAutoSyncConfigCount(form)) {
+    toast.error(
+      locale === "zh-CN"
+        ? "自动同步需要非空且有效的同步正则"
+        : "Auto sync requires a non-empty valid sync regex",
     );
     return false;
   }
@@ -185,17 +194,10 @@ export function useChannelForm(locale: Locale) {
           const ids = protocolConfigSelectedCredentialIds(config).filter(
             (id) => id !== target.id,
           );
-          const credentialId = ids.includes(config.credential_id)
-            ? config.credential_id
-            : (ids[0] ?? credentials[0]?.id ?? "");
           return {
             ...config,
-            credential_id: credentialId,
-            credential_ids: ids.length
-              ? ids
-              : credentialId
-                ? [credentialId]
-                : [],
+            credential_ids:
+              ids.length || !credentials[0] ? ids : [credentials[0].id],
             models: config.models.filter(
               (model) => model.credential_id !== target.id,
             ),
@@ -229,6 +231,7 @@ export function useChannelForm(locale: Locale) {
       protocolConfigs: current.protocolConfigs.map((config, configIndex) => ({
         ...config,
         models: config.models.map((model) =>
+          model.source === "manual" &&
           protocolConfigModelKey(configIndex, config, model) === key
             ? { ...model, protocols: Array.from(new Set(protocols)) }
             : model,
@@ -241,18 +244,19 @@ export function useChannelForm(locale: Locale) {
       ...current,
       protocolConfigs: current.protocolConfigs.map((config, configIndex) => ({
         ...config,
-        models: config.models.filter(
-          (model) => protocolConfigModelKey(configIndex, config, model) !== key,
-        ),
+        models: config.models.filter((model) => {
+          if (model.source === "synced") return true;
+          return protocolConfigModelKey(configIndex, config, model) !== key;
+        }),
       })),
     }));
   }
-  function clearAggregateModels() {
+  function clearManualModels() {
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
-        models: [],
+        models: config.models.filter((model) => model.source === "synced"),
       })),
     }));
   }
@@ -348,7 +352,7 @@ export function useChannelForm(locale: Locale) {
     updateProtocolConfig,
     updateModelProtocols,
     removeAggregateModel,
-    clearAggregateModels,
+    clearManualModels,
     addProtocolConfig,
     addBaseUrl,
     updateBaseUrl,

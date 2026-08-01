@@ -126,9 +126,14 @@ export type ChannelModelSyncGroupChange = {
   model_name: string;
 };
 export type ChannelModelSyncResultItem = {
+  site_id: string;
   protocol_config_id: string;
+  protocol_config_name: string;
   channel_name: string;
-  success: boolean;
+  credential_id: string;
+  credential_name: string;
+  protocol: ProtocolKind;
+  status: "updated" | "unchanged" | "failed";
   error: string;
   warning: string;
   added: string[];
@@ -137,7 +142,9 @@ export type ChannelModelSyncResultItem = {
 };
 export type ChannelModelSyncResponse = {
   dry_run: boolean;
-  synced_channel_count: number;
-  skipped_channel_count: number;
+  eligible_target_count: number;
+  updated_target_count: number;
+  unchanged_target_count: number;
+  failed_target_count: number;
   items: ChannelModelSyncResultItem[];
 };

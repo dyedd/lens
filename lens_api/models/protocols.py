@@ -44,6 +44,17 @@ class ChannelStatus(str, Enum):
     DISABLED = "disabled"
 
 
+class ModelSource(str, Enum):
+    MANUAL = "manual"
+    SYNCED = "synced"
+
+
+class ChannelModelSyncStatus(str, Enum):
+    UPDATED = "updated"
+    UNCHANGED = "unchanged"
+    FAILED = "failed"
+
+
 class RoutingStrategy(str, Enum):
     ROUND_ROBIN = "round_robin"
     FAILOVER = "failover"

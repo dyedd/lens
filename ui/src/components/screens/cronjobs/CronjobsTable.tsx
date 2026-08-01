@@ -56,6 +56,7 @@ function taskTitle(locale: Locale, task: CronjobItem) {
       "Request log stats persist",
     ],
     model_price_sync: ["模型价格同步", "Model price sync"],
+    channel_model_sync: ["渠道模型同步", "Channel model sync"],
   };
   const label = labels[task.id];
   return label ? titleForLocale(locale, label[0], label[1]) : task.name;
@@ -74,6 +75,10 @@ function taskDescription(locale: Locale, task: CronjobItem) {
     model_price_sync: [
       "从 models.dev 同步模型价格",
       "Sync model prices from models.dev",
+    ],
+    channel_model_sync: [
+      "按渠道自动同步配置更新上游模型",
+      "Update upstream models from channel auto-sync settings",
     ],
   };
   const label = labels[task.id];

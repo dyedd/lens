@@ -3,7 +3,7 @@ import type { Locale } from "@/lib/I18nContext";
 import { isGeneratedCredentialName } from "@/lib/utils";
 import { createLocalId } from "./channelDefaults";
 import {
-  classifyModelQueryInput,
+  isValidModelQueryRegex,
   normalizeCredentialIds,
   protocolConfigSelectedCredentialIds,
   resolveBaseUrlId,
@@ -49,7 +49,7 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
       (protocolConfig, protocolConfigIndex) => {
         const modelGroups = new Map<string, FormModel>();
         for (const model of protocolConfig.models) {
-          const key = `${model.credential_id}:${model.model_name}`;
+          const key = `${model.source}:${model.credential_id}:${model.model_name}`;
           const existing = modelGroups.get(key);
           if (existing) {
             if (
@@ -77,13 +77,13 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
               credential_id: model.credential_id,
               model_name: model.model_name,
               enabled: model.enabled,
+              source: model.source,
             });
           }
         }
-        const credentialIds = normalizeCredentialIds([
-          protocolConfig.credential_id,
-          ...protocolConfig.models.map((model) => model.credential_id),
-        ]);
+        const credentialIds = normalizeCredentialIds(
+          protocolConfig.credential_ids,
+        );
         return {
           id: protocolConfig.id,
           name: protocolConfigDisplayName(
@@ -102,10 +102,10 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           channel_proxy: protocolConfig.channel_proxy,
           param_override: protocolConfig.param_override,
           match_regex: safeText(protocolConfig.match_regex),
-          manual_model_name: safeText(protocolConfig.match_regex),
+          manual_model_name: "",
+          discovery_filter: "",
           manual_protocols: Array.from(new Set(protocolConfig.protocols ?? [])),
           base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
-          credential_id: protocolConfig.credential_id,
           credential_ids: credentialIds,
           auto_sync_enabled: protocolConfig.auto_sync_enabled,
           models: Array.from(modelGroups.values()),
@@ -161,16 +161,11 @@ export function toPayload(form: FormState): SitePayload {
     protocols: form.protocolConfigs.flatMap((protocolConfig) => {
       const selectedCredentialIds =
         protocolConfigSelectedCredentialIds(protocolConfig);
-      const credentialId = selectedCredentialIds.includes(
-        protocolConfig.credential_id,
-      )
-        ? protocolConfig.credential_id
-        : (selectedCredentialIds[0] ?? "");
       const protocolConfigProtocols =
         protocolConfigEffectiveProtocols(protocolConfig);
       const matchRegex = safeText(protocolConfig.match_regex).trim();
       const enabledMatchRegex =
-        classifyModelQueryInput(matchRegex) === "regex" ? matchRegex : "";
+        matchRegex && isValidModelQueryRegex(matchRegex) ? matchRegex : "";
       const models = protocolConfig.models
         .flatMap((model) => {
           const effectiveProtocols = model.protocols.filter((protocol) =>
@@ -185,12 +180,10 @@ export function toPayload(form: FormState): SitePayload {
             credential_id: model.credential_id,
             model_name: model.model_name.trim(),
             enabled: model.enabled,
+            source: model.source,
           }));
         })
         .filter((model) => model.credential_id && model.model_name);
-      if (!models.length) {
-        return [];
-      }
       return [
         {
           id: protocolConfig.id,
@@ -207,7 +200,7 @@ export function toPayload(form: FormState): SitePayload {
           param_override: protocolConfig.param_override.trim(),
           match_regex: enabledMatchRegex,
           base_url_id: protocolConfig.base_url_id,
-          credential_id: credentialId,
+          credential_ids: selectedCredentialIds,
           auto_sync_enabled: enabledMatchRegex
             ? protocolConfig.auto_sync_enabled
             : false,

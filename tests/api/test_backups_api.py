@@ -197,3 +197,31 @@ def test_import_backup_rejects_missing_site_enabled(
     )
 
     assert_error(response, 400, "Invalid backup file")
+
+
+def test_import_backup_rejects_synced_models_when_auto_sync_is_disabled(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(valid_site_payload())
+    exported = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert exported.status_code == 200
+    payload = exported.json()
+    protocol_config = payload["sites"][0]["protocols"][0]
+    protocol_config["auto_sync_enabled"] = False
+    protocol_config["models"][0]["source"] = "synced"
+
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={
+            "file": (
+                "backup.json",
+                json.dumps(payload).encode(),
+                "application/json",
+            )
+        },
+    )
+
+    assert_error(response, 400, "Invalid backup file")

@@ -77,6 +77,7 @@ from .entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigCredentialEntity,
 )
 from .stats_entities import (
     ImportedStatsDailyEntity,

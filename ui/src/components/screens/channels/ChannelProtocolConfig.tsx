@@ -126,13 +126,7 @@ export function ProtocolConfigItem({
               invalid={!hasActiveCredentials}
               onChange={(next) => {
                 const nextCredentialIdSet = new Set(next);
-                const primaryCredentialId = next.includes(
-                  protocolConfig.credential_id,
-                )
-                  ? protocolConfig.credential_id
-                  : (next[0] ?? "");
                 update({
-                  credential_id: primaryCredentialId,
                   credential_ids: next,
                   models: protocolConfig.models.filter((model) =>
                     nextCredentialIdSet.has(model.credential_id),

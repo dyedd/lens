@@ -11,6 +11,7 @@ from .entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigCredentialEntity,
 )
 
 
@@ -20,6 +21,7 @@ class SiteRows:
     base_urls: list[SiteBaseUrlEntity]
     credentials: list[SiteCredentialEntity]
     protocol_configs: list[SiteProtocolConfigEntity]
+    protocol_credentials: list[SiteProtocolConfigCredentialEntity]
     discovered_models: list[SiteDiscoveredModelEntity]
 
 
@@ -32,7 +34,7 @@ async def fetch_site_rows(
         site_query = site_query.where(SiteEntity.id.in_(site_ids))
     site_rows = (await session.execute(site_query)).scalars().all()
     if not site_rows:
-        return SiteRows([], [], [], [], [])
+        return SiteRows([], [], [], [], [], [])
 
     ids = [item.id for item in site_rows]
     base_url_rows = (
@@ -80,8 +82,28 @@ async def fetch_site_rows(
         .all()
     )
     protocol_config_ids = [item.id for item in protocol_rows]
+    protocol_credential_rows: list[SiteProtocolConfigCredentialEntity] = []
     model_rows: list[SiteDiscoveredModelEntity] = []
     if protocol_config_ids:
+        protocol_credential_rows = (
+            (
+                await session.execute(
+                    select(SiteProtocolConfigCredentialEntity)
+                    .where(
+                        SiteProtocolConfigCredentialEntity.protocol_config_id.in_(
+                            protocol_config_ids
+                        )
+                    )
+                    .order_by(
+                        SiteProtocolConfigCredentialEntity.protocol_config_id.asc(),
+                        SiteProtocolConfigCredentialEntity.sort_order.asc(),
+                        SiteProtocolConfigCredentialEntity.id.asc(),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         model_rows = (
             (
                 await session.execute(
@@ -107,5 +129,6 @@ async def fetch_site_rows(
         base_urls=base_url_rows,
         credentials=credential_rows,
         protocol_configs=protocol_rows,
+        protocol_credentials=protocol_credential_rows,
         discovered_models=model_rows,
     )

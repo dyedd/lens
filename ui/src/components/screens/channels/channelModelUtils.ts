@@ -16,7 +16,7 @@ export function genericModelKey(
 export function protocolConfigModelKey(
   protocolConfigIndex: number,
   protocolConfig: Pick<FormProtocolConfig, "id" | "base_url_id">,
-  model: Pick<FormModel, "credential_id" | "model_name">,
+  model: Pick<FormModel, "credential_id" | "model_name" | "source">,
 ) {
   const protocolConfigKey =
     protocolConfig.id?.trim() || `index-${protocolConfigIndex}`;
@@ -25,6 +25,7 @@ export function protocolConfigModelKey(
     protocolConfig.base_url_id,
     model.credential_id,
     model.model_name,
+    model.source,
   ]);
 }
 
@@ -89,9 +90,12 @@ export function selectedModelTestProtocol(
 }
 
 export function protocolConfigEffectiveProtocols(
-  protocolConfig: Pick<FormProtocolConfig, "models">,
+  protocolConfig: Pick<FormProtocolConfig, "manual_protocols" | "models">,
 ) {
   return Array.from(
-    new Set(protocolConfig.models.flatMap((model) => model.protocols)),
+    new Set([
+      ...protocolConfig.manual_protocols,
+      ...protocolConfig.models.flatMap((model) => model.protocols),
+    ]),
   );
 }

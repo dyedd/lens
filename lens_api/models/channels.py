@@ -1,7 +1,13 @@
 from pydantic import Field, HttpUrl, field_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
-from .protocols import ChannelProxyMode, ChannelStatus, ProtocolKind
+from .protocols import (
+    ChannelModelSyncStatus,
+    ChannelProxyMode,
+    ChannelStatus,
+    ModelSource,
+    ProtocolKind,
+)
 
 
 class ChannelKeyItem(StrictBaseModel):
@@ -51,9 +57,14 @@ class ChannelModelSyncGroupChange(StrictBaseModel):
 
 
 class ChannelModelSyncResultItem(StrictBaseModel):
+    site_id: str
     protocol_config_id: str
+    protocol_config_name: str
     channel_name: str
-    success: bool
+    credential_id: str
+    credential_name: str
+    protocol: ProtocolKind
+    status: ChannelModelSyncStatus
     error: str = ""
     warning: str = ""
     added: list[str] = Field(default_factory=list)
@@ -63,6 +74,8 @@ class ChannelModelSyncResultItem(StrictBaseModel):
 
 class ChannelModelSyncResponse(StrictBaseModel):
     dry_run: bool
-    synced_channel_count: int = Field(default=0, ge=0)
-    skipped_channel_count: int = Field(default=0, ge=0)
+    eligible_target_count: int = Field(default=0, ge=0)
+    updated_target_count: int = Field(default=0, ge=0)
+    unchanged_target_count: int = Field(default=0, ge=0)
+    failed_target_count: int = Field(default=0, ge=0)
     items: list[ChannelModelSyncResultItem] = Field(default_factory=list)

@@ -70,11 +70,13 @@ from .overview import (
     OverviewSummaryMetric,
 )
 from .protocols import (
+    ChannelModelSyncStatus,
     ChannelProxyMode,
     ChannelStatus,
     CronjobScheduleType,
     CronjobStatus,
     ModelGroupSyncFilterMode,
+    ModelSource,
     ProtocolKind,
     RequestLogLifecycleStatus,
     RequestLogSortMode,
@@ -147,6 +149,8 @@ __all__ = [
     "RequestLogLifecycleStatus",
     "RequestLogSortMode",
     "ChannelStatus",
+    "ModelSource",
+    "ChannelModelSyncStatus",
     "RoutingStrategy",
     "ModelGroupSyncFilterMode",
     "UpstreamHeaderRuleMatchType",

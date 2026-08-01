@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+
 from .shared import (
     AsyncSession,
     SiteEntity,
@@ -24,8 +26,15 @@ class ChannelLoadersMixin:
         models_by_protocol_config = self._group_models(
             rows.discovered_models, credentials_by_id
         )
+        credential_ids_by_protocol_config: dict[str, list[str]] = defaultdict(list)
+        for row in rows.protocol_credentials:
+            credential_ids_by_protocol_config[row.protocol_config_id].append(
+                row.credential_id
+            )
         protocols_by_site = self._group_protocols(
-            rows.protocol_configs, models_by_protocol_config
+            rows.protocol_configs,
+            models_by_protocol_config,
+            credential_ids_by_protocol_config,
         )
 
         return [

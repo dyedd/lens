@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import type { ProtocolKind } from "@/lib/api";
+import type { ProtocolKind, SiteModelInput } from "@/lib/api";
 import {
   baseUrlLabel,
   credentialLabel,
@@ -19,6 +19,7 @@ export type AggregatedModel = {
   modelName: string;
   protocols: ProtocolKind[];
   sources: string[];
+  source: SiteModelInput["source"];
 };
 
 /** Aggregates equivalent channel models and their protocol sources. */
@@ -35,6 +36,7 @@ export function useAggregatedModels(
         modelName: string;
         protocols: Set<ProtocolKind>;
         sources: Set<string>;
+        source: SiteModelInput["source"];
       }
     > = {};
     const credentialNameById = new Map(
@@ -70,6 +72,7 @@ export function useAggregatedModels(
             modelName: model.model_name,
             protocols: new Set(),
             sources: new Set(),
+            source: model.source,
           };
         }
         const modelProtocols = Array.from(new Set(model.protocols));
@@ -78,11 +81,12 @@ export function useAggregatedModels(
       });
     });
     return Object.entries(aggregate).map(
-      ([key, { modelName, protocols, sources }]) => ({
+      ([key, { modelName, protocols, sources, source }]) => ({
         key,
         modelName,
         protocols: Array.from(protocols),
         sources: Array.from(sources),
+        source,
       }),
     );
   }, [baseUrls, credentials, protocolConfigs, locale]);

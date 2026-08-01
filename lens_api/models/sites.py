@@ -4,13 +4,24 @@ from typing import Literal
 from pydantic import Field, HttpUrl, field_validator, model_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
-from .protocols import ChannelProxyMode, ProtocolKind
+from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
 
 
 def _normalize_required_text(value: str) -> str:
     normalized = value.strip()
     if not normalized:
         raise ValueError("Value cannot be empty")
+    return normalized
+
+
+def _normalize_required_text_list(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        item = _normalize_required_text(value)
+        if item not in normalized:
+            normalized.append(item)
+    if not normalized:
+        raise ValueError("At least one value is required")
     return normalized
 
 
@@ -81,6 +92,7 @@ class SiteModel(StrictBaseModel):
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
     protocol: ProtocolKind | None = None
+    source: ModelSource = ModelSource.MANUAL
 
 
 class SiteModelInput(StrictBaseModel):
@@ -89,6 +101,7 @@ class SiteModelInput(StrictBaseModel):
     model_name: str = Field(min_length=1)
     enabled: bool = True
     protocol: ProtocolKind
+    source: ModelSource = ModelSource.MANUAL
 
 
 class SiteProtocolConfig(StrictBaseModel):
@@ -102,9 +115,18 @@ class SiteProtocolConfig(StrictBaseModel):
     param_override: str = ""
     match_regex: str = ""
     base_url_id: str = Field(min_length=1)
-    credential_id: str = ""
+    credential_ids: list[str] = Field(min_length=1)
     auto_sync_enabled: bool = False
     models: list[SiteModel] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_auto_sync(self) -> "SiteProtocolConfig":
+        _require_auto_sync_pattern(self.auto_sync_enabled, self.match_regex)
+        if not self.auto_sync_enabled and any(
+            model.source == ModelSource.SYNCED for model in self.models
+        ):
+            raise ValueError("Synchronized models require auto sync to be enabled")
+        return self
 
 
 class SiteProtocolConfigInput(StrictBaseModel):
@@ -118,9 +140,13 @@ class SiteProtocolConfigInput(StrictBaseModel):
     param_override: str = ""
     match_regex: str = ""
     base_url_id: str = Field(min_length=1)
-    credential_id: str = ""
+    credential_ids: list[str] = Field(min_length=1)
     auto_sync_enabled: bool = False
     models: list[SiteModelInput] = Field(default_factory=list)
+
+    _normalize_credential_ids = field_validator("credential_ids")(
+        _normalize_required_text_list
+    )
 
     @field_validator("match_regex")
     @classmethod
@@ -210,8 +236,9 @@ class SiteImportCredentialInput(StrictBaseModel):
 
 class SiteImportModelInput(StrictBaseModel):
     model_name: str = Field(min_length=1)
-    credential_ref: str = ""
+    credential_ref: str = Field(min_length=1)
     enabled: bool = True
+    source: ModelSource = ModelSource.MANUAL
 
 
 class SiteImportProtocolInput(StrictBaseModel):
@@ -225,14 +252,15 @@ class SiteImportProtocolInput(StrictBaseModel):
     match_regex: str = ""
     auto_sync_enabled: bool
     base_url_ref: str
-    credential_ref: str
+    credential_refs: list[str] = Field(min_length=1)
     models: list[SiteImportModelInput] = Field(default_factory=list)
 
-    _normalize_identifiers = field_validator(
-        "name",
-        "base_url_ref",
-        "credential_ref",
-    )(_normalize_required_text)
+    _normalize_identifiers = field_validator("name", "base_url_ref")(
+        _normalize_required_text
+    )
+    _normalize_credential_refs = field_validator("credential_refs")(
+        _normalize_required_text_list
+    )
 
     @field_validator("match_regex")
     @classmethod
@@ -246,6 +274,10 @@ class SiteImportProtocolInput(StrictBaseModel):
     @model_validator(mode="after")
     def validate_auto_sync(self) -> "SiteImportProtocolInput":
         _require_auto_sync_pattern(self.auto_sync_enabled, self.match_regex)
+        if not self.auto_sync_enabled and any(
+            model.source == ModelSource.SYNCED for model in self.models
+        ):
+            raise ValueError("Synchronized models require auto sync to be enabled")
         return self
 
 

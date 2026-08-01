@@ -31,7 +31,7 @@ export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
           protocol: "openai_chat",
           enabled: true,
           base_url_ref: "main",
-          credential_ref: "key1",
+          credential_refs: ["key1"],
           headers: {},
           proxy_mode: "inherit",
           channel_proxy: "",

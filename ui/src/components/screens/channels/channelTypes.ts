@@ -31,9 +31,9 @@ export type FormProtocolConfig = {
   param_override: string;
   match_regex: string;
   manual_model_name: string;
+  discovery_filter: string;
   manual_protocols: ProtocolKind[];
   base_url_id: string;
-  credential_id: string;
   credential_ids: string[];
   auto_sync_enabled: boolean;
   models: FormModel[];

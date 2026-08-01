@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from .shared import (
     AsyncSession,
     ConfigBackupCronjob,
@@ -31,6 +33,7 @@ from .shared import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigCredentialEntity,
     UTC,
     _extract_protocol_config_id,
     _parse_runtime_channel_protocol,
@@ -53,6 +56,7 @@ async def _replace_sites(
     self, session: AsyncSession, sites: list[SiteConfig]
 ) -> tuple[set[str], dict[str, list[ProtocolKind]], set[tuple[str, str, str]]]:
     await session.execute(delete(SiteDiscoveredModelEntity))
+    await session.execute(delete(SiteProtocolConfigCredentialEntity))
     await session.execute(delete(SiteProtocolConfigEntity))
     await session.execute(delete(SiteCredentialEntity))
     await session.execute(delete(SiteBaseUrlEntity))
@@ -132,13 +136,13 @@ async def _replace_sites(
                     "Protocol config base URL not found in backup site "
                     f"{site.name}: {protocol_config.base_url_id}"
                 )
-            if (
-                protocol_config.credential_id
-                and protocol_config.credential_id not in site_credential_ids
-            ):
+            missing_credential_ids = (
+                set(protocol_config.credential_ids) - site_credential_ids
+            )
+            if missing_credential_ids:
                 raise ValueError(
-                    "Protocol config credential not found in backup site "
-                    f"{site.name}: {protocol_config.credential_id}"
+                    "Protocol config credentials not found in backup site "
+                    f"{site.name}: {', '.join(sorted(missing_credential_ids))}"
                 )
             protocol_kinds = list(protocol_config.protocols)
             if not protocol_kinds:
@@ -162,10 +166,18 @@ async def _replace_sites(
                     param_override=protocol_config.param_override,
                     match_regex=protocol_config.match_regex,
                     base_url_id=protocol_config.base_url_id,
-                    credential_id=protocol_config.credential_id,
                     auto_sync_enabled=(1 if protocol_config.auto_sync_enabled else 0),
                 )
             )
+            for sort_order, credential_id in enumerate(protocol_config.credential_ids):
+                session.add(
+                    SiteProtocolConfigCredentialEntity(
+                        id=str(uuid.uuid4()),
+                        protocol_config_id=protocol_config.id,
+                        credential_id=credential_id,
+                        sort_order=sort_order,
+                    )
+                )
 
             protocols_by_config_id[protocol_config.id] = protocol_kinds
 
@@ -210,6 +222,7 @@ async def _replace_sites(
                         enabled=1 if model.enabled else 0,
                         sort_order=model.sort_order,
                         protocol=model.protocol.value,
+                        source=model.source.value,
                     )
                 )
 

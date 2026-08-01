@@ -177,29 +177,43 @@ def _import_protocols(
             "Base URL",
             errors,
         )
-        credential_id = _resolve_import_ref(
-            f"protocols.{protocol_index}.credential_ref",
-            protocol.credential_ref,
-            credential_refs,
-            "Credential",
-            errors,
-        )
-        if base_url_id is None or credential_id is None:
-            continue
-
-        protocol_key = (protocol.protocol.value, base_url_id, credential_id)
-        if protocol_key in protocol_keys:
-            errors.append(
-                SiteBatchImportFieldError(
-                    field=f"protocols.{protocol_index}",
-                    message=(
-                        "Duplicate protocol config for protocol="
-                        f"{protocol.protocol.value}"
-                    ),
+        credential_ids = [
+            credential_id
+            for credential_ref_index, credential_ref in enumerate(
+                protocol.credential_refs
+            )
+            if (
+                credential_id := _resolve_import_ref(
+                    "protocols."
+                    f"{protocol_index}.credential_refs.{credential_ref_index}",
+                    credential_ref,
+                    credential_refs,
+                    "Credential",
+                    errors,
                 )
             )
+            is not None
+        ]
+        if base_url_id is None or len(credential_ids) != len(protocol.credential_refs):
             continue
-        protocol_keys.add(protocol_key)
+
+        has_duplicate = False
+        for credential_id in credential_ids:
+            protocol_key = (protocol.protocol.value, base_url_id, credential_id)
+            if protocol_key in protocol_keys:
+                errors.append(
+                    SiteBatchImportFieldError(
+                        field=f"protocols.{protocol_index}",
+                        message=(
+                            "Duplicate protocol config for protocol="
+                            f"{protocol.protocol.value}"
+                        ),
+                    )
+                )
+                has_duplicate = True
+            protocol_keys.add(protocol_key)
+        if has_duplicate:
+            continue
 
         protocols.append(
             SiteProtocolConfigInput(
@@ -217,13 +231,13 @@ def _import_protocols(
                 param_override=protocol.param_override,
                 match_regex=protocol.match_regex.strip(),
                 base_url_id=base_url_id,
-                credential_id=credential_id,
+                credential_ids=credential_ids,
                 auto_sync_enabled=protocol.auto_sync_enabled,
                 models=_import_protocol_models(
                     protocol_index,
                     protocol.models,
                     protocol.protocol,
-                    credential_id,
+                    set(credential_ids),
                     credential_refs,
                     errors,
                 ),
@@ -236,7 +250,7 @@ def _import_protocol_models(
     protocol_index: int,
     models: list[SiteImportModelInput],
     protocol: ProtocolKind,
-    protocol_credential_id: str,
+    protocol_credential_ids: set[str],
     credential_refs: dict[str, str],
     errors: list[SiteBatchImportFieldError],
 ) -> list[SiteModelInput]:
@@ -253,17 +267,23 @@ def _import_protocol_models(
             )
             continue
 
-        credential_id: str | None = protocol_credential_id
         credential_ref = model.credential_ref.strip()
-        if credential_ref:
-            credential_id = _resolve_import_ref(
-                f"protocols.{protocol_index}.models.{model_index}.credential_ref",
-                credential_ref,
-                credential_refs,
-                "Credential",
-                errors,
-            )
+        credential_id = _resolve_import_ref(
+            f"protocols.{protocol_index}.models.{model_index}.credential_ref",
+            credential_ref,
+            credential_refs,
+            "Credential",
+            errors,
+        )
         if credential_id is None:
+            continue
+        if credential_id not in protocol_credential_ids:
+            errors.append(
+                SiteBatchImportFieldError(
+                    field=f"protocols.{protocol_index}.models.{model_index}.credential_ref",
+                    message="Model credential is not selected by protocol config",
+                )
+            )
             continue
 
         model_key = (credential_id, model_name)
@@ -283,6 +303,7 @@ def _import_protocol_models(
                 model_name=model_name,
                 enabled=model.enabled,
                 protocol=protocol,
+                source=model.source,
             )
         )
     return model_inputs

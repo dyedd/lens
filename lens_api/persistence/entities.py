@@ -89,7 +89,6 @@ class SiteProtocolConfigEntity(Base):
     protocols_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     enabled: Mapped[int] = enabled_column()
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     proxy_mode: Mapped[str] = mapped_column(
@@ -102,8 +101,39 @@ class SiteProtocolConfigEntity(Base):
     auto_sync_enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class SiteProtocolConfigCredentialEntity(Base):
+    __tablename__ = "site_protocol_config_credentials"
+    __table_args__ = (
+        UniqueConstraint(
+            "protocol_config_id",
+            "credential_id",
+            name="uq_site_protocol_config_credentials_target",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    protocol_config_id: Mapped[str] = mapped_column(
+        String(80), nullable=False, index=True
+    )
+    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    sort_order: Mapped[int] = sort_order_column()
+
+
 class SiteDiscoveredModelEntity(Base):
     __tablename__ = "site_discovered_models"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('manual', 'synced')",
+            name="ck_site_discovered_models_source",
+        ),
+        UniqueConstraint(
+            "protocol_config_id",
+            "credential_id",
+            "protocol",
+            "model_name",
+            name="uq_site_discovered_models_target",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     protocol_config_id: Mapped[str] = mapped_column(
@@ -114,6 +144,7 @@ class SiteDiscoveredModelEntity(Base):
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
     protocol: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
 
 
 class ModelGroupEntity(Base):

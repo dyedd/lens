@@ -39,7 +39,7 @@ def valid_import_site(
                 "auto_sync_enabled": auto_sync_enabled,
                 "match_regex": match_regex,
                 "base_url_ref": "base",
-                "credential_ref": "cred",
+                "credential_refs": ["cred"],
                 "models": [
                     {
                         "credential_ref": "cred",
@@ -109,7 +109,7 @@ def test_import_sites_rejects_obsolete_priority(client, admin_headers) -> None:
         ("base_url", "ref"),
         ("credential", "ref"),
         ("protocol", "base_url_ref"),
-        ("protocol", "credential_ref"),
+        ("protocol", "credential_refs"),
     ],
 )
 def test_import_sites_requires_explicit_resource_refs(
@@ -143,7 +143,7 @@ def test_import_sites_requires_explicit_resource_refs(
         ("credential", "ref"),
         ("protocol", "name"),
         ("protocol", "base_url_ref"),
-        ("protocol", "credential_ref"),
+        ("protocol", "credential_refs"),
     ],
 )
 def test_import_sites_rejects_blank_identifiers(
@@ -158,7 +158,7 @@ def test_import_sites_rejects_blank_identifiers(
         "credential": site["credentials"][0],
         "protocol": site["protocols"][0],
     }
-    items[target][field] = "   "
+    items[target][field] = ["   "] if field == "credential_refs" else "   "
 
     response = client.post(
         "/api/admin/sites/import",
@@ -372,6 +372,23 @@ def test_import_sites_rejects_auto_sync_without_match_regex(
 ) -> None:
     site = deepcopy(valid_import_site())
     site["protocols"][0]["auto_sync_enabled"] = True
+
+    response = client.post(
+        "/api/admin/sites/import",
+        headers=admin_headers,
+        json={"sites": [site]},
+    )
+
+    assert response.status_code == 422
+    assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+
+
+def test_import_sites_rejects_synced_models_when_auto_sync_is_disabled(
+    client,
+    admin_headers,
+) -> None:
+    site = valid_import_site()
+    site["protocols"][0]["models"][0]["source"] = "synced"
 
     response = client.post(
         "/api/admin/sites/import",

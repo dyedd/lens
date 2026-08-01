@@ -375,7 +375,7 @@ def test_sync_channel_models_uses_service_task(
     monkeypatch,
 ) -> None:
     async def fake_sync(_state: Any, *, dry_run: bool) -> ChannelModelSyncResponse:
-        return ChannelModelSyncResponse(dry_run=dry_run, synced_channel_count=2)
+        return ChannelModelSyncResponse(dry_run=dry_run, eligible_target_count=2)
 
     import lens_api.gateway.service.model_sync as model_sync
 
@@ -388,4 +388,517 @@ def test_sync_channel_models_uses_service_task(
     )
 
     assert response.status_code == 200
-    assert response.json()["synced_channel_count"] == 2
+    assert response.json()["eligible_target_count"] == 2
+
+
+def _auto_sync_site_payload() -> dict[str, Any]:
+    return {
+        "name": "Multi-key Site",
+        "base_urls": [
+            {
+                "id": "base-1",
+                "url": "https://upstream.example/v1",
+                "name": "primary",
+                "enabled": True,
+                "supported_protocols": ["openai_chat"],
+            }
+        ],
+        "credentials": [
+            {
+                "id": "cred-a",
+                "name": "key-a",
+                "api_key": "secret-a",
+                "enabled": True,
+            },
+            {
+                "id": "cred-b",
+                "name": "key-b",
+                "api_key": "secret-b",
+                "enabled": True,
+            },
+        ],
+        "protocols": [
+            {
+                "id": "pc-1",
+                "name": "primary",
+                "protocols": ["openai_chat"],
+                "enabled": True,
+                "base_url_id": "base-1",
+                "credential_ids": ["cred-a", "cred-b"],
+                "match_regex": "^gpt-",
+                "auto_sync_enabled": True,
+                "models": [
+                    {
+                        "credential_id": "cred-a",
+                        "model_name": "manual-only",
+                        "enabled": True,
+                        "protocol": "openai_chat",
+                        "source": "manual",
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def test_channel_model_sync_preserves_manual_models_and_syncs_each_credential(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    create_response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=_auto_sync_site_payload(),
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    async def fake_fetch(channel: Any) -> list[str]:
+        assert len(channel.keys) == 1
+        return [f"gpt-{channel.keys[0].id}"]
+
+    import lens_api.gateway.service.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["eligible_target_count"] == 2
+    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]["models"]
+    assert {
+        (model["credential_id"], model["model_name"], model["source"])
+        for model in stored_models
+    } == {
+        ("cred-a", "manual-only", "manual"),
+        ("cred-a", "gpt-cred-a", "synced"),
+        ("cred-b", "gpt-cred-b", "synced"),
+    }
+
+
+def test_channel_model_sync_removes_only_stale_synced_models(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    payload = _auto_sync_site_payload()
+    payload["protocols"][0]["models"].extend(
+        [
+            {
+                "credential_id": "cred-a",
+                "model_name": "gpt-stale",
+                "enabled": True,
+                "protocol": "openai_chat",
+                "source": "synced",
+            },
+            {
+                "credential_id": "cred-b",
+                "model_name": "manual-stale",
+                "enabled": True,
+                "protocol": "openai_chat",
+                "source": "manual",
+            },
+        ]
+    )
+    create_response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=payload,
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    async def fake_fetch(channel: Any) -> list[str]:
+        return [f"gpt-{channel.keys[0].id}"]
+
+    import lens_api.gateway.service.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]["models"]
+    stored_names = {model["model_name"] for model in stored_models}
+    assert "gpt-stale" not in stored_names
+    assert "manual-stale" in stored_names
+    assert "manual-only" in stored_names
+
+
+def test_site_rejects_duplicate_models_for_the_same_sync_target(
+    client,
+    admin_headers,
+) -> None:
+    payload = _auto_sync_site_payload()
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-a",
+            "model_name": "manual-only",
+            "enabled": True,
+            "protocol": "openai_chat",
+            "source": "synced",
+        }
+    )
+
+    response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=payload,
+    )
+
+    assert_error(response, 400, "Duplicate model in protocol config")
+
+
+def test_channel_model_sync_isolates_target_failures(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    create_response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=_auto_sync_site_payload(),
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    async def fake_fetch(channel: Any) -> list[str]:
+        credential_id = channel.keys[0].id
+        if credential_id == "cred-a":
+            raise HTTPException(status_code=502, detail="credential failed")
+        return ["gpt-cred-b"]
+
+    import lens_api.gateway.service.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["failed_target_count"] == 1
+    assert result["updated_target_count"] == 1
+    assert {(item["credential_id"], item["status"]) for item in result["items"]} == {
+        ("cred-a", "failed"),
+        ("cred-b", "updated"),
+    }
+    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]["models"]
+    assert {
+        (model["credential_id"], model["model_name"], model["source"])
+        for model in stored_models
+    } == {
+        ("cred-a", "manual-only", "manual"),
+        ("cred-b", "gpt-cred-b", "synced"),
+    }
+
+
+def test_channel_model_sync_dry_run_does_not_write_models(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    payload = _auto_sync_site_payload()
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-a",
+            "model_name": "gpt-old",
+            "enabled": True,
+            "protocol": "openai_chat",
+            "source": "synced",
+        }
+    )
+    create_response = client.post(
+        "/api/admin/sites", headers=admin_headers, json=payload
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    async def fake_fetch(channel: Any) -> list[str]:
+        return [f"gpt-new-{channel.keys[0].id}"]
+
+    import lens_api.gateway.service.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": True},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["updated_target_count"] == 2
+    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]["models"]
+    assert {model["model_name"] for model in stored_models} == {
+        "manual-only",
+        "gpt-old",
+    }
+
+
+def test_channel_model_sync_removes_stale_synced_models_on_empty_response(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    payload = _auto_sync_site_payload()
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-a",
+            "model_name": "gpt-existing",
+            "enabled": True,
+            "protocol": "openai_chat",
+            "source": "synced",
+        }
+    )
+    create_response = client.post(
+        "/api/admin/sites", headers=admin_headers, json=payload
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    async def fake_fetch(_channel: Any) -> list[str]:
+        return []
+
+    import lens_api.gateway.service.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["updated_target_count"] == 1
+    assert result["unchanged_target_count"] == 1
+    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]["models"]
+    assert {model["model_name"] for model in stored_models} == {"manual-only"}
+
+
+def test_channel_model_sync_does_not_report_group_changes_that_failed(
+    client,
+    admin_headers,
+    app_state,
+    monkeypatch,
+) -> None:
+    create_response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=_auto_sync_site_payload(),
+    )
+    assert create_response.status_code == 201, create_response.text
+    group_response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={
+            "name": "gpt models",
+            "protocols": ["openai_chat"],
+            "sync_filter_mode": "contains",
+            "sync_filter_query": "gpt-",
+        },
+    )
+    assert group_response.status_code == 201, group_response.text
+
+    async def fake_fetch(channel: Any) -> list[str]:
+        return [f"gpt-{channel.keys[0].id}"]
+
+    async def fail_group_update(_payload: Any) -> None:
+        raise RuntimeError("group update failed")
+
+    import lens_api.gateway.service.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(
+        app_state.group_repo,
+        "ensure_groups_from_site",
+        fail_group_update,
+    )
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    changed_items = [
+        item for item in response.json()["items"] if item["status"] == "updated"
+    ]
+    assert len(changed_items) == 2
+    assert all(item["group_added"] == [] for item in changed_items)
+    assert all("model group update failed" in item["warning"] for item in changed_items)
+
+
+def test_channel_model_sync_reports_applied_group_changes(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    create_response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=_auto_sync_site_payload(),
+    )
+    assert create_response.status_code == 201, create_response.text
+    group_response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={
+            "name": "gpt models",
+            "protocols": ["openai_chat"],
+            "sync_filter_mode": "contains",
+            "sync_filter_query": "gpt-",
+        },
+    )
+    assert group_response.status_code == 201, group_response.text
+
+    async def fake_fetch(channel: Any) -> list[str]:
+        return [f"gpt-{channel.keys[0].id}"]
+
+    import lens_api.gateway.service.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    assert {
+        (item["credential_id"], change["group_name"], change["model_name"])
+        for item in response.json()["items"]
+        for change in item["group_added"]
+    } == {
+        ("cred-a", "gpt models", "gpt-cred-a"),
+        ("cred-b", "gpt models", "gpt-cred-b"),
+    }
+    group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
+    assert {item["model_name"] for item in group["items"]} == {
+        "gpt-cred-a",
+        "gpt-cred-b",
+    }
+
+
+@pytest.mark.parametrize(
+    "disabled_resource", ["site", "base_url", "config", "credential"]
+)
+def test_channel_model_sync_skips_disabled_resources_without_fetching(
+    client,
+    admin_headers,
+    monkeypatch,
+    disabled_resource: str,
+) -> None:
+    payload = _auto_sync_site_payload()
+    if disabled_resource == "base_url":
+        payload["base_urls"][0]["enabled"] = False
+    elif disabled_resource == "config":
+        payload["protocols"][0]["enabled"] = False
+    elif disabled_resource == "credential":
+        for credential in payload["credentials"]:
+            credential["enabled"] = False
+    create_response = client.post(
+        "/api/admin/sites", headers=admin_headers, json=payload
+    )
+    assert create_response.status_code == 201, create_response.text
+    if disabled_resource == "site":
+        disable_response = client.put(
+            f"/api/admin/sites/{create_response.json()['id']}/enabled",
+            headers=admin_headers,
+            json={"enabled": False},
+        )
+        assert disable_response.status_code == 200, disable_response.text
+
+    async def fail_fetch(_channel: Any) -> list[str]:
+        raise AssertionError("disabled resources must not trigger model discovery")
+
+    import lens_api.gateway.service.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fail_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["eligible_target_count"] == 0
+
+
+def test_disabling_auto_sync_converts_synced_models_to_manual(
+    client,
+    admin_headers,
+) -> None:
+    payload = _auto_sync_site_payload()
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-a",
+            "model_name": "gpt-synced",
+            "enabled": True,
+            "protocol": "openai_chat",
+            "source": "synced",
+        }
+    )
+    create_response = client.post(
+        "/api/admin/sites", headers=admin_headers, json=payload
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    payload["protocols"][0]["auto_sync_enabled"] = False
+    update_response = client.put(
+        f"/api/admin/sites/{create_response.json()['id']}",
+        headers=admin_headers,
+        json=payload,
+    )
+
+    assert update_response.status_code == 200, update_response.text
+    sources_by_name = {
+        model["model_name"]: model["source"]
+        for model in update_response.json()["protocols"][0]["models"]
+    }
+    assert sources_by_name == {
+        "manual-only": "manual",
+        "gpt-synced": "manual",
+    }
+
+
+def test_disabled_auto_sync_never_persists_synced_models(
+    client,
+    admin_headers,
+) -> None:
+    payload = _auto_sync_site_payload()
+    payload["protocols"][0]["auto_sync_enabled"] = False
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-a",
+            "model_name": "gpt-imported-as-synced",
+            "enabled": True,
+            "protocol": "openai_chat",
+            "source": "synced",
+        }
+    )
+
+    response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=payload,
+    )
+
+    assert response.status_code == 201, response.text
+    assert {model["source"] for model in response.json()["protocols"][0]["models"]} == {
+        "manual"
+    }

@@ -26,7 +26,7 @@ type Props = {
   onUpdateModelProtocols: (modelKey: string, protocols: ProtocolKind[]) => void;
   onOpenModelTest: (modelKey: string) => void;
   onRemoveModel: (modelKey: string) => void;
-  onClearModels: () => void;
+  onClearManualModels: () => void;
 };
 
 /** Renders aggregate channel models and their bulk actions. */
@@ -43,7 +43,7 @@ export function ChannelModelOverviewSection({
   onUpdateModelProtocols,
   onOpenModelTest,
   onRemoveModel,
-  onClearModels,
+  onClearManualModels,
 }: Props) {
   const [search, setSearch] = useState("");
   const normalizedSearch = search.trim().toLowerCase();
@@ -97,11 +97,13 @@ export function ChannelModelOverviewSection({
             variant="ghost"
             size="sm"
             className="text-muted-foreground hover:text-destructive"
-            onClick={onClearModels}
-            disabled={!overviewModels.length}
+            onClick={onClearManualModels}
+            disabled={
+              !overviewModels.some((model) => model.source === "manual")
+            }
           >
             <Trash2 data-icon="inline-start" />
-            {locale === "zh-CN" ? "清空" : "Clear"}
+            {locale === "zh-CN" ? "清空手动模型" : "Clear manual models"}
           </Button>
           <Button
             type="button"

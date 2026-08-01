@@ -108,6 +108,25 @@ export function ChannelsScreen() {
   return (
     <TooltipProvider>
       <DashboardHeaderActions>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={locale === "zh-CN" ? "同步模型" : "Sync models"}
+              disabled={transfer.channelSyncing}
+              onClick={() => void transfer.openChannelModelSync()}
+            >
+              <RefreshCcw
+                className={transfer.channelSyncing ? "animate-spin" : undefined}
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            {locale === "zh-CN" ? "同步模型" : "Sync models"}
+          </TooltipContent>
+        </Tooltip>
         <DropdownMenu>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -134,12 +153,6 @@ export function ChannelsScreen() {
             <DropdownMenuItem onSelect={transfer.openBatchImport}>
               <FileInput />
               {locale === "zh-CN" ? "批量导入" : "Import channels"}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => void transfer.openChannelModelSync()}
-            >
-              <RefreshCcw />
-              {locale === "zh-CN" ? "同步模型" : "Sync models"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

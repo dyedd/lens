@@ -95,7 +95,14 @@ async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "protocol": (
                     row.protocol if row.protocol in valid_protocol_values else None
                 ),
+                "source": row.source,
             }
+        )
+
+    credential_ids_by_protocol_config: dict[str, list[str]] = {}
+    for row in rows.protocol_credentials:
+        credential_ids_by_protocol_config.setdefault(row.protocol_config_id, []).append(
+            row.credential_id
         )
 
     protocol_configs_by_site: dict[str, list[dict[str, object]]] = {}
@@ -121,7 +128,7 @@ async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "param_override": row.param_override,
                 "match_regex": row.match_regex,
                 "base_url_id": row.base_url_id,
-                "credential_id": row.credential_id,
+                "credential_ids": credential_ids_by_protocol_config.get(row.id, []),
                 "auto_sync_enabled": bool(row.auto_sync_enabled),
                 "models": models_by_protocol_config.get(row.id, []),
             }
