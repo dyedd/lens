@@ -3,18 +3,19 @@ import type { Locale } from "@/lib/I18nContext";
 import { isGeneratedCredentialName } from "@/lib/utils";
 import { createLocalId } from "./channelDefaults";
 import {
-  isValidModelQueryRegex,
   normalizeCredentialIds,
   protocolConfigSelectedCredentialIds,
   resolveBaseUrlId,
-  safeText,
 } from "./channelFormUtils";
 import {
   fallbackCredentialName,
   protocolConfigDisplayName,
 } from "./channelLabels";
-import { protocolConfigEffectiveProtocols } from "./channelModelUtils";
-import type { FormModel, FormState } from "./channelTypes";
+import {
+  coalesceFormModels,
+  protocolConfigEffectiveProtocols,
+} from "./channelModelUtils";
+import type { FormState } from "./channelTypes";
 
 /** Converts a persisted site into channel editor state. */
 export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
@@ -24,7 +25,7 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
         url: item.url,
         name: item.name,
         enabled: item.enabled,
-        supported_protocols: item.supported_protocols ?? [],
+        supported_protocols: item.supported_protocols,
       }))
     : [
         {
@@ -47,40 +48,16 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
     credentials,
     protocolConfigs: site.protocols.map(
       (protocolConfig, protocolConfigIndex) => {
-        const modelGroups = new Map<string, FormModel>();
-        for (const model of protocolConfig.models) {
-          const key = `${model.source}:${model.credential_id}:${model.model_name}`;
-          const existing = modelGroups.get(key);
-          if (existing) {
-            if (
-              model.protocol &&
-              !existing.protocols.includes(model.protocol)
-            ) {
-              existing.protocols.push(model.protocol);
-            }
-            if (model.id && model.protocol) {
-              existing.protocolIds = {
-                ...existing.protocolIds,
-                [model.protocol]: model.id,
-              };
-            }
-            existing.enabled = existing.enabled || model.enabled;
-            if (!existing.id && model.id) existing.id = model.id;
-          } else {
-            modelGroups.set(key, {
-              id: model.id ?? null,
-              protocols: model.protocol ? [model.protocol] : [],
-              protocolIds:
-                model.id && model.protocol
-                  ? { [model.protocol]: model.id }
-                  : {},
-              credential_id: model.credential_id,
-              model_name: model.model_name,
-              enabled: model.enabled,
-              source: model.source,
-            });
-          }
-        }
+        const models = coalesceFormModels(
+          protocolConfig.models.map((model) => ({
+            protocols: model.protocol ? [model.protocol] : [],
+            protocolIds: model.protocol ? { [model.protocol]: model.id } : {},
+            credential_id: model.credential_id,
+            model_name: model.model_name,
+            enabled: model.enabled,
+            source: model.source,
+          })),
+        );
         const credentialIds = normalizeCredentialIds(
           protocolConfig.credential_ids,
         );
@@ -101,15 +78,14 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           proxy_mode: protocolConfig.proxy_mode,
           channel_proxy: protocolConfig.channel_proxy,
           param_override: protocolConfig.param_override,
-          match_regex: safeText(protocolConfig.match_regex),
+          match_regex: protocolConfig.match_regex,
           manual_model_name: "",
-          discovery_filter: "",
-          manual_protocols: Array.from(new Set(protocolConfig.protocols ?? [])),
+          manual_protocols: Array.from(new Set(protocolConfig.protocols)),
           base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
           credential_ids: credentialIds,
           auto_sync_enabled: protocolConfig.auto_sync_enabled,
-          models: Array.from(modelGroups.values()),
-          expanded: modelGroups.size === 0,
+          models,
+          expanded: models.length === 0,
         };
       },
     ),
@@ -158,14 +134,12 @@ export function toPayload(form: FormState): SitePayload {
         enabled: item.enabled,
       }))
       .filter((item) => item.api_key),
-    protocols: form.protocolConfigs.flatMap((protocolConfig) => {
+    protocols: form.protocolConfigs.map((protocolConfig) => {
       const selectedCredentialIds =
         protocolConfigSelectedCredentialIds(protocolConfig);
       const protocolConfigProtocols =
         protocolConfigEffectiveProtocols(protocolConfig);
-      const matchRegex = safeText(protocolConfig.match_regex).trim();
-      const enabledMatchRegex =
-        matchRegex && isValidModelQueryRegex(matchRegex) ? matchRegex : "";
+      const matchRegex = protocolConfig.match_regex.trim();
       const models = protocolConfig.models
         .flatMap((model) => {
           const effectiveProtocols = model.protocols.filter((protocol) =>
@@ -175,7 +149,7 @@ export function toPayload(form: FormState): SitePayload {
             return [];
           }
           return effectiveProtocols.map((protocol) => ({
-            id: model.protocolIds?.[protocol] ?? null,
+            id: model.protocolIds[protocol] ?? null,
             protocol,
             credential_id: model.credential_id,
             model_name: model.model_name.trim(),
@@ -184,29 +158,25 @@ export function toPayload(form: FormState): SitePayload {
           }));
         })
         .filter((model) => model.credential_id && model.model_name);
-      return [
-        {
-          id: protocolConfig.id,
-          name: protocolConfig.name.trim(),
-          protocols: protocolConfigProtocols,
-          enabled: protocolConfig.enabled,
-          headers: Object.fromEntries(
-            protocolConfig.headers
-              .map((entry) => [entry.key.trim(), entry.value] as const)
-              .filter(([key]) => key),
-          ),
-          proxy_mode: protocolConfig.proxy_mode,
-          channel_proxy: protocolConfig.channel_proxy.trim(),
-          param_override: protocolConfig.param_override.trim(),
-          match_regex: enabledMatchRegex,
-          base_url_id: protocolConfig.base_url_id,
-          credential_ids: selectedCredentialIds,
-          auto_sync_enabled: enabledMatchRegex
-            ? protocolConfig.auto_sync_enabled
-            : false,
-          models,
-        },
-      ];
+      return {
+        id: protocolConfig.id,
+        name: protocolConfig.name.trim(),
+        protocols: protocolConfigProtocols,
+        enabled: protocolConfig.enabled,
+        headers: Object.fromEntries(
+          protocolConfig.headers
+            .map((entry) => [entry.key.trim(), entry.value] as const)
+            .filter(([key]) => key),
+        ),
+        proxy_mode: protocolConfig.proxy_mode,
+        channel_proxy: protocolConfig.channel_proxy.trim(),
+        param_override: protocolConfig.param_override.trim(),
+        match_regex: matchRegex,
+        base_url_id: protocolConfig.base_url_id,
+        credential_ids: selectedCredentialIds,
+        auto_sync_enabled: protocolConfig.auto_sync_enabled,
+        models,
+      };
     }),
   };
 }

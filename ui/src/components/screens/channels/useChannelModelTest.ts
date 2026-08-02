@@ -62,7 +62,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     for (const [configIndex, config] of form.protocolConfigs.entries()) {
       if (!config.enabled || !activeBaseUrlValue(form, config).trim()) continue;
       for (const [modelIndex, model] of config.models.entries()) {
-        const key = protocolConfigModelKey(configIndex, config, model);
+        const key = protocolConfigModelKey(config, model);
         if (options.has(key) || !model.model_name.trim()) continue;
         const entry = credentials.get(model.credential_id);
         if (!entry?.credential.api_key.trim()) continue;

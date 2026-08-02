@@ -1,17 +1,11 @@
 import { Plus, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/Field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { ProtocolMultiSelect } from "@/components/ui/ProtocolMultiSelect";
 import { Separator } from "@/components/ui/Separator";
 import { Switch } from "@/components/ui/Switch";
 import type { FormProtocolConfig, Locale } from "./channelShared";
-import { isValidModelQueryRegex } from "./channelShared";
 
 type Props = {
   protocolConfig: FormProtocolConfig;
@@ -38,23 +32,19 @@ export function ProtocolConfigModelActions({
   onFetchModels,
 }: Props) {
   const manualModelName = protocolConfig.manual_model_name.trim();
-  const discoveryFilter = protocolConfig.discovery_filter.trim();
-  const isValidDiscoveryFilter =
-    !discoveryFilter || isValidModelQueryRegex(discoveryFilter);
-  const syncRegex = protocolConfig.match_regex.trim();
-  const isValidSyncRegex = Boolean(
-    syncRegex && isValidModelQueryRegex(syncRegex),
-  );
+  const matchRegex = protocolConfig.match_regex.trim();
+  const isMatchRegexInvalid = protocolConfig.auto_sync_enabled && !matchRegex;
   const isAddModelDisabled =
     !hasActiveCredentials ||
     !manualModelName ||
     !protocolConfig.manual_protocols.length;
   const isFetchModelsDisabled =
-    fetchingProtocolConfigIndex === protocolConfigIndex ||
+    fetchingProtocolConfigIndex !== null ||
     !hasActiveBaseUrl ||
     !hasActiveCredentials ||
-    !protocolConfig.manual_protocols.length ||
-    !isValidDiscoveryFilter;
+    !protocolConfig.manual_protocols.length;
+  const isModelActionPending =
+    fetchingProtocolConfigIndex === protocolConfigIndex;
 
   return (
     <div className="grid gap-3 pt-1">
@@ -103,15 +93,15 @@ export function ProtocolConfigModelActions({
           </Button>
         </div>
         <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <Field data-invalid={!isValidDiscoveryFilter}>
+          <Field data-invalid={isMatchRegexInvalid}>
             <FieldLabel>
               {locale === "zh-CN" ? "上游筛选" : "Upstream filter"}
             </FieldLabel>
             <Input
-              value={protocolConfig.discovery_filter}
-              aria-invalid={!isValidDiscoveryFilter}
+              value={protocolConfig.match_regex}
+              aria-invalid={isMatchRegexInvalid}
               onChange={(event) =>
-                onUpdate({ discovery_filter: event.target.value })
+                onUpdate({ match_regex: event.target.value })
               }
               placeholder={
                 locale === "zh-CN"
@@ -127,11 +117,7 @@ export function ProtocolConfigModelActions({
           >
             <RefreshCcw
               data-icon="inline-start"
-              className={
-                fetchingProtocolConfigIndex === protocolConfigIndex
-                  ? "animate-spin"
-                  : ""
-              }
+              className={isModelActionPending ? "animate-spin" : undefined}
             />
             {locale === "zh-CN" ? "从上游选择" : "Select from upstream"}
           </Button>
@@ -148,26 +134,6 @@ export function ProtocolConfigModelActions({
             }
           />
         </div>
-        <Field
-          data-invalid={protocolConfig.auto_sync_enabled && !isValidSyncRegex}
-          data-disabled={!protocolConfig.auto_sync_enabled}
-        >
-          <FieldLabel>
-            {locale === "zh-CN" ? "同步正则" : "Sync regex"}
-          </FieldLabel>
-          <Input
-            value={protocolConfig.match_regex}
-            aria-invalid={protocolConfig.auto_sync_enabled && !isValidSyncRegex}
-            disabled={!protocolConfig.auto_sync_enabled}
-            onChange={(event) => onUpdate({ match_regex: event.target.value })}
-            placeholder="^gpt-"
-          />
-          <FieldDescription>
-            {locale === "zh-CN"
-              ? "按每个已启用密钥分别同步匹配模型"
-              : "Sync matching models for every enabled key"}
-          </FieldDescription>
-        </Field>
       </FieldGroup>
     </div>
   );

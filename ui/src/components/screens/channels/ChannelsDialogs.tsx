@@ -110,6 +110,8 @@ export function ChannelsDialogs({
           openModelGroupEnsureDialog={modelGroups.openModelGroupEnsureDialog}
           openBatchModelTestDialog={batchTest.openBatchModelTestDialog}
           updateModelProtocols={editor.updateModelProtocols}
+          updateModelSource={editor.updateModelSource}
+          updateAllModelSources={editor.updateAllModelSources}
           openAggregateModelTest={modelTest.openAggregateModelTest}
           removeAggregateModel={editor.removeAggregateModel}
           clearManualModels={editor.clearManualModels}

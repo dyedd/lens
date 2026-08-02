@@ -42,7 +42,6 @@ export function buildManualModels(
   return credentialIds
     .filter((id) => !existing.has(`${id}:${modelName}`))
     .map((credentialId) => ({
-      id: null,
       protocols,
       protocolIds: {},
       credential_id: credentialId,
