@@ -1,12 +1,12 @@
 "use client";
 
 import { Trash2 } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ProtocolMultiSelect } from "@/components/ui/ProtocolMultiSelect";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import type { ProtocolKind } from "@/lib/api";
-import type { AggregatedModel } from "./useAggregatedModels";
 import type { Locale } from "./channelShared";
+import type { AggregatedModel } from "./useAggregatedModels";
 
 /** Renders aggregated channel models with protocol and test actions. */
 export function SiteModelAggregateView({
@@ -14,6 +14,7 @@ export function SiteModelAggregateView({
   locale,
   emptyLabel,
   onChangeModelProtocols,
+  onChangeModelSource,
   onOpenModelTest,
   onRemoveModel,
   canTestModel,
@@ -22,14 +23,18 @@ export function SiteModelAggregateView({
   models: AggregatedModel[];
   locale: Locale;
   emptyLabel?: string;
-  onChangeModelProtocols?: (
+  onChangeModelProtocols: (
     modelKey: string,
     nextProtocols: ProtocolKind[],
   ) => void;
-  onOpenModelTest?: (modelKey: string) => void;
-  onRemoveModel?: (modelKey: string) => void;
-  canTestModel?: (modelKey: string) => boolean;
-  testingDisabled?: boolean;
+  onChangeModelSource: (
+    modelKey: string,
+    source: AggregatedModel["source"],
+  ) => void;
+  onOpenModelTest: (modelKey: string) => void;
+  onRemoveModel: (modelKey: string) => void;
+  canTestModel: (modelKey: string) => boolean;
+  testingDisabled: boolean;
 }) {
   if (!models.length) {
     return (
@@ -41,46 +46,50 @@ export function SiteModelAggregateView({
       </div>
     );
   }
+  const sourceOptions: Array<{
+    value: AggregatedModel["source"];
+    label: string;
+  }> = [
+    { value: "manual", label: locale === "zh-CN" ? "手动" : "Manual" },
+    { value: "synced", label: locale === "zh-CN" ? "同步" : "Synced" },
+  ];
   return (
     <div className="grid min-w-0 max-h-[min(52dvh,28rem)] overflow-y-auto">
       {models.map(
-        ({ key: modelKey, modelName, protocols, sources, source }) => {
-          const testable = Boolean(canTestModel?.(modelKey));
-          const isSynced = source === "synced";
+        ({ key: modelKey, modelName, protocols, sourceLabel, source }) => {
+          const testable = canTestModel(modelKey);
           return (
             <div
               key={modelKey}
-              className="grid min-w-0 gap-2 border-b py-2 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(180px,0.34fr)_minmax(200px,0.42fr)_auto] md:items-center"
+              className="grid min-w-0 gap-2 border-b py-1 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(180px,0.34fr)_minmax(200px,0.42fr)_auto] md:items-center"
             >
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
                   <div className="truncate text-sm font-medium">
                     {modelName}
                   </div>
-                  <Badge variant={isSynced ? "secondary" : "outline"}>
-                    {isSynced
-                      ? locale === "zh-CN"
-                        ? "同步"
-                        : "Synced"
-                      : locale === "zh-CN"
-                        ? "手动"
-                        : "Manual"}
-                  </Badge>
+                  <SegmentedControl
+                    value={source}
+                    onValueChange={(nextSource) =>
+                      onChangeModelSource(modelKey, nextSource)
+                    }
+                    options={sourceOptions}
+                    className="shrink-0"
+                  />
                 </div>
                 <div className="truncate text-xs text-muted-foreground md:hidden">
-                  {sources.join(", ")}
+                  {sourceLabel}
                 </div>
               </div>
               <ProtocolMultiSelect
                 value={protocols}
-                onChange={(next) => onChangeModelProtocols?.(modelKey, next)}
+                onChange={(next) => onChangeModelProtocols(modelKey, next)}
                 locale={locale}
-                disabled={isSynced}
                 invalid={protocols.length === 0}
                 shouldRequireAtLeastOne
               />
               <span className="hidden truncate text-xs text-muted-foreground md:block">
-                {sources.join(", ")}
+                {sourceLabel}
               </span>
               <div className="flex items-center justify-end gap-1">
                 <Button
@@ -88,7 +97,7 @@ export function SiteModelAggregateView({
                   variant="ghost"
                   size="sm"
                   className="h-8 px-2 text-muted-foreground hover:text-foreground"
-                  onClick={() => onOpenModelTest?.(modelKey)}
+                  onClick={() => onOpenModelTest(modelKey)}
                   disabled={!testable || testingDisabled}
                 >
                   {locale === "zh-CN" ? "测试" : "Test"}
@@ -99,17 +108,8 @@ export function SiteModelAggregateView({
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-destructive"
                   aria-label={locale === "zh-CN" ? "删除模型" : "Delete model"}
-                  title={
-                    isSynced
-                      ? locale === "zh-CN"
-                        ? "同步模型由自动同步管理"
-                        : "Synced models are managed by auto sync"
-                      : locale === "zh-CN"
-                        ? "删除模型"
-                        : "Delete model"
-                  }
-                  onClick={() => onRemoveModel?.(modelKey)}
-                  disabled={isSynced}
+                  title={locale === "zh-CN" ? "删除模型" : "Delete model"}
+                  onClick={() => onRemoveModel(modelKey)}
                 >
                   <Trash2 />
                 </Button>

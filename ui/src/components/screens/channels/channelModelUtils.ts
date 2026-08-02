@@ -14,19 +14,45 @@ export function genericModelKey(
 
 /** Builds a stable model key scoped to a protocol configuration. */
 export function protocolConfigModelKey(
-  protocolConfigIndex: number,
-  protocolConfig: Pick<FormProtocolConfig, "id" | "base_url_id">,
+  protocolConfig: Pick<FormProtocolConfig, "id">,
   model: Pick<FormModel, "credential_id" | "model_name" | "source">,
 ) {
-  const protocolConfigKey =
-    protocolConfig.id?.trim() || `index-${protocolConfigIndex}`;
   return JSON.stringify([
-    protocolConfigKey,
-    protocolConfig.base_url_id,
+    protocolConfig.id,
     model.credential_id,
     model.model_name,
     model.source,
   ]);
+}
+
+/** Merges form models that represent the same persisted model rows. */
+export function coalesceFormModels(models: FormModel[]) {
+  const groups = new Map<string, FormModel>();
+  for (const model of models) {
+    const key = JSON.stringify([
+      model.credential_id,
+      model.model_name,
+      model.source,
+    ]);
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        ...model,
+        protocols: Array.from(new Set(model.protocols)),
+        protocolIds: { ...model.protocolIds },
+      });
+      continue;
+    }
+    existing.protocols = Array.from(
+      new Set([...existing.protocols, ...model.protocols]),
+    );
+    existing.protocolIds = {
+      ...existing.protocolIds,
+      ...model.protocolIds,
+    };
+    existing.enabled = existing.enabled || model.enabled;
+  }
+  return Array.from(groups.values());
 }
 
 /** Deduplicates picker models by credential and model name. */

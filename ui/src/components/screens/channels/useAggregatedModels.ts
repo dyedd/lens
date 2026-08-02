@@ -11,18 +11,17 @@ import {
   type Locale,
   protocolConfigDisplayName,
   protocolConfigModelKey,
-  protocolConfigSyncStatusLabel,
 } from "./channelShared";
 
 export type AggregatedModel = {
   key: string;
   modelName: string;
   protocols: ProtocolKind[];
-  sources: string[];
+  sourceLabel: string;
   source: SiteModelInput["source"];
 };
 
-/** Aggregates equivalent channel models and their protocol sources. */
+/** Builds the model rows shown in the channel overview. */
 export function useAggregatedModels(
   protocolConfigs: FormProtocolConfig[],
   baseUrls: FormBaseUrl[],
@@ -30,22 +29,13 @@ export function useAggregatedModels(
   locale: Locale,
 ): AggregatedModel[] {
   return useMemo(() => {
-    const aggregate: Record<
-      string,
-      {
-        modelName: string;
-        protocols: Set<ProtocolKind>;
-        sources: Set<string>;
-        source: SiteModelInput["source"];
-      }
-    > = {};
     const credentialNameById = new Map(
       credentials.map(
         (credential, index) =>
           [credential.id, credentialLabel(credential, index, locale)] as const,
       ),
     );
-    protocolConfigs.forEach((protocolConfig, index) => {
+    return protocolConfigs.flatMap((protocolConfig, index) => {
       const baseUrlIndex = baseUrls.findIndex(
         (item) => item.id === protocolConfig.base_url_id,
       );
@@ -58,36 +48,18 @@ export function useAggregatedModels(
       const sourceName = baseUrl
         ? `${protocolConfigName} · ${baseUrlLabel(baseUrl, baseUrlIndex, locale)}`
         : protocolConfigName;
-      protocolConfig.models.forEach((model) => {
+      return protocolConfig.models.map((model) => {
         const credentialName =
           credentialNameById.get(model.credential_id) ||
           (locale === "zh-CN" ? "未知密钥" : "Unknown key");
-        const sourceLabel = `${sourceName} · ${credentialName} · ${protocolConfigSyncStatusLabel(
-          protocolConfig,
-          locale,
-        )}`;
-        const key = protocolConfigModelKey(index, protocolConfig, model);
-        if (!aggregate[key]) {
-          aggregate[key] = {
-            modelName: model.model_name,
-            protocols: new Set(),
-            sources: new Set(),
-            source: model.source,
-          };
-        }
-        const modelProtocols = Array.from(new Set(model.protocols));
-        modelProtocols.forEach((p) => aggregate[key].protocols.add(p));
-        aggregate[key].sources.add(sourceLabel);
+        return {
+          key: protocolConfigModelKey(protocolConfig, model),
+          modelName: model.model_name,
+          protocols: model.protocols,
+          sourceLabel: `${sourceName} · ${credentialName}`,
+          source: model.source,
+        };
       });
     });
-    return Object.entries(aggregate).map(
-      ([key, { modelName, protocols, sources, source }]) => ({
-        key,
-        modelName,
-        protocols: Array.from(protocols),
-        sources: Array.from(sources),
-        source,
-      }),
-    );
   }, [baseUrls, credentials, protocolConfigs, locale]);
 }

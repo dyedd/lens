@@ -57,6 +57,11 @@ type ChannelEditorDialogProps = {
     modelKey: string,
     nextProtocols: ProtocolKind[],
   ) => void;
+  updateModelSource: (
+    modelKey: string,
+    source: AggregatedModel["source"],
+  ) => void;
+  updateAllModelSources: (source: AggregatedModel["source"]) => void;
   openAggregateModelTest: (modelKey: string) => void;
   removeAggregateModel: (modelKey: string) => void;
   clearManualModels: () => void;
@@ -95,6 +100,8 @@ export function ChannelEditorDialog({
   openModelGroupEnsureDialog,
   openBatchModelTestDialog,
   updateModelProtocols,
+  updateModelSource,
+  updateAllModelSources,
   openAggregateModelTest,
   removeAggregateModel,
   clearManualModels,
@@ -179,6 +186,8 @@ export function ChannelEditorDialog({
                 onEnsureModelGroups={openModelGroupEnsureDialog}
                 onOpenBatchTest={openBatchModelTestDialog}
                 onUpdateModelProtocols={updateModelProtocols}
+                onUpdateModelSource={updateModelSource}
+                onUpdateAllModelSources={updateAllModelSources}
                 onOpenModelTest={openAggregateModelTest}
                 onRemoveModel={removeAggregateModel}
                 onClearManualModels={clearManualModels}

@@ -1,5 +1,12 @@
 import { getStoredToken } from "@/lib/auth";
 
+type ApiErrorPayload = {
+  error?: {
+    message?: string;
+    details?: Array<{ loc?: Array<string | number>; msg?: string }>;
+  };
+};
+
 /** Represents an unsuccessful API response with its HTTP status. */
 export class ApiError extends Error {
   status: number;
@@ -47,17 +54,22 @@ export async function apiFetch(
     const text = await response.text();
     let errorMessage = "";
     if (contentType.includes("application/json") && text) {
-      const payload = parseJsonResponse<{
-        detail?: unknown;
-        error?: { message?: unknown };
-      }>(text, response.status, "Invalid JSON error response from API");
-      if (typeof payload?.detail === "string" && payload.detail) {
-        errorMessage = payload.detail;
-      } else if (
-        typeof payload?.error?.message === "string" &&
-        payload.error.message
-      ) {
+      const payload = parseJsonResponse<ApiErrorPayload>(
+        text,
+        response.status,
+        "Invalid JSON error response from API",
+      );
+      if (payload.error?.message) {
         errorMessage = payload.error.message;
+        const detail = payload.error.details?.[0];
+        if (detail) {
+          const field = detail.loc
+            ? detail.loc.filter((item) => item !== "body").join(".")
+            : "";
+          if (field && detail.msg) {
+            errorMessage += `: ${field}: ${detail.msg}`;
+          }
+        }
       }
     }
     throw new ApiError(
