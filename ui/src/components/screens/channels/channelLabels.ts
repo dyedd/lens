@@ -1,8 +1,7 @@
 import type { Site } from "@/lib/api";
 import type { Locale } from "@/lib/I18nContext";
 import { formatCredentialDisplayName } from "@/lib/utils";
-import { protocolConfigAutoSyncActive, safeText } from "./channelFormUtils";
-import type { FormProtocolConfig } from "./channelTypes";
+import { safeText } from "./channelFormUtils";
 
 /** Builds the fallback persisted name for a credential. */
 export function fallbackCredentialName(index: number) {
@@ -86,15 +85,4 @@ export function credentialDisplayName(
   locale: Locale,
 ) {
   return formatCredentialDisplayName(credential?.name, index + 1, locale);
-}
-
-/** Formats the synchronization mode of a protocol configuration. */
-export function protocolConfigSyncStatusLabel(
-  protocolConfig: Pick<FormProtocolConfig, "auto_sync_enabled" | "match_regex">,
-  locale: Locale,
-) {
-  if (protocolConfigAutoSyncActive(protocolConfig)) {
-    return locale === "zh-CN" ? "自动同步" : "Auto sync";
-  }
-  return locale === "zh-CN" ? "手动维护" : "Manual";
 }

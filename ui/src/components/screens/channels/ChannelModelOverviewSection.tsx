@@ -1,8 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FolderPlus, RefreshCcw, Trash2 } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ChevronDown,
+  FolderPlus,
+  Pencil,
+  RefreshCcw,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/DropdownMenu";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import type { ProtocolKind } from "@/lib/api";
 import { SiteModelAggregateView } from "./SiteModelAggregateView";
@@ -24,6 +38,11 @@ type Props = {
   onEnsureModelGroups: () => void;
   onOpenBatchTest: () => void;
   onUpdateModelProtocols: (modelKey: string, protocols: ProtocolKind[]) => void;
+  onUpdateModelSource: (
+    modelKey: string,
+    source: AggregatedModel["source"],
+  ) => void;
+  onUpdateAllModelSources: (source: AggregatedModel["source"]) => void;
   onOpenModelTest: (modelKey: string) => void;
   onRemoveModel: (modelKey: string) => void;
   onClearManualModels: () => void;
@@ -41,6 +60,8 @@ export function ChannelModelOverviewSection({
   onEnsureModelGroups,
   onOpenBatchTest,
   onUpdateModelProtocols,
+  onUpdateModelSource,
+  onUpdateAllModelSources,
   onOpenModelTest,
   onRemoveModel,
   onClearManualModels,
@@ -52,12 +73,16 @@ export function ChannelModelOverviewSection({
     return overviewModels.filter(
       (model) =>
         model.modelName.toLowerCase().includes(normalizedSearch) ||
-        model.sources.some((source) =>
-          source.toLowerCase().includes(normalizedSearch),
-        ),
+        model.sourceLabel.toLowerCase().includes(normalizedSearch),
     );
   }, [normalizedSearch, overviewModels]);
   const hasSearch = normalizedSearch.length > 0;
+  const hasManualModels = overviewModels.some(
+    (model) => model.source === "manual",
+  );
+  const hasSyncedModels = overviewModels.some(
+    (model) => model.source === "synced",
+  );
 
   return (
     <div className="mt-4">
@@ -98,9 +123,7 @@ export function ChannelModelOverviewSection({
             size="sm"
             className="text-muted-foreground hover:text-destructive"
             onClick={onClearManualModels}
-            disabled={
-              !overviewModels.some((model) => model.source === "manual")
-            }
+            disabled={!hasManualModels}
           >
             <Trash2 data-icon="inline-start" />
             {locale === "zh-CN" ? "清空手动模型" : "Clear manual models"}
@@ -147,6 +170,38 @@ export function ChannelModelOverviewSection({
             />
             {locale === "zh-CN" ? "批量测试" : "Batch test"}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!overviewModels.length}
+              >
+                <ArrowLeftRight data-icon="inline-start" />
+                {locale === "zh-CN" ? "批量切换" : "Bulk switch"}
+                <ChevronDown data-icon="inline-end" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  onSelect={() => onUpdateAllModelSources("manual")}
+                  disabled={!hasSyncedModels}
+                >
+                  <Pencil />
+                  {locale === "zh-CN" ? "全部设为手动" : "Set all to manual"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => onUpdateAllModelSources("synced")}
+                  disabled={!hasManualModels}
+                >
+                  <RefreshCcw />
+                  {locale === "zh-CN" ? "全部设为同步" : "Set all to synced"}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       <SiteModelAggregateView
@@ -160,6 +215,7 @@ export function ChannelModelOverviewSection({
             : undefined
         }
         onChangeModelProtocols={onUpdateModelProtocols}
+        onChangeModelSource={onUpdateModelSource}
         onOpenModelTest={onOpenModelTest}
         onRemoveModel={onRemoveModel}
         canTestModel={(modelKey) => modelTestOptionByKey.has(modelKey)}

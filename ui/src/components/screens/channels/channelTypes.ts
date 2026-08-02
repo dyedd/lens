@@ -16,13 +16,13 @@ export type FormBaseUrl = Omit<SiteBaseUrlInput, "id"> & {
 };
 export type { Locale };
 
-export type FormModel = Omit<SiteModelInput, "protocol"> & {
+export type FormModel = Omit<SiteModelInput, "id" | "protocol"> & {
   protocols: ProtocolKind[];
-  protocolIds?: Record<string, string>;
+  protocolIds: Partial<Record<ProtocolKind, string>>;
 };
 
 export type FormProtocolConfig = {
-  id?: string | null;
+  id: string;
   name: string;
   enabled: boolean;
   headers: HeaderItem[];
@@ -31,7 +31,6 @@ export type FormProtocolConfig = {
   param_override: string;
   match_regex: string;
   manual_model_name: string;
-  discovery_filter: string;
   manual_protocols: ProtocolKind[];
   base_url_id: string;
   credential_ids: string[];

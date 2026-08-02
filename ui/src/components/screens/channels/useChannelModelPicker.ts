@@ -16,9 +16,8 @@ import {
   formHeaders,
   genericModelKey,
   groupPickerModels,
-  isValidModelQueryRegex,
   resolvePickerModelProtocols,
-  safeText,
+  type FormModel,
   type FormState,
   type Locale,
   type PickerModelItem,
@@ -114,11 +113,7 @@ export function useChannelModelPicker({
     if (fetchingProtocolConfigIndex !== null) return;
     const config = form.protocolConfigs[configIndex];
     if (!config) return;
-    const query = config.discovery_filter.trim();
-    if (query && !isValidModelQueryRegex(query)) {
-      toast.error(locale === "zh-CN" ? "正则无效" : "Invalid regex");
-      return;
-    }
+    const query = config.match_regex.trim();
     const protocols = Array.from(new Set(config.manual_protocols));
     if (!protocols.length) {
       toast.error(
@@ -138,7 +133,7 @@ export function useChannelModelPicker({
       return;
     }
     const baseUrl = activeBaseUrlValue(form, config);
-    if (!safeText(baseUrl).trim()) {
+    if (!baseUrl.trim()) {
       toast.error(locale === "zh-CN" ? "地址为空" : "Base URL is empty");
       return;
     }
@@ -148,7 +143,7 @@ export function useChannelModelPicker({
     try {
       const selected = new Set(credentialIds);
       const payload: SiteModelFetchPayload = {
-        base_url: safeText(baseUrl).trim(),
+        base_url: baseUrl.trim(),
         headers: formHeaders(config),
         proxy_mode: config.proxy_mode,
         channel_proxy: config.channel_proxy.trim(),
@@ -216,17 +211,18 @@ export function useChannelModelPicker({
         ),
       );
     const selected = new Set(keys);
-    const existing = new Set(config.models.map(genericModelKey));
-    const newModels = groupPickerModels(
+    const selectedModels = groupPickerModels(
       availableModels.filter((item) => selected.has(genericModelKey(item))),
-    ).filter((model) => !existing.has(genericModelKey(model)));
-    if (!newModels.length) {
-      toast.info(locale === "zh-CN" ? "模型已存在" : "Model already exists");
+    );
+    if (!selectedModels.length) {
+      toast.info(locale === "zh-CN" ? "未选择模型" : "No models selected");
       closeModelPicker();
       return;
     }
     if (
-      newModels.some((model) => !protocolsForKey(genericModelKey(model)).length)
+      selectedModels.some(
+        (model) => !protocolsForKey(genericModelKey(model)).length,
+      )
     ) {
       toast.error(
         locale === "zh-CN"
@@ -237,32 +233,47 @@ export function useChannelModelPicker({
     }
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((item, index) =>
-        index !== modelPickerProtocolConfigIndex
-          ? item
-          : {
-              ...item,
-              expanded: true,
-              models: [
-                ...item.models,
-                ...newModels.map((model) => ({
-                  id: null,
-                  protocols: protocolsForKey(genericModelKey(model)),
-                  protocolIds: {},
-                  credential_id: model.credential_id,
-                  model_name: model.model_name,
-                  enabled: true,
-                  source: "manual" as const,
-                })),
-              ],
-            },
-      ),
+      protocolConfigs: current.protocolConfigs.map((item, index) => {
+        if (index !== modelPickerProtocolConfigIndex) return item;
+        const source: FormModel["source"] = item.auto_sync_enabled
+          ? "synced"
+          : "manual";
+        return {
+          ...item,
+          expanded: true,
+          models: [
+            ...item.models.filter(
+              (model) => !selected.has(genericModelKey(model)),
+            ),
+            ...selectedModels.map((model) => {
+              const key = genericModelKey(model);
+              const existingModels = item.models.filter(
+                (candidate) => genericModelKey(candidate) === key,
+              );
+              return {
+                protocols: protocolsForKey(key),
+                protocolIds: existingModels.reduce<FormModel["protocolIds"]>(
+                  (ids, candidate) => ({
+                    ...ids,
+                    ...candidate.protocolIds,
+                  }),
+                  {},
+                ),
+                credential_id: model.credential_id,
+                model_name: model.model_name,
+                enabled: true,
+                source,
+              };
+            }),
+          ],
+        };
+      }),
     }));
     closeModelPicker();
     toast.success(
       locale === "zh-CN"
-        ? `已加入 ${newModels.length} 个模型`
-        : `Added ${newModels.length} models`,
+        ? `已选择 ${selectedModels.length} 个模型`
+        : `Selected ${selectedModels.length} models`,
     );
   }
   return {

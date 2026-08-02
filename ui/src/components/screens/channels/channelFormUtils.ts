@@ -76,23 +76,11 @@ export function classifyModelQueryInput(value: string): ModelQueryInputKind {
   return "plain";
 }
 
-/** Reports whether a model query is a valid regular expression. */
-export function isValidModelQueryRegex(value: string) {
-  try {
-    new RegExp(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function protocolConfigAutoSyncActive(
   protocolConfig: Pick<FormProtocolConfig, "auto_sync_enabled" | "match_regex">,
 ) {
-  const matchRegex = safeText(protocolConfig.match_regex).trim();
   return (
     protocolConfig.auto_sync_enabled &&
-    Boolean(matchRegex) &&
-    isValidModelQueryRegex(matchRegex)
+    Boolean(protocolConfig.match_regex.trim())
   );
 }

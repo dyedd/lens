@@ -1,8 +1,5 @@
 import { formBaseUrlsForPayload } from "./channelFormConversion";
-import {
-  isValidModelQueryRegex,
-  protocolConfigSelectedCredentialIds,
-} from "./channelFormUtils";
+import { protocolConfigSelectedCredentialIds } from "./channelFormUtils";
 import { protocolConfigEffectiveProtocols } from "./channelModelUtils";
 import type { FormProtocolConfig, FormState } from "./channelTypes";
 
@@ -61,11 +58,10 @@ export function invalidModelProtocolCount(form: FormState) {
   }, 0);
 }
 
-/** Counts auto-sync configurations without a usable regular expression. */
-export function invalidAutoSyncConfigCount(form: FormState) {
-  return form.protocolConfigs.filter((protocolConfig) => {
-    if (!protocolConfig.auto_sync_enabled) return false;
-    const matchRegex = protocolConfig.match_regex.trim();
-    return !matchRegex || !isValidModelQueryRegex(matchRegex);
-  }).length;
+/** Counts auto-sync configurations without a model filter. */
+export function missingAutoSyncRegexConfigCount(form: FormState) {
+  return form.protocolConfigs.filter(
+    (protocolConfig) =>
+      protocolConfig.auto_sync_enabled && !protocolConfig.match_regex.trim(),
+  ).length;
 }

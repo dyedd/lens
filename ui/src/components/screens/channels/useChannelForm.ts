@@ -5,22 +5,25 @@ import { toast } from "sonner";
 import type { ProtocolKind, Site } from "@/lib/api";
 import {
   createLocalId,
+  coalesceFormModels,
   defaultBaseUrlId,
   duplicateProtocolConfigKeys,
   emptyForm,
   emptyProtocolConfig,
   formBaseUrlsForPayload,
-  invalidAutoSyncConfigCount,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
+  missingAutoSyncRegexConfigCount,
   nextProtocolConfigName,
   protocolConfigModelKey,
+  protocolConfigAutoSyncActive,
   protocolConfigSelectedCredentialIds,
   resolveBaseUrlId,
   toForm,
   toPayload,
   type FormBaseUrl,
   type FormCredential,
+  type FormModel,
   type FormProtocolConfig,
   type FormState,
   type HeaderItem,
@@ -56,11 +59,11 @@ function validateChannelForm(
     );
     return false;
   }
-  if (invalidAutoSyncConfigCount(form)) {
+  if (missingAutoSyncRegexConfigCount(form)) {
     toast.error(
       locale === "zh-CN"
-        ? "自动同步需要非空且有效的同步正则"
-        : "Auto sync requires a non-empty valid sync regex",
+        ? "开启自动同步时，上游筛选不能为空"
+        : "Upstream filter is required for auto sync",
     );
     return false;
   }
@@ -212,9 +215,20 @@ export function useChannelForm(locale: Locale) {
   ) {
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config, i) =>
-        i === index ? { ...config, ...patch } : config,
-      ),
+      protocolConfigs: current.protocolConfigs.map((config, i) => {
+        if (i !== index) return config;
+        const updated = { ...config, ...patch };
+        if (patch.auto_sync_enabled !== false) return updated;
+        return {
+          ...updated,
+          models: coalesceFormModels(
+            updated.models.map((model) => ({
+              ...model,
+              source: "manual",
+            })),
+          ),
+        };
+      }),
     }));
   }
   function updateModelProtocols(key: string, protocols: ProtocolKind[]) {
@@ -228,11 +242,10 @@ export function useChannelForm(locale: Locale) {
     }
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config, configIndex) => ({
+      protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
         models: config.models.map((model) =>
-          model.source === "manual" &&
-          protocolConfigModelKey(configIndex, config, model) === key
+          protocolConfigModelKey(config, model) === key
             ? { ...model, protocols: Array.from(new Set(protocols)) }
             : model,
         ),
@@ -242,14 +255,81 @@ export function useChannelForm(locale: Locale) {
   function removeAggregateModel(key: string) {
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config, configIndex) => ({
+      protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
-        models: config.models.filter((model) => {
-          if (model.source === "synced") return true;
-          return protocolConfigModelKey(configIndex, config, model) !== key;
-        }),
+        models: config.models.filter(
+          (model) => protocolConfigModelKey(config, model) !== key,
+        ),
       })),
     }));
+  }
+  function updateModelSource(key: string, source: FormModel["source"]) {
+    const targetConfig = form.protocolConfigs.find((config) =>
+      config.models.some(
+        (model) => protocolConfigModelKey(config, model) === key,
+      ),
+    );
+    if (!targetConfig) return;
+    if (source === "synced" && !protocolConfigAutoSyncActive(targetConfig)) {
+      toast.error(
+        locale === "zh-CN"
+          ? "请先在所属组合开启自动同步并填写筛选正则"
+          : "Enable auto sync and enter a filter regex for this combination first",
+      );
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map((config) => ({
+        ...config,
+        models: coalesceFormModels(
+          config.models.map((model) =>
+            protocolConfigModelKey(config, model) === key
+              ? { ...model, source }
+              : model,
+          ),
+        ),
+      })),
+    }));
+  }
+  function updateAllModelSources(source: FormModel["source"]) {
+    const changedModelCount = form.protocolConfigs.reduce(
+      (count, config) =>
+        count + config.models.filter((model) => model.source !== source).length,
+      0,
+    );
+    if (!changedModelCount) return;
+    if (
+      source === "synced" &&
+      form.protocolConfigs.some(
+        (config) =>
+          config.models.some((model) => model.source !== source) &&
+          !protocolConfigAutoSyncActive(config),
+      )
+    ) {
+      toast.error(
+        locale === "zh-CN"
+          ? "请先为所有包含手动模型的组合开启自动同步并填写筛选正则"
+          : "Enable auto sync and enter a filter regex for every combination containing manual models",
+      );
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map((config) => ({
+        ...config,
+        models: coalesceFormModels(
+          config.models.map((model) =>
+            model.source === source ? model : { ...model, source },
+          ),
+        ),
+      })),
+    }));
+    toast.success(
+      locale === "zh-CN"
+        ? `已将 ${changedModelCount} 个模型切换为${source === "synced" ? "同步" : "手动"}`
+        : `Switched ${changedModelCount} models to ${source === "synced" ? "synced" : "manual"}`,
+    );
   }
   function clearManualModels() {
     setForm((current) => ({
@@ -351,6 +431,8 @@ export function useChannelForm(locale: Locale) {
     removeCredential,
     updateProtocolConfig,
     updateModelProtocols,
+    updateModelSource,
+    updateAllModelSources,
     removeAggregateModel,
     clearManualModels,
     addProtocolConfig,

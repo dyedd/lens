@@ -52,7 +52,7 @@ export function ChannelProtocolSection({
       <div className="grid gap-3">
         {form.protocolConfigs.map((protocolConfig, protocolConfigIndex) => (
           <ProtocolConfigItem
-            key={protocolConfig.id || protocolConfigIndex}
+            key={protocolConfig.id}
             form={form}
             protocolConfig={protocolConfig}
             protocolConfigIndex={protocolConfigIndex}

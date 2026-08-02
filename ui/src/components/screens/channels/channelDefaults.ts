@@ -19,7 +19,7 @@ export const emptyProtocolConfig = (
   name = "",
   credentialId = "",
 ): FormProtocolConfig => ({
-  id: null,
+  id: createLocalId("protocol"),
   name,
   enabled: true,
   headers: [{ key: "", value: "" }],
@@ -28,7 +28,6 @@ export const emptyProtocolConfig = (
   param_override: "",
   match_regex: "",
   manual_model_name: "",
-  discovery_filter: "",
   manual_protocols: [],
   base_url_id: baseUrlId,
   credential_ids: credentialId ? [credentialId] : [],
