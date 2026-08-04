@@ -35,6 +35,57 @@ def _protocol_group_item(
     }
 
 
+def _create_failover_group(
+    *,
+    client: Any,
+    admin_headers: dict[str, Any],
+    create_site: Any,
+    create_model_group: Any,
+) -> None:
+    """Create two sites with a failover model group for upstream error tests."""
+    create_site(
+        valid_site_payload(
+            name="First",
+            base_id="ba",
+            credential_id="ca",
+            protocol_config_id="pa",
+            model_name="m-a",
+        )
+    )
+    create_site(
+        valid_site_payload(
+            name="Second",
+            base_id="bb",
+            credential_id="cb",
+            protocol_config_id="pb",
+            model_name="m-b",
+        )
+    )
+    group = create_model_group(
+        name="fail-group",
+        items=[
+            _protocol_group_item(
+                "openai_chat",
+                "m-a",
+                protocol_config_id="pa",
+                credential_id="ca",
+            ),
+            _protocol_group_item(
+                "openai_chat",
+                "m-b",
+                protocol_config_id="pb",
+                credential_id="cb",
+            ),
+        ],
+    )
+    update = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"strategy": "failover"},
+    )
+    assert update.status_code == 200, update.text
+
+
 async def _set_gateway_spend(app_state: Any, key_id: str, spent: float) -> None:
     async with app_state.session_factory() as session:
         entity = await session.get(GatewayApiKeyEntity, key_id)
@@ -511,3 +562,149 @@ def test_failover_orders_targets_and_tracks_active_credential(
         False,
         True,
     ]
+
+
+def test_upstream_400_passes_through_body_without_failover(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    _create_failover_group(
+        client=client,
+        admin_headers=admin_headers,
+        create_site=create_site,
+        create_model_group=create_model_group,
+    )
+
+    attempted: list[str] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        attempted.append(json.loads(body_bytes)["model"])
+        return httpx.Response(
+            400,
+            content="Error: [provider.api_error] 400 缺少 text 字段".encode("utf-8"),
+            headers={"content-type": "text/plain; charset=utf-8"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "fail-group", "messages": []},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "缺少 text 字段" in response.json()["error"]["message"]
+    assert attempted == ["m-a"]
+
+
+def test_upstream_400_stream_passes_through_body(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    create_site(valid_site_payload(model_name="bad-model"))
+    create_model_group(
+        name="bad-model",
+        items=[_protocol_group_item("openai_chat", "bad-model")],
+    )
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream
+        return httpx.Response(
+            400,
+            content="Error: [provider.api_error] 400 缺少 text 字段".encode("utf-8"),
+            headers={"content-type": "text/plain; charset=utf-8"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "bad-model", "messages": [], "stream": True},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "缺少 text 字段" in response.json()["error"]["message"]
+
+
+def test_all_upstream_fail_returns_first_specific_message(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    _create_failover_group(
+        client=client,
+        admin_headers=admin_headers,
+        create_site=create_site,
+        create_model_group=create_model_group,
+    )
+
+    attempted: list[str] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        model = json.loads(body_bytes)["model"]
+        attempted.append(model)
+        request = httpx.Request("POST", upstream.url)
+        content = (
+            b'{"error":{"message":"upstream-a exploded"}}'
+            if model == "m-a"
+            else b'{"error":{"message":"upstream-b exploded"}}'
+        )
+        return httpx.Response(
+            500,
+            content=content,
+            headers={"content-type": "application/json"},
+            request=request,
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "fail-group", "messages": []},
+    )
+
+    assert response.status_code == 502, response.text
+    assert "upstream-a exploded" in response.json()["error"]["message"]
+    assert attempted == ["m-a", "m-b"]

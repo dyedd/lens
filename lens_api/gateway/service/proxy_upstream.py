@@ -73,6 +73,11 @@ def _parse_retry_after_seconds(value: str | None) -> float | None:
     return seconds if seconds >= 0 else None
 
 
+def _is_request_level_client_error(status_code: int) -> bool:
+    """4xx errors that signal a request-body problem; failover cannot fix them."""
+    return status_code in (400, 422)
+
+
 async def _build_anthropic_sse_to_json_result(
     response: httpx.Response,
     channel: ChannelConfig,
@@ -441,21 +446,29 @@ async def _call_channel(
             result.first_token_latency_ms = _elapsed_ms(stream_started_at)
         return result
     except httpx.HTTPStatusError as exc:
-        detail = (
-            _format_http_response_error(exc.response)
-            if exc.response.is_stream_consumed
-            else f"HTTP {exc.response.status_code}"
-        )
+        response = exc.response
+        if not response.is_stream_consumed:
+            try:
+                await response.aread()
+            except httpx.HTTPError:
+                pass
+        status_code = response.status_code
+        if response.is_stream_consumed:
+            detail = _format_http_response_error(response)
+        else:
+            detail = f"HTTP {status_code}"
         retry_after_seconds = (
-            _parse_retry_after_seconds(exc.response.headers.get("retry-after"))
-            if exc.response.status_code in (429, 503)
+            _parse_retry_after_seconds(response.headers.get("retry-after"))
+            if status_code in (429, 503)
             else None
         )
+        stop_fallback = _is_request_level_client_error(status_code)
         raise UpstreamRequestError(
-            status_code=exc.response.status_code,
+            status_code=status_code,
             detail=detail,
-            router_status_code=exc.response.status_code,
+            router_status_code=status_code,
             router_cooldown_seconds=retry_after_seconds,
+            stop_fallback=stop_fallback,
         ) from exc
     except httpx.HTTPError as exc:
         raise UpstreamRequestError(
