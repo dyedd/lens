@@ -186,7 +186,10 @@ def _anthropic_error_type(status_code: int, error_type: str) -> str:
         return "not_found_error"
     if status_code == status.HTTP_429_TOO_MANY_REQUESTS:
         return "rate_limit_error"
-    if status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
+    if status_code in (
+        status.HTTP_400_BAD_REQUEST,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+    ):
         return "invalid_request_error"
     if status_code >= 500:
         return "api_error"
