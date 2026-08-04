@@ -127,6 +127,8 @@ def _final_upstream_failure(
         status_code == 504 for status_code in failure_status_codes
     ):
         return 504, "gateway_timeout", "All upstream channels timed out"
+    if errors:
+        return 502, "upstream_error", errors[0]
     return 502, "upstream_error", "All upstream channels failed"
 
 
