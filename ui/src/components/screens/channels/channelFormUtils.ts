@@ -75,12 +75,3 @@ export function classifyModelQueryInput(value: string): ModelQueryInputKind {
   if (/[\\^$()[\]{}|+*?]/.test(query)) return "regex";
   return "plain";
 }
-
-export function protocolConfigAutoSyncActive(
-  protocolConfig: Pick<FormProtocolConfig, "auto_sync_enabled" | "match_regex">,
-) {
-  return (
-    protocolConfig.auto_sync_enabled &&
-    Boolean(protocolConfig.match_regex.trim())
-  );
-}

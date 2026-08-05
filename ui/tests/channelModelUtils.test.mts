@@ -6,11 +6,6 @@ const moduleUrl = new URL(
   import.meta.url,
 ).href;
 const { coalesceFormModels } = await import(moduleUrl);
-const formUtilsModuleUrl = new URL(
-  "../src/components/screens/channels/channelFormUtils.ts",
-  import.meta.url,
-).href;
-const { protocolConfigAutoSyncActive } = await import(formUtilsModuleUrl);
 
 test("coalesces models that become equivalent after a source change", () => {
   const models = coalesceFormModels([
@@ -62,15 +57,5 @@ test("keeps manual and synchronized models separate", () => {
       { ...baseModel, source: "synced" },
     ]).length,
     2,
-  );
-});
-
-test("accepts a non-empty backend regex without applying JavaScript syntax rules", () => {
-  assert.equal(
-    protocolConfigAutoSyncActive({
-      auto_sync_enabled: true,
-      match_regex: "(?P<family>gpt)-.*",
-    }),
-    true,
   );
 });

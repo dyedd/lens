@@ -13,10 +13,8 @@ import {
   formBaseUrlsForPayload,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
-  missingAutoSyncRegexConfigCount,
   nextProtocolConfigName,
   protocolConfigModelKey,
-  protocolConfigAutoSyncActive,
   protocolConfigSelectedCredentialIds,
   resolveBaseUrlId,
   toForm,
@@ -56,14 +54,6 @@ function validateChannelForm(
       locale === "zh-CN"
         ? "请为每个模型选择至少一个有效协议"
         : "Select at least one valid protocol for every model",
-    );
-    return false;
-  }
-  if (missingAutoSyncRegexConfigCount(form)) {
-    toast.error(
-      locale === "zh-CN"
-        ? "开启自动同步时，上游筛选不能为空"
-        : "Upstream filter is required for auto sync",
     );
     return false;
   }
@@ -270,11 +260,11 @@ export function useChannelForm(locale: Locale) {
       ),
     );
     if (!targetConfig) return;
-    if (source === "synced" && !protocolConfigAutoSyncActive(targetConfig)) {
+    if (source === "synced" && !targetConfig.auto_sync_enabled) {
       toast.error(
         locale === "zh-CN"
-          ? "请先在所属组合开启自动同步并填写筛选正则"
-          : "Enable auto sync and enter a filter regex for this combination first",
+          ? "请先在所属组合开启自动同步"
+          : "Enable auto sync for this combination first",
       );
       return;
     }
@@ -304,13 +294,13 @@ export function useChannelForm(locale: Locale) {
       form.protocolConfigs.some(
         (config) =>
           config.models.some((model) => model.source !== source) &&
-          !protocolConfigAutoSyncActive(config),
+          !config.auto_sync_enabled,
       )
     ) {
       toast.error(
         locale === "zh-CN"
-          ? "请先为所有包含手动模型的组合开启自动同步并填写筛选正则"
-          : "Enable auto sync and enter a filter regex for every combination containing manual models",
+          ? "请先为所有包含手动模型的组合开启自动同步"
+          : "Enable auto sync for every combination containing manual models",
       );
       return;
     }
