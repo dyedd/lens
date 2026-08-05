@@ -120,8 +120,8 @@ export function ChannelModelSyncDialog({
                 </AlertTitle>
                 <AlertDescription>
                   {locale === "zh-CN"
-                    ? "请先在渠道组合中启用自动同步，并选择已启用的地址、密钥、客户端协议和有效同步正则。"
-                    : "Enable auto sync in a channel combination and select an enabled URL, key, client protocol, and valid sync regex."}
+                    ? "请先在渠道组合中启用自动同步，并选择已启用的地址、密钥和客户端协议。"
+                    : "Enable auto sync in a channel combination and select an enabled URL, key, and client protocol."}
                 </AlertDescription>
               </Alert>
             ) : null}

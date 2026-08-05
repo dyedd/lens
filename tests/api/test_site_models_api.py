@@ -391,6 +391,25 @@ def test_sync_channel_models_uses_service_task(
     assert response.json()["eligible_target_count"] == 2
 
 
+def test_create_site_accepts_auto_sync_without_match_regex(
+    client,
+    admin_headers,
+) -> None:
+    payload = _auto_sync_site_payload()
+    payload["protocols"][0]["match_regex"] = ""
+
+    response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=payload,
+    )
+
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["protocols"][0]["auto_sync_enabled"] is True
+    assert created["protocols"][0]["match_regex"] == ""
+
+
 def _auto_sync_site_payload() -> dict[str, Any]:
     return {
         "name": "Multi-key Site",

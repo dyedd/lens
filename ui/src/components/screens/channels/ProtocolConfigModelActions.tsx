@@ -32,8 +32,6 @@ export function ProtocolConfigModelActions({
   onFetchModels,
 }: Props) {
   const manualModelName = protocolConfig.manual_model_name.trim();
-  const matchRegex = protocolConfig.match_regex.trim();
-  const isMatchRegexInvalid = protocolConfig.auto_sync_enabled && !matchRegex;
   const isAddModelDisabled =
     !hasActiveCredentials ||
     !manualModelName ||
@@ -93,13 +91,12 @@ export function ProtocolConfigModelActions({
           </Button>
         </div>
         <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <Field data-invalid={isMatchRegexInvalid}>
+          <Field>
             <FieldLabel>
               {locale === "zh-CN" ? "上游筛选" : "Upstream filter"}
             </FieldLabel>
             <Input
               value={protocolConfig.match_regex}
-              aria-invalid={isMatchRegexInvalid}
               onChange={(event) =>
                 onUpdate({ match_regex: event.target.value })
               }

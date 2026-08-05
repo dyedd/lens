@@ -57,11 +57,3 @@ export function invalidModelProtocolCount(form: FormState) {
     );
   }, 0);
 }
-
-/** Counts auto-sync configurations without a model filter. */
-export function missingAutoSyncRegexConfigCount(form: FormState) {
-  return form.protocolConfigs.filter(
-    (protocolConfig) =>
-      protocolConfig.auto_sync_enabled && !protocolConfig.match_regex.trim(),
-  ).length;
-}

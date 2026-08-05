@@ -43,9 +43,16 @@ def _validate_param_override(value: str) -> str:
     return normalized
 
 
-def _require_auto_sync_pattern(auto_sync_enabled: bool, match_regex: str) -> None:
-    if auto_sync_enabled and not match_regex.strip():
-        raise ValueError("Auto sync requires a non-empty match regex")
+def _validate_synced_models_require_auto_sync(
+    auto_sync_enabled: bool, models: list
+) -> None:
+    if not auto_sync_enabled and any(
+        model.source == ModelSource.SYNCED for model in models
+    ):
+        raise ValueError("Synchronized models require auto sync to be enabled")
+
+
+_validate_match_regex = field_validator("match_regex")(_validate_regex_pattern)
 
 
 class SiteBaseUrl(StrictBaseModel):
@@ -121,11 +128,7 @@ class SiteProtocolConfig(StrictBaseModel):
 
     @model_validator(mode="after")
     def validate_auto_sync(self) -> "SiteProtocolConfig":
-        _require_auto_sync_pattern(self.auto_sync_enabled, self.match_regex)
-        if not self.auto_sync_enabled and any(
-            model.source == ModelSource.SYNCED for model in self.models
-        ):
-            raise ValueError("Synchronized models require auto sync to be enabled")
+        _validate_synced_models_require_auto_sync(self.auto_sync_enabled, self.models)
         return self
 
 
@@ -148,19 +151,11 @@ class SiteProtocolConfigInput(StrictBaseModel):
         _normalize_required_text_list
     )
 
-    @field_validator("match_regex")
-    @classmethod
-    def validate_match_regex(cls, pattern: str) -> str:
-        return _validate_regex_pattern(pattern)
+    validate_match_regex = _validate_match_regex
 
     _normalize_param_override = field_validator("param_override")(
         _validate_param_override
     )
-
-    @model_validator(mode="after")
-    def validate_auto_sync(self) -> "SiteProtocolConfigInput":
-        _require_auto_sync_pattern(self.auto_sync_enabled, self.match_regex)
-        return self
 
 
 class SiteConfig(StrictBaseModel):
@@ -262,10 +257,7 @@ class SiteImportProtocolInput(StrictBaseModel):
         _normalize_required_text_list
     )
 
-    @field_validator("match_regex")
-    @classmethod
-    def validate_match_regex(cls, pattern: str) -> str:
-        return _validate_regex_pattern(pattern)
+    validate_match_regex = _validate_match_regex
 
     _normalize_param_override = field_validator("param_override")(
         _validate_param_override
@@ -273,11 +265,7 @@ class SiteImportProtocolInput(StrictBaseModel):
 
     @model_validator(mode="after")
     def validate_auto_sync(self) -> "SiteImportProtocolInput":
-        _require_auto_sync_pattern(self.auto_sync_enabled, self.match_regex)
-        if not self.auto_sync_enabled and any(
-            model.source == ModelSource.SYNCED for model in self.models
-        ):
-            raise ValueError("Synchronized models require auto sync to be enabled")
+        _validate_synced_models_require_auto_sync(self.auto_sync_enabled, self.models)
         return self
 
 
@@ -327,10 +315,7 @@ class SiteModelFetchRequest(StrictBaseModel):
 
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
-    @field_validator("match_regex")
-    @classmethod
-    def validate_match_regex(cls, pattern: str) -> str:
-        return _validate_regex_pattern(pattern)
+    validate_match_regex = _validate_match_regex
 
 
 class SiteModelFetchItem(StrictBaseModel):

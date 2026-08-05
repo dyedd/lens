@@ -366,7 +366,7 @@ def test_import_sites_rejects_invalid_param_override(
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
 
-def test_import_sites_rejects_auto_sync_without_match_regex(
+def test_import_sites_accepts_auto_sync_without_match_regex(
     client,
     admin_headers,
 ) -> None:
@@ -379,8 +379,11 @@ def test_import_sites_rejects_auto_sync_without_match_regex(
         json={"sites": [site]},
     )
 
-    assert response.status_code == 422
-    assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["committed"] is True
+    assert payload["items"][0]["status"] == "created"
+    assert payload["items"][0]["site"]["protocols"][0]["auto_sync_enabled"] is True
 
 
 def test_import_sites_rejects_synced_models_when_auto_sync_is_disabled(
