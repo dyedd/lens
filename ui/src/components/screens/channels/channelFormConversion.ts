@@ -83,7 +83,6 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           manual_protocols: Array.from(new Set(protocolConfig.protocols)),
           base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
           credential_ids: credentialIds,
-          auto_sync_enabled: protocolConfig.auto_sync_enabled,
           models,
           expanded: models.length === 0,
         };
@@ -174,7 +173,6 @@ export function toPayload(form: FormState): SitePayload {
         match_regex: matchRegex,
         base_url_id: protocolConfig.base_url_id,
         credential_ids: selectedCredentialIds,
-        auto_sync_enabled: protocolConfig.auto_sync_enabled,
         models,
       };
     }),

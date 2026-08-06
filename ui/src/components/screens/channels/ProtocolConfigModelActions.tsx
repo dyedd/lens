@@ -1,10 +1,14 @@
-import { Plus, RefreshCcw } from "lucide-react";
+import { Plus, RefreshCcw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { ProtocolMultiSelect } from "@/components/ui/ProtocolMultiSelect";
 import { Separator } from "@/components/ui/Separator";
-import { Switch } from "@/components/ui/Switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { FormProtocolConfig, Locale } from "./channelShared";
 
 type Props = {
@@ -17,6 +21,7 @@ type Props = {
   onUpdate: (patch: Partial<FormProtocolConfig>) => void;
   onAddManualModel: () => void;
   onFetchModels: () => void;
+  onSyncAllModels: () => void;
 };
 
 /** Renders manual model entry and model discovery actions for a protocol config. */
@@ -30,6 +35,7 @@ export function ProtocolConfigModelActions({
   onUpdate,
   onAddManualModel,
   onFetchModels,
+  onSyncAllModels,
 }: Props) {
   const manualModelName = protocolConfig.manual_model_name.trim();
   const isAddModelDisabled =
@@ -90,7 +96,7 @@ export function ProtocolConfigModelActions({
             {locale === "zh-CN" ? "添加模型" : "Add model"}
           </Button>
         </div>
-        <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
           <Field>
             <FieldLabel>
               {locale === "zh-CN" ? "上游筛选" : "Upstream filter"}
@@ -102,13 +108,14 @@ export function ProtocolConfigModelActions({
               }
               placeholder={
                 locale === "zh-CN"
-                  ? "正则表达式，可留空"
-                  : "Regular expression, optional"
+                  ? "正则，可留空表示全部。多条用 | 分隔，如 gpt-|claude-"
+                  : "Regex, empty means all. Use | for multiple, e.g. gpt-|claude-"
               }
             />
           </Field>
           <Button
             type="button"
+            variant="outline"
             onClick={onFetchModels}
             disabled={isFetchModelsDisabled}
           >
@@ -118,19 +125,36 @@ export function ProtocolConfigModelActions({
             />
             {locale === "zh-CN" ? "从上游选择" : "Select from upstream"}
           </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                onClick={onSyncAllModels}
+                disabled={isFetchModelsDisabled}
+              >
+                {isModelActionPending ? (
+                  <RefreshCcw
+                    data-icon="inline-start"
+                    className="animate-spin"
+                  />
+                ) : (
+                  <TriangleAlert data-icon="inline-start" />
+                )}
+                {locale === "zh-CN" ? "全部同步" : "Sync all"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="end" className="max-w-sm">
+              {locale === "zh-CN"
+                ? "覆盖操作：按上游筛选拉取全部模型并标记为「同步」，上游已没有的同步模型会被移除，手动模型保持不动。保存后，模型组会跟着移除指向已删除模型的条目。"
+                : "Overwrites: pulls every upstream model matching the filter and marks it synced, drops synced models the upstream no longer returns, and leaves manual models alone. On save, model groups drop entries pointing to deleted models."}
+            </TooltipContent>
+          </Tooltip>
         </div>
-        <Separator />
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-medium text-foreground">
-            {locale === "zh-CN" ? "自动同步" : "Auto sync"}
-          </div>
-          <Switch
-            checked={protocolConfig.auto_sync_enabled}
-            onCheckedChange={(checked) =>
-              onUpdate({ auto_sync_enabled: checked })
-            }
-          />
-        </div>
+        <p className="text-xs text-muted-foreground">
+          {locale === "zh-CN"
+            ? "「从上游选择」勾选的模型标记为手动，由你维护；「全部同步」让同步模型与上游保持一致，之后后台会自动增删。"
+            : "Models picked via Select from upstream are marked manual and stay under your control; Sync all makes the synced set match the upstream, and the background job keeps it in step."}
+        </p>
       </FieldGroup>
     </div>
   );

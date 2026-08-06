@@ -37,7 +37,6 @@ export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
           channel_proxy: "",
           param_override: "",
           match_regex: "",
-          auto_sync_enabled: false,
           models: [
             {
               model_name: "gpt-4.1",

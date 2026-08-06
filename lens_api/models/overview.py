@@ -2,6 +2,7 @@ from pydantic import Field
 
 from .common import StrictBaseModel
 
+
 class OverviewSummaryMetric(StrictBaseModel):
     value: float
     delta: float = 0.0

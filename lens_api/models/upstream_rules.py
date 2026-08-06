@@ -9,6 +9,7 @@ from .protocols import (
     UpstreamParamOverrideRuleMatchType,
 )
 
+
 def _normalize_header_map(headers: dict[str, str]) -> dict[str, str]:
     normalized: dict[str, str] = {}
     lower_to_key: dict[str, str] = {}
@@ -157,6 +158,3 @@ def normalize_upstream_param_override_config_json(value: str) -> str:
     else:
         config = UpstreamParamOverrideConfig()
     return json.dumps(config.model_dump(mode="json", by_alias=True), ensure_ascii=True)
-
-
-

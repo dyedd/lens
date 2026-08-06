@@ -24,7 +24,7 @@ from ...models import (
     SiteProtocolConfig,
 )
 from .app_state import logger
-from .model_discovery import _fetch_upstream_models
+from .model_discovery import _fetch_upstream_models, filter_model_names
 
 if TYPE_CHECKING:
     from .app_state import AppState
@@ -201,7 +201,9 @@ async def sync_channel_models(
                         continue
 
                     try:
-                        fetched_names = await _fetch_upstream_models(target_channel)
+                        all_upstream = await _fetch_upstream_models(
+                            target_channel, apply_match_regex=False
+                        )
                     except HTTPException as exc:
                         items.append(
                             _failed_item(
@@ -231,10 +233,13 @@ async def sync_channel_models(
                         for model in target_models
                         if model.source == ModelSource.SYNCED
                     }
-                    fetched_set = set(fetched_names)
+                    all_upstream_set = set(all_upstream)
+                    matched_set = set(
+                        filter_model_names(all_upstream, protocol_config.match_regex)
+                    )
                     status = ChannelModelSyncStatus.UNCHANGED
-                    added = fetched_set - manual_names - old_synced_names
-                    removed = old_synced_names - fetched_set
+                    added = matched_set - manual_names - old_synced_names
+                    removed = old_synced_names - all_upstream_set
                     ensure_inputs = _group_ensure_inputs_for_added(
                         groups,
                         protocol_config,
@@ -245,11 +250,15 @@ async def sync_channel_models(
                     if added or removed or ensure_inputs:
                         status = ChannelModelSyncStatus.UPDATED
                     if not dry_run and (added or removed):
+                        # Keep synced models the upstream still serves even when
+                        # they fall outside the filter, so hand-switched models
+                        # are only dropped once the upstream really removes them.
+                        desired_synced = (old_synced_names & all_upstream_set) | added
                         await state.channel_store.replace_protocol_config_synced_models(
                             protocol_config.id,
                             credential_id,
                             protocol,
-                            sorted(fetched_set),
+                            sorted(desired_synced),
                         )
                     if not dry_run and ensure_inputs:
                         ensure_inputs_by_site.extend(ensure_inputs)

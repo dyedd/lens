@@ -35,6 +35,7 @@ type Props = {
   onRemoveProtocolConfig: (index: number) => void;
   onAddManualModel: (index: number) => void;
   onFetchModels: (index: number) => void;
+  onSyncAllModels: (index: number) => void;
   onOpenAdvanced: (index: number) => void;
 };
 
@@ -50,6 +51,7 @@ export function ProtocolConfigItem({
   onRemoveProtocolConfig,
   onAddManualModel,
   onFetchModels,
+  onSyncAllModels,
   onOpenAdvanced,
 }: Props) {
   const submittedBaseUrlIds = new Set(
@@ -204,6 +206,7 @@ export function ProtocolConfigItem({
             onUpdate={update}
             onAddManualModel={() => onAddManualModel(protocolConfigIndex)}
             onFetchModels={() => onFetchModels(protocolConfigIndex)}
+            onSyncAllModels={() => onSyncAllModels(protocolConfigIndex)}
           />
         ) : null}
       </div>
