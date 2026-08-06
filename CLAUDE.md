@@ -20,18 +20,20 @@ uv run lens dev
 - 每完成一个独立功能点，只有在用户明确要求时才提交 git。
 - 每次修改代码后，对你本次修改的文件进行格式化：前端文件使用 npx prettier --write <文件路径>，后端文件使用 black <文件路径>
 - 新增路由或修复可复现 bug 时，应包含对应的行为测试；其它修改无需新增测试文件。
+- 测试策略遵循 `.agents/skills/lens-testing/SKILL.md`：行为测试必须提交到仓库并由 CI 执行；本地不要求全量测试，只做受影响的静态检查，调试时再运行单个聚焦测试。
 
 ## 测试与验证
 
 ```bash
-# 后端：按受影响范围替换目标测试
+# 后端：本地只做快速检查；完整测试由 CI 并行执行
 python -m compileall -q lens_api scripts migrations
-uv run python -m pytest tests/api/test_version_api.py -q --confcutdir=tests
+uv run python -m pytest tests/api/test_<area>.py -q --confcutdir=tests  # 仅调试回归时运行
 
 # 前端
 cd ui
 pnpm exec tsc --noEmit
 pnpm lint
+pnpm test  # 仅调试前端回归时运行
 
 # 通用
 git diff --check
