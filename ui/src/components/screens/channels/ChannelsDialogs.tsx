@@ -107,6 +107,7 @@ export function ChannelsDialogs({
           updateProtocolConfig={editor.updateProtocolConfig}
           addManualProtocolConfigModel={picker.addManualProtocolConfigModel}
           fetchProtocolModels={picker.fetchProtocolModels}
+          syncAllProtocolModels={picker.syncAllProtocolModels}
           openModelGroupEnsureDialog={modelGroups.openModelGroupEnsureDialog}
           openBatchModelTestDialog={batchTest.openBatchModelTestDialog}
           updateModelProtocols={editor.updateModelProtocols}

@@ -49,9 +49,7 @@ def normalize_base_url(value: Any) -> Any:
     return rebuilt
 
 
-def _validate_regex_pattern(
-    pattern: str, *, error_label: str = "regex pattern"
-) -> str:
+def _validate_regex_pattern(pattern: str, *, error_label: str = "regex pattern") -> str:
     if not pattern:
         return pattern
     try:

@@ -61,9 +61,7 @@ def test_gateway_api_key_update_and_delete_missing_key_return_not_found(
         headers=admin_headers,
         json={"remark": "missing"},
     )
-    delete = client.delete(
-        "/api/admin/gateway-api-keys/missing", headers=admin_headers
-    )
+    delete = client.delete("/api/admin/gateway-api-keys/missing", headers=admin_headers)
 
     assert_error(update, 404, "missing")
     assert_error(delete, 404, "missing")

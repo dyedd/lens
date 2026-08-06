@@ -74,7 +74,6 @@ export type SiteProtocolConfigInput = {
   match_regex: string;
   base_url_id: string;
   credential_ids: string[];
-  auto_sync_enabled: boolean;
   models: SiteModelInput[];
 };
 export type Site = {
@@ -140,7 +139,7 @@ export type SiteBatchImportProtocolInput = {
   channel_proxy?: string;
   param_override?: string;
   match_regex?: string;
-  auto_sync_enabled: boolean;
+  auto_sync_enabled?: boolean;
   base_url_ref: string;
   credential_refs: string[];
   models?: SiteBatchImportModelInput[];

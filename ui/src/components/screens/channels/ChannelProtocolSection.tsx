@@ -18,6 +18,7 @@ type Props = {
   ) => void;
   addManualProtocolConfigModel: (protocolConfigIndex: number) => void;
   fetchProtocolModels: (protocolConfigIndex: number) => void;
+  syncAllProtocolModels: (protocolConfigIndex: number) => void;
 };
 
 /** Renders all protocol configurations for a channel. */
@@ -32,6 +33,7 @@ export function ChannelProtocolSection({
   updateProtocolConfig,
   addManualProtocolConfigModel,
   fetchProtocolModels,
+  syncAllProtocolModels,
 }: Props) {
   return (
     <div className="grid gap-4">
@@ -73,6 +75,7 @@ export function ChannelProtocolSection({
             }
             onAddManualModel={addManualProtocolConfigModel}
             onFetchModels={fetchProtocolModels}
+            onSyncAllModels={syncAllProtocolModels}
             onOpenAdvanced={setAdvancedProtocolConfigIndex}
           />
         ))}

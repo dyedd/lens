@@ -95,6 +95,56 @@ export function pickerModelKeys(models: PickerModelItem[]) {
   return Array.from(new Set(models.map((item) => genericModelKey(item))));
 }
 
+/**
+ * Replaces the synced model set with what the upstream returned.
+ *
+ * Fetched models become synced, keeping the protocols and persisted ids of any
+ * row they replace. Synced models the upstream no longer returns are dropped,
+ * so narrowing the filter prunes them. Manual models are never touched, and
+ * credentials absent from the response are skipped entirely so a partially
+ * failed discovery cannot wipe a working credential's models.
+ *
+ * ``removedCount`` counts only pruned models, so callers do not mistake rows
+ * merged by {@link coalesceFormModels} for upstream removals.
+ */
+export function mergeSyncedModels(
+  models: FormModel[],
+  fetched: PickerModelItem[],
+  protocols: ProtocolKind[],
+) {
+  const fetchedKeys = new Set(fetched.map((item) => genericModelKey(item)));
+  const coveredCredentialIds = new Set(
+    fetched.map((item) => item.credential_id),
+  );
+  let removedCount = 0;
+  const merged = models.flatMap((model) => {
+    if (fetchedKeys.has(genericModelKey(model))) {
+      return [{ ...model, source: "synced" as const }];
+    }
+    if (
+      model.source === "synced" &&
+      coveredCredentialIds.has(model.credential_id)
+    ) {
+      removedCount += 1;
+      return [];
+    }
+    return [model];
+  });
+  const existingKeys = new Set(models.map((model) => genericModelKey(model)));
+  for (const item of fetched) {
+    if (existingKeys.has(genericModelKey(item))) continue;
+    merged.push({
+      protocols: Array.from(new Set(protocols)),
+      protocolIds: {},
+      credential_id: item.credential_id,
+      model_name: item.model_name,
+      enabled: true,
+      source: "synced",
+    });
+  }
+  return { models: coalesceFormModels(merged), removedCount };
+}
+
 /** Returns the unique protocols supported by a form model. */
 export function modelSupportedProtocols(
   model: Pick<FormModel, "protocols"> | null | undefined,

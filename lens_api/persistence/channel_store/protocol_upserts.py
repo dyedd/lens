@@ -79,7 +79,16 @@ class ChannelProtocolUpsertsMixin:
             entity.param_override = protocol_config.param_override
             entity.match_regex = protocol_config.match_regex
             entity.base_url_id = protocol_config.base_url_id
-            entity.auto_sync_enabled = int(protocol_config.auto_sync_enabled)
+            # Derived from the models themselves: a config is a sync target only
+            # while it holds synchronized models. Recomputed on every save and
+            # deliberately left alone by background syncs, so one empty upstream
+            # response cannot permanently drop the config out of syncing.
+            entity.auto_sync_enabled = int(
+                any(
+                    model.source == ModelSource.SYNCED
+                    for model in protocol_config.models
+                )
+            )
 
             await session.execute(
                 delete(SiteProtocolConfigCredentialEntity).where(
@@ -159,10 +168,6 @@ class ChannelProtocolUpsertsMixin:
                     enabled=int(model.enabled),
                     sort_order=model_index,
                     protocol=protocol_value,
-                    source=(
-                        ModelSource.MANUAL.value
-                        if not protocol_config.auto_sync_enabled
-                        else model.source.value
-                    ),
+                    source=model.source.value,
                 )
             )

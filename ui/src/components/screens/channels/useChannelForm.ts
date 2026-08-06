@@ -205,20 +205,9 @@ export function useChannelForm(locale: Locale) {
   ) {
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config, i) => {
-        if (i !== index) return config;
-        const updated = { ...config, ...patch };
-        if (patch.auto_sync_enabled !== false) return updated;
-        return {
-          ...updated,
-          models: coalesceFormModels(
-            updated.models.map((model) => ({
-              ...model,
-              source: "manual",
-            })),
-          ),
-        };
-      }),
+      protocolConfigs: current.protocolConfigs.map((config, i) =>
+        i === index ? { ...config, ...patch } : config,
+      ),
     }));
   }
   function updateModelProtocols(key: string, protocols: ProtocolKind[]) {
@@ -254,20 +243,6 @@ export function useChannelForm(locale: Locale) {
     }));
   }
   function updateModelSource(key: string, source: FormModel["source"]) {
-    const targetConfig = form.protocolConfigs.find((config) =>
-      config.models.some(
-        (model) => protocolConfigModelKey(config, model) === key,
-      ),
-    );
-    if (!targetConfig) return;
-    if (source === "synced" && !targetConfig.auto_sync_enabled) {
-      toast.error(
-        locale === "zh-CN"
-          ? "请先在所属组合开启自动同步"
-          : "Enable auto sync for this combination first",
-      );
-      return;
-    }
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => ({
@@ -289,21 +264,6 @@ export function useChannelForm(locale: Locale) {
       0,
     );
     if (!changedModelCount) return;
-    if (
-      source === "synced" &&
-      form.protocolConfigs.some(
-        (config) =>
-          config.models.some((model) => model.source !== source) &&
-          !config.auto_sync_enabled,
-      )
-    ) {
-      toast.error(
-        locale === "zh-CN"
-          ? "请先为所有包含手动模型的组合开启自动同步"
-          : "Enable auto sync for every combination containing manual models",
-      );
-      return;
-    }
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => ({

@@ -1,7 +1,7 @@
 import json
 from typing import Literal
 
-from pydantic import Field, HttpUrl, field_validator, model_validator
+from pydantic import Field, HttpUrl, field_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
@@ -41,15 +41,6 @@ def _validate_param_override(value: str) -> str:
     if "model" in override:
         raise ValueError("Param override cannot override model")
     return normalized
-
-
-def _validate_synced_models_require_auto_sync(
-    auto_sync_enabled: bool, models: list
-) -> None:
-    if not auto_sync_enabled and any(
-        model.source == ModelSource.SYNCED for model in models
-    ):
-        raise ValueError("Synchronized models require auto sync to be enabled")
 
 
 _validate_match_regex = field_validator("match_regex")(_validate_regex_pattern)
@@ -125,11 +116,6 @@ class SiteProtocolConfig(StrictBaseModel):
     credential_ids: list[str] = Field(min_length=1)
     auto_sync_enabled: bool = False
     models: list[SiteModel] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_auto_sync(self) -> "SiteProtocolConfig":
-        _validate_synced_models_require_auto_sync(self.auto_sync_enabled, self.models)
-        return self
 
 
 class SiteProtocolConfigInput(StrictBaseModel):
@@ -245,7 +231,8 @@ class SiteImportProtocolInput(StrictBaseModel):
     channel_proxy: str = ""
     param_override: str = ""
     match_regex: str = ""
-    auto_sync_enabled: bool
+    auto_sync_enabled: bool = False
+    """Deprecated and ignored; derived from whether models contain synced entries."""
     base_url_ref: str
     credential_refs: list[str] = Field(min_length=1)
     models: list[SiteImportModelInput] = Field(default_factory=list)
@@ -262,11 +249,6 @@ class SiteImportProtocolInput(StrictBaseModel):
     _normalize_param_override = field_validator("param_override")(
         _validate_param_override
     )
-
-    @model_validator(mode="after")
-    def validate_auto_sync(self) -> "SiteImportProtocolInput":
-        _validate_synced_models_require_auto_sync(self.auto_sync_enabled, self.models)
-        return self
 
 
 class SiteImportItem(StrictBaseModel):

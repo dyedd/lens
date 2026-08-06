@@ -16,8 +16,10 @@ import {
   formHeaders,
   genericModelKey,
   groupPickerModels,
+  mergeSyncedModels,
   resolvePickerModelProtocols,
   type FormModel,
+  type FormProtocolConfig,
   type FormState,
   type Locale,
   type PickerModelItem,
@@ -109,11 +111,19 @@ export function useChannelModelPicker({
       ),
     }));
   }
-  async function fetchProtocolModels(configIndex: number) {
-    if (fetchingProtocolConfigIndex !== null) return;
+  /**
+   * Validates a protocol config and fetches its upstream models.
+   *
+   * Returns null when validation fails, the action is throttled, or the
+   * request errors; callers only proceed on a resolved result.
+   */
+  async function requestUpstreamModels(
+    configIndex: number,
+    actionKey: string,
+  ): Promise<{ config: FormProtocolConfig; models: PickerModelItem[] } | null> {
+    if (fetchingProtocolConfigIndex !== null) return null;
     const config = form.protocolConfigs[configIndex];
-    if (!config) return;
-    const query = config.match_regex.trim();
+    if (!config) return null;
     const protocols = Array.from(new Set(config.manual_protocols));
     if (!protocols.length) {
       toast.error(
@@ -121,7 +131,7 @@ export function useChannelModelPicker({
           ? "请先选择本次获取的客户端协议"
           : "Select client protocols for this fetch first",
       );
-      return;
+      return null;
     }
     const credentialIds = activeSelectedCredentialIds(form, config);
     if (!credentialIds.length) {
@@ -130,15 +140,15 @@ export function useChannelModelPicker({
           ? "请选择至少一个可用密钥"
           : "Select at least one available key",
       );
-      return;
+      return null;
     }
     const baseUrl = activeBaseUrlValue(form, config);
     if (!baseUrl.trim()) {
       toast.error(locale === "zh-CN" ? "地址为空" : "Base URL is empty");
-      return;
+      return null;
     }
-    if (!canRunModelAction(lastRunAtRef.current, `fetch:${configIndex}`))
-      return;
+    if (!canRunModelAction(lastRunAtRef.current, `${actionKey}:${configIndex}`))
+      return null;
     setFetchingProtocolConfigIndex(configIndex);
     try {
       const selected = new Set(credentialIds);
@@ -147,7 +157,7 @@ export function useChannelModelPicker({
         headers: formHeaders(config),
         proxy_mode: config.proxy_mode,
         channel_proxy: config.channel_proxy.trim(),
-        match_regex: query,
+        match_regex: config.match_regex.trim(),
         credentials: form.credentials
           .map((item, index) => ({
             id: item.id,
@@ -162,22 +172,14 @@ export function useChannelModelPicker({
         "/admin/site-model-discoveries",
         { method: "POST", body: JSON.stringify(payload) },
       );
-      setAvailableModels(
-        models.map((item) => ({
+      return {
+        config,
+        models: models.map((item) => ({
           credential_id: item.credential_id,
           credential_name: item.credential_name,
           model_name: item.model_name,
         })),
-      );
-      setPickerSelectedModelKeys([]);
-      setPickerImportProtocols(protocols);
-      setPickerModelProtocols({});
-      setModelPickerProtocolConfigIndex(configIndex);
-      toast.success(
-        locale === "zh-CN"
-          ? `已获取 ${models.length} 个可选模型`
-          : `Fetched ${models.length} available models`,
-      );
+      };
     } catch (error) {
       toast.error(
         getApiErrorMessage(
@@ -185,9 +187,58 @@ export function useChannelModelPicker({
           locale === "zh-CN" ? "获取模型失败" : "Failed to fetch models",
         ),
       );
+      return null;
     } finally {
       setFetchingProtocolConfigIndex(null);
     }
+  }
+  async function fetchProtocolModels(configIndex: number) {
+    const result = await requestUpstreamModels(configIndex, "fetch");
+    if (!result) return;
+    setAvailableModels(result.models);
+    setPickerSelectedModelKeys([]);
+    setPickerImportProtocols(
+      Array.from(new Set(result.config.manual_protocols)),
+    );
+    setPickerModelProtocols({});
+    setModelPickerProtocolConfigIndex(configIndex);
+    toast.success(
+      locale === "zh-CN"
+        ? `已获取 ${result.models.length} 个可选模型`
+        : `Fetched ${result.models.length} available models`,
+    );
+  }
+  /** Replaces the synced model set with the upstream models matching the filter. */
+  async function syncAllProtocolModels(configIndex: number) {
+    const result = await requestUpstreamModels(configIndex, "sync");
+    if (!result) return;
+    if (!result.models.length) {
+      toast.info(
+        locale === "zh-CN"
+          ? "上游没有匹配的模型，未做改动"
+          : "No upstream models matched the filter; nothing changed",
+      );
+      return;
+    }
+    const fetched = groupPickerModels(result.models);
+    const { models: nextModels, removedCount } = mergeSyncedModels(
+      result.config.models,
+      fetched,
+      Array.from(new Set(result.config.manual_protocols)),
+    );
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map((item, index) =>
+        index === configIndex
+          ? { ...item, expanded: true, models: nextModels }
+          : item,
+      ),
+    }));
+    toast.success(
+      locale === "zh-CN"
+        ? `已同步 ${fetched.length} 个模型${removedCount ? `，移除 ${removedCount} 个上游已下架的模型` : ""}`
+        : `Synced ${fetched.length} models${removedCount ? `, removed ${removedCount} no longer upstream` : ""}`,
+    );
   }
   function closeModelPicker() {
     setModelPickerProtocolConfigIndex(null);
@@ -235,9 +286,6 @@ export function useChannelModelPicker({
       ...current,
       protocolConfigs: current.protocolConfigs.map((item, index) => {
         if (index !== modelPickerProtocolConfigIndex) return item;
-        const source: FormModel["source"] = item.auto_sync_enabled
-          ? "synced"
-          : "manual";
         return {
           ...item,
           expanded: true,
@@ -262,7 +310,7 @@ export function useChannelModelPicker({
                 credential_id: model.credential_id,
                 model_name: model.model_name,
                 enabled: true,
-                source,
+                source: "manual" as const,
               };
             }),
           ],
@@ -288,6 +336,7 @@ export function useChannelModelPicker({
     setPickerModelProtocols,
     addManualProtocolConfigModel,
     fetchProtocolModels,
+    syncAllProtocolModels,
     closeModelPicker,
     applyModelSelection,
   };

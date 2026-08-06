@@ -2,6 +2,7 @@ from pydantic import Field, field_validator
 
 from .common import StrictBaseModel
 
+
 class GatewayApiKeyBase(StrictBaseModel):
     remark: str = ""
     enabled: bool = True

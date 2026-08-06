@@ -51,6 +51,7 @@ type ChannelEditorDialogProps = {
   ) => void;
   addManualProtocolConfigModel: (protocolConfigIndex: number) => void;
   fetchProtocolModels: (protocolConfigIndex: number) => void;
+  syncAllProtocolModels: (protocolConfigIndex: number) => void;
   openModelGroupEnsureDialog: () => void;
   openBatchModelTestDialog: () => void;
   updateModelProtocols: (
@@ -97,6 +98,7 @@ export function ChannelEditorDialog({
   updateProtocolConfig,
   addManualProtocolConfigModel,
   fetchProtocolModels,
+  syncAllProtocolModels,
   openModelGroupEnsureDialog,
   openBatchModelTestDialog,
   updateModelProtocols,
@@ -174,6 +176,7 @@ export function ChannelEditorDialog({
                 updateProtocolConfig={updateProtocolConfig}
                 addManualProtocolConfigModel={addManualProtocolConfigModel}
                 fetchProtocolModels={fetchProtocolModels}
+                syncAllProtocolModels={syncAllProtocolModels}
               />
               <ChannelModelOverviewSection
                 locale={locale}
