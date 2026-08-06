@@ -1,11 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ProtocolKind } from "../src/lib/api";
+import type {
+  FormModel,
+  PickerModelItem,
+} from "../src/components/screens/channels/channelTypes";
 
 const moduleUrl = new URL(
   "../src/components/screens/channels/channelModelUtils.ts",
   import.meta.url,
 ).href;
-const { coalesceFormModels, mergeSyncedModels } = await import(moduleUrl);
+const {
+  coalesceFormModels,
+  mergeSyncedModels,
+}: {
+  coalesceFormModels: (models: FormModel[]) => FormModel[];
+  mergeSyncedModels: (
+    models: FormModel[],
+    fetched: PickerModelItem[],
+    protocols: ProtocolKind[],
+  ) => { models: FormModel[]; removedCount: number };
+} = await import(moduleUrl);
 
 test("coalesces models that become equivalent after a source change", () => {
   const models = coalesceFormModels([
