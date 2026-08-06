@@ -232,7 +232,6 @@ def _import_protocols(
                 match_regex=protocol.match_regex.strip(),
                 base_url_id=base_url_id,
                 credential_ids=credential_ids,
-                auto_sync_enabled=protocol.auto_sync_enabled,
                 models=_import_protocol_models(
                     protocol_index,
                     protocol.models,

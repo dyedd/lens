@@ -3,6 +3,7 @@ from pydantic import Field
 from .common import StrictBaseModel
 from .protocols import ProtocolKind
 
+
 class ModelPriceItem(StrictBaseModel):
     model_key: str
     display_name: str

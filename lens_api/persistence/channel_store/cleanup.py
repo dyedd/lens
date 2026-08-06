@@ -3,7 +3,6 @@ from __future__ import annotations
 from ...core.runtime_channel_ids import compose_runtime_channel_id
 from .shared import (
     AsyncSession,
-    ModelGroupEntity,
     ModelGroupItemEntity,
     ProtocolKind,
     SiteCredentialEntity,
@@ -58,6 +57,7 @@ class ChannelCleanupMixin:
     async def _cleanup_invalid_synced_group_items(
         self, session: AsyncSession, protocol_config_ids: set[str]
     ) -> None:
+        """Delete model group items whose underlying channel model was removed."""
         if not protocol_config_ids:
             return
         matching_model = (
@@ -77,12 +77,6 @@ class ChannelCleanupMixin:
             )
             .exists()
         )
-        synced_group = (
-            select(ModelGroupEntity.id)
-            .where(ModelGroupEntity.id == ModelGroupItemEntity.group_id)
-            .where(ModelGroupEntity.sync_filter_mode != "")
-            .exists()
-        )
         runtime_channel_ids = {
             compose_runtime_channel_id(protocol_config_id, protocol)
             for protocol_config_id in protocol_config_ids
@@ -91,6 +85,5 @@ class ChannelCleanupMixin:
         await session.execute(
             delete(ModelGroupItemEntity)
             .where(ModelGroupItemEntity.channel_id.in_(runtime_channel_ids))
-            .where(synced_group)
             .where(~matching_model)
         )

@@ -66,7 +66,6 @@ def test_import_sites_rejects_empty_batch(client, admin_headers) -> None:
     [
         ("site", "enabled"),
         ("protocol", "name"),
-        ("protocol", "auto_sync_enabled"),
     ],
 )
 def test_import_sites_requires_strict_import_fields(
@@ -336,12 +335,12 @@ def test_import_sites_persists_master_state_protocol_name_and_auto_sync(
     created = payload["items"][0]["site"]
     assert created["enabled"] is False
     assert created["protocols"][0]["name"] == "Chat primary"
-    assert created["protocols"][0]["auto_sync_enabled"] is True
+    assert created["protocols"][0]["auto_sync_enabled"] is False
 
     stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert stored["enabled"] is False
     assert stored["protocols"][0]["name"] == "Chat primary"
-    assert stored["protocols"][0]["auto_sync_enabled"] is True
+    assert stored["protocols"][0]["auto_sync_enabled"] is False
 
 
 @pytest.mark.parametrize(
@@ -366,7 +365,29 @@ def test_import_sites_rejects_invalid_param_override(
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
 
-def test_import_sites_accepts_auto_sync_without_match_regex(
+def test_import_sites_derives_auto_sync_from_synced_models(
+    client,
+    admin_headers,
+) -> None:
+    site = deepcopy(valid_import_site())
+    site["protocols"][0]["models"][0]["source"] = "synced"
+
+    response = client.post(
+        "/api/admin/sites/import",
+        headers=admin_headers,
+        json={"sites": [site]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["committed"] is True
+    assert payload["items"][0]["status"] == "created"
+    created_protocol = payload["items"][0]["site"]["protocols"][0]
+    assert created_protocol["auto_sync_enabled"] is True
+    assert created_protocol["models"][0]["source"] == "synced"
+
+
+def test_import_sites_ignores_the_deprecated_auto_sync_flag(
     client,
     admin_headers,
 ) -> None:
@@ -382,22 +403,6 @@ def test_import_sites_accepts_auto_sync_without_match_regex(
     assert response.status_code == 200
     payload = response.json()
     assert payload["committed"] is True
-    assert payload["items"][0]["status"] == "created"
-    assert payload["items"][0]["site"]["protocols"][0]["auto_sync_enabled"] is True
-
-
-def test_import_sites_rejects_synced_models_when_auto_sync_is_disabled(
-    client,
-    admin_headers,
-) -> None:
-    site = valid_import_site()
-    site["protocols"][0]["models"][0]["source"] = "synced"
-
-    response = client.post(
-        "/api/admin/sites/import",
-        headers=admin_headers,
-        json={"sites": [site]},
-    )
-
-    assert response.status_code == 422
-    assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+    created_protocol = payload["items"][0]["site"]["protocols"][0]
+    assert created_protocol["auto_sync_enabled"] is False
+    assert created_protocol["models"][0]["source"] == "manual"

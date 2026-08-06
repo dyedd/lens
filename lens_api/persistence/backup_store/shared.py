@@ -29,6 +29,7 @@ from ...models import (
     ModelGroup,
     ModelGroupItem,
     ModelPriceItem,
+    ModelSource,
     ProtocolKind,
     RequestLogLifecycleStatus,
     SettingItem,

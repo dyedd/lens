@@ -31,7 +31,6 @@ export const emptyProtocolConfig = (
   manual_protocols: [],
   base_url_id: baseUrlId,
   credential_ids: credentialId ? [credentialId] : [],
-  auto_sync_enabled: false,
   models: [],
   expanded: true,
 });

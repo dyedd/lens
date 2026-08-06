@@ -34,7 +34,6 @@ export type FormProtocolConfig = {
   manual_protocols: ProtocolKind[];
   base_url_id: string;
   credential_ids: string[];
-  auto_sync_enabled: boolean;
   models: FormModel[];
   expanded: boolean;
 };

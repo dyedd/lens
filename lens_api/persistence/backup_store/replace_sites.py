@@ -18,6 +18,7 @@ from .shared import (
     ModelGroupItemEntity,
     ModelPriceEntity,
     ModelPriceItem,
+    ModelSource,
     OverviewModelDailyStatsEntity,
     ProtocolKind,
     RequestLogDailyStatsEntity,
@@ -166,7 +167,14 @@ async def _replace_sites(
                     param_override=protocol_config.param_override,
                     match_regex=protocol_config.match_regex,
                     base_url_id=protocol_config.base_url_id,
-                    auto_sync_enabled=(1 if protocol_config.auto_sync_enabled else 0),
+                    auto_sync_enabled=(
+                        1
+                        if any(
+                            model.source == ModelSource.SYNCED
+                            for model in protocol_config.models
+                        )
+                        else 0
+                    ),
                 )
             )
             for sort_order, credential_id in enumerate(protocol_config.credential_ids):

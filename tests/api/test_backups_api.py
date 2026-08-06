@@ -199,7 +199,7 @@ def test_import_backup_rejects_missing_site_enabled(
     assert_error(response, 400, "Invalid backup file")
 
 
-def test_import_backup_rejects_synced_models_when_auto_sync_is_disabled(
+def test_import_backup_derives_auto_sync_from_synced_models(
     client,
     admin_headers,
     create_site,
@@ -224,4 +224,7 @@ def test_import_backup_rejects_synced_models_when_auto_sync_is_disabled(
         },
     )
 
-    assert_error(response, 400, "Invalid backup file")
+    assert response.status_code == 200, response.text
+    stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert stored["protocols"][0]["auto_sync_enabled"] is True
+    assert stored["protocols"][0]["models"][0]["source"] == "synced"

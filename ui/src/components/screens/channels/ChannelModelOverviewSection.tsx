@@ -183,7 +183,7 @@ export function ChannelModelOverviewSection({
                 <ChevronDown data-icon="inline-end" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   onSelect={() => onUpdateAllModelSources("manual")}
@@ -200,6 +200,11 @@ export function ChannelModelOverviewSection({
                   {locale === "zh-CN" ? "全部设为同步" : "Set all to synced"}
                 </DropdownMenuItem>
               </DropdownMenuGroup>
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                {locale === "zh-CN"
+                  ? "同步：跟随上游筛选自动增删；手动：固定保留，后台不会改动。"
+                  : "Synced: follows the upstream filter and is added or removed automatically. Manual: kept as is."}
+              </p>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

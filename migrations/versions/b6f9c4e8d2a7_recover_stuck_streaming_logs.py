@@ -19,8 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         UPDATE request_logs
         SET lifecycle_status = 'failed',
             success = 0,
@@ -29,18 +28,15 @@ def upgrade() -> None:
                 'Streaming log was not finalized due to missing method in repository'
             )
         WHERE lifecycle_status = 'streaming'
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         UPDATE request_logs
         SET lifecycle_status = 'streaming',
             success = 0,
             error_message = NULL
         WHERE lifecycle_status = 'failed'
         AND error_message = 'Streaming log was not finalized due to missing method in repository'
-        """
-    )
+        """)
