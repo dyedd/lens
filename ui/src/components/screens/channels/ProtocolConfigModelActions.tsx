@@ -1,4 +1,4 @@
-import { Plus, RefreshCcw, TriangleAlert } from "lucide-react";
+import { CircleHelp, Plus, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -102,14 +102,14 @@ export function ProtocolConfigModelActions({
               {locale === "zh-CN" ? "上游筛选" : "Upstream filter"}
             </FieldLabel>
             <Input
-              value={protocolConfig.match_regex}
+              value={protocolConfig.model_filter}
               onChange={(event) =>
-                onUpdate({ match_regex: event.target.value })
+                onUpdate({ model_filter: event.target.value })
               }
               placeholder={
                 locale === "zh-CN"
-                  ? "正则，可留空表示全部。多条用 | 分隔，如 gpt-|claude-"
-                  : "Regex, empty means all. Use | for multiple, e.g. gpt-|claude-"
+                  ? "筛选上游模型（支持正则）；留空表示全部；如 gpt-|claude-"
+                  : "Filter upstream models (regex supported). Empty means all; e.g. gpt-|claude-"
               }
             />
           </Field>
@@ -125,36 +125,55 @@ export function ProtocolConfigModelActions({
             />
             {locale === "zh-CN" ? "从上游选择" : "Select from upstream"}
           </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                onClick={onSyncAllModels}
-                disabled={isFetchModelsDisabled}
-              >
-                {isModelActionPending ? (
-                  <RefreshCcw
-                    data-icon="inline-start"
-                    className="animate-spin"
-                  />
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              onClick={onSyncAllModels}
+              disabled={isFetchModelsDisabled}
+            >
+              <RefreshCcw
+                data-icon="inline-start"
+                className={isModelActionPending ? "animate-spin" : undefined}
+              />
+              {locale === "zh-CN" ? "全部同步" : "Sync all"}
+            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={
+                    locale === "zh-CN" ? "全部同步说明" : "Sync all details"
+                  }
+                >
+                  <CircleHelp />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="end" className="max-w-sm">
+                {locale === "zh-CN" ? (
+                  <div className="grid gap-2">
+                    <p>
+                      覆盖操作：按本次上游筛选拉取全部模型并标记为“同步”。上游已没有的同步模型会被移除，手动模型保持不动；保存后，后台只会继续协调这批同步模型。筛选条件仅用于本次操作，不会保存。
+                      已删除模型对应的模型组条目也会随之移除。
+                    </p>
+                  </div>
                 ) : (
-                  <TriangleAlert data-icon="inline-start" />
+                  <div className="grid gap-2">
+                    <p>
+                      Replace this combination&apos;s synced models with the
+                      models returned by this one-time upstream filter. Missing
+                      synced models are removed, while manual models stay
+                      unchanged. After saving, background sync reconciles only
+                      these exact models; the filter itself is not saved.
+                      Removed models are also removed from related model groups.
+                    </p>
+                  </div>
                 )}
-                {locale === "zh-CN" ? "全部同步" : "Sync all"}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" align="end" className="max-w-sm">
-              {locale === "zh-CN"
-                ? "覆盖操作：按上游筛选拉取全部模型并标记为「同步」，上游已没有的同步模型会被移除，手动模型保持不动。保存后，模型组会跟着移除指向已删除模型的条目。"
-                : "Overwrites: pulls every upstream model matching the filter and marks it synced, drops synced models the upstream no longer returns, and leaves manual models alone. On save, model groups drop entries pointing to deleted models."}
-            </TooltipContent>
-          </Tooltip>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {locale === "zh-CN"
-            ? "「从上游选择」勾选的模型标记为手动，由你维护；「全部同步」让同步模型与上游保持一致，之后后台会自动增删。"
-            : "Models picked via Select from upstream are marked manual and stay under your control; Sync all makes the synced set match the upstream, and the background job keeps it in step."}
-        </p>
       </FieldGroup>
     </div>
   );

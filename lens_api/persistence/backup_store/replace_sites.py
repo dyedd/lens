@@ -35,6 +35,7 @@ from .shared import (
     SiteEntity,
     SiteProtocolConfigEntity,
     SiteProtocolConfigCredentialEntity,
+    SiteProtocolConfigSyncTargetEntity,
     UTC,
     _extract_protocol_config_id,
     _parse_runtime_channel_protocol,
@@ -165,16 +166,7 @@ async def _replace_sites(
                     proxy_mode=protocol_config.proxy_mode.value,
                     channel_proxy=protocol_config.channel_proxy,
                     param_override=protocol_config.param_override,
-                    match_regex=protocol_config.match_regex,
                     base_url_id=protocol_config.base_url_id,
-                    auto_sync_enabled=(
-                        1
-                        if any(
-                            model.source == ModelSource.SYNCED
-                            for model in protocol_config.models
-                        )
-                        else 0
-                    ),
                 )
             )
             for sort_order, credential_id in enumerate(protocol_config.credential_ids):
@@ -188,6 +180,34 @@ async def _replace_sites(
                 )
 
             protocols_by_config_id[protocol_config.id] = protocol_kinds
+
+            target_keys: set[tuple[str, str, ProtocolKind]] = set()
+            for target in protocol_config.sync_targets:
+                target_key = (
+                    target.credential_id,
+                    target.model_name,
+                    target.protocol,
+                )
+                if (
+                    target.credential_id not in site_credential_ids
+                    or target.protocol not in protocol_kinds
+                    or not target.model_name
+                    or target_key in target_keys
+                ):
+                    raise ValueError(
+                        "Invalid sync target in backup protocol config "
+                        f"{protocol_config.id}: {target.model_name}"
+                    )
+                target_keys.add(target_key)
+                session.add(
+                    SiteProtocolConfigSyncTargetEntity(
+                        id=str(uuid.uuid4()),
+                        protocol_config_id=protocol_config.id,
+                        credential_id=target.credential_id,
+                        protocol=target.protocol.value,
+                        model_name=target.model_name,
+                    )
+                )
 
             for model in protocol_config.models:
                 if model.id in model_ids:
@@ -213,6 +233,16 @@ async def _replace_sites(
                         "Discovered model protocol is not enabled in backup "
                         f"protocol config {protocol_config.id}: "
                         f"{model.protocol.value}"
+                    )
+                target_key = (
+                    model.credential_id,
+                    model.model_name,
+                    model.protocol,
+                )
+                if (model.source == ModelSource.SYNCED) != (target_key in target_keys):
+                    raise ValueError(
+                        "Model source does not match sync targets in backup "
+                        f"protocol config {protocol_config.id}: {model.model_name}"
                     )
                 model_keys.add(
                     (

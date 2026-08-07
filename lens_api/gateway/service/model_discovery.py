@@ -23,14 +23,8 @@ from .upstream_support import (
 )
 
 
-async def _fetch_upstream_models(
-    channel: ChannelConfig, *, apply_match_regex: bool = True
-) -> list[str]:
-    """Lists upstream model names, optionally filtered by the channel regex.
-
-    Reconciliation callers pass ``apply_match_regex=False`` so a filtered-out
-    name is not mistaken for one the upstream removed.
-    """
+async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
+    """List all model names currently offered by an upstream."""
     runtime = await app_state.settings_repo.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client = _resolve_http_client(proxy_url)
@@ -40,9 +34,7 @@ async def _fetch_upstream_models(
             **_model_list_request(channel, runtime["upstream_headers_config"])
         )
         response.raise_for_status()
-        return _parse_model_list(
-            response.json(), channel.match_regex if apply_match_regex else ""
-        )
+        return _parse_model_list(response.json())
     except httpx.HTTPStatusError as exc:
         detail = _format_http_response_error(exc.response)
         raise HTTPException(
@@ -89,7 +81,7 @@ def filter_model_names(names: list[str], match_regex: str) -> list[str]:
     return [name for name in names if pattern.search(name)]
 
 
-def _parse_model_list(payload: dict[str, Any], match_regex: str) -> list[str]:
+def _parse_model_list(payload: dict[str, Any]) -> list[str]:
     names: list[str] = []
     seen: set[str] = set()
     if "data" in payload:
@@ -112,4 +104,4 @@ def _parse_model_list(payload: dict[str, Any], match_regex: str) -> list[str]:
             seen.add(value)
             names.append(value)
 
-    return filter_model_names(names, match_regex)
+    return names

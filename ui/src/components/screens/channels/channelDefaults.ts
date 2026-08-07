@@ -26,11 +26,12 @@ export const emptyProtocolConfig = (
   proxy_mode: "inherit",
   channel_proxy: "",
   param_override: "",
-  match_regex: "",
+  model_filter: "",
   manual_model_name: "",
   manual_protocols: [],
   base_url_id: baseUrlId,
   credential_ids: credentialId ? [credentialId] : [],
+  sync_targets: [],
   models: [],
   expanded: true,
 });

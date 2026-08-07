@@ -55,6 +55,7 @@ from ..entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
     SiteProtocolConfigCredentialEntity,
+    SiteProtocolConfigSyncTargetEntity,
 )
 from ..stats_entities import (
     ImportedStatsDailyEntity,

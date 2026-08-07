@@ -16,7 +16,7 @@ import {
   formHeaders,
   genericModelKey,
   groupPickerModels,
-  mergeSyncedModels,
+  replaceSyncedModels,
   resolvePickerModelProtocols,
   type FormModel,
   type FormProtocolConfig,
@@ -157,7 +157,7 @@ export function useChannelModelPicker({
         headers: formHeaders(config),
         proxy_mode: config.proxy_mode,
         channel_proxy: config.channel_proxy.trim(),
-        match_regex: config.match_regex.trim(),
+        match_regex: config.model_filter.trim(),
         credentials: form.credentials
           .map((item, index) => ({
             id: item.id,
@@ -172,6 +172,12 @@ export function useChannelModelPicker({
         "/admin/site-model-discoveries",
         { method: "POST", body: JSON.stringify(payload) },
       );
+      setForm((current) => ({
+        ...current,
+        protocolConfigs: current.protocolConfigs.map((item, index) =>
+          index === configIndex ? { ...item, model_filter: "" } : item,
+        ),
+      }));
       return {
         config,
         models: models.map((item) => ({
@@ -208,7 +214,7 @@ export function useChannelModelPicker({
         : `Fetched ${result.models.length} available models`,
     );
   }
-  /** Replaces the synced model set with the upstream models matching the filter. */
+  /** Replaces this one-shot discovery result's exact sync targets. */
   async function syncAllProtocolModels(configIndex: number) {
     const result = await requestUpstreamModels(configIndex, "sync");
     if (!result) return;
@@ -221,8 +227,13 @@ export function useChannelModelPicker({
       return;
     }
     const fetched = groupPickerModels(result.models);
-    const { models: nextModels, removedCount } = mergeSyncedModels(
+    const {
+      models: nextModels,
+      syncTargets,
+      removedCount,
+    } = replaceSyncedModels(
       result.config.models,
+      result.config.sync_targets,
       fetched,
       Array.from(new Set(result.config.manual_protocols)),
     );
@@ -230,7 +241,12 @@ export function useChannelModelPicker({
       ...current,
       protocolConfigs: current.protocolConfigs.map((item, index) =>
         index === configIndex
-          ? { ...item, expanded: true, models: nextModels }
+          ? {
+              ...item,
+              expanded: true,
+              models: nextModels,
+              sync_targets: syncTargets,
+            }
           : item,
       ),
     }));
@@ -314,6 +330,9 @@ export function useChannelModelPicker({
               };
             }),
           ],
+          sync_targets: item.sync_targets.filter(
+            (target) => !selected.has(genericModelKey(target)),
+          ),
         };
       }),
     }));

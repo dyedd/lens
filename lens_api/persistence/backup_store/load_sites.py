@@ -99,6 +99,18 @@ async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
             }
         )
 
+    sync_targets_by_protocol_config: dict[str, list[dict[str, object]]] = {}
+    for row in rows.sync_targets:
+        if row.protocol not in valid_protocol_values:
+            continue
+        sync_targets_by_protocol_config.setdefault(row.protocol_config_id, []).append(
+            {
+                "credential_id": row.credential_id,
+                "model_name": row.model_name,
+                "protocol": row.protocol,
+            }
+        )
+
     credential_ids_by_protocol_config: dict[str, list[str]] = {}
     for row in rows.protocol_credentials:
         credential_ids_by_protocol_config.setdefault(row.protocol_config_id, []).append(
@@ -126,10 +138,9 @@ async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "proxy_mode": row.proxy_mode,
                 "channel_proxy": row.channel_proxy,
                 "param_override": row.param_override,
-                "match_regex": row.match_regex,
                 "base_url_id": row.base_url_id,
                 "credential_ids": credential_ids_by_protocol_config.get(row.id, []),
-                "auto_sync_enabled": bool(row.auto_sync_enabled),
+                "sync_targets": sync_targets_by_protocol_config.get(row.id, []),
                 "models": models_by_protocol_config.get(row.id, []),
             }
         )

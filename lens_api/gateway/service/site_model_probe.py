@@ -56,7 +56,6 @@ def _site_model_probe_channel(payload: SiteModelTestRequest) -> ChannelConfig:
         proxy_mode=payload.proxy_mode,
         channel_proxy=payload.channel_proxy,
         param_override=payload.param_override,
-        match_regex="",
     )
 
 

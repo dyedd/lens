@@ -47,6 +47,11 @@ export type SiteModelInput = {
   enabled: boolean;
   source: "manual" | "synced";
 };
+export type SiteSyncTarget = {
+  credential_id: string;
+  model_name: string;
+  protocol: ProtocolKind;
+};
 export type SiteProtocolConfig = {
   id: string;
   name: string;
@@ -56,10 +61,9 @@ export type SiteProtocolConfig = {
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   param_override: string;
-  match_regex: string;
   base_url_id: string;
   credential_ids: string[];
-  auto_sync_enabled: boolean;
+  sync_targets: SiteSyncTarget[];
   models: SiteModel[];
 };
 export type SiteProtocolConfigInput = {
@@ -71,9 +75,9 @@ export type SiteProtocolConfigInput = {
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   param_override: string;
-  match_regex: string;
   base_url_id: string;
   credential_ids: string[];
+  sync_targets: SiteSyncTarget[];
   models: SiteModelInput[];
 };
 export type Site = {
@@ -138,8 +142,6 @@ export type SiteBatchImportProtocolInput = {
   proxy_mode?: ChannelProxyMode;
   channel_proxy?: string;
   param_override?: string;
-  match_regex?: string;
-  auto_sync_enabled?: boolean;
   base_url_ref: string;
   credential_refs: string[];
   models?: SiteBatchImportModelInput[];

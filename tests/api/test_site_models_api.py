@@ -391,12 +391,19 @@ def test_sync_channel_models_uses_service_task(
     assert response.json()["eligible_target_count"] == 2
 
 
-def test_create_site_accepts_synced_models_without_match_regex(
+def _sync_target(model_name: str, credential_id: str = "cred-a") -> dict[str, str]:
+    return {
+        "credential_id": credential_id,
+        "model_name": model_name,
+        "protocol": "openai_chat",
+    }
+
+
+def test_create_site_persists_exact_sync_targets(
     client,
     admin_headers,
 ) -> None:
     payload = _auto_sync_site_payload(seed_synced=True)
-    payload["protocols"][0]["match_regex"] = ""
 
     response = client.post(
         "/api/admin/sites",
@@ -406,16 +413,16 @@ def test_create_site_accepts_synced_models_without_match_regex(
 
     assert response.status_code == 201, response.text
     created = response.json()
-    assert created["protocols"][0]["auto_sync_enabled"] is True
-    assert created["protocols"][0]["match_regex"] == ""
+    assert created["protocols"][0]["sync_targets"] == [
+        _sync_target("gpt-cred-a"),
+        _sync_target("gpt-cred-b", "cred-b"),
+    ]
 
 
 def _auto_sync_site_payload(seed_synced: bool = False) -> dict[str, Any]:
     """Builds a two-credential site payload.
 
-    ``seed_synced`` adds a synchronized model so the protocol config qualifies
-    as a sync target; tests that append their own synced models can leave it
-    off because the stored flag is derived from the models themselves.
+    ``seed_synced`` materializes the first exact target before synchronization.
     """
     models: list[dict[str, Any]] = [
         {
@@ -430,7 +437,7 @@ def _auto_sync_site_payload(seed_synced: bool = False) -> dict[str, Any]:
         models.append(
             {
                 "credential_id": "cred-a",
-                "model_name": "gpt-seed",
+                "model_name": "gpt-cred-a",
                 "enabled": True,
                 "protocol": "openai_chat",
                 "source": "synced",
@@ -469,8 +476,10 @@ def _auto_sync_site_payload(seed_synced: bool = False) -> dict[str, Any]:
                 "enabled": True,
                 "base_url_id": "base-1",
                 "credential_ids": ["cred-a", "cred-b"],
-                "match_regex": "^gpt-",
-                "auto_sync_enabled": True,
+                "sync_targets": [
+                    _sync_target("gpt-cred-a"),
+                    _sync_target("gpt-cred-b", "cred-b"),
+                ],
                 "models": models,
             }
         ],
@@ -541,6 +550,7 @@ def test_channel_model_sync_removes_only_stale_synced_models(
             },
         ]
     )
+    payload["protocols"][0]["sync_targets"].append(_sync_target("gpt-stale"))
     create_response = client.post(
         "/api/admin/sites",
         headers=admin_headers,
@@ -584,7 +594,6 @@ def test_site_rejects_duplicate_models_for_the_same_sync_target(
             "source": "synced",
         }
     )
-
     response = client.post(
         "/api/admin/sites",
         headers=admin_headers,
@@ -637,7 +646,7 @@ def test_channel_model_sync_isolates_target_failures(
         for model in stored_models
     } == {
         ("cred-a", "manual-only", "manual"),
-        ("cred-a", "gpt-seed", "synced"),
+        ("cred-a", "gpt-cred-a", "synced"),
         ("cred-b", "gpt-cred-b", "synced"),
     }
 
@@ -657,6 +666,7 @@ def test_channel_model_sync_dry_run_does_not_write_models(
             "source": "synced",
         }
     )
+    payload["protocols"][0]["sync_targets"].append(_sync_target("gpt-old"))
     create_response = client.post(
         "/api/admin/sites", headers=admin_headers, json=payload
     )
@@ -675,7 +685,7 @@ def test_channel_model_sync_dry_run_does_not_write_models(
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["updated_target_count"] == 2
+    assert response.json()["updated_target_count"] == 1
     stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
         "protocols"
     ][0]["models"]
@@ -700,6 +710,7 @@ def test_channel_model_sync_removes_stale_synced_models_on_empty_response(
             "source": "synced",
         }
     )
+    payload["protocols"][0]["sync_targets"].append(_sync_target("gpt-existing"))
     create_response = client.post(
         "/api/admin/sites", headers=admin_headers, json=payload
     )
@@ -775,7 +786,7 @@ def test_channel_model_sync_does_not_report_group_changes_that_failed(
     changed_items = [
         item for item in response.json()["items"] if item["status"] == "updated"
     ]
-    assert len(changed_items) == 2
+    assert len(changed_items) == 1
     assert all(item["group_added"] == [] for item in changed_items)
     assert all("model group update failed" in item["warning"] for item in changed_items)
 
@@ -821,12 +832,10 @@ def test_channel_model_sync_reports_applied_group_changes(
         for item in response.json()["items"]
         for change in item["group_added"]
     } == {
-        ("cred-a", "gpt models", "gpt-cred-a"),
         ("cred-b", "gpt models", "gpt-cred-b"),
     }
     group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
     assert {item["model_name"] for item in group["items"]} == {
-        "gpt-cred-a",
         "gpt-cred-b",
     }
 
@@ -876,11 +885,12 @@ def test_channel_model_sync_skips_disabled_resources_without_fetching(
     assert response.json()["eligible_target_count"] == 0
 
 
-def test_auto_sync_flag_is_derived_from_synced_models(
+def test_synced_models_require_explicit_sync_targets(
     client,
     admin_headers,
 ) -> None:
     payload = _auto_sync_site_payload()
+    payload["protocols"][0]["sync_targets"] = []
     payload["protocols"][0]["models"] = [
         {
             "credential_id": "cred-a",
@@ -896,7 +906,7 @@ def test_auto_sync_flag_is_derived_from_synced_models(
     )
 
     assert create_response.status_code == 201, create_response.text
-    assert create_response.json()["protocols"][0]["auto_sync_enabled"] is False
+    assert create_response.json()["protocols"][0]["sync_targets"] == []
 
     payload["protocols"][0]["models"].append(
         {
@@ -913,9 +923,18 @@ def test_auto_sync_flag_is_derived_from_synced_models(
         json=payload,
     )
 
+    assert_error(update_response, 400, "Synced model is missing its sync target")
+
+    payload["protocols"][0]["sync_targets"] = [_sync_target("gpt-synced")]
+    update_response = client.put(
+        f"/api/admin/sites/{create_response.json()['id']}",
+        headers=admin_headers,
+        json=payload,
+    )
+
     assert update_response.status_code == 200, update_response.text
     updated = update_response.json()["protocols"][0]
-    assert updated["auto_sync_enabled"] is True
+    assert updated["sync_targets"] == [_sync_target("gpt-synced")]
     assert {model["model_name"]: model["source"] for model in updated["models"]} == {
         "manual-only": "manual",
         "gpt-synced": "synced",
@@ -928,6 +947,7 @@ def test_channel_model_sync_skips_configs_without_synced_models(
     monkeypatch,
 ) -> None:
     payload = _auto_sync_site_payload()
+    payload["protocols"][0]["sync_targets"] = []
     payload["protocols"][0]["models"] = [
         {
             "credential_id": "cred-a",
@@ -963,11 +983,10 @@ def test_hand_switched_synced_models_outside_filter_are_kept_when_upstream_serve
     admin_headers,
     monkeypatch,
 ) -> None:
-    """Match regex governs additions, not deletions — a synced model outside
-    the filter survives as long as the upstream still serves it."""
+    """The durable target, rather than a discovery filter, governs sync."""
     payload = _auto_sync_site_payload()
     payload["protocols"][0]["credential_ids"] = ["cred-a"]
-    payload["protocols"][0]["match_regex"] = "^gpt-"
+    payload["protocols"][0]["sync_targets"] = []
     payload["protocols"][0]["models"] = [
         {
             "credential_id": "cred-a",
@@ -983,21 +1002,17 @@ def test_hand_switched_synced_models_outside_filter_are_kept_when_upstream_serve
     assert create_response.status_code == 201, create_response.text
     site_id = create_response.json()["id"]
 
-    # User manually switches claude-3-opus to synced even though it doesn't
-    # match the ^gpt- filter
+    # Switching the model to synced creates its exact target.
     payload["protocols"][0]["models"][0]["source"] = "synced"
+    payload["protocols"][0]["sync_targets"] = [_sync_target("claude-3-opus")]
     update_response = client.put(
         f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
     )
     assert update_response.status_code == 200, update_response.text
 
-    # Upstream returns both gpt and claude models
+    # Unrelated upstream models are not added.
     async def fake_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
-        all_models = ["gpt-4o", "claude-3-opus", "gpt-4o-mini"]
-        if not apply_match_regex:
-            return all_models
-        # When filtering is requested, only gpt models pass
-        return [m for m in all_models if m.startswith("gpt-")]
+        return ["gpt-4o", "claude-3-opus", "gpt-4o-mini"]
 
     import lens_api.gateway.service.model_sync as model_sync
 
@@ -1013,18 +1028,17 @@ def test_hand_switched_synced_models_outside_filter_are_kept_when_upstream_serve
     ][0]["models"]
     synced = {m["model_name"] for m in result_models if m["source"] == "synced"}
 
-    # claude-3-opus is kept because upstream still has it, even though it
-    # doesn't match the filter. gpt models are added because they match.
-    assert synced == {"claude-3-opus", "gpt-4o", "gpt-4o-mini"}
+    assert synced == {"claude-3-opus"}
 
 
-def test_switching_a_model_to_synced_makes_the_config_a_sync_target(
+def test_sync_target_is_retained_when_upstream_temporarily_drops_it(
     client,
     admin_headers,
     monkeypatch,
 ) -> None:
     payload = _auto_sync_site_payload()
     payload["protocols"][0]["credential_ids"] = ["cred-a"]
+    payload["protocols"][0]["sync_targets"] = []
     payload["protocols"][0]["models"] = [
         {
             "credential_id": "cred-a",
@@ -1041,13 +1055,14 @@ def test_switching_a_model_to_synced_makes_the_config_a_sync_target(
     site_id = create_response.json()["id"]
 
     payload["protocols"][0]["models"][0]["source"] = "synced"
+    payload["protocols"][0]["sync_targets"] = [_sync_target("gpt-pinned")]
     update_response = client.put(
         f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
     )
     assert update_response.status_code == 200, update_response.text
 
     async def fake_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
-        return ["gpt-fresh"]
+        return []
 
     import lens_api.gateway.service.model_sync as model_sync
 
@@ -1063,6 +1078,22 @@ def test_switching_a_model_to_synced_makes_the_config_a_sync_target(
     stored = client.get("/api/admin/sites", headers=admin_headers).json()[0][
         "protocols"
     ][0]
-    assert {model["model_name"]: model["source"] for model in stored["models"]} == {
-        "gpt-fresh": "synced"
+    assert stored["models"] == []
+    assert stored["sync_targets"] == [_sync_target("gpt-pinned")]
+
+    async def restored_fetch(_channel: Any) -> list[str]:
+        return ["gpt-pinned"]
+
+    monkeypatch.setattr(model_sync, "_fetch_upstream_models", restored_fetch)
+    restore_response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+    assert restore_response.status_code == 200, restore_response.text
+    restored = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]
+    assert {model["model_name"]: model["source"] for model in restored["models"]} == {
+        "gpt-pinned": "synced"
     }

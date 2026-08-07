@@ -31,6 +31,7 @@ from ..site_model_probe import (
 )
 from ..app_state import app_state
 from ..model_discovery import _fetch_upstream_models
+from ..model_discovery import filter_model_names
 from ..upstream_support import _format_channel_error
 
 
@@ -123,10 +124,11 @@ async def fetch_site_models(
             proxy_mode=payload.proxy_mode,
             channel_proxy=payload.channel_proxy,
             param_override="",
-            match_regex=payload.match_regex,
         )
         try:
-            model_names = await _fetch_upstream_models(channel)
+            model_names = filter_model_names(
+                await _fetch_upstream_models(channel), payload.match_regex
+            )
         except HTTPException as exc:
             errors.append(_format_channel_error(exc.detail))
             continue

@@ -11,6 +11,7 @@ from .shared import (
     SiteModelFetchRequest,
     SiteProtocolConfigEntity,
     SiteProtocolConfigCredentialEntity,
+    SiteProtocolConfigSyncTargetEntity,
     delete,
     select,
     uuid,
@@ -39,6 +40,13 @@ class ChannelSiteOperationsMixin:
                 await session.execute(
                     delete(SiteProtocolConfigCredentialEntity).where(
                         SiteProtocolConfigCredentialEntity.protocol_config_id.in_(
+                            protocol_config_ids
+                        )
+                    )
+                )
+                await session.execute(
+                    delete(SiteProtocolConfigSyncTargetEntity).where(
+                        SiteProtocolConfigSyncTargetEntity.protocol_config_id.in_(
                             protocol_config_ids
                         )
                     )

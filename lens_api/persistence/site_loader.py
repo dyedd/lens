@@ -12,6 +12,7 @@ from .entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
     SiteProtocolConfigCredentialEntity,
+    SiteProtocolConfigSyncTargetEntity,
 )
 
 
@@ -23,6 +24,7 @@ class SiteRows:
     protocol_configs: list[SiteProtocolConfigEntity]
     protocol_credentials: list[SiteProtocolConfigCredentialEntity]
     discovered_models: list[SiteDiscoveredModelEntity]
+    sync_targets: list[SiteProtocolConfigSyncTargetEntity]
 
 
 async def fetch_site_rows(
@@ -34,7 +36,7 @@ async def fetch_site_rows(
         site_query = site_query.where(SiteEntity.id.in_(site_ids))
     site_rows = (await session.execute(site_query)).scalars().all()
     if not site_rows:
-        return SiteRows([], [], [], [], [], [])
+        return SiteRows([], [], [], [], [], [], [])
 
     ids = [item.id for item in site_rows]
     base_url_rows = (
@@ -84,6 +86,7 @@ async def fetch_site_rows(
     protocol_config_ids = [item.id for item in protocol_rows]
     protocol_credential_rows: list[SiteProtocolConfigCredentialEntity] = []
     model_rows: list[SiteDiscoveredModelEntity] = []
+    sync_target_rows: list[SiteProtocolConfigSyncTargetEntity] = []
     if protocol_config_ids:
         protocol_credential_rows = (
             (
@@ -123,6 +126,26 @@ async def fetch_site_rows(
             .scalars()
             .all()
         )
+        sync_target_rows = (
+            (
+                await session.execute(
+                    select(SiteProtocolConfigSyncTargetEntity)
+                    .where(
+                        SiteProtocolConfigSyncTargetEntity.protocol_config_id.in_(
+                            protocol_config_ids
+                        )
+                    )
+                    .order_by(
+                        SiteProtocolConfigSyncTargetEntity.protocol_config_id.asc(),
+                        SiteProtocolConfigSyncTargetEntity.credential_id.asc(),
+                        SiteProtocolConfigSyncTargetEntity.protocol.asc(),
+                        SiteProtocolConfigSyncTargetEntity.model_name.asc(),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     return SiteRows(
         sites=site_rows,
@@ -131,4 +154,5 @@ async def fetch_site_rows(
         protocol_configs=protocol_rows,
         protocol_credentials=protocol_credential_rows,
         discovered_models=model_rows,
+        sync_targets=sync_target_rows,
     )

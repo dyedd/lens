@@ -26,6 +26,7 @@ class ChannelLoadersMixin:
         models_by_protocol_config = self._group_models(
             rows.discovered_models, credentials_by_id
         )
+        sync_targets_by_protocol_config = self._group_sync_targets(rows.sync_targets)
         credential_ids_by_protocol_config: dict[str, list[str]] = defaultdict(list)
         for row in rows.protocol_credentials:
             credential_ids_by_protocol_config[row.protocol_config_id].append(
@@ -34,6 +35,7 @@ class ChannelLoadersMixin:
         protocols_by_site = self._group_protocols(
             rows.protocol_configs,
             models_by_protocol_config,
+            sync_targets_by_protocol_config,
             credential_ids_by_protocol_config,
         )
 

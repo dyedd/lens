@@ -12,8 +12,6 @@ def valid_import_site(
     name: str = "Imported Site",
     enabled: bool = True,
     protocol_name: str = "primary",
-    auto_sync_enabled: bool = False,
-    match_regex: str = "",
 ) -> dict:
     return {
         "name": name,
@@ -36,8 +34,6 @@ def valid_import_site(
             {
                 "name": protocol_name,
                 "protocol": "openai_chat",
-                "auto_sync_enabled": auto_sync_enabled,
-                "match_regex": match_regex,
                 "base_url_ref": "base",
                 "credential_refs": ["cred"],
                 "models": [
@@ -309,7 +305,7 @@ def test_import_sites_preserves_input_order_when_skipping_before_creation(
     assert payload["items"][1]["site"]["name"] == "Created Site"
 
 
-def test_import_sites_persists_master_state_protocol_name_and_auto_sync(
+def test_import_sites_persists_master_state_and_protocol_name(
     client,
     admin_headers,
 ) -> None:
@@ -321,8 +317,6 @@ def test_import_sites_persists_master_state_protocol_name_and_auto_sync(
                 valid_import_site(
                     enabled=False,
                     protocol_name="  Chat primary  ",
-                    auto_sync_enabled=True,
-                    match_regex="^gpt-",
                 )
             ]
         },
@@ -335,12 +329,12 @@ def test_import_sites_persists_master_state_protocol_name_and_auto_sync(
     created = payload["items"][0]["site"]
     assert created["enabled"] is False
     assert created["protocols"][0]["name"] == "Chat primary"
-    assert created["protocols"][0]["auto_sync_enabled"] is False
+    assert created["protocols"][0]["sync_targets"] == []
 
     stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert stored["enabled"] is False
     assert stored["protocols"][0]["name"] == "Chat primary"
-    assert stored["protocols"][0]["auto_sync_enabled"] is False
+    assert stored["protocols"][0]["sync_targets"] == []
 
 
 @pytest.mark.parametrize(
@@ -365,7 +359,7 @@ def test_import_sites_rejects_invalid_param_override(
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
 
-def test_import_sites_derives_auto_sync_from_synced_models(
+def test_import_sites_derives_sync_targets_from_synced_models(
     client,
     admin_headers,
 ) -> None:
@@ -383,26 +377,29 @@ def test_import_sites_derives_auto_sync_from_synced_models(
     assert payload["committed"] is True
     assert payload["items"][0]["status"] == "created"
     created_protocol = payload["items"][0]["site"]["protocols"][0]
-    assert created_protocol["auto_sync_enabled"] is True
+    assert created_protocol["sync_targets"] == [
+        {
+            "credential_id": created_protocol["models"][0]["credential_id"],
+            "model_name": "gpt-4o-mini",
+            "protocol": "openai_chat",
+        }
+    ]
     assert created_protocol["models"][0]["source"] == "synced"
 
 
-def test_import_sites_ignores_the_deprecated_auto_sync_flag(
+def test_import_sites_rejects_obsolete_auto_sync_fields(
     client,
     admin_headers,
 ) -> None:
     site = deepcopy(valid_import_site())
     site["protocols"][0]["auto_sync_enabled"] = True
 
+    site["protocols"][0]["match_regex"] = "^gpt-"
     response = client.post(
         "/api/admin/sites/import",
         headers=admin_headers,
         json={"sites": [site]},
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["committed"] is True
-    created_protocol = payload["items"][0]["site"]["protocols"][0]
-    assert created_protocol["auto_sync_enabled"] is False
-    assert created_protocol["models"][0]["source"] == "manual"
+    assert response.status_code == 422
+    assert client.get("/api/admin/sites", headers=admin_headers).json() == []

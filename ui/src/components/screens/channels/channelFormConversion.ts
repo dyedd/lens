@@ -78,11 +78,12 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           proxy_mode: protocolConfig.proxy_mode,
           channel_proxy: protocolConfig.channel_proxy,
           param_override: protocolConfig.param_override,
-          match_regex: protocolConfig.match_regex,
+          model_filter: "",
           manual_model_name: "",
           manual_protocols: Array.from(new Set(protocolConfig.protocols)),
           base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
           credential_ids: credentialIds,
+          sync_targets: protocolConfig.sync_targets,
           models,
           expanded: models.length === 0,
         };
@@ -138,7 +139,6 @@ export function toPayload(form: FormState): SitePayload {
         protocolConfigSelectedCredentialIds(protocolConfig);
       const protocolConfigProtocols =
         protocolConfigEffectiveProtocols(protocolConfig);
-      const matchRegex = protocolConfig.match_regex.trim();
       const models = protocolConfig.models
         .flatMap((model) => {
           const effectiveProtocols = model.protocols.filter((protocol) =>
@@ -157,6 +157,17 @@ export function toPayload(form: FormState): SitePayload {
           }));
         })
         .filter((model) => model.credential_id && model.model_name);
+      const syncTargets = protocolConfig.sync_targets
+        .filter(
+          (target) =>
+            selectedCredentialIds.includes(target.credential_id) &&
+            protocolConfigProtocols.includes(target.protocol) &&
+            target.model_name.trim(),
+        )
+        .map((target) => ({
+          ...target,
+          model_name: target.model_name.trim(),
+        }));
       return {
         id: protocolConfig.id,
         name: protocolConfig.name.trim(),
@@ -170,9 +181,9 @@ export function toPayload(form: FormState): SitePayload {
         proxy_mode: protocolConfig.proxy_mode,
         channel_proxy: protocolConfig.channel_proxy.trim(),
         param_override: protocolConfig.param_override.trim(),
-        match_regex: matchRegex,
         base_url_id: protocolConfig.base_url_id,
         credential_ids: selectedCredentialIds,
+        sync_targets: syncTargets,
         models,
       };
     }),

@@ -36,7 +36,6 @@ export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
           proxy_mode: "inherit",
           channel_proxy: "",
           param_override: "",
-          match_regex: "",
           models: [
             {
               model_name: "gpt-4.1",
