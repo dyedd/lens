@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Literal
@@ -13,6 +14,20 @@ from ..router.cooldown import ErrorCategory
 
 _STREAM_CONTENT_CAPTURE_LIMIT_BYTES = 1_000_000
 _STREAM_ERROR_SAMPLE_LIMIT = 20
+
+
+def _new_incremental_utf8_decoder() -> codecs.IncrementalDecoder:
+    """Holds partial multi-byte sequences across chunk boundaries."""
+    return codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+
+def _append_error_sample(errors: list[str] | None, message: str) -> None:
+    """Deduplicated, capped append. Shared by parse errors and stream errors."""
+    if errors is None or not message or message in errors:
+        return
+    if len(errors) < _STREAM_ERROR_SAMPLE_LIMIT:
+        errors.append(message)
+
 
 _TimeoutKind = Literal["first_token", "stream_idle"]
 
@@ -193,6 +208,12 @@ class StreamCapture:
     error_status_code: int | None = None
     error_category: ErrorCategory | None = None
     skip_route_failure: bool = False
+    content_decoder: codecs.IncrementalDecoder = field(
+        default_factory=_new_incremental_utf8_decoder
+    )
+    client_content_decoder: codecs.IncrementalDecoder = field(
+        default_factory=_new_incremental_utf8_decoder
+    )
 
 
 def _capture_stream_content(
@@ -245,14 +266,8 @@ def _record_stream_error(
         capture.error_category = category
     if skip_route_failure:
         capture.skip_route_failure = True
-    if not message or message in capture.errors:
-        return
-    if len(capture.errors) < _STREAM_ERROR_SAMPLE_LIMIT:
-        capture.errors.append(message)
+    _append_error_sample(capture.errors, message)
 
 
 def _record_stream_parse_error(capture: StreamCapture, message: str) -> None:
-    if not message or message in capture.parse_errors:
-        return
-    if len(capture.parse_errors) < _STREAM_ERROR_SAMPLE_LIMIT:
-        capture.parse_errors.append(message)
+    _append_error_sample(capture.parse_errors, message)

@@ -202,14 +202,19 @@ def _describe_stream_capture_issue(capture: StreamCapture | None) -> str | None:
     return "; ".join(dict.fromkeys(issues)) or None
 
 
-def _is_pure_client_stream_disconnect(capture: StreamCapture | None) -> bool:
+def _is_stream_body_cut_short(capture: StreamCapture | None) -> bool:
+    """Client hung up mid-stream: the captured body ends inside an SSE frame."""
     return (
         capture is not None
         and capture.is_client_disconnected
         and not capture.protocol_completed
-        and not capture.errors
-        and not capture.parse_errors
     )
+
+
+def _is_pure_client_stream_disconnect(capture: StreamCapture | None) -> bool:
+    if capture is None or not _is_stream_body_cut_short(capture):
+        return False
+    return not capture.errors and not capture.parse_errors
 
 
 def _extract_usage_from_payload(

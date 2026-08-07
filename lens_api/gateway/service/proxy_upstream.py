@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -26,6 +27,7 @@ from .upstream_support import (
     _format_transport_error,
     _passthrough_headers,
     _resolve_http_client,
+    _summarize_html_error_detail,
 )
 from .payload_serialization import (
     _decode_content_bytes,
@@ -54,6 +56,24 @@ _NDJSON_MEDIA_TYPES = {"application/x-ndjson", "application/ndjson"}
 def _response_media_type(response: httpx.Response) -> str:
     content_type = response.headers.get("content-type") or ""
     return content_type.lower().partition(";")[0].strip()
+
+
+def _looks_like_sse_body(content: bytes) -> bool:
+    """Detect an SSE body from upstreams that mislabel their content-type."""
+    return content[:64].lstrip().startswith((b"event:", b"data:"))
+
+
+def _describe_upstream_body(response: httpx.Response, content: bytes) -> str:
+    content_type = response.headers.get("content-type") or "unknown"
+    label = (
+        f"HTTP {response.status_code} "
+        f"(content-type={content_type}, {len(content)} bytes)"
+    )
+    preview = (_decode_content_bytes(content) or "").strip()
+    if not preview:
+        return label
+    summary = _summarize_html_error_detail(preview, content_type=content_type)
+    return f"{label}: {summary[:200]}"
 
 
 def _parse_retry_after_seconds(value: str | None) -> float | None:
@@ -255,9 +275,22 @@ async def _build_json_result(
     request_content: str | None,
     log_body_enabled: bool,
 ) -> UpstreamResult:
+    payload: Any = None
+    if channel.protocol != ProtocolKind.RERANK:
+        try:
+            payload = json.loads(content)
+        except ValueError as exc:
+            raise UpstreamRequestError(
+                status_code=502,
+                detail=(
+                    "Invalid upstream response body: "
+                    f"{_describe_upstream_body(response, content)}"
+                ),
+                router_status_code=502,
+            ) from exc
     try:
         parsed = _extract_response_usage(
-            channel.protocol, response, fallback_model=body.get("model")
+            channel.protocol, payload, fallback_model=body.get("model")
         )
     except ValueError as exc:
         raise UpstreamRequestError(
@@ -398,11 +431,13 @@ async def _call_channel(
         media_type = _response_media_type(response)
         is_event_stream = media_type == "text/event-stream"
         is_ndjson_stream = is_stream_request and media_type in _NDJSON_MEDIA_TYPES
-        if (
-            is_event_stream
-            and not is_stream_request
-            and channel.protocol == ProtocolKind.ANTHROPIC
-        ):
+        wants_anthropic_json = (
+            not is_stream_request and channel.protocol == ProtocolKind.ANTHROPIC
+        )
+        if wants_anthropic_json and not is_event_stream:
+            # Some upstreams answer a non-stream request with SSE but label it JSON.
+            is_event_stream = _looks_like_sse_body(await response.aread())
+        if wants_anthropic_json and is_event_stream:
             result = await _build_anthropic_sse_to_json_result(
                 response,
                 channel,
