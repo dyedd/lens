@@ -111,7 +111,7 @@ async def _stream_upstream_iterator(
                 await response.aclose()
             if forwarded_chunk:
                 _capture_stream_content(
-                    capture, forwarded_chunk.decode("utf-8", errors="replace")
+                    capture, capture.content_decoder.decode(forwarded_chunk)
                 )
                 yield forwarded_chunk
             if terminal_prefix_length is not None:
@@ -154,7 +154,7 @@ async def _capture_converted_stream_iterator(
 ) -> AsyncIterator[bytes]:
     try:
         async for chunk in raw_iterator:
-            text = chunk.decode("utf-8", errors="replace")
+            text = capture.client_content_decoder.decode(chunk)
             _capture_stream_content(capture, text, client_response=True)
             yield chunk
     except ValueError as exc:

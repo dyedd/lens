@@ -708,3 +708,177 @@ def test_all_upstream_fail_returns_first_specific_message(
     assert response.status_code == 502, response.text
     assert "upstream-a exploded" in response.json()["error"]["message"]
     assert attempted == ["m-a", "m-b"]
+
+
+def _anthropic_group(
+    create_site: Any, create_model_group: Any, *, name: str = "claude-group"
+) -> None:
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.ANTHROPIC.value],
+            model_name="claude-upstream",
+        )
+    )
+    create_model_group(
+        name=name,
+        protocols=[ProtocolKind.ANTHROPIC.value],
+        items=[_protocol_group_item("anthropic", "claude-upstream")],
+    )
+
+
+def test_anthropic_non_stream_accepts_sse_body_labelled_as_json(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    _anthropic_group(create_site, create_model_group)
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        events = [
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": "claude-upstream",
+                    "content": [],
+                    "usage": {"input_tokens": 5, "output_tokens": 0},
+                },
+            },
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "hi"},
+            },
+            {"type": "content_block_stop", "index": 0},
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn"},
+                "usage": {"output_tokens": 2},
+            },
+            {"type": "message_stop"},
+        ]
+        body = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+        return httpx.Response(
+            200,
+            content=body.encode("utf-8"),
+            # Upstream answers with SSE but mislabels the content-type.
+            headers={"content-type": "application/json"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(key),
+        json={"model": "claude-group", "messages": [], "max_tokens": 16},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["id"] == "msg_1"
+    assert payload["content"] == [{"type": "text", "text": "hi"}]
+    assert payload["stop_reason"] == "end_turn"
+
+
+def test_non_json_upstream_body_reports_the_body_not_usage(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    _anthropic_group(create_site, create_model_group)
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        return httpx.Response(
+            200,
+            content=b"",
+            headers={"content-type": "application/json"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(key),
+        json={"model": "claude-group", "messages": [], "max_tokens": 16},
+    )
+
+    assert response.status_code == 502, response.text
+    message = response.json()["error"]["message"]
+    assert "Invalid upstream response body" in message
+    assert "0 bytes" in message
+    assert "Invalid upstream usage" not in message
+
+
+def test_html_upstream_body_is_summarised_by_title(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    _anthropic_group(create_site, create_model_group)
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        return httpx.Response(
+            200,
+            content=b"<html><head><title>502 Bad Gateway</title></head></html>",
+            headers={"content-type": "text/html"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(key),
+        json={"model": "claude-group", "messages": [], "max_tokens": 16},
+    )
+
+    assert response.status_code == 502, response.text
+    message = response.json()["error"]["message"]
+    assert "Invalid upstream response body" in message
+    assert "502 Bad Gateway" in message
+    assert "<html>" not in message
