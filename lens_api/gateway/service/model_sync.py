@@ -24,7 +24,7 @@ from ...models import (
     SiteProtocolConfig,
 )
 from .app_state import logger
-from .model_discovery import _fetch_upstream_models, filter_model_names
+from .model_discovery import _fetch_upstream_models
 
 if TYPE_CHECKING:
     from .app_state import AppState
@@ -168,7 +168,7 @@ async def sync_channel_models(
         ensure_inputs_by_site: list[ModelGroupEnsureModelInput] = []
         group_targets_by_key: dict[GroupTargetKey, ChannelModelSyncResultItem] = {}
         for protocol_config in site.protocols:
-            if not protocol_config.auto_sync_enabled or not protocol_config.enabled:
+            if not protocol_config.sync_targets or not protocol_config.enabled:
                 continue
             base_url = base_urls_by_id.get(protocol_config.base_url_id)
             if base_url is None or not base_url.enabled:
@@ -181,6 +181,14 @@ async def sync_channel_models(
                 if credential is None or not credential.enabled:
                     continue
                 for protocol in protocol_config.protocols:
+                    target_names = {
+                        target.model_name
+                        for target in protocol_config.sync_targets
+                        if target.credential_id == credential_id
+                        and target.protocol == protocol
+                    }
+                    if not target_names:
+                        continue
                     channel = channels_by_protocol.get(protocol)
                     target_channel = (
                         _channel_for_credential(channel, credential_id)
@@ -201,9 +209,7 @@ async def sync_channel_models(
                         continue
 
                     try:
-                        all_upstream = await _fetch_upstream_models(
-                            target_channel, apply_match_regex=False
-                        )
+                        all_upstream = await _fetch_upstream_models(target_channel)
                     except HTTPException as exc:
                         items.append(
                             _failed_item(
@@ -223,23 +229,16 @@ async def sync_channel_models(
                         if model.credential_id == credential_id
                         and model.protocol == protocol
                     ]
-                    manual_names = {
-                        model.model_name
-                        for model in target_models
-                        if model.source == ModelSource.MANUAL
-                    }
                     old_synced_names = {
                         model.model_name
                         for model in target_models
                         if model.source == ModelSource.SYNCED
                     }
                     all_upstream_set = set(all_upstream)
-                    matched_set = set(
-                        filter_model_names(all_upstream, protocol_config.match_regex)
-                    )
+                    desired_synced = target_names & all_upstream_set
                     status = ChannelModelSyncStatus.UNCHANGED
-                    added = matched_set - manual_names - old_synced_names
-                    removed = old_synced_names - all_upstream_set
+                    added = desired_synced - old_synced_names
+                    removed = old_synced_names - desired_synced
                     ensure_inputs = _group_ensure_inputs_for_added(
                         groups,
                         protocol_config,
@@ -250,10 +249,6 @@ async def sync_channel_models(
                     if added or removed or ensure_inputs:
                         status = ChannelModelSyncStatus.UPDATED
                     if not dry_run and (added or removed):
-                        # Keep synced models the upstream still serves even when
-                        # they fall outside the filter, so hand-switched models
-                        # are only dropped once the upstream really removes them.
-                        desired_synced = (old_synced_names & all_upstream_set) | added
                         await state.channel_store.replace_protocol_config_synced_models(
                             protocol_config.id,
                             credential_id,

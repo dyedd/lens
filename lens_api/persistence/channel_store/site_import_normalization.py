@@ -215,6 +215,14 @@ def _import_protocols(
         if has_duplicate:
             continue
 
+        models = _import_protocol_models(
+            protocol_index,
+            protocol.models,
+            protocol.protocol,
+            set(credential_ids),
+            credential_refs,
+            errors,
+        )
         protocols.append(
             SiteProtocolConfigInput(
                 id=str(uuid.uuid4()),
@@ -229,17 +237,18 @@ def _import_protocols(
                 proxy_mode=protocol.proxy_mode,
                 channel_proxy=protocol.channel_proxy.strip(),
                 param_override=protocol.param_override,
-                match_regex=protocol.match_regex.strip(),
                 base_url_id=base_url_id,
                 credential_ids=credential_ids,
-                models=_import_protocol_models(
-                    protocol_index,
-                    protocol.models,
-                    protocol.protocol,
-                    set(credential_ids),
-                    credential_refs,
-                    errors,
-                ),
+                models=models,
+                sync_targets=[
+                    {
+                        "credential_id": model.credential_id,
+                        "model_name": model.model_name,
+                        "protocol": model.protocol,
+                    }
+                    for model in models
+                    if model.source.value == "synced"
+                ],
             )
         )
     return protocols

@@ -29,13 +29,20 @@ export type FormProtocolConfig = {
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   param_override: string;
-  match_regex: string;
+  model_filter: string;
   manual_model_name: string;
   manual_protocols: ProtocolKind[];
   base_url_id: string;
   credential_ids: string[];
+  sync_targets: FormSyncTarget[];
   models: FormModel[];
   expanded: boolean;
+};
+
+export type FormSyncTarget = {
+  credential_id: string;
+  model_name: string;
+  protocol: ProtocolKind;
 };
 
 export type FormState = {

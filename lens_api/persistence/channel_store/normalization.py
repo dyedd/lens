@@ -77,7 +77,6 @@ class ChannelNormalizationMixin(ChannelLoadNormalizationMixin):
                         proxy_mode=protocol_config.proxy_mode,
                         channel_proxy=protocol_config.channel_proxy,
                         param_override=protocol_config.param_override,
-                        match_regex=protocol_config.match_regex,
                     )
                 )
         return items
