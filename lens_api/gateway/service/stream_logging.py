@@ -25,6 +25,7 @@ from .usage import (
     _describe_stream_capture_issue,
     _extract_stream_usage,
     _is_pure_client_stream_disconnect,
+    _is_stream_body_cut_short,
 )
 
 
@@ -88,9 +89,15 @@ async def _record_stream_request_log(
         response_protocol = protocol
         response_raw_content = client_response_content
     parse_errors: list[str] = []
-    if raw_content and not (
+    # A body that ends mid-frame (client hung up, or capture hit its size cap) would
+    # only yield bogus parse errors if it were re-parsed as one document.
+    upstream_body_incomplete = _is_stream_body_cut_short(capture) or (
         capture is not None and capture.is_response_content_truncated
-    ):
+    )
+    logged_body_incomplete = upstream_body_incomplete or (
+        capture is not None and capture.is_client_response_content_truncated
+    )
+    if raw_content and not upstream_body_incomplete:
         try:
             parsed = _extract_stream_usage(
                 channel.protocol, raw_content, parse_errors=parse_errors
@@ -104,10 +111,7 @@ async def _record_stream_request_log(
         for error in parse_errors:
             _record_stream_parse_error(capture, error)
     try:
-        if capture is not None and (
-            capture.is_response_content_truncated
-            or capture.is_client_response_content_truncated
-        ):
+        if logged_body_incomplete:
             distilled_content = response_raw_content
         else:
             distilled_content = _distill_stream_response_content(
