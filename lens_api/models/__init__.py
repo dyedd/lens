@@ -128,6 +128,7 @@ from .sites import (
     SiteModelTestResult,
     SiteProtocolConfig,
     SiteProtocolConfigInput,
+    SiteSyncTarget,
     SiteRuntimeSummary,
     SiteUpdate,
 )
@@ -169,6 +170,7 @@ __all__ = [
     "SiteModelInput",
     "SiteProtocolConfig",
     "SiteProtocolConfigInput",
+    "SiteSyncTarget",
     "SiteConfig",
     "SiteRuntimeSummary",
     "SiteChannelRuntimeSummary",

@@ -96,9 +96,7 @@ class SiteProtocolConfigEntity(Base):
     )
     channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    match_regex: Mapped[str] = mapped_column(Text, nullable=False, default="")
     base_url_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    auto_sync_enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class SiteProtocolConfigCredentialEntity(Base):
@@ -145,6 +143,27 @@ class SiteDiscoveredModelEntity(Base):
     sort_order: Mapped[int] = sort_order_column()
     protocol: Mapped[str | None] = mapped_column(String(40), nullable=True)
     source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+
+
+class SiteProtocolConfigSyncTargetEntity(Base):
+    __tablename__ = "site_protocol_config_sync_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "protocol_config_id",
+            "credential_id",
+            "protocol",
+            "model_name",
+            name="uq_site_protocol_config_sync_targets_target",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    protocol_config_id: Mapped[str] = mapped_column(
+        String(80), nullable=False, index=True
+    )
+    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    protocol: Mapped[str] = mapped_column(String(40), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
 class ModelGroupEntity(Base):

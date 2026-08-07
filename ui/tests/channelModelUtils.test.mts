@@ -3,6 +3,7 @@ import test from "node:test";
 import type { ProtocolKind } from "../src/lib/api";
 import type {
   FormModel,
+  FormSyncTarget,
   PickerModelItem,
 } from "../src/components/screens/channels/channelTypes";
 
@@ -12,14 +13,19 @@ const moduleUrl = new URL(
 ).href;
 const {
   coalesceFormModels,
-  mergeSyncedModels,
+  replaceSyncedModels,
 }: {
   coalesceFormModels: (models: FormModel[]) => FormModel[];
-  mergeSyncedModels: (
+  replaceSyncedModels: (
     models: FormModel[],
+    syncTargets: FormSyncTarget[],
     fetched: PickerModelItem[],
     protocols: ProtocolKind[],
-  ) => { models: FormModel[]; removedCount: number };
+  ) => {
+    models: FormModel[];
+    syncTargets: FormSyncTarget[];
+    removedCount: number;
+  };
 } = await import(moduleUrl);
 
 test("coalesces models that become equivalent after a source change", () => {
@@ -75,8 +81,8 @@ test("keeps manual and synchronized models separate", () => {
   );
 });
 
-test("replaces the synced set with the fetched models", () => {
-  const { models, removedCount } = mergeSyncedModels(
+test("replaces exact sync targets while leaving manual conflicts alone", () => {
+  const { models, syncTargets, removedCount } = replaceSyncedModels(
     [
       {
         credential_id: "credential-1",
@@ -112,6 +118,18 @@ test("replaces the synced set with the fetched models", () => {
       },
     ],
     [
+      {
+        credential_id: "credential-1",
+        model_name: "dropped-upstream",
+        protocol: "openai_chat",
+      },
+      {
+        credential_id: "credential-2",
+        model_name: "other-credential",
+        protocol: "openai_chat",
+      },
+    ],
+    [
       { credential_id: "credential-1", model_name: "gpt-4.1" },
       { credential_id: "credential-1", model_name: "gpt-5" },
     ],
@@ -119,12 +137,12 @@ test("replaces the synced set with the fetched models", () => {
   );
   const byName = new Map(models.map((model) => [model.model_name, model]));
 
-  // Fetched row flips to synced but keeps its protocols and persisted ids.
+  // A same-name manual model remains manual and cannot gain a sync target.
   assert.deepEqual(byName.get("gpt-4.1"), {
     credential_id: "credential-1",
     model_name: "gpt-4.1",
     enabled: true,
-    source: "synced",
+    source: "manual",
     protocols: ["openai_responses"],
     protocolIds: { openai_responses: "responses-row" },
   });
@@ -142,14 +160,26 @@ test("replaces the synced set with the fetched models", () => {
   assert.equal(byName.has("dropped-upstream"), false);
   // Credentials missing from the response are left alone.
   assert.equal(byName.get("other-credential")?.source, "synced");
+  assert.deepEqual(syncTargets, [
+    {
+      credential_id: "credential-2",
+      model_name: "other-credential",
+      protocol: "openai_chat",
+    },
+    {
+      credential_id: "credential-1",
+      model_name: "gpt-5",
+      protocol: "openai_chat",
+    },
+  ]);
   assert.equal(models.length, 4);
   assert.equal(removedCount, 1);
 });
 
-test("counts only pruned models, not rows merged as equivalent", () => {
+test("does not create a target for a matching manual model", () => {
   // Both rows describe the same model under different sources, so coalescing
   // collapses them; that must not read as an upstream removal.
-  const { models, removedCount } = mergeSyncedModels(
+  const { models, syncTargets, removedCount } = replaceSyncedModels(
     [
       {
         credential_id: "credential-1",
@@ -168,10 +198,18 @@ test("counts only pruned models, not rows merged as equivalent", () => {
         protocolIds: { openai_chat: "chat-row" },
       },
     ],
+    [
+      {
+        credential_id: "credential-1",
+        model_name: "gpt-4.1",
+        protocol: "openai_chat",
+      },
+    ],
     [{ credential_id: "credential-1", model_name: "gpt-4.1" }],
     ["openai_chat"],
   );
 
   assert.equal(models.length, 1);
+  assert.deepEqual(syncTargets, []);
   assert.equal(removedCount, 0);
 });

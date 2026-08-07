@@ -28,6 +28,60 @@ import {
   type Locale,
 } from "./channelShared";
 
+function syncTargetKey(
+  target: Pick<
+    FormProtocolConfig["sync_targets"][number],
+    "credential_id" | "model_name" | "protocol"
+  >,
+) {
+  return JSON.stringify([
+    target.credential_id,
+    target.model_name,
+    target.protocol,
+  ]);
+}
+
+function syncTargetsForModel(model: FormModel) {
+  return model.protocols.map((protocol) => ({
+    credential_id: model.credential_id,
+    model_name: model.model_name,
+    protocol,
+  }));
+}
+
+function replaceSyncTargets(
+  config: FormProtocolConfig,
+  models: FormModel[],
+  source: FormModel["source"],
+) {
+  const nextTargets = models.flatMap(syncTargetsForModel);
+  const targetKeys = new Set(nextTargets.map(syncTargetKey));
+  const targets = config.sync_targets.filter(
+    (target) => !targetKeys.has(syncTargetKey(target)),
+  );
+  return source === "synced" ? [...targets, ...nextTargets] : targets;
+}
+
+function updateModelSources(
+  config: FormProtocolConfig,
+  selected: FormModel[],
+  source: FormModel["source"],
+) {
+  const modelKeys = new Set(
+    selected.map((model) => protocolConfigModelKey(config, model)),
+  );
+  return {
+    models: coalesceFormModels(
+      config.models.map((model) =>
+        modelKeys.has(protocolConfigModelKey(config, model))
+          ? { ...model, source }
+          : model,
+      ),
+    ),
+    sync_targets: replaceSyncTargets(config, selected, source),
+  };
+}
+
 function validateChannelForm(
   form: FormState,
   duplicatedConfigCount: number,
@@ -194,6 +248,9 @@ export function useChannelForm(locale: Locale) {
             models: config.models.filter(
               (model) => model.credential_id !== target.id,
             ),
+            sync_targets: config.sync_targets.filter(
+              (syncTarget) => syncTarget.credential_id !== target.id,
+            ),
           };
         }),
       };
@@ -205,9 +262,21 @@ export function useChannelForm(locale: Locale) {
   ) {
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config, i) =>
-        i === index ? { ...config, ...patch } : config,
-      ),
+      protocolConfigs: current.protocolConfigs.map((config, i) => {
+        if (i !== index) return config;
+        const next = { ...config, ...patch };
+        if (!patch.credential_ids) return next;
+        const credentialIds = new Set(next.credential_ids);
+        return {
+          ...next,
+          models: next.models.filter((model) =>
+            credentialIds.has(model.credential_id),
+          ),
+          sync_targets: next.sync_targets.filter((target) =>
+            credentialIds.has(target.credential_id),
+          ),
+        };
+      }),
     }));
   }
   function updateModelProtocols(key: string, protocols: ProtocolKind[]) {
@@ -221,25 +290,47 @@ export function useChannelForm(locale: Locale) {
     }
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => ({
-        ...config,
-        models: config.models.map((model) =>
-          protocolConfigModelKey(config, model) === key
-            ? { ...model, protocols: Array.from(new Set(protocols)) }
-            : model,
-        ),
-      })),
+      protocolConfigs: current.protocolConfigs.map((config) => {
+        const selected = config.models.find(
+          (model) => protocolConfigModelKey(config, model) === key,
+        );
+        if (!selected) return config;
+        const nextModel = {
+          ...selected,
+          protocols: Array.from(new Set(protocols)),
+        };
+        return {
+          ...config,
+          models: config.models.map((model) =>
+            protocolConfigModelKey(config, model) === key ? nextModel : model,
+          ),
+          sync_targets:
+            selected.source === "synced"
+              ? replaceSyncTargets(config, [selected], "manual").concat(
+                  syncTargetsForModel(nextModel),
+                )
+              : config.sync_targets,
+        };
+      }),
     }));
   }
   function removeAggregateModel(key: string) {
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => ({
-        ...config,
-        models: config.models.filter(
-          (model) => protocolConfigModelKey(config, model) !== key,
-        ),
-      })),
+      protocolConfigs: current.protocolConfigs.map((config) => {
+        const selected = config.models.find(
+          (model) => protocolConfigModelKey(config, model) === key,
+        );
+        return {
+          ...config,
+          models: config.models.filter(
+            (model) => protocolConfigModelKey(config, model) !== key,
+          ),
+          sync_targets: selected
+            ? replaceSyncTargets(config, [selected], "manual")
+            : config.sync_targets,
+        };
+      }),
     }));
   }
   function updateModelSource(key: string, source: FormModel["source"]) {
@@ -247,12 +338,12 @@ export function useChannelForm(locale: Locale) {
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
-        models: coalesceFormModels(
-          config.models.map((model) =>
-            protocolConfigModelKey(config, model) === key
-              ? { ...model, source }
-              : model,
+        ...updateModelSources(
+          config,
+          config.models.filter(
+            (model) => protocolConfigModelKey(config, model) === key,
           ),
+          source,
         ),
       })),
     }));
@@ -268,10 +359,10 @@ export function useChannelForm(locale: Locale) {
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
-        models: coalesceFormModels(
-          config.models.map((model) =>
-            model.source === source ? model : { ...model, source },
-          ),
+        ...updateModelSources(
+          config,
+          config.models.filter((model) => model.source !== source),
+          source,
         ),
       })),
     }));

@@ -42,8 +42,6 @@ class ChannelConfig(StrictBaseModel):
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
-    match_regex: str = ""
-
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_base_url)
 
 

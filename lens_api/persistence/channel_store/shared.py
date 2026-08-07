@@ -31,6 +31,7 @@ from ...models import (
     SiteModelFetchRequest,
     SiteProtocolConfig,
     SiteProtocolConfigInput,
+    SiteSyncTarget,
     SiteUpdate,
 )
 from ..entities import (
@@ -42,6 +43,7 @@ from ..entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
     SiteProtocolConfigCredentialEntity,
+    SiteProtocolConfigSyncTargetEntity,
 )
 
 

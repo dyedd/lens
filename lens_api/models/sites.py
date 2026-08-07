@@ -102,6 +102,12 @@ class SiteModelInput(StrictBaseModel):
     source: ModelSource = ModelSource.MANUAL
 
 
+class SiteSyncTarget(StrictBaseModel):
+    credential_id: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+    protocol: ProtocolKind
+
+
 class SiteProtocolConfig(StrictBaseModel):
     id: str
     name: str = ""
@@ -111,10 +117,9 @@ class SiteProtocolConfig(StrictBaseModel):
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
-    match_regex: str = ""
     base_url_id: str = Field(min_length=1)
     credential_ids: list[str] = Field(min_length=1)
-    auto_sync_enabled: bool = False
+    sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
     models: list[SiteModel] = Field(default_factory=list)
 
 
@@ -127,17 +132,14 @@ class SiteProtocolConfigInput(StrictBaseModel):
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
-    match_regex: str = ""
     base_url_id: str = Field(min_length=1)
     credential_ids: list[str] = Field(min_length=1)
-    auto_sync_enabled: bool = False
+    sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
 
     _normalize_credential_ids = field_validator("credential_ids")(
         _normalize_required_text_list
     )
-
-    validate_match_regex = _validate_match_regex
 
     _normalize_param_override = field_validator("param_override")(
         _validate_param_override
@@ -230,9 +232,6 @@ class SiteImportProtocolInput(StrictBaseModel):
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     param_override: str = ""
-    match_regex: str = ""
-    auto_sync_enabled: bool = False
-    """Deprecated and ignored; derived from whether models contain synced entries."""
     base_url_ref: str
     credential_refs: list[str] = Field(min_length=1)
     models: list[SiteImportModelInput] = Field(default_factory=list)
@@ -243,8 +242,6 @@ class SiteImportProtocolInput(StrictBaseModel):
     _normalize_credential_refs = field_validator("credential_refs")(
         _normalize_required_text_list
     )
-
-    validate_match_regex = _validate_match_regex
 
     _normalize_param_override = field_validator("param_override")(
         _validate_param_override

@@ -2,6 +2,7 @@ import type { ProtocolKind } from "@/lib/api";
 import type {
   FormModel,
   FormProtocolConfig,
+  FormSyncTarget,
   PickerModelItem,
 } from "./channelTypes";
 
@@ -107,42 +108,97 @@ export function pickerModelKeys(models: PickerModelItem[]) {
  * ``removedCount`` counts only pruned models, so callers do not mistake rows
  * merged by {@link coalesceFormModels} for upstream removals.
  */
-export function mergeSyncedModels(
+export function replaceSyncedModels(
   models: FormModel[],
+  syncTargets: FormSyncTarget[],
   fetched: PickerModelItem[],
   protocols: ProtocolKind[],
 ) {
-  const fetchedKeys = new Set(fetched.map((item) => genericModelKey(item)));
+  const selectedProtocols = Array.from(new Set(protocols));
+  const fetchedKeys = new Set(fetched.map(genericModelKey));
   const coveredCredentialIds = new Set(
     fetched.map((item) => item.credential_id),
   );
-  let removedCount = 0;
-  const merged = models.flatMap((model) => {
-    if (fetchedKeys.has(genericModelKey(model))) {
-      return [{ ...model, source: "synced" as const }];
-    }
-    if (
-      model.source === "synced" &&
-      coveredCredentialIds.has(model.credential_id)
-    ) {
-      removedCount += 1;
-      return [];
-    }
-    return [model];
+  const manualKeys = new Set(
+    models.filter((model) => model.source === "manual").map(genericModelKey),
+  );
+  const resetModel = (model: FormModel) =>
+    model.source === "synced" && coveredCredentialIds.has(model.credential_id);
+  const retainedSynced = models.flatMap((model) => {
+    if (!resetModel(model)) return [model];
+    const retainedProtocols = model.protocols.filter(
+      (protocol) => !selectedProtocols.includes(protocol),
+    );
+    return retainedProtocols.length
+      ? [
+          {
+            ...model,
+            protocols: retainedProtocols,
+            protocolIds: Object.fromEntries(
+              retainedProtocols.map((protocol) => [
+                protocol,
+                model.protocolIds[protocol],
+              ]),
+            ),
+          },
+        ]
+      : [];
   });
-  const existingKeys = new Set(models.map((model) => genericModelKey(model)));
+  const priorSynced = new Map(
+    models
+      .filter((model) => model.source === "synced")
+      .map((model) => [genericModelKey(model), model]),
+  );
+  const nextModels = [...retainedSynced];
   for (const item of fetched) {
-    if (existingKeys.has(genericModelKey(item))) continue;
-    merged.push({
-      protocols: Array.from(new Set(protocols)),
-      protocolIds: {},
+    const key = genericModelKey(item);
+    if (manualKeys.has(key)) continue;
+    const previous = priorSynced.get(key);
+    nextModels.push({
+      ...previous,
+      protocols: selectedProtocols,
+      protocolIds: previous
+        ? Object.fromEntries(
+            Object.entries(previous.protocolIds).filter(([protocol]) =>
+              selectedProtocols.includes(protocol as ProtocolKind),
+            ),
+          )
+        : {},
       credential_id: item.credential_id,
       model_name: item.model_name,
       enabled: true,
       source: "synced",
     });
   }
-  return { models: coalesceFormModels(merged), removedCount };
+  const nextTargets = syncTargets.filter(
+    (target) =>
+      !(
+        coveredCredentialIds.has(target.credential_id) &&
+        selectedProtocols.includes(target.protocol)
+      ),
+  );
+  for (const item of fetched) {
+    if (manualKeys.has(genericModelKey(item))) continue;
+    for (const protocol of selectedProtocols) {
+      nextTargets.push({
+        credential_id: item.credential_id,
+        model_name: item.model_name,
+        protocol,
+      });
+    }
+  }
+  return {
+    models: coalesceFormModels(nextModels),
+    syncTargets: nextTargets,
+    removedCount: models.filter(
+      (model) =>
+        resetModel(model) &&
+        model.protocols.some((protocol) =>
+          selectedProtocols.includes(protocol),
+        ) &&
+        !fetchedKeys.has(genericModelKey(model)),
+    ).length,
+  };
 }
 
 /** Returns the unique protocols supported by a form model. */
@@ -166,12 +222,16 @@ export function selectedModelTestProtocol(
 }
 
 export function protocolConfigEffectiveProtocols(
-  protocolConfig: Pick<FormProtocolConfig, "manual_protocols" | "models">,
+  protocolConfig: Pick<
+    FormProtocolConfig,
+    "manual_protocols" | "models" | "sync_targets"
+  >,
 ) {
   return Array.from(
     new Set([
       ...protocolConfig.manual_protocols,
       ...protocolConfig.models.flatMap((model) => model.protocols),
+      ...protocolConfig.sync_targets.map((target) => target.protocol),
     ]),
   );
 }

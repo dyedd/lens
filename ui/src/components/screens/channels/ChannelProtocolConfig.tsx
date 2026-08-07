@@ -126,15 +126,7 @@ export function ProtocolConfigItem({
               options={credentialOptions}
               locale={locale}
               invalid={!hasActiveCredentials}
-              onChange={(next) => {
-                const nextCredentialIdSet = new Set(next);
-                update({
-                  credential_ids: next,
-                  models: protocolConfig.models.filter((model) =>
-                    nextCredentialIdSet.has(model.credential_id),
-                  ),
-                });
-              }}
+              onChange={(next) => update({ credential_ids: next })}
             />
           </Field>
           <div className="flex size-8 items-center justify-center xl:self-end">
