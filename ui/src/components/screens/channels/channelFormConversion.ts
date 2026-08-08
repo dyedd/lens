@@ -79,6 +79,7 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
           channel_proxy: protocolConfig.channel_proxy,
           param_override: protocolConfig.param_override,
           model_filter: "",
+          sync_new_models: false,
           manual_model_name: "",
           manual_protocols: Array.from(new Set(protocolConfig.protocols)),
           base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),

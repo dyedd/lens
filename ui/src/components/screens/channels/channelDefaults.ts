@@ -27,6 +27,7 @@ export const emptyProtocolConfig = (
   channel_proxy: "",
   param_override: "",
   model_filter: "",
+  sync_new_models: false,
   manual_model_name: "",
   manual_protocols: [],
   base_url_id: baseUrlId,

@@ -30,11 +30,12 @@ export function activeSelectedCredentialIds(
   });
 }
 
-export function buildManualModels(
+export function buildModels(
   config: FormProtocolConfig,
   credentialIds: string[],
   modelName: string,
   protocols: ProtocolKind[],
+  source: "manual" | "synced",
 ) {
   const existing = new Set(
     config.models.map((model) => `${model.credential_id}:${model.model_name}`),
@@ -47,6 +48,6 @@ export function buildManualModels(
       credential_id: credentialId,
       model_name: modelName,
       enabled: true,
-      source: "manual" as const,
+      source,
     }));
 }

@@ -1,4 +1,4 @@
 interface:
   display_name: "Lens Testing"
-  short_description: "Keep behavior tests in CI while local checks stay fast"
-  default_prompt: "Apply the Lens testing policy: add only behavior coverage, run focused local checks, and leave the full parallel suite to CI."
+  short_description: "Protect only critical backend HTTP contracts"
+  default_prompt: "Use $lens-testing to keep only high-risk backend API behavior coverage, run focused local checks, and leave the backend API suite plus frontend static checks to CI."
