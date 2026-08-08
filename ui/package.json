@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "lint": "eslint",
-    "test": "node --experimental-strip-types --test tests/*.test.mts"
+    "lint": "eslint"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.97.0",

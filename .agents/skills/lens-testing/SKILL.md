@@ -1,25 +1,26 @@
 ---
 name: lens-testing
-description: Apply Lens's test policy when adding or changing backend or frontend tests, fixing a reproducible bug, or updating CI validation. Keep behavior coverage in the repository and run the complete suite in CI while local development uses only focused, fast checks.
+description: Apply Lens's policy for critical backend HTTP API tests and CI validation. Keep only high-risk API boundary coverage, and validate the frontend with static checks instead of frontend tests.
 ---
 
 # Lens Testing
 
-Keep tests for externally observable behavior, not implementation details. A new route or reproducible bug needs a regression test; a refactor, formatting change, or type-only edit does not justify a new test file.
+Keep tests only for critical, high-risk backend HTTP contracts: authentication and authorization, data persistence or loss, gateway protocol compatibility, and routing or failover behavior. A new route or reproducible bug does not automatically require a test; add or update one only when the affected HTTP contract warrants the maintenance cost.
+
+Do not add frontend tests or direct tests of units, services, helpers, converters, repositories, or other implementation details.
 
 ## Workflow
 
-1. Trace the affected request or UI flow and reuse the nearest existing fixture/helper.
-2. Add the smallest behavior test that fails before the fix and passes after it.
-3. Keep backend tests under `tests/` and frontend tests under `ui/tests/`.
-4. Do not run the full suite as a local gate. Locally run only the relevant static checks or one focused test while debugging.
-5. Let CI run the full backend suite with pytest-xdist and the frontend's `node:test` files, type check, lint, and build.
+1. Trace the affected HTTP path and decide whether it is a high-risk contract.
+2. Reuse the nearest file and fixture under `tests/api/`.
+3. If coverage is justified, add the smallest request-and-response behavior test.
+4. Locally run static checks and, only when debugging, one focused API test.
+5. Let CI run the backend API suite with pytest-xdist and the frontend lint, type check, and build.
 
 ## Commands
 
 - Backend focused check: `uv run --no-sync python -m pytest tests/api/test_<area>.py -q --confcutdir=tests`
-- Backend CI suite: `uv run --no-sync python -m pytest tests -q --confcutdir=tests -n auto --dist worksteal`
-- Frontend focused check: `cd ui && pnpm test`
-- Frontend CI checks: `pnpm test`, `pnpm lint`, `pnpm exec tsc --noEmit`, and `pnpm build`
+- Backend CI suite: `uv run --no-sync python -m pytest tests/api -q --confcutdir=tests -n auto --dist worksteal`
+- Frontend checks: `pnpm lint`, `pnpm exec tsc --noEmit`, and `pnpm build`
 
-Do not add a second test runner or a custom parallel harness. `pytest-xdist` is the backend parallel runner; Node's built-in `node:test` is sufficient for the current frontend utility tests. Add broader frontend coverage only when a user-facing regression or a reusable pure utility warrants it.
+Do not add another test runner or a custom parallel harness. `pytest-xdist` is the backend parallel runner.

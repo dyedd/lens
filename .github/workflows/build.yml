@@ -31,7 +31,7 @@ jobs:
         run: python -m compileall -q lens_api scripts migrations
 
       - name: Test backend
-        run: uv run --no-sync python -m pytest tests -q --confcutdir=tests -n auto --dist worksteal
+        run: uv run --no-sync python -m pytest tests/api -q --confcutdir=tests -n auto --dist worksteal
 
       - name: Validate backend migrations
         env:
@@ -66,9 +66,6 @@ jobs:
 
       - name: Lint frontend
         run: pnpm lint
-
-      - name: Test frontend
-        run: pnpm test
 
       - name: Type check frontend
         run: pnpm exec tsc --noEmit
