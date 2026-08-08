@@ -19,13 +19,13 @@ uv run lens dev
 - 需要单独启动时使用 `uv run lens serve` 和 `cd ui && pnpm dev`。环境变量、部署方式、端口和数据库配置以 `README.md` 为准。
 - 每完成一个独立功能点，只有在用户明确要求时才提交 git。
 - 每次修改代码后，对你本次修改的文件进行格式化：前端文件使用 npx prettier --write <文件路径>，后端文件使用 black <文件路径>
-- 新增路由或修复可复现 bug 时，应包含对应的行为测试；其它修改无需新增测试文件。
-- 测试策略遵循 `.agents/skills/lens-testing/SKILL.md`：行为测试必须提交到仓库并由 CI 执行；本地不要求全量测试，只做受影响的静态检查，调试时再运行单个聚焦测试。
+- 仅在认证授权、数据持久化或丢失、网关协议兼容、路由或故障转移等高风险后端 HTTP 合同需要保护时，补充或更新最小 API 行为测试；不要为前端、工具函数、服务层、实现细节或一般可复现 bug 自动新增测试。
+- 测试策略遵循 `.agents/skills/lens-testing/SKILL.md`：关键后端 API 行为测试由 CI 执行；本地只做受影响的静态检查，调试时再运行单个聚焦测试。
 
 ## 测试与验证
 
 ```bash
-# 后端：本地只做快速检查；完整测试由 CI 并行执行
+# 后端：本地只做快速检查；完整 API 测试由 CI 并行执行
 python -m compileall -q lens_api scripts migrations
 uv run python -m pytest tests/api/test_<area>.py -q --confcutdir=tests  # 仅调试回归时运行
 
@@ -33,7 +33,6 @@ uv run python -m pytest tests/api/test_<area>.py -q --confcutdir=tests  # 仅调
 cd ui
 pnpm exec tsc --noEmit
 pnpm lint
-pnpm test  # 仅调试前端回归时运行
 
 # 通用
 git diff --check

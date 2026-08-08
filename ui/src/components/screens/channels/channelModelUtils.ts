@@ -2,7 +2,6 @@ import type { ProtocolKind } from "@/lib/api";
 import type {
   FormModel,
   FormProtocolConfig,
-  FormSyncTarget,
   PickerModelItem,
 } from "./channelTypes";
 
@@ -94,111 +93,6 @@ export function resolvePickerModelProtocols(
 
 export function pickerModelKeys(models: PickerModelItem[]) {
   return Array.from(new Set(models.map((item) => genericModelKey(item))));
-}
-
-/**
- * Replaces the synced model set with what the upstream returned.
- *
- * Fetched models become synced, keeping the protocols and persisted ids of any
- * row they replace. Synced models the upstream no longer returns are dropped,
- * so narrowing the filter prunes them. Manual models are never touched, and
- * credentials absent from the response are skipped entirely so a partially
- * failed discovery cannot wipe a working credential's models.
- *
- * ``removedCount`` counts only pruned models, so callers do not mistake rows
- * merged by {@link coalesceFormModels} for upstream removals.
- */
-export function replaceSyncedModels(
-  models: FormModel[],
-  syncTargets: FormSyncTarget[],
-  fetched: PickerModelItem[],
-  protocols: ProtocolKind[],
-) {
-  const selectedProtocols = Array.from(new Set(protocols));
-  const fetchedKeys = new Set(fetched.map(genericModelKey));
-  const coveredCredentialIds = new Set(
-    fetched.map((item) => item.credential_id),
-  );
-  const manualKeys = new Set(
-    models.filter((model) => model.source === "manual").map(genericModelKey),
-  );
-  const resetModel = (model: FormModel) =>
-    model.source === "synced" && coveredCredentialIds.has(model.credential_id);
-  const retainedSynced = models.flatMap((model) => {
-    if (!resetModel(model)) return [model];
-    const retainedProtocols = model.protocols.filter(
-      (protocol) => !selectedProtocols.includes(protocol),
-    );
-    return retainedProtocols.length
-      ? [
-          {
-            ...model,
-            protocols: retainedProtocols,
-            protocolIds: Object.fromEntries(
-              retainedProtocols.map((protocol) => [
-                protocol,
-                model.protocolIds[protocol],
-              ]),
-            ),
-          },
-        ]
-      : [];
-  });
-  const priorSynced = new Map(
-    models
-      .filter((model) => model.source === "synced")
-      .map((model) => [genericModelKey(model), model]),
-  );
-  const nextModels = [...retainedSynced];
-  for (const item of fetched) {
-    const key = genericModelKey(item);
-    if (manualKeys.has(key)) continue;
-    const previous = priorSynced.get(key);
-    nextModels.push({
-      ...previous,
-      protocols: selectedProtocols,
-      protocolIds: previous
-        ? Object.fromEntries(
-            Object.entries(previous.protocolIds).filter(([protocol]) =>
-              selectedProtocols.includes(protocol as ProtocolKind),
-            ),
-          )
-        : {},
-      credential_id: item.credential_id,
-      model_name: item.model_name,
-      enabled: true,
-      source: "synced",
-    });
-  }
-  const nextTargets = syncTargets.filter(
-    (target) =>
-      !(
-        coveredCredentialIds.has(target.credential_id) &&
-        selectedProtocols.includes(target.protocol)
-      ),
-  );
-  for (const item of fetched) {
-    if (manualKeys.has(genericModelKey(item))) continue;
-    for (const protocol of selectedProtocols) {
-      nextTargets.push({
-        credential_id: item.credential_id,
-        model_name: item.model_name,
-        protocol,
-      });
-    }
-  }
-  return {
-    models: coalesceFormModels(nextModels),
-    syncTargets: nextTargets,
-    removedCount: models.filter(
-      (model) =>
-        resetModel(model) &&
-        model.protocols.some((protocol) =>
-          selectedProtocols.includes(protocol),
-        ) &&
-        !fetchedKeys.has(genericModelKey(model)),
-    ).length,
-  };
 }
 
 /** Returns the unique protocols supported by a form model. */

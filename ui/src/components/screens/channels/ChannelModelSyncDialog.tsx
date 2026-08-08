@@ -120,8 +120,8 @@ export function ChannelModelSyncDialog({
                 </AlertTitle>
                 <AlertDescription>
                   {locale === "zh-CN"
-                    ? "请先在渠道组合中点「全部同步」，或把模型来源改为同步，并确保地址、密钥和客户端协议均已启用。"
-                    : "Click Sync all in a channel combination or switch models to synced, and make sure the URL, key, and client protocol are enabled."}
+                    ? "请先在渠道组合中开启「同步」，或把模型来源改为同步，并确保地址、密钥和客户端协议均已启用。"
+                    : "Click Sync in a channel combination or switch models to synced, and make sure the URL, key, and client protocol are enabled."}
                 </AlertDescription>
               </Alert>
             ) : null}
