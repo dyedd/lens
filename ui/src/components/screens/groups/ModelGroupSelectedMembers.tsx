@@ -46,6 +46,7 @@ interface ModelGroupSelectedMembersProps {
   setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
   visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
   visibleChannelGroups: ChannelMemberGroup[];
+  toggleChannelMembers: (channelKey: string, enabled: boolean) => void;
   toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
   removeFoldedMember: (foldKey: string) => void;
   moveChannelGroup: (fromIndex: number, toIndex: number) => void;
@@ -74,6 +75,7 @@ export function ModelGroupSelectedMembers({
   setMemberStatusFilter,
   visibleFoldedMembers,
   visibleChannelGroups,
+  toggleChannelMembers,
   toggleFoldedMember,
   removeFoldedMember,
   moveChannelGroup,
@@ -219,6 +221,7 @@ export function ModelGroupSelectedMembers({
           memberStatusFilter={memberStatusFilter}
           visibleFoldedMembers={visibleFoldedMembers}
           visibleChannelGroups={visibleChannelGroups}
+          toggleChannelMembers={toggleChannelMembers}
           toggleFoldedMember={toggleFoldedMember}
           removeFoldedMember={removeFoldedMember}
           moveChannelGroup={moveChannelGroup}

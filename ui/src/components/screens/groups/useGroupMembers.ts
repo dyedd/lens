@@ -122,6 +122,21 @@ export function useGroupMembers(
     0,
   );
 
+  function setItemsEnabled(
+    enabled: boolean,
+    matches: (item: FormItem) => boolean,
+  ) {
+    setForm((current) => {
+      let changed = false;
+      const items = current.items.map((item) => {
+        if (!matches(item) || item.enabled === enabled) return item;
+        changed = true;
+        return { ...item, enabled, state: null, reasons: [] };
+      });
+      return changed ? { ...current, items } : current;
+    });
+  }
+
   function removeFoldedMember(foldKey: string) {
     setForm((current) => ({
       ...current,
@@ -132,14 +147,11 @@ export function useGroupMembers(
   }
 
   function toggleFoldedMember(foldKey: string, enabled: boolean) {
-    setForm((current) => ({
-      ...current,
-      items: current.items.map((item) =>
-        formItemMemberKey(item) === foldKey
-          ? { ...item, enabled, state: null, reasons: [] }
-          : item,
-      ),
-    }));
+    setItemsEnabled(enabled, (item) => formItemMemberKey(item) === foldKey);
+  }
+
+  function toggleChannelMembers(channelKey: string, enabled: boolean) {
+    setItemsEnabled(enabled, (item) => formItemChannelKey(item) === channelKey);
   }
 
   function moveFoldedMember(fromIndex: number, toIndex: number) {
@@ -200,20 +212,7 @@ export function useGroupMembers(
   }
 
   function setAllMembersEnabled(enabled: boolean) {
-    setForm((current) => {
-      if (!current.items.some((item) => item.enabled !== enabled)) {
-        return current;
-      }
-      return {
-        ...current,
-        items: current.items.map((item) => ({
-          ...item,
-          enabled,
-          state: null,
-          reasons: [],
-        })),
-      };
-    });
+    setItemsEnabled(enabled, () => true);
   }
 
   function removeDisabledMembers() {
@@ -260,6 +259,7 @@ export function useGroupMembers(
     removeInvalidItems,
     removeUnavailableItems,
     setAllMembersEnabled,
+    toggleChannelMembers,
     toggleFoldedMember,
     unavailableItemCount,
     visibleChannelGroups,
