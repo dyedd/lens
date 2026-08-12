@@ -65,6 +65,7 @@ interface GroupEditorDialogProps {
   setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
   visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
   visibleChannelGroups: ChannelMemberGroup[];
+  toggleChannelMembers: (channelKey: string, enabled: boolean) => void;
   toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
   removeFoldedMember: (foldKey: string) => void;
   moveChannelGroup: (fromIndex: number, toIndex: number) => void;
@@ -172,6 +173,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                     setMemberStatusFilter={props.setMemberStatusFilter}
                     visibleFoldedMembers={props.visibleFoldedMembers}
                     visibleChannelGroups={props.visibleChannelGroups}
+                    toggleChannelMembers={props.toggleChannelMembers}
                     toggleFoldedMember={props.toggleFoldedMember}
                     removeFoldedMember={props.removeFoldedMember}
                     moveChannelGroup={props.moveChannelGroup}

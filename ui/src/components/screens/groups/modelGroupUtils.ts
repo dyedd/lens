@@ -77,6 +77,7 @@ export type ChannelMemberGroup = {
   channel_id: string;
   channel_name: string;
   priority: number;
+  hasEnabledItems: boolean;
   members: Array<{ member: FoldedMember; index: number }>;
 };
 
