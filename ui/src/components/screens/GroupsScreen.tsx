@@ -154,6 +154,7 @@ export function GroupsScreen() {
             setMemberStatusFilter={editor.setMemberStatusFilter}
             visibleFoldedMembers={members.visibleFoldedMembers}
             visibleChannelGroups={members.visibleChannelGroups}
+            toggleChannelMembers={members.toggleChannelMembers}
             toggleFoldedMember={members.toggleFoldedMember}
             removeFoldedMember={members.removeFoldedMember}
             moveChannelGroup={members.moveChannelGroup}

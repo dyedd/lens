@@ -193,11 +193,13 @@ export function groupFoldedMembersByChannel(
         key,
         channel_id: member.channel_id,
         channel_name: member.channel_name,
+        hasEnabledItems: false,
         members: [],
       };
       groupsByKey.set(key, group);
     }
     group.members.push(entry);
+    group.hasEnabledItems ||= member.enabled_item_count > 0;
   }
 
   const groups = Array.from(groupsByKey.values());

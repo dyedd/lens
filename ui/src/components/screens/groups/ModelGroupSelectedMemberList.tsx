@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { GripVertical } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { Switch } from "@/components/ui/Switch";
 import type { RoutingStrategy } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { FoldedMemberRow } from "./ModelGroupEditorFields";
@@ -16,6 +17,7 @@ interface ModelGroupSelectedMemberListProps {
   memberStatusFilter: MemberStatusFilter;
   visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
   visibleChannelGroups: ChannelMemberGroup[];
+  toggleChannelMembers: (channelKey: string, enabled: boolean) => void;
   toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
   removeFoldedMember: (foldKey: string) => void;
   moveChannelGroup: (fromIndex: number, toIndex: number) => void;
@@ -123,6 +125,7 @@ type FailoverMemberListProps = Pick<
   ModelGroupSelectedMemberListProps,
   | "locale"
   | "visibleChannelGroups"
+  | "toggleChannelMembers"
   | "toggleFoldedMember"
   | "removeFoldedMember"
   | "moveChannelGroup"
@@ -132,6 +135,7 @@ type FailoverMemberListProps = Pick<
 function FailoverMemberList({
   locale,
   visibleChannelGroups,
+  toggleChannelMembers,
   toggleFoldedMember,
   removeFoldedMember,
   moveChannelGroup,
@@ -154,12 +158,6 @@ function FailoverMemberList({
           className="overflow-hidden rounded-md border bg-background/40"
         >
           <div
-            draggable={canReorder}
-            onDragStart={
-              canReorder
-                ? () => setDraggingChannelIndex(channelIndex)
-                : undefined
-            }
             onDragEnter={
               canReorder
                 ? () => {
@@ -177,16 +175,18 @@ function FailoverMemberList({
             onDragOver={
               canReorder ? (event) => event.preventDefault() : undefined
             }
-            onDragEnd={
-              canReorder ? () => setDraggingChannelIndex(null) : undefined
-            }
             className={cn(
               "flex min-h-10 min-w-0 items-center gap-2 bg-muted/40 px-3 py-2",
               draggingChannelIndex === channelIndex && "opacity-60",
             )}
           >
             {canReorder ? (
-              <span className="cursor-grab text-muted-foreground active:cursor-grabbing">
+              <span
+                draggable
+                className="cursor-grab text-muted-foreground active:cursor-grabbing"
+                onDragStart={() => setDraggingChannelIndex(channelIndex)}
+                onDragEnd={() => setDraggingChannelIndex(null)}
+              >
                 <GripVertical size={14} />
               </span>
             ) : null}
@@ -195,6 +195,17 @@ function FailoverMemberList({
                 channelGroup.channel_id ||
                 (locale === "zh-CN" ? "未知渠道" : "Unknown channel")}
             </div>
+            <Switch
+              checked={channelGroup.hasEnabledItems}
+              aria-label={
+                locale === "zh-CN"
+                  ? `启停渠道 ${channelGroup.channel_name || channelGroup.channel_id}`
+                  : `Toggle channel ${channelGroup.channel_name || channelGroup.channel_id}`
+              }
+              onCheckedChange={(enabled) =>
+                toggleChannelMembers(channelGroup.key, enabled)
+              }
+            />
             <Badge
               variant="secondary"
               aria-label={`${locale === "zh-CN" ? "优先级" : "Priority"} ${channelGroup.priority}`}
