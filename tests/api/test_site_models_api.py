@@ -210,9 +210,9 @@ def test_test_site_model_returns_probe_result(
             output_text="pong",
         )
 
-    import lens_api.gateway.service.admin.sites as sites
+    import lens_api.gateway.service.site_model_probe as probe
 
-    monkeypatch.setattr(sites, "_call_site_model_probe_channel", fake_probe)
+    monkeypatch.setattr(probe, "_call_site_model_probe_channel", fake_probe)
 
     response = client.post(
         "/api/admin/site-model-tests",
@@ -279,8 +279,9 @@ def test_test_site_model_cancels_upstream_on_client_disconnect(monkeypatch) -> N
             return {"type": "http.disconnect"}
 
         import lens_api.gateway.service.admin.sites as sites
+        import lens_api.gateway.service.site_model_probe as probe
 
-        monkeypatch.setattr(sites, "_call_site_model_probe_channel", hanging_probe)
+        monkeypatch.setattr(probe, "_call_site_model_probe_channel", hanging_probe)
         await sites.test_site_model(
             SiteModelTestRequest.model_validate(
                 _model_test_payload(ProtocolKind.OPENAI_CHAT)
@@ -324,9 +325,9 @@ def test_test_site_model_omits_unsupported_upstream_fields(
             credential_id=kwargs["credential_id"],
         )
 
-    import lens_api.gateway.service.admin.sites as sites
+    import lens_api.gateway.service.site_model_probe as probe
 
-    monkeypatch.setattr(sites, "_call_site_model_probe_channel", fake_probe)
+    monkeypatch.setattr(probe, "_call_site_model_probe_channel", fake_probe)
 
     response = client.post(
         "/api/admin/site-model-tests",

@@ -25,6 +25,8 @@ type ModelGroupListProps = Pick<
   | "removeGroupMember"
   | "toggleGroupEnabled"
   | "setDeleteTarget"
+  | "testingModel"
+  | "openModelTest"
 >;
 
 /** Render the filtered model group cards or the matching empty state. */
@@ -73,6 +75,8 @@ export function ModelGroupList(props: ModelGroupListProps) {
                 removeGroupMember={props.removeGroupMember}
                 toggleGroupEnabled={props.toggleGroupEnabled}
                 setDeleteTarget={props.setDeleteTarget}
+                testingModel={props.testingModel}
+                openModelTest={props.openModelTest}
               />
             ))}
           </ItemGroup>

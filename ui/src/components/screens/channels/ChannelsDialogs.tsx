@@ -204,10 +204,9 @@ export function ChannelsDialogs({
           removeSite={persistence.removeSite}
         />
       ) : null}
-      {modelTest.modelTestTarget ? (
+      {modelTest.modelTestDialogTarget ? (
         <ModelTestDialog
-          target={modelTest.modelTestTarget}
-          form={editor.form}
+          target={modelTest.modelTestDialogTarget}
           locale={locale}
           modelTestPrompts={modelTest.modelTestPrompts}
           modelTestPromptMode={modelTest.modelTestPromptMode}

@@ -1,20 +1,18 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   apiRequest,
   getApiErrorMessage,
   type ProtocolKind,
-  type SettingItem,
   type SiteModelTestPayload,
   type SiteModelTestResult,
 } from "@/lib/api";
 import {
-  MODEL_TEST_PROMPTS_SETTING_KEY,
-  parseModelTestPrompts,
-} from "@/lib/modelTestPrompts";
+  selectedModelTestProtocol,
+  useModelTestPrompts,
+} from "../modelTestSession";
 import {
   activeBaseUrlValue,
   credentialLabel,
@@ -22,7 +20,6 @@ import {
   formHeaders,
   modelSupportedProtocols,
   protocolConfigModelKey,
-  selectedModelTestProtocol,
   type FormState,
   type Locale,
   type ModelTestTarget,
@@ -40,18 +37,8 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
   const [modelTestResult, setModelTestResult] =
     useState<SiteModelTestResult | null>(null);
   const [testingModel, setTestingModel] = useState(false);
-  const modelTestAbortController = useRef<AbortController | null>(null);
-  const { data: settings } = useQuery({
-    queryKey: ["settings"],
-    queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
-    staleTime: 5 * 60_000,
-  });
-  const modelTestPrompts = useMemo(() => {
-    const mapping = new Map(
-      (settings ?? []).map((item) => [item.key, item.value]),
-    );
-    return parseModelTestPrompts(mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY));
-  }, [settings]);
+  const abortController = useRef<AbortController | null>(null);
+  const modelTestPrompts = useModelTestPrompts();
   const modelTestOptionByKey = useMemo(() => {
     const options = new Map<string, TestableModelOption>();
     const credentials = new Map(
@@ -83,6 +70,31 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     }
     return options;
   }, [form, locale]);
+  const modelTestDialogTarget = modelTestTarget
+    ? describeModelTestTarget(modelTestTarget)
+    : null;
+
+  useEffect(() => () => abortController.current?.abort(), []);
+
+  function describeModelTestTarget(target: ModelTestTarget) {
+    const config = form.protocolConfigs[target.protocolConfigIndex];
+    const model = config?.models[target.modelIndex];
+    if (!config || !model) return null;
+    const credentialIndex = form.credentials.findIndex(
+      (item) => item.id === model.credential_id,
+    );
+    const credential = form.credentials[credentialIndex];
+    return {
+      modelName: model.model_name,
+      source: [
+        credential ? credentialLabel(credential, credentialIndex, locale) : "",
+        activeBaseUrlValue(form, config).trim(),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      protocols: modelSupportedProtocols(model),
+    };
+  }
 
   function buildModelTestPayload(
     target: ModelTestTarget,
@@ -128,6 +140,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       prompt,
     };
   }
+
   function openModelTest(configIndex: number, modelIndex: number) {
     const protocols = modelSupportedProtocols(
       form.protocolConfigs[configIndex]?.models[modelIndex],
@@ -146,6 +159,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     setModelTestPrompt(modelTestPrompts[0] || "");
     setModelTestResult(null);
   }
+
   function openAggregateModelTest(key: string) {
     const option = modelTestOptionByKey.get(key);
     if (!option) {
@@ -158,31 +172,36 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     }
     openModelTest(option.target.protocolConfigIndex, option.target.modelIndex);
   }
+
   function closeModelTest() {
-    modelTestAbortController.current?.abort();
-    modelTestAbortController.current = null;
+    abortController.current?.abort();
+    abortController.current = null;
     setTestingModel(false);
     setModelTestTarget(null);
     setModelTestProtocol(null);
     setModelTestResult(null);
   }
+
   function changeModelTestPromptMode(value: string) {
     setModelTestPromptMode(value);
     if (value !== "custom" && modelTestPrompts[Number(value)]) {
       setModelTestPrompt(modelTestPrompts[Number(value)]);
     }
   }
+
   function changeModelTestPrompt(value: string) {
     setModelTestPrompt(value);
     if (modelTestPromptMode !== "custom") setModelTestPromptMode("custom");
   }
+
   async function runModelTest() {
-    if (!modelTestTarget) return;
-    const payload = buildModelTestPayload(
-      modelTestTarget,
-      modelTestProtocol,
-      modelTestPrompt,
-    );
+    const payload = modelTestTarget
+      ? buildModelTestPayload(
+          modelTestTarget,
+          modelTestProtocol,
+          modelTestPrompt,
+        )
+      : null;
     if (!payload) {
       toast.error(
         locale === "zh-CN"
@@ -192,8 +211,8 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       return;
     }
     const controller = new AbortController();
-    modelTestAbortController.current?.abort();
-    modelTestAbortController.current = controller;
+    abortController.current?.abort();
+    abortController.current = controller;
     setTestingModel(true);
     setModelTestResult(null);
     try {
@@ -217,10 +236,6 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       );
     } catch (error) {
       if (controller.signal.aborted) return;
-      const message = getApiErrorMessage(
-        error,
-        locale === "zh-CN" ? "模型测试失败" : "Model test failed",
-      );
       setModelTestResult({
         success: false,
         status_code: null,
@@ -228,30 +243,34 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
         model_name: payload.model_name,
         credential_id: payload.credential.id,
         output_text: "",
-        error_message: message,
+        error_message: getApiErrorMessage(
+          error,
+          locale === "zh-CN" ? "模型测试失败" : "Model test failed",
+        ),
       });
     } finally {
-      if (modelTestAbortController.current === controller) {
-        modelTestAbortController.current = null;
+      if (abortController.current === controller) {
+        abortController.current = null;
         setTestingModel(false);
       }
     }
   }
+
   return {
-    modelTestTarget,
-    modelTestPromptMode,
-    modelTestPrompt,
-    modelTestProtocol,
-    setModelTestProtocol,
-    modelTestResult,
-    testingModel,
-    modelTestPrompts,
+    changeModelTestPrompt,
+    changeModelTestPromptMode,
+    closeModelTest,
     modelTestOptionByKey,
     buildModelTestPayload,
+    modelTestDialogTarget,
+    modelTestPrompt,
+    modelTestPromptMode,
+    modelTestPrompts,
+    modelTestProtocol,
+    modelTestResult,
     openAggregateModelTest,
-    closeModelTest,
-    changeModelTestPromptMode,
-    changeModelTestPrompt,
     runModelTest,
+    setModelTestProtocol,
+    testingModel,
   };
 }

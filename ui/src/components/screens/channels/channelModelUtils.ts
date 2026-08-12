@@ -105,16 +105,6 @@ export function modelSupportedProtocols(
   return [];
 }
 
-/** Selects a valid test protocol with a deterministic fallback. */
-export function selectedModelTestProtocol(
-  protocols: ProtocolKind[],
-  selectedProtocol: ProtocolKind | null,
-) {
-  return selectedProtocol && protocols.includes(selectedProtocol)
-    ? selectedProtocol
-    : (protocols[0] ?? null);
-}
-
 export function protocolConfigEffectiveProtocols(
   protocolConfig: Pick<
     FormProtocolConfig,

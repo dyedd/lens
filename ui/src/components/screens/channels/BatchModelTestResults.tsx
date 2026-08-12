@@ -12,8 +12,8 @@ import { compactProtocolLabel, protocolBadgeClassName } from "@/lib/protocols";
 import type {
   BatchModelTestRow,
   BatchModelTestStatus,
-  Locale,
-} from "./channelShared";
+} from "../batchModelTestSession";
+import type { Locale } from "./channelShared";
 
 type Props = {
   rows: BatchModelTestRow[];

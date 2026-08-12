@@ -1,5 +1,5 @@
 import { createElement, type Dispatch, type SetStateAction } from "react";
-import { Copy, Trash2, TriangleAlert } from "lucide-react";
+import { Copy, TestTube2, Trash2, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
@@ -49,6 +49,8 @@ interface ModelGroupCardProps {
   removeGroupMember: (group: GroupRow, memberKey: string) => void;
   toggleGroupEnabled: (group: GroupRow, enabled: boolean) => void;
   setDeleteTarget: Dispatch<SetStateAction<ModelGroup | null>>;
+  testingModel: boolean;
+  openModelTest: (group: GroupRow) => void;
 }
 
 /** Render a model group summary and its inline actions. */
@@ -67,6 +69,8 @@ export function ModelGroupCard({
   removeGroupMember,
   toggleGroupEnabled,
   setDeleteTarget,
+  testingModel,
+  openModelTest,
 }: ModelGroupCardProps) {
   const copyModelNameLabel =
     locale === "zh-CN" ? "复制模型名称" : "Copy model name";
@@ -76,6 +80,11 @@ export function ModelGroupCard({
       : `${group.problem_member_count} problematic ${
           group.problem_member_count === 1 ? "member" : "members"
         }`;
+  const hasTestableMember = group.display_members.some((member) =>
+    member.items.some(
+      (item) => item.enabled && item.state === "ready" && item.protocol,
+    ),
+  );
 
   return (
     <Item
@@ -221,6 +230,23 @@ export function ModelGroupCard({
           }
           onCheckedChange={(checked) => void toggleGroupEnabled(group, checked)}
         />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={testingModel || !hasTestableMember}
+              aria-label={locale === "zh-CN" ? "模型测试" : "Test model"}
+              onClick={() => openModelTest(group)}
+            >
+              <TestTube2 />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {locale === "zh-CN" ? "模型测试" : "Test model"}
+          </TooltipContent>
+        </Tooltip>
         <Button
           type="button"
           variant="ghost"
