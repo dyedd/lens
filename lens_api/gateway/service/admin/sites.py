@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, Response
@@ -23,12 +22,7 @@ from ....models import (
     SiteUpdate,
 )
 from ..auth import get_current_admin
-from ..site_model_probe import (
-    _apply_site_model_probe_param_override,
-    _call_site_model_probe_channel,
-    _site_model_probe_body,
-    _site_model_probe_channel,
-)
+from ..site_model_probe import run_site_model_probe
 from ..app_state import app_state
 from ..model_discovery import _fetch_upstream_models
 from ..model_discovery import filter_model_names
@@ -159,62 +153,7 @@ async def test_site_model(
     _: Any = Depends(get_current_admin),
 ) -> SiteModelTestResult:
     """Probe one site model with the supplied request settings."""
-    channel = _site_model_probe_channel(payload)
-    body = _site_model_probe_body(payload)
-    prepared_body = _apply_site_model_probe_param_override(channel, body, payload)
-    if isinstance(prepared_body, SiteModelTestResult):
-        return prepared_body
-    return await _call_site_model_probe_for_request(
-        request,
-        channel=channel,
-        body=prepared_body,
-        model_name=payload.model_name,
-        credential_id=payload.credential.id,
-    )
-
-
-async def _call_site_model_probe_for_request(
-    request: Request,
-    *,
-    channel: ChannelConfig,
-    body: dict[str, Any],
-    model_name: str,
-    credential_id: str,
-) -> SiteModelTestResult:
-    probe_task = asyncio.create_task(
-        _call_site_model_probe_channel(
-            channel=channel,
-            body=body,
-            model_name=model_name,
-            credential_id=credential_id,
-        )
-    )
-    disconnect_task = asyncio.create_task(_wait_for_request_disconnect(request))
-    try:
-        done, _ = await asyncio.wait(
-            (probe_task, disconnect_task),
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        if probe_task in done:
-            return await probe_task
-        await disconnect_task
-        return SiteModelTestResult(
-            success=False,
-            model_name=model_name,
-            credential_id=credential_id,
-        )
-    finally:
-        for task in (probe_task, disconnect_task):
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(probe_task, disconnect_task, return_exceptions=True)
-
-
-async def _wait_for_request_disconnect(request: Request) -> None:
-    while True:
-        message = await request.receive()
-        if message["type"] == "http.disconnect":
-            return
+    return await run_site_model_probe(payload, request)
 
 
 async def sync_channel_models(

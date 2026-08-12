@@ -21,12 +21,12 @@ import {
 import { Textarea } from "@/components/ui/Textarea";
 import type { ProtocolKind } from "@/lib/api";
 import { protocolLabel } from "@/lib/protocols";
-import { BatchModelTestResults } from "./BatchModelTestResults";
 import type {
   BatchModelTestOption,
   BatchModelTestRow,
-  Locale,
-} from "./channelShared";
+} from "../batchModelTestSession";
+import { BatchModelTestResults } from "./BatchModelTestResults";
+import type { Locale } from "./channelShared";
 
 type Props = {
   open: boolean;
@@ -154,7 +154,9 @@ export function BatchModelTestDialog({
                   {multiProtocolOptions.map((item) => (
                     <Field key={item.key}>
                       <FieldLabel className="truncate">
-                        {item.modelName}
+                        {[item.modelName, item.credentialName]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </FieldLabel>
                       <Select
                         value={item.selectedProtocol}

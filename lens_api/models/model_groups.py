@@ -181,6 +181,13 @@ class ModelGroupCandidatesResponse(StrictBaseModel):
     evaluated_items: list[ModelGroupItemView] = Field(default_factory=list)
 
 
+class ModelGroupModelTestRequest(StrictBaseModel):
+    channel_id: str = Field(min_length=1)
+    credential_id: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+    prompt: str = Field(min_length=1, max_length=2000)
+
+
 class ModelGroupEnsureModelInput(StrictBaseModel):
     protocol_config_id: str = Field(min_length=1)
     credential_id: str = Field(min_length=1)

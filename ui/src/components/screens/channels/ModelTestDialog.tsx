@@ -20,17 +20,14 @@ import {
   protocolBadgeClassName,
   protocolLabel,
 } from "@/lib/protocols";
+import type { Locale } from "./channelShared";
 import {
-  activeBaseUrlValue,
-  credentialLabel,
-  modelSupportedProtocols,
   selectedModelTestProtocol,
-} from "./channelShared";
-import type { FormState, Locale, ModelTestTarget } from "./channelShared";
+  type ModelTestDialogTarget,
+} from "../modelTestSession";
 
 type Props = {
-  target: ModelTestTarget | null;
-  form: FormState;
+  target: ModelTestDialogTarget | null;
   locale: Locale;
   modelTestPrompts: string[];
   modelTestPromptMode: string;
@@ -45,10 +42,9 @@ type Props = {
   onRun: () => void;
 };
 
-/** Renders the form and result for testing a single channel model. */
+/** Renders the form and result for testing a single model. */
 export function ModelTestDialog({
   target,
-  form,
   locale,
   modelTestPrompts,
   modelTestPromptMode,
@@ -62,40 +58,14 @@ export function ModelTestDialog({
   onProtocolChange,
   onRun,
 }: Props) {
-  const protocolConfig =
-    target === null
-      ? undefined
-      : form.protocolConfigs[target.protocolConfigIndex];
-  const model =
-    target === null ? undefined : protocolConfig?.models[target.modelIndex];
-  const credentialIndex = model
-    ? form.credentials.findIndex((item) => item.id === model.credential_id)
-    : -1;
-  const credential =
-    credentialIndex >= 0 ? form.credentials[credentialIndex] : undefined;
-  const activeBaseUrl = protocolConfig
-    ? activeBaseUrlValue(form, protocolConfig).trim()
-    : "";
-  const supportedProtocols = modelSupportedProtocols(model);
+  const supportedProtocols = target?.protocols ?? [];
   const selectedProtocol = selectedModelTestProtocol(
     supportedProtocols,
     modelTestProtocol,
   );
   const canTest = Boolean(
-    protocolConfig &&
-    model?.model_name.trim() &&
-    credential?.api_key.trim() &&
-    activeBaseUrl &&
-    selectedProtocol &&
-    modelTestPrompt.trim(),
+    target?.modelName.trim() && selectedProtocol && modelTestPrompt.trim(),
   );
-  const sourceText = [
-    model?.model_name || "",
-    credential ? credentialLabel(credential, credentialIndex, locale) : "",
-    activeBaseUrl,
-  ]
-    .filter(Boolean)
-    .join(" · ");
 
   return (
     <Dialog
@@ -113,7 +83,7 @@ export function ModelTestDialog({
             <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="min-w-0 flex-1 truncate text-foreground">
-                  {model?.model_name || "-"}
+                  {target.modelName || "-"}
                 </span>
                 {supportedProtocols.map((item) => (
                   <Badge
@@ -128,7 +98,7 @@ export function ModelTestDialog({
                   </Badge>
                 ))}
               </div>
-              <div className="mt-1 break-all text-xs">{sourceText}</div>
+              <div className="mt-1 break-all text-xs">{target.source}</div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">

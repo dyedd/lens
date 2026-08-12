@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Separator } from "@/components/ui/Separator";
 import type { ProtocolKind } from "@/lib/api";
+import type { BatchModelTestOption } from "../batchModelTestSession";
 import { ChannelBasicInfoSection } from "./ChannelBasicInfoSection";
 import { ChannelModelOverviewSection } from "./ChannelModelOverviewSection";
 import { ChannelProtocolSection } from "./ChannelProtocolSection";
 import type { AggregatedModel } from "./useAggregatedModels";
 import type {
-  BatchModelTestOption,
   FormBaseUrl,
   FormCredential,
   FormProtocolConfig,

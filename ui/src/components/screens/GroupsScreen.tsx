@@ -9,6 +9,7 @@ import { useGroupCommands } from "./groups/useGroupCommands";
 import { useGroupEditorState } from "./groups/useGroupEditorState";
 import { useGroupFilters } from "./groups/useGroupFilters";
 import { useGroupMembers } from "./groups/useGroupMembers";
+import { useGroupModelTest } from "./groups/useGroupModelTest";
 import { useGroupsQueries } from "./groups/useGroupsQueries";
 
 const GroupEditorDialog = dynamic(() =>
@@ -19,6 +20,11 @@ const GroupEditorDialog = dynamic(() =>
 const DeleteGroupDialog = dynamic(() =>
   import("./groups/ModelGroupDialogs").then(
     (module) => module.DeleteGroupDialog,
+  ),
+);
+const BatchModelTestDialog = dynamic(() =>
+  import("./channels/BatchModelTestDialog").then(
+    (module) => module.BatchModelTestDialog,
   ),
 );
 
@@ -39,6 +45,7 @@ export function GroupsScreen() {
     editor.setForm,
     editor.memberStatusFilter,
   );
+  const modelTest = useGroupModelTest(locale);
   const candidates = useGroupCandidates({
     candidateResponse: queries.candidateQuery.data,
     candidateSearch: editor.candidateSearch,
@@ -101,6 +108,8 @@ export function GroupsScreen() {
           removeGroupMember={commands.removeGroupMember}
           toggleGroupEnabled={commands.toggleGroupEnabled}
           setDeleteTarget={commands.setDeleteTarget}
+          testingModel={modelTest.testingModel}
+          openModelTest={modelTest.openModelTest}
         />
 
         {editor.dialogOpen ? (
@@ -152,6 +161,26 @@ export function GroupsScreen() {
             moveFoldedMemberWithinChannel={
               members.moveFoldedMemberWithinChannel
             }
+          />
+        ) : null}
+
+        {modelTest.batchModelTestOpen ? (
+          <BatchModelTestDialog
+            open={modelTest.batchModelTestOpen}
+            locale={locale}
+            modelTestPrompts={modelTest.modelTestPrompts}
+            batchTestPromptMode={modelTest.batchTestPromptMode}
+            batchTestPrompt={modelTest.batchTestPrompt}
+            batchTestConcurrency={modelTest.batchTestConcurrency}
+            batchTestOptions={modelTest.batchTestOptions}
+            batchTestRows={modelTest.batchTestRows}
+            isBatchModelTestRunning={modelTest.isBatchModelTestRunning}
+            onOpenChange={modelTest.changeBatchModelTestOpen}
+            onPromptModeChange={modelTest.changeBatchTestPromptMode}
+            onPromptChange={modelTest.changeBatchTestPrompt}
+            onConcurrencyChange={modelTest.setBatchTestConcurrency}
+            onProtocolChange={modelTest.changeBatchTestProtocol}
+            onRun={() => void modelTest.runBatchModelTests()}
           />
         ) : null}
 

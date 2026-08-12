@@ -13,6 +13,7 @@ from .model_groups import (
     get_model_group,
     list_model_group_candidates,
     list_model_groups,
+    test_model_group_model,
     update_model_group,
 )
 from .model_prices import list_model_prices, sync_model_prices, update_model_price
@@ -73,6 +74,7 @@ __all__ = [
     "sync_channel_models",
     "sync_model_prices",
     "test_site_model",
+    "test_model_group_model",
     "update_cronjob",
     "update_gateway_api_key",
     "update_model_group",

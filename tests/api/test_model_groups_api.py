@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+import json
+
+import httpx
 import pytest
 
-from conftest import assert_error, openai_chat_channel_id, valid_site_payload
+from conftest import (
+    assert_error,
+    openai_chat_channel_id,
+    run_async,
+    valid_site_payload,
+)
+from lens_api.core.runtime_channel_ids import compose_runtime_channel_id
+from lens_api.models import ProtocolKind
 
 
 def _member(
@@ -24,6 +34,141 @@ def test_list_model_groups_requires_admin(client) -> None:
     response = client.get("/api/admin/model-groups")
 
     assert_error(response, 401, "Not authenticated")
+
+
+def test_model_group_model_test_requires_admin(client) -> None:
+    response = client.post(
+        "/api/admin/model-groups/missing/model-tests",
+        json={
+            "channel_id": "channel",
+            "credential_id": "credential",
+            "model_name": "model",
+            "prompt": "ping",
+        },
+    )
+
+    assert_error(response, 401, "Not authenticated")
+
+
+def test_model_group_model_test_uses_persisted_image_credential(
+    client,
+    admin_headers,
+    app_state,
+    create_site,
+    create_model_group,
+    monkeypatch,
+) -> None:
+    protocol = ProtocolKind.OPENAI_IMAGE
+    channel_id = compose_runtime_channel_id("pc-image", protocol)
+    site_payload = valid_site_payload(
+        protocol_config_id="pc-image",
+        protocols=[protocol.value],
+        model_name="gpt-image-1",
+    )
+    site_payload["protocols"][0]["headers"] = {
+        "X-Persisted-Header": "model-group-test",
+        "User-Agent": "configured-model-group-probe",
+    }
+    create_site(site_payload)
+    group = create_model_group(
+        name="image-group",
+        protocols=[protocol.value],
+        items=[
+            _member(
+                channel_id=channel_id,
+                model_name="gpt-image-1",
+            )
+        ],
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer upstream-secret"
+        assert request.headers["X-Persisted-Header"] == "model-group-test"
+        assert request.headers["User-Agent"] == "configured-model-group-probe"
+        assert json.loads(request.content) == {
+            "model": "gpt-image-1",
+            "prompt": "draw a lens",
+            "n": 1,
+            "size": "1024x1024",
+        }
+        return httpx.Response(
+            200,
+            json={"data": [{"revised_prompt": "a polished lens"}]},
+            request=request,
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    import lens_api.gateway.service.site_model_probe as probe
+
+    monkeypatch.setattr(probe, "app_state", app_state)
+    monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)
+    request_payload = {
+        "channel_id": channel_id,
+        "credential_id": "cred-1",
+        "model_name": "gpt-image-1",
+        "prompt": "draw a lens",
+    }
+    injected_response = client.post(
+        f"/api/admin/model-groups/{group['id']}/model-tests",
+        headers=admin_headers,
+        json={**request_payload, "api_key": "injected"},
+    )
+    assert injected_response.status_code == 422, injected_response.text
+    try:
+        response = client.post(
+            f"/api/admin/model-groups/{group['id']}/model-tests",
+            headers=admin_headers,
+            json=request_payload,
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert response.status_code == 200, response.text
+    assert response.json()["success"] is True
+    assert response.json()["output_text"] == "a polished lens"
+    assert "upstream-secret" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("model_name", "disable_site", "message"),
+    [
+        ("not-a-member", False, "not a member"),
+        ("gpt-4o", True, "unavailable"),
+    ],
+)
+def test_model_group_model_test_rejects_non_member_or_unavailable_member(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+    model_name,
+    disable_site,
+    message,
+) -> None:
+    site = create_site(valid_site_payload())
+    group = create_model_group(
+        items=[_member()],
+    )
+    if disable_site:
+        disabled = client.put(
+            f"/api/admin/sites/{site['id']}/enabled",
+            headers=admin_headers,
+            json={"enabled": False},
+        )
+        assert disabled.status_code == 200, disabled.text
+
+    response = client.post(
+        f"/api/admin/model-groups/{group['id']}/model-tests",
+        headers=admin_headers,
+        json={
+            "channel_id": openai_chat_channel_id(),
+            "credential_id": "cred-1",
+            "model_name": model_name,
+            "prompt": "ping",
+        },
+    )
+
+    assert_error(response, 400, message)
 
 
 def test_model_group_crud_round_trip(client, admin_headers, create_model_group) -> None:

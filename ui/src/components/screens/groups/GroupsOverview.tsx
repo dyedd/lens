@@ -38,6 +38,8 @@ export function GroupsOverview(props: GroupsOverviewProps) {
           removeGroupMember={props.removeGroupMember}
           toggleGroupEnabled={props.toggleGroupEnabled}
           setDeleteTarget={props.setDeleteTarget}
+          testingModel={props.testingModel}
+          openModelTest={props.openModelTest}
         />
       </div>
       <GroupsFilterPanel

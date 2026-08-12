@@ -47,4 +47,6 @@ export interface GroupsOverviewProps {
   removeGroupMember: (group: GroupRow, memberKey: string) => void;
   toggleGroupEnabled: (group: GroupRow, enabled: boolean) => void;
   setDeleteTarget: Dispatch<SetStateAction<ModelGroup | null>>;
+  testingModel: boolean;
+  openModelTest: (group: GroupRow) => void;
 }

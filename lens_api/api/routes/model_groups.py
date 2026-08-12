@@ -30,6 +30,12 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         response_model=service_module.ModelGroupEnsureFromSiteResponse,
     )
     app.add_api_route(
+        "/api/admin/model-groups/{group_id}/model-tests",
+        service_module.test_model_group_model,
+        methods=["POST"],
+        response_model=service_module.SiteModelTestResult,
+    )
+    app.add_api_route(
         "/api/admin/model-groups/{group_id}",
         service_module.get_model_group,
         methods=["GET"],
