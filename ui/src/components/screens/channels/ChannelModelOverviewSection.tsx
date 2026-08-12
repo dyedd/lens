@@ -19,13 +19,10 @@ import {
 } from "@/components/ui/DropdownMenu";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import type { ProtocolKind } from "@/lib/api";
+import type { BatchModelTestOption } from "../batchModelTestSession";
 import { SiteModelAggregateView } from "./SiteModelAggregateView";
 import type { AggregatedModel } from "./useAggregatedModels";
-import type {
-  BatchModelTestOption,
-  Locale,
-  TestableModelOption,
-} from "./channelShared";
+import type { Locale, TestableModelOption } from "./channelShared";
 
 type Props = {
   locale: Locale;

@@ -7,6 +7,7 @@ import type {
   SiteModelInput,
 } from "@/lib/api";
 import type { Locale } from "@/lib/I18nContext";
+import type { BatchModelTestSource } from "../batchModelTestSession";
 
 export type HeaderItem = { key: string; value: string };
 export type FormCredential = Omit<SiteCredentialInput, "id"> & { id: string };
@@ -64,32 +65,7 @@ export type ModelTestTarget = {
   modelIndex: number;
 };
 
-export type BatchModelTestStatus = "pending" | "running" | "success" | "failed";
-
-export type BatchModelTestRow = {
-  key: string;
-  modelName: string;
-  credentialName: string;
-  protocol: ProtocolKind;
-  status: BatchModelTestStatus;
-  statusCode: number | null;
-  latencyMs?: number;
-  message: string;
-};
-
-export type BatchModelTestOption = {
-  key: string;
-  target: ModelTestTarget;
-  modelName: string;
-  credentialName: string;
-  protocols: ProtocolKind[];
-  selectedProtocol: ProtocolKind;
-};
-
-export type TestableModelOption = Omit<
-  BatchModelTestOption,
-  "selectedProtocol"
->;
+export type TestableModelOption = BatchModelTestSource<ModelTestTarget>;
 
 export type SiteRow = Site & {
   subtitle: string;

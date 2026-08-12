@@ -81,6 +81,12 @@ export type ModelGroupCandidatesResponse = {
   candidates: ModelGroupCandidateItem[];
   evaluated_items: ModelGroupItem[];
 };
+export type ModelGroupModelTestPayload = {
+  channel_id: string;
+  credential_id: string;
+  model_name: string;
+  prompt: string;
+};
 export type ModelGroupEnsureStatus =
   | "create"
   | "update"
