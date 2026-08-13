@@ -28,6 +28,40 @@ async def _read_json_object(request: Request, body_name: str) -> dict[str, Any]:
     return body
 
 
+def _normalize_anthropic_system_messages(body: dict[str, Any]) -> dict[str, Any]:
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        raise ValueError("Anthropic request messages must be an array")
+
+    system_blocks: list[Any] | None = None
+    normalized_messages: list[Any] = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "system":
+            normalized_messages.append(message)
+            continue
+        if system_blocks is None:
+            system = body.get("system")
+            if system is None or system == "":
+                system_blocks = []
+            elif isinstance(system, str):
+                system_blocks = [{"type": "text", "text": system}]
+            elif isinstance(system, list):
+                system_blocks = list(system)
+            else:
+                raise ValueError("Anthropic system must be a string or array")
+        content = message.get("content")
+        if isinstance(content, str):
+            system_blocks.append({"type": "text", "text": content})
+        elif isinstance(content, list):
+            system_blocks.extend(content)
+        else:
+            raise ValueError("Anthropic message content must be a string or array")
+
+    if system_blocks is None:
+        return body
+    return {**body, "system": system_blocks, "messages": normalized_messages}
+
+
 async def proxy_openai_chat(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
@@ -58,7 +92,9 @@ async def proxy_anthropic_messages(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
     """Proxy an authenticated Anthropic Messages request."""
-    body = await _read_json_object(request, "Anthropic messages")
+    body = _normalize_anthropic_system_messages(
+        await _read_json_object(request, "Anthropic messages")
+    )
     return await _proxy_protocol(
         ProtocolKind.ANTHROPIC,
         body,

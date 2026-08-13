@@ -174,6 +174,20 @@ export function FoldedMemberRow({
               : ""}
         </div>
       </div>
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {member.protocols.map((protocol) => (
+          <Badge
+            key={protocol}
+            variant="outline"
+            className={cn(
+              "px-1.5 py-0 text-[10px] font-normal",
+              protocolBadgeClassName(protocol),
+            )}
+          >
+            {protocolLabel(protocol, locale)}
+          </Badge>
+        ))}
+      </div>
       <div className="flex h-8 w-8 items-center justify-center">
         <Switch
           checked={enabled}

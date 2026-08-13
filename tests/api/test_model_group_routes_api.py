@@ -1,6 +1,84 @@
 from __future__ import annotations
 
-from conftest import assert_error
+from typing import Any
+
+import httpx
+from conftest import assert_error, gateway_headers, valid_site_payload
+
+from lens_api.core.runtime_channel_ids import compose_runtime_channel_id
+from lens_api.models import ProtocolKind
+
+
+def test_anthropic_route_prefers_native_channel_over_earlier_chat_member(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    create_site(
+        valid_site_payload(
+            protocols=["openai_chat", "anthropic"],
+            model_name="upstream-model",
+        )
+    )
+    create_model_group(
+        name="client-model",
+        protocols=["anthropic"],
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.OPENAI_CHAT
+                ),
+                "credential_id": "cred-1",
+                "model_name": "upstream-model",
+                "enabled": True,
+            },
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.ANTHROPIC
+                ),
+                "credential_id": "cred-1",
+                "model_name": "upstream-model",
+                "enabled": True,
+            },
+        ],
+    )
+    attempted_urls: list[str] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        attempted_urls.append(upstream.url)
+        return httpx.Response(
+            400,
+            json={"error": {"message": "stop after capturing primary"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(key),
+        json={
+            "model": "client-model",
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 16,
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    assert len(attempted_urls) == 1
+    assert attempted_urls[0].endswith("/v1/messages")
 
 
 def test_model_group_sync_filter_is_normalized_and_validated(

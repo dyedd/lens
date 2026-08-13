@@ -398,6 +398,94 @@ def test_responses_proxy_preserves_input_shape(
     ]
 
 
+@pytest.mark.parametrize(
+    "upstream_protocol",
+    [
+        ProtocolKind.OPENAI_CHAT,
+        ProtocolKind.ANTHROPIC,
+        ProtocolKind.OPENAI_RESPONSES,
+    ],
+)
+def test_anthropic_proxy_normalizes_system_messages(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+    upstream_protocol: ProtocolKind,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    captured_body: dict[str, Any] = {}
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        captured_body.update(json.loads(body_bytes))
+        return httpx.Response(
+            500,
+            json={"error": {"message": "stop after capture"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[upstream_protocol.value],
+            model_name="upstream-model",
+        )
+    )
+    create_model_group(
+        name="client-model",
+        protocols=[ProtocolKind.ANTHROPIC.value],
+        items=[_protocol_group_item(upstream_protocol.value, "upstream-model")],
+    )
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(key),
+        json={
+            "model": "client-model",
+            "max_tokens": 16,
+            "system": "Initial instruction.",
+            "messages": [
+                {"role": "user", "content": "First question."},
+                {"role": "system", "content": "Updated instruction."},
+                {"role": "user", "content": "Second question."},
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    user_messages = [
+        {"role": "user", "content": "First question."},
+        {"role": "user", "content": "Second question."},
+    ]
+    if upstream_protocol == ProtocolKind.ANTHROPIC:
+        assert captured_body["system"] == [
+            {"type": "text", "text": "Initial instruction."},
+            {"type": "text", "text": "Updated instruction."},
+        ]
+        assert captured_body["messages"] == user_messages
+    else:
+        payload_key = (
+            "messages" if upstream_protocol == ProtocolKind.OPENAI_CHAT else "input"
+        )
+        assert captured_body[payload_key] == [
+            {
+                "role": "system",
+                "content": "Initial instruction.\nUpdated instruction.",
+            },
+            *user_messages,
+        ]
+
+
 def test_failover_orders_targets_and_tracks_active_credential(
     client,
     admin_headers,
@@ -842,16 +930,41 @@ def test_non_json_upstream_body_reports_the_body_not_usage(
     assert "Invalid upstream usage" not in message
 
 
+@pytest.mark.parametrize(
+    ("protocol", "path", "body"),
+    [
+        (
+            ProtocolKind.ANTHROPIC,
+            "/v1/messages",
+            {"model": "client-model", "messages": [], "max_tokens": 16},
+        ),
+        (
+            ProtocolKind.RERANK,
+            "/v1/rerank",
+            {"model": "client-model", "query": "ping", "documents": ["pong"]},
+        ),
+    ],
+)
 def test_html_upstream_body_is_summarised_by_title(
     client,
     monkeypatch,
     create_site,
     create_model_group,
     create_gateway_key,
+    protocol: ProtocolKind,
+    path: str,
+    body: dict[str, Any],
 ) -> None:
     from lens_api.gateway.service import proxy_upstream
 
-    _anthropic_group(create_site, create_model_group)
+    create_site(
+        valid_site_payload(protocols=[protocol.value], model_name="upstream-model")
+    )
+    create_model_group(
+        name="client-model",
+        protocols=[protocol.value],
+        items=[_protocol_group_item(protocol.value, "upstream-model")],
+    )
 
     async def fake_send_upstream(
         _client: httpx.AsyncClient,
@@ -872,9 +985,9 @@ def test_html_upstream_body_is_summarised_by_title(
     key = create_gateway_key()
 
     response = client.post(
-        "/v1/messages",
+        path,
         headers=gateway_headers(key),
-        json={"model": "claude-group", "messages": [], "max_tokens": 16},
+        json=body,
     )
 
     assert response.status_code == 502, response.text

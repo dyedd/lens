@@ -275,19 +275,17 @@ async def _build_json_result(
     request_content: str | None,
     log_body_enabled: bool,
 ) -> UpstreamResult:
-    payload: Any = None
-    if channel.protocol != ProtocolKind.RERANK:
-        try:
-            payload = json.loads(content)
-        except ValueError as exc:
-            raise UpstreamRequestError(
-                status_code=502,
-                detail=(
-                    "Invalid upstream response body: "
-                    f"{_describe_upstream_body(response, content)}"
-                ),
-                router_status_code=502,
-            ) from exc
+    try:
+        payload: Any = json.loads(content)
+    except ValueError as exc:
+        raise UpstreamRequestError(
+            status_code=502,
+            detail=(
+                "Invalid upstream response body: "
+                f"{_describe_upstream_body(response, content)}"
+            ),
+            router_status_code=502,
+        ) from exc
     try:
         parsed = _extract_response_usage(
             channel.protocol, payload, fallback_model=body.get("model")

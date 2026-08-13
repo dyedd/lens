@@ -18,13 +18,13 @@ from .usage import (
 def _extract_response_usage(
     protocol: ProtocolKind, payload: Any, fallback_model: Any = None
 ) -> dict[str, int | str | None]:
+    if not isinstance(payload, dict):
+        raise ValueError("Upstream response JSON must be an object")
     if protocol == ProtocolKind.RERANK:
         empty = dict(_EMPTY_USAGE)
         if isinstance(fallback_model, str) and fallback_model.strip():
             empty["resolved_model"] = fallback_model.strip()
         return empty
-    if not isinstance(payload, dict):
-        raise ValueError("Upstream response JSON must be an object")
     if protocol == ProtocolKind.OPENAI_CHAT:
         return _openai_chat_usage(payload)
     if protocol == ProtocolKind.OPENAI_RESPONSES:
