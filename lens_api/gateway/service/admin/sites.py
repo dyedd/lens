@@ -74,17 +74,20 @@ def _suggest_model_group_name(model_name: str, existing_names: Iterable[str]) ->
     normalized_model_name = model_name.strip()
     if not normalized_model_name:
         return ""
-    if normalized_model_name in existing_names:
-        return normalized_model_name
 
+    comparable_model_name = normalized_model_name.casefold()
     best_match = ""
     for name in existing_names:
-        if len(name) <= len(best_match) or not normalized_model_name.startswith(name):
+        normalized_group_name = name.strip()
+        if len(normalized_group_name) <= len(best_match):
             continue
-        next_character = normalized_model_name[len(name) : len(name) + 1]
-        if next_character and next_character not in "-_ .:":
+        comparable_group_name = normalized_group_name.casefold()
+        if (
+            comparable_group_name not in comparable_model_name
+            and comparable_model_name not in comparable_group_name
+        ):
             continue
-        best_match = name
+        best_match = normalized_group_name
     return best_match or normalized_model_name
 
 

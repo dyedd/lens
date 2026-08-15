@@ -154,7 +154,7 @@ export function useModelGroupEnsure({
       });
       const nextPending = { ...pending, siteId: preview.site.id };
       const nextResult = preview.model_groups;
-      if (!nextResult.skipped_count) {
+      if (!nextResult.items.length) {
         await commitSave(nextPending, null);
         return;
       }
