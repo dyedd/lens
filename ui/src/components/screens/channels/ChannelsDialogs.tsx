@@ -50,6 +50,7 @@ const ChannelModelSyncDialog = dynamic(() =>
 
 type Props = {
   locale: Locale;
+  availableTags: string[];
   editor: ReturnType<typeof useChannelForm>;
   persistence: ReturnType<typeof useChannelPersistence>;
   transfer: ReturnType<typeof useChannelTransfer>;
@@ -65,6 +66,7 @@ type Props = {
 /** Renders channel dialogs while keeping the screen component declarative. */
 export function ChannelsDialogs({
   locale,
+  availableTags,
   editor,
   persistence,
   transfer,
@@ -84,20 +86,21 @@ export function ChannelsDialogs({
           hasUnsavedChanges={editor.hasUnsavedChanges}
           editingSiteId={editor.editingSiteId}
           locale={locale}
+          availableTags={availableTags}
           form={editor.form}
           fetchingProtocolConfigIndex={picker.fetchingProtocolConfigIndex}
           duplicatedProtocolConfigKeys={editor.duplicatedProtocolConfigKeys}
           batchTestOptions={batchTest.batchTestOptions}
           isBatchModelTestRunning={batchTest.isBatchModelTestRunning}
           testingModel={modelTest.testingModel}
-          isEnsuringModelGroups={modelGroups.isEnsuringModelGroups}
+          savingChannel={modelGroups.isEnsuringModelGroups}
           overviewModels={overviewModels}
           modelTestOptionByKey={modelTest.modelTestOptionByKey}
           setIsDialogOpen={editor.setIsDialogOpen}
           setEditingSiteId={editor.setEditingSiteId}
           setForm={editor.setForm}
           setAdvancedProtocolConfigIndex={setAdvancedConfigIndex}
-          submit={persistence.submit}
+          submit={modelGroups.submit}
           addBaseUrl={editor.addBaseUrl}
           updateBaseUrl={editor.updateBaseUrl}
           removeBaseUrl={editor.removeBaseUrl}
@@ -107,14 +110,13 @@ export function ChannelsDialogs({
           updateProtocolConfig={editor.updateProtocolConfig}
           addManualProtocolConfigModel={picker.addManualProtocolConfigModel}
           fetchProtocolModels={picker.fetchProtocolModels}
-          openModelGroupEnsureDialog={modelGroups.openModelGroupEnsureDialog}
           openBatchModelTestDialog={batchTest.openBatchModelTestDialog}
           updateModelProtocols={editor.updateModelProtocols}
           updateModelSource={editor.updateModelSource}
           updateAllModelSources={editor.updateAllModelSources}
           openAggregateModelTest={modelTest.openAggregateModelTest}
           removeAggregateModel={editor.removeAggregateModel}
-          clearManualModels={editor.clearManualModels}
+          clearModels={editor.clearModels}
           closeEditor={editor.closeEditor}
         />
       ) : null}

@@ -41,6 +41,12 @@ export function ChannelsScreen() {
   );
   const queries = useChannelQueries(locale);
   const editor = useChannelForm(locale);
+  const modelGroups = useModelGroupEnsure({
+    locale,
+    queryClient: queries.queryClient,
+    editor,
+    invalidateChannelData: queries.invalidateChannelData,
+  });
   const persistence = useChannelPersistence({
     locale,
     queryClient: queries.queryClient,
@@ -63,13 +69,6 @@ export function ChannelsScreen() {
     prompts: modelTest.modelTestPrompts,
     optionByKey: modelTest.modelTestOptionByKey,
     buildPayload: modelTest.buildModelTestPayload,
-  });
-  const modelGroups = useModelGroupEnsure({
-    locale,
-    queryClient: queries.queryClient,
-    validateSiteForm: editor.validateSiteForm,
-    saveCurrentSite: persistence.saveCurrentSite,
-    invalidateChannelData: queries.invalidateChannelData,
   });
   const overviewModels = useAggregatedModels(
     editor.form.protocolConfigs,
@@ -186,6 +185,7 @@ export function ChannelsScreen() {
         />
         <ChannelsDialogs
           locale={locale}
+          availableTags={queries.tags}
           editor={editor}
           persistence={persistence}
           transfer={transfer}
