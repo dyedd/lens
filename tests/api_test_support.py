@@ -26,11 +26,13 @@ def valid_site_payload(
     base_url_enabled: bool = True,
     protocol_enabled: bool = True,
     model_enabled: bool = True,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build a valid site API payload with optional field overrides."""
     protocol_values = protocols or [ProtocolKind.OPENAI_CHAT.value]
     return {
         "name": name,
+        "tags": tags or [],
         "base_urls": [
             {
                 "id": base_id,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from .cleanup import ChannelCleanupMixin
 from .protocol_upserts import ChannelProtocolUpsertsMixin
 from .shared import (
@@ -24,6 +26,7 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
         site_id: str,
         name: str,
         enabled: bool,
+        tags: list[str],
         base_urls: list[SiteBaseUrlInput],
         credentials: list[SiteCredentialInput],
         protocols: list[SiteProtocolConfigInput],
@@ -46,11 +49,13 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
                     id=site_id,
                     name=normalized_name,
                     enabled=int(enabled),
+                    tags_json=json.dumps(tags, ensure_ascii=True),
                 )
             )
         else:
             site.name = normalized_name
             site.enabled = int(enabled)
+            site.tags_json = json.dumps(tags, ensure_ascii=True)
 
         await self._upsert_base_urls(session, site_id, normalized_base_urls)
         current_protocol_config_ids = set(

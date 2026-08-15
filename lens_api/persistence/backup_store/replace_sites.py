@@ -86,6 +86,7 @@ async def _replace_sites(
                 id=site.id,
                 name=site.name,
                 enabled=int(site.enabled),
+                tags_json=json.dumps(site.tags, ensure_ascii=True),
             )
         )
         site_base_url_ids: set[str] = set()

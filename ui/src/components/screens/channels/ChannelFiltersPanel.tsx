@@ -31,11 +31,14 @@ export function ChannelFiltersPanel({
   search,
   statusFilter,
   protocolFilter,
+  tags,
+  tagFilter,
   sortBy,
   activeFilterCount,
   onSearchChange,
   onStatusChange,
   onProtocolChange,
+  onTagChange,
   onSortChange,
   onReset,
 }: {
@@ -43,11 +46,14 @@ export function ChannelFiltersPanel({
   search: string;
   statusFilter: ChannelStatusFilter;
   protocolFilter: "all" | ProtocolKind;
+  tags: string[];
+  tagFilter: string | null;
   sortBy: ChannelSort;
   activeFilterCount: number;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: ChannelStatusFilter) => void;
   onProtocolChange: (value: "all" | ProtocolKind) => void;
+  onTagChange: (value: string | null) => void;
   onSortChange: (value: ChannelSort) => void;
   onReset: () => void;
 }) {
@@ -150,6 +156,32 @@ export function ChannelFiltersPanel({
                 {protocolOptions(locale).map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="channels-tag-filter">
+              {locale === "zh-CN" ? "标签" : "Tag"}
+            </FieldLabel>
+            <Select
+              value={tagFilter ? `tag:${tagFilter}` : "all"}
+              onValueChange={(value) =>
+                onTagChange(value === "all" ? null : value.slice(4))
+              }
+            >
+              <SelectTrigger id="channels-tag-filter" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  {locale === "zh-CN" ? "全部标签" : "All tags"}
+                </SelectItem>
+                {tags.map((tag) => (
+                  <SelectItem key={tag} value={`tag:${tag}`}>
+                    {tag}
                   </SelectItem>
                 ))}
               </SelectContent>

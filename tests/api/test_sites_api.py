@@ -25,14 +25,17 @@ def test_update_site_enabled_requires_admin(client) -> None:
 def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
-    create_payload = valid_site_payload()
+    create_payload = valid_site_payload(tags=[" primary ", "production", "primary"])
     site = create_site(create_payload)
     assert site["name"] == "OpenAI Site"
+    assert site["tags"] == ["primary", "production"]
     assert "priority" not in site
     assert site["base_urls"][0]["url"] == "https://upstream.example/"
     assert site["protocols"][0]["models"][0]["model_name"] == "gpt-4o"
 
-    update_payload = valid_site_payload(name="Renamed Site", model_name="gpt-4.1")
+    update_payload = valid_site_payload(
+        name="Renamed Site", model_name="gpt-4.1", tags=["backup"]
+    )
     update_response = client.put(
         f"/api/admin/sites/{site['id']}",
         headers=admin_headers,
@@ -40,6 +43,7 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     )
     assert update_response.status_code == 200
     assert update_response.json()["name"] == "Renamed Site"
+    assert update_response.json()["tags"] == ["backup"]
     assert "priority" not in update_response.json()
 
     delete_response = client.delete(
@@ -47,6 +51,46 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     )
     assert delete_response.status_code == 204
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+
+
+def test_list_sites_filters_by_exact_tag(client, admin_headers, create_site) -> None:
+    create_site(valid_site_payload(tags=["production", "OpenAI"]))
+    create_site(
+        valid_site_payload(
+            name="Backup Site",
+            base_id="base-backup",
+            credential_id="cred-backup",
+            protocol_config_id="pc-backup",
+            tags=["backup"],
+        )
+    )
+
+    response = client.get(
+        "/api/admin/sites", headers=admin_headers, params={"tag": "production"}
+    )
+
+    assert response.status_code == 200
+    assert [site["name"] for site in response.json()] == ["OpenAI Site"]
+
+    prefix_response = client.get(
+        "/api/admin/sites", headers=admin_headers, params={"tag": "prod"}
+    )
+    assert prefix_response.status_code == 200
+    assert prefix_response.json() == []
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [[""], ["x" * 81], [f"tag-{index}" for index in range(21)]],
+)
+def test_create_site_rejects_invalid_tags(client, admin_headers, tags) -> None:
+    response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=valid_site_payload(tags=tags),
+    )
+
+    assert response.status_code == 422
 
 
 def test_create_site_rejects_obsolete_priority(client, admin_headers) -> None:

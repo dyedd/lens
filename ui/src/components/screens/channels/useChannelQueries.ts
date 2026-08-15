@@ -28,6 +28,7 @@ export function useChannelQueries(locale: Locale) {
   const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
     "all",
   );
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<ChannelSort>("requests-desc");
   const {
     data: sites,
@@ -88,6 +89,13 @@ export function useChannelQueries(locale: Locale) {
       })),
     [sites, locale],
   );
+  const tags = useMemo(
+    () =>
+      Array.from(new Set((sites ?? []).flatMap((site) => site.tags))).sort(
+        (left, right) => left.localeCompare(right, locale),
+      ),
+    [locale, sites],
+  );
   const visibleSites = useMemo<SiteRow[]>(() => {
     const keyword = search.trim().toLowerCase();
     const filtered = siteRows.filter((site) => {
@@ -103,11 +111,13 @@ export function useChannelQueries(locale: Locale) {
       ) {
         return false;
       }
+      if (tagFilter && !site.tags.includes(tagFilter)) return false;
       if (!keyword) return true;
       return [
         site.name,
         site.subtitle,
         site.endpoint_summary,
+        ...site.tags,
         ...site.protocols.flatMap((config) =>
           config.models.map((model) => model.model_name),
         ),
@@ -149,6 +159,7 @@ export function useChannelQueries(locale: Locale) {
     siteRuntimeById,
     sortBy,
     statusFilter,
+    tagFilter,
   ]);
 
   async function invalidateChannelData() {
@@ -171,6 +182,7 @@ export function useChannelQueries(locale: Locale) {
     setSearch("");
     setStatusFilter("all");
     setProtocolFilter("all");
+    setTagFilter(null);
     setSortBy("requests-desc");
   }
 
@@ -188,12 +200,16 @@ export function useChannelQueries(locale: Locale) {
     setStatusFilter,
     protocolFilter,
     setProtocolFilter,
+    tags,
+    tagFilter,
+    setTagFilter,
     sortBy,
     setSortBy,
     activeFilterCount: [
       Boolean(search.trim()),
       statusFilter !== "all",
       protocolFilter !== "all",
+      Boolean(tagFilter),
     ].filter(Boolean).length,
     resetFilters,
     invalidateChannelData,

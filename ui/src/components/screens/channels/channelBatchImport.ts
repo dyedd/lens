@@ -9,6 +9,7 @@ export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
     {
       name: "OpenAI",
       enabled: true,
+      tags: ["production"],
       base_urls: [
         {
           ref: "main",

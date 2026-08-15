@@ -53,6 +53,9 @@ class SiteEntity(Base):
         String(120), nullable=False, unique=True, index=True
     )
     enabled: Mapped[int] = enabled_column()
+    tags_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
 
 
 class SiteBaseUrlEntity(Base):
