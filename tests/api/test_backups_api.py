@@ -96,7 +96,7 @@ def test_backup_round_trip_preserves_site_master_enabled(
     admin_headers,
     create_site,
 ) -> None:
-    site = create_site(valid_site_payload())
+    site = create_site(valid_site_payload(tags=["production", "primary"]))
     update_response = client.put(
         f"/api/admin/sites/{site['id']}/enabled",
         headers=admin_headers,
@@ -106,6 +106,7 @@ def test_backup_round_trip_preserves_site_master_enabled(
     exported = client.get("/api/admin/backups/export", headers=admin_headers)
     assert exported.status_code == 200
     assert exported.json()["sites"][0]["enabled"] is False
+    assert exported.json()["sites"][0]["tags"] == ["production", "primary"]
     assert "priority" not in exported.json()["sites"][0]
 
     response = client.post(
@@ -117,6 +118,7 @@ def test_backup_round_trip_preserves_site_master_enabled(
     assert response.status_code == 200
     restored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert restored_site["enabled"] is False
+    assert restored_site["tags"] == ["production", "primary"]
     assert restored_site["protocols"][0]["enabled"] is True
 
 
@@ -183,6 +185,32 @@ def test_import_backup_rejects_missing_site_enabled(
     payload = exported.json()
     payload["sites"][0].pop("enabled")
     payload["sites"][0]["protocols"][0]["enabled"] = False
+
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={
+            "file": (
+                "backup.json",
+                json.dumps(payload).encode(),
+                "application/json",
+            )
+        },
+    )
+
+    assert_error(response, 400, "Invalid backup file")
+
+
+def test_import_backup_rejects_missing_site_tags(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(valid_site_payload())
+    exported = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert exported.status_code == 200
+    payload = exported.json()
+    payload["sites"][0].pop("tags")
 
     response = client.post(
         "/api/admin/backups/import",

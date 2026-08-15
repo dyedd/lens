@@ -46,12 +46,15 @@ export function ChannelsOverview({
   search,
   statusFilter,
   protocolFilter,
+  tags,
+  tagFilter,
   sortBy,
   activeFilterCount,
   busyId,
   onSearchChange,
   onStatusChange,
   onProtocolChange,
+  onTagChange,
   onSortChange,
   onReset,
   onOpenEdit,
@@ -68,12 +71,15 @@ export function ChannelsOverview({
   search: string;
   statusFilter: ChannelStatusFilter;
   protocolFilter: "all" | ProtocolKind;
+  tags: string[];
+  tagFilter: string | null;
   sortBy: ChannelSort;
   activeFilterCount: number;
   busyId: string | null;
   onSearchChange: Dispatch<SetStateAction<string>>;
   onStatusChange: Dispatch<SetStateAction<ChannelStatusFilter>>;
   onProtocolChange: Dispatch<SetStateAction<"all" | ProtocolKind>>;
+  onTagChange: Dispatch<SetStateAction<string | null>>;
   onSortChange: Dispatch<SetStateAction<ChannelSort>>;
   onReset: () => void;
   onOpenEdit: (site: Site) => void;
@@ -132,6 +138,15 @@ export function ChannelsOverview({
                             </Badge>
                           ))}
                         </div>
+                        {site.tags.length ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {site.tags.map((tag) => (
+                              <Badge key={tag} variant="secondary">
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
                         <ItemDescription className="truncate text-sm">
                           {site.endpoint_summary ||
                             (locale === "zh-CN"
@@ -176,7 +191,7 @@ export function ChannelsOverview({
             </ItemGroup>
           ) : (
             <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-              {search.trim()
+              {activeFilterCount
                 ? locale === "zh-CN"
                   ? "没有匹配的渠道。"
                   : "No matching channels."
@@ -194,11 +209,14 @@ export function ChannelsOverview({
           search={search}
           statusFilter={statusFilter}
           protocolFilter={protocolFilter}
+          tags={tags}
+          tagFilter={tagFilter}
           sortBy={sortBy}
           activeFilterCount={activeFilterCount}
           onSearchChange={onSearchChange}
           onStatusChange={onStatusChange}
           onProtocolChange={onProtocolChange}
+          onTagChange={onTagChange}
           onSortChange={onSortChange}
           onReset={onReset}
         />

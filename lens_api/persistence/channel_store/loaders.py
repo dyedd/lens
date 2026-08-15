@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 
 from .shared import (
@@ -44,6 +45,7 @@ class ChannelLoadersMixin:
                 id=row.id,
                 name=row.name,
                 enabled=bool(row.enabled),
+                tags=json.loads(row.tags_json),
                 base_urls=base_urls_by_site.get(row.id, []),
                 credentials=credentials_by_site.get(row.id, []),
                 protocols=protocols_by_site.get(row.id, []),

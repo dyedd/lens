@@ -1,7 +1,7 @@
 import json
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import AfterValidator, Field, HttpUrl, field_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
@@ -23,6 +23,24 @@ def _normalize_required_text_list(values: list[str]) -> list[str]:
     if not normalized:
         raise ValueError("At least one value is required")
     return normalized
+
+
+def _normalize_site_tags(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        tag = value.strip()
+        if not tag:
+            raise ValueError("Site tags cannot be empty")
+        if len(tag) > 80:
+            raise ValueError("Site tags cannot exceed 80 characters")
+        if tag not in normalized:
+            normalized.append(tag)
+    if len(normalized) > 20:
+        raise ValueError("Sites cannot have more than 20 tags")
+    return normalized
+
+
+SiteTags = Annotated[list[str], AfterValidator(_normalize_site_tags)]
 
 
 def _validate_param_override(value: str) -> str:
@@ -150,6 +168,7 @@ class SiteConfig(StrictBaseModel):
     id: str
     name: str
     enabled: bool
+    tags: SiteTags
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -182,6 +201,7 @@ class SiteChannelHealthBucket(StrictBaseModel):
 
 class SiteCreate(StrictBaseModel):
     name: str
+    tags: SiteTags = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -189,6 +209,7 @@ class SiteCreate(StrictBaseModel):
 
 class SiteUpdate(StrictBaseModel):
     name: str
+    tags: SiteTags = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -251,6 +272,7 @@ class SiteImportProtocolInput(StrictBaseModel):
 class SiteImportItem(StrictBaseModel):
     name: str
     enabled: bool
+    tags: SiteTags = Field(default_factory=list)
     base_urls: list[SiteImportBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteImportCredentialInput] = Field(default_factory=list)
     protocols: list[SiteImportProtocolInput] = Field(default_factory=list)

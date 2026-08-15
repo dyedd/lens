@@ -29,9 +29,11 @@ from ..model_discovery import filter_model_names
 from ..upstream_support import _format_channel_error
 
 
-async def list_sites(_: Any = Depends(get_current_admin)) -> list[SiteConfig]:
+async def list_sites(
+    tag: str | None = None, _: Any = Depends(get_current_admin)
+) -> list[SiteConfig]:
     """List configured upstream sites."""
-    return await app_state.channel_store.list_sites()
+    return await app_state.channel_store.list_sites(tag=tag)
 
 
 async def list_site_runtime_summaries(

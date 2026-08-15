@@ -169,12 +169,15 @@ export function ChannelsScreen() {
           search={queries.search}
           statusFilter={queries.statusFilter}
           protocolFilter={queries.protocolFilter}
+          tags={queries.tags}
+          tagFilter={queries.tagFilter}
           sortBy={queries.sortBy}
           activeFilterCount={queries.activeFilterCount}
           busyId={persistence.busyId}
           onSearchChange={queries.setSearch}
           onStatusChange={queries.setStatusFilter}
           onProtocolChange={queries.setProtocolFilter}
+          onTagChange={queries.setTagFilter}
           onSortChange={queries.setSortBy}
           onReset={queries.resetFilters}
           onOpenEdit={openEdit}
