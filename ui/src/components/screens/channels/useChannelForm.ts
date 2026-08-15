@@ -17,6 +17,7 @@ import {
   protocolConfigModelKey,
   protocolConfigSelectedCredentialIds,
   resolveBaseUrlId,
+  syncTargetKey,
   toForm,
   toPayload,
   type FormBaseUrl,
@@ -27,19 +28,6 @@ import {
   type HeaderItem,
   type Locale,
 } from "./channelShared";
-
-function syncTargetKey(
-  target: Pick<
-    FormProtocolConfig["sync_targets"][number],
-    "credential_id" | "model_name" | "protocol"
-  >,
-) {
-  return JSON.stringify([
-    target.credential_id,
-    target.model_name,
-    target.protocol,
-  ]);
-}
 
 function syncTargetsForModel(model: FormModel) {
   return model.protocols.map((protocol) => ({
@@ -318,17 +306,19 @@ export function useChannelForm(locale: Locale) {
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => {
-        const selected = config.models.find(
-          (model) => protocolConfigModelKey(config, model) === key,
-        );
+        const targetMatches = (
+          target: FormProtocolConfig["sync_targets"][number],
+        ) =>
+          protocolConfigModelKey(config, { ...target, source: "synced" }) ===
+          key;
         return {
           ...config,
           models: config.models.filter(
             (model) => protocolConfigModelKey(config, model) !== key,
           ),
-          sync_targets: selected
-            ? replaceSyncTargets(config, [selected], "manual")
-            : config.sync_targets,
+          sync_targets: config.sync_targets.filter(
+            (target) => !targetMatches(target),
+          ),
         };
       }),
     }));
@@ -349,27 +339,31 @@ export function useChannelForm(locale: Locale) {
     }));
   }
   function updateAllModelSources(source: FormModel["source"]) {
-    const changedModelCount = form.protocolConfigs.reduce(
-      (count, config) =>
-        count + config.models.filter((model) => model.source !== source).length,
-      0,
+    const hasModelChanges = form.protocolConfigs.some((config) =>
+      config.models.some((model) => model.source !== source),
     );
-    if (!changedModelCount) return;
+    const hasTargetChanges =
+      source === "manual"
+        ? form.protocolConfigs.some((config) => config.sync_targets.length)
+        : false;
+    if (!hasModelChanges && !hasTargetChanges) return;
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => ({
-        ...config,
-        ...updateModelSources(
+      protocolConfigs: current.protocolConfigs.map((config) => {
+        const updated = updateModelSources(
           config,
           config.models.filter((model) => model.source !== source),
           source,
-        ),
-      })),
+        );
+        return source === "manual"
+          ? { ...config, models: updated.models, sync_targets: [] }
+          : { ...config, ...updated };
+      }),
     }));
     toast.success(
       locale === "zh-CN"
-        ? `已将 ${changedModelCount} 个模型切换为${source === "synced" ? "同步" : "手动"}`
-        : `Switched ${changedModelCount} models to ${source === "synced" ? "synced" : "manual"}`,
+        ? `已将模型切换为${source === "synced" ? "同步" : "手动"}`
+        : `Switched models to ${source === "synced" ? "synced" : "manual"}`,
     );
   }
   function clearModels() {
