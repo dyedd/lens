@@ -16,6 +16,7 @@ def valid_import_site(
     return {
         "name": name,
         "enabled": enabled,
+        "tags": [],
         "base_urls": [
             {
                 "ref": "base",
@@ -309,17 +310,15 @@ def test_import_sites_persists_master_state_and_protocol_name(
     client,
     admin_headers,
 ) -> None:
+    site = valid_import_site(
+        enabled=False,
+        protocol_name="  Chat primary  ",
+    )
+    site["tags"] = [" imported ", "production", "imported"]
     response = client.post(
         "/api/admin/sites/import",
         headers=admin_headers,
-        json={
-            "sites": [
-                valid_import_site(
-                    enabled=False,
-                    protocol_name="  Chat primary  ",
-                )
-            ]
-        },
+        json={"sites": [site]},
     )
 
     assert response.status_code == 200
@@ -328,11 +327,13 @@ def test_import_sites_persists_master_state_and_protocol_name(
     assert payload["items"][0]["status"] == "created"
     created = payload["items"][0]["site"]
     assert created["enabled"] is False
+    assert created["tags"] == ["imported", "production"]
     assert created["protocols"][0]["name"] == "Chat primary"
     assert created["protocols"][0]["sync_targets"] == []
 
     stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert stored["enabled"] is False
+    assert stored["tags"] == ["imported", "production"]
     assert stored["protocols"][0]["name"] == "Chat primary"
     assert stored["protocols"][0]["sync_targets"] == []
 

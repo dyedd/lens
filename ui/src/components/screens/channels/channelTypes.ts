@@ -49,6 +49,7 @@ export type FormSyncTarget = {
 
 export type FormState = {
   name: string;
+  tags: string[];
   base_urls: FormBaseUrl[];
   credentials: FormCredential[];
   protocolConfigs: FormProtocolConfig[];

@@ -151,6 +151,7 @@ async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "id": row.id,
                 "name": row.name,
                 "enabled": bool(row.enabled),
+                "tags": json.loads(row.tags_json),
                 "base_urls": base_urls_by_site.get(row.id, []),
                 "credentials": credentials_by_site.get(row.id, []),
                 "protocols": protocol_configs_by_site.get(row.id, []),

@@ -55,10 +55,14 @@ class ChannelStore(
             items.extend(self._flatten_site(site))
         return sorted(items, key=lambda item: (item.name.lower(), item.id))
 
-    async def list_sites(self) -> list[SiteConfig]:
+    async def list_sites(self, tag: str | None = None) -> list[SiteConfig]:
         """Return all configured sites."""
         async with self._session_factory() as session:
-            return await self._load_sites(session)
+            sites = await self._load_sites(session)
+        normalized_tag = tag.strip() if tag else ""
+        if not normalized_tag:
+            return sites
+        return [site for site in sites if normalized_tag in site.tags]
 
     async def get_site(self, site_id: str) -> SiteConfig:
         """Return a site by identifier or raise when it does not exist."""
@@ -78,6 +82,7 @@ class ChannelStore(
                 site_id,
                 payload.name,
                 True,
+                payload.tags,
                 payload.base_urls,
                 payload.credentials,
                 payload.protocols,
@@ -102,6 +107,7 @@ class ChannelStore(
                     site_id,
                     site_payload.name,
                     prepared_item.enabled,
+                    site_payload.tags,
                     site_payload.base_urls,
                     site_payload.credentials,
                     site_payload.protocols,
@@ -140,6 +146,7 @@ class ChannelStore(
                 site_id,
                 payload.name,
                 bool(site.enabled),
+                payload.tags,
                 payload.base_urls,
                 payload.credentials,
                 payload.protocols,
