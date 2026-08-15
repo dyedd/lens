@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..channel_store import ChannelStore
 from ..shared import (
@@ -19,6 +19,7 @@ from ..shared import (
     _dump_group_protocols,
     _group_supports_protocol,
     _normalize_group_protocols,
+    _parse_runtime_channel_id,
     _parse_group_protocols,
     delete,
     select,
@@ -117,6 +118,41 @@ class GroupRepository(
     ) -> ModelGroupEnsureFromSiteResponse:
         """Plan or apply model group changes from selected site models."""
         return await self._ensure_groups_from_site(payload)
+
+    async def ensure_groups_from_site_in_session(
+        self,
+        session: AsyncSession,
+        payload: ModelGroupEnsureFromSiteRequest,
+    ) -> ModelGroupEnsureFromSiteResponse:
+        """Plan or apply model group changes in a caller-owned transaction."""
+        return await self._ensure_groups_from_site_in_session(session, payload)
+
+    async def list_execution_group_names_in_session(
+        self, session: AsyncSession
+    ) -> list[str]:
+        """Return names of execution groups visible in a caller-owned transaction."""
+        rows = await session.execute(
+            select(ModelGroupEntity.name).where(ModelGroupEntity.route_group_id == "")
+        )
+        return [name for name in rows.scalars().all() if name.strip()]
+
+    async def list_grouped_model_keys_in_session(
+        self, session: AsyncSession
+    ) -> set[tuple[str, str, str]]:
+        """Return protocol-config, credential, and model keys already in a group."""
+        rows = await session.execute(
+            select(
+                ModelGroupItemEntity.channel_id,
+                ModelGroupItemEntity.credential_id,
+                ModelGroupItemEntity.model_name,
+            )
+        )
+        keys: set[tuple[str, str, str]] = set()
+        for channel_id, credential_id, model_name in rows.all():
+            parsed = _parse_runtime_channel_id(channel_id)
+            if parsed is not None:
+                keys.add((parsed[0], credential_id, model_name))
+        return keys
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroupView:
         """Create and return a validated model group."""

@@ -4,6 +4,10 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, HttpUrl, field_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
+from .model_groups import (
+    ModelGroupEnsureFromSiteResponse,
+    ModelGroupEnsureModelInput,
+)
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
 
 
@@ -213,6 +217,20 @@ class SiteUpdate(StrictBaseModel):
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
+
+
+class SiteModelGroupSaveRequest(SiteCreate):
+    """Site payload plus transactional model-group save options."""
+
+    site_id: str | None = None
+    dry_run: bool = True
+    allow_protocol_extension: bool = False
+    models: list[ModelGroupEnsureModelInput] | None = None
+
+
+class SiteModelGroupSaveResponse(StrictBaseModel):
+    site: SiteConfig
+    model_groups: ModelGroupEnsureFromSiteResponse
 
 
 class SiteEnabledUpdate(StrictBaseModel):

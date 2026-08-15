@@ -78,13 +78,6 @@ export function ModelGroupEnsureDialog({
       ) ?? [],
     ),
   );
-  const selectedCount =
-    result?.items.filter(
-      (item) =>
-        canSubmitModelGroupEnsureItem(item) &&
-        selectedItemKeys.includes(modelGroupEnsureResultKey(item)),
-    ).length ?? 0;
-
   function getCreateGroupName(
     item: ModelGroupEnsureResultItem,
     key: string,
@@ -209,7 +202,11 @@ export function ModelGroupEnsureDialog({
       {open && result ? (
         <AppDialogContent
           className="max-w-5xl"
-          title={locale === "zh-CN" ? "加入/创建模型组" : "Add/create groups"}
+          title={
+            locale === "zh-CN"
+              ? "确认模型组处理"
+              : "Confirm model-group changes"
+          }
         >
           <div className="grid gap-4 pt-1">
             <div className="flex flex-wrap gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
@@ -274,15 +271,13 @@ export function ModelGroupEnsureDialog({
               <Button
                 type="button"
                 onClick={confirmWithDrafts}
-                disabled={
-                  !selectedCount || isConfirming || hasInvalidSelectedCreateName
-                }
+                disabled={isConfirming || hasInvalidSelectedCreateName}
               >
                 <RefreshCcw
                   data-icon="inline-start"
                   className={isConfirming ? "animate-spin" : undefined}
                 />
-                {locale === "zh-CN" ? "确认处理" : "Confirm"}
+                {locale === "zh-CN" ? "保存渠道" : "Save channel"}
               </Button>
             </div>
           </div>

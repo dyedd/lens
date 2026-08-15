@@ -372,12 +372,13 @@ export function useChannelForm(locale: Locale) {
         : `Switched ${changedModelCount} models to ${source === "synced" ? "synced" : "manual"}`,
     );
   }
-  function clearManualModels() {
+  function clearModels() {
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
-        models: config.models.filter((model) => model.source === "synced"),
+        models: [],
+        sync_targets: [],
       })),
     }));
   }
@@ -475,7 +476,7 @@ export function useChannelForm(locale: Locale) {
     updateModelSource,
     updateAllModelSources,
     removeAggregateModel,
-    clearManualModels,
+    clearModels,
     addProtocolConfig,
     addBaseUrl,
     updateBaseUrl,

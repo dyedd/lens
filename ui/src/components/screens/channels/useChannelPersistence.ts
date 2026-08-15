@@ -1,23 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import type { QueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiErrorMessage, type Site } from "@/lib/api";
-import {
-  toForm,
-  toPayload,
-  type FormState,
-  type Locale,
-} from "./channelShared";
+import type { Locale } from "./channelShared";
 
 type ChannelFormController = {
   editingSiteId: string | null;
   setEditingSiteId: (value: string | null) => void;
   setIsDialogOpen: (value: boolean) => void;
-  form: FormState;
-  applyPreparedForm: (form: FormState) => void;
-  validateSiteForm: () => boolean;
 };
 
 /** Persists channel editor changes and channel status actions. */
@@ -34,55 +26,6 @@ export function useChannelPersistence({
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null);
-
-  async function saveCurrentSite({ keepEditing = false } = {}) {
-    const wasEditing = Boolean(editor.editingSiteId);
-    const savedSite = await apiRequest<Site>(
-      editor.editingSiteId
-        ? `/admin/sites/${editor.editingSiteId}`
-        : "/admin/sites",
-      {
-        method: editor.editingSiteId ? "PUT" : "POST",
-        body: JSON.stringify(toPayload(editor.form)),
-      },
-    );
-    queryClient.setQueryData<Site[]>(["sites"], (current) => {
-      const rows = current ?? [];
-      return rows.some((site) => site.id === savedSite.id)
-        ? rows.map((site) => (site.id === savedSite.id ? savedSite : site))
-        : [savedSite, ...rows];
-    });
-    editor.applyPreparedForm(toForm(savedSite, locale));
-    if (keepEditing) editor.setEditingSiteId(savedSite.id);
-    await invalidateChannelData();
-    return { savedSite, wasEditing };
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!editor.validateSiteForm()) return;
-    try {
-      const { wasEditing } = await saveCurrentSite();
-      editor.setIsDialogOpen(false);
-      editor.setEditingSiteId(null);
-      toast.success(
-        wasEditing
-          ? locale === "zh-CN"
-            ? "渠道已更新"
-            : "Channel updated"
-          : locale === "zh-CN"
-            ? "渠道已创建"
-            : "Channel created",
-      );
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          locale === "zh-CN" ? "保存渠道失败" : "Failed to save channel",
-        ),
-      );
-    }
-  }
 
   async function removeSite(site: Site) {
     setBusyId(site.id);
@@ -153,8 +96,6 @@ export function useChannelPersistence({
     busyId,
     deleteTarget,
     setDeleteTarget,
-    saveCurrentSite,
-    submit,
     removeSite,
     toggleSiteEnabled,
   };

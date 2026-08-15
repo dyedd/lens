@@ -67,28 +67,57 @@ class ChannelStore(
     async def get_site(self, site_id: str) -> SiteConfig:
         """Return a site by identifier or raise when it does not exist."""
         async with self._session_factory() as session:
-            sites = await self._load_sites(session, site_ids=[site_id])
-            if not sites:
-                raise KeyError(site_id)
-            return sites[0]
+            return await self.get_site_in_session(session, site_id)
+
+    async def get_site_in_session(
+        self, session: AsyncSession, site_id: str
+    ) -> SiteConfig:
+        """Return a site from a caller-owned transaction."""
+        sites = await self._load_sites(session, site_ids=[site_id])
+        if not sites:
+            raise KeyError(site_id)
+        return sites[0]
 
     async def create_site(self, payload: SiteCreate) -> SiteConfig:
         """Create and return a site from the supplied configuration."""
         async with self._session_factory() as session:
-            await self._ensure_site_name_unique(session, payload.name)
             site_id = str(uuid.uuid4())
-            await self._upsert_site_payload(
-                session,
-                site_id,
-                payload.name,
-                True,
-                payload.tags,
-                payload.base_urls,
-                payload.credentials,
-                payload.protocols,
-            )
+            await self.save_site_in_session(session, site_id, payload, creating=True)
             await session.commit()
         return await self.get_site(site_id)
+
+    async def save_site_in_session(
+        self,
+        session: AsyncSession,
+        site_id: str,
+        payload: SiteCreate | SiteUpdate,
+        *,
+        creating: bool,
+    ) -> None:
+        """Create or update a site without committing the caller's transaction."""
+        site = await session.get(SiteEntity, site_id)
+        if not creating and site is None:
+            raise KeyError(site_id)
+        if creating and site is not None:
+            raise ValueError(f"Site already exists: {site_id}")
+        if creating:
+            await self._ensure_site_name_unique(session, payload.name)
+            enabled = True
+        else:
+            await self._ensure_site_name_unique(
+                session, payload.name, exclude_site_id=site_id
+            )
+            enabled = bool(site.enabled)
+        await self._upsert_site_payload(
+            session,
+            site_id,
+            payload.name,
+            enabled,
+            payload.tags,
+            payload.base_urls,
+            payload.credentials,
+            payload.protocols,
+        )
 
     async def import_sites(
         self, payload: SiteBatchImportRequest
@@ -135,22 +164,7 @@ class ChannelStore(
     async def update_site(self, site_id: str, payload: SiteUpdate) -> SiteConfig:
         """Replace and return an existing site configuration."""
         async with self._session_factory() as session:
-            site = await session.get(SiteEntity, site_id)
-            if site is None:
-                raise KeyError(site_id)
-            await self._ensure_site_name_unique(
-                session, payload.name, exclude_site_id=site_id
-            )
-            await self._upsert_site_payload(
-                session,
-                site_id,
-                payload.name,
-                bool(site.enabled),
-                payload.tags,
-                payload.base_urls,
-                payload.credentials,
-                payload.protocols,
-            )
+            await self.save_site_in_session(session, site_id, payload, creating=False)
             await session.commit()
         return await self.get_site(site_id)
 

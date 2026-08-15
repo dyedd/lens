@@ -18,6 +18,13 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         status_code=201,
     )
     app.add_api_route(
+        "/api/admin/sites/with-model-groups",
+        service_module.create_site_with_model_groups,
+        methods=["POST"],
+        response_model=service_module.SiteModelGroupSaveResponse,
+        status_code=201,
+    )
+    app.add_api_route(
         "/api/admin/sites/import",
         service_module.import_sites,
         methods=["POST"],
@@ -25,6 +32,12 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
     )
     app.add_api_route(
         "/api/admin/sites/{site_id}", service_module.update_site, methods=["PUT"]
+    )
+    app.add_api_route(
+        "/api/admin/sites/{site_id}/with-model-groups",
+        service_module.update_site_with_model_groups,
+        methods=["PUT"],
+        response_model=service_module.SiteModelGroupSaveResponse,
     )
     app.add_api_route(
         "/api/admin/sites/{site_id}/enabled",

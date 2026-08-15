@@ -143,26 +143,3 @@ export function modelGroupEnsureInputsFromResult(
     protocols: item.protocols,
   }));
 }
-
-/** Suggests the longest compatible existing group name for a model. */
-export function suggestModelGroupName(modelName: string, groups: ModelGroup[]) {
-  const normalizedModelName = modelName.trim();
-  if (!normalizedModelName) return "";
-  if (groups.some((group) => group.name === normalizedModelName)) {
-    return normalizedModelName;
-  }
-
-  let bestMatch = "";
-  for (const group of groups) {
-    const groupName = group.name.trim();
-    if (!groupName || groupName.length <= bestMatch.length) continue;
-    if (!normalizedModelName.startsWith(groupName)) continue;
-    const nextCharacter = normalizedModelName.charAt(groupName.length);
-    if (nextCharacter && !["-", "_", ".", " ", ":"].includes(nextCharacter)) {
-      continue;
-    }
-    bestMatch = groupName;
-  }
-
-  return bestMatch || normalizedModelName;
-}
