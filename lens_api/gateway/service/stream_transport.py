@@ -33,6 +33,7 @@ class _FinalizingStreamingResponse(StreamingResponse):
         status_code: int,
         media_type: str | None,
         headers: dict[str, str],
+        owned_client: httpx.AsyncClient | None = None,
     ) -> None:
         super().__init__(
             content,
@@ -42,6 +43,7 @@ class _FinalizingStreamingResponse(StreamingResponse):
         )
         self._stream_capture = stream_capture
         self._upstream_response = upstream_response
+        self._owned_client = owned_client
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         background = self.background
@@ -70,8 +72,12 @@ class _FinalizingStreamingResponse(StreamingResponse):
             try:
                 await self._upstream_response.aclose()
             finally:
-                if background is not None:
-                    await background()
+                try:
+                    if self._owned_client is not None:
+                        await self._owned_client.aclose()
+                finally:
+                    if background is not None:
+                        await background()
 
 
 async def _stream_upstream_iterator(
