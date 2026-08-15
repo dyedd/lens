@@ -2,8 +2,17 @@ import type { ProtocolKind } from "@/lib/api";
 import type {
   FormModel,
   FormProtocolConfig,
+  FormSyncTarget,
   PickerModelItem,
 } from "./channelTypes";
+
+export function syncTargetKey(target: FormSyncTarget) {
+  return JSON.stringify([
+    target.credential_id,
+    target.model_name,
+    target.protocol,
+  ]);
+}
 
 /** Builds a model key scoped by credential and model name. */
 export function genericModelKey(
