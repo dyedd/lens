@@ -14,6 +14,7 @@ from ...models import ChannelConfig, ProtocolKind
 from ..converters import convert_response, convert_stream_iterator, needs_conversion
 from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
 from ..router.cooldown import ErrorCategory
+from .app_state import app_state
 from .runtime_types import (
     StreamCapture,
     _GatewayTimeoutError,
@@ -176,6 +177,7 @@ async def _build_stream_result(
     log_body_enabled: bool,
     *,
     deadline: _RequestDeadline,
+    owned_client: httpx.AsyncClient | None = None,
 ) -> UpstreamResult:
     chat_expected_choices = body.get("n", 1)
     if (
@@ -236,6 +238,7 @@ async def _build_stream_result(
             status_code=response.status_code,
             media_type=stream_media,
             headers=_passthrough_headers(response.headers),
+            owned_client=owned_client,
         ),
         is_stream=True,
         status_code=response.status_code,
@@ -411,6 +414,7 @@ async def _call_channel(
     client = _resolve_http_client(proxy_url)
     is_stream_request = bool(body.get("stream"))
     response: httpx.Response | None = None
+    retry_client: httpx.AsyncClient | None = None
 
     try:
         stream_started_at = perf_counter()
@@ -425,6 +429,26 @@ async def _call_channel(
                 body_bytes=body_bytes,
             )
         response.raise_for_status()
+
+        if (
+            is_stream_request
+            and response.status_code == 200
+            and _response_media_type(response) == "text/html"
+        ):
+            await response.aclose()
+            response = None
+            retry_client = app_state._create_http_client(proxy_url)
+            async with _gateway_timeout_scope(
+                deadline.first_token_remaining_seconds(),
+                timeout_message=deadline.timeout_message(kind="first_token"),
+            ):
+                response = await _send_upstream(
+                    retry_client,
+                    upstream,
+                    stream=True,
+                    body_bytes=body_bytes,
+                )
+            response.raise_for_status()
 
         media_type = _response_media_type(response)
         is_event_stream = media_type == "text/event-stream"
@@ -455,8 +479,10 @@ async def _call_channel(
                 stream_started_at,
                 log_body_enabled,
                 deadline=deadline,
+                owned_client=retry_client,
             )
             response = None  # _FinalizingStreamingResponse owns the upstream response
+            retry_client = None
         else:
             if is_stream_request:
                 async with _gateway_timeout_scope(
@@ -521,6 +547,8 @@ async def _call_channel(
     finally:
         if response is not None:
             await response.aclose()
+        if retry_client is not None:
+            await retry_client.aclose()
 
 
 async def _send_upstream(
