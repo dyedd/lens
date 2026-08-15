@@ -162,6 +162,29 @@ def test_transactional_site_save_waits_for_protocol_extension_confirmation(
     assert stored_group["items"][0]["model_name"] == "gpt-image"
 
 
+def test_transactional_site_save_suggests_case_insensitive_containing_group(
+    client,
+    admin_headers,
+    create_model_group,
+) -> None:
+    create_model_group(name="glm", protocols=["openai_chat"])
+    create_model_group(name="GLM5.2", protocols=["openai_chat"])
+
+    preview = client.post(
+        "/api/admin/sites/with-model-groups",
+        headers=admin_headers,
+        json={
+            **valid_site_payload(model_name="zai.org/glm5.2"),
+            "dry_run": True,
+        },
+    )
+
+    assert preview.status_code == 201, preview.text
+    item = preview.json()["model_groups"]["items"][0]
+    assert item["group_name"] == "GLM5.2"
+    assert item["status"] == "update"
+
+
 @pytest.mark.parametrize("dry_run", [True, False])
 def test_ensure_model_groups_from_site_creates_group(
     client,
