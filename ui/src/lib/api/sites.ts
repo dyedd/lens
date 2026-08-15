@@ -1,4 +1,8 @@
 import type { ProtocolKind } from "./protocols";
+import type {
+  ModelGroupEnsureFromSiteResponse,
+  ModelGroupEnsureModelInput,
+} from "./groups";
 
 export type ChannelProxyMode = "inherit" | "direct" | "custom";
 export type SiteBaseUrl = {
@@ -117,6 +121,16 @@ export type SitePayload = {
   base_urls: SiteBaseUrlInput[];
   credentials: SiteCredentialInput[];
   protocols: SiteProtocolConfigInput[];
+};
+export type SiteModelGroupSavePayload = SitePayload & {
+  site_id?: string | null;
+  dry_run: boolean;
+  allow_protocol_extension: boolean;
+  models: ModelGroupEnsureModelInput[] | null;
+};
+export type SiteModelGroupSaveResponse = {
+  site: Site;
+  model_groups: ModelGroupEnsureFromSiteResponse;
 };
 export type SiteBatchImportBaseUrlInput = {
   ref: string;

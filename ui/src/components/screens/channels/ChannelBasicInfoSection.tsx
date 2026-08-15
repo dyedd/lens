@@ -1,11 +1,24 @@
 "use client";
 
 import { useState, type Dispatch, type SetStateAction } from "react";
-import { Plus, X } from "lucide-react";
+import { ChevronsUpDown, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/Command";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/Popover";
 import { ChannelBaseUrlSection } from "./ChannelBaseUrlSection";
 import { ChannelCredentialSection } from "./ChannelCredentialSection";
 import type {
@@ -18,6 +31,7 @@ import type {
 type Props = {
   form: FormState;
   locale: Locale;
+  availableTags: string[];
   setForm: Dispatch<SetStateAction<FormState>>;
   addBaseUrl: () => void;
   updateBaseUrl: (index: number, patch: Partial<FormBaseUrl>) => void;
@@ -30,6 +44,7 @@ type Props = {
 export function ChannelBasicInfoSection({
   form,
   locale,
+  availableTags,
   setForm,
   addBaseUrl,
   updateBaseUrl,
@@ -37,10 +52,17 @@ export function ChannelBasicInfoSection({
   updateCredential,
   removeCredential,
 }: Props) {
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const [tagInput, setTagInput] = useState("");
+  const suggestedTags = availableTags.filter((tag) => !form.tags.includes(tag));
+  const normalizedTagInput = tagInput.trim();
+  const canCreateTag =
+    normalizedTagInput.length > 0 &&
+    !availableTags.includes(normalizedTagInput) &&
+    !form.tags.includes(normalizedTagInput);
 
-  function addTag() {
-    const tag = tagInput.trim();
+  function addTag(value: string) {
+    const tag = value.trim();
     if (!tag) return;
     setForm((current) => {
       if (current.tags.length >= 20 || current.tags.includes(tag))
@@ -48,6 +70,7 @@ export function ChannelBasicInfoSection({
       return { ...current, tags: [...current.tags, tag] };
     });
     setTagInput("");
+    setTagPickerOpen(false);
   }
 
   return (
@@ -55,7 +78,7 @@ export function ChannelBasicInfoSection({
       <div className="text-base font-semibold text-foreground">
         {locale === "zh-CN" ? "基本信息" : "Channel and keys"}
       </div>
-      <FieldGroup className="gap-4">
+      <FieldGroup className="grid gap-4 md:grid-cols-2">
         <Field>
           <FieldLabel htmlFor="channel-name">
             {locale === "zh-CN" ? "渠道名称" : "Channel name"}
@@ -75,59 +98,128 @@ export function ChannelBasicInfoSection({
           <FieldLabel htmlFor="channel-tag-input">
             {locale === "zh-CN" ? "标签" : "Tags"}
           </FieldLabel>
-          <div className="flex gap-2">
-            <Input
-              id="channel-tag-input"
-              value={tagInput}
-              maxLength={80}
-              placeholder={locale === "zh-CN" ? "新标签" : "New tag"}
-              disabled={form.tags.length >= 20}
-              onChange={(event) => setTagInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
-                event.preventDefault();
-                addTag();
-              }}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              aria-label={locale === "zh-CN" ? "添加标签" : "Add tag"}
-              disabled={!tagInput.trim() || form.tags.length >= 20}
-              onClick={addTag}
+          <Popover
+            open={tagPickerOpen}
+            onOpenChange={(open) => {
+              setTagPickerOpen(open);
+              if (!open) setTagInput("");
+            }}
+          >
+            <PopoverTrigger asChild>
+              <Button
+                id="channel-tag-input"
+                type="button"
+                variant="outline"
+                role="combobox"
+                aria-controls="channel-tag-options"
+                aria-expanded={tagPickerOpen}
+                disabled={form.tags.length >= 20}
+                className="w-full justify-between font-normal"
+              >
+                <span className="truncate text-muted-foreground">
+                  {locale === "zh-CN"
+                    ? "选择或创建标签"
+                    : "Select or create a tag"}
+                </span>
+                <ChevronsUpDown data-icon="inline-end" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-[var(--radix-popover-trigger-width)] p-0"
             >
-              <Plus />
-            </Button>
-          </div>
-          {form.tags.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {form.tags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="pr-1">
-                  {tag}
-                  <button
-                    type="button"
-                    className="inline-flex rounded-full outline-none hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label={
-                      locale === "zh-CN"
-                        ? `移除标签 ${tag}`
-                        : `Remove tag ${tag}`
-                    }
-                    onClick={() =>
-                      setForm((current) => ({
-                        ...current,
-                        tags: current.tags.filter((item) => item !== tag),
-                      }))
-                    }
-                  >
-                    <X />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          ) : null}
+              <Command>
+                <CommandInput
+                  value={tagInput}
+                  maxLength={80}
+                  aria-label={
+                    locale === "zh-CN"
+                      ? "搜索或创建标签"
+                      : "Search or create a tag"
+                  }
+                  placeholder={
+                    locale === "zh-CN"
+                      ? "搜索或输入新标签..."
+                      : "Search or enter a new tag..."
+                  }
+                  onValueChange={setTagInput}
+                />
+                <CommandList id="channel-tag-options">
+                  <CommandEmpty>
+                    {normalizedTagInput &&
+                    form.tags.includes(normalizedTagInput)
+                      ? locale === "zh-CN"
+                        ? "该标签已添加"
+                        : "Tag already added"
+                      : locale === "zh-CN"
+                        ? "暂无已有标签"
+                        : "No existing tags"}
+                  </CommandEmpty>
+                  {suggestedTags.length ? (
+                    <CommandGroup
+                      heading={
+                        locale === "zh-CN" ? "已有标签" : "Existing tags"
+                      }
+                    >
+                      {suggestedTags.map((tag) => (
+                        <CommandItem
+                          key={tag}
+                          value={tag}
+                          onSelect={() => addTag(tag)}
+                        >
+                          <span className="truncate">{tag}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  ) : null}
+                  {canCreateTag ? (
+                    <CommandGroup
+                      heading={locale === "zh-CN" ? "新建" : "Create"}
+                    >
+                      <CommandItem
+                        value={`create ${normalizedTagInput}`}
+                        forceMount
+                        onSelect={() => addTag(normalizedTagInput)}
+                      >
+                        <Plus />
+                        <span className="truncate">
+                          {locale === "zh-CN"
+                            ? `创建标签“${normalizedTagInput}”`
+                            : `Create tag “${normalizedTagInput}”`}
+                        </span>
+                      </CommandItem>
+                    </CommandGroup>
+                  ) : null}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </Field>
-        <div className="grid gap-4 xl:grid-cols-2">
+        {form.tags.length ? (
+          <div className="flex flex-wrap gap-1.5 md:col-span-2">
+            {form.tags.map((tag) => (
+              <Badge key={tag} variant="secondary" className="pr-1">
+                {tag}
+                <button
+                  type="button"
+                  className="inline-flex size-4 items-center justify-center rounded-full outline-none hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={
+                    locale === "zh-CN" ? `移除标签 ${tag}` : `Remove tag ${tag}`
+                  }
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      tags: current.tags.filter((item) => item !== tag),
+                    }))
+                  }
+                >
+                  <X size={12} />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid gap-4 md:col-span-2 xl:grid-cols-2">
           <ChannelBaseUrlSection
             baseUrls={form.base_urls}
             locale={locale}

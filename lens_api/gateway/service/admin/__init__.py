@@ -31,6 +31,7 @@ from .routing import get_router_snapshot
 from .settings import list_settings, update_settings
 from .sites import (
     create_site,
+    create_site_with_model_groups,
     delete_site,
     fetch_site_models,
     import_sites,
@@ -39,6 +40,7 @@ from .sites import (
     sync_channel_models,
     test_site_model,
     update_site,
+    update_site_with_model_groups,
     update_site_enabled,
 )
 
@@ -47,6 +49,7 @@ __all__ = [
     "create_gateway_api_key",
     "create_model_group",
     "create_site",
+    "create_site_with_model_groups",
     "delete_gateway_api_key",
     "delete_model_group",
     "delete_site",
@@ -81,5 +84,6 @@ __all__ = [
     "update_model_price",
     "update_settings",
     "update_site",
+    "update_site_with_model_groups",
     "update_site_enabled",
 ]

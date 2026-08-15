@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   ArrowLeftRight,
   ChevronDown,
-  FolderPlus,
   Pencil,
   RefreshCcw,
   Trash2,
@@ -31,8 +30,6 @@ type Props = {
   batchTestOptions: BatchModelTestOption[];
   isBatchModelTestRunning: boolean;
   testingModel: boolean;
-  isEnsuringModelGroups: boolean;
-  onEnsureModelGroups: () => void;
   onOpenBatchTest: () => void;
   onUpdateModelProtocols: (modelKey: string, protocols: ProtocolKind[]) => void;
   onUpdateModelSource: (
@@ -42,7 +39,7 @@ type Props = {
   onUpdateAllModelSources: (source: AggregatedModel["source"]) => void;
   onOpenModelTest: (modelKey: string) => void;
   onRemoveModel: (modelKey: string) => void;
-  onClearManualModels: () => void;
+  onClearModels: () => void;
 };
 
 /** Renders aggregate channel models and their bulk actions. */
@@ -53,15 +50,13 @@ export function ChannelModelOverviewSection({
   batchTestOptions,
   isBatchModelTestRunning,
   testingModel,
-  isEnsuringModelGroups,
-  onEnsureModelGroups,
   onOpenBatchTest,
   onUpdateModelProtocols,
   onUpdateModelSource,
   onUpdateAllModelSources,
   onOpenModelTest,
   onRemoveModel,
-  onClearManualModels,
+  onClearModels,
 }: Props) {
   const [search, setSearch] = useState("");
   const normalizedSearch = search.trim().toLowerCase();
@@ -119,36 +114,11 @@ export function ChannelModelOverviewSection({
             variant="ghost"
             size="sm"
             className="text-muted-foreground hover:text-destructive"
-            onClick={onClearManualModels}
-            disabled={!hasManualModels}
+            onClick={onClearModels}
+            disabled={!overviewModels.length}
           >
             <Trash2 data-icon="inline-start" />
-            {locale === "zh-CN" ? "清空手动模型" : "Clear manual models"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onEnsureModelGroups}
-            disabled={
-              !overviewModels.length ||
-              isEnsuringModelGroups ||
-              isBatchModelTestRunning ||
-              testingModel
-            }
-          >
-            {isEnsuringModelGroups ? (
-              <RefreshCcw data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <FolderPlus data-icon="inline-start" />
-            )}
-            {locale === "zh-CN"
-              ? isEnsuringModelGroups
-                ? "生成预览中..."
-                : "加入/创建模型组"
-              : isEnsuringModelGroups
-                ? "Preparing preview..."
-                : "Add/create groups"}
+            {locale === "zh-CN" ? "清空所有模型" : "Clear all models"}
           </Button>
           <Button
             type="button"
@@ -180,7 +150,7 @@ export function ChannelModelOverviewSection({
                 <ChevronDown data-icon="inline-end" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   onSelect={() => onUpdateAllModelSources("manual")}
@@ -197,11 +167,6 @@ export function ChannelModelOverviewSection({
                   {locale === "zh-CN" ? "全部设为同步" : "Set all to synced"}
                 </DropdownMenuItem>
               </DropdownMenuGroup>
-              <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                {locale === "zh-CN"
-                  ? "同步：跟随上游筛选自动增删；手动：固定保留，后台不会改动。"
-                  : "Synced: follows the upstream filter and is added or removed automatically. Manual: kept as is."}
-              </p>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

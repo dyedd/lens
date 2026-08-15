@@ -1,6 +1,7 @@
 "use client";
 
 import type { Dispatch, FormEventHandler, SetStateAction } from "react";
+import { RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
@@ -25,13 +26,14 @@ type ChannelEditorDialogProps = {
   hasUnsavedChanges: boolean;
   editingSiteId: string | null;
   locale: Locale;
+  availableTags: string[];
   form: FormState;
   fetchingProtocolConfigIndex: number | null;
   duplicatedProtocolConfigKeys: Set<string>;
   batchTestOptions: BatchModelTestOption[];
   isBatchModelTestRunning: boolean;
   testingModel: boolean;
-  isEnsuringModelGroups: boolean;
+  savingChannel: boolean;
   overviewModels: AggregatedModel[];
   modelTestOptionByKey: Map<string, TestableModelOption>;
   setIsDialogOpen: Dispatch<SetStateAction<boolean>>;
@@ -51,7 +53,6 @@ type ChannelEditorDialogProps = {
   ) => void;
   addManualProtocolConfigModel: (protocolConfigIndex: number) => void;
   fetchProtocolModels: (protocolConfigIndex: number) => void;
-  openModelGroupEnsureDialog: () => void;
   openBatchModelTestDialog: () => void;
   updateModelProtocols: (
     modelKey: string,
@@ -64,7 +65,7 @@ type ChannelEditorDialogProps = {
   updateAllModelSources: (source: AggregatedModel["source"]) => void;
   openAggregateModelTest: (modelKey: string) => void;
   removeAggregateModel: (modelKey: string) => void;
-  clearManualModels: () => void;
+  clearModels: () => void;
   closeEditor: () => void;
 };
 
@@ -74,13 +75,14 @@ export function ChannelEditorDialog({
   hasUnsavedChanges,
   editingSiteId,
   locale,
+  availableTags,
   form,
   fetchingProtocolConfigIndex,
   duplicatedProtocolConfigKeys,
   batchTestOptions,
   isBatchModelTestRunning,
   testingModel,
-  isEnsuringModelGroups,
+  savingChannel,
   overviewModels,
   modelTestOptionByKey,
   setIsDialogOpen,
@@ -97,20 +99,20 @@ export function ChannelEditorDialog({
   updateProtocolConfig,
   addManualProtocolConfigModel,
   fetchProtocolModels,
-  openModelGroupEnsureDialog,
   openBatchModelTestDialog,
   updateModelProtocols,
   updateModelSource,
   updateAllModelSources,
   openAggregateModelTest,
   removeAggregateModel,
-  clearManualModels,
+  clearModels,
   closeEditor,
 }: ChannelEditorDialogProps) {
   return (
     <Dialog
       open={isDialogOpen}
       onOpenChange={(open) => {
+        if (!open && savingChannel) return;
         if (!open && hasUnsavedChanges) {
           const confirmed = window.confirm(
             locale === "zh-CN"
@@ -154,6 +156,7 @@ export function ChannelEditorDialog({
             <ChannelBasicInfoSection
               form={form}
               locale={locale}
+              availableTags={availableTags}
               setForm={setForm}
               addBaseUrl={addBaseUrl}
               updateBaseUrl={updateBaseUrl}
@@ -182,30 +185,40 @@ export function ChannelEditorDialog({
                 batchTestOptions={batchTestOptions}
                 isBatchModelTestRunning={isBatchModelTestRunning}
                 testingModel={testingModel}
-                isEnsuringModelGroups={isEnsuringModelGroups}
-                onEnsureModelGroups={openModelGroupEnsureDialog}
                 onOpenBatchTest={openBatchModelTestDialog}
                 onUpdateModelProtocols={updateModelProtocols}
                 onUpdateModelSource={updateModelSource}
                 onUpdateAllModelSources={updateAllModelSources}
                 onOpenModelTest={openAggregateModelTest}
                 onRemoveModel={removeAggregateModel}
-                onClearManualModels={clearManualModels}
+                onClearModels={clearModels}
               />
             </section>
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-            <Button type="button" variant="outline" onClick={closeEditor}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeEditor}
+              disabled={savingChannel}
+            >
               {locale === "zh-CN" ? "取消" : "Cancel"}
             </Button>
-            <Button type="submit">
-              {editingSiteId
+            <Button type="submit" disabled={savingChannel}>
+              {savingChannel ? (
+                <RefreshCcw data-icon="inline-start" className="animate-spin" />
+              ) : null}
+              {savingChannel
                 ? locale === "zh-CN"
-                  ? "保存渠道"
-                  : "Save channel"
-                : locale === "zh-CN"
-                  ? "创建渠道"
-                  : "Create channel"}
+                  ? "正在保存..."
+                  : "Saving..."
+                : editingSiteId
+                  ? locale === "zh-CN"
+                    ? "保存渠道"
+                    : "Save channel"
+                  : locale === "zh-CN"
+                    ? "创建渠道"
+                    : "Create channel"}
             </Button>
           </div>
         </form>

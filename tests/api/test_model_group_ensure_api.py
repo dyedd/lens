@@ -5,6 +5,163 @@ import pytest
 from conftest import assert_error, valid_site_payload
 
 
+def _save_models_from_preview(payload: dict) -> list[dict]:
+    return [
+        {
+            "protocol_config_id": item["protocol_config_id"],
+            "credential_id": item["credential_id"],
+            "model_name": item["model_name"],
+            "group_name": item["group_name"],
+            "protocols": item["protocols"],
+        }
+        for item in payload["model_groups"]["items"]
+    ]
+
+
+def test_transactional_site_save_groups_manual_and_synced_models(
+    client,
+    admin_headers,
+) -> None:
+    site_payload = valid_site_payload(model_name="gpt-manual")
+    protocol_config = site_payload["protocols"][0]
+    protocol_config["models"].append(
+        {
+            "credential_id": "cred-1",
+            "model_name": "gpt-synced",
+            "enabled": True,
+            "protocol": "openai_chat",
+            "source": "synced",
+        }
+    )
+    protocol_config["sync_targets"] = [
+        {
+            "credential_id": "cred-1",
+            "model_name": "gpt-synced",
+            "protocol": "openai_chat",
+        }
+    ]
+
+    preview = client.post(
+        "/api/admin/sites/with-model-groups",
+        headers=admin_headers,
+        json={**site_payload, "dry_run": True},
+    )
+
+    assert preview.status_code == 201, preview.text
+    preview_payload = preview.json()
+    assert preview_payload["model_groups"]["created_count"] == 2
+    assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+    assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
+
+    committed = client.post(
+        "/api/admin/sites/with-model-groups",
+        headers=admin_headers,
+        json={
+            **site_payload,
+            "site_id": preview_payload["site"]["id"],
+            "dry_run": False,
+            "models": _save_models_from_preview(preview_payload),
+        },
+    )
+
+    assert committed.status_code == 201, committed.text
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    assert {group["name"] for group in groups} == {"gpt-manual", "gpt-synced"}
+    assert {item["model_name"] for group in groups for item in group["items"]} == {
+        "gpt-manual",
+        "gpt-synced",
+    }
+    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]["models"]
+    assert {model["model_name"]: model["source"] for model in stored_models} == {
+        "gpt-manual": "manual",
+        "gpt-synced": "synced",
+    }
+
+    repeated_preview = client.put(
+        f"/api/admin/sites/{preview_payload['site']['id']}/with-model-groups",
+        headers=admin_headers,
+        json={**site_payload, "dry_run": True},
+    )
+    assert repeated_preview.status_code == 200, repeated_preview.text
+    assert repeated_preview.json()["model_groups"]["items"] == []
+
+
+def test_transactional_site_save_rolls_back_when_group_write_fails(
+    client,
+    admin_headers,
+    app_state,
+    monkeypatch,
+) -> None:
+    async def fail_group_write(*_args, **_kwargs):
+        raise RuntimeError("group write failed")
+
+    monkeypatch.setattr(
+        app_state.group_repo,
+        "ensure_groups_from_site_in_session",
+        fail_group_write,
+    )
+    response = client.post(
+        "/api/admin/sites/with-model-groups",
+        headers=admin_headers,
+        json={**valid_site_payload(), "dry_run": False},
+    )
+
+    assert response.status_code == 500
+    assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+    assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
+
+
+def test_transactional_site_save_waits_for_protocol_extension_confirmation(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    site_payload = valid_site_payload(
+        name="Original Site",
+        protocols=["openai_image"],
+        model_name="gpt-image",
+    )
+    site = create_site(site_payload)
+    group = create_model_group(name="gpt", protocols=["openai_chat"])
+    updated_payload = {**site_payload, "name": "Updated Site"}
+
+    preview = client.put(
+        f"/api/admin/sites/{site['id']}/with-model-groups",
+        headers=admin_headers,
+        json={**updated_payload, "dry_run": True},
+    )
+
+    assert preview.status_code == 200, preview.text
+    preview_payload = preview.json()
+    assert preview_payload["model_groups"]["items"][0]["skipped_reason"] == (
+        "protocol_extension_required"
+    )
+    stored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert stored_site["name"] == "Original Site"
+
+    committed = client.put(
+        f"/api/admin/sites/{site['id']}/with-model-groups",
+        headers=admin_headers,
+        json={
+            **updated_payload,
+            "dry_run": False,
+            "allow_protocol_extension": True,
+            "models": _save_models_from_preview(preview_payload),
+        },
+    )
+
+    assert committed.status_code == 200, committed.text
+    assert committed.json()["site"]["name"] == "Updated Site"
+    stored_group = client.get(
+        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
+    ).json()
+    assert stored_group["protocols"] == ["openai_chat", "openai_image"]
+    assert stored_group["items"][0]["model_name"] == "gpt-image"
+
+
 @pytest.mark.parametrize("dry_run", [True, False])
 def test_ensure_model_groups_from_site_creates_group(
     client,

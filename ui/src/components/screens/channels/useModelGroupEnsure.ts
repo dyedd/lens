@@ -1,52 +1,62 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   apiRequest,
   getApiErrorMessage,
   type ModelGroup,
-  type ModelGroupEnsureFromSitePayload,
   type ModelGroupEnsureFromSiteResponse,
   type ModelGroupEnsureModelInput,
   type ModelGroupEnsureResultItem,
-  type Site,
+  type SiteModelGroupSavePayload,
+  type SiteModelGroupSaveResponse,
+  type SitePayload,
 } from "@/lib/api";
 import {
   canSubmitModelGroupEnsureItem,
-  executionModelGroups,
   modelGroupEnsureInputsFromResult,
+  modelGroupEnsureSkippedToastMessage,
   modelGroupEnsureResultKey,
 } from "./modelGroupEnsure";
 import {
-  buildModelGroupEnsureInputs,
-  showModelGroupEnsureSkippedToast,
-} from "./modelGroupEnsurePayload";
-import type { Locale } from "./channelShared";
+  toForm,
+  toPayload,
+  type FormState,
+  type Locale,
+} from "./channelShared";
 
-type SaveSite = (options: { keepEditing: true }) => Promise<{
-  savedSite: Site;
-  wasEditing: boolean;
-}>;
+type ChannelEditor = {
+  form: FormState;
+  editingSiteId: string | null;
+  setEditingSiteId: (value: string | null) => void;
+  setIsDialogOpen: (value: boolean) => void;
+  applyPreparedForm: (form: FormState) => void;
+  validateSiteForm: () => boolean;
+};
 
-/** Owns the model-group preview and confirmation workflow. */
+type PendingSave = {
+  mode: "create" | "update";
+  siteId: string;
+  payload: SitePayload;
+};
+
+/** Owns the transactional channel save and its ambiguity confirmation dialog. */
 export function useModelGroupEnsure({
   locale,
   queryClient,
-  validateSiteForm,
-  saveCurrentSite,
+  editor,
   invalidateChannelData,
 }: {
   locale: Locale;
   queryClient: QueryClient;
-  validateSiteForm: () => boolean;
-  saveCurrentSite: SaveSite;
+  editor: ChannelEditor;
   invalidateChannelData: () => Promise<void>;
 }) {
-  const [modelGroupEnsureOpen, setModelGroupEnsureOpen] = useState(false);
+  const [modelGroupEnsureOpen, setModelGroupEnsureOpenState] = useState(false);
   const [isEnsuringModelGroups, setIsEnsuringModelGroups] = useState(false);
-  const [siteId, setSiteId] = useState("");
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [result, setResult] = useState<ModelGroupEnsureFromSiteResponse | null>(
     null,
   );
@@ -54,61 +64,105 @@ export function useModelGroupEnsure({
   const [allowProtocolExtension, setAllowProtocolExtension] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
-  async function requestPreview(
-    models: ModelGroupEnsureModelInput[],
-    allowed: boolean,
+  async function requestSave(
+    pending: PendingSave,
+    options: {
+      dryRun: boolean;
+      allowProtocolExtension: boolean;
+      models: ModelGroupEnsureModelInput[] | null;
+    },
   ) {
-    return apiRequest<ModelGroupEnsureFromSiteResponse>(
-      "/admin/model-groups/ensure-from-site",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          site_id: siteId,
-          dry_run: true,
-          allow_protocol_extension: allowed,
-          models,
-        } satisfies ModelGroupEnsureFromSitePayload),
-      },
-    );
+    const savePayload: SiteModelGroupSavePayload = {
+      ...pending.payload,
+      site_id: pending.mode === "create" ? pending.siteId || null : null,
+      dry_run: options.dryRun,
+      allow_protocol_extension: options.allowProtocolExtension,
+      models: options.models,
+    };
+    const path =
+      pending.mode === "create"
+        ? "/admin/sites/with-model-groups"
+        : `/admin/sites/${pending.siteId}/with-model-groups`;
+    return apiRequest<SiteModelGroupSaveResponse>(path, {
+      method: pending.mode === "create" ? "POST" : "PUT",
+      body: JSON.stringify(savePayload),
+    });
   }
-  async function openModelGroupEnsureDialog() {
-    if (!validateSiteForm()) return;
+
+  function showSkippedToast(nextResult: ModelGroupEnsureFromSiteResponse) {
+    const message = modelGroupEnsureSkippedToastMessage(nextResult, locale);
+    if (message) toast.warning(message);
+  }
+
+  function clearPendingSave() {
+    setPendingSave(null);
+    setResult(null);
+    setGroups([]);
+    setAllowProtocolExtension(false);
+    setSelectedKeys([]);
+  }
+
+  function setModelGroupEnsureOpen(open: boolean) {
+    setModelGroupEnsureOpenState(open);
+    if (!open) clearPendingSave();
+  }
+
+  async function commitSave(
+    pending: PendingSave,
+    models: ModelGroupEnsureModelInput[] | null,
+  ) {
+    const committed = await requestSave(pending, {
+      dryRun: false,
+      allowProtocolExtension,
+      models,
+    });
+    editor.applyPreparedForm(toForm(committed.site, locale));
+    editor.setIsDialogOpen(false);
+    editor.setEditingSiteId(null);
+    setModelGroupEnsureOpen(false);
+    const changedCount =
+      committed.model_groups.created_count +
+      committed.model_groups.updated_count;
+    toast.success(locale === "zh-CN" ? "渠道已保存" : "Channel saved");
+    toast.success(
+      locale === "zh-CN"
+        ? `已处理 ${changedCount} 项模型组变更`
+        : `Processed ${changedCount} model-group changes`,
+    );
+    await invalidateChannelData();
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editor.validateSiteForm()) return;
     setIsEnsuringModelGroups(true);
     setResult(null);
     setGroups([]);
     setAllowProtocolExtension(false);
     setSelectedKeys([]);
+    const mode = editor.editingSiteId ? "update" : "create";
+    const pending: PendingSave = {
+      mode,
+      siteId: editor.editingSiteId ?? "",
+      payload: toPayload(editor.form),
+    };
     try {
-      const { savedSite } = await saveCurrentSite({ keepEditing: true });
+      const preview = await requestSave(pending, {
+        dryRun: true,
+        allowProtocolExtension: false,
+        models: null,
+      });
+      const nextPending = { ...pending, siteId: preview.site.id };
+      const nextResult = preview.model_groups;
+      if (!nextResult.skipped_count) {
+        await commitSave(nextPending, null);
+        return;
+      }
       const modelGroups = await queryClient.fetchQuery<ModelGroup[]>({
         queryKey: ["model-groups"],
         queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
       });
-      const models = buildModelGroupEnsureInputs(
-        savedSite,
-        executionModelGroups(modelGroups),
-      );
-      if (!models.length) {
-        toast.info(
-          locale === "zh-CN"
-            ? "没有可加入模型组的启用模型"
-            : "No enabled models can be added to groups",
-        );
-        return;
-      }
-      const nextResult = await apiRequest<ModelGroupEnsureFromSiteResponse>(
-        "/admin/model-groups/ensure-from-site",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            site_id: savedSite.id,
-            dry_run: true,
-            allow_protocol_extension: false,
-            models,
-          } satisfies ModelGroupEnsureFromSitePayload),
-        },
-      );
-      setSiteId(savedSite.id);
+      setPendingSave(nextPending);
       setGroups(modelGroups);
       setResult(nextResult);
       setSelectedKeys(
@@ -116,104 +170,107 @@ export function useModelGroupEnsure({
           .filter(canSubmitModelGroupEnsureItem)
           .map(modelGroupEnsureResultKey),
       );
-      showModelGroupEnsureSkippedToast(nextResult, locale);
+      showSkippedToast(nextResult);
       setModelGroupEnsureOpen(true);
     } catch (error) {
       toast.error(
         getApiErrorMessage(
           error,
-          locale === "zh-CN"
-            ? "生成模型组预览失败"
-            : "Failed to preview model groups",
+          locale === "zh-CN" ? "保存渠道失败" : "Failed to save channel",
         ),
       );
     } finally {
       setIsEnsuringModelGroups(false);
     }
   }
+
+  async function previewWithModels(
+    models: ModelGroupEnsureModelInput[],
+    allowed: boolean,
+  ) {
+    if (!pendingSave) return;
+    setIsEnsuringModelGroups(true);
+    try {
+      const preview = await requestSave(pendingSave, {
+        dryRun: true,
+        allowProtocolExtension: allowed,
+        models,
+      });
+      setResult(preview.model_groups);
+      showSkippedToast(preview.model_groups);
+      return preview.model_groups;
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          locale === "zh-CN"
+            ? "更新模型组预览失败"
+            : "Failed to update model group preview",
+        ),
+      );
+      return null;
+    } finally {
+      setIsEnsuringModelGroups(false);
+    }
+  }
+
   async function updateTarget(item: ModelGroupEnsureResultItem, group: string) {
-    if (!result || !siteId) return;
+    if (!result) return;
     const changedKey = modelGroupEnsureResultKey(item);
     const wasSelected = selectedKeys.includes(changedKey);
-    setIsEnsuringModelGroups(true);
-    try {
-      const nextResult = await requestPreview(
-        modelGroupEnsureInputsFromResult(
-          result.items,
-          new Map([[changedKey, group]]),
-        ),
-        allowProtocolExtension,
+    const nextResult = await previewWithModels(
+      modelGroupEnsureInputsFromResult(
+        result.items,
+        new Map([[changedKey, group]]),
+      ),
+      allowProtocolExtension,
+    );
+    if (!nextResult) return;
+    setSelectedKeys((current) => {
+      const executable = new Set(
+        nextResult.items
+          .filter(canSubmitModelGroupEnsureItem)
+          .map(modelGroupEnsureResultKey),
       );
-      setResult(nextResult);
-      showModelGroupEnsureSkippedToast(nextResult, locale);
-      setSelectedKeys((current) => {
-        const executable = new Set(
-          nextResult.items
-            .filter(canSubmitModelGroupEnsureItem)
-            .map(modelGroupEnsureResultKey),
-        );
-        const next = current.filter((key) => executable.has(key));
-        const changed = nextResult.items.find(
-          (row) => modelGroupEnsureResultKey(row) === changedKey,
-        );
-        if (
-          changed &&
-          canSubmitModelGroupEnsureItem(changed) &&
-          (wasSelected || !canSubmitModelGroupEnsureItem(item)) &&
-          !next.includes(changedKey)
-        ) {
-          next.push(changedKey);
-        }
-        return next;
-      });
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          locale === "zh-CN"
-            ? "更新模型组预览失败"
-            : "Failed to update model group preview",
-        ),
+      const next = current.filter((key) => executable.has(key));
+      const changed = nextResult.items.find(
+        (row) => modelGroupEnsureResultKey(row) === changedKey,
       );
-    } finally {
-      setIsEnsuringModelGroups(false);
-    }
+      if (
+        changed &&
+        canSubmitModelGroupEnsureItem(changed) &&
+        (wasSelected || !canSubmitModelGroupEnsureItem(item)) &&
+        !next.includes(changedKey)
+      ) {
+        next.push(changedKey);
+      }
+      return next;
+    });
   }
+
   async function updateProtocolExtension(allowed: boolean) {
-    if (!result || !siteId) return;
+    if (!result) return;
     setAllowProtocolExtension(allowed);
-    setIsEnsuringModelGroups(true);
-    try {
-      const nextResult = await requestPreview(
-        modelGroupEnsureInputsFromResult(result.items),
-        allowed,
-      );
-      setResult(nextResult);
-      showModelGroupEnsureSkippedToast(nextResult, locale);
-      setSelectedKeys((current) => {
-        const executable = new Set(
-          nextResult.items
-            .filter(canSubmitModelGroupEnsureItem)
-            .map(modelGroupEnsureResultKey),
-        );
-        return allowed
-          ? Array.from(executable)
-          : current.filter((key) => executable.has(key));
-      });
-    } catch (error) {
+    const nextResult = await previewWithModels(
+      modelGroupEnsureInputsFromResult(result.items),
+      allowed,
+    );
+    if (!nextResult) {
       setAllowProtocolExtension(!allowed);
-      toast.error(
-        getApiErrorMessage(
-          error,
-          locale === "zh-CN"
-            ? "更新模型组预览失败"
-            : "Failed to update model group preview",
-        ),
-      );
-    } finally {
-      setIsEnsuringModelGroups(false);
+      return;
     }
+    setSelectedKeys((current) => {
+      const executable = new Set(
+        nextResult.items
+          .filter(canSubmitModelGroupEnsureItem)
+          .map(modelGroupEnsureResultKey),
+      );
+      return allowed
+        ? Array.from(executable)
+        : current.filter((key) => executable.has(key));
+    });
   }
+
   function toggleItem(item: ModelGroupEnsureResultItem) {
     if (!canSubmitModelGroupEnsureItem(item)) return;
     const key = modelGroupEnsureResultKey(item);
@@ -223,66 +280,40 @@ export function useModelGroupEnsure({
         : [...current, key],
     );
   }
+
   async function confirm(groupOverrides: Record<string, string> = {}) {
-    if (!result || !siteId) return;
+    if (!result || !pendingSave) return;
     const selected = new Set(selectedKeys);
     const overrides = new Map(
       Object.entries(groupOverrides)
         .map(([key, value]) => [key, value.trim()] as const)
         .filter(([, value]) => value),
     );
-    const models = result.items
-      .filter(
+    const models = modelGroupEnsureInputsFromResult(
+      result.items.filter(
         (item) =>
           canSubmitModelGroupEnsureItem(item) &&
           selected.has(modelGroupEnsureResultKey(item)),
-      )
-      .map((item) => modelGroupEnsureInputsFromResult([item], overrides)[0]);
-    if (!models.length) {
-      toast.info(
-        locale === "zh-CN" ? "请选择要处理的模型" : "Select models to process",
-      );
-      return;
-    }
+      ),
+      overrides,
+    );
     setIsEnsuringModelGroups(true);
     try {
-      const nextResult = await apiRequest<ModelGroupEnsureFromSiteResponse>(
-        "/admin/model-groups/ensure-from-site",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            site_id: siteId,
-            dry_run: false,
-            allow_protocol_extension: allowProtocolExtension,
-            models,
-          } satisfies ModelGroupEnsureFromSitePayload),
-        },
-      );
-      setModelGroupEnsureOpen(false);
-      setSiteId("");
-      setResult(null);
-      setGroups([]);
-      setAllowProtocolExtension(false);
-      setSelectedKeys([]);
-      toast.success(
-        locale === "zh-CN"
-          ? `已处理 ${nextResult.created_count + nextResult.updated_count} 项`
-          : `Processed ${nextResult.created_count + nextResult.updated_count} items`,
-      );
-      await invalidateChannelData();
+      await commitSave(pendingSave, models);
     } catch (error) {
       toast.error(
         getApiErrorMessage(
           error,
           locale === "zh-CN"
-            ? "处理模型组失败"
-            : "Failed to process model groups",
+            ? "保存渠道或模型组失败"
+            : "Failed to save channel or model groups",
         ),
       );
     } finally {
       setIsEnsuringModelGroups(false);
     }
   }
+
   return {
     modelGroupEnsureOpen,
     setModelGroupEnsureOpen,
@@ -291,7 +322,7 @@ export function useModelGroupEnsure({
     groups,
     allowProtocolExtension,
     selectedKeys,
-    openModelGroupEnsureDialog,
+    submit,
     updateTarget,
     updateProtocolExtension,
     toggleItem,
