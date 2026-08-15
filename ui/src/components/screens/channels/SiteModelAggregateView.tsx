@@ -53,11 +53,25 @@ export function SiteModelAggregateView({
     { value: "manual", label: locale === "zh-CN" ? "手动" : "Manual" },
     { value: "synced", label: locale === "zh-CN" ? "同步" : "Synced" },
   ];
+  const pendingLabel = locale === "zh-CN" ? "待上游恢复" : "Awaiting upstream";
+  const deleteTargetLabel =
+    locale === "zh-CN" ? "删除同步目标" : "Remove sync target";
+  const deleteModelLabel = locale === "zh-CN" ? "删除模型" : "Delete model";
   return (
     <div className="grid min-w-0 max-h-[min(52dvh,28rem)] overflow-y-auto">
       {models.map(
-        ({ key: modelKey, modelName, protocols, sourceLabel, source }) => {
+        ({
+          key: modelKey,
+          modelName,
+          protocols,
+          sourceLabel,
+          source,
+          isTargetOnly,
+        }) => {
           const testable = canTestModel(modelKey);
+          const deleteLabel = isTargetOnly
+            ? deleteTargetLabel
+            : deleteModelLabel;
           return (
             <div
               key={modelKey}
@@ -68,14 +82,20 @@ export function SiteModelAggregateView({
                   <div className="truncate text-sm font-medium">
                     {modelName}
                   </div>
-                  <SegmentedControl
-                    value={source}
-                    onValueChange={(nextSource) =>
-                      onChangeModelSource(modelKey, nextSource)
-                    }
-                    options={sourceOptions}
-                    className="shrink-0"
-                  />
+                  {isTargetOnly ? (
+                    <span className="shrink-0 rounded-full border border-amber-500/40 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                      {pendingLabel}
+                    </span>
+                  ) : (
+                    <SegmentedControl
+                      value={source}
+                      onValueChange={(nextSource) =>
+                        onChangeModelSource(modelKey, nextSource)
+                      }
+                      options={sourceOptions}
+                      className="shrink-0"
+                    />
+                  )}
                 </div>
                 <div className="truncate text-xs text-muted-foreground md:hidden">
                   {sourceLabel}
@@ -85,6 +105,7 @@ export function SiteModelAggregateView({
                 value={protocols}
                 onChange={(next) => onChangeModelProtocols(modelKey, next)}
                 locale={locale}
+                disabled={isTargetOnly}
                 invalid={protocols.length === 0}
                 shouldRequireAtLeastOne
               />
@@ -92,23 +113,25 @@ export function SiteModelAggregateView({
                 {sourceLabel}
               </span>
               <div className="flex items-center justify-end gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 text-muted-foreground hover:text-foreground"
-                  onClick={() => onOpenModelTest(modelKey)}
-                  disabled={!testable || testingDisabled}
-                >
-                  {locale === "zh-CN" ? "测试" : "Test"}
-                </Button>
+                {!isTargetOnly ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                    onClick={() => onOpenModelTest(modelKey)}
+                    disabled={!testable || testingDisabled}
+                  >
+                    {locale === "zh-CN" ? "测试" : "Test"}
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  aria-label={locale === "zh-CN" ? "删除模型" : "Delete model"}
-                  title={locale === "zh-CN" ? "删除模型" : "Delete model"}
+                  aria-label={deleteLabel}
+                  title={deleteLabel}
                   onClick={() => onRemoveModel(modelKey)}
                 >
                   <Trash2 />
