@@ -114,8 +114,10 @@ export function FoldedMemberRow({
   const sourceLabel = showChannelName
     ? foldedMemberSourceLabel(member, locale)
     : credentialDisplayLabel(member, locale);
-  const enabled = member.enabled_item_count > 0;
-  const partiallyEnabled = enabled && member.disabled_item_count > 0;
+  const enabled = member.ready_item_count > 0;
+  const manuallyEnabled = member.enabled_item_count > 0;
+  const partiallyEnabled = manuallyEnabled && member.disabled_item_count > 0;
+  const automaticallyUnavailable = !enabled && manuallyEnabled;
   const invalidReasons = modelGroupReasonsForState(member.subItems, "invalid");
   const unavailableReasons = modelGroupReasonsForState(
     member.subItems,
@@ -132,11 +134,11 @@ export function FoldedMemberRow({
   const unavailableLabel =
     member.unavailable_item_count < member.subItems.length
       ? locale === "zh-CN"
-        ? `部分不可用 ${member.unavailable_item_count}`
-        : `Partly unavailable ${member.unavailable_item_count}`
+        ? `部分依赖不可用 ${member.unavailable_item_count}`
+        : `Dependencies unavailable ${member.unavailable_item_count}`
       : locale === "zh-CN"
-        ? "不可用"
-        : "Unavailable";
+        ? "依赖不可用"
+        : "Dependency unavailable";
 
   return (
     <div
@@ -169,7 +171,7 @@ export function FoldedMemberRow({
           {sourceLabel}
           {partiallyEnabled
             ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
-            : !enabled
+            : !manuallyEnabled
               ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
               : ""}
         </div>
@@ -191,7 +193,7 @@ export function FoldedMemberRow({
       <div className="flex h-8 w-8 items-center justify-center">
         <Switch
           checked={enabled}
-          disabled={isBusy}
+          disabled={isBusy || automaticallyUnavailable}
           onCheckedChange={onToggle}
           aria-label={
             locale === "zh-CN" ? "切换成员启用状态" : "Toggle member status"

@@ -76,15 +76,16 @@ export function ModelGroupCard({
     locale === "zh-CN" ? "复制模型名称" : "Copy model name";
   const problemMembersLabel =
     locale === "zh-CN"
-      ? `包含 ${group.problem_member_count} 个异常成员`
-      : `${group.problem_member_count} problematic ${
-          group.problem_member_count === 1 ? "member" : "members"
-        }`;
+      ? `包含 ${group.problem_member_count} 个需处理成员`
+      : `${group.problem_member_count} member${
+          group.problem_member_count === 1 ? "" : "s"
+        } needing attention`;
   const hasTestableMember = group.display_members.some((member) =>
-    member.items.some(
-      (item) => item.enabled && item.state === "ready" && item.protocol,
-    ),
+    member.items.some((item) => item.state === "ready" && item.protocol),
   );
+  const enabled = isGroupEnabled(group);
+  const automaticallyUnavailable =
+    !enabled && group.items.some((item) => item.enabled);
 
   return (
     <Item
@@ -164,8 +165,8 @@ export function ModelGroupCard({
                 </TooltipTrigger>
                 <TooltipContent side="bottom" align="start">
                   {locale === "zh-CN"
-                    ? "成员存在配置错误或当前不可用，具体原因见成员状态"
-                    : "Members have configuration errors or are currently unavailable; see member status for details"}
+                    ? "成员存在配置错误或依赖暂不可用，具体原因见成员状态"
+                    : "Members have configuration errors or unavailable dependencies; see member status for details"}
                 </TooltipContent>
               </Tooltip>
             ) : null}
@@ -224,9 +225,12 @@ export function ModelGroupCard({
         onKeyDown={(event) => event.stopPropagation()}
       >
         <Switch
-          checked={isGroupEnabled(group)}
+          checked={enabled}
           disabled={
-            group.is_route_group || busyId === group.id || !group.items.length
+            group.is_route_group ||
+            busyId === group.id ||
+            !group.items.length ||
+            automaticallyUnavailable
           }
           onCheckedChange={(checked) => void toggleGroupEnabled(group, checked)}
         />

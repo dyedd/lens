@@ -85,8 +85,9 @@ export function useGroupMembers(
         member.invalid_item_count > 0 || member.unavailable_item_count > 0;
       const isVisible =
         memberStatusFilter === "all" ||
-        (memberStatusFilter === "enabled" && member.enabled_item_count > 0) ||
-        (memberStatusFilter === "disabled" && member.disabled_item_count > 0) ||
+        (memberStatusFilter === "enabled" && member.ready_item_count > 0) ||
+        (memberStatusFilter === "disabled" &&
+          member.ready_item_count < member.subItems.length) ||
         (memberStatusFilter === "problem" && hasProblem);
       return isVisible ? [{ member, index }] : [];
     });
@@ -115,10 +116,6 @@ export function useGroupMembers(
   );
   const invalidItemCount = foldedMembers.reduce(
     (count, member) => count + member.invalid_item_count,
-    0,
-  );
-  const unavailableItemCount = foldedMembers.reduce(
-    (count, member) => count + member.unavailable_item_count,
     0,
   );
 
@@ -224,11 +221,11 @@ export function useGroupMembers(
     });
   }
 
-  function removeItemsByState(state: "invalid" | "unavailable") {
+  function removeInvalidItems() {
     const keysToRemove = new Set(
       foldedMembers
         .flatMap((member) => member.subItems)
-        .filter((item) => item.state === state)
+        .filter((item) => item.state === "invalid")
         .map((item) => itemKey(item)),
     );
     if (!keysToRemove.size) return;
@@ -236,14 +233,6 @@ export function useGroupMembers(
       ...current,
       items: current.items.filter((item) => !keysToRemove.has(itemKey(item))),
     }));
-  }
-
-  function removeInvalidItems() {
-    removeItemsByState("invalid");
-  }
-
-  function removeUnavailableItems() {
-    removeItemsByState("unavailable");
   }
 
   return {
@@ -257,11 +246,9 @@ export function useGroupMembers(
     removeDisabledMembers,
     removeFoldedMember,
     removeInvalidItems,
-    removeUnavailableItems,
     setAllMembersEnabled,
     toggleChannelMembers,
     toggleFoldedMember,
-    unavailableItemCount,
     visibleChannelGroups,
     visibleFoldedMembers,
   };

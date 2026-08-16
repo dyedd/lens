@@ -11,7 +11,6 @@ from .shared import (
     SiteModelFetchRequest,
     SiteProtocolConfigEntity,
     SiteProtocolConfigCredentialEntity,
-    SiteProtocolConfigSyncTargetEntity,
     delete,
     select,
     uuid,
@@ -29,33 +28,9 @@ class ChannelSiteOperationsMixin:
 
             protocol_config_ids = await self._site_protocol_config_ids(session, site_id)
             credential_ids = await self._site_credential_ids(session, site_id)
-            if protocol_config_ids:
-                await session.execute(
-                    delete(SiteDiscoveredModelEntity).where(
-                        SiteDiscoveredModelEntity.protocol_config_id.in_(
-                            protocol_config_ids
-                        )
-                    )
-                )
-                await session.execute(
-                    delete(SiteProtocolConfigCredentialEntity).where(
-                        SiteProtocolConfigCredentialEntity.protocol_config_id.in_(
-                            protocol_config_ids
-                        )
-                    )
-                )
-                await session.execute(
-                    delete(SiteProtocolConfigSyncTargetEntity).where(
-                        SiteProtocolConfigSyncTargetEntity.protocol_config_id.in_(
-                            protocol_config_ids
-                        )
-                    )
-                )
-                await session.execute(
-                    delete(SiteProtocolConfigEntity).where(
-                        SiteProtocolConfigEntity.id.in_(protocol_config_ids)
-                    )
-                )
+            await self._cleanup_deleted_protocol_configs(
+                session, set(protocol_config_ids)
+            )
             if credential_ids:
                 await session.execute(
                     delete(SiteCredentialEntity).where(
@@ -66,9 +41,7 @@ class ChannelSiteOperationsMixin:
                 delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id)
             )
             await session.delete(site)
-            await self._cleanup_invalid_synced_group_items(
-                session, set(protocol_config_ids)
-            )
+            await self._cleanup_invalid_group_items(session, set(protocol_config_ids))
             await session.commit()
 
     async def fetch_models_preview(
@@ -210,7 +183,5 @@ class ChannelSiteOperationsMixin:
                 )
                 next_sort_order += 1
 
-            await self._cleanup_invalid_synced_group_items(
-                session, {protocol_config_id}
-            )
+            await self._cleanup_invalid_group_items(session, {protocol_config_id})
             await session.commit()

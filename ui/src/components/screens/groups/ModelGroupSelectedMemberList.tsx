@@ -196,7 +196,17 @@ function FailoverMemberList({
                 (locale === "zh-CN" ? "未知渠道" : "Unknown channel")}
             </div>
             <Switch
-              checked={channelGroup.hasEnabledItems}
+              checked={channelGroup.members.some(
+                ({ member }) => member.ready_item_count > 0,
+              )}
+              disabled={
+                !channelGroup.members.some(
+                  ({ member }) => member.ready_item_count > 0,
+                ) &&
+                channelGroup.members.some(
+                  ({ member }) => member.enabled_item_count > 0,
+                )
+              }
               aria-label={
                 locale === "zh-CN"
                   ? `启停渠道 ${channelGroup.channel_name || channelGroup.channel_id}`
@@ -272,14 +282,14 @@ function emptyMemberListMessage(
       all: "暂无已选模型",
       enabled: "没有包含启用项的模型",
       disabled: "没有包含关闭项的模型",
-      problem: "没有异常模型",
+      problem: "没有需处理的模型",
     }[memberStatusFilter];
   }
   return {
     all: "No selected models",
     enabled: "No models with enabled items",
     disabled: "No models with disabled items",
-    problem: "No problematic models",
+    problem: "No models needing attention",
   }[memberStatusFilter];
 }
 

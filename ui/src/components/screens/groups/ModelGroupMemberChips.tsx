@@ -68,7 +68,7 @@ export function ModelGroupMemberChips({
   if (group.strategy === "failover") {
     return group.display_channels.map((channel, index) => {
       const hasEnabledMember = channel.members.some(
-        (member) => member.enabled_item_count > 0,
+        (member) => member.ready_item_count > 0,
       );
       const hasProblem = channel.members.some(
         (member) =>
@@ -139,7 +139,7 @@ export function ModelGroupMemberChips({
   return group.display_members.map((member, index) => {
     const channelName = member.channel_names.slice(0, 2).join(" · ") || "n/a";
     const sourceLabel = `${channelName} · ${credentialDisplayLabel(member, locale)}`;
-    const enabled = member.enabled_item_count > 0;
+    const enabled = member.ready_item_count > 0;
     const invalidReasons = modelGroupReasonsForState(member.items, "invalid");
     const unavailableReasons = modelGroupReasonsForState(
       member.items,
@@ -212,7 +212,7 @@ export function ModelGroupMemberChips({
             <TooltipTrigger asChild>
               <Badge variant="outline" className="mr-1" tabIndex={0}>
                 <Ban data-icon="inline-start" />
-                {locale === "zh-CN" ? "不可用" : "Unavailable"}
+                {locale === "zh-CN" ? "依赖不可用" : "Dependency unavailable"}
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="bottom">

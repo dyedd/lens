@@ -108,6 +108,14 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
     create_site,
 ) -> None:
     payload = valid_site_payload()
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-1",
+            "model_name": "manually-disabled",
+            "enabled": True,
+            "protocol": "openai_chat",
+        }
+    )
     payload["protocols"].append(
         {
             "id": "pc-disabled",
@@ -139,7 +147,13 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
                     "credential_id": "cred-1",
                     "model_name": "gpt-4o",
                     "enabled": True,
-                }
+                },
+                {
+                    "channel_id": openai_chat_channel_id(),
+                    "credential_id": "cred-1",
+                    "model_name": "manually-disabled",
+                    "enabled": False,
+                },
             ],
         },
     )
@@ -162,9 +176,15 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
     disabled_group = client.get(
         "/api/admin/model-groups", headers=admin_headers
     ).json()[0]
-    assert disabled_group["items"][0]["enabled"] is True
-    assert disabled_group["items"][0]["state"] == "unavailable"
-    assert disabled_group["items"][0]["reasons"] == ["channel_disabled"]
+    assert [item["enabled"] for item in disabled_group["items"]] == [True, False]
+    assert [item["state"] for item in disabled_group["items"]] == [
+        "unavailable",
+        "unavailable",
+    ]
+    assert disabled_group["items"][1]["reasons"] == [
+        "manual_disabled",
+        "channel_disabled",
+    ]
 
     enabled_response = client.put(
         f"/api/admin/sites/{site['id']}/enabled",
@@ -183,9 +203,124 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
     enabled_group = client.get("/api/admin/model-groups", headers=admin_headers).json()[
         0
     ]
-    assert enabled_group["items"][0]["enabled"] is True
-    assert enabled_group["items"][0]["state"] == "ready"
-    assert enabled_group["items"][0]["reasons"] == []
+    assert [item["enabled"] for item in enabled_group["items"]] == [True, False]
+    assert [item["state"] for item in enabled_group["items"]] == [
+        "ready",
+        "disabled",
+    ]
+    assert enabled_group["items"][1]["reasons"] == ["manual_disabled"]
+
+
+def test_site_dependency_changes_update_members_but_keep_group_shells(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    site = create_site(valid_site_payload())
+    execution_group = create_model_group(
+        items=[
+            {
+                "channel_id": openai_chat_channel_id(),
+                "credential_id": "cred-1",
+                "model_name": "gpt-4o",
+                "enabled": True,
+            }
+        ]
+    )
+    routed_group = create_model_group(
+        name="routed", route_group_id=execution_group["id"]
+    )
+    disabled_payload = valid_site_payload(credential_enabled=False)
+    disabled_response = client.put(
+        f"/api/admin/sites/{site['id']}",
+        headers=admin_headers,
+        json=disabled_payload,
+    )
+    assert disabled_response.status_code == 200, disabled_response.text
+    disabled_item = client.get(
+        f"/api/admin/model-groups/{execution_group['id']}", headers=admin_headers
+    ).json()["items"][0]
+    assert disabled_item["enabled"] is True
+    assert disabled_item["state"] == "unavailable"
+    assert disabled_item["reasons"] == ["credential_disabled"]
+
+    enabled_response = client.put(
+        f"/api/admin/sites/{site['id']}",
+        headers=admin_headers,
+        json=valid_site_payload(),
+    )
+    assert enabled_response.status_code == 200, enabled_response.text
+    enabled_item = client.get(
+        f"/api/admin/model-groups/{execution_group['id']}", headers=admin_headers
+    ).json()["items"][0]
+    assert enabled_item["enabled"] is True
+    assert enabled_item["state"] == "ready"
+
+    delete_response = client.delete(
+        f"/api/admin/sites/{site['id']}", headers=admin_headers
+    )
+    assert delete_response.status_code == 204
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    assert {group["id"] for group in groups} == {
+        execution_group["id"],
+        routed_group["id"],
+    }
+    assert (
+        next(group for group in groups if group["id"] == execution_group["id"])["items"]
+        == []
+    )
+
+
+def test_removing_credential_cleans_group_members_but_keeps_group_shell(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    payload = valid_site_payload(model_name="gpt-4o")
+    payload["credentials"].append(
+        {
+            "id": "cred-2",
+            "name": "secondary-key",
+            "api_key": "secondary-secret",
+            "enabled": True,
+        }
+    )
+    payload["protocols"][0]["credential_ids"].append("cred-2")
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-2",
+            "model_name": "gpt-4o-secondary",
+            "enabled": True,
+            "protocol": "openai_chat",
+        }
+    )
+    site = create_site(payload)
+    group = create_model_group(
+        name="deleted-key-group",
+        items=[
+            {
+                "channel_id": openai_chat_channel_id(),
+                "credential_id": "cred-2",
+                "model_name": "gpt-4o-secondary",
+                "enabled": True,
+            }
+        ],
+    )
+
+    retained_payload = valid_site_payload(model_name="gpt-4o")
+    response = client.put(
+        f"/api/admin/sites/{site['id']}",
+        headers=admin_headers,
+        json=retained_payload,
+    )
+    assert response.status_code == 200, response.text
+    remaining = client.get(
+        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
+    )
+    assert remaining.status_code == 200
+    assert remaining.json()["items"] == []
 
 
 @pytest.mark.parametrize(
