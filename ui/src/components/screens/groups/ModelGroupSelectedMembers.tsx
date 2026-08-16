@@ -3,7 +3,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import {
   AlertCircle,
-  Ban,
   ChevronDown,
   Eraser,
   Power,
@@ -36,9 +35,7 @@ interface ModelGroupSelectedMembersProps {
   foldedMembers: FoldedMember[];
   disabledItemCount: number;
   invalidItemCount: number;
-  unavailableItemCount: number;
   removeInvalidItems: () => void;
-  removeUnavailableItems: () => void;
   removeDisabledMembers: () => void;
   clearMembers: () => void;
   setAllMembersEnabled: (enabled: boolean) => void;
@@ -65,9 +62,7 @@ export function ModelGroupSelectedMembers({
   foldedMembers,
   disabledItemCount,
   invalidItemCount,
-  unavailableItemCount,
   removeInvalidItems,
-  removeUnavailableItems,
   removeDisabledMembers,
   clearMembers,
   setAllMembersEnabled,
@@ -130,9 +125,13 @@ export function ModelGroupSelectedMembers({
             </ToggleGroupItem>
             <ToggleGroupItem
               value="problem"
-              aria-label={locale === "zh-CN" ? "显示异常" : "Show problems"}
+              aria-label={
+                locale === "zh-CN"
+                  ? "显示需处理项"
+                  : "Show items needing attention"
+              }
             >
-              {locale === "zh-CN" ? "异常" : "Problems"}
+              {locale === "zh-CN" ? "需处理" : "Needs attention"}
             </ToggleGroupItem>
           </ToggleGroup>
           <DropdownMenu>
@@ -186,16 +185,6 @@ export function ModelGroupSelectedMembers({
                   {locale === "zh-CN"
                     ? `移除配置错误 (${invalidItemCount})`
                     : `Remove invalid (${invalidItemCount})`}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant="destructive"
-                  onSelect={removeUnavailableItems}
-                  disabled={unavailableItemCount === 0}
-                >
-                  <Ban />
-                  {locale === "zh-CN"
-                    ? `移除当前不可用 (${unavailableItemCount})`
-                    : `Remove unavailable (${unavailableItemCount})`}
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />

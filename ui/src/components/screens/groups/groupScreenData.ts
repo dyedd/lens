@@ -29,7 +29,7 @@ function buildExecutionRow(group: ModelGroup): GroupRow {
     items,
     member_count: displayMembers.length,
     enabled_member_count: displayMembers.filter(
-      (member) => member.enabled_item_count > 0,
+      (member) => member.ready_item_count > 0,
     ).length,
     problem_member_count: displayMembers.filter(
       (member) =>
@@ -112,6 +112,7 @@ export function foldGroupMembers(
 
   for (const item of formItems) {
     const evaluation = evaluatedItemsByKey.get(itemKey(item));
+    const evaluationMatchesForm = evaluation?.enabled === item.enabled;
     const evaluatedItem: EvaluatedFormItem = {
       ...item,
       site_id: evaluation ? evaluation.site_id : item.site_id,
@@ -126,8 +127,10 @@ export function foldGroupMembers(
       credential_number: evaluation
         ? evaluation.credential_number
         : item.credential_number,
-      state: evaluation ? evaluation.state : item.state,
-      reasons: evaluation ? evaluation.reasons : item.reasons,
+      state:
+        evaluation && evaluationMatchesForm ? evaluation.state : item.state,
+      reasons:
+        evaluation && evaluationMatchesForm ? evaluation.reasons : item.reasons,
     };
     const key = modelFoldKey(
       evaluatedItem.protocol_config_id,
@@ -193,13 +196,11 @@ export function groupFoldedMembersByChannel(
         key,
         channel_id: member.channel_id,
         channel_name: member.channel_name,
-        hasEnabledItems: false,
         members: [],
       };
       groupsByKey.set(key, group);
     }
     group.members.push(entry);
-    group.hasEnabledItems ||= member.enabled_item_count > 0;
   }
 
   const groups = Array.from(groupsByKey.values());

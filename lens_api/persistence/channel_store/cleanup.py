@@ -5,7 +5,6 @@ from .shared import (
     AsyncSession,
     ModelGroupItemEntity,
     ProtocolKind,
-    SiteCredentialEntity,
     SiteDiscoveredModelEntity,
     SiteProtocolConfigEntity,
     SiteProtocolConfigCredentialEntity,
@@ -46,28 +45,7 @@ class ChannelCleanupMixin:
             )
         )
 
-    async def _cleanup_deleted_credentials(
-        self, session: AsyncSession, credential_ids: set[str]
-    ) -> None:
-        if not credential_ids:
-            return
-        await session.execute(
-            delete(SiteProtocolConfigCredentialEntity).where(
-                SiteProtocolConfigCredentialEntity.credential_id.in_(credential_ids)
-            )
-        )
-        await session.execute(
-            delete(SiteProtocolConfigSyncTargetEntity).where(
-                SiteProtocolConfigSyncTargetEntity.credential_id.in_(credential_ids)
-            )
-        )
-        await session.execute(
-            delete(SiteCredentialEntity).where(
-                SiteCredentialEntity.id.in_(credential_ids)
-            )
-        )
-
-    async def _cleanup_invalid_synced_group_items(
+    async def _cleanup_invalid_group_items(
         self, session: AsyncSession, protocol_config_ids: set[str]
     ) -> None:
         """Delete model group items whose underlying channel model was removed."""

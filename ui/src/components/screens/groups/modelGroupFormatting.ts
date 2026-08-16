@@ -44,11 +44,11 @@ export function modelGroupItemReasonLabel(
       zh: "无法服务所选协议",
       en: "Cannot serve selected protocols",
     },
-    channel_disabled: { zh: "渠道不可用", en: "Channel unavailable" },
+    channel_disabled: { zh: "渠道已停用", en: "Channel disabled" },
     credential_not_found: { zh: "密钥不存在", en: "Key not found" },
     credential_disabled: { zh: "密钥不可用", en: "Key unavailable" },
     model_not_found: { zh: "模型不存在", en: "Model not found" },
-    model_disabled: { zh: "模型不可用", en: "Model unavailable" },
+    model_disabled: { zh: "模型已停用", en: "Model disabled" },
   };
   return labels[reason][locale === "zh-CN" ? "zh" : "en"];
 }
@@ -118,9 +118,9 @@ export function itemKey(
   return `${item.channel_id}::${item.credential_id}::${item.model_name}`;
 }
 
-/** Return whether a group has at least one enabled member. */
+/** Return whether a group has at least one currently usable member. */
 export function isGroupEnabled(group: Pick<ModelGroup, "items">) {
-  return group.items.some((item) => item.enabled);
+  return group.items.some((item) => item.state === "ready");
 }
 
 /** Return a copy with one item moved between valid indexes. */

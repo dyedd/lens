@@ -61,7 +61,6 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
         current_protocol_config_ids = set(
             await self._site_protocol_config_ids(session, site_id)
         )
-        current_credential_ids = set(await self._site_credential_ids(session, site_id))
         await self._upsert_credentials(session, site_id, normalized_credentials)
 
         next_protocol_config_ids = await self._upsert_protocol_configs(
@@ -75,10 +74,7 @@ class ChannelUpsertsMixin(ChannelProtocolUpsertsMixin, ChannelCleanupMixin):
         await self._cleanup_deleted_protocol_configs(
             session, current_protocol_config_ids - next_protocol_config_ids
         )
-        await self._cleanup_deleted_credentials(
-            session, current_credential_ids - credential_ids
-        )
-        await self._cleanup_invalid_synced_group_items(
+        await self._cleanup_invalid_group_items(
             session, current_protocol_config_ids | next_protocol_config_ids
         )
 
