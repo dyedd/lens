@@ -147,10 +147,9 @@ class RequestLogStore(
 
         thinking = payload.get("thinking")
         if isinstance(thinking, dict):
-            for key in ("effort", "budget_tokens"):
-                effort = cls._clean_reasoning_effort(thinking.get(key))
-                if effort:
-                    return effort
+            effort = cls._clean_reasoning_effort(thinking.get("effort"))
+            if effort:
+                return effort
 
         output_config = payload.get("output_config")
         if isinstance(output_config, dict):
