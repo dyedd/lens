@@ -16,6 +16,10 @@ def _distill_stream_response_content(
     if not raw_content:
         return None
 
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        payloads = _parse_sse_payloads(raw_content)
+        if payloads:
+            return _dump_log_json(payloads) or raw_content
     if protocol == ProtocolKind.OPENAI_RESPONSES:
         payloads = _parse_sse_payloads(raw_content)
         for payload in reversed(payloads):

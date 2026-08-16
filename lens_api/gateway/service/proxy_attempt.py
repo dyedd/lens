@@ -28,6 +28,7 @@ from .routing_plan import (
 from .routing_request import (
     _apply_deepseek_thinking_compat,
     _apply_global_param_override,
+    _apply_glm_chat_reasoning_compat,
     _apply_param_override,
     _extract_request_reasoning_effort,
     _is_deepseek_thinking_target,
@@ -189,6 +190,7 @@ async def _try_target(
         )
         upstream_body = _apply_param_override(channel, upstream_body)
         upstream_body = _apply_deepseek_thinking_compat(channel, upstream_body)
+        upstream_body = _apply_glm_chat_reasoning_compat(channel, upstream_body, body)
     except UpstreamRequestError as exc:
         return await _record_target_failure(
             target=target,

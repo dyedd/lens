@@ -253,6 +253,14 @@ def test_streaming_chat_proxy_converts_responses_stream_and_logs_upstream_usage(
     assert request_log.output_tokens == 2
     assert request_log.total_tokens == 7
     assert json.loads(request_log.request_content or "null") == captured_request["body"]
-    assert '"object": "chat.completion.chunk"' in (request_log.response_content or "")
-    assert '"content": "Hello"' in (request_log.response_content or "")
+    logged_chunks = json.loads(request_log.response_content or "null")
+    assert isinstance(logged_chunks, list)
+    assert any(
+        chunk.get("object") == "chat.completion.chunk" for chunk in logged_chunks
+    )
+    assert any(
+        choice.get("delta", {}).get("content") == "Hello"
+        for chunk in logged_chunks
+        for choice in chunk.get("choices", [])
+    )
     assert "response.output_text.delta" not in (request_log.response_content or "")
