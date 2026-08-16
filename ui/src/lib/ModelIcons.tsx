@@ -88,7 +88,7 @@ const BRAND_ICONS: BrandIconDefinition[] = [
   {
     key: "glm",
     label: "GLM",
-    prefixes: ["glm", "chatglm", "zhipu", "z-ai", "zai-org"],
+    prefixes: ["glm", "chatglm", "zhipu", "z-ai", "zai-"],
     src: "/brand-icons/glm.svg",
     imageClassName: "scale-[0.94]",
     shouldInvertInDark: true,

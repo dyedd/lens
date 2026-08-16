@@ -248,6 +248,6 @@ REQUEST_LOG_MODEL_FAMILY_PREFIXES: dict[str, tuple[str, ...]] = {
     "deepseek": ("deepseek",),
     "qwen": ("qwen", "qwq", "alibaba"),
     "kimi": ("moonshot", "kimi"),
-    "glm": ("glm", "chatglm", "zhipu", "z-ai", "zai-org"),
+    "glm": ("glm", "chatglm", "zhipu", "z-ai", "zai-"),
     "minimax": ("minimax", "abab", "minmax"),
 }
