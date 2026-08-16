@@ -16,6 +16,7 @@ on:
 
 jobs:
   draft_release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -23,7 +24,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: main
           fetch-depth: 0
+
+      - name: Sync dev into main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main dev --tags
+          git merge --ff-only origin/dev
+          git push origin HEAD:refs/heads/main
 
       - name: Prepare draft release
         id: prepare
@@ -70,6 +80,7 @@ jobs:
             range="HEAD"
             base_version="0.0.0"
           fi
+          current_sha="$(git rev-parse HEAD)"
 
           commit_count="$(git rev-list --count "$range")"
           if [ "$commit_count" -eq 0 ]; then
@@ -193,17 +204,18 @@ jobs:
             if [ -n "$last_tag" ]; then
               echo "## Range"
               echo
-              echo "- From \`${last_tag}\` to \`${GITHUB_SHA::7}\`"
+              echo "- From \`${last_tag}\` to \`${current_sha:0:7}\`"
             else
               echo "## Range"
               echo
-              echo "- Initial draft release from repository start to \`${GITHUB_SHA::7}\`"
+              echo "- Initial draft release from repository start to \`${current_sha:0:7}\`"
             fi
           } > "$body_path"
 
           echo "tag_name=${next_tag}" >> "$GITHUB_OUTPUT"
           echo "release_name=${next_tag}" >> "$GITHUB_OUTPUT"
           echo "body_path=${body_path}" >> "$GITHUB_OUTPUT"
+          echo "target_commitish=${current_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Create or update draft release
         shell: bash
@@ -212,7 +224,7 @@ jobs:
           TAG_NAME: ${{ steps.prepare.outputs.tag_name }}
           RELEASE_NAME: ${{ steps.prepare.outputs.release_name }}
           BODY_PATH: ${{ steps.prepare.outputs.body_path }}
-          TARGET_COMMITISH: ${{ github.sha }}
+          TARGET_COMMITISH: ${{ steps.prepare.outputs.target_commitish }}
         run: |
           set -euo pipefail
 
