@@ -22,6 +22,7 @@ import { useRequestsScreen } from "./requests/useRequestsScreen";
 /** Render searchable request logs and request details. */
 export function RequestsScreen() {
   const screen = useRequestsScreen();
+  const isPlaceholderData = screen.logsQuery.isPlaceholderData;
   return (
     <TooltipProvider>
       <DashboardHeaderActions>
@@ -53,8 +54,10 @@ export function RequestsScreen() {
             canOpenDetail={screen.relayLogBodyEnabled}
             effectiveModelPrefix={screen.effectiveModelPrefix}
             isError={screen.logsQuery.isError}
-            isLoading={screen.logsQuery.isLoading}
-            items={screen.logsQuery.data?.items ?? []}
+            isLoading={screen.logsQuery.isLoading || isPlaceholderData}
+            items={
+              isPlaceholderData ? [] : (screen.logsQuery.data?.items ?? [])
+            }
             locale={screen.locale}
             modelPrefixOptions={screen.modelPrefixOptions}
             showModelPrefixFilter={screen.modelPrefixOptions.length > 1}
