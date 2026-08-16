@@ -144,9 +144,7 @@ export function GroupsScreen() {
             candidateListError={candidateListError}
             disabledItemCount={members.disabledItemCount}
             invalidItemCount={members.invalidItemCount}
-            unavailableItemCount={members.unavailableItemCount}
             removeInvalidItems={members.removeInvalidItems}
-            removeUnavailableItems={members.removeUnavailableItems}
             removeDisabledMembers={members.removeDisabledMembers}
             clearMembers={members.clearMembers}
             setAllMembersEnabled={members.setAllMembersEnabled}

@@ -55,9 +55,7 @@ interface GroupEditorDialogProps {
   candidateListError: unknown;
   disabledItemCount: number;
   invalidItemCount: number;
-  unavailableItemCount: number;
   removeInvalidItems: () => void;
-  removeUnavailableItems: () => void;
   removeDisabledMembers: () => void;
   clearMembers: () => void;
   setAllMembersEnabled: (enabled: boolean) => void;
@@ -163,9 +161,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                     foldedMembers={props.foldedMembers}
                     disabledItemCount={props.disabledItemCount}
                     invalidItemCount={props.invalidItemCount}
-                    unavailableItemCount={props.unavailableItemCount}
                     removeInvalidItems={props.removeInvalidItems}
-                    removeUnavailableItems={props.removeUnavailableItems}
                     removeDisabledMembers={props.removeDisabledMembers}
                     clearMembers={props.clearMembers}
                     setAllMembersEnabled={props.setAllMembersEnabled}
