@@ -43,10 +43,9 @@ def _extract_request_reasoning_effort(
 
         thinking = body.get("thinking")
         if isinstance(thinking, Mapping):
-            for key in ("effort", "budget_tokens"):
-                effort = _clean_reasoning_effort(thinking.get(key))
-                if effort:
-                    return effort
+            effort = _clean_reasoning_effort(thinking.get("effort"))
+            if effort:
+                return effort
 
         output_config = body.get("output_config")
         if isinstance(output_config, Mapping):
@@ -75,6 +74,35 @@ def _apply_deepseek_thinking_compat(
         return _apply_deepseek_anthropic_thinking(body)
     if channel.protocol == ProtocolKind.OPENAI_CHAT:
         return _apply_deepseek_chat_reasoning(body)
+    return body
+
+
+def _apply_glm_chat_reasoning_compat(
+    channel: ChannelConfig,
+    body: dict[str, Any],
+    source_body: Mapping[str, Any],
+) -> dict[str, Any]:
+    if channel.protocol != ProtocolKind.OPENAI_CHAT:
+        return body
+    model = body.get("model")
+    if not isinstance(model, str) or model.casefold().rsplit("/", 1)[-1] != "glm-5.2":
+        return body
+    output_config = (
+        body.pop("output_config")
+        if "output_config" in body
+        else source_body.get("output_config")
+    )
+    if isinstance(output_config, Mapping) and "reasoning_effort" not in body:
+        effort = _clean_reasoning_effort(output_config.get("effort"))
+        if effort:
+            body["reasoning_effort"] = effort
+    thinking = (
+        body.pop("thinking") if "thinking" in body else source_body.get("thinking")
+    )
+    if isinstance(thinking, Mapping):
+        thinking_type = thinking.get("type")
+        if thinking_type in {"enabled", "disabled"}:
+            body["thinking"] = {"type": thinking_type}
     return body
 
 

@@ -28,6 +28,18 @@ export type ParsedViewerContent =
   | { isJson: true; data: JsonContainer }
   | { isJson: false; data: string };
 
+function parseSseJsonPayloads(content: string) {
+  const payloads = normalizeLineBreaks(content)
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .filter((line) => line && line !== "[DONE]")
+    .map(tryParseJsonValue);
+  return payloads.length && payloads.every((payload) => payload !== null)
+    ? payloads
+    : null;
+}
+
 export const JSON_VIEW_STYLE = {
   fontSize: "12px",
   fontFamily:
@@ -58,7 +70,7 @@ export const JSON_VIEW_STYLE = {
 } as CSSProperties;
 
 export function parseViewerContent(content: string): ParsedViewerContent {
-  const parsed = tryParseJsonValue(content);
+  const parsed = tryParseJsonValue(content) ?? parseSseJsonPayloads(content);
   if (parsed && typeof parsed === "object") {
     return { isJson: true, data: parsed };
   }
