@@ -68,3 +68,9 @@ def register(app: FastAPI, service_module: ModuleType) -> None:
         methods=["POST"],
         response_model=service_module.ChannelModelSyncResponse,
     )
+    app.add_api_route(
+        "/api/admin/sites/{site_id}/credentials/{credential_id}/rate-sync",
+        service_module.sync_site_credential_rate,
+        methods=["POST"],
+        response_model=service_module.SiteCredential,
+    )

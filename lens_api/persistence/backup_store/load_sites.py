@@ -68,13 +68,20 @@ async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
 
     credentials_by_site: dict[str, list[dict[str, object]]] = {}
     credentials_by_id: dict[str, dict[str, object]] = {}
+    rates_by_credential = {row.credential_id: row for row in rows.credential_rates}
     for row in rows.credentials:
+        rate = rates_by_credential.get(row.id)
         item = {
             "id": row.id,
             "name": row.name,
             "api_key": row.api_key,
             "enabled": bool(row.enabled),
             "sort_order": row.sort_order,
+            "rate_source": rate.source if rate is not None else "none",
+            "rate_protocol_config_id": (
+                rate.protocol_config_id if rate is not None else ""
+            ),
+            "rate_group": rate.group_name if rate is not None else "",
         }
         credentials_by_site.setdefault(row.site_id, []).append(item)
         credentials_by_id[row.id] = item

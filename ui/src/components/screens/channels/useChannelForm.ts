@@ -208,11 +208,14 @@ export function useChannelForm(locale: Locale) {
   function validateSiteForm() {
     return validateChannelForm(form, duplicatedProtocolConfigKeys.size, locale);
   }
-  function updateCredential(index: number, patch: Partial<FormCredential>) {
+  function updateCredential(
+    credentialId: string,
+    patch: Partial<FormCredential>,
+  ) {
     setForm((current) => ({
       ...current,
-      credentials: current.credentials.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, ...patch } : item,
+      credentials: current.credentials.map((item) =>
+        item.id === credentialId ? { ...item, ...patch } : item,
       ),
     }));
   }

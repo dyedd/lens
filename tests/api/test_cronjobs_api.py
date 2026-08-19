@@ -25,6 +25,7 @@ def test_list_cronjobs_returns_registered_tasks(client, admin_headers) -> None:
         "request_log_stats_persist",
         "version_check",
         "channel_model_sync",
+        "credential_rate_sync",
     } <= task_ids
 
 

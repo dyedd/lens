@@ -41,6 +41,13 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
     name: isGeneratedCredentialName(item.name) ? "" : item.name,
     api_key: item.api_key,
     enabled: item.enabled,
+    rate_source: item.rate_source,
+    rate_protocol_config_id: item.rate_protocol_config_id,
+    rate_group: item.rate_group,
+    rate_multiplier: item.rate_multiplier,
+    rate_observed_at: item.rate_observed_at,
+    rate_last_synced_at: item.rate_last_synced_at,
+    rate_last_error: item.rate_last_error,
   }));
   return {
     name: site.name,
@@ -135,6 +142,9 @@ export function toPayload(form: FormState): SitePayload {
         name: item.name.trim() || fallbackCredentialName(index),
         api_key: item.api_key.trim(),
         enabled: item.enabled,
+        rate_source: item.rate_source,
+        rate_protocol_config_id: item.rate_protocol_config_id,
+        rate_group: item.rate_group.trim(),
       }))
       .filter((item) => item.api_key),
     protocols: form.protocolConfigs.map((protocolConfig) => {

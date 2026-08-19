@@ -202,5 +202,8 @@ class _GroupMappingMixin:
             cache_write_price_per_million=(
                 float(price.cache_write_price_per_million) if price is not None else 0.0
             ),
+            image_price_per_image=(
+                float(price.image_price_per_image) if price is not None else 0.0
+            ),
             items=items,
         )

@@ -26,12 +26,22 @@ export type SiteCredential = {
   api_key: string;
   enabled: boolean;
   sort_order: number;
+  rate_source: "none" | "sub2api" | "newapi";
+  rate_protocol_config_id: string;
+  rate_group: string;
+  rate_multiplier: number | null;
+  rate_observed_at: string | null;
+  rate_last_synced_at: string | null;
+  rate_last_error: string;
 };
 export type SiteCredentialInput = {
   id?: string | null;
   name: string;
   api_key: string;
   enabled: boolean;
+  rate_source: "none" | "sub2api" | "newapi";
+  rate_protocol_config_id: string;
+  rate_group: string;
 };
 export type SiteModel = {
   id: string;
@@ -212,7 +222,12 @@ export type SiteModelFetchPayload = {
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   match_regex: string;
-  credentials: SiteCredentialInput[];
+  credentials: {
+    id?: string | null;
+    name: string;
+    api_key: string;
+    enabled: boolean;
+  }[];
   credential_ids: string[];
 };
 export type SiteModelFetchItem = {

@@ -21,12 +21,14 @@ export function CompactPriceSummary({
   outputPrice,
   cacheReadPrice,
   cacheWritePrice,
+  imagePrice,
 }: {
   locale: "zh-CN" | "en-US";
   inputPrice: number;
   outputPrice: number;
   cacheReadPrice: number;
   cacheWritePrice: number;
+  imagePrice: number;
 }) {
   return (
     <Tooltip>
@@ -43,6 +45,9 @@ export function CompactPriceSummary({
           </span>
           <span>
             {metricLabel("cache_write", locale)} ${formatMoney(cacheWritePrice)}
+          </span>
+          <span>
+            {locale === "zh-CN" ? "每张" : "Image"} ${formatMoney(imagePrice)}
           </span>
         </div>
       </TooltipTrigger>
@@ -63,6 +68,10 @@ export function CompactPriceSummary({
           <div>
             {metricLabel("cache_write", locale)}: $
             {formatMoney(cacheWritePrice)} / 1M tokens
+          </div>
+          <div>
+            {locale === "zh-CN" ? "图片" : "Image"}: ${formatMoney(imagePrice)}/
+            image
           </div>
         </div>
       </TooltipContent>
