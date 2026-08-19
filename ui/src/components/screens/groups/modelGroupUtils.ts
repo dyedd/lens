@@ -42,6 +42,7 @@ export type FormState = {
   output_price_per_million: string;
   cache_read_price_per_million: string;
   cache_write_price_per_million: string;
+  image_price_per_image: string;
   items: FormItem[];
 };
 
@@ -132,6 +133,7 @@ export const EMPTY_FORM: FormState = {
   output_price_per_million: "0",
   cache_read_price_per_million: "0",
   cache_write_price_per_million: "0",
+  image_price_per_image: "0",
   items: [],
 };
 
@@ -222,6 +224,7 @@ export function toForm(group: ModelGroup): FormState {
     output_price_per_million: String(group.output_price_per_million),
     cache_read_price_per_million: String(group.cache_read_price_per_million),
     cache_write_price_per_million: String(group.cache_write_price_per_million),
+    image_price_per_image: String(group.image_price_per_image),
     items: group.items
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)

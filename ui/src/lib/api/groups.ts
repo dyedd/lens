@@ -46,6 +46,7 @@ export type ModelGroup = {
   output_price_per_million: number;
   cache_read_price_per_million: number;
   cache_write_price_per_million: number;
+  image_price_per_image: number;
   items: ModelGroupItem[];
 };
 export type ModelGroupPayload = {
