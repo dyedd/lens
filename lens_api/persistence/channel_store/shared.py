@@ -39,6 +39,7 @@ from ..entities import (
     ModelGroupItemEntity,
     SiteBaseUrlEntity,
     SiteCredentialEntity,
+    SiteCredentialRateEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,

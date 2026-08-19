@@ -29,7 +29,23 @@ async def export_settings_bundle(
         "%Y%m%d%H%M%S"
     )
     return JSONResponse(
-        content=dump.model_dump(mode="json"),
+        content=dump.model_dump(
+            mode="json",
+            exclude={
+                "sites": {
+                    "__all__": {
+                        "credentials": {
+                            "__all__": {
+                                "rate_multiplier",
+                                "rate_observed_at",
+                                "rate_last_synced_at",
+                                "rate_last_error",
+                            }
+                        }
+                    }
+                }
+            },
+        ),
         headers={
             "content-disposition": f'attachment; filename="lens-backup-{timestamp}.json"',
         },

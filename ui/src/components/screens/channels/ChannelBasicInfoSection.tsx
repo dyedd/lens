@@ -32,11 +32,17 @@ type Props = {
   form: FormState;
   locale: Locale;
   availableTags: string[];
+  siteId: string | null;
+  canSyncRates: boolean;
+  onRateSyncingChange: (isSyncing: boolean) => void;
   setForm: Dispatch<SetStateAction<FormState>>;
   addBaseUrl: () => void;
   updateBaseUrl: (index: number, patch: Partial<FormBaseUrl>) => void;
   removeBaseUrl: (index: number) => void;
-  updateCredential: (index: number, patch: Partial<FormCredential>) => void;
+  updateCredential: (
+    credentialId: string,
+    patch: Partial<FormCredential>,
+  ) => void;
   removeCredential: (index: number) => void;
 };
 
@@ -45,6 +51,9 @@ export function ChannelBasicInfoSection({
   form,
   locale,
   availableTags,
+  siteId,
+  canSyncRates,
+  onRateSyncingChange,
   setForm,
   addBaseUrl,
   updateBaseUrl,
@@ -228,8 +237,13 @@ export function ChannelBasicInfoSection({
             onRemove={removeBaseUrl}
           />
           <ChannelCredentialSection
+            baseUrls={form.base_urls}
             credentials={form.credentials}
+            protocolConfigs={form.protocolConfigs}
+            siteId={siteId}
+            canSyncRates={canSyncRates}
             locale={locale}
+            onSyncingChange={onRateSyncingChange}
             onAdd={(credential) =>
               setForm((current) => ({
                 ...current,

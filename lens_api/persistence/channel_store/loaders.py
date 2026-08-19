@@ -22,7 +22,7 @@ class ChannelLoadersMixin:
 
         base_urls_by_site = self._group_base_urls(rows.base_urls)
         credentials_by_site, credentials_by_id = self._group_credentials(
-            rows.credentials
+            rows.credentials, rows.credential_rates
         )
         models_by_protocol_config = self._group_models(
             rows.discovered_models, credentials_by_id
