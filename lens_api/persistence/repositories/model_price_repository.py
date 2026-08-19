@@ -34,6 +34,7 @@ def _model_price_entity(
         cache_write_price_per_million=float(
             item.get("cache_write_price_per_million") or 0.0
         ),
+        image_price_per_image=float(item.get("image_price_per_image") or 0.0),
     )
 
 
@@ -88,6 +89,9 @@ async def _sync_model_prices(
             entity.cache_write_price_per_million = float(
                 item.get("cache_write_price_per_million") or 0.0
             )
+            entity.image_price_per_image = float(
+                item.get("image_price_per_image") or 0.0
+            )
 
         normalized_allowed_keys = {
             normalize_model_key(item)
@@ -126,6 +130,7 @@ class ModelPriceRepository:
         output_tokens: int,
         cache_read_input_tokens: int = 0,
         cache_write_input_tokens: int = 0,
+        image_count: int = 0,
     ) -> tuple[float, float, float]:
         """Estimate input, output, and total cost for a priced model."""
         if not model_name:
@@ -157,6 +162,8 @@ class ModelPriceRepository:
         output_cost = (max(output_tokens, 0) / 1_000_000) * float(
             entity.output_price_per_million
         )
+        image_cost = max(image_count, 0) * float(entity.image_price_per_image)
+        output_cost += image_cost
         total_cost = input_cost + output_cost
         return round(input_cost, 8), round(output_cost, 8), round(total_cost, 8)
 
@@ -234,6 +241,11 @@ class ModelPriceRepository:
                         if price_entity is not None
                         else 0.0
                     ),
+                    image_price_per_image=(
+                        float(price_entity.image_price_per_image)
+                        if price_entity is not None
+                        else 0.0
+                    ),
                 )
             )
 
@@ -288,6 +300,7 @@ class ModelPriceRepository:
                     cache_write_price_per_million=float(
                         payload.cache_write_price_per_million
                     ),
+                    image_price_per_image=float(payload.image_price_per_image),
                 )
                 session.add(entity)
             else:
@@ -302,6 +315,7 @@ class ModelPriceRepository:
                 entity.cache_write_price_per_million = float(
                     payload.cache_write_price_per_million
                 )
+                entity.image_price_per_image = float(payload.image_price_per_image)
 
             await session.commit()
 
@@ -322,6 +336,7 @@ class ModelPriceRepository:
             output_price_per_million=float(payload.output_price_per_million),
             cache_read_price_per_million=float(payload.cache_read_price_per_million),
             cache_write_price_per_million=float(payload.cache_write_price_per_million),
+            image_price_per_image=float(payload.image_price_per_image),
         )
 
     async def replace_model_prices(

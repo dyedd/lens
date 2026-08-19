@@ -11,9 +11,9 @@ from lens_api.gateway.service.model_price_tasks import ModelPriceSyncError
 from lens_api.persistence.repositories import model_price_repository
 
 
-def _models_dev_client(payload: object) -> httpx.AsyncClient:
+def _litellm_client(payload: object) -> httpx.AsyncClient:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url == "https://models.dev/api.json"
+        assert "model_prices_and_context_window.json" in str(request.url)
         return httpx.Response(200, json=payload)
 
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -73,8 +73,14 @@ def test_sync_model_prices_fetches_source_and_returns_updated_prices(
     monkeypatch,
 ) -> None:
     create_model_group(name="gpt-4o")
-    source_client = _models_dev_client(
-        {"openai": {"models": {"gpt-4o": {"cost": {"input": 2.5}}}}}
+    source_client = _litellm_client(
+        {
+            "gpt-4o": {
+                "input_cost_per_token": 2.5e-6,
+                "output_cost_per_token": 1e-5,
+                "input_cost_per_image": 0.04,
+            }
+        }
     )
     monkeypatch.setattr(
         model_price_tasks.httpx,
@@ -88,6 +94,7 @@ def test_sync_model_prices_fetches_source_and_returns_updated_prices(
     payload = response.json()
     assert payload["items"][0]["model_key"] == "gpt-4o"
     assert payload["items"][0]["input_price_per_million"] == 2.5
+    assert payload["items"][0]["image_price_per_image"] == 0.04
     assert payload["last_synced_at"]
 
 
@@ -106,9 +113,7 @@ def test_sync_model_prices_rolls_back_when_timestamp_write_fails(
     )
     assert initial.status_code == 200
 
-    source_client = _models_dev_client(
-        {"openai": {"models": {"gpt-4o": {"cost": {"input": 2.5}}}}}
-    )
+    source_client = _litellm_client({"gpt-4o": {"input_cost_per_token": 2.5e-6}})
     monkeypatch.setattr(
         model_price_tasks.httpx,
         "AsyncClient",

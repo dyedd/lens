@@ -12,6 +12,7 @@ class ModelPriceItem(StrictBaseModel):
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
     cache_write_price_per_million: float = 0.0
+    image_price_per_image: float = 0.0
 
 
 class ModelPriceUpdate(StrictBaseModel):
@@ -21,6 +22,7 @@ class ModelPriceUpdate(StrictBaseModel):
     output_price_per_million: float = Field(default=0.0, ge=0.0)
     cache_read_price_per_million: float = Field(default=0.0, ge=0.0)
     cache_write_price_per_million: float = Field(default=0.0, ge=0.0)
+    image_price_per_image: float = Field(default=0.0, ge=0.0)
 
 
 class ModelPriceListResponse(StrictBaseModel):

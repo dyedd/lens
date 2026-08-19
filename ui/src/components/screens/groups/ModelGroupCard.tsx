@@ -182,6 +182,7 @@ export function ModelGroupCard({
               outputPrice={group.output_price_per_million}
               cacheReadPrice={group.cache_read_price_per_million}
               cacheWritePrice={group.cache_write_price_per_million}
+              imagePrice={group.image_price_per_image}
             />
           )}
         </div>

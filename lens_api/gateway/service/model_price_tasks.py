@@ -6,7 +6,7 @@ import httpx
 
 from ...core.model_prices import (
     build_group_price_payloads,
-    build_models_dev_price_index,
+    build_litellm_price_index,
 )
 from .app_state import AppState
 
@@ -15,7 +15,13 @@ class ModelPriceSyncError(Exception):
     """Raised when the remote model price source cannot be synchronized."""
 
 
-async def _fetch_models_dev_price_index(
+LITELLM_PRICE_URL = (
+    "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/"
+    "model_prices_and_context_window.json"
+)
+
+
+async def _fetch_litellm_price_index(
     proxy_url: str,
 ) -> dict[str, dict[str, float]]:
     try:
@@ -25,12 +31,12 @@ async def _fetch_models_dev_price_index(
             trust_env=not proxy_url,
             headers={"Accept": "application/json"},
         ) as client:
-            response = await client.get("https://models.dev/api.json")
+            response = await client.get(LITELLM_PRICE_URL)
             response.raise_for_status()
             payload = response.json()
         if not isinstance(payload, dict):
             raise TypeError("Model price payload must be an object")
-        price_index = build_models_dev_price_index(payload)
+        price_index = build_litellm_price_index(payload)
         if not price_index:
             raise ValueError("Model price index is empty")
         return price_index
@@ -54,7 +60,7 @@ async def _sync_group_prices(state: AppState) -> None:
 
     runtime = await state.settings_repo.get_runtime_settings()
     proxy_url = str(runtime["proxy_url"]).strip()
-    price_index = await _fetch_models_dev_price_index(proxy_url)
+    price_index = await _fetch_litellm_price_index(proxy_url)
     payloads = build_group_price_payloads(group_names, price_index)
     await state.model_price_repo.sync_model_prices(
         payloads,
