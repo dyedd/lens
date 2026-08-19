@@ -67,6 +67,7 @@ export function useGroupCommands({
       payload.output_price_per_million,
       payload.cache_read_price_per_million,
       payload.cache_write_price_per_million,
+      payload.image_price_per_image,
     ].map(Number);
     if (priceValues.some((value) => !Number.isFinite(value) || value < 0)) {
       throw new Error(
@@ -75,8 +76,13 @@ export function useGroupCommands({
           : "Prices must be numbers greater than or equal to 0",
       );
     }
-    const [inputPrice, outputPrice, cacheReadPrice, cacheWritePrice] =
-      priceValues;
+    const [
+      inputPrice,
+      outputPrice,
+      cacheReadPrice,
+      cacheWritePrice,
+      imagePrice,
+    ] = priceValues;
     await apiRequest(`/admin/model-prices/${encodeURIComponent(groupName)}`, {
       method: "PUT",
       body: JSON.stringify({
@@ -86,6 +92,7 @@ export function useGroupCommands({
         output_price_per_million: outputPrice,
         cache_read_price_per_million: cacheReadPrice,
         cache_write_price_per_million: cacheWritePrice,
+        image_price_per_image: imagePrice,
       }),
     });
     await queryClient.invalidateQueries({ queryKey: ["groups"] });

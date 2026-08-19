@@ -7,6 +7,7 @@ export type ModelPriceItem = {
   output_price_per_million: number;
   cache_read_price_per_million: number;
   cache_write_price_per_million: number;
+  image_price_per_image: number;
 };
 export type ModelPriceListResponse = {
   items: ModelPriceItem[];
@@ -19,4 +20,5 @@ export type ModelPriceUpdatePayload = {
   output_price_per_million: number;
   cache_read_price_per_million: number;
   cache_write_price_per_million: number;
+  image_price_per_image: number;
 };

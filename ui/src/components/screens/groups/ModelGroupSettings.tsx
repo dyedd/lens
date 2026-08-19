@@ -165,6 +165,20 @@ export function ModelGroupSettings({
                   }))
                 }
               />
+              <Field>
+                <FieldLabel>
+                  {locale === "zh-CN" ? "$image（每张）" : "$image (per image)"}
+                </FieldLabel>
+                <Input
+                  value={form.image_price_per_image}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      image_price_per_image: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
             </div>
           </section>
         </>
