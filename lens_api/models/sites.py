@@ -1,7 +1,7 @@
 import json
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, Field, HttpUrl, field_validator
+from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
 from .model_groups import (
@@ -45,6 +45,7 @@ def _normalize_site_tags(values: list[str]) -> list[str]:
 
 
 SiteTags = Annotated[list[str], AfterValidator(_normalize_site_tags)]
+SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
 
 
 def _validate_param_override(value: str) -> str:
@@ -95,6 +96,13 @@ class SiteCredential(StrictBaseModel):
     api_key: str = Field(min_length=1)
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
+    rate_source: SiteCredentialRateSource = "none"
+    rate_protocol_config_id: str = ""
+    rate_group: str = ""
+    rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    rate_observed_at: str | None = None
+    rate_last_synced_at: str | None = None
+    rate_last_error: str = ""
 
 
 class SiteCredentialInput(StrictBaseModel):
@@ -102,6 +110,25 @@ class SiteCredentialInput(StrictBaseModel):
     name: str
     api_key: str = Field(min_length=1)
     enabled: bool = True
+    rate_source: SiteCredentialRateSource = "none"
+    rate_protocol_config_id: str = ""
+    rate_group: str = ""
+
+    @model_validator(mode="after")
+    def validate_rate_config(self) -> "SiteCredentialInput":
+        self.rate_protocol_config_id = self.rate_protocol_config_id.strip()
+        self.rate_group = self.rate_group.strip()
+        if self.rate_source == "none":
+            self.rate_protocol_config_id = ""
+            self.rate_group = ""
+            return self
+        if not self.rate_protocol_config_id:
+            raise ValueError("Rate protocol config is required")
+        if self.rate_source == "newapi" and not self.rate_group:
+            raise ValueError("NewAPI rate group is required")
+        if self.rate_source == "sub2api":
+            self.rate_group = ""
+        return self
 
 
 class SiteModel(StrictBaseModel):

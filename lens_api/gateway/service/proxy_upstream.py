@@ -54,6 +54,18 @@ from .routing_plan import (
 _NDJSON_MEDIA_TYPES = {"application/x-ndjson", "application/ndjson"}
 
 
+def _image_count(body: dict[str, Any], payload: Any) -> int:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if isinstance(data, list):
+        return len(data)
+    value = body.get("n", 1)
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return count if count > 0 else 1
+
+
 def _response_media_type(response: httpx.Response) -> str:
     content_type = response.headers.get("content-type") or ""
     return content_type.lower().partition(";")[0].strip()
@@ -319,6 +331,11 @@ async def _build_json_result(
         parsed["output_tokens"],
         parsed["cache_read_input_tokens"],
         parsed["cache_write_input_tokens"],
+        image_count=(
+            _image_count(body, payload)
+            if channel.protocol == ProtocolKind.OPENAI_IMAGE
+            else 0
+        ),
     )
     return UpstreamResult(
         response=Response(

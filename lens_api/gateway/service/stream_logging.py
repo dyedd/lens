@@ -35,6 +35,7 @@ async def _safe_estimate_cost(
     output_tokens: int,
     cache_read_input_tokens: int = 0,
     cache_write_input_tokens: int = 0,
+    image_count: int = 0,
 ) -> tuple[float, float, float]:
     try:
         return await app_state.model_price_repo.estimate_model_cost(
@@ -43,6 +44,7 @@ async def _safe_estimate_cost(
             output_tokens,
             cache_read_input_tokens,
             cache_write_input_tokens,
+            image_count,
         )
     except Exception:
         logger.exception("Failed to estimate model cost")

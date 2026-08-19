@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,
+    SiteCredentialRateEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
@@ -21,6 +22,7 @@ class SiteRows:
     sites: list[SiteEntity]
     base_urls: list[SiteBaseUrlEntity]
     credentials: list[SiteCredentialEntity]
+    credential_rates: list[SiteCredentialRateEntity]
     protocol_configs: list[SiteProtocolConfigEntity]
     protocol_credentials: list[SiteProtocolConfigCredentialEntity]
     discovered_models: list[SiteDiscoveredModelEntity]
@@ -36,7 +38,7 @@ async def fetch_site_rows(
         site_query = site_query.where(SiteEntity.id.in_(site_ids))
     site_rows = (await session.execute(site_query)).scalars().all()
     if not site_rows:
-        return SiteRows([], [], [], [], [], [], [])
+        return SiteRows([], [], [], [], [], [], [], [])
 
     ids = [item.id for item in site_rows]
     base_url_rows = (
@@ -69,6 +71,20 @@ async def fetch_site_rows(
         .scalars()
         .all()
     )
+    credential_ids = [item.id for item in credential_rows]
+    credential_rate_rows: list[SiteCredentialRateEntity] = []
+    if credential_ids:
+        credential_rate_rows = (
+            (
+                await session.execute(
+                    select(SiteCredentialRateEntity).where(
+                        SiteCredentialRateEntity.credential_id.in_(credential_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
     protocol_rows = (
         (
             await session.execute(
@@ -151,6 +167,7 @@ async def fetch_site_rows(
         sites=site_rows,
         base_urls=base_url_rows,
         credentials=credential_rows,
+        credential_rates=credential_rate_rows,
         protocol_configs=protocol_rows,
         protocol_credentials=protocol_credential_rows,
         discovered_models=model_rows,

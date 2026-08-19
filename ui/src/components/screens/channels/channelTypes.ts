@@ -3,14 +3,14 @@ import type {
   ProtocolKind,
   Site,
   SiteBaseUrlInput,
-  SiteCredentialInput,
+  SiteCredential,
   SiteModelInput,
 } from "@/lib/api";
 import type { Locale } from "@/lib/I18nContext";
 import type { BatchModelTestSource } from "../batchModelTestSession";
 
 export type HeaderItem = { key: string; value: string };
-export type FormCredential = Omit<SiteCredentialInput, "id"> & { id: string };
+export type FormCredential = Omit<SiteCredential, "sort_order">;
 export type FormBaseUrl = Omit<SiteBaseUrlInput, "id"> & {
   id: string;
   supported_protocols: ProtocolKind[];

@@ -83,6 +83,21 @@ class SiteCredentialEntity(Base):
     sort_order: Mapped[int] = sort_order_column()
 
 
+class SiteCredentialRateEntity(Base):
+    __tablename__ = "site_credential_rates"
+
+    credential_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    protocol_config_id: Mapped[str] = mapped_column(
+        String(80), nullable=False, index=True
+    )
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    group_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    multiplier: Mapped[float | None] = mapped_column(Float, nullable=True)
+    observed_at: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_synced_at: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
 class SiteProtocolConfigEntity(Base):
     __tablename__ = "site_protocol_configs"
 
@@ -309,6 +324,9 @@ class ModelPriceEntity(Base):
         Float, nullable=False, default=0.0
     )
     cache_write_price_per_million: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
+    image_price_per_image: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0
     )
 

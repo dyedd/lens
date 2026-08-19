@@ -152,6 +152,9 @@ async def _load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                         if price is not None
                         else 0.0
                     ),
+                    "image_price_per_image": (
+                        price.image_price_per_image if price is not None else 0.0
+                    ),
                     "items": items_by_group.get(row.id, []),
                 }
             )

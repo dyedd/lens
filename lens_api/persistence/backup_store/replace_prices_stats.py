@@ -74,6 +74,7 @@ async def _replace_model_prices(
                 output_price_per_million=item.output_price_per_million,
                 cache_read_price_per_million=item.cache_read_price_per_million,
                 cache_write_price_per_million=item.cache_write_price_per_million,
+                image_price_per_image=item.image_price_per_image,
             )
         )
 

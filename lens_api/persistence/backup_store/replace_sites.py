@@ -30,7 +30,9 @@ from .shared import (
     SettingItem,
     SiteBaseUrlEntity,
     SiteConfig,
+    SiteCredentialInput,
     SiteCredentialEntity,
+    SiteCredentialRateEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
@@ -57,6 +59,7 @@ from .value_parsing import parse_backup_datetime, parse_optional_datetime
 async def _replace_sites(
     self, session: AsyncSession, sites: list[SiteConfig]
 ) -> tuple[set[str], dict[str, list[ProtocolKind]], set[tuple[str, str, str]]]:
+    await session.execute(delete(SiteCredentialRateEntity))
     await session.execute(delete(SiteDiscoveredModelEntity))
     await session.execute(delete(SiteProtocolConfigCredentialEntity))
     await session.execute(delete(SiteProtocolConfigEntity))
@@ -115,6 +118,20 @@ async def _replace_sites(
         for credential in site.credentials:
             if credential.id in credential_ids:
                 raise ValueError(f"Duplicate credential id in backup: {credential.id}")
+            rate_config = SiteCredentialInput.model_validate(
+                {
+                    "id": credential.id,
+                    "name": credential.name,
+                    "api_key": credential.api_key,
+                    "enabled": credential.enabled,
+                    "rate_source": credential.rate_source,
+                    "rate_protocol_config_id": credential.rate_protocol_config_id,
+                    "rate_group": credential.rate_group,
+                }
+            )
+            credential.rate_source = rate_config.rate_source
+            credential.rate_protocol_config_id = rate_config.rate_protocol_config_id
+            credential.rate_group = rate_config.rate_group
             credential_ids.add(credential.id)
             site_credential_ids.add(credential.id)
             session.add(
@@ -264,5 +281,32 @@ async def _replace_sites(
                         source=model.source.value,
                     )
                 )
+
+        protocol_credentials = {
+            protocol.id: set(protocol.credential_ids) for protocol in site.protocols
+        }
+        for credential in site.credentials:
+            if credential.rate_source == "none":
+                continue
+            bound_credentials = protocol_credentials.get(
+                credential.rate_protocol_config_id
+            )
+            if bound_credentials is None or credential.id not in bound_credentials:
+                raise ValueError(
+                    "Credential rate protocol config not found in backup site "
+                    f"{site.name}: {credential.rate_protocol_config_id}"
+                )
+            session.add(
+                SiteCredentialRateEntity(
+                    credential_id=credential.id,
+                    protocol_config_id=credential.rate_protocol_config_id,
+                    source=credential.rate_source,
+                    group_name=credential.rate_group,
+                    multiplier=None,
+                    observed_at=None,
+                    last_synced_at=None,
+                    last_error="",
+                )
+            )
 
     return protocol_config_ids, protocols_by_config_id, model_keys

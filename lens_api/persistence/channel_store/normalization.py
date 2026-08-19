@@ -160,6 +160,9 @@ class ChannelNormalizationMixin(ChannelLoadNormalizationMixin):
                     api_key=item.api_key,
                     enabled=item.enabled,
                     sort_order=index,
+                    rate_source=item.rate_source,
+                    rate_protocol_config_id=item.rate_protocol_config_id,
+                    rate_group=item.rate_group,
                 )
             )
         if not normalized:

@@ -1,6 +1,11 @@
 "use client";
 
-import type { Dispatch, FormEventHandler, SetStateAction } from "react";
+import {
+  useState,
+  type Dispatch,
+  type FormEventHandler,
+  type SetStateAction,
+} from "react";
 import { RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -44,7 +49,10 @@ type ChannelEditorDialogProps = {
   addBaseUrl: () => void;
   updateBaseUrl: (index: number, patch: Partial<FormBaseUrl>) => void;
   removeBaseUrl: (index: number) => void;
-  updateCredential: (index: number, patch: Partial<FormCredential>) => void;
+  updateCredential: (
+    credentialId: string,
+    patch: Partial<FormCredential>,
+  ) => void;
   removeCredential: (index: number) => void;
   addProtocolConfig: () => void;
   updateProtocolConfig: (
@@ -108,11 +116,13 @@ export function ChannelEditorDialog({
   clearModels,
   closeEditor,
 }: ChannelEditorDialogProps) {
+  const [isRateSyncing, setIsRateSyncing] = useState(false);
+
   return (
     <Dialog
       open={isDialogOpen}
       onOpenChange={(open) => {
-        if (!open && savingChannel) return;
+        if (!open && (savingChannel || isRateSyncing)) return;
         if (!open && hasUnsavedChanges) {
           const confirmed = window.confirm(
             locale === "zh-CN"
@@ -152,75 +162,88 @@ export function ChannelEditorDialog({
             }
           }}
         >
-          <div className="grid gap-4">
-            <ChannelBasicInfoSection
-              form={form}
-              locale={locale}
-              availableTags={availableTags}
-              setForm={setForm}
-              addBaseUrl={addBaseUrl}
-              updateBaseUrl={updateBaseUrl}
-              removeBaseUrl={removeBaseUrl}
-              updateCredential={updateCredential}
-              removeCredential={removeCredential}
-            />
-            <Separator />
-            <section className="grid gap-4">
-              <ChannelProtocolSection
+          <fieldset
+            className="grid min-w-0 gap-5 border-0 p-0"
+            disabled={isRateSyncing}
+          >
+            <div className="grid gap-4">
+              <ChannelBasicInfoSection
                 form={form}
                 locale={locale}
-                fetchingProtocolConfigIndex={fetchingProtocolConfigIndex}
-                duplicatedProtocolConfigKeys={duplicatedProtocolConfigKeys}
+                availableTags={availableTags}
+                siteId={editingSiteId}
+                canSyncRates={Boolean(editingSiteId) && !hasUnsavedChanges}
+                onRateSyncingChange={setIsRateSyncing}
                 setForm={setForm}
-                setAdvancedProtocolConfigIndex={setAdvancedProtocolConfigIndex}
-                addProtocolConfig={addProtocolConfig}
-                updateProtocolConfig={updateProtocolConfig}
-                addManualProtocolConfigModel={addManualProtocolConfigModel}
-                fetchProtocolModels={fetchProtocolModels}
+                addBaseUrl={addBaseUrl}
+                updateBaseUrl={updateBaseUrl}
+                removeBaseUrl={removeBaseUrl}
+                updateCredential={updateCredential}
+                removeCredential={removeCredential}
               />
-              <ChannelModelOverviewSection
-                locale={locale}
-                overviewModels={overviewModels}
-                modelTestOptionByKey={modelTestOptionByKey}
-                batchTestOptions={batchTestOptions}
-                isBatchModelTestRunning={isBatchModelTestRunning}
-                testingModel={testingModel}
-                onOpenBatchTest={openBatchModelTestDialog}
-                onUpdateModelProtocols={updateModelProtocols}
-                onUpdateModelSource={updateModelSource}
-                onUpdateAllModelSources={updateAllModelSources}
-                onOpenModelTest={openAggregateModelTest}
-                onRemoveModel={removeAggregateModel}
-                onClearModels={clearModels}
-              />
-            </section>
-          </div>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={closeEditor}
-              disabled={savingChannel}
-            >
-              {locale === "zh-CN" ? "取消" : "Cancel"}
-            </Button>
-            <Button type="submit" disabled={savingChannel}>
-              {savingChannel ? (
-                <RefreshCcw data-icon="inline-start" className="animate-spin" />
-              ) : null}
-              {savingChannel
-                ? locale === "zh-CN"
-                  ? "正在保存..."
-                  : "Saving..."
-                : editingSiteId
+              <Separator />
+              <section className="grid gap-4">
+                <ChannelProtocolSection
+                  form={form}
+                  locale={locale}
+                  fetchingProtocolConfigIndex={fetchingProtocolConfigIndex}
+                  duplicatedProtocolConfigKeys={duplicatedProtocolConfigKeys}
+                  setForm={setForm}
+                  setAdvancedProtocolConfigIndex={
+                    setAdvancedProtocolConfigIndex
+                  }
+                  addProtocolConfig={addProtocolConfig}
+                  updateProtocolConfig={updateProtocolConfig}
+                  addManualProtocolConfigModel={addManualProtocolConfigModel}
+                  fetchProtocolModels={fetchProtocolModels}
+                />
+                <ChannelModelOverviewSection
+                  locale={locale}
+                  overviewModels={overviewModels}
+                  modelTestOptionByKey={modelTestOptionByKey}
+                  batchTestOptions={batchTestOptions}
+                  isBatchModelTestRunning={isBatchModelTestRunning}
+                  testingModel={testingModel}
+                  onOpenBatchTest={openBatchModelTestDialog}
+                  onUpdateModelProtocols={updateModelProtocols}
+                  onUpdateModelSource={updateModelSource}
+                  onUpdateAllModelSources={updateAllModelSources}
+                  onOpenModelTest={openAggregateModelTest}
+                  onRemoveModel={removeAggregateModel}
+                  onClearModels={clearModels}
+                />
+              </section>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeEditor}
+                disabled={savingChannel}
+              >
+                {locale === "zh-CN" ? "取消" : "Cancel"}
+              </Button>
+              <Button type="submit" disabled={savingChannel}>
+                {savingChannel ? (
+                  <RefreshCcw
+                    data-icon="inline-start"
+                    className="animate-spin"
+                  />
+                ) : null}
+                {savingChannel
                   ? locale === "zh-CN"
-                    ? "保存渠道"
-                    : "Save channel"
-                  : locale === "zh-CN"
-                    ? "创建渠道"
-                    : "Create channel"}
-            </Button>
-          </div>
+                    ? "正在保存..."
+                    : "Saving..."
+                  : editingSiteId
+                    ? locale === "zh-CN"
+                      ? "保存渠道"
+                      : "Save channel"
+                    : locale === "zh-CN"
+                      ? "创建渠道"
+                      : "Create channel"}
+              </Button>
+            </div>
+          </fieldset>
         </form>
       </AppDialogContent>
     </Dialog>

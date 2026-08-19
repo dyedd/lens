@@ -22,6 +22,7 @@ from ...persistence.repositories import (
     ModelPriceRepository,
     RequestLogStore,
     SettingsRepository,
+    SiteCredentialRateRepository,
 )
 from ...persistence.shared import (
     SETTING_LATEST_VERSION,
@@ -36,6 +37,7 @@ TASK_MODEL_PRICE_SYNC = "model_price_sync"
 TASK_REQUEST_LOG_STATS_PERSIST = "request_log_stats_persist"
 TASK_VERSION_CHECK = "version_check"
 TASK_CHANNEL_MODEL_SYNC = "channel_model_sync"
+TASK_CREDENTIAL_RATE_SYNC = "credential_rate_sync"
 
 CRONJOB_SPECS = (
     CronjobSpec(
@@ -47,7 +49,7 @@ CRONJOB_SPECS = (
     CronjobSpec(
         id=TASK_MODEL_PRICE_SYNC,
         name="模型价格同步",
-        description="从 models.dev 同步模型价格",
+        description="从 LiteLLM 同步模型价格",
         default_interval_hours=24,
     ),
     CronjobSpec(
@@ -68,6 +70,12 @@ CRONJOB_SPECS = (
         description="按周期拉取上游模型并同步模型组成员",
         default_interval_hours=24,
         default_enabled=False,
+    ),
+    CronjobSpec(
+        id=TASK_CREDENTIAL_RATE_SYNC,
+        name="凭据倍率同步",
+        description="同步 Sub2API 有效倍率与 NewAPI 分组参考倍率",
+        default_interval_hours=24,
     ),
 )
 
@@ -92,6 +100,9 @@ class AppState:
         self.gateway_api_key_repo = GatewayApiKeyRepository(self.session_factory)
         self.group_repo = GroupRepository(self.session_factory)
         self.model_price_repo = ModelPriceRepository(self.session_factory)
+        self.site_credential_rate_repo = SiteCredentialRateRepository(
+            self.session_factory
+        )
         self.request_log_store = RequestLogStore(
             self.session_factory,
             settings_repo=self.settings_repo,
@@ -111,6 +122,7 @@ class AppState:
                 TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.persist_request_log_stats,
                 TASK_VERSION_CHECK: self._check_version_update,
                 TASK_CHANNEL_MODEL_SYNC: self._sync_channel_models,
+                TASK_CREDENTIAL_RATE_SYNC: self._sync_credential_rates,
             },
             time_zone_provider=self._runtime_time_zone,
             logger=logger,
@@ -162,6 +174,11 @@ class AppState:
         from .model_sync import sync_channel_models
 
         await sync_channel_models(self, dry_run=False)
+
+    async def _sync_credential_rates(self) -> None:
+        from .credential_rate_tasks import sync_all_site_credential_rates
+
+        await sync_all_site_credential_rates(self)
 
     async def _check_version_update(self) -> None:
         async with httpx.AsyncClient(timeout=30) as client:

@@ -1,6 +1,10 @@
 import type { Locale } from "@/lib/I18nContext";
 import { defaultProtocolConfigName } from "./channelLabels";
-import type { FormProtocolConfig, FormState } from "./channelTypes";
+import type {
+  FormCredential,
+  FormProtocolConfig,
+  FormState,
+} from "./channelTypes";
 
 /** Creates a client-side identifier for unsaved channel entities. */
 export function createLocalId(prefix: string) {
@@ -11,6 +15,22 @@ export function createLocalId(prefix: string) {
     return crypto.randomUUID();
   }
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+export function emptyCredential(): FormCredential {
+  return {
+    id: createLocalId("credential"),
+    name: "",
+    api_key: "",
+    enabled: true,
+    rate_source: "none",
+    rate_protocol_config_id: "",
+    rate_group: "",
+    rate_multiplier: null,
+    rate_observed_at: null,
+    rate_last_synced_at: null,
+    rate_last_error: "",
+  };
 }
 
 /** Creates a new protocol configuration with editor defaults. */
@@ -40,7 +60,7 @@ export const emptyProtocolConfig = (
 /** Creates a channel editor form with one URL, credential, and combination. */
 export const emptyForm = (locale: Locale = "zh-CN"): FormState => {
   const baseUrlId = createLocalId("baseurl");
-  const credentialId = createLocalId("credential");
+  const credential = emptyCredential();
   return {
     name: "",
     tags: [],
@@ -53,12 +73,12 @@ export const emptyForm = (locale: Locale = "zh-CN"): FormState => {
         supported_protocols: [],
       },
     ],
-    credentials: [{ id: credentialId, name: "", api_key: "", enabled: true }],
+    credentials: [credential],
     protocolConfigs: [
       emptyProtocolConfig(
         baseUrlId,
         defaultProtocolConfigName(0, locale),
-        credentialId,
+        credential.id,
       ),
     ],
   };

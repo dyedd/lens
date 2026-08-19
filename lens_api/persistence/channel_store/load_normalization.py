@@ -6,6 +6,7 @@ from .shared import (
     SiteBaseUrlEntity,
     SiteCredential,
     SiteCredentialEntity,
+    SiteCredentialRateEntity,
     SiteDiscoveredModelEntity,
     SiteModel,
     SiteProtocolConfig,
@@ -39,17 +40,30 @@ class ChannelLoadNormalizationMixin:
         return result
 
     def _group_credentials(
-        self, rows: list[SiteCredentialEntity]
+        self,
+        rows: list[SiteCredentialEntity],
+        rate_rows: list[SiteCredentialRateEntity],
     ) -> tuple[dict[str, list[SiteCredential]], dict[str, SiteCredential]]:
         by_site: dict[str, list[SiteCredential]] = defaultdict(list)
         by_id: dict[str, SiteCredential] = {}
+        rates_by_credential = {row.credential_id: row for row in rate_rows}
         for row in rows:
+            rate = rates_by_credential.get(row.id)
             item = SiteCredential(
                 id=row.id,
                 name=row.name,
                 api_key=row.api_key,
                 enabled=bool(row.enabled),
                 sort_order=row.sort_order,
+                rate_source=rate.source if rate is not None else "none",
+                rate_protocol_config_id=(
+                    rate.protocol_config_id if rate is not None else ""
+                ),
+                rate_group=rate.group_name if rate is not None else "",
+                rate_multiplier=rate.multiplier if rate is not None else None,
+                rate_observed_at=rate.observed_at if rate is not None else None,
+                rate_last_synced_at=(rate.last_synced_at if rate is not None else None),
+                rate_last_error=rate.last_error if rate is not None else "",
             )
             by_site[row.site_id].append(item)
             by_id[row.id] = item

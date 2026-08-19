@@ -2,12 +2,212 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
-from conftest import assert_error, openai_chat_channel_id, seed_request_log
+from conftest import assert_error, openai_chat_channel_id, run_async, seed_request_log
 from conftest import valid_site_payload
-from lens_api.models import ChannelModelSyncResponse, SiteModelTestResult
+from lens_api.models import ChannelModelSyncResponse, SiteModelTestResult, SiteUpdate
+
+
+def _rate_site_payload(source: str, *, group: str = "") -> dict[str, Any]:
+    payload = valid_site_payload()
+    payload["credentials"][0].update(
+        {
+            "rate_source": source,
+            "rate_protocol_config_id": "pc-1",
+            "rate_group": group,
+        }
+    )
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("source", "group", "expected_path", "upstream_payload", "expected_rate"),
+    [
+        (
+            "sub2api",
+            "",
+            "/v1/sub2api/billing",
+            {
+                "object": "sub2api.key_billing",
+                "schema_version": 1,
+                "billing_scope": "token",
+                "group_rate_multiplier": 0.8,
+                "user_rate_multiplier": 0.6,
+                "resolved_rate_multiplier": 0.6,
+                "peak_rate_enabled": True,
+                "peak_rate_multiplier": 1.5,
+                "applied_peak_multiplier": 1.5,
+                "effective_rate_multiplier": 0.9,
+                "observed_at": "2026-08-17T00:00:00Z",
+            },
+            0.9,
+        ),
+        (
+            "newapi",
+            "vip",
+            "/api/pricing",
+            {"success": True, "group_ratio": {"default": 1, "vip": 0.75}},
+            0.75,
+        ),
+    ],
+)
+def test_sync_credential_rate_persists_upstream_multiplier(
+    client,
+    app_state,
+    admin_headers,
+    create_site,
+    monkeypatch,
+    source,
+    group,
+    expected_path,
+    upstream_payload,
+    expected_rate,
+) -> None:
+    site = create_site(_rate_site_payload(source, group=group))
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == expected_path
+        if source == "sub2api":
+            assert request.headers["authorization"] == "Bearer upstream-secret"
+            assert request.headers["x-api-key"] == "upstream-secret"
+        else:
+            assert "authorization" not in request.headers
+        return httpx.Response(200, json=upstream_payload, request=request)
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        app_state, "get_http_client", lambda _proxy_url: upstream_client
+    )
+    try:
+        response = client.post(
+            f"/api/admin/sites/{site['id']}/credentials/cred-1/rate-sync",
+            headers=admin_headers,
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert response.status_code == 200, response.text
+    credential = response.json()
+    assert credential["rate_multiplier"] == expected_rate
+    assert credential["rate_observed_at"]
+    assert credential["rate_last_synced_at"]
+    stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert stored["credentials"][0]["rate_multiplier"] == expected_rate
+
+
+def test_failed_credential_rate_sync_preserves_cached_multiplier(
+    client,
+    app_state,
+    admin_headers,
+    create_site,
+    monkeypatch,
+) -> None:
+    site = create_site(_rate_site_payload("sub2api"))
+    should_fail = False
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if should_fail:
+            return httpx.Response(
+                503,
+                json={"error": {"message": "temporarily unavailable"}},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={
+                "object": "sub2api.key_billing",
+                "schema_version": 1,
+                "billing_scope": "token",
+                "group_rate_multiplier": 0.8,
+                "user_rate_multiplier": None,
+                "resolved_rate_multiplier": 0.8,
+                "peak_rate_enabled": False,
+                "peak_rate_multiplier": None,
+                "applied_peak_multiplier": None,
+                "effective_rate_multiplier": 0.8,
+                "observed_at": "2026-08-17T00:00:00Z",
+            },
+            request=request,
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        app_state, "get_http_client", lambda _proxy_url: upstream_client
+    )
+    try:
+        first = client.post(
+            f"/api/admin/sites/{site['id']}/credentials/cred-1/rate-sync",
+            headers=admin_headers,
+        )
+        should_fail = True
+        failed = client.post(
+            f"/api/admin/sites/{site['id']}/credentials/cred-1/rate-sync",
+            headers=admin_headers,
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert first.status_code == 200, first.text
+    assert_error(failed, 502, "temporarily unavailable")
+    stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    credential = stored["credentials"][0]
+    assert credential["rate_multiplier"] == 0.8
+    assert "temporarily unavailable" in credential["rate_last_error"]
+
+
+def test_credential_rate_sync_rejects_stale_configuration(
+    client,
+    app_state,
+    admin_headers,
+    create_site,
+    monkeypatch,
+) -> None:
+    site = create_site(_rate_site_payload("sub2api"))
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await app_state.channel_store.update_site(
+            site["id"],
+            SiteUpdate.model_validate(_rate_site_payload("newapi", group="vip")),
+        )
+        return httpx.Response(
+            200,
+            json={
+                "object": "sub2api.key_billing",
+                "schema_version": 1,
+                "billing_scope": "token",
+                "group_rate_multiplier": 0.8,
+                "user_rate_multiplier": None,
+                "resolved_rate_multiplier": 0.8,
+                "peak_rate_enabled": False,
+                "peak_rate_multiplier": None,
+                "applied_peak_multiplier": None,
+                "effective_rate_multiplier": 0.8,
+                "observed_at": "2026-08-17T00:00:00Z",
+            },
+            request=request,
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        app_state, "get_http_client", lambda _proxy_url: upstream_client
+    )
+    try:
+        response = client.post(
+            f"/api/admin/sites/{site['id']}/credentials/cred-1/rate-sync",
+            headers=admin_headers,
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert_error(response, 409, "configuration changed during sync")
+    stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    credential = stored["credentials"][0]
+    assert credential["rate_source"] == "newapi"
+    assert credential["rate_group"] == "vip"
+    assert credential["rate_multiplier"] is None
 
 
 def test_list_sites_requires_admin(client) -> None:

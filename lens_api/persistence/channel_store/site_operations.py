@@ -6,6 +6,7 @@ from .shared import (
     SiteBaseUrlEntity,
     SiteCredential,
     SiteCredentialEntity,
+    SiteCredentialRateEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteModelFetchRequest,
@@ -32,6 +33,11 @@ class ChannelSiteOperationsMixin:
                 session, set(protocol_config_ids)
             )
             if credential_ids:
+                await session.execute(
+                    delete(SiteCredentialRateEntity).where(
+                        SiteCredentialRateEntity.credential_id.in_(credential_ids)
+                    )
+                )
                 await session.execute(
                     delete(SiteCredentialEntity).where(
                         SiteCredentialEntity.id.in_(credential_ids)

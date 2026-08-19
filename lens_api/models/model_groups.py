@@ -42,6 +42,7 @@ class ModelGroup(StrictBaseModel):
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
     cache_write_price_per_million: float = 0.0
+    image_price_per_image: float = 0.0
     items: list["ModelGroupItem"] = Field(default_factory=list)
 
     @model_validator(mode="after")

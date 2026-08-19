@@ -34,6 +34,7 @@ from ...models import (
     RequestLogLifecycleStatus,
     SettingItem,
     SiteConfig,
+    SiteCredentialInput,
 )
 from ..editable_settings import (
     EDITABLE_SETTING_KEYS,
@@ -51,6 +52,7 @@ from ..entities import (
     SettingEntity,
     SiteBaseUrlEntity,
     SiteCredentialEntity,
+    SiteCredentialRateEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,

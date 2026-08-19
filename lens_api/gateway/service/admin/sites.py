@@ -15,6 +15,7 @@ from ....models import (
     SiteBatchImportResult,
     SiteConfig,
     SiteCreate,
+    SiteCredential,
     SiteEnabledUpdate,
     SiteModelFetchItem,
     SiteModelFetchRequest,
@@ -301,3 +302,28 @@ async def sync_channel_models(
     from ..model_sync import sync_channel_models as run_channel_model_sync
 
     return await run_channel_model_sync(app_state, dry_run=payload.dry_run)
+
+
+async def sync_site_credential_rate(
+    site_id: str,
+    credential_id: str,
+    _: Any = Depends(get_current_admin),
+) -> SiteCredential:
+    """Synchronize one configured upstream credential rate."""
+    from ..credential_rate_tasks import (
+        CredentialRateConflictError,
+        CredentialRateSyncError,
+        CredentialRateNotConfiguredError,
+        sync_site_credential_rate as run_credential_rate_sync,
+    )
+
+    try:
+        return await run_credential_rate_sync(app_state, site_id, credential_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Credential not found") from exc
+    except CredentialRateNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except CredentialRateConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CredentialRateSyncError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
