@@ -23,6 +23,8 @@ export type FormItem = {
   credential_id: string;
   credential_name: string;
   credential_number: number;
+  rate_multiplier: number | null;
+  rate_source: "none" | "sub2api" | "newapi";
   model_name: string;
   enabled: boolean;
   state: ModelGroupItemState | null;
@@ -64,6 +66,8 @@ export type FoldedMember = {
   credential_id: string;
   credential_name: string;
   credential_number: number;
+  rate_multiplier: number | null;
+  rate_source: "none" | "sub2api" | "newapi";
   protocols: ProtocolKind[];
   subItems: EvaluatedFormItem[];
   enabled_item_count: number;
@@ -205,6 +209,8 @@ export function candidatePayloadToFormItems(
       credential_id: payloadItem.credential_id,
       credential_name: candidate.credential_name,
       credential_number: candidate.credential_number,
+      rate_multiplier: candidate.rate_multiplier,
+      rate_source: candidate.rate_source,
       model_name: payloadItem.model_name,
       enabled: true,
       state: null,
@@ -240,6 +246,8 @@ export function toForm(group: ModelGroup): FormState {
         credential_id: item.credential_id,
         credential_name: item.credential_name,
         credential_number: item.credential_number,
+        rate_multiplier: item.rate_multiplier,
+        rate_source: item.rate_source,
         model_name: item.model_name,
         enabled: item.enabled,
         state: item.state,

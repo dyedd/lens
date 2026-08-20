@@ -134,7 +134,7 @@ export function ChannelCredentialSection({
               key={credential.id}
               className="grid min-w-0 gap-3 border-b pb-4 last:border-b-0 last:pb-0"
             >
-              <FieldGroup className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
+              <FieldGroup className="grid min-w-0 gap-2 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_minmax(7rem,0.8fr)_32px_32px] md:items-end">
                 <Field>
                   <FieldLabel>{credentialIndexLabel(index, locale)}</FieldLabel>
                   <Input
@@ -159,25 +159,6 @@ export function ChannelCredentialSection({
                     placeholder={locale === "zh-CN" ? "备注" : "Remark"}
                   />
                 </Field>
-                <div className="flex size-8 items-center justify-center">
-                  <Switch
-                    checked={credential.enabled}
-                    onCheckedChange={(checked) =>
-                      onUpdate(credential.id, { enabled: checked })
-                    }
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="text-muted-foreground"
-                  onClick={() => onRemove(index)}
-                >
-                  <X />
-                </Button>
-              </FieldGroup>
-              <div className="grid min-w-0 gap-3 md:grid-cols-3">
                 <Field>
                   <FieldLabel>
                     {locale === "zh-CN" ? "倍率来源" : "Rate source"}
@@ -211,7 +192,26 @@ export function ChannelCredentialSection({
                     </SelectContent>
                   </Select>
                 </Field>
-                {credential.rate_source !== "none" ? (
+                <div className="flex size-8 items-center justify-center">
+                  <Switch
+                    checked={credential.enabled}
+                    onCheckedChange={(checked) =>
+                      onUpdate(credential.id, { enabled: checked })
+                    }
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="text-muted-foreground"
+                  onClick={() => onRemove(index)}
+                >
+                  <X />
+                </Button>
+              </FieldGroup>
+              {credential.rate_source !== "none" ? (
+                <div className="grid min-w-0 gap-3 md:grid-cols-2">
                   <Field>
                     <FieldLabel>
                       {locale === "zh-CN" ? "请求配置" : "Request config"}
@@ -248,25 +248,25 @@ export function ChannelCredentialSection({
                       </SelectContent>
                     </Select>
                   </Field>
-                ) : null}
-                {credential.rate_source === "newapi" ? (
-                  <Field>
-                    <FieldLabel>
-                      {locale === "zh-CN" ? "NewAPI 分组" : "NewAPI group"}
-                    </FieldLabel>
-                    <Input
-                      value={credential.rate_group}
-                      onChange={(event) =>
-                        onUpdate(credential.id, {
-                          rate_group: event.target.value,
-                          ...CLEARED_RATE_STATUS,
-                        })
-                      }
-                      placeholder="default"
-                    />
-                  </Field>
-                ) : null}
-              </div>
+                  {credential.rate_source === "newapi" ? (
+                    <Field>
+                      <FieldLabel>
+                        {locale === "zh-CN" ? "NewAPI 分组" : "NewAPI group"}
+                      </FieldLabel>
+                      <Input
+                        value={credential.rate_group}
+                        onChange={(event) =>
+                          onUpdate(credential.id, {
+                            rate_group: event.target.value,
+                            ...CLEARED_RATE_STATUS,
+                          })
+                        }
+                        placeholder="default"
+                      />
+                    </Field>
+                  ) : null}
+                </div>
+              ) : null}
               {credential.rate_source !== "none" ? (
                 <div className="flex min-h-8 flex-wrap items-center gap-2">
                   {credential.rate_multiplier !== null ? (

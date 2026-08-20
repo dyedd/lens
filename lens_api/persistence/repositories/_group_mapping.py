@@ -147,6 +147,12 @@ class _GroupMappingMixin:
                     credential_number=(
                         credential.number if credential is not None else 0
                     ),
+                    rate_source=(
+                        credential.rate_source if credential is not None else "none"
+                    ),
+                    rate_multiplier=(
+                        credential.rate_multiplier if credential is not None else None
+                    ),
                     model_name=row.model_name,
                     enabled=bool(row.enabled),
                     sort_order=row.sort_order,

@@ -177,6 +177,12 @@ export function FoldedMemberRow({
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {member.rate_source !== "none" &&
+        typeof member.rate_multiplier === "number" ? (
+          <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+            {locale === "zh-CN" ? "倍率" : "Rate"} {member.rate_multiplier}x
+          </Badge>
+        ) : null}
         {member.protocols.map((protocol) => (
           <Badge
             key={protocol}

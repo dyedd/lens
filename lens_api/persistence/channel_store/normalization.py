@@ -112,6 +112,8 @@ class ChannelNormalizationMixin(ChannelLoadNormalizationMixin):
                 remark=credential.name,
                 number=credential_numbers[credential.id],
                 enabled=credential.enabled,
+                rate_source=credential.rate_source,
+                rate_multiplier=credential.rate_multiplier,
             )
             for credential_id in credential_ids
             if credential_id and (credential := credentials_by_id.get(credential_id))
