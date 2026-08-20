@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field, HttpUrl, field_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern, normalize_base_url
@@ -16,6 +18,8 @@ class ChannelKeyItem(StrictBaseModel):
     remark: str = ""
     number: int = Field(default=0, ge=0)
     enabled: bool = True
+    rate_source: Literal["none", "sub2api", "newapi"] = "none"
+    rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class ChannelDiscoveredModel(StrictBaseModel):

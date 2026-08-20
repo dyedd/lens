@@ -73,6 +73,8 @@ class ModelGroupItem(StrictBaseModel):
 class ModelGroupItemView(ModelGroupItem):
     protocol_config_id: str
     site_id: str | None
+    rate_source: Literal["none", "sub2api", "newapi"] = "none"
+    rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     state: ModelGroupItemState
     reasons: list[ModelGroupItemReason] = Field(default_factory=list)
 
@@ -166,6 +168,8 @@ class ModelGroupCandidateItem(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     credential_name: str = ""
     credential_number: int = Field(default=0, ge=0)
+    rate_source: Literal["none", "sub2api", "newapi"] = "none"
+    rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     base_url: str
     model_name: str
     protocol_config_id: str
