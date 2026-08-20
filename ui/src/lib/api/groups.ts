@@ -29,6 +29,8 @@ export type ModelGroupItem = ModelGroupItemPayload & {
   protocol?: ProtocolKind | null;
   credential_name: string;
   credential_number: number;
+  rate_multiplier: number | null;
+  rate_source: "none" | "sub2api" | "newapi";
   state: ModelGroupItemState;
   reasons: ModelGroupItemReason[];
   sort_order: number;
@@ -69,6 +71,8 @@ export type ModelGroupCandidateItem = {
   credential_id: string;
   credential_name: string;
   credential_number: number;
+  rate_multiplier: number | null;
+  rate_source: "none" | "sub2api" | "newapi";
   base_url: string;
   model_name: string;
   protocol_config_id: string;

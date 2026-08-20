@@ -127,6 +127,10 @@ export function foldGroupMembers(
       credential_number: evaluation
         ? evaluation.credential_number
         : item.credential_number,
+      rate_multiplier: evaluation
+        ? evaluation.rate_multiplier
+        : item.rate_multiplier,
+      rate_source: evaluation ? evaluation.rate_source : item.rate_source,
       state:
         evaluation && evaluationMatchesForm ? evaluation.state : item.state,
       reasons:
@@ -148,6 +152,8 @@ export function foldGroupMembers(
         credential_id: evaluatedItem.credential_id,
         credential_name: evaluatedItem.credential_name,
         credential_number: evaluatedItem.credential_number,
+        rate_multiplier: evaluatedItem.rate_multiplier,
+        rate_source: evaluatedItem.rate_source,
         protocols: [],
         subItems: [],
         enabled_item_count: 0,

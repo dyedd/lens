@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Literal
 
 from ...core.model_group_status import (
     ModelGroupChannelLookup,
@@ -29,6 +30,8 @@ class _CandidateAggregate:
     channel_name: str = ""
     credential_name: str = ""
     credential_number: int = 0
+    rate_source: Literal["none", "sub2api", "newapi"] = "none"
+    rate_multiplier: float | None = None
     base_url: str = ""
     model_name: str = ""
     credential_id: str = ""
@@ -76,6 +79,8 @@ class _GroupCandidatesMixin:
                         credential_id=model.credential_id,
                         credential_name=model.credential_name,
                         credential_number=credential.number,
+                        rate_source=credential.rate_source,
+                        rate_multiplier=credential.rate_multiplier,
                         model_name=model.model_name,
                         channel_name=channel.name,
                         base_url=str(channel.base_url),
@@ -106,6 +111,8 @@ class _GroupCandidatesMixin:
                     credential_id=aggregate.credential_id,
                     credential_name=aggregate.credential_name,
                     credential_number=aggregate.credential_number,
+                    rate_source=aggregate.rate_source,
+                    rate_multiplier=aggregate.rate_multiplier,
                     base_url=aggregate.base_url,
                     model_name=aggregate.model_name,
                     protocol_config_id=aggregate.protocol_config_id,
@@ -205,6 +212,10 @@ class _GroupCandidatesMixin:
             credential_id=item.credential_id,
             credential_name=credential.remark if credential is not None else "",
             credential_number=credential.number if credential is not None else 0,
+            rate_source=credential.rate_source if credential is not None else "none",
+            rate_multiplier=(
+                credential.rate_multiplier if credential is not None else None
+            ),
             model_name=item.model_name,
             enabled=item.enabled,
             sort_order=index,
