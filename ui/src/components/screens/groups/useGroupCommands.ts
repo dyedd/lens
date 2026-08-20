@@ -93,6 +93,7 @@ export function useGroupCommands({
         cache_read_price_per_million: cacheReadPrice,
         cache_write_price_per_million: cacheWritePrice,
         image_price_per_image: imagePrice,
+        pricing_mode: payload.pricing_mode,
       }),
     });
     await queryClient.invalidateQueries({ queryKey: ["groups"] });

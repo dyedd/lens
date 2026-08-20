@@ -8,6 +8,7 @@ export type ModelPriceItem = {
   cache_read_price_per_million: number;
   cache_write_price_per_million: number;
   image_price_per_image: number;
+  pricing_mode: "tokens" | "non_tokens";
 };
 export type ModelPriceListResponse = {
   items: ModelPriceItem[];
@@ -21,4 +22,5 @@ export type ModelPriceUpdatePayload = {
   cache_read_price_per_million: number;
   cache_write_price_per_million: number;
   image_price_per_image: number;
+  pricing_mode?: "tokens" | "non_tokens";
 };

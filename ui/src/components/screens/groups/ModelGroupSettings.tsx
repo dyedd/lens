@@ -127,58 +127,65 @@ export function ModelGroupSettings({
               {locale === "zh-CN" ? "价格" : "Pricing"}
             </div>
             <div className="grid gap-3 xl:grid-cols-2">
-              <EditablePriceRow
-                locale={locale}
-                primaryLabel="input"
-                primaryValue={form.input_price_per_million}
-                secondaryLabel="cache_read"
-                secondaryValue={form.cache_read_price_per_million}
-                onPrimaryChange={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    input_price_per_million: value,
-                  }))
-                }
-                onSecondaryChange={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    cache_read_price_per_million: value,
-                  }))
-                }
-              />
-              <EditablePriceRow
-                locale={locale}
-                primaryLabel="output"
-                primaryValue={form.output_price_per_million}
-                secondaryLabel="cache_write"
-                secondaryValue={form.cache_write_price_per_million}
-                onPrimaryChange={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    output_price_per_million: value,
-                  }))
-                }
-                onSecondaryChange={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    cache_write_price_per_million: value,
-                  }))
-                }
-              />
-              <Field>
-                <FieldLabel>
-                  {locale === "zh-CN" ? "$image（每张）" : "$image (per image)"}
-                </FieldLabel>
-                <Input
-                  value={form.image_price_per_image}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      image_price_per_image: event.target.value,
-                    }))
-                  }
-                />
-              </Field>
+              {form.pricing_mode === "non_tokens" ? (
+                <Field>
+                  <FieldLabel>
+                    {locale === "zh-CN"
+                      ? "$image（每张）"
+                      : "$image (per image)"}
+                  </FieldLabel>
+                  <Input
+                    value={form.image_price_per_image}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        image_price_per_image: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+              ) : (
+                <>
+                  <EditablePriceRow
+                    locale={locale}
+                    primaryLabel="input"
+                    primaryValue={form.input_price_per_million}
+                    secondaryLabel="cache_read"
+                    secondaryValue={form.cache_read_price_per_million}
+                    onPrimaryChange={(value) =>
+                      setForm((current) => ({
+                        ...current,
+                        input_price_per_million: value,
+                      }))
+                    }
+                    onSecondaryChange={(value) =>
+                      setForm((current) => ({
+                        ...current,
+                        cache_read_price_per_million: value,
+                      }))
+                    }
+                  />
+                  <EditablePriceRow
+                    locale={locale}
+                    primaryLabel="output"
+                    primaryValue={form.output_price_per_million}
+                    secondaryLabel="cache_write"
+                    secondaryValue={form.cache_write_price_per_million}
+                    onPrimaryChange={(value) =>
+                      setForm((current) => ({
+                        ...current,
+                        output_price_per_million: value,
+                      }))
+                    }
+                    onSecondaryChange={(value) =>
+                      setForm((current) => ({
+                        ...current,
+                        cache_write_price_per_million: value,
+                      }))
+                    }
+                  />
+                </>
+              )}
             </div>
           </section>
         </>
