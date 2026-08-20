@@ -329,6 +329,9 @@ class ModelPriceEntity(Base):
     image_price_per_image: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0
     )
+    pricing_mode: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="tokens"
+    )
 
 
 class CronjobEntity(Base):

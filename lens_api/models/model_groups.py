@@ -43,6 +43,7 @@ class ModelGroup(StrictBaseModel):
     cache_read_price_per_million: float = 0.0
     cache_write_price_per_million: float = 0.0
     image_price_per_image: float = 0.0
+    pricing_mode: Literal["tokens", "non_tokens"] = "tokens"
     items: list["ModelGroupItem"] = Field(default_factory=list)
 
     @model_validator(mode="after")
