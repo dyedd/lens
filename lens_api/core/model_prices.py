@@ -15,8 +15,15 @@ def normalize_model_key(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
-def _has_price_value(price_payload: dict[str, float]) -> bool:
-    return any(price_payload[field] > 0 for field in PRICE_PAYLOAD_FIELDS)
+def _has_price_value(price_payload: dict[str, Any]) -> bool:
+    return any(price_payload.get(field, 0.0) > 0 for field in PRICE_PAYLOAD_FIELDS)
+
+
+def _pricing_mode(payload: dict[str, Any]) -> str:
+    mode = str(payload.get("mode") or "").strip().lower()
+    if "image" in mode or "video" in mode:
+        return "non_tokens"
+    return "tokens"
 
 
 def _price_value(cost_payload: dict[str, Any], field: str) -> float:
@@ -37,48 +44,49 @@ def _litellm_price(payload: dict[str, Any], field: str) -> float:
 
 def build_litellm_price_index(
     payload: dict[str, Any],
-) -> dict[str, dict[str, float]]:
+) -> dict[str, dict[str, Any]]:
     """Build Lens prices from LiteLLM's model price JSON."""
-    index: dict[str, dict[str, float]] = {}
+    index: dict[str, dict[str, Any]] = {}
+    exact_keys = {normalize_model_key(str(model_id)) for model_id in payload}
     for model_id, model_payload in payload.items():
         if not isinstance(model_payload, dict):
             continue
-        mode = model_payload.get("mode")
-        input_field = (
-            "input_cost_per_image_token"
-            if mode == "image_generation"
-            and "input_cost_per_image_token" in model_payload
-            else "input_cost_per_token"
-        )
-        output_field = (
-            "output_cost_per_image_token"
-            if mode == "image_generation"
-            and "output_cost_per_image_token" in model_payload
-            else "output_cost_per_token"
-        )
-        image_field = (
-            "output_cost_per_image"
-            if "output_cost_per_image" in model_payload
-            else "input_cost_per_image"
-        )
-        price_payload = {
-            "input_price_per_million": _litellm_price(model_payload, input_field),
-            "output_price_per_million": _litellm_price(model_payload, output_field),
-            "cache_read_price_per_million": _litellm_price(
-                model_payload, "cache_read_input_token_cost"
-            ),
-            "cache_write_price_per_million": _litellm_price(
-                model_payload, "cache_creation_input_token_cost"
-            ),
-            "image_price_per_image": _price_value(model_payload, image_field),
-        }
-        if not _has_price_value(price_payload):
+        pricing_mode = _pricing_mode(model_payload)
+        if pricing_mode == "non_tokens":
+            image_field = (
+                "output_cost_per_image"
+                if "output_cost_per_image" in model_payload
+                else "input_cost_per_image"
+            )
+            price_payload = {field: 0.0 for field in PRICE_PAYLOAD_FIELDS} | {
+                "image_price_per_image": _price_value(model_payload, image_field),
+                "pricing_mode": pricing_mode,
+            }
+        else:
+            price_payload = {
+                "input_price_per_million": _litellm_price(
+                    model_payload, "input_cost_per_token"
+                ),
+                "output_price_per_million": _litellm_price(
+                    model_payload, "output_cost_per_token"
+                ),
+                "cache_read_price_per_million": _litellm_price(
+                    model_payload, "cache_read_input_token_cost"
+                ),
+                "cache_write_price_per_million": _litellm_price(
+                    model_payload, "cache_creation_input_token_cost"
+                ),
+                "image_price_per_image": 0.0,
+                "pricing_mode": pricing_mode,
+            }
+        if pricing_mode == "tokens" and not _has_price_value(price_payload):
             continue
         aliases = {normalize_model_key(str(model_id))}
         if "/" in str(model_id):
             tail = str(model_id).rsplit("/", 1)[-1].strip()
-            if tail:
-                aliases.add(normalize_model_key(tail))
+            normalized_tail = normalize_model_key(tail)
+            if normalized_tail and normalized_tail not in exact_keys:
+                aliases.add(normalized_tail)
         for alias in aliases:
             if not alias:
                 continue
@@ -91,7 +99,7 @@ def build_litellm_price_index(
 
 
 def build_group_price_payloads(
-    group_names: list[str], price_index: dict[str, dict[str, float]]
+    group_names: list[str], price_index: dict[str, dict[str, Any]]
 ) -> list[dict[str, float | str]]:
     """Build price payloads for model groups present in a price index."""
     payloads: list[dict[str, float | str]] = []
@@ -123,6 +131,7 @@ def build_group_price_payloads(
                     "cache_write_price_per_million"
                 ],
                 "image_price_per_image": price_payload["image_price_per_image"],
+                "pricing_mode": price_payload["pricing_mode"],
             }
         )
 

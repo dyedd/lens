@@ -47,6 +47,7 @@ export type ModelGroup = {
   cache_read_price_per_million: number;
   cache_write_price_per_million: number;
   image_price_per_image: number;
+  pricing_mode: "tokens" | "non_tokens";
   items: ModelGroupItem[];
 };
 export type ModelGroupPayload = {

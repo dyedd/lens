@@ -64,6 +64,8 @@ def test_update_model_price_upserts_existing_group_price(
     assert payload["display_name"] == "GPT 4o"
     assert payload["protocols"] == ["openai_chat"]
     assert payload["input_price_per_million"] == 1.25
+    assert payload["pricing_mode"] == "tokens"
+    assert payload["image_price_per_image"] == 0
 
 
 def test_sync_model_prices_fetches_source_and_returns_updated_prices(
@@ -72,14 +74,20 @@ def test_sync_model_prices_fetches_source_and_returns_updated_prices(
     create_model_group,
     monkeypatch,
 ) -> None:
+    create_model_group(name="nano-banana-pro")
     create_model_group(name="gpt-4o")
     source_client = _litellm_client(
         {
+            "nano-banana-pro": {
+                "mode": "image_generation",
+                "output_cost_per_image": 0.04,
+            },
             "gpt-4o": {
+                "mode": "chat",
                 "input_cost_per_token": 2.5e-6,
                 "output_cost_per_token": 1e-5,
                 "input_cost_per_image": 0.04,
-            }
+            },
         }
     )
     monkeypatch.setattr(
@@ -92,9 +100,13 @@ def test_sync_model_prices_fetches_source_and_returns_updated_prices(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["items"][0]["model_key"] == "gpt-4o"
-    assert payload["items"][0]["input_price_per_million"] == 2.5
-    assert payload["items"][0]["image_price_per_image"] == 0.04
+    items = {item["model_key"]: item for item in payload["items"]}
+    assert items["nano-banana-pro"]["pricing_mode"] == "non_tokens"
+    assert items["nano-banana-pro"]["input_price_per_million"] == 0
+    assert items["nano-banana-pro"]["image_price_per_image"] == 0.04
+    assert items["gpt-4o"]["pricing_mode"] == "tokens"
+    assert items["gpt-4o"]["input_price_per_million"] == 2.5
+    assert items["gpt-4o"]["image_price_per_image"] == 0
     assert payload["last_synced_at"]
 
 

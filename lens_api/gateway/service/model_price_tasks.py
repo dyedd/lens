@@ -23,7 +23,7 @@ LITELLM_PRICE_URL = (
 
 async def _fetch_litellm_price_index(
     proxy_url: str,
-) -> dict[str, dict[str, float]]:
+) -> dict[str, dict[str, float | str]]:
     try:
         async with httpx.AsyncClient(
             proxy=proxy_url or None,

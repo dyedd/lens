@@ -14,7 +14,7 @@ import { formatMoney, metricLabel, STRATEGY_OPTIONS } from "./modelGroupUtils";
 
 export { CandidateRow, FoldedMemberRow } from "./ModelGroupMemberRows";
 
-/** Render a compact summary of model token prices. */
+/** Render a compact summary of model prices. */
 export function CompactPriceSummary({
   locale,
   inputPrice,
@@ -22,6 +22,7 @@ export function CompactPriceSummary({
   cacheReadPrice,
   cacheWritePrice,
   imagePrice,
+  pricingMode,
 }: {
   locale: "zh-CN" | "en-US";
   inputPrice: number;
@@ -29,7 +30,16 @@ export function CompactPriceSummary({
   cacheReadPrice: number;
   cacheWritePrice: number;
   imagePrice: number;
+  pricingMode: "tokens" | "non_tokens";
 }) {
+  if (pricingMode === "non_tokens") {
+    return (
+      <div className="mt-2 text-sm text-muted-foreground">
+        {locale === "zh-CN" ? "每张" : "Image"} ${formatMoney(imagePrice)}
+      </div>
+    );
+  }
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -45,9 +55,6 @@ export function CompactPriceSummary({
           </span>
           <span>
             {metricLabel("cache_write", locale)} ${formatMoney(cacheWritePrice)}
-          </span>
-          <span>
-            {locale === "zh-CN" ? "每张" : "Image"} ${formatMoney(imagePrice)}
           </span>
         </div>
       </TooltipTrigger>
@@ -68,10 +75,6 @@ export function CompactPriceSummary({
           <div>
             {metricLabel("cache_write", locale)}: $
             {formatMoney(cacheWritePrice)} / 1M tokens
-          </div>
-          <div>
-            {locale === "zh-CN" ? "图片" : "Image"}: ${formatMoney(imagePrice)}/
-            image
           </div>
         </div>
       </TooltipContent>

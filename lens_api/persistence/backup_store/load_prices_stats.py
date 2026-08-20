@@ -66,6 +66,7 @@ async def _load_model_prices(self, session: AsyncSession) -> list[ModelPriceItem
             cache_read_price_per_million=row.cache_read_price_per_million,
             cache_write_price_per_million=row.cache_write_price_per_million,
             image_price_per_image=row.image_price_per_image,
+            pricing_mode=row.pricing_mode,
         )
         for row in rows
     ]

@@ -205,5 +205,6 @@ class _GroupMappingMixin:
             image_price_per_image=(
                 float(price.image_price_per_image) if price is not None else 0.0
             ),
+            pricing_mode=(price.pricing_mode if price is not None else "tokens"),
             items=items,
         )
