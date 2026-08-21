@@ -51,6 +51,28 @@ def test_request_log_page_returns_seeded_logs_with_filters(
     assert "gpt-4o" in payload["model_names"]
 
 
+def test_request_log_page_returns_non_token_billing(
+    client,
+    admin_headers,
+    app_state,
+) -> None:
+    seed_request_log(
+        app_state,
+        protocol=ProtocolKind.OPENAI_IMAGE.value,
+        requested_group_name="gpt-image-1",
+        resolved_group_name="gpt-image-1",
+        billing_mode="non_tokens",
+        billing_units=2,
+    )
+
+    response = client.get("/api/admin/request-logs/page", headers=admin_headers)
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["billing_mode"] == "non_tokens"
+    assert item["billing_units"] == 2
+
+
 def test_request_log_page_filters_failed_logs_with_na_options(
     client,
     admin_headers,
