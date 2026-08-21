@@ -11,6 +11,7 @@ from ...models import (
 from ..converters import needs_conversion
 from ..router.cooldown import ErrorCategory, classify_error
 from .app_state import app_state, logger
+from ...persistence.repositories.model_price_repository import ModelCostEstimate
 from .request_logger import _update_request_log
 from .routing_plan import _elapsed_ms
 from .runtime_types import (
@@ -36,7 +37,7 @@ async def _safe_estimate_cost(
     cache_read_input_tokens: int = 0,
     cache_write_input_tokens: int = 0,
     image_count: int = 0,
-) -> tuple[float, float, float]:
+) -> ModelCostEstimate:
     try:
         return await app_state.model_price_repo.estimate_model_cost(
             model_name,
@@ -48,7 +49,7 @@ async def _safe_estimate_cost(
         )
     except Exception:
         logger.exception("Failed to estimate model cost")
-        return (0.0, 0.0, 0.0)
+        return ModelCostEstimate()
 
 
 async def _record_stream_request_log(
@@ -154,11 +155,7 @@ async def _record_stream_request_log(
         lifecycle_status=lifecycle_status,
         attempts=attempt_logs,
     )
-    (
-        input_cost_usd,
-        output_cost_usd,
-        total_cost_usd,
-    ) = await _safe_estimate_cost(
+    cost = await _safe_estimate_cost(
         resolved_group_name,
         input_tokens,
         output_tokens,
@@ -186,9 +183,11 @@ async def _record_stream_request_log(
         cache_write_input_tokens=cache_write_input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
-        input_cost_usd=input_cost_usd,
-        output_cost_usd=output_cost_usd,
-        total_cost_usd=total_cost_usd,
+        input_cost_usd=cost.input_cost_usd,
+        output_cost_usd=cost.output_cost_usd,
+        total_cost_usd=cost.total_cost_usd,
+        billing_mode=cost.billing_mode,
+        billing_units=cost.billing_units,
         request_content=result.request_content,
         response_content=distilled_content,
         attempts=attempt_logs,

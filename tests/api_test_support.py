@@ -95,6 +95,8 @@ def seed_request_log(
     success: bool = True,
     lifecycle_status: RequestLogLifecycleStatus | None = None,
     error_message: str | None = None,
+    billing_mode: str = "tokens",
+    billing_units: int = 0,
 ) -> Any:
     """Insert a representative request log through the current repository."""
     return run_async(
@@ -126,6 +128,8 @@ def seed_request_log(
             input_cost_usd=0.01,
             output_cost_usd=0.02,
             total_cost_usd=0.03,
+            billing_mode=billing_mode,
+            billing_units=billing_units,
             request_content='{"model":"gpt-4o"}',
             response_content='{"ok":true}',
             attempts=[

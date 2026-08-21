@@ -398,6 +398,71 @@ def test_responses_proxy_preserves_input_shape(
     ]
 
 
+def test_image_proxy_logs_non_token_billing(
+    client,
+    admin_headers,
+    app_state,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream, stream_logging
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        assert json.loads(body_bytes)["model"] == "gpt-image-1"
+        return httpx.Response(
+            200,
+            json={"data": [{"b64_json": "first"}, {"b64_json": "second"}]},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    monkeypatch.setattr(stream_logging, "app_state", app_state)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_IMAGE.value],
+            model_name="gpt-image-1",
+        )
+    )
+    create_model_group(
+        name="gpt-image-1",
+        protocols=[ProtocolKind.OPENAI_IMAGE.value],
+        items=[_protocol_group_item("openai_image", "gpt-image-1")],
+    )
+    price_response = client.put(
+        "/api/admin/model-prices/gpt-image-1",
+        headers=admin_headers,
+        json={
+            "model_key": "gpt-image-1",
+            "pricing_mode": "non_tokens",
+            "image_price_per_image": 0.04,
+        },
+    )
+    assert price_response.status_code == 200, price_response.text
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/images/generations",
+        headers=gateway_headers(key),
+        json={"model": "gpt-image-1", "prompt": "test", "n": 3},
+    )
+
+    assert response.status_code == 200, response.text
+    log = run_async(app_state.request_log_store.list_request_log_page()).items[0]
+    assert log.billing_mode == "non_tokens"
+    assert log.billing_units == 2
+    assert log.output_cost_usd == 0.08
+    assert log.total_cost_usd == 0.08
+
+
 @pytest.mark.parametrize(
     "upstream_protocol",
     [

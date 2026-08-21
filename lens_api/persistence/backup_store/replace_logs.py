@@ -81,6 +81,8 @@ async def _replace_request_logs(
                 input_cost_usd=max(item.input_cost_usd, 0.0),
                 output_cost_usd=max(item.output_cost_usd, 0.0),
                 total_cost_usd=max(item.total_cost_usd, 0.0),
+                billing_mode=item.billing_mode,
+                billing_units=max(item.billing_units, 0),
                 request_content=item.request_content,
                 response_content=item.response_content,
                 attempts_json=json.dumps(

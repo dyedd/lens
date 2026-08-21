@@ -75,6 +75,8 @@ class RequestLogWriteMixin:
             input_cost_usd=0.0,
             output_cost_usd=0.0,
             total_cost_usd=0.0,
+            billing_mode="tokens",
+            billing_units=0,
             request_content=request_content,
             response_content=None,
             attempts=[],
@@ -104,6 +106,8 @@ class RequestLogWriteMixin:
         input_cost_usd: float,
         output_cost_usd: float,
         total_cost_usd: float,
+        billing_mode: str = "tokens",
+        billing_units: int = 0,
         cache_read_input_tokens: int = 0,
         cache_write_input_tokens: int = 0,
         request_content: str | None = None,
@@ -138,6 +142,8 @@ class RequestLogWriteMixin:
                 input_cost_usd=max(input_cost_usd, 0.0),
                 output_cost_usd=max(output_cost_usd, 0.0),
                 total_cost_usd=max(total_cost_usd, 0.0),
+                billing_mode=billing_mode,
+                billing_units=max(billing_units, 0),
                 request_content=request_content,
                 response_content=response_content,
                 attempts_json=json.dumps(attempts or [], ensure_ascii=True),
@@ -187,6 +193,8 @@ class RequestLogWriteMixin:
         input_cost_usd: float = 0.0,
         output_cost_usd: float = 0.0,
         total_cost_usd: float = 0.0,
+        billing_mode: str = "tokens",
+        billing_units: int = 0,
         request_content: str | None = None,
         response_content: str | None = None,
         attempts: list[dict[str, Any]] | None = None,
@@ -226,6 +234,8 @@ class RequestLogWriteMixin:
             entity.input_cost_usd = max(input_cost_usd, 0.0)
             entity.output_cost_usd = max(output_cost_usd, 0.0)
             entity.total_cost_usd = max(total_cost_usd, 0.0)
+            entity.billing_mode = billing_mode
+            entity.billing_units = max(billing_units, 0)
             entity.request_content = request_content
             entity.response_content = response_content
             entity.attempts_json = json.dumps(attempts or [], ensure_ascii=True)

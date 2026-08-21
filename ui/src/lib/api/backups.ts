@@ -94,6 +94,8 @@ export type ConfigBackupRequestLog = {
   input_cost_usd: number;
   output_cost_usd: number;
   total_cost_usd: number;
+  billing_mode: "tokens" | "non_tokens";
+  billing_units: number;
   error_message?: string | null;
   created_at: string;
   stats_archived: boolean;
