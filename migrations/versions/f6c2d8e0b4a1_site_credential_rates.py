@@ -1,7 +1,7 @@
 """add site credential rates
 
 Revision ID: f6c2d8e0b4a1
-Revises: e5b1c7d9a3f2
+Revises: c0d1e2f3a4b5
 Create Date: 2026-08-16 00:00:00.000000
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f6c2d8e0b4a1"
-down_revision: str | None = "e5b1c7d9a3f2"
+down_revision: str | None = "c0d1e2f3a4b5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
