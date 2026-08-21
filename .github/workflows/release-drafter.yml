@@ -2,21 +2,10 @@ name: Draft Release
 
 on:
   workflow_dispatch:
-    inputs:
-      version_bump:
-        description: Override version bump strategy
-        required: false
-        default: auto
-        type: choice
-        options:
-          - auto
-          - patch
-          - minor
-          - major
 
 jobs:
   draft_release:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref_name == 'main' || github.ref_name == 'dev'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -24,14 +13,82 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: dev
           fetch-depth: 0
+
+      - name: Prepare version on dev
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin main dev --tags
+          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -n "$last_tag" ]; then
+            base_version="${last_tag#v}"
+          else
+            base_version="0.0.0"
+          fi
+
+          next_version="$(python - "$base_version" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          base_version = sys.argv[1]
+          version_path = Path("lens_api/__init__.py")
+          source = version_path.read_text(encoding="utf-8")
+          match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', source)
+          if match is None:
+              raise SystemExit("Could not find __version__")
+
+          current_version = match.group(1)
+          semver = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+          base_match = semver.fullmatch(base_version)
+          current_match = semver.fullmatch(current_version)
+          if base_match is None or current_match is None:
+              raise SystemExit(
+                  f"Unsupported version: base={base_version}, current={current_version}"
+              )
+
+          base_parts = tuple(map(int, base_match.groups()))
+          current_parts = tuple(map(int, current_match.groups()))
+          if current_parts < base_parts:
+              raise SystemExit(
+                  f"Current version {current_version} is behind latest tag {base_version}"
+              )
+
+          if current_parts > base_parts:
+              next_version = current_version
+          else:
+              major, minor, patch = base_parts
+              patch += 1
+              next_version = f"{major}.{minor}.{patch}"
+
+              updated = source[: match.start(1)] + next_version + source[match.end(1) :]
+              version_path.write_text(updated, encoding="utf-8")
+
+          print(next_version)
+          PY
+          )"
+
+          if ! git diff --quiet -- lens_api/__init__.py; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add lens_api/__init__.py
+            git commit -m "chore: 更新版本号至 ${next_version}"
+            git push origin HEAD:refs/heads/dev
+          fi
+
+          echo "version=${next_version}" >> "$GITHUB_OUTPUT"
 
       - name: Sync dev into main
         shell: bash
         run: |
           set -euo pipefail
+
           git fetch origin main dev --tags
+          git checkout -B main origin/main
           git merge --ff-only origin/dev
           git push origin HEAD:refs/heads/main
 
@@ -39,7 +96,7 @@ jobs:
         id: prepare
         shell: bash
         env:
-          VERSION_BUMP: ${{ inputs.version_bump }}
+          NEXT_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -61,24 +118,11 @@ jobs:
             esac
           }
 
-          is_breaking_change() {
-            local subject="$1"
-            local body="$2"
-
-            if [[ "$subject" == *"!:"* ]] || [[ "$body" == *"BREAKING CHANGE"* ]]; then
-              return 0
-            fi
-
-            return 1
-          }
-
           last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
           if [ -n "$last_tag" ]; then
             range="${last_tag}..HEAD"
-            base_version="${last_tag#v}"
           else
             range="HEAD"
-            base_version="0.0.0"
           fi
           current_sha="$(git rev-parse HEAD)"
 
@@ -88,51 +132,7 @@ jobs:
             exit 1
           fi
 
-          if ! [[ "$base_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Unsupported base version: $base_version" >&2
-            exit 1
-          fi
-
-          IFS='.' read -r major minor patch <<< "$base_version"
-          bump="$VERSION_BUMP"
-          if [ "$bump" = "auto" ]; then
-            bump="patch"
-          fi
-
-          while IFS=$'\t' read -r sha subject; do
-            body="$(git log -1 --format=%b "$sha")"
-            type="$(commit_type "$subject")"
-
-            if is_breaking_change "$subject" "$body"; then
-              bump="major"
-              break
-            fi
-
-            if [ "$bump" != "minor" ] && [ "$type" = "feat" ]; then
-              bump="minor"
-            fi
-          done < <(git log --reverse --format='%H%x09%s' "$range")
-
-          case "$bump" in
-            major)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
-            minor)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            patch)
-              patch=$((patch + 1))
-              ;;
-            *)
-              echo "Unsupported version bump: $bump" >&2
-              exit 1
-              ;;
-          esac
-
-          next_tag="v${major}.${minor}.${patch}"
+          next_tag="v${NEXT_VERSION}"
           body_path="release-body.md"
           features_file="$(mktemp)"
           fixes_file="$(mktemp)"
