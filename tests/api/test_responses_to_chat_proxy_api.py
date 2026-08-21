@@ -8,6 +8,7 @@ from conftest import gateway_headers, run_async, valid_site_payload
 
 from lens_api.core.runtime_channel_ids import compose_runtime_channel_id
 from lens_api.models import ProtocolKind
+from lens_api.persistence.repositories.model_price_repository import ModelCostEstimate
 from lens_api.persistence.shared import SETTING_RELAY_LOG_BODY_ENABLED, SettingItem
 
 
@@ -23,10 +24,8 @@ def test_chat_proxy_uses_responses_channel_and_converts_response(
 
     captured_request: dict[str, Any] = {}
 
-    async def fake_estimate_cost(
-        *_args: Any, **_kwargs: Any
-    ) -> tuple[float, float, float]:
-        return (0.0, 0.0, 0.0)
+    async def fake_estimate_cost(*_args: Any, **_kwargs: Any) -> ModelCostEstimate:
+        return ModelCostEstimate()
 
     async def fake_send_upstream(
         _client: httpx.AsyncClient,
@@ -128,10 +127,8 @@ def test_streaming_chat_proxy_converts_responses_stream_and_logs_upstream_usage(
 
     captured_request: dict[str, Any] = {}
 
-    async def fake_estimate_cost(
-        *_args: Any, **_kwargs: Any
-    ) -> tuple[float, float, float]:
-        return (0.0, 0.0, 0.0)
+    async def fake_estimate_cost(*_args: Any, **_kwargs: Any) -> ModelCostEstimate:
+        return ModelCostEstimate()
 
     async def fake_send_upstream(
         _client: httpx.AsyncClient,

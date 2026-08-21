@@ -299,6 +299,10 @@ class RequestLogEntity(Base):
     input_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     output_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    billing_mode: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="tokens"
+    )
+    billing_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     request_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     response_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempts_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")

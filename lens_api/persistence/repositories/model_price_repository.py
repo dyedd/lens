@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -15,6 +17,15 @@ from ..shared import (
     _parse_group_protocols,
     normalize_model_key,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ModelCostEstimate:
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
+    billing_mode: str = "tokens"
+    billing_units: int = 0
 
 
 def _model_price_entity(
@@ -133,23 +144,28 @@ class ModelPriceRepository:
         cache_read_input_tokens: int = 0,
         cache_write_input_tokens: int = 0,
         image_count: int = 0,
-    ) -> tuple[float, float, float]:
+    ) -> ModelCostEstimate:
         """Estimate input, output, and total cost for a priced model."""
         if not model_name:
-            return 0.0, 0.0, 0.0
+            return ModelCostEstimate()
 
         async with self._session_factory() as session:
             entity = await session.get(
                 ModelPriceEntity, normalize_model_key(model_name)
             )
             if entity is None:
-                return 0.0, 0.0, 0.0
+                return ModelCostEstimate()
 
         if entity.pricing_mode == "non_tokens":
-            output_cost = max(image_count, 0) * float(
-                entity.image_price_per_image or 0.0
+            billing_units = max(image_count, 0)
+            output_cost = billing_units * float(entity.image_price_per_image or 0.0)
+            rounded_cost = round(output_cost, 8)
+            return ModelCostEstimate(
+                output_cost_usd=rounded_cost,
+                total_cost_usd=rounded_cost,
+                billing_mode="non_tokens",
+                billing_units=billing_units,
             )
-            return 0.0, round(output_cost, 8), round(output_cost, 8)
 
         total_input_tokens = max(input_tokens, 0)
         cache_read_tokens = max(cache_read_input_tokens, 0)
@@ -171,7 +187,11 @@ class ModelPriceRepository:
             entity.output_price_per_million
         )
         total_cost = input_cost + output_cost
-        return round(input_cost, 8), round(output_cost, 8), round(total_cost, 8)
+        return ModelCostEstimate(
+            input_cost_usd=round(input_cost, 8),
+            output_cost_usd=round(output_cost, 8),
+            total_cost_usd=round(total_cost, 8),
+        )
 
     async def list_model_prices(self) -> ModelPriceListResponse:
         """Return model group prices and the latest synchronization time."""

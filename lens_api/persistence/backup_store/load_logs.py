@@ -94,6 +94,8 @@ async def _load_request_logs(
                 input_cost_usd=row.input_cost_usd,
                 output_cost_usd=row.output_cost_usd,
                 total_cost_usd=row.total_cost_usd,
+                billing_mode=row.billing_mode,
+                billing_units=row.billing_units,
                 error_message=row.error_message,
                 created_at=row.created_at.replace(tzinfo=UTC).isoformat(),
                 stats_archived=bool(row.stats_archived),

@@ -227,6 +227,8 @@ class RequestLogStore(
             input_cost_usd=entity.input_cost_usd,
             output_cost_usd=entity.output_cost_usd,
             total_cost_usd=entity.total_cost_usd,
+            billing_mode=entity.billing_mode,
+            billing_units=entity.billing_units,
             attempt_count=len(attempts),
             error_message=entity.error_message,
             created_at=entity.created_at.replace(tzinfo=UTC).isoformat(),

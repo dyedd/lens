@@ -8,6 +8,7 @@ import {
   Database,
   DollarSign,
   Fingerprint,
+  Image as ImageIcon,
   KeyRound,
   ServerCog,
   Upload,
@@ -71,6 +72,7 @@ export function RequestCard({
   const running =
     item.lifecycle_status === "connecting" ||
     item.lifecycle_status === "streaming";
+  const isNonTokenBilling = item.billing_mode === "non_tokens";
   const [now, setNow] = useState(() => Date.now());
   const createdAtMs = useMemo(
     () => new Date(item.created_at).getTime(),
@@ -187,36 +189,54 @@ export function RequestCard({
           </div>
 
           <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(126px,1fr))] gap-2">
-            <RequestMetric
-              icon={<Zap size={14} />}
-              label={titleForLocale(locale, "首字延迟", "First token")}
-              value={formatMs(item.first_token_latency_ms)}
-            />
+            {!isNonTokenBilling ? (
+              <RequestMetric
+                icon={<Zap size={14} />}
+                label={titleForLocale(locale, "首字延迟", "First token")}
+                value={formatMs(item.first_token_latency_ms)}
+              />
+            ) : null}
             <RequestMetric
               icon={<ServerCog size={14} />}
               label={titleForLocale(locale, "总耗时", "Total")}
               value={formatMs(elapsedMs)}
             />
-            <RequestMetric
-              icon={<ArrowDownToLine size={14} />}
-              label={titleForLocale(locale, "输入", "Input")}
-              value={formatMaybeCount(item.input_tokens, running)}
-            />
-            <RequestMetric
-              icon={<ArrowUpFromLine size={14} />}
-              label={titleForLocale(locale, "输出", "Output")}
-              value={formatMaybeCount(item.output_tokens, running)}
-            />
-            <RequestMetric
-              icon={<Database size={14} />}
-              label={titleForLocale(locale, "缓存读取", "Cache Read")}
-              value={formatMaybeCount(item.cache_read_input_tokens, running)}
-            />
-            <RequestMetric
-              icon={<Upload size={14} />}
-              label={titleForLocale(locale, "缓存写入", "Cache Write")}
-              value={formatMaybeCount(item.cache_write_input_tokens, running)}
-            />
+            {isNonTokenBilling ? (
+              <RequestMetric
+                icon={<ImageIcon size={14} />}
+                label={titleForLocale(locale, "图片数", "Images")}
+                value={formatMaybeCount(item.billing_units, running)}
+              />
+            ) : (
+              <>
+                <RequestMetric
+                  icon={<ArrowDownToLine size={14} />}
+                  label={titleForLocale(locale, "输入", "Input")}
+                  value={formatMaybeCount(item.input_tokens, running)}
+                />
+                <RequestMetric
+                  icon={<ArrowUpFromLine size={14} />}
+                  label={titleForLocale(locale, "输出", "Output")}
+                  value={formatMaybeCount(item.output_tokens, running)}
+                />
+                <RequestMetric
+                  icon={<Database size={14} />}
+                  label={titleForLocale(locale, "缓存读取", "Cache Read")}
+                  value={formatMaybeCount(
+                    item.cache_read_input_tokens,
+                    running,
+                  )}
+                />
+                <RequestMetric
+                  icon={<Upload size={14} />}
+                  label={titleForLocale(locale, "缓存写入", "Cache Write")}
+                  value={formatMaybeCount(
+                    item.cache_write_input_tokens,
+                    running,
+                  )}
+                />
+              </>
+            )}
             <RequestMetric
               icon={<DollarSign size={14} />}
               label={titleForLocale(locale, "费用", "Cost")}

@@ -59,6 +59,8 @@ class UpstreamResult:
     input_cost_usd: float = 0.0
     output_cost_usd: float = 0.0
     total_cost_usd: float = 0.0
+    billing_mode: str = "tokens"
+    billing_units: int = 0
     request_content: str | None = None
     response_content: str | None = None
     stream_capture: StreamCapture | None = None

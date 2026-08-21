@@ -57,6 +57,8 @@ class _RequestLogger:
                 input_cost_usd=result.input_cost_usd,
                 output_cost_usd=result.output_cost_usd,
                 total_cost_usd=result.total_cost_usd,
+                billing_mode=result.billing_mode,
+                billing_units=result.billing_units,
             )
         await _update_request_log(
             self.request_log_id,
@@ -109,6 +111,8 @@ async def _update_request_log(
     input_cost_usd: float = 0.0,
     output_cost_usd: float = 0.0,
     total_cost_usd: float = 0.0,
+    billing_mode: str = "tokens",
+    billing_units: int = 0,
     request_content: str | None = None,
     response_content: str | None = None,
     attempts: list[dict[str, Any]] | None = None,
@@ -138,6 +142,8 @@ async def _update_request_log(
         input_cost_usd=input_cost_usd,
         output_cost_usd=output_cost_usd,
         total_cost_usd=total_cost_usd,
+        billing_mode=billing_mode,
+        billing_units=billing_units,
         request_content=request_content,
         response_content=response_content,
         attempts=attempts,

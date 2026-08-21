@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field, field_validator, model_validator
 
 from .common import StrictBaseModel
@@ -127,6 +129,8 @@ class ConfigBackupRequestLog(StrictBaseModel):
     input_cost_usd: float = 0.0
     output_cost_usd: float = 0.0
     total_cost_usd: float = 0.0
+    billing_mode: Literal["tokens", "non_tokens"] = "tokens"
+    billing_units: int = Field(default=0, ge=0)
     error_message: str | None = None
     created_at: str
     stats_archived: bool = False
