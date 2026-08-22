@@ -32,6 +32,7 @@ import {
   formatChannelCredentialLabel,
   formatErrorDisplay,
   formatGatewayKeyLabel,
+  formatInternalCredentialLabel,
   formatMaybeCount,
   formatMaybeMoney,
   formatMs,
@@ -65,6 +66,14 @@ export function RequestCard({
     ? `${modelChain} ${item.reasoning_effort}`
     : modelChain;
   const secondaryModelName = getSecondaryModelName(item);
+  const channelCredential = formatChannelCredentialLabel(item, locale);
+  const credentialLabel = formatInternalCredentialLabel(item, locale);
+  const rateMultiplier =
+    item.rate_multiplier === null ? "" : ` · ${item.rate_multiplier}x`;
+  const channelCredentialWithRate =
+    rateMultiplier && credentialLabel && !item.channel_has_multiple_credentials
+      ? `${channelCredential} | ${credentialLabel}${rateMultiplier}`
+      : `${channelCredential}${rateMultiplier}`;
   const attemptCount = Number.isFinite(item.attempt_count)
     ? item.attempt_count
     : 0;
@@ -163,7 +172,7 @@ export function RequestCard({
               />
               <RequestMeta
                 icon={<Waypoints size={13} />}
-                value={formatChannelCredentialLabel(item, locale)}
+                value={channelCredentialWithRate}
               />
               {item.gateway_key_id && item.gateway_has_multiple_keys ? (
                 <RequestMeta

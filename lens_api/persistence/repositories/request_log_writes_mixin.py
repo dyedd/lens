@@ -75,6 +75,7 @@ class RequestLogWriteMixin:
             input_cost_usd=0.0,
             output_cost_usd=0.0,
             total_cost_usd=0.0,
+            rate_multiplier=None,
             billing_mode="tokens",
             billing_units=0,
             request_content=request_content,
@@ -106,6 +107,7 @@ class RequestLogWriteMixin:
         input_cost_usd: float,
         output_cost_usd: float,
         total_cost_usd: float,
+        rate_multiplier: float | None = None,
         billing_mode: str = "tokens",
         billing_units: int = 0,
         cache_read_input_tokens: int = 0,
@@ -142,6 +144,11 @@ class RequestLogWriteMixin:
                 input_cost_usd=max(input_cost_usd, 0.0),
                 output_cost_usd=max(output_cost_usd, 0.0),
                 total_cost_usd=max(total_cost_usd, 0.0),
+                rate_multiplier=(
+                    max(float(rate_multiplier), 0.0)
+                    if rate_multiplier is not None
+                    else None
+                ),
                 billing_mode=billing_mode,
                 billing_units=max(billing_units, 0),
                 request_content=request_content,
@@ -193,6 +200,7 @@ class RequestLogWriteMixin:
         input_cost_usd: float = 0.0,
         output_cost_usd: float = 0.0,
         total_cost_usd: float = 0.0,
+        rate_multiplier: float | None = None,
         billing_mode: str = "tokens",
         billing_units: int = 0,
         request_content: str | None = None,
@@ -234,6 +242,11 @@ class RequestLogWriteMixin:
             entity.input_cost_usd = max(input_cost_usd, 0.0)
             entity.output_cost_usd = max(output_cost_usd, 0.0)
             entity.total_cost_usd = max(total_cost_usd, 0.0)
+            entity.rate_multiplier = (
+                max(float(rate_multiplier), 0.0)
+                if rate_multiplier is not None
+                else None
+            )
             entity.billing_mode = billing_mode
             entity.billing_units = max(billing_units, 0)
             entity.request_content = request_content

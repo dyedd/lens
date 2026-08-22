@@ -129,6 +129,7 @@ class ConfigBackupRequestLog(StrictBaseModel):
     input_cost_usd: float = 0.0
     output_cost_usd: float = 0.0
     total_cost_usd: float = 0.0
+    rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     billing_mode: Literal["tokens", "non_tokens"] = "tokens"
     billing_units: int = Field(default=0, ge=0)
     error_message: str | None = None

@@ -144,6 +144,7 @@ class ModelPriceRepository:
         cache_read_input_tokens: int = 0,
         cache_write_input_tokens: int = 0,
         image_count: int = 0,
+        rate_multiplier: float | None = None,
     ) -> ModelCostEstimate:
         """Estimate input, output, and total cost for a priced model."""
         if not model_name:
@@ -156,9 +157,13 @@ class ModelPriceRepository:
             if entity is None:
                 return ModelCostEstimate()
 
+        multiplier = 1.0 if rate_multiplier is None else float(rate_multiplier)
+
         if entity.pricing_mode == "non_tokens":
             billing_units = max(image_count, 0)
-            output_cost = billing_units * float(entity.image_price_per_image or 0.0)
+            output_cost = (
+                billing_units * float(entity.image_price_per_image or 0.0) * multiplier
+            )
             rounded_cost = round(output_cost, 8)
             return ModelCostEstimate(
                 output_cost_usd=rounded_cost,
@@ -186,6 +191,8 @@ class ModelPriceRepository:
         output_cost = (max(output_tokens, 0) / 1_000_000) * float(
             entity.output_price_per_million
         )
+        input_cost *= multiplier
+        output_cost *= multiplier
         total_cost = input_cost + output_cost
         return ModelCostEstimate(
             input_cost_usd=round(input_cost, 8),

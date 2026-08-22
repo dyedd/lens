@@ -13,6 +13,7 @@ class RouteTarget:
     model_name: str | None = None
     credential_id: str | None = None
     credential_name: str | None = None
+    rate_multiplier: float | None = None
 
 
 @dataclass(slots=True)

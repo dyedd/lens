@@ -115,6 +115,7 @@ async def _build_anthropic_sse_to_json_result(
     response: httpx.Response,
     channel: ChannelConfig,
     pricing_group_name: str | None,
+    rate_multiplier: float | None,
     request_content: str | None,
     log_body_enabled: bool,
 ) -> UpstreamResult:
@@ -154,6 +155,7 @@ async def _build_anthropic_sse_to_json_result(
         parsed["output_tokens"],
         parsed["cache_read_input_tokens"],
         parsed["cache_write_input_tokens"],
+        rate_multiplier=rate_multiplier,
     )
     return UpstreamResult(
         response=Response(
@@ -289,6 +291,7 @@ async def _build_json_result(
     client_protocol: ProtocolKind | None,
     body: dict[str, Any],
     pricing_group_name: str | None,
+    rate_multiplier: float | None,
     request_content: str | None,
     log_body_enabled: bool,
 ) -> UpstreamResult:
@@ -338,6 +341,7 @@ async def _build_json_result(
             if channel.protocol == ProtocolKind.OPENAI_IMAGE
             else 0
         ),
+        rate_multiplier=rate_multiplier,
     )
     return UpstreamResult(
         response=Response(
@@ -427,6 +431,7 @@ async def _call_channel(
     credential_id: str | None,
     include_stream_usage: bool,
     pricing_group_name: str | None = None,
+    rate_multiplier: float | None = None,
     client_protocol: ProtocolKind | None = None,
     log_body_enabled: bool = False,
     global_proxy_url: str | None = None,
@@ -485,6 +490,7 @@ async def _call_channel(
                 response,
                 channel,
                 pricing_group_name,
+                rate_multiplier,
                 request_content,
                 log_body_enabled,
             )
@@ -520,6 +526,7 @@ async def _call_channel(
                 client_protocol,
                 body,
                 pricing_group_name,
+                rate_multiplier,
                 request_content,
                 log_body_enabled,
             )

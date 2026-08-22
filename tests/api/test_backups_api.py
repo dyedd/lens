@@ -57,7 +57,12 @@ def test_export_backup_can_include_request_logs(
     admin_headers,
     app_state,
 ) -> None:
-    seed_request_log(app_state, billing_mode="non_tokens", billing_units=2)
+    seed_request_log(
+        app_state,
+        rate_multiplier=2.0,
+        billing_mode="non_tokens",
+        billing_units=2,
+    )
 
     response = client.get(
         "/api/admin/backups/export",
@@ -70,6 +75,7 @@ def test_export_backup_can_include_request_logs(
     assert payload["include_request_logs"] is True
     assert len(payload["request_logs"]) == 1
     assert payload["request_logs"][0]["requested_group_name"] == "gpt-4o"
+    assert payload["request_logs"][0]["rate_multiplier"] == 2.0
     assert payload["request_logs"][0]["billing_mode"] == "non_tokens"
     assert payload["request_logs"][0]["billing_units"] == 2
 

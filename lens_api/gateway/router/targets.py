@@ -77,6 +77,7 @@ def _expand_target_credentials(target: RouteTarget) -> list[RouteTarget]:
                 model_name=target.model_name,
                 credential_id=key.id,
                 credential_name=target.credential_name or key.remark,
+                rate_multiplier=key.rate_multiplier,
             )
         ]
 
@@ -89,6 +90,7 @@ def _expand_target_credentials(target: RouteTarget) -> list[RouteTarget]:
             model_name=target.model_name,
             credential_id=key.id,
             credential_name=key.remark,
+            rate_multiplier=key.rate_multiplier,
         )
         for key in _candidate_keys(target.channel, target.model_name)
     ]
