@@ -95,12 +95,12 @@ def _suggest_model_group_name(model_name: str, existing_names: Iterable[str]) ->
 def _build_model_group_inputs(
     site: SiteConfig,
     existing_group_names: Iterable[str],
-    grouped_model_keys: set[tuple[str, str, str]],
+    grouped_model_keys: set[tuple[str, str, str, ProtocolKind]],
 ) -> list[ModelGroupEnsureModelInput]:
     group_names = [name.strip() for name in existing_group_names if name.strip()]
     enabled_base_urls = {item.id for item in site.base_urls if item.enabled}
     enabled_credentials = {item.id for item in site.credentials if item.enabled}
-    grouped: dict[tuple[str, str, str], ModelGroupEnsureModelInput] = {}
+    inputs: list[ModelGroupEnsureModelInput] = []
 
     for protocol_config in site.protocols:
         if (
@@ -123,21 +123,20 @@ def _build_model_group_inputs(
                 protocol_config.id,
                 model.credential_id,
                 model_name,
+                model.protocol,
             )
             if key in grouped_model_keys:
                 continue
-            current = grouped.get(key)
-            if current is None:
-                grouped[key] = ModelGroupEnsureModelInput(
+            inputs.append(
+                ModelGroupEnsureModelInput(
                     protocol_config_id=protocol_config.id,
                     credential_id=model.credential_id,
                     model_name=model_name,
                     group_name=_suggest_model_group_name(model_name, group_names),
                     protocols=[model.protocol],
                 )
-            elif model.protocol not in current.protocols:
-                current.protocols.append(model.protocol)
-    return list(grouped.values())
+            )
+    return inputs
 
 
 async def _save_site_with_model_groups(

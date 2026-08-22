@@ -45,7 +45,6 @@ export function ChannelsScreen() {
     locale,
     queryClient: queries.queryClient,
     editor,
-    invalidateChannelData: queries.invalidateChannelData,
   });
   const persistence = useChannelPersistence({
     locale,

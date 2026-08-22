@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from conftest import assert_error, valid_site_payload
+from lens_api.core.runtime_channel_ids import compose_runtime_channel_id
+from lens_api.models import ProtocolKind
 
 
 def _save_models_from_preview(payload: dict) -> list[dict]:
@@ -160,6 +162,118 @@ def test_transactional_site_save_waits_for_protocol_extension_confirmation(
     ).json()
     assert stored_group["protocols"] == ["openai_chat", "openai_image"]
     assert stored_group["items"][0]["model_name"] == "gpt-image"
+
+
+def test_transactional_site_save_detects_protocol_added_to_grouped_model(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    site = create_site(valid_site_payload(model_name="shared-model"))
+    group = create_model_group(
+        name="shared-model",
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.OPENAI_CHAT
+                ),
+                "credential_id": "cred-1",
+                "model_name": "shared-model",
+                "enabled": True,
+            }
+        ],
+    )
+    updated_payload = valid_site_payload(
+        model_name="shared-model",
+        protocols=["openai_chat", "anthropic"],
+    )
+
+    preview = client.put(
+        f"/api/admin/sites/{site['id']}/with-model-groups",
+        headers=admin_headers,
+        json={**updated_payload, "dry_run": True},
+    )
+
+    assert preview.status_code == 200, preview.text
+    preview_payload = preview.json()
+    assert preview_payload["model_groups"]["items"][0]["protocols"] == ["anthropic"]
+    assert preview_payload["model_groups"]["items"][0]["skipped_reason"] == (
+        "protocol_extension_required"
+    )
+
+    committed = client.put(
+        f"/api/admin/sites/{site['id']}/with-model-groups",
+        headers=admin_headers,
+        json={
+            **updated_payload,
+            "dry_run": False,
+            "allow_protocol_extension": True,
+            "models": _save_models_from_preview(preview_payload),
+        },
+    )
+
+    assert committed.status_code == 200, committed.text
+    stored_group = client.get(
+        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
+    ).json()
+    assert stored_group["protocols"] == ["openai_chat", "anthropic"]
+    assert {item["channel_id"] for item in stored_group["items"]} == {
+        compose_runtime_channel_id("pc-1", ProtocolKind.OPENAI_CHAT),
+        compose_runtime_channel_id("pc-1", ProtocolKind.ANTHROPIC),
+    }
+
+
+def test_transactional_site_save_removes_deleted_model_protocol_from_group(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    site = create_site(
+        valid_site_payload(
+            model_name="shared-model",
+            protocols=["openai_chat", "gemini"],
+        )
+    )
+    group = create_model_group(
+        name="shared-model",
+        protocols=["openai_chat", "gemini"],
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.OPENAI_CHAT
+                ),
+                "credential_id": "cred-1",
+                "model_name": "shared-model",
+                "enabled": True,
+            },
+            {
+                "channel_id": compose_runtime_channel_id("pc-1", ProtocolKind.GEMINI),
+                "credential_id": "cred-1",
+                "model_name": "shared-model",
+                "enabled": True,
+            },
+        ],
+    )
+
+    response = client.put(
+        f"/api/admin/sites/{site['id']}/with-model-groups",
+        headers=admin_headers,
+        json={
+            **valid_site_payload(model_name="shared-model"),
+            "dry_run": False,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    stored_group = client.get(
+        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
+    ).json()
+    assert stored_group["protocols"] == ["openai_chat"]
+    assert [item["channel_id"] for item in stored_group["items"]] == [
+        compose_runtime_channel_id("pc-1", ProtocolKind.OPENAI_CHAT)
+    ]
 
 
 def test_transactional_site_save_suggests_case_insensitive_containing_group(
