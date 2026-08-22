@@ -138,8 +138,8 @@ class GroupRepository(
 
     async def list_grouped_model_keys_in_session(
         self, session: AsyncSession
-    ) -> set[tuple[str, str, str]]:
-        """Return protocol-config, credential, and model keys already in a group."""
+    ) -> set[tuple[str, str, str, ProtocolKind]]:
+        """Return protocol-specific model keys already in a group."""
         rows = await session.execute(
             select(
                 ModelGroupItemEntity.channel_id,
@@ -147,11 +147,11 @@ class GroupRepository(
                 ModelGroupItemEntity.model_name,
             )
         )
-        keys: set[tuple[str, str, str]] = set()
+        keys: set[tuple[str, str, str, ProtocolKind]] = set()
         for channel_id, credential_id, model_name in rows.all():
             parsed = _parse_runtime_channel_id(channel_id)
             if parsed is not None:
-                keys.add((parsed[0], credential_id, model_name))
+                keys.add((parsed[0], credential_id, model_name, parsed[1]))
         return keys
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroupView:
