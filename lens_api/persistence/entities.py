@@ -299,6 +299,7 @@ class RequestLogEntity(Base):
     input_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     output_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    rate_multiplier: Mapped[float | None] = mapped_column(Float, nullable=True)
     billing_mode: Mapped[str] = mapped_column(
         String(32), nullable=False, default="tokens"
     )
