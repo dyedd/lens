@@ -94,6 +94,7 @@ async def _load_request_logs(
                 input_cost_usd=row.input_cost_usd,
                 output_cost_usd=row.output_cost_usd,
                 total_cost_usd=row.total_cost_usd,
+                rate_multiplier=row.rate_multiplier,
                 billing_mode=row.billing_mode,
                 billing_units=row.billing_units,
                 error_message=row.error_message,

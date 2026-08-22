@@ -40,13 +40,14 @@ class _RequestLogger:
         status_code: int | None,
         success: bool,
         is_stream: bool,
+        rate_multiplier: float | None = None,
         first_token_latency_ms: int = 0,
         request_content: str | None = None,
         response_content: str | None = None,
         error_message: str | None = None,
         result: UpstreamResult | None = None,
     ) -> None:
-        kwargs: dict[str, Any] = {}
+        kwargs: dict[str, Any] = {"rate_multiplier": rate_multiplier}
         if result is not None:
             kwargs.update(
                 input_tokens=result.input_tokens,
@@ -103,6 +104,7 @@ async def _update_request_log(
     is_stream: bool,
     first_token_latency_ms: int,
     latency_ms: int,
+    rate_multiplier: float | None = None,
     input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
     cache_write_input_tokens: int = 0,
@@ -142,6 +144,7 @@ async def _update_request_log(
         input_cost_usd=input_cost_usd,
         output_cost_usd=output_cost_usd,
         total_cost_usd=total_cost_usd,
+        rate_multiplier=rate_multiplier,
         billing_mode=billing_mode,
         billing_units=billing_units,
         request_content=request_content,

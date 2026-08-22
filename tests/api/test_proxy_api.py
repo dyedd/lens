@@ -437,6 +437,19 @@ def test_image_proxy_logs_non_token_billing(
         protocols=[ProtocolKind.OPENAI_IMAGE.value],
         items=[_protocol_group_item("openai_image", "gpt-image-1")],
     )
+    channels = run_async(app_state.channel_store.list_channels())
+    channel = channels[0].model_copy(
+        update={
+            "keys": [channels[0].keys[0].model_copy(update={"rate_multiplier": 2.0})]
+        }
+    )
+
+    async def list_channels_with_rate() -> list[Any]:
+        return [channel]
+
+    monkeypatch.setattr(
+        app_state.channel_store, "list_channels", list_channels_with_rate
+    )
     price_response = client.put(
         "/api/admin/model-prices/gpt-image-1",
         headers=admin_headers,
@@ -456,11 +469,15 @@ def test_image_proxy_logs_non_token_billing(
     )
 
     assert response.status_code == 200, response.text
-    log = run_async(app_state.request_log_store.list_request_log_page()).items[0]
-    assert log.billing_mode == "non_tokens"
-    assert log.billing_units == 2
-    assert log.output_cost_usd == 0.08
-    assert log.total_cost_usd == 0.08
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers)
+
+    assert logs.status_code == 200, logs.text
+    log = logs.json()["items"][0]
+    assert log["rate_multiplier"] == 2.0
+    assert log["billing_mode"] == "non_tokens"
+    assert log["billing_units"] == 2
+    assert log["output_cost_usd"] == 0.16
+    assert log["total_cost_usd"] == 0.16
 
 
 @pytest.mark.parametrize(

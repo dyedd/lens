@@ -96,6 +96,7 @@ async def _record_target_failure(
         status_code=exc.status_code,
         success=False,
         is_stream=bool(upstream_body.get("stream")),
+        rate_multiplier=target.rate_multiplier,
         request_content=(
             exc.request_content
             if exc.request_content is not None
@@ -271,6 +272,7 @@ async def _try_target(
         status_code=None,
         success=False,
         is_stream=bool(upstream_body.get("stream")),
+        rate_multiplier=target.rate_multiplier,
         request_content=upstream_request_content,
     )
     try:
@@ -282,6 +284,7 @@ async def _try_target(
             upstream_request_content,
             credential_id=target.credential_id,
             pricing_group_name=plan.resolved_group_name,
+            rate_multiplier=target.rate_multiplier,
             client_protocol=protocol,
             include_stream_usage=_client_stream_includes_usage(protocol, body),
             log_body_enabled=log_body_enabled,
@@ -337,6 +340,7 @@ async def _try_target(
             status_code=result.status_code,
             success=False,
             is_stream=True,
+            rate_multiplier=target.rate_multiplier,
             first_token_latency_ms=first_token_latency_ms,
             request_content=merged_request_content,
         )
@@ -352,6 +356,7 @@ async def _try_target(
             started_at=log_ctx.started_at,
             result=result,
             attempts=_attempt_logs_to_dicts(log_ctx.attempts),
+            rate_multiplier=target.rate_multiplier,
         )
         return result.response
     await log_ctx.update(
@@ -364,6 +369,7 @@ async def _try_target(
         status_code=result.status_code,
         success=True,
         is_stream=result.is_stream,
+        rate_multiplier=target.rate_multiplier,
         first_token_latency_ms=result.first_token_latency_ms,
         request_content=merged_request_content,
         response_content=result.response_content,
