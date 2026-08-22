@@ -47,12 +47,10 @@ export function useModelGroupEnsure({
   locale,
   queryClient,
   editor,
-  invalidateChannelData,
 }: {
   locale: Locale;
   queryClient: QueryClient;
   editor: ChannelEditor;
-  invalidateChannelData: () => Promise<void>;
 }) {
   const [modelGroupEnsureOpen, setModelGroupEnsureOpenState] = useState(false);
   const [isEnsuringModelGroups, setIsEnsuringModelGroups] = useState(false);
@@ -116,6 +114,20 @@ export function useModelGroupEnsure({
       allowProtocolExtension,
       models,
     });
+    try {
+      const updatedGroups = await apiRequest<ModelGroup[]>(
+        "/admin/model-groups",
+      );
+      queryClient.setQueryData(["groups"], updatedGroups);
+      queryClient.setQueryData(["model-groups"], updatedGroups);
+    } catch {
+      void queryClient.invalidateQueries({ queryKey: ["groups"] });
+    }
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["sites"] }),
+      queryClient.invalidateQueries({ queryKey: ["router-snapshot"] }),
+      queryClient.invalidateQueries({ queryKey: ["group-candidates"] }),
+    ]);
     editor.applyPreparedForm(toForm(committed.site, locale));
     editor.setIsDialogOpen(false);
     editor.setEditingSiteId(null);
@@ -129,7 +141,6 @@ export function useModelGroupEnsure({
         ? `已处理 ${changedCount} 项模型组变更`
         : `Processed ${changedCount} model-group changes`,
     );
-    await invalidateChannelData();
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {

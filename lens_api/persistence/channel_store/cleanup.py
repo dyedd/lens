@@ -1,8 +1,14 @@
 from __future__ import annotations
 
-from ...core.runtime_channel_ids import compose_runtime_channel_id
+from ...core.protocol_reachability import can_reach_protocol
+from ...core.runtime_channel_ids import (
+    compose_runtime_channel_id,
+    split_runtime_channel_id,
+)
+from ..shared import _dump_group_protocols, _parse_group_protocols
 from .shared import (
     AsyncSession,
+    ModelGroupEntity,
     ModelGroupItemEntity,
     ProtocolKind,
     SiteDiscoveredModelEntity,
@@ -48,7 +54,7 @@ class ChannelCleanupMixin:
     async def _cleanup_invalid_group_items(
         self, session: AsyncSession, protocol_config_ids: set[str]
     ) -> None:
-        """Delete model group items whose underlying channel model was removed."""
+        """Delete removed members and trim unsupported execution protocols."""
         if not protocol_config_ids:
             return
         matching_model = (
@@ -73,8 +79,61 @@ class ChannelCleanupMixin:
             for protocol_config_id in protocol_config_ids
             for protocol in ProtocolKind
         }
-        await session.execute(
-            delete(ModelGroupItemEntity)
-            .where(ModelGroupItemEntity.channel_id.in_(runtime_channel_ids))
-            .where(~matching_model)
+        invalid_item_filter = (
+            ModelGroupItemEntity.channel_id.in_(runtime_channel_ids) & ~matching_model
         )
+        group_ids = set(
+            (
+                await session.execute(
+                    select(ModelGroupItemEntity.group_id)
+                    .where(invalid_item_filter)
+                    .distinct()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await session.execute(delete(ModelGroupItemEntity).where(invalid_item_filter))
+        if not group_ids:
+            return
+
+        groups = (
+            (
+                await session.execute(
+                    select(ModelGroupEntity).where(
+                        ModelGroupEntity.id.in_(group_ids),
+                        ModelGroupEntity.route_group_id == "",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        member_rows = (
+            await session.execute(
+                select(
+                    ModelGroupItemEntity.group_id,
+                    ModelGroupItemEntity.channel_id,
+                ).where(ModelGroupItemEntity.group_id.in_(group_ids))
+            )
+        ).all()
+        protocols_by_group: dict[str, set[ProtocolKind]] = {}
+        for group_id, channel_id in member_rows:
+            parsed = split_runtime_channel_id(channel_id)
+            if parsed is not None:
+                protocols_by_group.setdefault(group_id, set()).add(parsed[1])
+        for group in groups:
+            remaining_protocols = protocols_by_group.get(group.id, set())
+            if not remaining_protocols:
+                continue
+            current_protocols = _parse_group_protocols(group)
+            next_protocols = [
+                protocol
+                for protocol in current_protocols
+                if any(
+                    can_reach_protocol(member_protocol, protocol)
+                    for member_protocol in remaining_protocols
+                )
+            ]
+            if next_protocols and next_protocols != current_protocols:
+                group.protocols_json = _dump_group_protocols(next_protocols)
