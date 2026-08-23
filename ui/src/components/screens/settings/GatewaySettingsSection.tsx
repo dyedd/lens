@@ -83,10 +83,6 @@ export function GatewaySettingsSection({
           onRemoveRuleHeader={settings.removeRuleHeader}
           upstreamParamOverrideConfig={draft.upstreamParamOverrideConfig}
           onGlobalParamOverrideChange={settings.updateGlobalParamOverride}
-          onAddParamOverrideRule={settings.addParamOverrideRule}
-          onUpdateParamOverrideRule={settings.updateParamOverrideRule}
-          onRemoveParamOverrideRule={settings.removeParamOverrideRule}
-          onMoveParamOverrideRule={settings.moveParamOverrideRule}
         />
       </SettingsSectionCard>
     </TabsContent>

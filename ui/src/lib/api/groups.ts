@@ -43,6 +43,7 @@ export type ModelGroup = {
   route_group_name?: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
   sync_filter_query: string;
+  param_override: string;
   input_price_per_million: number;
   output_price_per_million: number;
   cache_read_price_per_million: number;
@@ -57,6 +58,7 @@ export type ModelGroupPayload = {
   route_group_id?: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
   sync_filter_query: string;
+  param_override: string;
   items: ModelGroupItemPayload[];
 };
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {

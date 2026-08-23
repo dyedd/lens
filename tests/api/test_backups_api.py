@@ -104,6 +104,12 @@ def test_import_backup_accepts_exported_bundle(
         }
     )
     create_site(site_payload)
+    group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "backup-group", "param_override": '{"temperature":0.2}'},
+    )
+    assert group.status_code == 201, group.text
     exported = client.get("/api/admin/backups/export", headers=admin_headers)
     assert exported.status_code == 200
 
@@ -127,6 +133,10 @@ def test_import_backup_accepts_exported_bundle(
     assert credential["rate_protocol_config_id"] == "pc-1"
     assert credential["rate_group"] == "vip"
     assert credential["rate_multiplier"] is None
+    restored_group = client.get(
+        "/api/admin/model-groups", headers=admin_headers
+    ).json()[0]
+    assert restored_group["param_override"] == '{"temperature":0.2}'
 
 
 def test_import_backup_rejects_invalid_credential_rate_config(

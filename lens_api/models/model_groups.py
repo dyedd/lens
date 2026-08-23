@@ -1,9 +1,10 @@
 from enum import Enum
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern
+from .param_override import validate_param_override
 from .protocols import (
     ModelGroupSyncFilterMode,
     ProtocolKind,
@@ -36,6 +37,7 @@ class ModelGroup(StrictBaseModel):
     route_group_name: str = ""
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
     sync_filter_query: str = ""
+    param_override: str = ""
     input_price_per_million: float = 0.0
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
@@ -43,6 +45,10 @@ class ModelGroup(StrictBaseModel):
     image_price_per_image: float = 0.0
     pricing_mode: Literal["tokens", "non_tokens"] = "tokens"
     items: list["ModelGroupItem"] = Field(default_factory=list)
+
+    _normalize_param_override = field_validator("param_override")(
+        validate_param_override
+    )
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroup":
@@ -95,7 +101,12 @@ class ModelGroupCreate(StrictBaseModel):
     route_group_id: str = ""
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
     sync_filter_query: str = ""
+    param_override: str = ""
     items: list[ModelGroupItemInput] = Field(default_factory=list)
+
+    _normalize_param_override = field_validator("param_override")(
+        validate_param_override
+    )
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroupCreate":
@@ -115,7 +126,13 @@ class ModelGroupUpdate(StrictBaseModel):
     route_group_id: str | None = None
     sync_filter_mode: ModelGroupSyncFilterMode | None = None
     sync_filter_query: str | None = None
+    param_override: str | None = None
     items: list[ModelGroupItemInput] | None = None
+
+    @field_validator("param_override")
+    @classmethod
+    def normalize_param_override(cls, value: str | None) -> str | None:
+        return validate_param_override(value) if value is not None else None
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroupUpdate":
