@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from ...core.model_group_status import (
     build_model_group_channel_lookups,
     evaluate_model_group_item,
@@ -204,6 +206,7 @@ class _GroupMappingMixin:
             sync_filter_mode=entity.sync_filter_mode,
             sync_filter_query=entity.sync_filter_query,
             param_override=entity.param_override,
+            headers=json.loads(entity.headers_json),
             input_price_per_million=(
                 float(price.input_price_per_million) if price is not None else 0.0
             ),

@@ -185,10 +185,14 @@ def test_model_group_crud_round_trip(client, admin_headers, create_model_group) 
     update = client.put(
         f"/api/admin/model-groups/{group['id']}",
         headers=admin_headers,
-        json={"name": "gpt-4.1"},
+        json={
+            "name": "gpt-4.1",
+            "headers": {" X-Group ": " first ", "x-group": " second "},
+        },
     )
     assert update.status_code == 200
     assert update.json()["name"] == "gpt-4.1"
+    assert update.json()["headers"] == {"x-group": "second"}
 
     delete = client.delete(
         f"/api/admin/model-groups/{group['id']}", headers=admin_headers

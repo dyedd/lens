@@ -3,21 +3,8 @@ import type { UpstreamParamOverrideDraft } from "@/lib/settingsTypes";
 
 export type HeaderItem = { key: string; value: string };
 
-export type UpstreamHeaderMatchType = "exact" | "regex";
-
-export type UpstreamHeaderRuleDraft = {
-  id: string;
-  enabled: boolean;
-  name: string;
-  matchType: UpstreamHeaderMatchType;
-  models: string;
-  pattern: string;
-  headers: HeaderItem[];
-};
-
 export type UpstreamHeadersDraft = {
   global: HeaderItem[];
-  rules: UpstreamHeaderRuleDraft[];
 };
 
 export type GatewayGeneralSettingsProps = {
@@ -50,20 +37,6 @@ export type UpstreamHeaderSettingsProps = {
   onAddGlobalHeader: () => void;
   onUpdateGlobalHeader: (index: number, patch: Partial<HeaderItem>) => void;
   onRemoveGlobalHeader: (index: number) => void;
-  onAddRule: () => void;
-  onUpdateRule: (
-    index: number,
-    patch: Partial<UpstreamHeaderRuleDraft>,
-  ) => void;
-  onRemoveRule: (index: number) => void;
-  onMoveRule: (index: number, direction: -1 | 1) => void;
-  onAddRuleHeader: (ruleIndex: number) => void;
-  onUpdateRuleHeader: (
-    ruleIndex: number,
-    headerIndex: number,
-    patch: Partial<HeaderItem>,
-  ) => void;
-  onRemoveRuleHeader: (ruleIndex: number, headerIndex: number) => void;
 };
 
 export type ParamOverrideSettingsProps = {

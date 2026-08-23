@@ -106,11 +106,7 @@ def test_update_settings_normalizes_upstream_headers_config(
             "items": [
                 {
                     "key": SETTING_UPSTREAM_HEADERS_CONFIG,
-                    "value": (
-                        '{"global":{" X-Test ":" value "},'
-                        '"rules":[{"name":" r ","models":[" gpt-4o ",""],'
-                        '"headers":{"Authorization":" Bearer token "}}]}'
-                    ),
+                    "value": ('{"global":{" X-Test ":" value "}}'),
                 }
             ]
         },
@@ -123,8 +119,7 @@ def test_update_settings_normalizes_upstream_headers_config(
         ]
     )
     assert stored["global"] == {"X-Test": "value"}
-    assert stored["rules"][0]["models"] == ["gpt-4o"]
-    assert stored["rules"][0]["headers"] == {"Authorization": "Bearer token"}
+    assert set(stored) == {"global"}
 
 
 def test_update_settings_rejects_model_param_override(

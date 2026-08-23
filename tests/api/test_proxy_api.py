@@ -408,6 +408,7 @@ def test_model_group_param_override_has_highest_priority(
     from lens_api.gateway.service import proxy_upstream
 
     captured_body: dict[str, Any] = {}
+    captured_headers: dict[str, str] = {}
 
     async def fake_send_upstream(
         _client: httpx.AsyncClient,
@@ -418,6 +419,7 @@ def test_model_group_param_override_has_highest_priority(
     ) -> httpx.Response:
         assert not stream
         captured_body.update(json.loads(body_bytes))
+        captured_headers.update(upstream.headers)
         return httpx.Response(
             500,
             json={"error": {"message": "stop after capture"}},
@@ -440,7 +442,13 @@ def test_model_group_param_override_has_highest_priority(
                             }
                         }
                     ),
-                }
+                },
+                {
+                    "key": "upstream_headers_config",
+                    "value": json.dumps(
+                        {"global": {"X-Priority": "global", "X-Global": "yes"}}
+                    ),
+                },
             ]
         },
     )
@@ -449,6 +457,10 @@ def test_model_group_param_override_has_highest_priority(
     site_payload["protocols"][0]["param_override"] = json.dumps(
         {"temperature": 0.5, "metadata": {"channel": True, "priority": "channel"}}
     )
+    site_payload["protocols"][0]["headers"] = {
+        "X-Priority": "channel",
+        "X-Channel": "yes",
+    }
     create_site(site_payload)
     group_response = client.post(
         "/api/admin/model-groups",
@@ -458,6 +470,7 @@ def test_model_group_param_override_has_highest_priority(
             "param_override": json.dumps(
                 {"temperature": 0.2, "metadata": {"group": True, "priority": "group"}}
             ),
+            "headers": {"X-Priority": "group", "X-Group": "yes"},
             "items": [_protocol_group_item("openai_chat", "gpt-4o")],
         },
     )
@@ -485,6 +498,11 @@ def test_model_group_param_override_has_highest_priority(
         "group": True,
         "priority": "group",
     }
+    headers = {key.lower(): value for key, value in captured_headers.items()}
+    assert headers["x-priority"] == "group"
+    assert headers["x-global"] == "yes"
+    assert headers["x-channel"] == "yes"
+    assert headers["x-group"] == "yes"
 
 
 def test_image_proxy_logs_non_token_billing(

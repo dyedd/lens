@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..channel_store import ChannelStore
@@ -174,6 +176,7 @@ class GroupRepository(
                 sync_filter_mode=payload.sync_filter_mode.value,
                 sync_filter_query=payload.sync_filter_query,
                 param_override=payload.param_override,
+                headers_json=json.dumps(payload.headers, ensure_ascii=True),
             )
             session.add(entity)
             await session.flush()
@@ -250,6 +253,8 @@ class GroupRepository(
                     entity.sync_filter_mode = value.value
                 elif key == "items":
                     continue
+                elif key == "headers":
+                    entity.headers_json = json.dumps(value, ensure_ascii=True)
                 elif key == "route_group_id":
                     entity.route_group_id = (
                         route_group.id if route_group is not None else ""

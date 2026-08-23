@@ -374,6 +374,7 @@ def _prepare_channel_request(
     user_agent: str | None,
     forwarded_headers: Mapping[str, str] | None,
     upstream_headers_config: Mapping[str, Any] | None,
+    model_group_headers: Mapping[str, str] | None,
     log_body_enabled: bool,
     max_request_body_bytes: int,
     path_suffix: str | None = None,
@@ -386,6 +387,7 @@ def _prepare_channel_request(
         user_agent=user_agent,
         forwarded_headers=forwarded_headers,
         upstream_headers_config=upstream_headers_config,
+        model_group_headers=model_group_headers,
         path_suffix=path_suffix,
     )
     if multipart_files is not None:

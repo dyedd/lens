@@ -74,13 +74,6 @@ export function GatewaySettingsSection({
           onAddGlobalHeader={settings.addGlobalHeader}
           onUpdateGlobalHeader={settings.updateGlobalHeader}
           onRemoveGlobalHeader={settings.removeGlobalHeader}
-          onAddRule={settings.addUpstreamHeaderRule}
-          onUpdateRule={settings.updateUpstreamHeaderRule}
-          onRemoveRule={settings.removeUpstreamHeaderRule}
-          onMoveRule={settings.moveUpstreamHeaderRule}
-          onAddRuleHeader={settings.addRuleHeader}
-          onUpdateRuleHeader={settings.updateRuleHeader}
-          onRemoveRuleHeader={settings.removeRuleHeader}
           upstreamParamOverrideConfig={draft.upstreamParamOverrideConfig}
           onGlobalParamOverrideChange={settings.updateGlobalParamOverride}
         />

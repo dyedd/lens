@@ -1,10 +1,18 @@
 "use client";
 
-import type { Dispatch, FormEventHandler, SetStateAction } from "react";
+import {
+  useState,
+  type Dispatch,
+  type FormEventHandler,
+  type SetStateAction,
+} from "react";
 
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
+import { Field, FieldLabel } from "@/components/ui/Field";
+import { HeaderRows } from "@/components/settings/gateway-settings/HeaderRows";
 import { Separator } from "@/components/ui/Separator";
+import { Textarea } from "@/components/ui/Textarea";
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api";
 import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
 import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
@@ -89,116 +97,193 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
     form,
     setForm,
   } = props;
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const existingItemKeys = new Set(form.items.map((item) => itemKey(item)));
 
   return (
-    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      <AppDialogContent
-        className="h-[92dvh] max-w-5xl sm:h-[88vh]"
-        title={
-          editingId
-            ? locale === "zh-CN"
-              ? "编辑模型组"
-              : "Edit group"
-            : locale === "zh-CN"
-              ? "新建模型组"
-              : "Create group"
-        }
+    <>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (!open) setAdvancedSettingsOpen(false);
+          setDialogOpen(open);
+        }}
       >
-        <form className="flex flex-col gap-4 pr-1" onSubmit={submit}>
-          <div className="flex flex-col gap-4">
-            <ModelGroupSettings
-              locale={locale}
-              form={form}
-              setForm={setForm}
-              routeTargetOptions={props.routeTargetOptions}
-              changeRouteTarget={props.changeRouteTarget}
-            />
+        <AppDialogContent
+          className="h-[92dvh] max-w-5xl sm:h-[88vh]"
+          title={
+            editingId
+              ? locale === "zh-CN"
+                ? "编辑模型组"
+                : "Edit group"
+              : locale === "zh-CN"
+                ? "新建模型组"
+                : "Create group"
+          }
+        >
+          <form className="flex flex-col gap-4 pr-1" onSubmit={submit}>
+            <div className="flex flex-col gap-4">
+              <ModelGroupSettings
+                locale={locale}
+                form={form}
+                setForm={setForm}
+                routeTargetOptions={props.routeTargetOptions}
+                changeRouteTarget={props.changeRouteTarget}
+                onOpenAdvanced={() => setAdvancedSettingsOpen(true)}
+              />
 
-            {!form.route_group_id ? (
-              <>
-                <Separator />
-                <div className="grid gap-3 xl:grid-cols-2">
-                  <section className="flex flex-col rounded-lg bg-muted/10">
-                    <ModelGroupCandidateToolbar
+              {!form.route_group_id ? (
+                <>
+                  <Separator />
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    <section className="flex flex-col rounded-lg bg-muted/10">
+                      <ModelGroupCandidateToolbar
+                        locale={locale}
+                        form={form}
+                        candidateSearchMode={props.candidateSearchMode}
+                        changeCandidateSearchMode={
+                          props.changeCandidateSearchMode
+                        }
+                        candidateSearch={props.candidateSearch}
+                        changeCandidateSearch={props.changeCandidateSearch}
+                        addMatchedItems={props.addMatchedItems}
+                        candidateRegexInvalid={props.candidateRegexInvalid}
+                        filteredCandidateCount={props.filteredCandidates.length}
+                        refetchCandidates={props.refetchCandidates}
+                        isFetchingCandidates={props.isFetchingCandidates}
+                        applySavedFilter={props.applySavedFilter}
+                        clearSavedFilter={props.clearSavedFilter}
+                      />
+                      <ModelGroupCandidateList
+                        locale={locale}
+                        groupedCandidates={props.groupedCandidates}
+                        expandedChannels={props.expandedChannels}
+                        existingItemKeys={existingItemKeys}
+                        toggleChannel={props.toggleChannel}
+                        addCandidate={props.addCandidate}
+                        candidateIsError={props.candidateIsError}
+                        candidateListError={props.candidateListError}
+                      />
+                    </section>
+                    <ModelGroupSelectedMembers
                       locale={locale}
-                      form={form}
-                      candidateSearchMode={props.candidateSearchMode}
-                      changeCandidateSearchMode={
-                        props.changeCandidateSearchMode
+                      strategy={form.strategy}
+                      foldedMembers={props.foldedMembers}
+                      disabledItemCount={props.disabledItemCount}
+                      invalidItemCount={props.invalidItemCount}
+                      removeInvalidItems={props.removeInvalidItems}
+                      removeDisabledMembers={props.removeDisabledMembers}
+                      clearMembers={props.clearMembers}
+                      setAllMembersEnabled={props.setAllMembersEnabled}
+                      memberStatusFilter={props.memberStatusFilter}
+                      setMemberStatusFilter={props.setMemberStatusFilter}
+                      visibleFoldedMembers={props.visibleFoldedMembers}
+                      visibleChannelGroups={props.visibleChannelGroups}
+                      toggleChannelMembers={props.toggleChannelMembers}
+                      toggleFoldedMember={props.toggleFoldedMember}
+                      removeFoldedMember={props.removeFoldedMember}
+                      moveChannelGroup={props.moveChannelGroup}
+                      moveFoldedMember={props.moveFoldedMember}
+                      moveFoldedMemberWithinChannel={
+                        props.moveFoldedMemberWithinChannel
                       }
-                      candidateSearch={props.candidateSearch}
-                      changeCandidateSearch={props.changeCandidateSearch}
-                      addMatchedItems={props.addMatchedItems}
-                      candidateRegexInvalid={props.candidateRegexInvalid}
-                      filteredCandidateCount={props.filteredCandidates.length}
-                      refetchCandidates={props.refetchCandidates}
-                      isFetchingCandidates={props.isFetchingCandidates}
-                      applySavedFilter={props.applySavedFilter}
-                      clearSavedFilter={props.clearSavedFilter}
                     />
-                    <ModelGroupCandidateList
-                      locale={locale}
-                      groupedCandidates={props.groupedCandidates}
-                      expandedChannels={props.expandedChannels}
-                      existingItemKeys={existingItemKeys}
-                      toggleChannel={props.toggleChannel}
-                      addCandidate={props.addCandidate}
-                      candidateIsError={props.candidateIsError}
-                      candidateListError={props.candidateListError}
-                    />
-                  </section>
-                  <ModelGroupSelectedMembers
-                    locale={locale}
-                    strategy={form.strategy}
-                    foldedMembers={props.foldedMembers}
-                    disabledItemCount={props.disabledItemCount}
-                    invalidItemCount={props.invalidItemCount}
-                    removeInvalidItems={props.removeInvalidItems}
-                    removeDisabledMembers={props.removeDisabledMembers}
-                    clearMembers={props.clearMembers}
-                    setAllMembersEnabled={props.setAllMembersEnabled}
-                    memberStatusFilter={props.memberStatusFilter}
-                    setMemberStatusFilter={props.setMemberStatusFilter}
-                    visibleFoldedMembers={props.visibleFoldedMembers}
-                    visibleChannelGroups={props.visibleChannelGroups}
-                    toggleChannelMembers={props.toggleChannelMembers}
-                    toggleFoldedMember={props.toggleFoldedMember}
-                    removeFoldedMember={props.removeFoldedMember}
-                    moveChannelGroup={props.moveChannelGroup}
-                    moveFoldedMember={props.moveFoldedMember}
-                    moveFoldedMemberWithinChannel={
-                      props.moveFoldedMemberWithinChannel
-                    }
-                  />
-                </div>
-              </>
-            ) : null}
-          </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
 
-          <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+            <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setDialogOpen(false)}
+                >
+                  {locale === "zh-CN" ? "取消" : "Cancel"}
+                </Button>
+                <Button type="submit">
+                  {editingId
+                    ? locale === "zh-CN"
+                      ? "保存模型组"
+                      : "Save group"
+                    : locale === "zh-CN"
+                      ? "创建模型组"
+                      : "Create group"}
+                </Button>
+              </div>
+            </div>
+          </form>
+        </AppDialogContent>
+      </Dialog>
+
+      <Dialog
+        open={advancedSettingsOpen}
+        onOpenChange={setAdvancedSettingsOpen}
+      >
+        <AppDialogContent
+          className="max-w-2xl"
+          title={locale === "zh-CN" ? "更多设置" : "More settings"}
+        >
+          <div className="grid gap-5">
+            <Field>
+              <FieldLabel htmlFor="group-param-override">
+                {locale === "zh-CN" ? "参数覆盖" : "Param Override"}
+              </FieldLabel>
+              <Textarea
+                id="group-param-override"
+                className="min-h-32 font-mono text-sm"
+                value={form.param_override}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    param_override: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <HeaderRows
+              title={locale === "zh-CN" ? "请求头" : "Request headers"}
+              headers={form.headers}
+              locale={locale}
+              onAdd={() =>
+                setForm((current) => ({
+                  ...current,
+                  headers: [...current.headers, { key: "", value: "" }],
+                }))
+              }
+              onUpdate={(index, patch) =>
+                setForm((current) => ({
+                  ...current,
+                  headers: current.headers.map((header, currentIndex) =>
+                    currentIndex === index ? { ...header, ...patch } : header,
+                  ),
+                }))
+              }
+              onRemove={(index) =>
+                setForm((current) => ({
+                  ...current,
+                  headers:
+                    current.headers.length > 1
+                      ? current.headers.filter(
+                          (_, currentIndex) => currentIndex !== index,
+                        )
+                      : current.headers,
+                }))
+              }
+            />
+            <div className="flex justify-end">
               <Button
-                variant="outline"
                 type="button"
-                onClick={() => setDialogOpen(false)}
+                onClick={() => setAdvancedSettingsOpen(false)}
               >
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button type="submit">
-                {editingId
-                  ? locale === "zh-CN"
-                    ? "保存模型组"
-                    : "Save group"
-                  : locale === "zh-CN"
-                    ? "创建模型组"
-                    : "Create group"}
+                {locale === "zh-CN" ? "完成" : "Done"}
               </Button>
             </div>
           </div>
-        </form>
-      </AppDialogContent>
-    </Dialog>
+        </AppDialogContent>
+      </Dialog>
+    </>
   );
 }
 
