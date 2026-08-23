@@ -39,6 +39,7 @@ export type FormState = {
   route_group_id: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
   sync_filter_query: string;
+  param_override: string;
   input_price_per_million: string;
   output_price_per_million: string;
   cache_read_price_per_million: string;
@@ -132,6 +133,7 @@ export const EMPTY_FORM: FormState = {
   route_group_id: "",
   sync_filter_mode: "",
   sync_filter_query: "",
+  param_override: "",
   input_price_per_million: "0",
   output_price_per_million: "0",
   cache_read_price_per_million: "0",
@@ -225,6 +227,7 @@ export function toForm(group: ModelGroup): FormState {
     route_group_id: group.route_group_id ?? "",
     sync_filter_mode: group.sync_filter_mode,
     sync_filter_query: group.sync_filter_query,
+    param_override: group.param_override,
     input_price_per_million: String(group.input_price_per_million),
     output_price_per_million: String(group.output_price_per_million),
     cache_read_price_per_million: String(group.cache_read_price_per_million),
@@ -266,6 +269,7 @@ export function toPayload(form: FormState): ModelGroupPayload {
     sync_filter_query: form.route_group_id.trim()
       ? ""
       : form.sync_filter_query.trim(),
+    param_override: form.param_override.trim(),
     items: form.items.map((item) => ({
       channel_id: item.channel_id,
       credential_id: item.credential_id,

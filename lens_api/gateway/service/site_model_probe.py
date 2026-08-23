@@ -294,7 +294,11 @@ def _apply_site_model_probe_param_override(
     channel: ChannelConfig, body: dict[str, Any], payload: SiteModelTestRequest
 ) -> dict[str, Any] | SiteModelTestResult:
     try:
-        prepared_body = _apply_param_override(channel, body)
+        prepared_body = _apply_param_override(
+            body,
+            channel.param_override,
+            source=f"channel {channel.name}",
+        )
     except UpstreamRequestError as exc:
         return SiteModelTestResult(
             success=False,

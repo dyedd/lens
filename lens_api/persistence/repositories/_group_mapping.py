@@ -203,6 +203,7 @@ class _GroupMappingMixin:
             route_group_name=route_group_name,
             sync_filter_mode=entity.sync_filter_mode,
             sync_filter_query=entity.sync_filter_query,
+            param_override=entity.param_override,
             input_price_per_million=(
                 float(price.input_price_per_million) if price is not None else 0.0
             ),

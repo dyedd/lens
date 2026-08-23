@@ -2,10 +2,7 @@
 
 import { FieldGroup } from "@/components/ui/Field";
 import { useI18n } from "@/lib/I18nContext";
-import type {
-  UpstreamParamOverrideDraft,
-  UpstreamParamOverrideRuleDraft,
-} from "@/lib/settingsTypes";
+import type { UpstreamParamOverrideDraft } from "@/lib/settingsTypes";
 
 import { GatewayGeneralSettings } from "./gateway-settings/GatewayGeneralSettings";
 import type {
@@ -57,13 +54,6 @@ interface GatewaySettingsProps {
   ) => void;
   onRemoveRuleHeader: (ruleIndex: number, headerIndex: number) => void;
   onGlobalParamOverrideChange: (value: string) => void;
-  onAddParamOverrideRule: () => void;
-  onUpdateParamOverrideRule: (
-    index: number,
-    patch: Partial<UpstreamParamOverrideRuleDraft>,
-  ) => void;
-  onRemoveParamOverrideRule: (index: number) => void;
-  onMoveParamOverrideRule: (index: number, direction: -1 | 1) => void;
 }
 
 /** Renders gateway proxy, CORS, logging, header, and override settings. */
@@ -101,10 +91,6 @@ export function GatewaySettings({
   onUpdateRuleHeader,
   onRemoveRuleHeader,
   onGlobalParamOverrideChange,
-  onAddParamOverrideRule,
-  onUpdateParamOverrideRule,
-  onRemoveParamOverrideRule,
-  onMoveParamOverrideRule,
 }: GatewaySettingsProps) {
   const { locale } = useI18n();
 
@@ -151,10 +137,6 @@ export function GatewaySettings({
         locale={locale}
         config={upstreamParamOverrideConfig}
         onGlobalChange={onGlobalParamOverrideChange}
-        onAddRule={onAddParamOverrideRule}
-        onUpdateRule={onUpdateParamOverrideRule}
-        onRemoveRule={onRemoveParamOverrideRule}
-        onMoveRule={onMoveParamOverrideRule}
       />
     </FieldGroup>
   );
