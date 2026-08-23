@@ -1,8 +1,14 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Separator } from "@/components/ui/Separator";
+import { Textarea } from "@/components/ui/Textarea";
 import type { ModelGroup } from "@/lib/api";
 import { EditablePriceRow, StrategyToggle } from "./ModelGroupEditorFields";
 import type { FormState } from "./modelGroupUtils";
@@ -80,6 +86,27 @@ export function ModelGroupSettings({
                 setForm((current) => ({ ...current, strategy: value }))
               }
             />
+          </Field>
+          <Field className="xl:col-span-2">
+            <FieldLabel htmlFor="group-param-override">
+              {locale === "zh-CN" ? "参数覆盖" : "Param Override"}
+            </FieldLabel>
+            <Textarea
+              id="group-param-override"
+              className="min-h-24 font-mono text-sm"
+              value={form.param_override}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  param_override: event.target.value,
+                }))
+              }
+            />
+            <FieldDescription>
+              {locale === "zh-CN"
+                ? "JSON 对象，在渠道参数覆盖之后合并；不可覆盖 model。"
+                : "JSON object merged after channel overrides; cannot override model."}
+            </FieldDescription>
           </Field>
         </FieldGroup>
       </section>

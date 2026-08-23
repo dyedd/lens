@@ -137,6 +137,7 @@ async def _load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                     "route_group_name": route_group_names.get(row.route_group_id, ""),
                     "sync_filter_mode": row.sync_filter_mode,
                     "sync_filter_query": row.sync_filter_query,
+                    "param_override": row.param_override,
                     "input_price_per_million": (
                         price.input_price_per_million if price is not None else 0.0
                     ),

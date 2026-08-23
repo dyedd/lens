@@ -1,4 +1,3 @@
-import json
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
@@ -8,6 +7,7 @@ from .model_groups import (
     ModelGroupEnsureFromSiteResponse,
     ModelGroupEnsureModelInput,
 )
+from .param_override import validate_param_override
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
 
 
@@ -46,24 +46,6 @@ def _normalize_site_tags(values: list[str]) -> list[str]:
 
 SiteTags = Annotated[list[str], AfterValidator(_normalize_site_tags)]
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
-
-
-def _validate_param_override(value: str) -> str:
-    normalized = value.strip()
-    if not normalized:
-        return ""
-    try:
-        override = json.loads(normalized)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Invalid param override JSON: {exc.msg} at line {exc.lineno} "
-            f"column {exc.colno}"
-        ) from exc
-    if not isinstance(override, dict):
-        raise ValueError("Param override must be a JSON object")
-    if "model" in override:
-        raise ValueError("Param override cannot override model")
-    return normalized
 
 
 _validate_match_regex = field_validator("match_regex")(_validate_regex_pattern)
@@ -191,7 +173,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
     )
 
     _normalize_param_override = field_validator("param_override")(
-        _validate_param_override
+        validate_param_override
     )
 
 
@@ -309,7 +291,7 @@ class SiteImportProtocolInput(StrictBaseModel):
     )
 
     _normalize_param_override = field_validator("param_override")(
-        _validate_param_override
+        validate_param_override
     )
 
 

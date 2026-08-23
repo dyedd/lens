@@ -207,6 +207,7 @@ class ModelGroupEntity(Base):
         String(20), nullable=False, default=""
     )
     sync_filter_query: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class ModelGroupItemEntity(Base):

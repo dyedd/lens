@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
@@ -107,10 +106,10 @@ def _apply_glm_chat_reasoning_compat(
 
 
 def _apply_param_override(
-    channel: ChannelConfig, body: dict[str, Any]
+    body: dict[str, Any], raw_override: str, *, source: str
 ) -> dict[str, Any]:
-    """Apply a channel's validated JSON parameter override."""
-    raw_override = channel.param_override.strip()
+    """Apply a validated parameter override from a routing layer."""
+    raw_override = raw_override.strip()
     if not raw_override:
         return body
 
@@ -120,7 +119,7 @@ def _apply_param_override(
         raise UpstreamRequestError(
             status_code=400,
             detail=(
-                f"Invalid param override JSON for channel {channel.name}: "
+                f"Invalid param override JSON for {source}: "
                 f"{exc.msg} at line {exc.lineno} column {exc.colno}"
             ),
             router_status_code=None,
@@ -129,18 +128,14 @@ def _apply_param_override(
     if not isinstance(override, dict):
         raise UpstreamRequestError(
             status_code=400,
-            detail=(
-                f"Invalid param override for channel {channel.name}: "
-                "expected a JSON object"
-            ),
+            detail=f"Invalid param override for {source}: expected a JSON object",
             router_status_code=None,
         )
     if "model" in override:
         raise UpstreamRequestError(
             status_code=400,
             detail=(
-                f"Invalid param override for channel {channel.name}: "
-                "model cannot be overridden"
+                f"Invalid param override for {source}: " "model cannot be overridden"
             ),
             router_status_code=None,
         )
@@ -151,18 +146,14 @@ def _apply_param_override(
 def _apply_global_param_override(
     body: dict[str, Any],
     config: Mapping[str, Any] | None,
-    model_name: str,
 ) -> dict[str, Any]:
-    """Apply global and first-match model parameter overrides."""
+    """Apply the global parameter override."""
     merged = dict(body)
     if not config:
         return merged
     global_override = config.get("global")
     if isinstance(global_override, Mapping):
         merged = _deep_merge_json_objects(merged, global_override)
-    matched_rules = _matching_param_override_rules(config, model_name)
-    for rule_override in reversed(matched_rules):
-        merged = _deep_merge_json_objects(merged, rule_override)
     return merged
 
 
@@ -242,34 +233,3 @@ def _deep_merge_json_objects(
         else:
             merged[key] = deepcopy(override_value)
     return merged
-
-
-def _matching_param_override_rules(
-    config: Mapping[str, Any], model_name: str
-) -> list[dict[str, Any]]:
-    matched: list[dict[str, Any]] = []
-    normalized_model = (model_name or "").strip()
-    if not normalized_model:
-        return matched
-    for rule in config.get("rules", []):
-        if not rule.get("enabled", True):
-            continue
-        if not _param_override_rule_matches(rule, normalized_model):
-            continue
-        override = rule.get("override")
-        if isinstance(override, Mapping):
-            matched.append(dict(override))
-    return matched
-
-
-def _param_override_rule_matches(rule: Mapping[str, Any], model_name: str) -> bool:
-    match_type = rule.get("match_type", "exact")
-    if match_type == "regex":
-        pattern = str(rule.get("pattern", "")).strip()
-        if not pattern:
-            return False
-        try:
-            return bool(re.search(pattern, model_name))
-        except re.error:
-            return False
-    return model_name in rule.get("models", [])

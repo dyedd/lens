@@ -1,7 +1,5 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 
-import { type UpstreamParamOverrideRuleDraft } from "@/lib/settingsTypes";
-
 import { type SettingsDraft } from "./settingsDraft";
 import {
   createEmptyUpstreamHeaderRule,
@@ -9,7 +7,6 @@ import {
   type UpstreamHeaderRuleDraft,
   type UpstreamHeadersDraft,
 } from "./upstreamHeaderConfig";
-import { createEmptyUpstreamParamOverrideRule } from "./upstreamParamOverride";
 
 /** Provide stable immutable update actions for a settings draft. */
 export function useSettingsDraftActions(
@@ -204,55 +201,6 @@ export function useSettingsDraftActions(
     [updateUpstreamParamOverrideConfig],
   );
 
-  const addParamOverrideRule = useCallback(() => {
-    updateUpstreamParamOverrideConfig((current) => ({
-      ...current,
-      rules: [...current.rules, createEmptyUpstreamParamOverrideRule()],
-    }));
-  }, [updateUpstreamParamOverrideConfig]);
-
-  const updateParamOverrideRule = useCallback(
-    (index: number, patch: Partial<UpstreamParamOverrideRuleDraft>) => {
-      updateUpstreamParamOverrideConfig((current) => ({
-        ...current,
-        rules: current.rules.map((rule, ruleIndex) =>
-          ruleIndex === index ? { ...rule, ...patch } : rule,
-        ),
-      }));
-    },
-    [updateUpstreamParamOverrideConfig],
-  );
-
-  const removeParamOverrideRule = useCallback(
-    (index: number) => {
-      updateUpstreamParamOverrideConfig((current) => ({
-        ...current,
-        rules: current.rules.filter((_, ruleIndex) => ruleIndex !== index),
-      }));
-    },
-    [updateUpstreamParamOverrideConfig],
-  );
-
-  const moveParamOverrideRule = useCallback(
-    (index: number, direction: -1 | 1) => {
-      updateUpstreamParamOverrideConfig((current) => {
-        const nextIndex = index + direction;
-        if (nextIndex < 0 || nextIndex >= current.rules.length) {
-          return current;
-        }
-        const rules = [...current.rules];
-        const rule = rules[index];
-        if (!rule) {
-          return current;
-        }
-        rules.splice(index, 1);
-        rules.splice(nextIndex, 0, rule);
-        return { ...current, rules };
-      });
-    },
-    [updateUpstreamParamOverrideConfig],
-  );
-
   return {
     setDraftValue,
     addGlobalHeader,
@@ -266,9 +214,5 @@ export function useSettingsDraftActions(
     updateRuleHeader,
     removeRuleHeader,
     updateGlobalParamOverride,
-    addParamOverrideRule,
-    updateParamOverrideRule,
-    removeParamOverrideRule,
-    moveParamOverrideRule,
   };
 }

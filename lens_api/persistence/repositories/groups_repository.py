@@ -173,6 +173,7 @@ class GroupRepository(
                 route_group_id=route_group.id if route_group is not None else "",
                 sync_filter_mode=payload.sync_filter_mode.value,
                 sync_filter_query=payload.sync_filter_query,
+                param_override=payload.param_override,
             )
             session.add(entity)
             await session.flush()

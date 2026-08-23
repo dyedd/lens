@@ -84,7 +84,6 @@ from .protocols import (
     RequestLogStatusFilter,
     RoutingStrategy,
     UpstreamHeaderRuleMatchType,
-    UpstreamParamOverrideRuleMatchType,
 )
 from .request_logs import (
     RequestLogAttempt,
@@ -140,7 +139,6 @@ from .upstream_rules import (
     UpstreamHeaderRule,
     UpstreamHeadersConfig,
     UpstreamParamOverrideConfig,
-    UpstreamParamOverrideRule,
     normalize_upstream_headers_config_json,
     normalize_upstream_param_override_config_json,
 )
@@ -159,7 +157,6 @@ __all__ = [
     "RoutingStrategy",
     "ModelGroupSyncFilterMode",
     "UpstreamHeaderRuleMatchType",
-    "UpstreamParamOverrideRuleMatchType",
     "CronjobStatus",
     "CronjobScheduleType",
     "ChannelKeyItem",
@@ -227,7 +224,6 @@ __all__ = [
     "UpstreamHeaderRule",
     "UpstreamHeadersConfig",
     "normalize_upstream_headers_config_json",
-    "UpstreamParamOverrideRule",
     "UpstreamParamOverrideConfig",
     "normalize_upstream_param_override_config_json",
     "ModelGroupCandidateItem",

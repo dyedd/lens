@@ -4,10 +4,7 @@ from typing import Any
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern
-from .protocols import (
-    UpstreamHeaderRuleMatchType,
-    UpstreamParamOverrideRuleMatchType,
-)
+from .protocols import UpstreamHeaderRuleMatchType
 
 
 def _normalize_header_map(headers: dict[str, str]) -> dict[str, str]:
@@ -95,52 +92,10 @@ def normalize_upstream_headers_config_json(value: str) -> str:
     return json.dumps(config.model_dump(mode="json", by_alias=True), ensure_ascii=True)
 
 
-class UpstreamParamOverrideRule(StrictBaseModel):
-    enabled: bool = True
-    name: str = ""
-    match_type: UpstreamParamOverrideRuleMatchType = (
-        UpstreamParamOverrideRuleMatchType.EXACT
-    )
-    models: list[str] = Field(default_factory=list)
-    pattern: str = ""
-    override: dict[str, Any] = Field(default_factory=dict)
-
-    @field_validator("name", "pattern")
-    @classmethod
-    def normalize_text(cls, value: str) -> str:
-        return value.strip()
-
-    @field_validator("models")
-    @classmethod
-    def normalize_models(cls, models: list[str]) -> list[str]:
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for item in models:
-            model = str(item).strip()
-            if not model or model in seen:
-                continue
-            seen.add(model)
-            normalized.append(model)
-        return normalized
-
-    @model_validator(mode="after")
-    def validate_matcher(self) -> "UpstreamParamOverrideRule":
-        if "model" in self.override:
-            raise ValueError("model cannot be overridden")
-        if self.match_type == UpstreamParamOverrideRuleMatchType.REGEX:
-            if not self.pattern:
-                raise ValueError("Regex upstream param override rule requires pattern")
-            _validate_regex_pattern(
-                self.pattern, error_label="upstream param override rule regex"
-            )
-        return self
-
-
 class UpstreamParamOverrideConfig(StrictBaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     global_override: dict[str, Any] = Field(default_factory=dict, alias="global")
-    rules: list[UpstreamParamOverrideRule] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_global_override(self) -> "UpstreamParamOverrideConfig":

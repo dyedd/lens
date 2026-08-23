@@ -71,11 +71,6 @@ class UpstreamHeaderRuleMatchType(str, Enum):
     REGEX = "regex"
 
 
-class UpstreamParamOverrideRuleMatchType(str, Enum):
-    EXACT = "exact"
-    REGEX = "regex"
-
-
 class CronjobStatus(str, Enum):
     IDLE = "idle"
     RUNNING = "running"

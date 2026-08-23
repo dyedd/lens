@@ -398,6 +398,95 @@ def test_responses_proxy_preserves_input_shape(
     ]
 
 
+def test_model_group_param_override_has_highest_priority(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    captured_body: dict[str, Any] = {}
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        captured_body.update(json.loads(body_bytes))
+        return httpx.Response(
+            500,
+            json={"error": {"message": "stop after capture"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={
+            "items": [
+                {
+                    "key": "upstream_param_override_config",
+                    "value": json.dumps(
+                        {
+                            "global": {
+                                "temperature": 0.8,
+                                "metadata": {"global": True, "priority": "global"},
+                            }
+                        }
+                    ),
+                }
+            ]
+        },
+    )
+    assert settings.status_code == 200, settings.text
+    site_payload = valid_site_payload(model_name="gpt-4o")
+    site_payload["protocols"][0]["param_override"] = json.dumps(
+        {"temperature": 0.5, "metadata": {"channel": True, "priority": "channel"}}
+    )
+    create_site(site_payload)
+    group_response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={
+            "name": "client-model",
+            "param_override": json.dumps(
+                {"temperature": 0.2, "metadata": {"group": True, "priority": "group"}}
+            ),
+            "items": [_protocol_group_item("openai_chat", "gpt-4o")],
+        },
+    )
+    assert group_response.status_code == 201, group_response.text
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "client-model",
+            "messages": [],
+            "temperature": 1.0,
+            "metadata": {"request": True, "priority": "request"},
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    assert captured_body["model"] == "gpt-4o"
+    assert captured_body["temperature"] == 0.2
+    assert captured_body["metadata"] == {
+        "request": True,
+        "global": True,
+        "channel": True,
+        "group": True,
+        "priority": "group",
+    }
+
+
 def test_image_proxy_logs_non_token_billing(
     client,
     admin_headers,

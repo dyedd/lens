@@ -1,8 +1,5 @@
 import type { Locale } from "@/lib/I18nContext";
-import type {
-  UpstreamParamOverrideDraft,
-  UpstreamParamOverrideRuleDraft,
-} from "@/lib/settingsTypes";
+import type { UpstreamParamOverrideDraft } from "@/lib/settingsTypes";
 
 export type HeaderItem = { key: string; value: string };
 
@@ -73,11 +70,4 @@ export type ParamOverrideSettingsProps = {
   locale: Locale;
   config: UpstreamParamOverrideDraft;
   onGlobalChange: (value: string) => void;
-  onAddRule: () => void;
-  onUpdateRule: (
-    index: number,
-    patch: Partial<UpstreamParamOverrideRuleDraft>,
-  ) => void;
-  onRemoveRule: (index: number) => void;
-  onMoveRule: (index: number, direction: -1 | 1) => void;
 };

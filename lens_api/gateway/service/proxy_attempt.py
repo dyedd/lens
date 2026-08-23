@@ -187,9 +187,18 @@ async def _try_target(
         upstream_body = _apply_global_param_override(
             upstream_body,
             runtime["upstream_param_override_config"],
-            target.model_name or "",
         )
-        upstream_body = _apply_param_override(channel, upstream_body)
+        upstream_body = _apply_param_override(
+            upstream_body,
+            channel.param_override,
+            source=f"channel {channel.name}",
+        )
+        if plan.requested_group is not None:
+            upstream_body = _apply_param_override(
+                upstream_body,
+                plan.requested_group.param_override,
+                source=f"model group {plan.requested_group.name}",
+            )
         upstream_body = _apply_deepseek_thinking_compat(channel, upstream_body)
         upstream_body = _apply_glm_chat_reasoning_compat(channel, upstream_body, body)
     except UpstreamRequestError as exc:
