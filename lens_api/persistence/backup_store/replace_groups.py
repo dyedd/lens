@@ -137,6 +137,7 @@ async def _replace_groups(
                 sync_filter_mode=group.sync_filter_mode.value,
                 sync_filter_query=group.sync_filter_query,
                 param_override=group.param_override,
+                headers_json=json.dumps(group.headers, ensure_ascii=True),
             )
         )
 

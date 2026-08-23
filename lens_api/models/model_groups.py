@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from .common import StrictBaseModel, _validate_regex_pattern
+from .headers import normalize_header_map
 from .param_override import validate_param_override
 from .protocols import (
     ModelGroupSyncFilterMode,
@@ -38,6 +39,7 @@ class ModelGroup(StrictBaseModel):
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
     sync_filter_query: str = ""
     param_override: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
     input_price_per_million: float = 0.0
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
@@ -49,6 +51,7 @@ class ModelGroup(StrictBaseModel):
     _normalize_param_override = field_validator("param_override")(
         validate_param_override
     )
+    _normalize_headers = field_validator("headers")(normalize_header_map)
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroup":
@@ -102,11 +105,13 @@ class ModelGroupCreate(StrictBaseModel):
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
     sync_filter_query: str = ""
     param_override: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
     items: list[ModelGroupItemInput] = Field(default_factory=list)
 
     _normalize_param_override = field_validator("param_override")(
         validate_param_override
     )
+    _normalize_headers = field_validator("headers")(normalize_header_map)
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroupCreate":
@@ -127,12 +132,18 @@ class ModelGroupUpdate(StrictBaseModel):
     sync_filter_mode: ModelGroupSyncFilterMode | None = None
     sync_filter_query: str | None = None
     param_override: str | None = None
+    headers: dict[str, str] | None = None
     items: list[ModelGroupItemInput] | None = None
 
     @field_validator("param_override")
     @classmethod
     def normalize_param_override(cls, value: str | None) -> str | None:
         return validate_param_override(value) if value is not None else None
+
+    @field_validator("headers")
+    @classmethod
+    def normalize_headers(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        return normalize_header_map(value) if value is not None else None
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroupUpdate":

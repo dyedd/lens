@@ -1,4 +1,4 @@
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/Field";
+import { Field, FieldLabel } from "@/components/ui/Field";
 import { Textarea } from "@/components/ui/Textarea";
 import { titleForLocale } from "@/lib/I18nContext";
 
@@ -22,13 +22,6 @@ export function ParamOverrideSettings({
           onChange={(event) => onGlobalChange(event.target.value)}
           placeholder={'{\n  "stream_options": { "include_usage": true }\n}'}
         />
-        <FieldDescription>
-          {titleForLocale(
-            locale,
-            "JSON 对象，深合并进所有协议的上游请求体；不可覆盖 model。",
-            "JSON object, deep-merged into all protocols' upstream body; cannot override model.",
-          )}
-        </FieldDescription>
       </Field>
     </div>
   );

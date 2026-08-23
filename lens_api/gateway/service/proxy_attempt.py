@@ -228,6 +228,11 @@ async def _try_target(
             user_agent=upstream_user_agent,
             forwarded_headers=inbound_headers,
             upstream_headers_config=runtime["upstream_headers_config"],
+            model_group_headers=(
+                plan.requested_group.headers
+                if plan.requested_group is not None
+                else None
+            ),
             log_body_enabled=log_body_enabled,
             max_request_body_bytes=int(runtime["max_request_body_bytes"]),
             path_suffix=path_suffix,

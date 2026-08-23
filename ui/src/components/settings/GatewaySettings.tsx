@@ -7,7 +7,6 @@ import type { UpstreamParamOverrideDraft } from "@/lib/settingsTypes";
 import { GatewayGeneralSettings } from "./gateway-settings/GatewayGeneralSettings";
 import type {
   HeaderItem,
-  UpstreamHeaderRuleDraft,
   UpstreamHeadersDraft,
 } from "./gateway-settings/gatewaySettingsTypes";
 import { ParamOverrideSettings } from "./gateway-settings/ParamOverrideSettings";
@@ -39,20 +38,6 @@ interface GatewaySettingsProps {
   onAddGlobalHeader: () => void;
   onUpdateGlobalHeader: (index: number, patch: Partial<HeaderItem>) => void;
   onRemoveGlobalHeader: (index: number) => void;
-  onAddRule: () => void;
-  onUpdateRule: (
-    index: number,
-    patch: Partial<UpstreamHeaderRuleDraft>,
-  ) => void;
-  onRemoveRule: (index: number) => void;
-  onMoveRule: (index: number, direction: -1 | 1) => void;
-  onAddRuleHeader: (ruleIndex: number) => void;
-  onUpdateRuleHeader: (
-    ruleIndex: number,
-    headerIndex: number,
-    patch: Partial<HeaderItem>,
-  ) => void;
-  onRemoveRuleHeader: (ruleIndex: number, headerIndex: number) => void;
   onGlobalParamOverrideChange: (value: string) => void;
 }
 
@@ -83,13 +68,6 @@ export function GatewaySettings({
   onAddGlobalHeader,
   onUpdateGlobalHeader,
   onRemoveGlobalHeader,
-  onAddRule,
-  onUpdateRule,
-  onRemoveRule,
-  onMoveRule,
-  onAddRuleHeader,
-  onUpdateRuleHeader,
-  onRemoveRuleHeader,
   onGlobalParamOverrideChange,
 }: GatewaySettingsProps) {
   const { locale } = useI18n();
@@ -125,13 +103,6 @@ export function GatewaySettings({
         onAddGlobalHeader={onAddGlobalHeader}
         onUpdateGlobalHeader={onUpdateGlobalHeader}
         onRemoveGlobalHeader={onRemoveGlobalHeader}
-        onAddRule={onAddRule}
-        onUpdateRule={onUpdateRule}
-        onRemoveRule={onRemoveRule}
-        onMoveRule={onMoveRule}
-        onAddRuleHeader={onAddRuleHeader}
-        onUpdateRuleHeader={onUpdateRuleHeader}
-        onRemoveRuleHeader={onRemoveRuleHeader}
       />
       <ParamOverrideSettings
         locale={locale}

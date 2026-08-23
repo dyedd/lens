@@ -1,6 +1,5 @@
-from dataclasses import dataclass
 from collections.abc import Mapping
-import re
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -48,6 +47,7 @@ def build_upstream_request(
     user_agent: str | None = None,
     forwarded_headers: Mapping[str, str] | None = None,
     upstream_headers_config: Mapping[str, Any] | None = None,
+    model_group_headers: Mapping[str, str] | None = None,
     path_suffix: str | None = None,
 ) -> UpstreamRequest:
     """Build an authenticated request for an upstream channel."""
@@ -75,7 +75,7 @@ def build_upstream_request(
                 channel.headers,
                 user_agent=user_agent,
                 upstream_headers_config=upstream_headers_config,
-                model_name=model_name,
+                model_group_headers=model_group_headers,
             ),
             json_body=payload,
         )
@@ -108,7 +108,7 @@ def build_upstream_request(
             channel.headers,
             user_agent=user_agent,
             upstream_headers_config=upstream_headers_config,
-            model_name=str(body.get("model") or ""),
+            model_group_headers=model_group_headers,
         ),
         json_body=dict(body),
     )
@@ -119,19 +119,16 @@ def build_upstream_headers(
     channel_headers: dict[str, str],
     user_agent: str | None = None,
     upstream_headers_config: Mapping[str, Any] | None = None,
-    model_name: str | None = None,
+    model_group_headers: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-    """Merge default, configured, and model-specific upstream headers."""
+    """Merge default, global, channel, and model-group upstream headers."""
     headers: dict[str, str] = {}
     _merge_headers(headers, default_headers)
     if user_agent and not any(key.lower() == "user-agent" for key in channel_headers):
         _set_header(headers, "user-agent", user_agent)
     _merge_headers(headers, _upstream_global_headers(upstream_headers_config))
-    matched_rules = _matching_upstream_rule_headers(upstream_headers_config, model_name)
-    # earlier rules take precedence (first matching rule wins on conflict)
-    for rule_headers in reversed(matched_rules):
-        _merge_headers(headers, rule_headers)
     _merge_headers(headers, channel_headers)
+    _merge_headers(headers, model_group_headers)
     return headers
 
 
@@ -160,40 +157,6 @@ def _upstream_global_headers(
     if not upstream_headers_config:
         return None
     return upstream_headers_config.get("global")
-
-
-def _matching_upstream_rule_headers(
-    upstream_headers_config: Mapping[str, Any] | None,
-    model_name: str | None,
-) -> list[dict[str, str]]:
-    if not upstream_headers_config:
-        return []
-    rules = upstream_headers_config.get("rules", [])
-    matched: list[dict[str, str]] = []
-    normalized_model = (model_name or "").strip()
-    if not normalized_model:
-        return []
-    for rule in rules:
-        if not rule.get("enabled", True):
-            continue
-        if not _upstream_header_rule_matches(rule, normalized_model):
-            continue
-        matched.append(rule["headers"])
-    return matched
-
-
-def _upstream_header_rule_matches(rule: dict[str, Any], model_name: str) -> bool:
-    match_type = rule.get("match_type", "exact")
-    if match_type == "regex":
-        pattern = rule.get("pattern", "").strip()
-        if not pattern:
-            return False
-        try:
-            return bool(re.search(pattern, model_name))
-        except re.error:
-            return False
-    models = rule.get("models", [])
-    return model_name in models
 
 
 def _protocol_base_url(channel: ChannelConfig) -> str:

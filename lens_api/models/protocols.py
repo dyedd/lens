@@ -66,11 +66,6 @@ class ModelGroupSyncFilterMode(str, Enum):
     REGEX = "regex"
 
 
-class UpstreamHeaderRuleMatchType(str, Enum):
-    EXACT = "exact"
-    REGEX = "regex"
-
-
 class CronjobStatus(str, Enum):
     IDLE = "idle"
     RUNNING = "running"
