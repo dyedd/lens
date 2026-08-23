@@ -5,11 +5,7 @@ import type { Dispatch, FormEventHandler, SetStateAction } from "react";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Separator } from "@/components/ui/Separator";
-import type {
-  ModelGroup,
-  ModelGroupCandidateItem,
-  ProtocolKind,
-} from "@/lib/api";
+import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api";
 import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
 import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
 import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
@@ -32,7 +28,6 @@ interface GroupEditorDialogProps {
   submit: FormEventHandler<HTMLFormElement>;
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
-  toggleProtocol: (protocol: ProtocolKind) => void;
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
   candidateSearchMode: CandidateSearchMode;
@@ -116,7 +111,6 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               locale={locale}
               form={form}
               setForm={setForm}
-              toggleProtocol={props.toggleProtocol}
               routeTargetOptions={props.routeTargetOptions}
               changeRouteTarget={props.changeRouteTarget}
             />
@@ -145,7 +139,6 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                     />
                     <ModelGroupCandidateList
                       locale={locale}
-                      protocols={form.protocols}
                       groupedCandidates={props.groupedCandidates}
                       expandedChannels={props.expandedChannels}
                       existingItemKeys={existingItemKeys}
@@ -192,7 +185,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               >
                 {locale === "zh-CN" ? "取消" : "Cancel"}
               </Button>
-              <Button type="submit" disabled={form.protocols.length === 0}>
+              <Button type="submit">
                 {editingId
                   ? locale === "zh-CN"
                     ? "保存模型组"

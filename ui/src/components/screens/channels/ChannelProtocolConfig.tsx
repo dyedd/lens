@@ -86,7 +86,7 @@ export function ProtocolConfigItem({
         <div className="grid gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_32px_auto] xl:items-end">
           <Field>
             <FieldLabel>
-              {locale === "zh-CN" ? "组合名称" : "Combination name"}
+              {locale === "zh-CN" ? "协议配置名称" : "Protocol config name"}
             </FieldLabel>
             <Input
               className="w-full min-w-0"
@@ -140,9 +140,11 @@ export function ProtocolConfigItem({
               size="icon"
               className="text-muted-foreground"
               aria-label={
-                locale === "zh-CN" ? "组合设置" : "Combination settings"
+                locale === "zh-CN" ? "协议配置设置" : "Protocol config settings"
               }
-              title={locale === "zh-CN" ? "组合设置" : "Combination settings"}
+              title={
+                locale === "zh-CN" ? "协议配置设置" : "Protocol config settings"
+              }
               onClick={() => onOpenAdvanced(protocolConfigIndex)}
             >
               <Settings />
@@ -153,9 +155,11 @@ export function ProtocolConfigItem({
               size="icon"
               className="text-destructive hover:text-destructive"
               aria-label={
-                locale === "zh-CN" ? "删除组合" : "Delete combination"
+                locale === "zh-CN" ? "删除协议配置" : "Delete protocol config"
               }
-              title={locale === "zh-CN" ? "删除组合" : "Delete combination"}
+              title={
+                locale === "zh-CN" ? "删除协议配置" : "Delete protocol config"
+              }
               onClick={() => onRemoveProtocolConfig(protocolConfigIndex)}
             >
               <Trash2 />

@@ -40,10 +40,6 @@ export function modelGroupItemReasonLabel(
   const labels: Record<ModelGroupItemReason, { zh: string; en: string }> = {
     manual_disabled: { zh: "成员已关闭", en: "Member disabled" },
     channel_not_found: { zh: "渠道不存在", en: "Channel not found" },
-    protocol_unreachable: {
-      zh: "无法服务所选协议",
-      en: "Cannot serve selected protocols",
-    },
     channel_disabled: { zh: "渠道已停用", en: "Channel disabled" },
     credential_not_found: { zh: "密钥不存在", en: "Key not found" },
     credential_disabled: { zh: "密钥不可用", en: "Key unavailable" },

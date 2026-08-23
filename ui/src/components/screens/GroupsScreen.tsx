@@ -91,12 +91,10 @@ export function GroupsScreen() {
           cardDragging={commands.cardDragging}
           setCardDragging={commands.setCardDragging}
           search={filters.search}
-          protocolFilter={filters.protocolFilter}
           strategyFilter={filters.strategyFilter}
           sortBy={filters.sortBy}
           activeFilterCount={filters.activeFilterCount}
           setSearch={filters.setSearch}
-          setProtocolFilter={filters.setProtocolFilter}
           setStrategyFilter={filters.setStrategyFilter}
           setSortBy={filters.setSortBy}
           resetFilters={filters.resetFilters}
@@ -121,7 +119,6 @@ export function GroupsScreen() {
             submit={commands.submit}
             form={editor.form}
             setForm={editor.setForm}
-            toggleProtocol={editor.toggleProtocol}
             routeTargetOptions={queries.routeTargetOptions}
             changeRouteTarget={editor.changeRouteTarget}
             candidateSearchMode={editor.candidateSearchMode}

@@ -20,18 +20,15 @@ import type {
   Site,
   SiteRuntimeSummary,
 } from "@/lib/api";
-import { protocolBadgeClassName, protocolLabel } from "@/lib/protocols";
-import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/Switch";
 import { ChannelFiltersPanel } from "./ChannelFiltersPanel";
 import { SiteHealthPreview } from "./SiteHealthPreview";
 import { SiteFavicon } from "./SiteFavicon";
-import {
-  siteProtocols,
-  type ChannelSort,
-  type ChannelStatusFilter,
-  type Locale,
-  type SiteRow,
+import type {
+  ChannelSort,
+  ChannelStatusFilter,
+  Locale,
+  SiteRow,
 } from "./channelShared";
 
 /** Renders the channel list alongside its filtering controls. */
@@ -125,18 +122,6 @@ export function ChannelsOverview({
                           <ItemTitle className="truncate text-base">
                             {site.name}
                           </ItemTitle>
-                          {siteProtocols(site).map((p) => (
-                            <Badge
-                              key={p}
-                              variant="outline"
-                              className={cn(
-                                "px-2.5 py-0.5",
-                                protocolBadgeClassName(p),
-                              )}
-                            >
-                              {protocolLabel(p, locale)}
-                            </Badge>
-                          ))}
                         </div>
                         {site.tags.length ? (
                           <div className="flex flex-wrap gap-1.5">

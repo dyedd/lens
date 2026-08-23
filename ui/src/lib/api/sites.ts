@@ -135,7 +135,6 @@ export type SitePayload = {
 export type SiteModelGroupSavePayload = SitePayload & {
   site_id?: string | null;
   dry_run: boolean;
-  allow_protocol_extension: boolean;
   models: ModelGroupEnsureModelInput[] | null;
 };
 export type SiteModelGroupSaveResponse = {

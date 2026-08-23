@@ -89,7 +89,6 @@ export function ModelGroupCandidateToolbar({
             size="sm"
             onClick={addMatchedItems}
             disabled={
-              form.protocols.length === 0 ||
               candidateRegexInvalid ||
               (!filteredCandidateCount && !candidateSearch.trim())
             }
@@ -110,7 +109,7 @@ export function ModelGroupCandidateToolbar({
             aria-label={locale === "zh-CN" ? "刷新列表" : "Refresh list"}
             title={locale === "zh-CN" ? "刷新列表" : "Refresh list"}
             onClick={() => void refetchCandidates()}
-            disabled={isFetchingCandidates || form.protocols.length === 0}
+            disabled={isFetchingCandidates}
           >
             <RefreshCcw />
           </Button>

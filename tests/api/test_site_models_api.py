@@ -756,7 +756,6 @@ def test_channel_model_sync_does_not_report_group_changes_that_failed(
         headers=admin_headers,
         json={
             "name": "gpt models",
-            "protocols": ["openai_chat"],
             "sync_filter_mode": "contains",
             "sync_filter_query": "gpt-",
         },
@@ -808,7 +807,6 @@ def test_channel_model_sync_reports_applied_group_changes(
         headers=admin_headers,
         json={
             "name": "gpt models",
-            "protocols": ["openai_chat"],
             "sync_filter_mode": "contains",
             "sync_filter_query": "gpt-",
         },

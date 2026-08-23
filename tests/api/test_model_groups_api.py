@@ -176,7 +176,7 @@ def test_model_group_crud_round_trip(client, admin_headers, create_model_group) 
 
     group = create_model_group(name="gpt-4o")
     assert group["name"] == "gpt-4o"
-    assert group["protocols"] == ["openai_chat"]
+    assert group["client_protocols"] == []
 
     detail = client.get(f"/api/admin/model-groups/{group['id']}", headers=admin_headers)
     assert detail.status_code == 200
@@ -195,6 +195,25 @@ def test_model_group_crud_round_trip(client, admin_headers, create_model_group) 
     )
     assert delete.status_code == 204
     assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
+
+
+def test_model_group_derives_client_protocols_from_member(
+    client, admin_headers, create_site
+) -> None:
+    create_site(valid_site_payload())
+
+    response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "derived", "items": [_member()]},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["client_protocols"] == [
+        "openai_chat",
+        "openai_responses",
+        "anthropic",
+    ]
 
 
 def test_model_group_strategy_switch_preserves_shared_member_order(
@@ -217,7 +236,6 @@ def test_model_group_strategy_switch_preserves_shared_member_order(
         headers=admin_headers,
         json={
             "name": "ordered-group",
-            "protocols": ["openai_chat"],
             "strategy": "round_robin",
             "items": [
                 _member(model_name="model-a"),
@@ -273,7 +291,7 @@ def test_create_model_group_rejects_duplicate_names(
     response = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={"name": "gpt-4o", "protocols": ["openai_chat"]},
+        json={"name": "gpt-4o"},
     )
 
     assert_error(response, 400, "Model group already exists")
@@ -291,7 +309,6 @@ def test_create_model_group_with_site_member_hydrates_member_metadata(
         headers=admin_headers,
         json={
             "name": "gpt-4o",
-            "protocols": ["openai_chat"],
             "items": [_member()],
         },
     )
@@ -310,7 +327,7 @@ def test_create_model_group_rejects_blank_name(client, admin_headers) -> None:
     response = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={"name": " ", "protocols": ["openai_chat"]},
+        json={"name": " "},
     )
 
     assert_error(response, 400, "Model group name is required")
@@ -346,52 +363,11 @@ def test_create_model_group_rejects_invalid_members(
         headers=admin_headers,
         json={
             "name": "gpt-4o",
-            "protocols": ["openai_chat"],
             "items": [_member(**member_overrides)],
         },
     )
 
     assert_error(response, 400, message)
-
-
-def test_create_model_group_rejects_channel_that_cannot_reach_selected_protocol(
-    client,
-    admin_headers,
-    create_site,
-) -> None:
-    create_site(valid_site_payload())
-
-    response = client.post(
-        "/api/admin/model-groups",
-        headers=admin_headers,
-        json={
-            "name": "embedding-group",
-            "protocols": ["openai_embedding"],
-            "items": [_member()],
-        },
-    )
-
-    assert_error(response, 400, "Channels cannot reach any selected protocol")
-
-
-def test_create_model_group_rejects_uncovered_selected_protocol(
-    client,
-    admin_headers,
-    create_site,
-) -> None:
-    create_site(valid_site_payload())
-
-    response = client.post(
-        "/api/admin/model-groups",
-        headers=admin_headers,
-        json={
-            "name": "mixed-group",
-            "protocols": ["openai_chat", "openai_embedding"],
-            "items": [_member()],
-        },
-    )
-
-    assert_error(response, 400, "Protocol openai_embedding has no reachable channel")
 
 
 def test_model_group_missing_resources_return_not_found(

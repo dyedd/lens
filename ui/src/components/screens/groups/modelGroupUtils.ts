@@ -35,7 +35,6 @@ export type EvaluatedFormItem = FormItem;
 
 export type FormState = {
   name: string;
-  protocols: ProtocolKind[];
   strategy: RoutingStrategy;
   route_group_id: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
@@ -129,7 +128,6 @@ export type GroupRow = ModelGroup & {
 
 export const EMPTY_FORM: FormState = {
   name: "",
-  protocols: ["openai_chat"],
   strategy: "round_robin",
   route_group_id: "",
   sync_filter_mode: "",
@@ -223,7 +221,6 @@ export function candidatePayloadToFormItems(
 export function toForm(group: ModelGroup): FormState {
   return {
     name: group.name,
-    protocols: group.protocols,
     strategy: group.strategy,
     route_group_id: group.route_group_id ?? "",
     sync_filter_mode: group.sync_filter_mode,
@@ -260,7 +257,6 @@ export function toForm(group: ModelGroup): FormState {
 export function toPayload(form: FormState): ModelGroupPayload {
   return {
     name: form.name.trim(),
-    protocols: form.protocols,
     strategy: form.strategy,
     route_group_id: form.route_group_id.trim(),
     sync_filter_mode:

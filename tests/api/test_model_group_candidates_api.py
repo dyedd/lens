@@ -26,7 +26,7 @@ def test_model_group_candidates_return_site_models(
     response = client.post(
         "/api/admin/model-group-candidates",
         headers=admin_headers,
-        json={"protocols": ["openai_chat"], "items": items},
+        json={"items": items},
     )
 
     assert response.status_code == 200

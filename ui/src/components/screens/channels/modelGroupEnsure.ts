@@ -1,5 +1,4 @@
 import {
-  canReachProtocol,
   type ModelGroup,
   type ModelGroupEnsureFromSiteResponse,
   type ModelGroupEnsureModelInput,
@@ -28,29 +27,12 @@ export function executionModelGroups(groups: ModelGroup[]) {
   return groups.filter((group) => !group.route_group_id?.trim());
 }
 
-/** Reports whether an existing group already supports an ensure item. */
-export function canUseModelGroupWithoutProtocolExtension(
-  item: ModelGroupEnsureResultItem,
-  group: ModelGroup,
-) {
-  return group.protocols.some((groupProtocol) =>
-    item.protocols.some((itemProtocol) =>
-      canReachProtocol(itemProtocol, groupProtocol),
-    ),
-  );
-}
-
 /** Returns execution groups eligible for an ensure result item. */
 export function selectableModelGroupsForEnsureItem(
-  item: ModelGroupEnsureResultItem,
+  _item: ModelGroupEnsureResultItem,
   groups: ModelGroup[],
-  allowProtocolExtension: boolean,
 ) {
-  const executableGroups = executionModelGroups(groups);
-  if (allowProtocolExtension) return executableGroups;
-  return executableGroups.filter((group) =>
-    canUseModelGroupWithoutProtocolExtension(item, group),
-  );
+  return executionModelGroups(groups);
 }
 
 /** Formats an ensure skip reason for the requested locale. */
@@ -74,8 +56,8 @@ export function modelGroupEnsureReasonLabel(reason: string, locale: string) {
       en: "Group name is required",
     },
     protocol_config_not_found: {
-      zh: "组合不存在",
-      en: "Combination not found",
+      zh: "协议配置不存在",
+      en: "Protocol config not found",
     },
     channel_disabled: {
       zh: "渠道不可用",
@@ -92,10 +74,6 @@ export function modelGroupEnsureReasonLabel(reason: string, locale: string) {
     model_not_available: {
       zh: "模型不可用",
       en: "Model unavailable",
-    },
-    protocol_extension_required: {
-      zh: "需要扩展目标模型组协议",
-      en: "Target group needs protocol extension",
     },
   };
   const label = labels[reason];

@@ -160,9 +160,9 @@ def create_model_group(
         items: list[dict[str, Any]] | None = None,
         route_group_id: str = "",
     ) -> dict[str, Any]:
+        _ = protocols
         payload = {
             "name": name,
-            "protocols": protocols or [ProtocolKind.OPENAI_CHAT.value],
             "strategy": "round_robin",
             "route_group_id": route_group_id,
             "items": items or [],

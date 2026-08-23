@@ -8,7 +8,6 @@ from ...models import (
     ProtocolKind,
     RequestLogLifecycleStatus,
 )
-from ..converters import needs_conversion
 from ..router.cooldown import ErrorCategory, classify_error
 from .app_state import app_state, logger
 from ...persistence.repositories.model_price_repository import ModelCostEstimate
@@ -87,11 +86,7 @@ async def _record_stream_request_log(
     )
     if capture is not None:
         capture.client_response_content_chunks.clear()
-    if (
-        capture is not None
-        and needs_conversion(protocol, channel.protocol)
-        and client_response_content
-    ):
+    if capture is not None and protocol != channel.protocol and client_response_content:
         response_protocol = protocol
         response_raw_content = client_response_content
     parse_errors: list[str] = []

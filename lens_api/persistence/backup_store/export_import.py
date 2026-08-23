@@ -20,6 +20,10 @@ class BackupExportImportMixin:
         """Parse and validate a serialized configuration backup."""
         try:
             data = json.loads(payload)
+            if isinstance(data, dict) and isinstance(data.get("groups"), list):
+                for group in data["groups"]:
+                    if isinstance(group, dict):
+                        group.pop("protocols", None)
             return ConfigBackupDump.model_validate(data)
         except ValueError as exc:
             raise ValueError("Invalid backup file") from exc

@@ -21,7 +21,6 @@ class ModelGroupItemState(str, Enum):
 class ModelGroupItemReason(str, Enum):
     MANUAL_DISABLED = "manual_disabled"
     CHANNEL_NOT_FOUND = "channel_not_found"
-    PROTOCOL_UNREACHABLE = "protocol_unreachable"
     CHANNEL_DISABLED = "channel_disabled"
     CREDENTIAL_NOT_FOUND = "credential_not_found"
     CREDENTIAL_DISABLED = "credential_disabled"
@@ -32,7 +31,6 @@ class ModelGroupItemReason(str, Enum):
 class ModelGroup(StrictBaseModel):
     id: str
     name: str
-    protocols: list[ProtocolKind] = Field(min_length=1)
     strategy: RoutingStrategy
     route_group_id: str = ""
     route_group_name: str = ""
@@ -80,6 +78,7 @@ class ModelGroupItemView(ModelGroupItem):
 
 
 class ModelGroupView(ModelGroup):
+    client_protocols: list[ProtocolKind] = Field(default_factory=list)
     items: list[ModelGroupItemView] = Field(default_factory=list)
 
 
@@ -92,7 +91,6 @@ class ModelGroupItemInput(StrictBaseModel):
 
 class ModelGroupCreate(StrictBaseModel):
     name: str
-    protocols: list[ProtocolKind] = Field(min_length=1)
     strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
     route_group_id: str = ""
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
@@ -113,7 +111,6 @@ class ModelGroupCreate(StrictBaseModel):
 
 class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
-    protocols: list[ProtocolKind] | None = Field(default=None, min_length=1)
     strategy: RoutingStrategy | None = None
     route_group_id: str | None = None
     sync_filter_mode: ModelGroupSyncFilterMode | None = None
@@ -178,7 +175,6 @@ class ModelGroupCandidateItem(StrictBaseModel):
 
 
 class ModelGroupCandidatesRequest(StrictBaseModel):
-    protocols: list[ProtocolKind] = Field(min_length=1)
     items: list[ModelGroupItemInput] = Field(default_factory=list)
 
 
@@ -205,7 +201,6 @@ class ModelGroupEnsureModelInput(StrictBaseModel):
 class ModelGroupEnsureFromSiteRequest(StrictBaseModel):
     site_id: str = Field(min_length=1)
     dry_run: bool = True
-    allow_protocol_extension: bool = False
     models: list[ModelGroupEnsureModelInput] = Field(default_factory=list)
 
 
@@ -220,7 +215,6 @@ class ModelGroupEnsureResultItem(StrictBaseModel):
     added_count: int = Field(default=0, ge=0)
     existing_count: int = Field(default=0, ge=0)
     skipped_reason: str = ""
-    missing_protocols: list[ProtocolKind] = Field(default_factory=list)
 
 
 class ModelGroupEnsureFromSiteResponse(StrictBaseModel):

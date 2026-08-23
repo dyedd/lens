@@ -18,7 +18,6 @@ from ..shared import (
     ModelGroupCandidateSubitem,
     ModelGroupItemInput,
     ProtocolKind,
-    can_reach_protocol,
 )
 
 
@@ -44,7 +43,6 @@ class _GroupCandidatesMixin:
     ) -> ModelGroupCandidatesResponse:
         all_channels = await self._channel_store.list_channels()
         channels_by_id = build_model_group_channel_lookups(all_channels)
-        protocols_filter = list(dict.fromkeys(payload.protocols))
         selected_item_keys = {model_group_item_key(item) for item in payload.items}
         candidate_aggregates: dict[tuple[str, str, str], _CandidateAggregate] = {}
 
@@ -59,7 +57,6 @@ class _GroupCandidatesMixin:
                 evaluation = evaluate_model_group_item(
                     item,
                     channels_by_id,
-                    protocols_filter or [channel.protocol],
                 )
                 if evaluation.state != ModelGroupItemState.READY:
                     continue
@@ -94,7 +91,6 @@ class _GroupCandidatesMixin:
         for aggregate in candidate_aggregates.values():
             recommended_items = self._recommended_candidate_items(
                 aggregate,
-                protocols_filter,
             )
             remaining_items = [
                 item
@@ -141,7 +137,6 @@ class _GroupCandidatesMixin:
                 item,
                 index,
                 channels_by_id,
-                protocols_filter,
             )
             for index, item in enumerate(payload.items)
         ]
@@ -153,48 +148,28 @@ class _GroupCandidatesMixin:
     @staticmethod
     def _recommended_candidate_items(
         aggregate: _CandidateAggregate,
-        protocols_filter: list[ProtocolKind],
     ) -> list[ModelGroupItemInput]:
-        chosen: dict[str, ModelGroupItemInput] = {}
-        requested_protocols = protocols_filter or aggregate.native_protocols
-        for required_protocol in requested_protocols:
-            native_protocol = (
-                required_protocol
-                if required_protocol in aggregate.protocol_channels
-                else next(
-                    (
-                        protocol
-                        for protocol in aggregate.native_protocols
-                        if can_reach_protocol(protocol, required_protocol)
-                    ),
-                    None,
-                )
+        return [
+            ModelGroupItemInput(
+                channel_id=channel_id,
+                credential_id=aggregate.credential_id,
+                model_name=aggregate.model_name,
+                enabled=True,
             )
-            if native_protocol is None:
-                continue
-            channel_id = aggregate.protocol_channels[native_protocol]
-            chosen.setdefault(
-                channel_id,
-                ModelGroupItemInput(
-                    channel_id=channel_id,
-                    credential_id=aggregate.credential_id,
-                    model_name=aggregate.model_name,
-                    enabled=True,
-                ),
+            for _, channel_id in sorted(
+                aggregate.protocol_channels.items(), key=lambda item: item[0].value
             )
-        return list(chosen.values())
+        ]
 
     @staticmethod
     def _candidate_item_view(
         item: ModelGroupItemInput,
         index: int,
         channels_by_id: Mapping[str, ModelGroupChannelLookup],
-        protocols_filter: list[ProtocolKind],
     ) -> ModelGroupItemView:
         evaluation = evaluate_model_group_item(
             item,
             channels_by_id,
-            protocols_filter,
         )
         channel_lookup = channels_by_id.get(item.channel_id)
         channel = channel_lookup.channel if channel_lookup is not None else None

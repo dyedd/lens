@@ -16,19 +16,16 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
-import type { ProtocolKind, RoutingStrategy } from "@/lib/api";
-import { protocolOptions } from "@/lib/protocols";
+import type { RoutingStrategy } from "@/lib/api";
 import type { GroupSort } from "./modelGroupUtils";
 
 interface GroupsFilterPanelProps {
   locale: "zh-CN" | "en-US";
   search: string;
-  protocolFilter: "all" | ProtocolKind;
   strategyFilter: "all" | RoutingStrategy;
   sortBy: GroupSort;
   activeFilterCount: number;
   setSearch: Dispatch<SetStateAction<string>>;
-  setProtocolFilter: Dispatch<SetStateAction<"all" | ProtocolKind>>;
   setStrategyFilter: Dispatch<SetStateAction<"all" | RoutingStrategy>>;
   setSortBy: Dispatch<SetStateAction<GroupSort>>;
   resetFilters: () => void;
@@ -38,12 +35,10 @@ interface GroupsFilterPanelProps {
 export function GroupsFilterPanel({
   locale,
   search,
-  protocolFilter,
   strategyFilter,
   sortBy,
   activeFilterCount,
   setSearch,
-  setProtocolFilter,
   setStrategyFilter,
   setSortBy,
   resetFilters,
@@ -113,31 +108,6 @@ export function GroupsFilterPanel({
                 }
                 className="max-w-none"
               />
-            </Field>
-            <Field>
-              <FieldLabel>
-                {locale === "zh-CN" ? "协议" : "Protocol"}
-              </FieldLabel>
-              <Select
-                value={protocolFilter}
-                onValueChange={(value) =>
-                  setProtocolFilter(value as "all" | ProtocolKind)
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    {locale === "zh-CN" ? "全部协议" : "All protocols"}
-                  </SelectItem>
-                  {protocolOptions(locale).map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </Field>
             <Field>
               <FieldLabel>

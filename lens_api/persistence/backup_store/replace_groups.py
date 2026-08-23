@@ -37,7 +37,6 @@ from .shared import (
     _parse_runtime_channel_protocol,
     _resolve_group_item_channel_id,
     _runtime_channel_id,
-    can_reach_protocol,
     datetime,
     delete,
     encode_weekdays,
@@ -77,32 +76,18 @@ async def _replace_groups(
             raise ValueError(f"Duplicate model group name in backup: {group.name}")
         seen_group_names.add(group.name)
 
-        if not group.protocols:
-            raise ValueError(f"Backup model group missing protocols: {group.name}")
-
         if group.route_group_id and group.route_group_id not in group_ids:
             raise ValueError(
                 f"Referenced route group not found: {group.route_group_id}"
             )
         if group.route_group_id:
             route_group = groups_by_id[group.route_group_id]
-            route_protocols = set(route_group.protocols)
-            missing_protocols = [
-                protocol
-                for protocol in group.protocols
-                if protocol not in route_protocols
-            ]
-            if missing_protocols:
-                missing = ", ".join(protocol.value for protocol in missing_protocols)
-                raise ValueError(
-                    f"Route target protocols must cover source protocols: {missing}"
-                )
             if route_group.route_group_id:
                 raise ValueError(
                     f"Route target must be an execution group: {route_group.name}"
                 )
 
-        resolved_items: list[tuple[int, ModelGroupItem, str, ProtocolKind]] = []
+        resolved_items: list[tuple[int, ModelGroupItem, str]] = []
         resolved_item_keys: set[tuple[str, str, str]] = set()
 
         for index, item in enumerate(group.items):
@@ -125,8 +110,7 @@ async def _replace_groups(
                 if protocol_config_id in available_protocol_config_ids
                 else item.channel_id
             )
-            resolved_protocol = _parse_runtime_channel_protocol(resolved_channel_id)
-            if resolved_protocol is None:
+            if _parse_runtime_channel_protocol(resolved_channel_id) is None:
                 raise ValueError(
                     f"Model group channel not found in backup sites: {item.channel_id}"
                 )
@@ -142,31 +126,12 @@ async def _replace_groups(
                 raise ValueError(
                     f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
                 )
-            resolved_items.append((index, item, resolved_channel_id, resolved_protocol))
-
-        enabled_resolved_items = [
-            resolved_item
-            for resolved_item in resolved_items
-            if resolved_item[1].enabled
-        ]
-        if enabled_resolved_items and not group.route_group_id:
-            for protocol in group.protocols:
-                if not any(
-                    can_reach_protocol(item_protocol, protocol)
-                    for _, _, _, item_protocol in enabled_resolved_items
-                ):
-                    raise ValueError(
-                        f"Protocol {protocol.value} has no reachable channel in group items"
-                    )
+            resolved_items.append((index, item, resolved_channel_id))
 
         session.add(
             ModelGroupEntity(
                 id=group.id,
                 name=group.name,
-                protocols_json=json.dumps(
-                    [protocol.value for protocol in group.protocols],
-                    ensure_ascii=True,
-                ),
                 strategy=group.strategy.value,
                 route_group_id=group.route_group_id,
                 sync_filter_mode=group.sync_filter_mode.value,
@@ -174,7 +139,7 @@ async def _replace_groups(
             )
         )
 
-        for index, item, resolved_channel_id, _ in resolved_items:
+        for index, item, resolved_channel_id in resolved_items:
             session.add(
                 ModelGroupItemEntity(
                     group_id=group.id,
