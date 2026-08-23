@@ -75,7 +75,7 @@ export function ProtocolConfigModelActions({
           </Field>
           <Field>
             <FieldLabel>
-              {locale === "zh-CN" ? "客户端协议" : "Client protocols"}
+              {locale === "zh-CN" ? "上游协议" : "Upstream protocols"}
             </FieldLabel>
             <ProtocolMultiSelect
               value={protocolConfig.manual_protocols}

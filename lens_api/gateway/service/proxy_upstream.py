@@ -11,7 +11,7 @@ import httpx
 from fastapi import Response
 
 from ...models import ChannelConfig, ProtocolKind
-from ..converters import convert_response, convert_stream_iterator, needs_conversion
+from ..converters import convert_response, convert_stream_iterator
 from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
 from ..router.cooldown import ErrorCategory
 from .app_state import app_state
@@ -228,9 +228,7 @@ async def _build_stream_result(
         stream_started_at,
     )
 
-    if client_protocol is not None and needs_conversion(
-        client_protocol, channel.protocol
-    ):
+    if client_protocol is not None and client_protocol != channel.protocol:
         converted_iter = convert_stream_iterator(
             client_protocol,
             channel.protocol,
@@ -316,9 +314,7 @@ async def _build_json_result(
             detail=f"Invalid upstream usage: {exc}",
             router_status_code=502,
         ) from exc
-    if client_protocol is not None and needs_conversion(
-        client_protocol, channel.protocol
-    ):
+    if client_protocol is not None and client_protocol != channel.protocol:
         try:
             content = convert_response(
                 client_protocol, channel.protocol, content, body.get("model", "")

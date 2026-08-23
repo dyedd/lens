@@ -18,13 +18,9 @@ from ..shared import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    _dump_group_protocols,
-    _normalize_group_protocols,
-    _parse_group_protocols,
     _parse_runtime_channel_id,
     _parse_supported_protocols_json,
     _runtime_channel_id,
-    can_reach_protocol,
     select,
     uuid,
 )
@@ -156,7 +152,6 @@ class _GroupEnsureMixin:
                     session,
                     operation,
                     dry_run=payload.dry_run,
-                    allow_protocol_extension=payload.allow_protocol_extension,
                 )
             )
 
@@ -322,14 +317,12 @@ class _GroupEnsureMixin:
         *,
         dry_run: bool,
     ) -> list[ModelGroupEnsureResultItem]:
-        protocols = self._ensure_operation_protocols(operation.items)
         members = self._ensure_operation_members(operation.items)
         group_id = ""
         if not dry_run:
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=operation.group_name,
-                protocols_json=_dump_group_protocols(protocols),
                 strategy="round_robin",
                 route_group_id="",
                 sync_filter_mode="",
@@ -356,11 +349,8 @@ class _GroupEnsureMixin:
         operation: _EnsureGroupOperation,
         *,
         dry_run: bool,
-        allow_protocol_extension: bool,
     ) -> list[ModelGroupEnsureResultItem]:
         entity = operation.entity
-        current_protocols = _normalize_group_protocols(_parse_group_protocols(entity))
-        next_protocols = list(current_protocols)
 
         current_rows = (
             (
@@ -385,45 +375,7 @@ class _GroupEnsureMixin:
         result_items: list[ModelGroupEnsureResultItem] = []
 
         for item in operation.items:
-            missing_protocols = [
-                protocol
-                for protocol in item.protocols
-                if protocol not in current_protocols
-            ]
-            can_use_current_protocols = any(
-                self._ensure_member_reaches_protocols(member, current_protocols)
-                for member in item.items
-            )
-            is_protocol_extension_required = (
-                bool(missing_protocols) and not can_use_current_protocols
-            )
-            if is_protocol_extension_required and not allow_protocol_extension:
-                result_items.append(
-                    self._ensure_result_item(
-                        item,
-                        status="skipped",
-                        group_id=entity.id,
-                        skipped_reason="protocol_extension_required",
-                        missing_protocols=missing_protocols,
-                    )
-                )
-                continue
-
-            extended_protocols = (
-                missing_protocols
-                if is_protocol_extension_required and allow_protocol_extension
-                else []
-            )
-            if extended_protocols:
-                for protocol in extended_protocols:
-                    if protocol not in next_protocols:
-                        next_protocols.append(protocol)
-
-            item_members = [
-                member
-                for member in item.items
-                if self._ensure_member_reaches_protocols(member, next_protocols)
-            ]
+            item_members = item.items
             item_additions: list[ModelGroupItemInput] = []
             for member in item_members:
                 member_key = self._ensure_member_key(
@@ -435,25 +387,17 @@ class _GroupEnsureMixin:
                 item_additions.append(member)
             additions.extend(item_additions)
 
-            has_protocol_extensions = bool(extended_protocols)
             result_items.append(
                 self._ensure_result_item(
                     item,
-                    status=(
-                        "update"
-                        if item_additions or has_protocol_extensions
-                        else "unchanged"
-                    ),
+                    status="update" if item_additions else "unchanged",
                     group_id=entity.id,
                     added_count=len(item_additions),
                     existing_count=len(item_members) - len(item_additions),
-                    missing_protocols=extended_protocols,
                 )
             )
 
         if not dry_run:
-            if next_protocols != current_protocols:
-                entity.protocols_json = _dump_group_protocols(next_protocols)
             for index, member in enumerate(additions, start=len(current_rows)):
                 session.add(
                     ModelGroupItemEntity(
@@ -467,17 +411,6 @@ class _GroupEnsureMixin:
                 )
 
         return result_items
-
-    @staticmethod
-    def _ensure_operation_protocols(
-        items: list[_EnsurePreparedItem],
-    ) -> list[ProtocolKind]:
-        protocols: list[ProtocolKind] = []
-        for item in items:
-            for protocol in item.protocols:
-                if protocol not in protocols:
-                    protocols.append(protocol)
-        return protocols
 
     @classmethod
     def _ensure_operation_members(
@@ -503,18 +436,6 @@ class _GroupEnsureMixin:
         return channel_id, credential_id, model_name
 
     @staticmethod
-    def _ensure_member_reaches_protocols(
-        member: ModelGroupItemInput, protocols: list[ProtocolKind]
-    ) -> bool:
-        parsed = _parse_runtime_channel_id(member.channel_id)
-        if parsed is None:
-            return False
-        _, native_protocol = parsed
-        return any(
-            can_reach_protocol(native_protocol, protocol) for protocol in protocols
-        )
-
-    @staticmethod
     def _ensure_result_item(
         item: _EnsurePreparedItem,
         *,
@@ -523,7 +444,6 @@ class _GroupEnsureMixin:
         added_count: int = 0,
         existing_count: int = 0,
         skipped_reason: str = "",
-        missing_protocols: list[ProtocolKind] | None = None,
     ) -> ModelGroupEnsureResultItem:
         return ModelGroupEnsureResultItem(
             group_id=group_id,
@@ -536,7 +456,6 @@ class _GroupEnsureMixin:
             added_count=added_count,
             existing_count=existing_count,
             skipped_reason=skipped_reason,
-            missing_protocols=missing_protocols or [],
         )
 
     @staticmethod

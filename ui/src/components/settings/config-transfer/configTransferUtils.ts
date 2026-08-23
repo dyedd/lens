@@ -93,7 +93,7 @@ export function resultLabelForLocale(locale: Locale, key: string) {
     site_base_urls: ["渠道地址", "Channel base URLs"],
     site_credentials: ["上游凭据", "Upstream credentials"],
     site_models: ["发现模型", "Discovered models"],
-    site_protocol_configs: ["渠道组合", "Channel combinations"],
+    site_protocol_configs: ["渠道协议配置", "Channel protocol configs"],
     sites: ["渠道", "Channels"],
   };
   const label = labels[key];

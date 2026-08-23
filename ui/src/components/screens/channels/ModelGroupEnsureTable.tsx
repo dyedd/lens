@@ -16,7 +16,6 @@ import { compactProtocolLabel, protocolBadgeClassName } from "@/lib/protocols";
 import type { Locale } from "./channelShared";
 import {
   canSubmitModelGroupEnsureItem,
-  modelGroupEnsureReasonLabel,
   modelGroupEnsureResultKey,
   selectableModelGroupsForEnsureItem,
 } from "./modelGroupEnsure";
@@ -33,7 +32,6 @@ type Props = {
   createGroupNameDrafts: Record<string, string>;
   createGroupNameErrors: Record<string, string>;
   openTargetGroupKey: string | null;
-  isProtocolExtensionAllowed: boolean;
   isConfirming: boolean;
   locale: Locale;
   getCreateGroupName: (
@@ -61,7 +59,6 @@ export function ModelGroupEnsureTable({
   createGroupNameDrafts,
   createGroupNameErrors,
   openTargetGroupKey,
-  isProtocolExtensionAllowed,
   isConfirming,
   locale,
   getCreateGroupName,
@@ -103,7 +100,6 @@ export function ModelGroupEnsureTable({
               const targetModelGroups = selectableModelGroupsForEnsureItem(
                 item,
                 modelGroups,
-                isProtocolExtensionAllowed,
               );
               const targetGroupIsSelectable = targetModelGroups.some(
                 (group) => group.name === item.group_name,
@@ -179,14 +175,6 @@ export function ModelGroupEnsureTable({
                           {compactProtocolLabel(protocol)}
                         </Badge>
                       ))}
-                      {item.skipped_reason === "protocol_extension_required" ? (
-                        <Badge variant="outline" className="text-xs">
-                          {modelGroupEnsureReasonLabel(
-                            item.skipped_reason,
-                            locale,
-                          )}
-                        </Badge>
-                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>

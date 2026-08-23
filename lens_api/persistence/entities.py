@@ -104,10 +104,10 @@ class SiteProtocolConfigEntity(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    enabled: Mapped[int] = enabled_column()
     protocols_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    enabled: Mapped[int] = enabled_column()
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     proxy_mode: Mapped[str] = mapped_column(
         String(16), nullable=False, default="inherit"
@@ -196,9 +196,6 @@ class ModelGroupEntity(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     name: Mapped[str] = mapped_column(
         String(120), nullable=False, unique=True, index=True
-    )
-    protocols_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
     )
     strategy: Mapped[str] = mapped_column(
         String(32), nullable=False, default="round_robin"

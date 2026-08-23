@@ -132,7 +132,6 @@ async def _load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                 {
                     "id": row.id,
                     "name": row.name,
-                    "protocols": json.loads(row.protocols_json),
                     "strategy": row.strategy,
                     "route_group_id": row.route_group_id,
                     "route_group_name": route_group_names.get(row.route_group_id, ""),

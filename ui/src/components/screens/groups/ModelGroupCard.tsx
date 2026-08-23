@@ -19,8 +19,6 @@ import {
 } from "@/components/ui/Tooltip";
 import type { ModelGroup, RoutingStrategy } from "@/lib/api";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
-import { protocolBadgeClassName, protocolLabel } from "@/lib/protocols";
-import { cn } from "@/lib/utils";
 import type { GroupCardDragging } from "./groupOverviewTypes";
 import { CompactPriceSummary, StrategyToggle } from "./ModelGroupEditorFields";
 import { ModelGroupMemberChips } from "./ModelGroupMemberChips";
@@ -132,20 +130,6 @@ export function ModelGroupCard({
                 {copyModelNameLabel}
               </TooltipContent>
             </Tooltip>
-            <div className="flex flex-wrap gap-1.5">
-              {group.protocols.map((protocol) => (
-                <Badge
-                  key={protocol}
-                  variant="outline"
-                  className={cn(
-                    "px-2.5 py-0.5",
-                    protocolBadgeClassName(protocol),
-                  )}
-                >
-                  {protocolLabel(protocol, locale)}
-                </Badge>
-              ))}
-            </div>
             {group.is_route_group ? (
               <Badge variant="outline" className="px-2.5 py-0.5">
                 {locale === "zh-CN" ? "路由组" : "Route group"}

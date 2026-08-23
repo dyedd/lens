@@ -23,7 +23,7 @@ async def _resolve_routing_plan(
     matched_group = await app_state.group_repo.find_group_by_name(
         protocol.value, requested_model, channels=channels
     )
-    if matched_group is None or protocol not in matched_group.protocols:
+    if matched_group is None or protocol not in matched_group.client_protocols:
         raise LookupError(f"No model group matched {requested_model}")
 
     resolved_group = matched_group
@@ -40,7 +40,7 @@ async def _resolve_routing_plan(
             raise LookupError(
                 f"Route target must be an execution group: {resolved_group.name}"
             )
-        if protocol not in resolved_group.protocols:
+        if protocol not in resolved_group.client_protocols:
             raise LookupError(f"No model group matched {requested_model}")
 
     channel_map = {channel.id: channel for channel in channels}

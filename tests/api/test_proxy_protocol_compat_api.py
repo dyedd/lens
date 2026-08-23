@@ -21,6 +21,69 @@ def _chat_group_item(model_name: str) -> dict[str, Any]:
     }
 
 
+def test_same_protocol_responses_request_preserves_body_shape(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    captured_body: dict[str, Any] = {}
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        captured_body.update(json.loads(body_bytes))
+        return httpx.Response(
+            500,
+            json={"error": {"message": "stop after capture"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_RESPONSES.value],
+            model_name="responses-upstream",
+        )
+    )
+    create_model_group(
+        name="responses-client",
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.OPENAI_RESPONSES
+                ),
+                "credential_id": "cred-1",
+                "model_name": "responses-upstream",
+                "enabled": True,
+            }
+        ],
+    )
+    body = {
+        "model": "responses-client",
+        "input": "  preserve this input exactly  ",
+        "tools": [{"type": "function", "name": "lookup", "parameters": {}}],
+        "tool_choice": "auto",
+    }
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json=body,
+    )
+
+    assert response.status_code == 502, response.text
+    assert captured_body == {**body, "model": "responses-upstream"}
+
+
 @pytest.mark.parametrize(
     ("client_protocol", "route"),
     [

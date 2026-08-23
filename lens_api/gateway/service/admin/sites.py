@@ -173,7 +173,6 @@ async def _save_site_with_model_groups(
             ModelGroupEnsureFromSiteRequest(
                 site_id=next_site_id,
                 dry_run=payload.dry_run,
-                allow_protocol_extension=payload.allow_protocol_extension,
                 models=models,
             ),
         )

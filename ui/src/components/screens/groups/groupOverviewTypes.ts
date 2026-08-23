@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { ModelGroup, ProtocolKind, RoutingStrategy } from "@/lib/api";
+import type { ModelGroup, RoutingStrategy } from "@/lib/api";
 import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";
 import type { GroupRow, GroupSort } from "./modelGroupUtils";
 
@@ -22,12 +22,10 @@ export interface GroupsOverviewProps {
   cardDragging: GroupCardDragging;
   setCardDragging: Dispatch<SetStateAction<GroupCardDragging>>;
   search: string;
-  protocolFilter: "all" | ProtocolKind;
   strategyFilter: "all" | RoutingStrategy;
   sortBy: GroupSort;
   activeFilterCount: number;
   setSearch: Dispatch<SetStateAction<string>>;
-  setProtocolFilter: Dispatch<SetStateAction<"all" | ProtocolKind>>;
   setStrategyFilter: Dispatch<SetStateAction<"all" | RoutingStrategy>>;
   setSortBy: Dispatch<SetStateAction<GroupSort>>;
   resetFilters: () => void;

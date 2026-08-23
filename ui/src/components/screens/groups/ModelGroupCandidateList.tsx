@@ -2,14 +2,13 @@ import { AlertCircle, ChevronDown } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Separator } from "@/components/ui/Separator";
-import type { ModelGroupCandidateItem, ProtocolKind } from "@/lib/api";
+import type { ModelGroupCandidateItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { CandidateRow } from "./ModelGroupEditorFields";
 import { itemKey, type CandidateChannelGroup } from "./modelGroupUtils";
 
 interface ModelGroupCandidateListProps {
   locale: "zh-CN" | "en-US";
-  protocols: ProtocolKind[];
   groupedCandidates: CandidateChannelGroup[];
   expandedChannels: string[];
   existingItemKeys: Set<string>;
@@ -22,7 +21,6 @@ interface ModelGroupCandidateListProps {
 /** Render candidate models grouped by channel. */
 export function ModelGroupCandidateList({
   locale,
-  protocols,
   groupedCandidates,
   expandedChannels,
   existingItemKeys,
@@ -97,13 +95,7 @@ export function ModelGroupCandidateList({
           </Alert>
         ) : !groupedCandidates.length ? (
           <p className="px-1 py-6 text-center text-sm text-muted-foreground">
-            {protocols.length === 0
-              ? locale === "zh-CN"
-                ? "请先在上方选择对外协议以加载候选节点。"
-                : "Select external protocols above to load candidates."
-              : locale === "zh-CN"
-                ? "暂无可选模型"
-                : "No candidates found"}
+            {locale === "zh-CN" ? "暂无可选模型" : "No candidates found"}
           </p>
         ) : null}
       </div>

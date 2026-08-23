@@ -62,7 +62,7 @@ def test_update_model_price_upserts_existing_group_price(
     payload = response.json()
     assert payload["model_key"] == "gpt-4o"
     assert payload["display_name"] == "GPT 4o"
-    assert payload["protocols"] == ["openai_chat"]
+    assert payload["protocols"] == []
     assert payload["input_price_per_million"] == 1.25
     assert payload["pricing_mode"] == "tokens"
     assert payload["image_price_per_image"] == 0

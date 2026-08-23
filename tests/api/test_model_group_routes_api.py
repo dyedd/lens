@@ -90,7 +90,6 @@ def test_model_group_sync_filter_is_normalized_and_validated(
         headers=admin_headers,
         json={
             "name": "filtered",
-            "protocols": ["openai_chat"],
             "sync_filter_mode": "contains",
             "sync_filter_query": "  gpt  ",
         },
@@ -100,7 +99,6 @@ def test_model_group_sync_filter_is_normalized_and_validated(
         headers=admin_headers,
         json={
             "name": "invalid-filter",
-            "protocols": ["openai_chat"],
             "sync_filter_mode": "regex",
             "sync_filter_query": "[",
         },
@@ -129,7 +127,6 @@ def test_create_route_group_rejects_invalid_route_targets(
         headers=admin_headers,
         json={
             "name": "missing-target",
-            "protocols": ["openai_chat"],
             "route_group_id": "missing",
         },
     )
@@ -138,7 +135,6 @@ def test_create_route_group_rejects_invalid_route_targets(
         headers=admin_headers,
         json={
             "name": "missing-protocol",
-            "protocols": ["openai_chat", "gemini"],
             "route_group_id": target["id"],
         },
     )
@@ -147,13 +143,12 @@ def test_create_route_group_rejects_invalid_route_targets(
         headers=admin_headers,
         json={
             "name": "chained",
-            "protocols": ["openai_chat"],
             "route_group_id": route["id"],
         },
     )
 
     assert_error(missing, 400, "Route target model group not found")
-    assert_error(missing_protocol, 400, "Route target protocols must cover")
+    assert missing_protocol.status_code == 201, missing_protocol.text
     assert_error(chained, 400, "Route target must be an execution group")
 
 
@@ -190,7 +185,7 @@ def test_update_referenced_execution_group_preserves_route_group_contracts(
     remove_protocol = client.put(
         f"/api/admin/model-groups/{execution['id']}",
         headers=admin_headers,
-        json={"protocols": ["openai_chat"]},
+        json={},
     )
     become_route = client.put(
         f"/api/admin/model-groups/{execution['id']}",
@@ -198,7 +193,7 @@ def test_update_referenced_execution_group_preserves_route_group_contracts(
         json={"route_group_id": target["id"]},
     )
 
-    assert_error(remove_protocol, 400, "cannot remove protocols")
+    assert remove_protocol.status_code == 200, remove_protocol.text
     assert_error(become_route, 400, "cannot become route groups")
 
 
@@ -213,7 +208,6 @@ def test_update_route_group_clears_sync_filter(
         headers=admin_headers,
         json={
             "name": "source",
-            "protocols": ["openai_chat"],
             "sync_filter_mode": "contains",
             "sync_filter_query": "gpt",
         },

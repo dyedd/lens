@@ -115,7 +115,7 @@ def test_transactional_site_save_rolls_back_when_group_write_fails(
     assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
 
 
-def test_transactional_site_save_waits_for_protocol_extension_confirmation(
+def test_transactional_site_save_adds_members_without_protocol_confirmation(
     client,
     admin_headers,
     create_site,
@@ -138,9 +138,7 @@ def test_transactional_site_save_waits_for_protocol_extension_confirmation(
 
     assert preview.status_code == 200, preview.text
     preview_payload = preview.json()
-    assert preview_payload["model_groups"]["items"][0]["skipped_reason"] == (
-        "protocol_extension_required"
-    )
+    assert preview_payload["model_groups"]["items"][0]["status"] == "update"
     stored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert stored_site["name"] == "Original Site"
 
@@ -150,7 +148,6 @@ def test_transactional_site_save_waits_for_protocol_extension_confirmation(
         json={
             **updated_payload,
             "dry_run": False,
-            "allow_protocol_extension": True,
             "models": _save_models_from_preview(preview_payload),
         },
     )
@@ -160,7 +157,7 @@ def test_transactional_site_save_waits_for_protocol_extension_confirmation(
     stored_group = client.get(
         f"/api/admin/model-groups/{group['id']}", headers=admin_headers
     ).json()
-    assert stored_group["protocols"] == ["openai_chat", "openai_image"]
+    assert stored_group["client_protocols"] == ["openai_image"]
     assert stored_group["items"][0]["model_name"] == "gpt-image"
 
 
@@ -198,9 +195,7 @@ def test_transactional_site_save_detects_protocol_added_to_grouped_model(
     assert preview.status_code == 200, preview.text
     preview_payload = preview.json()
     assert preview_payload["model_groups"]["items"][0]["protocols"] == ["anthropic"]
-    assert preview_payload["model_groups"]["items"][0]["skipped_reason"] == (
-        "protocol_extension_required"
-    )
+    assert preview_payload["model_groups"]["items"][0]["status"] == "update"
 
     committed = client.put(
         f"/api/admin/sites/{site['id']}/with-model-groups",
@@ -208,7 +203,6 @@ def test_transactional_site_save_detects_protocol_added_to_grouped_model(
         json={
             **updated_payload,
             "dry_run": False,
-            "allow_protocol_extension": True,
             "models": _save_models_from_preview(preview_payload),
         },
     )
@@ -217,7 +211,11 @@ def test_transactional_site_save_detects_protocol_added_to_grouped_model(
     stored_group = client.get(
         f"/api/admin/model-groups/{group['id']}", headers=admin_headers
     ).json()
-    assert stored_group["protocols"] == ["openai_chat", "anthropic"]
+    assert stored_group["client_protocols"] == [
+        "openai_chat",
+        "openai_responses",
+        "anthropic",
+    ]
     assert {item["channel_id"] for item in stored_group["items"]} == {
         compose_runtime_channel_id("pc-1", ProtocolKind.OPENAI_CHAT),
         compose_runtime_channel_id("pc-1", ProtocolKind.ANTHROPIC),
@@ -270,7 +268,11 @@ def test_transactional_site_save_removes_deleted_model_protocol_from_group(
     stored_group = client.get(
         f"/api/admin/model-groups/{group['id']}", headers=admin_headers
     ).json()
-    assert stored_group["protocols"] == ["openai_chat"]
+    assert stored_group["client_protocols"] == [
+        "openai_chat",
+        "openai_responses",
+        "anthropic",
+    ]
     assert [item["channel_id"] for item in stored_group["items"]] == [
         compose_runtime_channel_id("pc-1", ProtocolKind.OPENAI_CHAT)
     ]
@@ -506,7 +508,7 @@ def test_ensure_model_groups_from_site_skips_disabled_resources(
     assert model_response.json()["items"][0]["skipped_reason"] == "model_not_available"
 
 
-def test_ensure_model_groups_from_site_updates_existing_group_with_protocol_extension(
+def test_ensure_model_groups_from_site_updates_existing_group_from_member(
     client,
     admin_headers,
     create_site,
@@ -523,23 +525,12 @@ def test_ensure_model_groups_from_site_updates_existing_group_with_protocol_exte
         "protocols": ["gemini"],
     }
 
-    without_extension = client.post(
-        "/api/admin/model-groups/ensure-from-site",
-        headers=admin_headers,
-        json={
-            "site_id": site["id"],
-            "dry_run": True,
-            "allow_protocol_extension": False,
-            "models": [model],
-        },
-    )
-    with_extension = client.post(
+    preview = client.post(
         "/api/admin/model-groups/ensure-from-site",
         headers=admin_headers,
         json={
             "site_id": site["id"],
             "dry_run": False,
-            "allow_protocol_extension": True,
             "models": [model],
         },
     )
@@ -547,16 +538,10 @@ def test_ensure_model_groups_from_site_updates_existing_group_with_protocol_exte
         f"/api/admin/model-groups/{existing['id']}", headers=admin_headers
     )
 
-    assert without_extension.status_code == 200
-    assert without_extension.json()["items"][0]["status"] == "skipped"
-    assert without_extension.json()["items"][0]["skipped_reason"] == (
-        "protocol_extension_required"
-    )
-    assert without_extension.json()["items"][0]["missing_protocols"] == ["gemini"]
-    assert with_extension.status_code == 200
-    assert with_extension.json()["updated_count"] == 1
+    assert preview.status_code == 200
+    assert preview.json()["updated_count"] == 1
     assert detail.status_code == 200
-    assert detail.json()["protocols"] == ["openai_chat", "gemini"]
+    assert detail.json()["client_protocols"] == ["gemini"]
     assert detail.json()["items"][0]["protocol"] == "gemini"
 
 

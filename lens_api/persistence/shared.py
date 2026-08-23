@@ -108,63 +108,6 @@ def _parse_supported_protocols_json(raw: str | None) -> list[ProtocolKind]:
     return protocols
 
 
-def _parse_group_protocols(
-    entity_or_json: str | ModelGroupEntity,
-) -> list[ProtocolKind]:
-    protocols_json = (
-        entity_or_json.protocols_json
-        if isinstance(entity_or_json, ModelGroupEntity)
-        else entity_or_json
-    )
-    try:
-        raw_protocols = json.loads(protocols_json or "[]")
-        if not isinstance(raw_protocols, list):
-            raise ValueError("protocols_json must be a list")
-        return [ProtocolKind(str(protocol)) for protocol in raw_protocols]
-    except (TypeError, ValueError) as exc:
-        _LOGGER.warning("Invalid model group protocols_json: %s", exc)
-        return []
-
-
-def _dump_group_protocols(protocols: list[ProtocolKind]) -> str:
-    return json.dumps([protocol.value for protocol in protocols], ensure_ascii=True)
-
-
-def _normalize_group_protocols(protocols: list[ProtocolKind]) -> list[ProtocolKind]:
-    normalized: list[ProtocolKind] = []
-    seen: set[ProtocolKind] = set()
-    for protocol in protocols:
-        protocol_kind = (
-            protocol if isinstance(protocol, ProtocolKind) else ProtocolKind(protocol)
-        )
-        if protocol_kind in seen:
-            continue
-        seen.add(protocol_kind)
-        normalized.append(protocol_kind)
-    if not normalized:
-        raise ValueError("At least one protocol is required")
-    return normalized
-
-
-def _group_supports_protocol(
-    entity: ModelGroupEntity | ModelGroup,
-    protocol: ProtocolKind | str,
-) -> bool:
-    protocol_kind = (
-        protocol
-        if isinstance(protocol, ProtocolKind)
-        else _PROTOCOL_KIND_BY_VALUE.get(protocol)
-    )
-    if protocol_kind is None:
-        return False
-    protocols = (
-        entity.protocols
-        if isinstance(entity, ModelGroup)
-        else _parse_group_protocols(entity)
-    )
-    return protocol_kind in protocols
-
-
 def _channel_ids_by_protocol_config(
     channel_ids: Iterable[str | None],
 ) -> tuple[dict[str, list[str]], dict[str, ProtocolKind]]:

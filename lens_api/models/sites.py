@@ -251,7 +251,6 @@ class SiteModelGroupSaveRequest(SiteCreate):
 
     site_id: str | None = None
     dry_run: bool = True
-    allow_protocol_extension: bool = False
     models: list[ModelGroupEnsureModelInput] | None = None
 
 

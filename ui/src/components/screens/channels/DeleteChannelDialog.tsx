@@ -33,8 +33,8 @@ export function DeleteChannelDialog({
         title={locale === "zh-CN" ? "确认删除渠道" : "Delete channel"}
         description={
           locale === "zh-CN"
-            ? "删除后该渠道下的组合、模型和模型组成员会一起移除。"
-            : "Combinations, models, and group members under this channel will be removed together."
+            ? "删除后该渠道下的协议配置、模型和模型组成员会一起移除。"
+            : "Protocol configs, models, and group members under this channel will be removed together."
         }
       >
         <div className="grid gap-5">

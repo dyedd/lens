@@ -2,10 +2,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
-import { ProtocolMultiSelect } from "@/components/ui/ProtocolMultiSelect";
 import { Separator } from "@/components/ui/Separator";
-import type { ModelGroup, ProtocolKind } from "@/lib/api";
-import { protocolOptions } from "@/lib/protocols";
+import type { ModelGroup } from "@/lib/api";
 import { EditablePriceRow, StrategyToggle } from "./ModelGroupEditorFields";
 import type { FormState } from "./modelGroupUtils";
 
@@ -13,7 +11,6 @@ interface ModelGroupSettingsProps {
   locale: "zh-CN" | "en-US";
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
-  toggleProtocol: (protocol: ProtocolKind) => void;
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
 }
@@ -23,7 +20,6 @@ export function ModelGroupSettings({
   locale,
   form,
   setForm,
-  toggleProtocol,
   routeTargetOptions,
   changeRouteTarget,
 }: ModelGroupSettingsProps) {
@@ -34,37 +30,6 @@ export function ModelGroupSettings({
           {locale === "zh-CN" ? "基本信息" : "Group settings"}
         </div>
         <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Field>
-            <FieldLabel>
-              {locale === "zh-CN" ? "协议" : "External Protocols"}
-            </FieldLabel>
-            <ProtocolMultiSelect
-              value={form.protocols}
-              onChange={(next) => {
-                const changedProtocols = protocolOptions(locale)
-                  .map((option) => option.value)
-                  .filter(
-                    (protocol) =>
-                      form.protocols.includes(protocol) !==
-                      next.includes(protocol),
-                  );
-                if (changedProtocols.length === 1) {
-                  toggleProtocol(changedProtocols[0]);
-                  return;
-                }
-                setForm((current) => ({ ...current, protocols: next }));
-              }}
-              locale={locale}
-              invalid={form.protocols.length === 0}
-            />
-            {form.protocols.length === 0 ? (
-              <p className="text-sm text-destructive">
-                {locale === "zh-CN"
-                  ? "至少需要选择一项协议。"
-                  : "At least one protocol is required."}
-              </p>
-            ) : null}
-          </Field>
           <Field>
             <FieldLabel htmlFor="group-name">
               {locale === "zh-CN" ? "模型组名称" : "Group name"}

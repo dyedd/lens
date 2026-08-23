@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type Dispatch, type SetStateAction } from "react";
-import type { ModelGroup, ProtocolKind } from "@/lib/api";
+import type { ModelGroup } from "@/lib/api";
 import {
   EMPTY_FORM,
   toForm,
@@ -82,20 +82,6 @@ export function useGroupEditorState() {
     setCandidateSearchUsesGroupName(false);
   }
 
-  function toggleProtocol(protocol: ProtocolKind) {
-    setForm((current) => ({
-      ...current,
-      protocols: current.protocols.includes(protocol)
-        ? current.protocols.filter((item) => item !== protocol)
-        : [...current.protocols, protocol],
-      items: current.items.map((item) => ({
-        ...item,
-        state: null,
-        reasons: [],
-      })),
-    }));
-  }
-
   function changeRouteTarget(routeGroupId: string) {
     setForm((current) => ({
       ...current,
@@ -124,6 +110,5 @@ export function useGroupEditorState() {
     setExpandedChannels,
     setForm,
     setMemberStatusFilter,
-    toggleProtocol,
   };
 }

@@ -57,7 +57,7 @@ export const emptyProtocolConfig = (
   expanded: true,
 });
 
-/** Creates a channel editor form with one URL, credential, and combination. */
+/** Creates a channel editor form with one URL, credential, and protocol config. */
 export const emptyForm = (locale: Locale = "zh-CN"): FormState => {
   const baseUrlId = createLocalId("baseurl");
   const credential = emptyCredential();

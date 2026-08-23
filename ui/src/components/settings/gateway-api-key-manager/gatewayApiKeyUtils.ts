@@ -2,9 +2,7 @@ import type {
   GatewayApiKey,
   GatewayApiKeyPayload,
   ModelGroup,
-  ProtocolKind,
 } from "@/lib/api";
-import { PROTOCOL_LABELS } from "@/lib/protocols";
 import { titleForLocale, type Locale } from "@/lib/I18nContext";
 import { formatExpiresAt, parseGatewayExpiresAt } from "./gatewayDateTime";
 
@@ -19,7 +17,6 @@ export type GatewayApiKeyForm = {
 
 export type GatewayModelGroupOption = {
   name: string;
-  protocols: ProtocolKind[];
   enabledItemCount: number;
   channelNames: string[];
 };
@@ -132,16 +129,10 @@ export function buildGatewayModelGroupOptions(groups: ModelGroup[]) {
       mapping.get(group.name) ??
       ({
         name: group.name,
-        protocols: [],
         enabledItemCount: 0,
         channelNames: [],
       } satisfies GatewayModelGroupOption);
 
-    for (const protocol of group.protocols) {
-      if (!current.protocols.includes(protocol)) {
-        current.protocols = [...current.protocols, protocol];
-      }
-    }
     current.enabledItemCount += enabledItems.length;
     current.channelNames = Array.from(
       new Set([
@@ -155,14 +146,4 @@ export function buildGatewayModelGroupOptions(groups: ModelGroup[]) {
   return [...mapping.values()].sort((left, right) =>
     left.name.localeCompare(right.name),
   );
-}
-
-/** Formats a localized summary of supported protocols. */
-export function protocolSummary(locale: Locale, protocols: ProtocolKind[]) {
-  return protocols
-    .map((protocol) => {
-      const labels = PROTOCOL_LABELS[protocol];
-      return locale === "zh-CN" ? labels.zh : labels.en;
-    })
-    .join(" / ");
 }

@@ -117,9 +117,11 @@ def filter_enabled_targets(
                         enabled=True,
                     ),
                     channel_lookups,
-                    [protocol],
                 )
-                if evaluation.state != ModelGroupItemState.READY:
+                if (
+                    evaluation.state != ModelGroupItemState.READY
+                    or not can_reach_protocol(target.channel.protocol, protocol)
+                ):
                     continue
             elif (
                 target.channel.status != ChannelStatus.ENABLED

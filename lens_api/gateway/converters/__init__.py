@@ -2,7 +2,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from ...core.protocol_reachability import can_reach_protocol, needs_conversion
+from ...core.protocol_reachability import can_reach_protocol
 from ...models import ProtocolKind
 from .anthropic_request_to_chat import anthropic_request_to_chat
 from .anthropic_to_responses import anthropic_request_to_responses
@@ -30,7 +30,6 @@ __all__ = [
     "convert_request",
     "convert_response",
     "convert_stream_iterator",
-    "needs_conversion",
 ]
 
 

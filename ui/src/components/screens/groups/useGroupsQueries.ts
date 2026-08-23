@@ -34,7 +34,6 @@ export function useGroupsQueries({
   });
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(
     () => ({
-      protocols: form.protocols,
       items: form.items
         .map((item) => ({
           channel_id: item.channel_id,
@@ -44,7 +43,7 @@ export function useGroupsQueries({
         }))
         .sort((left, right) => itemKey(left).localeCompare(itemKey(right))),
     }),
-    [form.items, form.protocols],
+    [form.items],
   );
   const candidateQuery = useQuery({
     queryKey: ["group-candidates", candidatePayload],
@@ -56,7 +55,7 @@ export function useGroupsQueries({
           body: JSON.stringify(candidatePayload),
         },
       ),
-    enabled: dialogOpen && !form.route_group_id && form.protocols.length > 0,
+    enabled: dialogOpen && !form.route_group_id,
   });
   const groupRows = useMemo(
     () => buildGroupRows(groupsQuery.data ?? []),
@@ -65,16 +64,9 @@ export function useGroupsQueries({
   const routeTargetOptions = useMemo(
     () =>
       (groupsQuery.data ?? [])
-        .filter(
-          (group) =>
-            form.protocols.every((protocol) =>
-              group.protocols.includes(protocol),
-            ) &&
-            !group.route_group_id &&
-            group.id !== editingId,
-        )
+        .filter((group) => !group.route_group_id && group.id !== editingId)
         .sort((left, right) => left.name.localeCompare(right.name, locale)),
-    [editingId, form.protocols, groupsQuery.data, locale],
+    [editingId, groupsQuery.data, locale],
   );
 
   useEffect(() => {

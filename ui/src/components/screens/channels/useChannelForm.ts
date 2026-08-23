@@ -78,8 +78,8 @@ function validateChannelForm(
   if (invalidProtocolBaseUrlCount(form)) {
     toast.error(
       locale === "zh-CN"
-        ? "组合地址来源无效"
-        : "Combination Base URL is invalid",
+        ? "协议配置地址来源无效"
+        : "Protocol config Base URL is invalid",
     );
     return false;
   }

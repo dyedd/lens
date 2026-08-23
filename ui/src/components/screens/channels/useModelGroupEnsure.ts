@@ -59,14 +59,12 @@ export function useModelGroupEnsure({
     null,
   );
   const [groups, setGroups] = useState<ModelGroup[]>([]);
-  const [allowProtocolExtension, setAllowProtocolExtension] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
   async function requestSave(
     pending: PendingSave,
     options: {
       dryRun: boolean;
-      allowProtocolExtension: boolean;
       models: ModelGroupEnsureModelInput[] | null;
     },
   ) {
@@ -74,7 +72,6 @@ export function useModelGroupEnsure({
       ...pending.payload,
       site_id: pending.mode === "create" ? pending.siteId || null : null,
       dry_run: options.dryRun,
-      allow_protocol_extension: options.allowProtocolExtension,
       models: options.models,
     };
     const path =
@@ -96,7 +93,6 @@ export function useModelGroupEnsure({
     setPendingSave(null);
     setResult(null);
     setGroups([]);
-    setAllowProtocolExtension(false);
     setSelectedKeys([]);
   }
 
@@ -111,7 +107,6 @@ export function useModelGroupEnsure({
   ) {
     const committed = await requestSave(pending, {
       dryRun: false,
-      allowProtocolExtension,
       models,
     });
     try {
@@ -149,7 +144,6 @@ export function useModelGroupEnsure({
     setIsEnsuringModelGroups(true);
     setResult(null);
     setGroups([]);
-    setAllowProtocolExtension(false);
     setSelectedKeys([]);
     const mode = editor.editingSiteId ? "update" : "create";
     const pending: PendingSave = {
@@ -160,7 +154,6 @@ export function useModelGroupEnsure({
     try {
       const preview = await requestSave(pending, {
         dryRun: true,
-        allowProtocolExtension: false,
         models: null,
       });
       const nextPending = { ...pending, siteId: preview.site.id };
@@ -195,16 +188,12 @@ export function useModelGroupEnsure({
     }
   }
 
-  async function previewWithModels(
-    models: ModelGroupEnsureModelInput[],
-    allowed: boolean,
-  ) {
+  async function previewWithModels(models: ModelGroupEnsureModelInput[]) {
     if (!pendingSave) return;
     setIsEnsuringModelGroups(true);
     try {
       const preview = await requestSave(pendingSave, {
         dryRun: true,
-        allowProtocolExtension: allowed,
         models,
       });
       setResult(preview.model_groups);
@@ -234,7 +223,6 @@ export function useModelGroupEnsure({
         result.items,
         new Map([[changedKey, group]]),
       ),
-      allowProtocolExtension,
     );
     if (!nextResult) return;
     setSelectedKeys((current) => {
@@ -256,29 +244,6 @@ export function useModelGroupEnsure({
         next.push(changedKey);
       }
       return next;
-    });
-  }
-
-  async function updateProtocolExtension(allowed: boolean) {
-    if (!result) return;
-    setAllowProtocolExtension(allowed);
-    const nextResult = await previewWithModels(
-      modelGroupEnsureInputsFromResult(result.items),
-      allowed,
-    );
-    if (!nextResult) {
-      setAllowProtocolExtension(!allowed);
-      return;
-    }
-    setSelectedKeys((current) => {
-      const executable = new Set(
-        nextResult.items
-          .filter(canSubmitModelGroupEnsureItem)
-          .map(modelGroupEnsureResultKey),
-      );
-      return allowed
-        ? Array.from(executable)
-        : current.filter((key) => executable.has(key));
     });
   }
 
@@ -331,11 +296,9 @@ export function useModelGroupEnsure({
     isEnsuringModelGroups,
     result,
     groups,
-    allowProtocolExtension,
     selectedKeys,
     submit,
     updateTarget,
-    updateProtocolExtension,
     toggleItem,
     confirm,
   };

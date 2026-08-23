@@ -127,13 +127,9 @@ export function ChannelsDialogs({
           result={modelGroups.result}
           modelGroups={modelGroups.groups}
           selectedItemKeys={modelGroups.selectedKeys}
-          isProtocolExtensionAllowed={modelGroups.allowProtocolExtension}
           isConfirming={modelGroups.isEnsuringModelGroups}
           onOpenChange={modelGroups.setModelGroupEnsureOpen}
           onToggleItem={modelGroups.toggleItem}
-          onAllowProtocolExtensionChange={(allowed) =>
-            void modelGroups.updateProtocolExtension(allowed)
-          }
           onTargetGroupChange={(item, name) =>
             void modelGroups.updateTarget(item, name)
           }

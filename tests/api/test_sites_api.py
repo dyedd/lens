@@ -340,7 +340,6 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
         headers=admin_headers,
         json={
             "name": "gpt-4o",
-            "protocols": ["openai_chat"],
             "items": [
                 {
                     "channel_id": openai_chat_channel_id(),

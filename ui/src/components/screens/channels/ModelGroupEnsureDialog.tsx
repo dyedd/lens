@@ -3,15 +3,12 @@
 import { useState } from "react";
 import { RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/Field";
 import type {
   ModelGroup,
   ModelGroupEnsureFromSiteResponse,
   ModelGroupEnsureResultItem,
 } from "@/lib/api";
-import { compactProtocolLabel } from "@/lib/protocols";
 import type { Locale } from "./channelShared";
 import {
   canSubmitModelGroupEnsureItem,
@@ -28,11 +25,9 @@ type Props = {
   result: ModelGroupEnsureFromSiteResponse | null;
   modelGroups: ModelGroup[];
   selectedItemKeys: string[];
-  isProtocolExtensionAllowed: boolean;
   isConfirming: boolean;
   onOpenChange: (open: boolean) => void;
   onToggleItem: (item: ModelGroupEnsureResultItem) => void;
-  onAllowProtocolExtensionChange: (allowed: boolean) => void;
   onTargetGroupChange: (
     item: ModelGroupEnsureResultItem,
     groupName: string,
@@ -47,11 +42,9 @@ export function ModelGroupEnsureDialog({
   result,
   modelGroups,
   selectedItemKeys,
-  isProtocolExtensionAllowed,
   isConfirming,
   onOpenChange,
   onToggleItem,
-  onAllowProtocolExtensionChange,
   onTargetGroupChange,
   onConfirm,
 }: Props) {
@@ -63,20 +56,6 @@ export function ModelGroupEnsureDialog({
   >({});
   const [openTargetGroupKey, setOpenTargetGroupKey] = useState<string | null>(
     null,
-  );
-  const requiresProtocolExtension = Boolean(
-    result?.items.some(
-      (item) =>
-        item.skipped_reason === "protocol_extension_required" ||
-        item.missing_protocols.length > 0,
-    ),
-  );
-  const missingProtocolLabels = Array.from(
-    new Set(
-      result?.items.flatMap((item) =>
-        item.missing_protocols.map(compactProtocolLabel),
-      ) ?? [],
-    ),
   );
   function getCreateGroupName(
     item: ModelGroupEnsureResultItem,
@@ -172,7 +151,6 @@ export function ModelGroupEnsureDialog({
       const targetModelGroups = selectableModelGroupsForEnsureItem(
         item,
         modelGroups,
-        isProtocolExtensionAllowed,
       );
       const targetGroupExists = targetModelGroups.some(
         (group) => group.name === item.group_name,
@@ -215,34 +193,6 @@ export function ModelGroupEnsureDialog({
               <span>{`${locale === "zh-CN" ? "已存在" : "Unchanged"} ${result.unchanged_count}`}</span>
               <span>{`${locale === "zh-CN" ? "跳过" : "Skipped"} ${result.skipped_count}`}</span>
             </div>
-            {requiresProtocolExtension ? (
-              <Field orientation="horizontal" className="items-center gap-3">
-                <Checkbox
-                  checked={isProtocolExtensionAllowed}
-                  disabled={isConfirming}
-                  aria-label={
-                    locale === "zh-CN"
-                      ? "允许扩展已有模型组协议"
-                      : "Allow protocol extension"
-                  }
-                  onCheckedChange={(checked) =>
-                    onAllowProtocolExtensionChange(Boolean(checked))
-                  }
-                />
-                <div className="flex min-w-0 flex-col gap-1">
-                  <FieldLabel className="w-auto">
-                    {locale === "zh-CN"
-                      ? "允许扩展已有模型组协议"
-                      : "Allow protocol extension"}
-                  </FieldLabel>
-                  <FieldDescription>
-                    {locale === "zh-CN"
-                      ? `不修改已有组协议。以下协议现有组不包含，相关模型会被跳过：${missingProtocolLabels.join(", ")}`
-                      : `Existing group protocols stay unchanged. Models using the following protocols will be skipped: ${missingProtocolLabels.join(", ")}`}
-                  </FieldDescription>
-                </div>
-              </Field>
-            ) : null}
             <ModelGroupEnsureTable
               items={result.items}
               modelGroups={modelGroups}
@@ -250,7 +200,6 @@ export function ModelGroupEnsureDialog({
               createGroupNameDrafts={createGroupNameDrafts}
               createGroupNameErrors={createGroupNameErrors}
               openTargetGroupKey={openTargetGroupKey}
-              isProtocolExtensionAllowed={isProtocolExtensionAllowed}
               isConfirming={isConfirming}
               locale={locale}
               getCreateGroupName={getCreateGroupName}

@@ -101,14 +101,6 @@ export function useGroupCommands({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!form.protocols.length) {
-      toast.error(
-        locale === "zh-CN"
-          ? "至少需要选择一项协议。"
-          : "At least one protocol is required.",
-      );
-      return;
-    }
     try {
       const savedGroup = await saveGroup(form, editingId);
       if (!savedGroup.route_group_id)
