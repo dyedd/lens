@@ -226,22 +226,6 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
           title={locale === "zh-CN" ? "更多设置" : "More settings"}
         >
           <div className="grid gap-5">
-            <Field>
-              <FieldLabel htmlFor="group-param-override">
-                {locale === "zh-CN" ? "参数覆盖" : "Param Override"}
-              </FieldLabel>
-              <Textarea
-                id="group-param-override"
-                className="min-h-32 font-mono text-sm"
-                value={form.param_override}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    param_override: event.target.value,
-                  }))
-                }
-              />
-            </Field>
             <HeaderRows
               title={locale === "zh-CN" ? "请求头" : "Request headers"}
               headers={form.headers}
@@ -272,6 +256,22 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 }))
               }
             />
+            <Field>
+              <FieldLabel htmlFor="group-param-override">
+                {locale === "zh-CN" ? "参数覆盖" : "Param Override"}
+              </FieldLabel>
+              <Textarea
+                id="group-param-override"
+                className="min-h-32 font-mono text-sm"
+                value={form.param_override}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    param_override: event.target.value,
+                  }))
+                }
+              />
+            </Field>
             <div className="flex justify-end">
               <Button
                 type="button"
