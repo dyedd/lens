@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from ..models.channels import ChannelConfig, ChannelDiscoveredModel, ChannelKeyItem
@@ -11,13 +11,11 @@ from ..models.model_groups import (
     ModelGroupItemState,
 )
 from ..models.protocols import ChannelStatus, ProtocolKind
-from .protocol_reachability import can_reach_protocol
 from .runtime_channel_ids import split_runtime_channel_id
 
 _INVALID_REASONS = frozenset(
     {
         ModelGroupItemReason.CHANNEL_NOT_FOUND,
-        ModelGroupItemReason.PROTOCOL_UNREACHABLE,
         ModelGroupItemReason.CREDENTIAL_NOT_FOUND,
         ModelGroupItemReason.MODEL_NOT_FOUND,
     }
@@ -71,7 +69,6 @@ def model_group_item_key(
 def evaluate_model_group_item(
     item: ModelGroupItemInput | ModelGroupItem,
     channels_by_id: Mapping[str, ModelGroupChannelLookup],
-    required_protocols: Sequence[ProtocolKind],
 ) -> ModelGroupItemEvaluation:
     parsed_channel_id = split_runtime_channel_id(item.channel_id)
     protocol_config_id = (
@@ -90,11 +87,6 @@ def evaluate_model_group_item(
 
     channel = channel_lookup.channel
     protocol = channel.protocol
-    if not any(
-        can_reach_protocol(channel.protocol, required_protocol)
-        for required_protocol in required_protocols
-    ):
-        reasons.append(ModelGroupItemReason.PROTOCOL_UNREACHABLE)
     if channel.status != ChannelStatus.ENABLED:
         reasons.append(ModelGroupItemReason.CHANNEL_DISABLED)
 

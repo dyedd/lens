@@ -9,7 +9,7 @@ from fastapi import HTTPException, Response
 from starlette.background import BackgroundTask
 
 from ...models import ProtocolKind, RequestLogLifecycleStatus
-from ..converters import convert_request, needs_conversion
+from ..converters import convert_request
 from ..router import RouteTarget
 from ..router.cooldown import classify_error
 from .app_state import app_state
@@ -149,7 +149,7 @@ async def _try_target(
     )
     log_ctx.attempts.append(attempt)
 
-    if needs_conversion(protocol, channel.protocol):
+    if protocol != channel.protocol:
         try:
             upstream_body = convert_request(
                 protocol,

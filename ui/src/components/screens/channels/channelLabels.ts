@@ -40,7 +40,9 @@ export function baseUrlLabel(
 
 /** Builds a localized default name for a protocol configuration. */
 export function defaultProtocolConfigName(index: number, locale: string) {
-  return locale === "zh-CN" ? `组合 ${index + 1}` : `Combination ${index + 1}`;
+  return locale === "zh-CN"
+    ? `协议配置 ${index + 1}`
+    : `Protocol config ${index + 1}`;
 }
 
 /** Returns a protocol configuration name or its localized fallback. */

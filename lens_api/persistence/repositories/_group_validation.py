@@ -7,7 +7,6 @@ from ...core.model_group_status import (
 )
 from ...models import (
     ModelGroupItemReason,
-    ModelGroupItemState,
     ModelGroupItemView,
 )
 from ..shared import (
@@ -15,10 +14,6 @@ from ..shared import (
     ChannelConfig,
     ModelGroupEntity,
     ModelGroupItemInput,
-    ProtocolKind,
-    _normalize_group_protocols,
-    _parse_group_protocols,
-    can_reach_protocol,
     select,
 )
 
@@ -28,20 +23,16 @@ class _GroupValidationMixin:
         self,
         session: AsyncSession,
         name: str,
-        protocols: list[ProtocolKind],
         route_group_id: str = "",
         items: list[ModelGroupItemInput] | None = None,
         exclude_group_id: str | None = None,
         *,
         channels: list[ChannelConfig],
         existing_items: list[ModelGroupItemView] | None = None,
-        existing_protocols: list[ProtocolKind] | None = None,
     ) -> ModelGroupEntity | None:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError("Model group name is required")
-        normalized_protocols = _normalize_group_protocols(protocols)
-
         result = await session.execute(
             select(ModelGroupEntity.id)
             .where(ModelGroupEntity.name == normalized_name)
@@ -63,17 +54,6 @@ class _GroupValidationMixin:
             if route_group is None:
                 raise ValueError(
                     f"Route target model group not found: {normalized_route_group_id}"
-                )
-            route_group_protocols = set(_parse_group_protocols(route_group))
-            missing_protocols = [
-                protocol
-                for protocol in normalized_protocols
-                if protocol not in route_group_protocols
-            ]
-            if missing_protocols:
-                missing = ", ".join(protocol.value for protocol in missing_protocols)
-                raise ValueError(
-                    f"Route target protocols must cover source protocols: {missing}"
                 )
             if route_group.route_group_id.strip():
                 raise ValueError(
@@ -101,7 +81,7 @@ class _GroupValidationMixin:
         evaluated_items = [
             (
                 item,
-                evaluate_model_group_item(item, channels_by_id, normalized_protocols),
+                evaluate_model_group_item(item, channels_by_id),
             )
             for item in items
         ]
@@ -125,35 +105,6 @@ class _GroupValidationMixin:
             if blocking_reason is not None:
                 self._raise_group_item_error(item, blocking_reason)
 
-        previous_enabled_by_key = {
-            model_group_item_key(item): item.enabled for item in existing_items or []
-        }
-        next_enabled_by_key = {
-            model_group_item_key(item): item.enabled for item, _ in evaluated_items
-        }
-        should_validate_coverage = (
-            existing_protocols is None
-            or set(normalized_protocols) != set(existing_protocols)
-            or next_enabled_by_key != previous_enabled_by_key
-        )
-        has_enabled_items = any(item.enabled for item, _ in evaluated_items)
-        enabled_evaluations = [
-            evaluation
-            for item, evaluation in evaluated_items
-            if item.enabled and evaluation.state != ModelGroupItemState.INVALID
-        ]
-        if should_validate_coverage and has_enabled_items:
-            for protocol in normalized_protocols:
-                if not any(
-                    evaluation.protocol is not None
-                    and can_reach_protocol(evaluation.protocol, protocol)
-                    for evaluation in enabled_evaluations
-                ):
-                    raise ValueError(
-                        f"Protocol {protocol.value} has no reachable channel "
-                        "in group items"
-                    )
-
         return route_group
 
     @staticmethod
@@ -163,11 +114,6 @@ class _GroupValidationMixin:
         reason_label = f"{reason.value}: "
         if reason == ModelGroupItemReason.CHANNEL_NOT_FOUND:
             raise ValueError(f"{reason_label}Channels not found: {item.channel_id}")
-        if reason == ModelGroupItemReason.PROTOCOL_UNREACHABLE:
-            raise ValueError(
-                f"{reason_label}Channels cannot reach any selected protocol: "
-                f"{item.channel_id}"
-            )
         if reason == ModelGroupItemReason.CHANNEL_DISABLED:
             raise ValueError(
                 f"{reason_label}Channel '{item.channel_id}' is disabled; "

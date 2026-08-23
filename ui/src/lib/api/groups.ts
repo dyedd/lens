@@ -10,7 +10,6 @@ export type ModelGroupItemState =
 export type ModelGroupItemReason =
   | "manual_disabled"
   | "channel_not_found"
-  | "protocol_unreachable"
   | "channel_disabled"
   | "credential_not_found"
   | "credential_disabled"
@@ -38,7 +37,7 @@ export type ModelGroupItem = ModelGroupItemPayload & {
 export type ModelGroup = {
   id: string;
   name: string;
-  protocols: ProtocolKind[];
+  client_protocols: ProtocolKind[];
   strategy: RoutingStrategy;
   route_group_id?: string;
   route_group_name?: string;
@@ -54,7 +53,6 @@ export type ModelGroup = {
 };
 export type ModelGroupPayload = {
   name: string;
-  protocols: ProtocolKind[];
   strategy: RoutingStrategy;
   route_group_id?: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
@@ -79,10 +77,7 @@ export type ModelGroupCandidateItem = {
   protocols: ProtocolKind[];
   items: ModelGroupCandidateSubitem[];
 };
-export type ModelGroupCandidatesPayload = {
-  protocols?: ProtocolKind[];
-  items: ModelGroupItemPayload[];
-};
+export type ModelGroupCandidatesPayload = { items: ModelGroupItemPayload[] };
 export type ModelGroupCandidatesResponse = {
   candidates: ModelGroupCandidateItem[];
   evaluated_items: ModelGroupItem[];
@@ -108,7 +103,6 @@ export type ModelGroupEnsureModelInput = {
 export type ModelGroupEnsureFromSitePayload = {
   site_id: string;
   dry_run: boolean;
-  allow_protocol_extension: boolean;
   models: ModelGroupEnsureModelInput[];
 };
 export type ModelGroupEnsureResultItem = {
@@ -122,7 +116,6 @@ export type ModelGroupEnsureResultItem = {
   added_count: number;
   existing_count: number;
   skipped_reason: string;
-  missing_protocols: ProtocolKind[];
 };
 export type ModelGroupEnsureFromSiteResponse = {
   dry_run: boolean;

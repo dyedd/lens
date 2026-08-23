@@ -124,7 +124,7 @@ export function ModelPickerDialog({
                 />
                 <div className="flex min-w-0 items-center gap-2 sm:justify-end">
                   <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                    {locale === "zh-CN" ? "客户端协议" : "Client protocols"}
+                    {locale === "zh-CN" ? "上游协议" : "Upstream protocols"}
                   </span>
                   <ProtocolMultiSelect
                     value={toolbarProtocols}
@@ -140,8 +140,8 @@ export function ModelPickerDialog({
                           ? "设置匹配协议"
                           : "Set matched"
                         : locale === "zh-CN"
-                          ? "客户端协议"
-                          : "Client protocols"
+                          ? "上游协议"
+                          : "Upstream protocols"
                     }
                   />
                 </div>

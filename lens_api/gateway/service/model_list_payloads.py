@@ -120,7 +120,7 @@ def _filtered_group_names(
             group.name.strip()
             for group in groups
             if group.name.strip()
-            and set(group.protocols) & requested_protocols
+            and set(group.client_protocols) & requested_protocols
             and has_ready_item(group)
             and _gateway_key_allows_model(gateway_key, group.name)
         }

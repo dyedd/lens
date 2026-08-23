@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ProtocolKind, RoutingStrategy } from "@/lib/api";
+import type { RoutingStrategy } from "@/lib/api";
 import { getModelFamilyKey } from "@/lib/ModelIcons";
 import {
   buildModelPrefixOptions,
@@ -18,9 +18,6 @@ export function useGroupFilters(
   const [selectedModelPrefix, setSelectedModelPrefix] =
     useState<SelectedModelPrefix>("all");
   const [search, setSearch] = useState("");
-  const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
-    "all",
-  );
   const [strategyFilter, setStrategyFilter] = useState<"all" | RoutingStrategy>(
     "all",
   );
@@ -43,12 +40,6 @@ export function useGroupFilters(
       if (
         effectiveSelectedModelPrefix !== "all" &&
         getModelFamilyKey(group.name) !== effectiveSelectedModelPrefix
-      ) {
-        return false;
-      }
-      if (
-        protocolFilter !== "all" &&
-        !group.protocols.includes(protocolFilter)
       ) {
         return false;
       }
@@ -88,7 +79,6 @@ export function useGroupFilters(
     effectiveSelectedModelPrefix,
     groupRows,
     locale,
-    protocolFilter,
     search,
     sortBy,
     strategyFilter,
@@ -97,7 +87,6 @@ export function useGroupFilters(
   function resetFilters() {
     setSelectedModelPrefix("all");
     setSearch("");
-    setProtocolFilter("all");
     setStrategyFilter("all");
     setSortBy("members-desc");
   }
@@ -106,16 +95,13 @@ export function useGroupFilters(
     activeFilterCount: [
       effectiveSelectedModelPrefix !== "all",
       Boolean(search.trim()),
-      protocolFilter !== "all",
       strategyFilter !== "all",
     ].filter(Boolean).length,
     effectiveSelectedModelPrefix,
     hasModelPrefixOptions: modelPrefixOptions.length > 0,
     modelPrefixOptions,
-    protocolFilter,
     resetFilters,
     search,
-    setProtocolFilter,
     setSearch,
     setSelectedModelPrefix,
     setSortBy,

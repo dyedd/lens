@@ -149,7 +149,6 @@ export function useGroupCandidates({
         {
           method: "POST",
           body: JSON.stringify({
-            protocols: form.protocols,
             items: [],
           } satisfies ModelGroupCandidatesPayload),
         },

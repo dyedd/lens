@@ -28,7 +28,6 @@ export function GroupsOverview(props: GroupsOverviewProps) {
           setCardDragging={props.setCardDragging}
           effectiveSelectedModelPrefix={props.effectiveSelectedModelPrefix}
           search={props.search}
-          protocolFilter={props.protocolFilter}
           strategyFilter={props.strategyFilter}
           openEdit={props.openEdit}
           changeStrategy={props.changeStrategy}
@@ -45,12 +44,10 @@ export function GroupsOverview(props: GroupsOverviewProps) {
       <GroupsFilterPanel
         locale={props.locale}
         search={props.search}
-        protocolFilter={props.protocolFilter}
         strategyFilter={props.strategyFilter}
         sortBy={props.sortBy}
         activeFilterCount={props.activeFilterCount}
         setSearch={props.setSearch}
-        setProtocolFilter={props.setProtocolFilter}
         setStrategyFilter={props.setStrategyFilter}
         setSortBy={props.setSortBy}
         resetFilters={props.resetFilters}

@@ -37,7 +37,7 @@ export function ChannelProtocolSection({
     <div className="grid gap-4">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="text-base font-semibold text-foreground">
-          {locale === "zh-CN" ? "组合" : "Combinations"}
+          {locale === "zh-CN" ? "上游协议配置" : "Upstream protocol configs"}
         </div>
         <Button
           type="button"
@@ -46,7 +46,7 @@ export function ChannelProtocolSection({
           onClick={addProtocolConfig}
         >
           <Plus data-icon="inline-start" />
-          {locale === "zh-CN" ? "增加一个组合" : "Add combination"}
+          {locale === "zh-CN" ? "增加协议配置" : "Add protocol config"}
         </Button>
       </div>
       <div className="grid gap-3">

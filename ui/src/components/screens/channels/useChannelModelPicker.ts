@@ -80,8 +80,8 @@ export function useChannelModelPicker({
     if (!protocols.length) {
       toast.error(
         locale === "zh-CN"
-          ? "请先选择手动添加模型的客户端协议"
-          : "Select client protocols for manually added models first",
+          ? "请先选择手动添加模型的上游协议"
+          : "Select upstream protocols for manually added models first",
       );
       return;
     }
@@ -147,8 +147,8 @@ export function useChannelModelPicker({
     if (!protocols.length) {
       toast.error(
         locale === "zh-CN"
-          ? "请先选择本次获取的客户端协议"
-          : "Select client protocols for this fetch first",
+          ? "请先选择本次获取的上游协议"
+          : "Select upstream protocols for this fetch first",
       );
       return null;
     }

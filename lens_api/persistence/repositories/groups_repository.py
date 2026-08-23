@@ -16,11 +16,7 @@ from ..shared import (
     ModelGroupItemInput,
     ModelGroupUpdate,
     ModelGroupView,
-    _dump_group_protocols,
-    _group_supports_protocol,
-    _normalize_group_protocols,
     _parse_runtime_channel_id,
-    _parse_group_protocols,
     delete,
     select,
     uuid,
@@ -102,15 +98,20 @@ class GroupRepository(
                 .limit(1)
             )
             entity = result.scalar_one_or_none()
-            if entity is None or not _group_supports_protocol(entity, protocol):
+            if entity is None:
                 return None
             hydrated = await self._hydrate_groups(session, [entity], effective_channels)
-            return hydrated[0]
+            group = hydrated[0]
+            return (
+                group
+                if protocol in {item.value for item in group.client_protocols}
+                else None
+            )
 
     async def list_group_candidates(
         self, payload: ModelGroupCandidatesRequest
     ) -> ModelGroupCandidatesResponse:
-        """Return enabled model candidates reachable for the requested protocols."""
+        """Return enabled model candidates and evaluate selected members."""
         return await self._list_group_candidates(payload)
 
     async def ensure_groups_from_site(
@@ -158,11 +159,9 @@ class GroupRepository(
         """Create and return a validated model group."""
         channels = await self._channel_store.list_channels()
         async with self._session_factory() as session:
-            protocols = _normalize_group_protocols(payload.protocols)
             route_group = await self._validate_group_payload(
                 session,
                 payload.name,
-                protocols,
                 payload.route_group_id,
                 payload.items,
                 channels=channels,
@@ -170,7 +169,6 @@ class GroupRepository(
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
-                protocols_json=_dump_group_protocols(protocols),
                 strategy=payload.strategy.value,
                 route_group_id=route_group.id if route_group is not None else "",
                 sync_filter_mode=payload.sync_filter_mode.value,
@@ -194,12 +192,6 @@ class GroupRepository(
             if entity is None:
                 raise KeyError(group_id)
 
-            current_protocols = _normalize_group_protocols(
-                _parse_group_protocols(entity)
-            )
-            next_protocols = _normalize_group_protocols(
-                payload.protocols or current_protocols
-            )
             next_name = payload.name if payload.name is not None else entity.name
             next_route_group_id = (
                 payload.route_group_id
@@ -215,25 +207,16 @@ class GroupRepository(
             has_inbound_route_group = (
                 inbound_route_group_result.scalar_one_or_none() is not None
             )
-            if (
-                payload.protocols is not None
-                and has_inbound_route_group
-                and set(current_protocols) - set(next_protocols)
-            ):
-                raise ValueError(
-                    "Execution groups referenced by route groups cannot remove protocols"
-                )
             if next_route_group_id and has_inbound_route_group:
                 raise ValueError(
                     "Execution groups referenced by route groups cannot become route groups"
                 )
-            validates_items = payload.items is not None or payload.protocols is not None
+            validates_items = payload.items is not None
             current_item_views = []
             if validates_items:
                 current_items = await self._load_group_items(
                     session,
                     [group_id],
-                    {group_id: current_protocols},
                     channels,
                 )
                 current_item_views = current_items.get(group_id, [])
@@ -251,21 +234,16 @@ class GroupRepository(
             route_group = await self._validate_group_payload(
                 session,
                 next_name,
-                next_protocols,
                 next_route_group_id,
                 next_items if validates_items else None,
                 exclude_group_id=group_id,
                 channels=channels,
                 existing_items=current_item_views,
-                existing_protocols=current_protocols,
             )
 
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
-                if key == "protocols":
-                    if value is not None:
-                        entity.protocols_json = _dump_group_protocols(next_protocols)
-                elif key == "strategy" and value is not None:
+                if key == "strategy" and value is not None:
                     entity.strategy = value.value
                 elif key == "sync_filter_mode" and value is not None:
                     entity.sync_filter_mode = value.value
@@ -286,7 +264,7 @@ class GroupRepository(
                 entity.sync_filter_mode = ""
                 entity.sync_filter_query = ""
 
-            if payload.items is not None or payload.protocols is not None:
+            if payload.items is not None:
                 await session.execute(
                     delete(ModelGroupItemEntity).where(
                         ModelGroupItemEntity.group_id == group_id

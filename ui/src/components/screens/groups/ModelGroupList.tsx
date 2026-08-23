@@ -15,7 +15,6 @@ type ModelGroupListProps = Pick<
   | "setCardDragging"
   | "effectiveSelectedModelPrefix"
   | "search"
-  | "protocolFilter"
   | "strategyFilter"
   | "openEdit"
   | "changeStrategy"
@@ -38,7 +37,6 @@ export function ModelGroupList(props: ModelGroupListProps) {
     visibleGroups,
     effectiveSelectedModelPrefix,
     search,
-    protocolFilter,
     strategyFilter,
   } = props;
 
@@ -84,7 +82,6 @@ export function ModelGroupList(props: ModelGroupListProps) {
           <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
             {effectiveSelectedModelPrefix !== "all" ||
             search.trim() ||
-            protocolFilter !== "all" ||
             strategyFilter !== "all"
               ? locale === "zh-CN"
                 ? "没有匹配的模型组。"

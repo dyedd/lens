@@ -90,8 +90,6 @@ def _group_ensure_inputs_for_added(
             continue
         if group.sync_filter_mode == ModelGroupSyncFilterMode.NONE:
             continue
-        if protocol not in group.protocols:
-            continue
         for model_name in added_models:
             if not _model_matches_sync_filter(
                 model_name, group.sync_filter_mode, group.sync_filter_query

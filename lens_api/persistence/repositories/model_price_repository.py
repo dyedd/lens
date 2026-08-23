@@ -5,16 +5,18 @@ from dataclasses import dataclass
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ...core.protocol_reachability import infer_client_protocols
+from ...core.runtime_channel_ids import split_runtime_channel_id
 from ..shared import (
     SETTING_MODEL_PRICE_LAST_SYNC_AT,
     ModelGroupEntity,
+    ModelGroupItemEntity,
     ModelPriceEntity,
     ModelPriceItem,
     ModelPriceListResponse,
     ModelPriceUpdate,
     ProtocolKind,
     SettingEntity,
-    _parse_group_protocols,
     normalize_model_key,
 )
 
@@ -217,7 +219,11 @@ class ModelPriceRepository:
             )
             group_rows = (
                 await session.execute(
-                    select(ModelGroupEntity.name, ModelGroupEntity.protocols_json)
+                    select(ModelGroupEntity.name, ModelGroupItemEntity.channel_id)
+                    .outerjoin(
+                        ModelGroupItemEntity,
+                        ModelGroupItemEntity.group_id == ModelGroupEntity.id,
+                    )
                     .where(ModelGroupEntity.route_group_id == "")
                     .order_by(ModelGroupEntity.name.asc())
                 )
@@ -229,13 +235,15 @@ class ModelPriceRepository:
         prices_by_key = {item.model_key: item for item in price_rows}
         protocols_by_key: dict[str, set[ProtocolKind]] = {}
         display_names_by_key: dict[str, str] = {}
-        for name, protocols_json in group_rows:
+        for name, channel_id in group_rows:
             key = normalize_model_key(str(name))
             if not key:
                 continue
-            protocols_by_key.setdefault(key, set()).update(
-                _parse_group_protocols(str(protocols_json or "[]"))
-            )
+            parsed = split_runtime_channel_id(str(channel_id))
+            if parsed is not None:
+                protocols_by_key.setdefault(key, set()).update(
+                    infer_client_protocols([parsed[1]])
+                )
             display_names_by_key.setdefault(key, str(name))
 
         for key, price_entity in prices_by_key.items():
@@ -307,16 +315,26 @@ class ModelPriceRepository:
                 await session.execute(
                     select(
                         ModelGroupEntity.name,
-                        ModelGroupEntity.protocols_json,
-                    ).where(ModelGroupEntity.route_group_id == "")
+                        ModelGroupItemEntity.channel_id,
+                    )
+                    .outerjoin(
+                        ModelGroupItemEntity,
+                        ModelGroupItemEntity.group_id == ModelGroupEntity.id,
+                    )
+                    .where(ModelGroupEntity.route_group_id == "")
                 )
             ).all()
             matched_groups = [
                 (
                     str(name),
-                    _parse_group_protocols(str(protocols_json or "[]")),
+                    (
+                        parsed[1]
+                        if (parsed := split_runtime_channel_id(str(channel_id)))
+                        is not None
+                        else None
+                    ),
                 )
-                for name, protocols_json in group_rows
+                for name, channel_id in group_rows
                 if normalize_model_key(str(name)) == model_key
             ]
             if not matched_groups:
@@ -364,8 +382,10 @@ class ModelPriceRepository:
         protocols = sorted(
             {
                 protocol
-                for _, group_protocols in matched_groups
-                for protocol in group_protocols
+                for _, upstream_protocol in matched_groups
+                for protocol in infer_client_protocols(
+                    [upstream_protocol] if upstream_protocol is not None else []
+                )
             },
             key=lambda value: value.value,
         )

@@ -4,6 +4,8 @@ from ...core.model_group_status import (
     build_model_group_channel_lookups,
     evaluate_model_group_item,
 )
+from ...core.protocol_reachability import infer_client_protocols
+from ...models import ProtocolKind
 from ..shared import (
     AsyncSession,
     ChannelConfig,
@@ -13,8 +15,6 @@ from ..shared import (
     ModelGroupItemView,
     ModelGroupView,
     ModelPriceEntity,
-    ProtocolKind,
-    _parse_group_protocols,
     normalize_model_key,
     select,
 )
@@ -29,41 +29,49 @@ class _GroupMappingMixin:
     ) -> list[ModelGroupView]:
         if not entities:
             return []
-        protocols_by_group = {
-            item.id: _parse_group_protocols(item) for item in entities
+        requested_ids = {item.id for item in entities}
+        route_group_ids = {
+            item.route_group_id for item in entities if item.route_group_id.strip()
         }
+        missing_route_group_ids = route_group_ids - requested_ids
+        if missing_route_group_ids:
+            route_entities = (
+                (
+                    await session.execute(
+                        select(ModelGroupEntity).where(
+                            ModelGroupEntity.id.in_(missing_route_group_ids)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            entities = [*entities, *route_entities]
         items_by_group = await self._load_group_items(
             session,
             [item.id for item in entities],
-            protocols_by_group,
             channels,
         )
-        route_group_ids = [
-            item.route_group_id for item in entities if item.route_group_id.strip()
-        ]
-        route_name_by_id: dict[str, str] = {}
-        if route_group_ids:
-            route_rows = (
-                await session.execute(
-                    select(ModelGroupEntity.id, ModelGroupEntity.name).where(
-                        ModelGroupEntity.id.in_(sorted(set(route_group_ids)))
-                    )
-                )
-            ).all()
-            route_name_by_id = {
-                str(group_id): str(group_name) for group_id, group_name in route_rows
-            }
+        route_name_by_id = {item.id: item.name for item in entities}
         prices_by_key = await self._load_model_prices_by_keys(
             session, [normalize_model_key(item.name) for item in entities]
         )
+        client_protocols_by_group = {
+            item.id: infer_client_protocols(
+                member.protocol for member in items_by_group.get(item.id, [])
+            )
+            for item in entities
+        }
         return [
             self._to_group(
                 item,
                 items_by_group.get(item.id, []),
+                client_protocols_by_group.get(item.route_group_id or item.id, []),
                 prices_by_key.get(normalize_model_key(item.name)),
                 route_name_by_id.get(item.route_group_id, ""),
             )
             for item in entities
+            if item.id in requested_ids
         ]
 
     async def _load_model_prices_by_keys(
@@ -90,7 +98,6 @@ class _GroupMappingMixin:
         self,
         session: AsyncSession,
         group_ids: list[str],
-        protocols_by_group: dict[str, list[ProtocolKind]],
         channels: list[ChannelConfig],
     ) -> dict[str, list[ModelGroupItemView]]:
         if not group_ids:
@@ -126,7 +133,6 @@ class _GroupMappingMixin:
             evaluation = evaluate_model_group_item(
                 item,
                 channels_by_id,
-                protocols_by_group.get(row.group_id, []),
             )
             channel_lookup = channels_by_id.get(row.channel_id)
             channel = channel_lookup.channel if channel_lookup is not None else None
@@ -184,13 +190,14 @@ class _GroupMappingMixin:
     def _to_group(
         entity: ModelGroupEntity,
         items: list[ModelGroupItemView],
+        client_protocols: list[ProtocolKind],
         price: ModelPriceEntity | None = None,
         route_group_name: str = "",
     ) -> ModelGroupView:
         return ModelGroupView(
             id=entity.id,
             name=entity.name,
-            protocols=_parse_group_protocols(entity),
+            client_protocols=client_protocols,
             strategy=entity.strategy,
             route_group_id=entity.route_group_id,
             route_group_name=route_group_name,

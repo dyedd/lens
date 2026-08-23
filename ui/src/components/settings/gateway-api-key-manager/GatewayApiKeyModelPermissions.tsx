@@ -27,10 +27,7 @@ import {
 import { Switch } from "@/components/ui/Switch";
 import { titleForLocale, type Locale } from "@/lib/I18nContext";
 
-import {
-  protocolSummary,
-  type GatewayModelGroupOption,
-} from "./gatewayApiKeyUtils";
+import type { GatewayModelGroupOption } from "./gatewayApiKeyUtils";
 
 type GatewayApiKeyModelPermissionsProps = {
   locale: Locale;
@@ -148,7 +145,7 @@ export function GatewayApiKeyModelPermissions({
                     return (
                       <CommandItem
                         key={option.name}
-                        value={`${option.name} ${protocolSummary(locale, option.protocols)} ${option.channelNames.join(" ")}`}
+                        value={`${option.name} ${option.channelNames.join(" ")}`}
                         onSelect={() => onToggleAllowedModel(option.name)}
                         className="items-start gap-3"
                       >
@@ -161,7 +158,6 @@ export function GatewayApiKeyModelPermissions({
                             {option.name}
                           </div>
                           <div className="truncate text-xs text-muted-foreground">
-                            {protocolSummary(locale, option.protocols)} ·{" "}
                             {titleForLocale(
                               locale,
                               `${option.enabledItemCount} 个启用成员`,
