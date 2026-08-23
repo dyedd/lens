@@ -1,12 +1,7 @@
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/Field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import {
   Select,
@@ -204,11 +199,6 @@ export function AdvancedProtocolConfigDialog({
                   })
                 }
               />
-              <FieldDescription>
-                {locale === "zh-CN"
-                  ? "填写 JSON 片段用于覆盖请求参数。"
-                  : "Use a JSON snippet to override request params."}
-              </FieldDescription>
             </Field>
           </div>
         </AppDialogContent>

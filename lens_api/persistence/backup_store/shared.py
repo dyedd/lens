@@ -41,7 +41,11 @@ from ..editable_settings import (
     effective_editable_setting_items,
     normalize_editable_setting_items,
 )
-from ..shared import SETTING_MODEL_PRICE_LAST_SYNC_AT, SETTING_TIME_ZONE
+from ..shared import (
+    SETTING_MODEL_PRICE_LAST_SYNC_AT,
+    SETTING_TIME_ZONE,
+    SETTING_UPSTREAM_HEADERS_CONFIG,
+)
 from ..entities import (
     GatewayApiKeyEntity,
     ModelGroupEntity,

@@ -2,9 +2,7 @@ import { useCallback, type Dispatch, type SetStateAction } from "react";
 
 import { type SettingsDraft } from "./settingsDraft";
 import {
-  createEmptyUpstreamHeaderRule,
   type HeaderItem,
-  type UpstreamHeaderRuleDraft,
   type UpstreamHeadersDraft,
 } from "./upstreamHeaderConfig";
 
@@ -63,118 +61,6 @@ export function useSettingsDraftActions(
     [updateUpstreamHeadersConfig],
   );
 
-  const addUpstreamHeaderRule = useCallback(() => {
-    updateUpstreamHeadersConfig((current) => ({
-      ...current,
-      rules: [...current.rules, createEmptyUpstreamHeaderRule()],
-    }));
-  }, [updateUpstreamHeadersConfig]);
-
-  const updateUpstreamHeaderRule = useCallback(
-    (index: number, patch: Partial<UpstreamHeaderRuleDraft>) => {
-      updateUpstreamHeadersConfig((current) => ({
-        ...current,
-        rules: current.rules.map((rule, currentIndex) =>
-          currentIndex === index ? { ...rule, ...patch } : rule,
-        ),
-      }));
-    },
-    [updateUpstreamHeadersConfig],
-  );
-
-  const removeUpstreamHeaderRule = useCallback(
-    (index: number) => {
-      updateUpstreamHeadersConfig((current) => ({
-        ...current,
-        rules: current.rules.filter(
-          (_, currentIndex) => currentIndex !== index,
-        ),
-      }));
-    },
-    [updateUpstreamHeadersConfig],
-  );
-
-  const moveUpstreamHeaderRule = useCallback(
-    (index: number, direction: -1 | 1) => {
-      updateUpstreamHeadersConfig((current) => {
-        const nextIndex = index + direction;
-        if (nextIndex < 0 || nextIndex >= current.rules.length) {
-          return current;
-        }
-        const rules = [...current.rules];
-        const rule = rules[index];
-        if (!rule) {
-          return current;
-        }
-        rules.splice(index, 1);
-        rules.splice(nextIndex, 0, rule);
-        return { ...current, rules };
-      });
-    },
-    [updateUpstreamHeadersConfig],
-  );
-
-  const addRuleHeader = useCallback(
-    (ruleIndex: number) => {
-      updateUpstreamHeadersConfig((current) => ({
-        ...current,
-        rules: current.rules.map((rule, currentRuleIndex) =>
-          currentRuleIndex === ruleIndex
-            ? {
-                ...rule,
-                headers: [...rule.headers, { key: "", value: "" }],
-              }
-            : rule,
-        ),
-      }));
-    },
-    [updateUpstreamHeadersConfig],
-  );
-
-  const updateRuleHeader = useCallback(
-    (ruleIndex: number, headerIndex: number, patch: Partial<HeaderItem>) => {
-      updateUpstreamHeadersConfig((current) => ({
-        ...current,
-        rules: current.rules.map((rule, currentRuleIndex) =>
-          currentRuleIndex === ruleIndex
-            ? {
-                ...rule,
-                headers: rule.headers.map((header, currentHeaderIndex) =>
-                  currentHeaderIndex === headerIndex
-                    ? { ...header, ...patch }
-                    : header,
-                ),
-              }
-            : rule,
-        ),
-      }));
-    },
-    [updateUpstreamHeadersConfig],
-  );
-
-  const removeRuleHeader = useCallback(
-    (ruleIndex: number, headerIndex: number) => {
-      updateUpstreamHeadersConfig((current) => ({
-        ...current,
-        rules: current.rules.map((rule, currentRuleIndex) => {
-          if (currentRuleIndex !== ruleIndex) {
-            return rule;
-          }
-          const nextHeaders = rule.headers.filter(
-            (_, currentHeaderIndex) => currentHeaderIndex !== headerIndex,
-          );
-          return {
-            ...rule,
-            headers: nextHeaders.length
-              ? nextHeaders
-              : [{ key: "", value: "" }],
-          };
-        }),
-      }));
-    },
-    [updateUpstreamHeadersConfig],
-  );
-
   const updateUpstreamParamOverrideConfig = useCallback(
     (
       updater: (
@@ -206,13 +92,6 @@ export function useSettingsDraftActions(
     addGlobalHeader,
     updateGlobalHeader,
     removeGlobalHeader,
-    addUpstreamHeaderRule,
-    updateUpstreamHeaderRule,
-    removeUpstreamHeaderRule,
-    moveUpstreamHeaderRule,
-    addRuleHeader,
-    updateRuleHeader,
-    removeRuleHeader,
     updateGlobalParamOverride,
   };
 }

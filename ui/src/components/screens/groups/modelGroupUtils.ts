@@ -9,6 +9,11 @@ import type {
   RoutingStrategy,
 } from "@/lib/api";
 import { protocolLabel } from "@/lib/protocols";
+import {
+  headersToRecord,
+  parseHeaderRows,
+  type HeaderItem,
+} from "../settings/upstreamHeaderConfig";
 import { credentialDisplayLabel } from "./modelGroupFormatting";
 
 export * from "./modelGroupFormatting";
@@ -40,6 +45,7 @@ export type FormState = {
   sync_filter_mode: ModelGroupSyncFilterMode;
   sync_filter_query: string;
   param_override: string;
+  headers: HeaderItem[];
   input_price_per_million: string;
   output_price_per_million: string;
   cache_read_price_per_million: string;
@@ -134,6 +140,7 @@ export const EMPTY_FORM: FormState = {
   sync_filter_mode: "",
   sync_filter_query: "",
   param_override: "",
+  headers: [{ key: "", value: "" }],
   input_price_per_million: "0",
   output_price_per_million: "0",
   cache_read_price_per_million: "0",
@@ -228,6 +235,7 @@ export function toForm(group: ModelGroup): FormState {
     sync_filter_mode: group.sync_filter_mode,
     sync_filter_query: group.sync_filter_query,
     param_override: group.param_override,
+    headers: parseHeaderRows(group.headers),
     input_price_per_million: String(group.input_price_per_million),
     output_price_per_million: String(group.output_price_per_million),
     cache_read_price_per_million: String(group.cache_read_price_per_million),
@@ -270,6 +278,7 @@ export function toPayload(form: FormState): ModelGroupPayload {
       ? ""
       : form.sync_filter_query.trim(),
     param_override: form.param_override.trim(),
+    headers: headersToRecord(form.headers),
     items: form.items.map((item) => ({
       channel_id: item.channel_id,
       credential_id: item.credential_id,

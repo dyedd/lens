@@ -107,11 +107,30 @@ def test_import_backup_accepts_exported_bundle(
     group = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={"name": "backup-group", "param_override": '{"temperature":0.2}'},
+        json={
+            "name": "backup-group",
+            "param_override": '{"temperature":0.2}',
+            "headers": {"X-Group": "enabled"},
+        },
     )
     assert group.status_code == 201, group.text
     exported = client.get("/api/admin/backups/export", headers=admin_headers)
     assert exported.status_code == 200
+    payload = exported.json()
+    for item in payload["settings"]:
+        if item["key"] == "upstream_headers_config":
+            item["value"] = json.dumps(
+                {
+                    "global": {"X-Global": "enabled"},
+                    "rules": [
+                        {
+                            "models": ["backup-group"],
+                            "headers": {"X-Old-Rule": "discarded"},
+                        }
+                    ],
+                }
+            )
+            break
 
     response = client.post(
         "/api/admin/backups/import",
@@ -119,7 +138,7 @@ def test_import_backup_accepts_exported_bundle(
         files={
             "file": (
                 "backup.json",
-                exported.content,
+                json.dumps(payload).encode(),
                 "application/json",
             )
         },
@@ -137,6 +156,14 @@ def test_import_backup_accepts_exported_bundle(
         "/api/admin/model-groups", headers=admin_headers
     ).json()[0]
     assert restored_group["param_override"] == '{"temperature":0.2}'
+    assert restored_group["headers"] == {"X-Group": "enabled"}
+    settings = {
+        item["key"]: item["value"]
+        for item in client.get("/api/admin/settings", headers=admin_headers).json()
+    }
+    assert json.loads(settings["upstream_headers_config"]) == {
+        "global": {"X-Global": "enabled"}
+    }
 
 
 def test_import_backup_rejects_invalid_credential_rate_config(
