@@ -14,15 +14,9 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/Item";
-import type {
-  ProtocolKind,
-  RouteSnapshot,
-  Site,
-  SiteRuntimeSummary,
-} from "@/lib/api";
+import type { ProtocolKind, Site } from "@/lib/api";
 import { Switch } from "@/components/ui/Switch";
 import { ChannelFiltersPanel } from "./ChannelFiltersPanel";
-import { SiteHealthPreview } from "./SiteHealthPreview";
 import { SiteFavicon } from "./SiteFavicon";
 import type {
   ChannelSort,
@@ -37,9 +31,6 @@ export function ChannelsOverview({
   visibleSites,
   isLoading,
   sitesIsError,
-  siteRuntimeById,
-  channelHealthById,
-  timeZone,
   search,
   statusFilter,
   protocolFilter,
@@ -62,9 +53,6 @@ export function ChannelsOverview({
   visibleSites: SiteRow[];
   isLoading: boolean;
   sitesIsError: boolean;
-  siteRuntimeById: Map<string, SiteRuntimeSummary>;
-  channelHealthById: Map<string, RouteSnapshot["health"][number]>;
-  timeZone?: string;
   search: string;
   statusFilter: ChannelStatusFilter;
   protocolFilter: "all" | ProtocolKind;
@@ -90,7 +78,6 @@ export function ChannelsOverview({
           {isLoading || sitesIsError ? null : visibleSites.length ? (
             <ItemGroup className="gap-3">
               {visibleSites.map((site) => {
-                const runtimeSummary = siteRuntimeById.get(site.id);
                 return (
                   <Item
                     key={site.id}
@@ -138,13 +125,6 @@ export function ChannelsOverview({
                               ? "未配置请求地址"
                               : "No endpoint configured")}
                         </ItemDescription>
-                        <SiteHealthPreview
-                          site={site}
-                          summary={runtimeSummary}
-                          healthByChannelId={channelHealthById}
-                          locale={locale}
-                          timeZone={timeZone}
-                        />
                       </div>
                     </ItemContent>
                     <ItemActions
