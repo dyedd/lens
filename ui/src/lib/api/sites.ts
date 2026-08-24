@@ -103,27 +103,23 @@ export type Site = {
   credentials: SiteCredential[];
   protocols: SiteProtocolConfig[];
 };
-export type SiteChannelHealthBucket = {
+export type HealthBucket = {
   started_at: string;
   ended_at: string;
   success_count: number;
   total_count: number;
 };
-export type SiteChannelRuntimeSummary = {
-  channel_id: string;
-  health_buckets: SiteChannelHealthBucket[];
+export type HealthItem = {
+  name: string;
+  success_count: number;
+  total_count: number;
+  buckets: HealthBucket[];
 };
-export type SiteRuntimeSummary = {
-  site_id: string;
-  site_name: string;
-  recent_request_count: number;
-  latest_request_at?: string | null;
-  latest_success?: boolean | null;
-  latest_status_code?: number | null;
-  latest_error_message?: string | null;
-  latest_channel_id?: string | null;
-  latest_channel_name?: string | null;
-  channel_summaries: SiteChannelRuntimeSummary[];
+export type HealthSummary = {
+  started_at: string;
+  ended_at: string;
+  items: HealthItem[];
+  next_offset: number | null;
 };
 export type SitePayload = {
   name: string;

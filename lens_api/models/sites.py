@@ -187,29 +187,25 @@ class SiteConfig(StrictBaseModel):
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
 
 
-class SiteRuntimeSummary(StrictBaseModel):
-    site_id: str
-    site_name: str
-    recent_request_count: int = 0
-    latest_request_at: str | None = None
-    latest_success: bool | None = None
-    latest_status_code: int | None = None
-    latest_error_message: str | None = None
-    latest_channel_id: str | None = None
-    latest_channel_name: str | None = None
-    channel_summaries: list["SiteChannelRuntimeSummary"] = Field(default_factory=list)
-
-
-class SiteChannelRuntimeSummary(StrictBaseModel):
-    channel_id: str
-    health_buckets: list["SiteChannelHealthBucket"] = Field(default_factory=list)
-
-
-class SiteChannelHealthBucket(StrictBaseModel):
+class HealthBucket(StrictBaseModel):
     started_at: str
     ended_at: str
     success_count: int = 0
     total_count: int = 0
+
+
+class HealthItem(StrictBaseModel):
+    name: str
+    success_count: int = 0
+    total_count: int = 0
+    buckets: list[HealthBucket] = Field(default_factory=list)
+
+
+class HealthSummary(StrictBaseModel):
+    started_at: str
+    ended_at: str
+    items: list[HealthItem] = Field(default_factory=list)
+    next_offset: int | None = None
 
 
 class SiteCreate(StrictBaseModel):

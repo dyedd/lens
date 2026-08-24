@@ -41,6 +41,9 @@ from ..models import (
     ModelGroupItemView,
     ModelGroupUpdate,
     ModelGroupView,
+    HealthBucket,
+    HealthItem,
+    HealthSummary,
     ModelPriceItem,
     ModelPriceListResponse,
     ModelPriceUpdate,
@@ -60,9 +63,6 @@ from ..models import (
     RequestLogSortMode,
     RequestLogStatusFilter,
     SettingItem,
-    SiteChannelHealthBucket,
-    SiteChannelRuntimeSummary,
-    SiteRuntimeSummary,
 )
 from ..core.protocol_reachability import can_reach_protocol
 from .entities import (
@@ -170,8 +170,6 @@ SETTING_LATEST_VERSION = "latest_version"
 SETTING_LATEST_VERSION_URL = "latest_version_url"
 SETTING_VERSION_CHECK_AT = "version_check_at"
 GATEWAY_API_KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-CHANNEL_HEALTH_BUCKET_SECONDS = 300
-CHANNEL_HEALTH_BUCKET_COUNT = 12
 REQUEST_LOG_RUNNING_STATUSES = (
     RequestLogLifecycleStatus.CONNECTING.value,
     RequestLogLifecycleStatus.STREAMING.value,

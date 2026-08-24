@@ -100,14 +100,15 @@ from .routing import (
 )
 from .settings import SettingItem, SettingsUpdate
 from .sites import (
+    HealthBucket,
+    HealthItem,
+    HealthSummary,
     SiteBaseUrl,
     SiteBaseUrlInput,
     SiteBatchImportFieldError,
     SiteBatchImportItemResult,
     SiteBatchImportRequest,
     SiteBatchImportResult,
-    SiteChannelHealthBucket,
-    SiteChannelRuntimeSummary,
     SiteConfig,
     SiteCreate,
     SiteCredential,
@@ -131,7 +132,6 @@ from .sites import (
     SiteProtocolConfig,
     SiteProtocolConfigInput,
     SiteSyncTarget,
-    SiteRuntimeSummary,
     SiteUpdate,
 )
 from .upstream_rules import (
@@ -171,9 +171,9 @@ __all__ = [
     "SiteProtocolConfigInput",
     "SiteSyncTarget",
     "SiteConfig",
-    "SiteRuntimeSummary",
-    "SiteChannelRuntimeSummary",
-    "SiteChannelHealthBucket",
+    "HealthBucket",
+    "HealthItem",
+    "HealthSummary",
     "SiteCreate",
     "SiteUpdate",
     "SiteModelGroupSaveRequest",

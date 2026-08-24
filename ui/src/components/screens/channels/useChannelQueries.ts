@@ -2,12 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  ProtocolKind,
-  RouteSnapshot,
-  Site,
-  SiteRuntimeSummary,
-} from "@/lib/api";
+import type { ProtocolKind, Site } from "@/lib/api";
 import { apiRequest } from "@/lib/api";
 import {
   isSiteProtocolConfigEnabled,
@@ -29,7 +24,7 @@ export function useChannelQueries(locale: Locale) {
     "all",
   );
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<ChannelSort>("requests-desc");
+  const [sortBy, setSortBy] = useState<ChannelSort>("name-asc");
   const {
     data: sites,
     error: sitesError,
@@ -40,36 +35,6 @@ export function useChannelQueries(locale: Locale) {
     queryFn: () => apiRequest<Site[]>("/admin/sites"),
     staleTime: 2 * 60_000,
   });
-  const { data: siteRuntimeSummaries } = useQuery({
-    queryKey: ["site-runtime-summaries"],
-    queryFn: () => apiRequest<SiteRuntimeSummary[]>("/admin/sites/runtime"),
-    staleTime: 5_000,
-    refetchInterval: 5000,
-  });
-  const { data: routerSnapshot } = useQuery({
-    queryKey: ["router-snapshot"],
-    queryFn: () => apiRequest<RouteSnapshot>("/admin/routes"),
-    staleTime: 5_000,
-    refetchInterval: 5000,
-  });
-  const siteRuntimeById = useMemo(
-    () =>
-      new Map(
-        (siteRuntimeSummaries ?? []).map(
-          (item) => [item.site_id, item] as const,
-        ),
-      ),
-    [siteRuntimeSummaries],
-  );
-  const channelHealthById = useMemo(
-    () =>
-      new Map(
-        (routerSnapshot?.health ?? []).map(
-          (item) => [item.channel_id, item] as const,
-        ),
-      ),
-    [routerSnapshot],
-  );
   const siteRows = useMemo<SiteRow[]>(
     () =>
       (sites ?? []).map((site) => ({
@@ -127,10 +92,6 @@ export function useChannelQueries(locale: Locale) {
         .includes(keyword);
     });
     return [...filtered].sort((left, right) => {
-      const leftRequests =
-        siteRuntimeById.get(left.id)?.recent_request_count ?? 0;
-      const rightRequests =
-        siteRuntimeById.get(right.id)?.recent_request_count ?? 0;
       if (sortBy === "name-asc")
         return left.name.localeCompare(right.name, locale);
       if (sortBy === "name-desc")
@@ -146,17 +107,13 @@ export function useChannelQueries(locale: Locale) {
             left.enabled_protocol_channel_count ||
           left.name.localeCompare(right.name, locale)
         );
-      return (
-        rightRequests - leftRequests ||
-        left.name.localeCompare(right.name, locale)
-      );
+      return left.name.localeCompare(right.name, locale);
     });
   }, [
     locale,
     protocolFilter,
     search,
     siteRows,
-    siteRuntimeById,
     sortBy,
     statusFilter,
     tagFilter,
@@ -165,8 +122,6 @@ export function useChannelQueries(locale: Locale) {
   async function invalidateChannelData() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["sites"] }),
-      queryClient.invalidateQueries({ queryKey: ["site-runtime-summaries"] }),
-      queryClient.invalidateQueries({ queryKey: ["router-snapshot"] }),
       queryClient.invalidateQueries({ queryKey: ["group-candidates"] }),
       queryClient.invalidateQueries({ queryKey: ["groups"] }),
       queryClient.invalidateQueries({ queryKey: ["model-groups"] }),
@@ -183,7 +138,7 @@ export function useChannelQueries(locale: Locale) {
     setStatusFilter("all");
     setProtocolFilter("all");
     setTagFilter(null);
-    setSortBy("requests-desc");
+    setSortBy("name-asc");
   }
 
   return {
@@ -191,8 +146,6 @@ export function useChannelQueries(locale: Locale) {
     sitesError,
     sitesIsError,
     isLoading,
-    siteRuntimeById,
-    channelHealthById,
     visibleSites,
     search,
     setSearch,

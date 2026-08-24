@@ -80,7 +80,7 @@ export function ChannelFiltersPanel({
           variant="ghost"
           size="sm"
           onClick={onReset}
-          disabled={!activeFilterCount && sortBy === "requests-desc"}
+          disabled={!activeFilterCount && sortBy === "name-asc"}
         >
           {locale === "zh-CN" ? "清空" : "Clear"}
         </Button>
@@ -200,9 +200,6 @@ export function ChannelFiltersPanel({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="requests-desc">
-                  {locale === "zh-CN" ? "请求优先" : "Requests first"}
-                </SelectItem>
                 <SelectItem value="models-desc">
                   {locale === "zh-CN" ? "模型优先" : "Models first"}
                 </SelectItem>

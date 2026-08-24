@@ -17,7 +17,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
-import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { useI18n } from "@/lib/I18nContext";
 import type { Site } from "@/lib/api";
 import { ChannelsDialogs } from "./channels/ChannelsDialogs";
@@ -35,7 +34,6 @@ import { useModelGroupEnsure } from "./channels/useModelGroupEnsure";
 /** Coordinates channel management data, dialogs, and user actions. */
 export function ChannelsScreen() {
   const { locale } = useI18n();
-  const timeZone = useAppTimeZone();
   const [advancedConfigIndex, setAdvancedConfigIndex] = useState<number | null>(
     null,
   );
@@ -161,9 +159,6 @@ export function ChannelsScreen() {
           visibleSites={queries.visibleSites}
           isLoading={queries.isLoading}
           sitesIsError={queries.sitesIsError}
-          siteRuntimeById={queries.siteRuntimeById}
-          channelHealthById={queries.channelHealthById}
-          timeZone={timeZone}
           search={queries.search}
           statusFilter={queries.statusFilter}
           protocolFilter={queries.protocolFilter}

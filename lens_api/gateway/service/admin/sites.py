@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import Depends, HTTPException, Request, Response
+from fastapi import Depends, HTTPException, Query, Request, Response
 
 from ....models import (
     ChannelConfig,
@@ -25,7 +25,7 @@ from ....models import (
     SiteModelTestResult,
     ModelGroupEnsureFromSiteRequest,
     ModelGroupEnsureModelInput,
-    SiteRuntimeSummary,
+    HealthSummary,
     SiteUpdate,
 )
 from ..auth import get_current_admin
@@ -43,11 +43,24 @@ async def list_sites(
     return await app_state.channel_store.list_sites(tag=tag)
 
 
-async def list_site_runtime_summaries(
+async def list_model_health(
+    hours: int = Query(default=6),
+    mode: Literal["model", "channel"] = "model",
+    query: str = Query(default="", max_length=120),
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     _: Any = Depends(get_current_admin),
-) -> list[SiteRuntimeSummary]:
-    """List runtime health summaries for upstream sites."""
-    return await app_state.request_log_store.list_site_runtime_summaries()
+) -> HealthSummary:
+    """List request-log health by execution model group or site."""
+    if hours not in (1, 6, 24):
+        raise HTTPException(status_code=422, detail="hours must be 1, 6, or 24")
+    return await app_state.request_log_store.list_model_health(
+        hours=hours,
+        mode=mode,
+        query=query,
+        limit=limit,
+        offset=offset,
+    )
 
 
 async def create_site(

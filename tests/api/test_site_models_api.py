@@ -41,33 +41,24 @@ def _model_test_payload(protocol: ProtocolKind) -> dict[str, Any]:
     }
 
 
-def test_site_runtime_summaries_include_recent_request_log(
+def test_model_health_aggregates_execution_groups_and_channel_requests(
     client,
     admin_headers,
     app_state,
     create_site,
+    create_model_group,
 ) -> None:
     site = create_site()
+    create_model_group(name="claude")
+    create_model_group(name="gpt-4o")
     seed_request_log(app_state, channel_id=openai_chat_channel_id())
-
-    response = client.get("/api/admin/sites/runtime", headers=admin_headers)
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload[0]["site_id"] == site["id"]
-    assert payload[0]["recent_request_count"] == 1
-    assert payload[0]["latest_success"] is True
-    assert payload[0]["channel_summaries"][0]["channel_id"] == openai_chat_channel_id()
-
-
-def test_site_runtime_health_ignores_cancelled_request_outcome(
-    client,
-    admin_headers,
-    app_state,
-    create_site,
-) -> None:
-    create_site()
-    seed_request_log(app_state, channel_id=openai_chat_channel_id())
+    seed_request_log(
+        app_state,
+        channel_id=openai_chat_channel_id(),
+        requested_group_name="z-ai/glm-5.2",
+        resolved_group_name="z-ai/glm-5.2",
+        success=False,
+    )
     seed_request_log(
         app_state,
         channel_id=openai_chat_channel_id(),
@@ -75,15 +66,44 @@ def test_site_runtime_health_ignores_cancelled_request_outcome(
         lifecycle_status=RequestLogLifecycleStatus.CANCELLED,
     )
 
-    response = client.get("/api/admin/sites/runtime", headers=admin_headers)
+    response = client.get(
+        "/api/admin/model-health?hours=1&mode=model&limit=1&offset=0",
+        headers=admin_headers,
+    )
 
-    assert response.status_code == 200
-    summary = response.json()[0]
-    assert summary["recent_request_count"] == 2
-    assert summary["latest_success"] is True
-    buckets = summary["channel_summaries"][0]["health_buckets"]
-    assert sum(bucket["total_count"] for bucket in buckets) == 1
-    assert sum(bucket["success_count"] for bucket in buckets) == 1
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert [item["name"] for item in payload["items"]] == ["claude"]
+    assert payload["next_offset"] == 1
+
+    response = client.get(
+        "/api/admin/model-health?hours=1&mode=model&query=gpt&limit=24",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["items"]) == 1
+    item = payload["items"][0]
+    assert item["name"] == "gpt-4o"
+    assert item["success_count"] == 1
+    assert item["total_count"] == 1
+    assert len(item["buckets"]) == 60
+    assert payload["next_offset"] is None
+
+    response = client.get(
+        "/api/admin/model-health?hours=1&mode=channel&query=OpenAI%20Site&limit=24",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["items"]) == 1
+    item = payload["items"][0]
+    assert item["name"] == site["name"]
+    assert item["success_count"] == 1
+    assert item["total_count"] == 2
+    assert payload["next_offset"] is None
 
 
 def test_fetch_site_models_uses_selected_credentials(

@@ -1,5 +1,6 @@
 export type DashboardView =
   | "overview"
+  | "modelHealth"
   | "requests"
   | "channels"
   | "groups"
@@ -10,6 +11,7 @@ export type DashboardView =
 
 export type DashboardHref =
   | "/"
+  | "/model-health"
   | "/requests"
   | "/channels"
   | "/groups"
@@ -20,6 +22,7 @@ export type DashboardHref =
 
 export const DASHBOARD_ROUTES: Record<DashboardView, DashboardHref> = {
   overview: "/",
+  modelHealth: "/model-health",
   requests: "/requests",
   channels: "/channels",
   groups: "/groups",
