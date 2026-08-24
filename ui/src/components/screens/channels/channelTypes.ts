@@ -77,7 +77,6 @@ export type SiteRow = Site & {
 
 export type ChannelStatusFilter = "all" | "enabled" | "disabled";
 export type ChannelSort =
-  | "requests-desc"
   | "name-asc"
   | "name-desc"
   | "models-desc"

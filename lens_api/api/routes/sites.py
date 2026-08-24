@@ -6,10 +6,10 @@ from fastapi import FastAPI
 def register(app: FastAPI, service_module: ModuleType) -> None:
     app.add_api_route("/api/admin/sites", service_module.list_sites, methods=["GET"])
     app.add_api_route(
-        "/api/admin/sites/runtime",
-        service_module.list_site_runtime_summaries,
+        "/api/admin/model-health",
+        service_module.list_model_health,
         methods=["GET"],
-        response_model=list[service_module.SiteRuntimeSummary],
+        response_model=service_module.HealthSummary,
     )
     app.add_api_route(
         "/api/admin/sites",

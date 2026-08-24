@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import func, literal, select
 
 from ..shared import (
-    CHANNEL_HEALTH_BUCKET_COUNT,
-    CHANNEL_HEALTH_BUCKET_SECONDS,
+    HealthBucket,
+    HealthItem,
+    HealthSummary,
+    ModelGroupEntity,
     REQUEST_LOG_HEALTH_STATUSES,
-    REQUEST_LOG_TERMINAL_STATUSES,
     ProtocolKind,
     RequestLogDetail,
     RequestLogEntity,
@@ -17,17 +19,163 @@ from ..shared import (
     RequestLogPage,
     RequestLogSortMode,
     RequestLogStatusFilter,
-    SiteChannelHealthBucket,
-    SiteChannelRuntimeSummary,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteRuntimeSummary,
-    _parse_supported_protocols_json,
-    _runtime_channel_id,
 )
 
 
 class RequestLogReadMixin:
+    async def list_model_health(
+        self,
+        *,
+        hours: int,
+        mode: Literal["model", "channel"],
+        query: str = "",
+        limit: int = 24,
+        offset: int = 0,
+    ) -> HealthSummary:
+        """Return a paged request-health summary grouped by model or site."""
+        bucket_count = 60
+        bucket_seconds = hours * 3600 // bucket_count
+        ended_at = datetime.now(UTC)
+        started_at = ended_at - timedelta(hours=hours)
+        bucket_ranges = [
+            (
+                started_at + timedelta(seconds=bucket_seconds * index),
+                started_at + timedelta(seconds=bucket_seconds * (index + 1)),
+            )
+            for index in range(bucket_count)
+        ]
+        normalized_query = query.strip()
+        normalized_limit = min(max(limit, 1), 100)
+        normalized_offset = max(offset, 0)
+
+        async with self._session_factory() as session:
+            if mode == "model":
+                item_stmt = select(
+                    ModelGroupEntity.name.label("key"),
+                    ModelGroupEntity.name.label("name"),
+                ).where(ModelGroupEntity.route_group_id == "")
+                if normalized_query:
+                    item_stmt = item_stmt.where(
+                        ModelGroupEntity.name.ilike(f"%{normalized_query}%")
+                    )
+                item_stmt = item_stmt.order_by(
+                    func.lower(ModelGroupEntity.name), ModelGroupEntity.name
+                )
+                item_rows = await session.execute(
+                    item_stmt.offset(normalized_offset).limit(normalized_limit + 1)
+                )
+                request_logs_stmt = select(
+                    RequestLogEntity.resolved_group_name.label("key"),
+                    RequestLogEntity.lifecycle_status,
+                    RequestLogEntity.created_at,
+                )
+            else:
+                item_stmt = select(
+                    SiteEntity.id.label("key"),
+                    SiteEntity.name.label("name"),
+                ).where(SiteEntity.enabled == 1)
+                if normalized_query:
+                    item_stmt = item_stmt.where(
+                        SiteEntity.name.ilike(f"%{normalized_query}%")
+                    )
+                item_stmt = item_stmt.order_by(
+                    func.lower(SiteEntity.name), SiteEntity.name
+                )
+                item_rows = await session.execute(
+                    item_stmt.offset(normalized_offset).limit(normalized_limit + 1)
+                )
+                request_logs_stmt = select(
+                    SiteProtocolConfigEntity.site_id.label("key"),
+                    RequestLogEntity.lifecycle_status,
+                    RequestLogEntity.created_at,
+                ).join(
+                    SiteProtocolConfigEntity,
+                    RequestLogEntity.channel_id.like(
+                        SiteProtocolConfigEntity.id + literal("_%")
+                    ),
+                )
+
+            rows = item_rows.all()
+            has_next_page = len(rows) > normalized_limit
+            rows = rows[:normalized_limit]
+            items_by_key = {
+                str(row.key).strip(): str(row.name).strip()
+                for row in rows
+                if str(row.key).strip() and str(row.name).strip()
+            }
+            bucket_counts = {
+                key: [
+                    {"success_count": 0, "total_count": 0} for _ in range(bucket_count)
+                ]
+                for key in items_by_key
+            }
+            if items_by_key:
+                request_logs_stmt = request_logs_stmt.where(
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_HEALTH_STATUSES),
+                    RequestLogEntity.created_at >= started_at.replace(tzinfo=None),
+                    RequestLogEntity.created_at < ended_at.replace(tzinfo=None),
+                )
+                if mode == "model":
+                    request_logs_stmt = request_logs_stmt.where(
+                        RequestLogEntity.resolved_group_name.in_(items_by_key)
+                    )
+                else:
+                    request_logs_stmt = request_logs_stmt.where(
+                        SiteProtocolConfigEntity.site_id.in_(items_by_key)
+                    )
+                request_rows = await session.execute(request_logs_stmt)
+                for row in request_rows.all():
+                    key = str(row.key).strip()
+                    counts = bucket_counts.get(key)
+                    if counts is None or row.created_at is None:
+                        continue
+                    created_at = row.created_at
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=UTC)
+                    else:
+                        created_at = created_at.astimezone(UTC)
+                    bucket_index = int(
+                        (created_at - started_at).total_seconds() // bucket_seconds
+                    )
+                    if bucket_index < 0 or bucket_index >= bucket_count:
+                        continue
+                    counts[bucket_index]["total_count"] += 1
+                    if (
+                        row.lifecycle_status
+                        == RequestLogLifecycleStatus.SUCCEEDED.value
+                    ):
+                        counts[bucket_index]["success_count"] += 1
+
+        return HealthSummary(
+            started_at=started_at.isoformat(),
+            ended_at=ended_at.isoformat(),
+            next_offset=(
+                normalized_offset + normalized_limit if has_next_page else None
+            ),
+            items=[
+                HealthItem(
+                    name=items_by_key[key],
+                    success_count=sum(item["success_count"] for item in counts),
+                    total_count=sum(item["total_count"] for item in counts),
+                    buckets=[
+                        HealthBucket(
+                            started_at=start.isoformat(),
+                            ended_at=end.isoformat(),
+                            success_count=counts[index]["success_count"],
+                            total_count=counts[index]["total_count"],
+                        )
+                        for index, (start, end) in enumerate(bucket_ranges)
+                    ],
+                )
+                for key, counts in sorted(
+                    bucket_counts.items(),
+                    key=lambda item: items_by_key[item[0]].casefold(),
+                )
+            ],
+        )
+
     async def list_request_log_page(
         self,
         limit: int = 100,
@@ -209,249 +357,6 @@ class RequestLogReadMixin:
                 gateway_has_multiple_keys=gateway_has_multiple_keys,
                 model_names=model_names,
             )
-
-    async def list_site_runtime_summaries(self) -> list[SiteRuntimeSummary]:
-        """Return recent request and health summaries for configured sites."""
-        async with self._session_factory() as session:
-            site_rows = (
-                (
-                    await session.execute(
-                        select(SiteEntity).order_by(SiteEntity.name.asc())
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            if not site_rows:
-                return []
-
-            channel_rows = await session.execute(
-                select(
-                    SiteProtocolConfigEntity.site_id.label("site_id"),
-                    SiteProtocolConfigEntity.id.label("protocol_config_id"),
-                    SiteProtocolConfigEntity.protocols_json.label("protocols_json"),
-                ).order_by(
-                    SiteProtocolConfigEntity.site_id.asc(),
-                    SiteProtocolConfigEntity.id.asc(),
-                )
-            )
-            channel_ids_by_site: dict[str, list[str]] = {
-                site.id: [] for site in site_rows
-            }
-            for row in channel_rows.all():
-                site_id = str(row.site_id)
-                protocol_config_id = str(row.protocol_config_id)
-                for protocol in _parse_supported_protocols_json(row.protocols_json):
-                    channel_ids_by_site.setdefault(site_id, []).append(
-                        _runtime_channel_id(protocol_config_id, protocol)
-                    )
-
-            recent_request_logs = (
-                select(RequestLogEntity.channel_id.label("channel_id"))
-                .where(RequestLogEntity.channel_id.is_not(None))
-                .where(
-                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES)
-                )
-                .order_by(
-                    RequestLogEntity.created_at.desc(), RequestLogEntity.id.desc()
-                )
-                .limit(100)
-                .subquery()
-            )
-            recent_count_rows = await session.execute(
-                select(
-                    SiteProtocolConfigEntity.site_id.label("site_id"),
-                    func.count().label("recent_request_count"),
-                )
-                .select_from(recent_request_logs)
-                .join(
-                    SiteProtocolConfigEntity,
-                    recent_request_logs.c.channel_id.like(
-                        SiteProtocolConfigEntity.id + literal("_%")
-                    ),
-                )
-                .group_by(SiteProtocolConfigEntity.site_id)
-            )
-            recent_request_count_by_site = {
-                str(row.site_id): int(row.recent_request_count)
-                for row in recent_count_rows.all()
-            }
-
-            ranked_logs = (
-                select(
-                    SiteProtocolConfigEntity.site_id.label("site_id"),
-                    RequestLogEntity.channel_id.label("channel_id"),
-                    RequestLogEntity.channel_name.label("channel_name"),
-                    RequestLogEntity.status_code.label("status_code"),
-                    RequestLogEntity.lifecycle_status.label("lifecycle_status"),
-                    RequestLogEntity.error_message.label("error_message"),
-                    RequestLogEntity.created_at.label("created_at"),
-                    func.row_number()
-                    .over(
-                        partition_by=SiteProtocolConfigEntity.site_id,
-                        order_by=(
-                            RequestLogEntity.created_at.desc(),
-                            RequestLogEntity.id.desc(),
-                        ),
-                    )
-                    .label("row_number"),
-                )
-                .join(
-                    SiteProtocolConfigEntity,
-                    RequestLogEntity.channel_id.like(
-                        SiteProtocolConfigEntity.id + literal("_%")
-                    ),
-                )
-                .where(
-                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_HEALTH_STATUSES)
-                )
-                .subquery()
-            )
-
-            latest_rows = await session.execute(
-                select(
-                    ranked_logs.c.site_id,
-                    ranked_logs.c.channel_id,
-                    ranked_logs.c.channel_name,
-                    ranked_logs.c.status_code,
-                    ranked_logs.c.lifecycle_status,
-                    ranked_logs.c.error_message,
-                    ranked_logs.c.created_at,
-                ).where(ranked_logs.c.row_number == 1)
-            )
-            latest_by_site = {str(row.site_id): row for row in latest_rows.all()}
-
-            bucket_anchor = datetime.now(UTC).replace(second=0, microsecond=0)
-            bucket_anchor -= timedelta(minutes=bucket_anchor.minute % 5)
-            bucket_start = bucket_anchor - timedelta(
-                seconds=CHANNEL_HEALTH_BUCKET_SECONDS
-                * (CHANNEL_HEALTH_BUCKET_COUNT - 1)
-            )
-            bucket_end = bucket_anchor + timedelta(
-                seconds=CHANNEL_HEALTH_BUCKET_SECONDS
-            )
-            bucket_ranges = [
-                (
-                    bucket_start
-                    + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS * index),
-                    bucket_start
-                    + timedelta(seconds=CHANNEL_HEALTH_BUCKET_SECONDS * (index + 1)),
-                )
-                for index in range(CHANNEL_HEALTH_BUCKET_COUNT)
-            ]
-            bucket_counts_by_channel = {
-                channel_id: [
-                    {"success_count": 0, "total_count": 0}
-                    for _ in range(CHANNEL_HEALTH_BUCKET_COUNT)
-                ]
-                for channel_ids in channel_ids_by_site.values()
-                for channel_id in channel_ids
-            }
-            bucket_rows = await session.execute(
-                select(
-                    RequestLogEntity.channel_id.label("channel_id"),
-                    RequestLogEntity.lifecycle_status.label("lifecycle_status"),
-                    RequestLogEntity.created_at.label("created_at"),
-                )
-                .where(
-                    RequestLogEntity.channel_id.is_not(None),
-                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_HEALTH_STATUSES),
-                    RequestLogEntity.created_at >= bucket_start.replace(tzinfo=None),
-                    RequestLogEntity.created_at < bucket_end.replace(tzinfo=None),
-                )
-                .order_by(RequestLogEntity.created_at.asc(), RequestLogEntity.id.asc())
-            )
-            for row in bucket_rows.all():
-                if row.channel_id is None or row.created_at is None:
-                    continue
-
-                channel_id = str(row.channel_id)
-                counts = bucket_counts_by_channel.get(channel_id)
-                if counts is None:
-                    continue
-
-                created_at = row.created_at
-                if created_at.tzinfo is None:
-                    created_at = created_at.replace(tzinfo=UTC)
-                else:
-                    created_at = created_at.astimezone(UTC)
-
-                bucket_index = int(
-                    (created_at - bucket_start).total_seconds()
-                    // CHANNEL_HEALTH_BUCKET_SECONDS
-                )
-                if bucket_index < 0 or bucket_index >= CHANNEL_HEALTH_BUCKET_COUNT:
-                    continue
-
-                counts[bucket_index]["total_count"] += 1
-                if row.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED.value:
-                    counts[bucket_index]["success_count"] += 1
-
-            items: list[SiteRuntimeSummary] = []
-            for site in site_rows:
-                latest = latest_by_site.get(site.id)
-                channel_summaries: list[SiteChannelRuntimeSummary] = []
-                for channel_id in channel_ids_by_site.get(site.id, []):
-                    bucket_counts = bucket_counts_by_channel.get(channel_id) or [
-                        {"success_count": 0, "total_count": 0}
-                        for _ in range(CHANNEL_HEALTH_BUCKET_COUNT)
-                    ]
-                    channel_summaries.append(
-                        SiteChannelRuntimeSummary(
-                            channel_id=channel_id,
-                            health_buckets=[
-                                SiteChannelHealthBucket(
-                                    started_at=start.isoformat(),
-                                    ended_at=end.isoformat(),
-                                    success_count=bucket_counts[index]["success_count"],
-                                    total_count=bucket_counts[index]["total_count"],
-                                )
-                                for index, (start, end) in enumerate(bucket_ranges)
-                            ],
-                        )
-                    )
-                items.append(
-                    SiteRuntimeSummary(
-                        site_id=site.id,
-                        site_name=site.name,
-                        recent_request_count=recent_request_count_by_site.get(
-                            site.id, 0
-                        ),
-                        latest_request_at=(
-                            latest.created_at.replace(tzinfo=UTC).isoformat()
-                            if latest is not None and latest.created_at is not None
-                            else None
-                        ),
-                        latest_success=(
-                            latest.lifecycle_status
-                            == RequestLogLifecycleStatus.SUCCEEDED.value
-                            if latest is not None
-                            else None
-                        ),
-                        latest_status_code=(
-                            int(latest.status_code)
-                            if latest is not None and latest.status_code is not None
-                            else None
-                        ),
-                        latest_error_message=(
-                            str(latest.error_message)
-                            if latest is not None and latest.error_message is not None
-                            else None
-                        ),
-                        latest_channel_id=(
-                            str(latest.channel_id)
-                            if latest is not None and latest.channel_id is not None
-                            else None
-                        ),
-                        latest_channel_name=(
-                            str(latest.channel_name)
-                            if latest is not None and latest.channel_name is not None
-                            else None
-                        ),
-                        channel_summaries=channel_summaries,
-                    )
-                )
-            return items
 
     async def get_request_log(self, log_id: int) -> RequestLogDetail:
         """Return a hydrated request log by identifier."""

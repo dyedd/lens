@@ -25,6 +25,7 @@ import {
   Activity,
   ArchiveRestore,
   CalendarClock,
+  HeartPulse,
   KeyRound,
   Layers3,
   LayoutDashboard,
@@ -97,6 +98,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             href: DASHBOARD_ROUTES.overview,
             label: t.dashboard,
             icon: LayoutDashboard,
+          },
+          {
+            key: "modelHealth" as DashboardView,
+            href: DASHBOARD_ROUTES.modelHealth,
+            label: locale === "zh-CN" ? "模型健康" : "Model Health",
+            icon: HeartPulse,
           },
           {
             key: "requests" as DashboardView,
