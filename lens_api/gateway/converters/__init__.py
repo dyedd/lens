@@ -15,6 +15,7 @@ from .chat_to_responses import (
     chat_response_to_responses,
     chat_stream_to_responses_stream,
 )
+from ._chat_stream import normalize_chat_stream
 from .responses_request_to_chat import responses_request_to_chat
 from .responses_to_anthropic import (
     responses_response_to_anthropic,
@@ -30,6 +31,7 @@ __all__ = [
     "convert_request",
     "convert_response",
     "convert_stream_iterator",
+    "normalize_chat_stream",
 ]
 
 
