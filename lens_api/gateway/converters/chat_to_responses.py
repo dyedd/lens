@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._chat_stream import ChatToolCall, ChatToolCalls
+from ._chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
 from ._sse import (
     FINISH_REASON_CHAT_TO_RESPONSES,
     format_sse_event,
@@ -131,7 +131,9 @@ class _ResponsesStreamState:
             delta = choice.get("delta", {})
             events.extend(self._text_events(delta.get("content")))
             for value in delta.get("tool_calls") or []:
-                events.extend(self._tool_events(value))
+                events.extend(
+                    self._tool_events(value, choice_index=chat_choice_index(choice))
+                )
         return events
 
     def finish_events(self) -> list[bytes]:
@@ -211,17 +213,19 @@ class _ResponsesStreamState:
         )
         return events
 
-    def _tool_events(self, value: Any) -> list[bytes]:
-        tool_call = self.tool_calls.update(value)
-        if tool_call.target_index is None:
-            tool_call.target_index = self.allocate_output_index()
+    def _tool_events(self, value: Any, *, choice_index: int) -> list[bytes]:
         events: list[bytes] = []
-        if not tool_call.announced and tool_call.call_id and tool_call.name:
-            events.append(self._announce_tool(tool_call))
-        if tool_call.announced:
-            arguments_delta = tool_call.take_argument_delta()
-            if arguments_delta:
-                events.append(self._tool_arguments_event(tool_call, arguments_delta))
+        for tool_call in self.tool_calls.update_many(value, choice_index=choice_index):
+            if tool_call.target_index is None:
+                tool_call.target_index = self.allocate_output_index()
+            if not tool_call.announced and tool_call.call_id and tool_call.name:
+                events.append(self._announce_tool(tool_call))
+            if tool_call.announced:
+                arguments_delta = tool_call.take_argument_delta()
+                if arguments_delta:
+                    events.append(
+                        self._tool_arguments_event(tool_call, arguments_delta)
+                    )
         return events
 
     def _finish_text(

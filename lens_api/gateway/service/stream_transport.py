@@ -88,7 +88,7 @@ async def _stream_upstream_iterator(
 ) -> AsyncIterator[bytes]:
     deadline = capture.deadline
     try:
-        iterator = response.aiter_bytes().__aiter__()
+        iterator: AsyncIterator[bytes] = response.aiter_bytes().__aiter__()
         while True:
             try:
                 chunk = await _next_stream_chunk(

@@ -11,7 +11,11 @@ import httpx
 from fastapi import Response
 
 from ...models import ChannelConfig, ProtocolKind
-from ..converters import convert_response, convert_stream_iterator
+from ..converters import (
+    convert_response,
+    convert_stream_iterator,
+    normalize_chat_stream,
+)
 from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
 from ..router.cooldown import ErrorCategory
 from .app_state import app_state
@@ -227,6 +231,14 @@ async def _build_stream_result(
         capture,
         stream_started_at,
     )
+    if (
+        client_protocol == ProtocolKind.OPENAI_CHAT
+        and channel.protocol == ProtocolKind.OPENAI_CHAT
+    ):
+        raw_iter = normalize_chat_stream(
+            raw_iter,
+            event_format="ndjson" if capture.event_format == "ndjson" else "sse",
+        )
 
     if client_protocol is not None and client_protocol != channel.protocol:
         converted_iter = convert_stream_iterator(

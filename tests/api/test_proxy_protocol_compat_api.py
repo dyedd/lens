@@ -21,6 +21,20 @@ def _chat_group_item(model_name: str) -> dict[str, Any]:
     }
 
 
+def _stream_payloads(response_text: str) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for block in response_text.split("\n\n"):
+        data_lines = [
+            line[6:] for line in block.splitlines() if line.startswith("data: ")
+        ]
+        for data in data_lines:
+            if data != "[DONE]":
+                payload = json.loads(data)
+                if isinstance(payload, dict):
+                    payloads.append(payload)
+    return payloads
+
+
 def test_same_protocol_responses_request_preserves_body_shape(
     client,
     monkeypatch,
@@ -229,3 +243,464 @@ def test_openai_chat_stream_logs_kimi_sse_as_json(
     logged_chunks = json.loads(request_log.response_content or "null")
     assert isinstance(logged_chunks, list)
     assert logged_chunks[0]["choices"][0]["delta"]["reasoning"] == "用户"
+
+
+def test_openai_chat_stream_repairs_reused_tool_call_index(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    upstream_payloads = [
+        {
+            "id": "chatcmpl-tools",
+            "object": "chat.completion.chunk",
+            "model": "gemini-3.1-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "toolu-first",
+                                "type": "function",
+                                "function": {"name": "glob", "arguments": ""},
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-tools",
+            "object": "chat.completion.chunk",
+            "model": "gemini-3.1-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {
+                                    "name": "",
+                                    "arguments": '{"path":"","pattern":"**/*"}',
+                                },
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-tools",
+            "object": "chat.completion.chunk",
+            "model": "gemini-3.1-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {
+                                    "name": "",
+                                    "arguments": '{"path":"content/wiki","pattern":""}',
+                                },
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-tools",
+            "object": "chat.completion.chunk",
+            "model": "gemini-3.1-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+    ]
+    stream_body = (
+        "".join(
+            f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            for payload in upstream_payloads
+        )
+        + "data: [DONE]\n\n"
+    )
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream
+        return httpx.Response(
+            200,
+            content=stream_body.encode(),
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_CHAT.value],
+            model_name="gemini-3.1-pro",
+        )
+    )
+    create_model_group(
+        name="gemini-3.1-pro",
+        items=[_chat_group_item("gemini-3.1-pro")],
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "gemini-3.1-pro",
+            "messages": [{"role": "user", "content": "call glob twice"}],
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    chunks = _stream_payloads(response.text)
+    tool_deltas = [
+        tool_call
+        for chunk in chunks
+        for choice in chunk["choices"]
+        for tool_call in choice["delta"].get("tool_calls", [])
+    ]
+    assert [tool_call["index"] for tool_call in tool_deltas] == [0, 0, 1]
+    assert tool_deltas[0]["id"] == "toolu-first"
+    assert tool_deltas[2]["id"].startswith("call_")
+    assert json.loads(tool_deltas[1]["function"]["arguments"]) == {
+        "path": "",
+        "pattern": "**/*",
+    }
+    assert json.loads(tool_deltas[2]["function"]["arguments"]) == {
+        "path": "content/wiki",
+        "pattern": "",
+    }
+
+
+def test_openai_chat_stream_preserves_split_tool_call_arguments(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    upstream_payloads = [
+        {
+            "id": "chatcmpl-split",
+            "object": "chat.completion.chunk",
+            "model": "tool-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "toolu-split",
+                                "type": "function",
+                                "function": {"name": "glob", "arguments": ""},
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-split",
+            "object": "chat.completion.chunk",
+            "model": "tool-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {"arguments": '{"path":"con'},
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-split",
+            "object": "chat.completion.chunk",
+            "model": "tool-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {"arguments": 'tent/wiki"}'},
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-split",
+            "object": "chat.completion.chunk",
+            "model": "tool-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+    ]
+    stream_body = (
+        "".join(f"data: {json.dumps(payload)}\n\n" for payload in upstream_payloads)
+        + "data: [DONE]\n\n"
+    )
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream
+        return httpx.Response(
+            200,
+            content=stream_body.encode(),
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_CHAT.value],
+            model_name="tool-model",
+        )
+    )
+    create_model_group(
+        name="tool-model",
+        items=[_chat_group_item("tool-model")],
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={"model": "tool-model", "messages": [], "stream": True},
+    )
+
+    assert response.status_code == 200, response.text
+    chunks = _stream_payloads(response.text)
+    tool_deltas = [
+        tool_call
+        for chunk in chunks
+        for choice in chunk["choices"]
+        for tool_call in choice["delta"].get("tool_calls", [])
+    ]
+    assert [tool_call["index"] for tool_call in tool_deltas] == [0, 0, 0]
+    assert "id" not in tool_deltas[1]
+    assert "id" not in tool_deltas[2]
+
+
+@pytest.mark.parametrize(
+    ("route", "client_protocol"),
+    [
+        ("/v1/messages", ProtocolKind.ANTHROPIC),
+        ("/v1/responses", ProtocolKind.OPENAI_RESPONSES),
+    ],
+)
+def test_chat_upstream_repeated_tool_index_converts_to_separate_calls(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+    route: str,
+    client_protocol: ProtocolKind,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    upstream_payloads = [
+        {
+            "id": "chatcmpl-cross-protocol",
+            "model": "tool-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "toolu-first",
+                                "type": "function",
+                                "function": {"name": "glob", "arguments": ""},
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-cross-protocol",
+            "model": "tool-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {
+                                    "arguments": '{"path":"","pattern":"**/*"}',
+                                },
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-cross-protocol",
+            "model": "tool-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {
+                                    "arguments": '{"path":"content/wiki","pattern":""}',
+                                },
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+    ]
+    stream_body = (
+        "".join(f"data: {json.dumps(payload)}\n\n" for payload in upstream_payloads)
+        + "data: [DONE]\n\n"
+    )
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream
+        return httpx.Response(
+            200,
+            content=stream_body.encode(),
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_CHAT.value],
+            model_name="tool-model",
+        )
+    )
+    model_name = f"chat-upstream-{client_protocol.value}"
+    create_model_group(name=model_name, items=[_chat_group_item("tool-model")])
+
+    request_body = {
+        "model": model_name,
+        "stream": True,
+        "messages": [{"role": "user", "content": "call glob twice"}],
+    }
+    if client_protocol == ProtocolKind.OPENAI_RESPONSES:
+        request_body = {"model": model_name, "stream": True, "input": "call glob twice"}
+    else:
+        request_body["max_tokens"] = 64
+
+    response = client.post(
+        route,
+        headers=gateway_headers(create_gateway_key()),
+        json=request_body,
+    )
+
+    assert response.status_code == 200, response.text
+    payloads = _stream_payloads(response.text)
+    if client_protocol == ProtocolKind.ANTHROPIC:
+        starts = [
+            payload["content_block"]
+            for payload in payloads
+            if payload.get("type") == "content_block_start"
+            and payload.get("content_block", {}).get("type") == "tool_use"
+        ]
+        assert len(starts) == 2
+        assert starts[0]["id"] == "toolu-first"
+        assert starts[1]["id"].startswith("call_")
+        deltas = [
+            payload["delta"]["partial_json"]
+            for payload in payloads
+            if payload.get("type") == "content_block_delta"
+            and payload.get("delta", {}).get("type") == "input_json_delta"
+        ]
+        assert [json.loads(delta) for delta in deltas] == [
+            {"path": "", "pattern": "**/*"},
+            {"path": "content/wiki", "pattern": ""},
+        ]
+    else:
+        added = [
+            payload["item"]
+            for payload in payloads
+            if payload.get("type") == "response.output_item.added"
+            and payload.get("item", {}).get("type") == "function_call"
+        ]
+        assert len(added) == 2
+        assert added[0]["call_id"] == "toolu-first"
+        assert added[1]["call_id"].startswith("call_")
+        terminal = next(
+            payload
+            for payload in payloads
+            if payload.get("type") == "response.completed"
+        )
+        output = [
+            item
+            for item in terminal["response"]["output"]
+            if item.get("type") == "function_call"
+        ]
+        assert [json.loads(item["arguments"]) for item in output] == [
+            {"path": "", "pattern": "**/*"},
+            {"path": "content/wiki", "pattern": ""},
+        ]
