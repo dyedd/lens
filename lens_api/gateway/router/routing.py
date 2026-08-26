@@ -9,6 +9,8 @@ from .health import _HealthTracker
 from .targets import filter_enabled_targets
 from .types import RouteSelection, RouteTarget
 
+_COOLED_TARGET_LABEL_LIMIT = 5
+
 
 @dataclass(slots=True)
 class _SWRRNode:
@@ -60,7 +62,10 @@ class _RoutePlanner:
                 skip_health_filter=True,
             )
             if all_matching:
-                detail = f"All {len(all_matching)} matching channels are in cooldown"
+                detail = (
+                    f"All {len(all_matching)} matching channels are in cooldown: "
+                    f"{self._cooled_targets_summary(all_matching)}"
+                )
             else:
                 detail = f"No enabled channels available for protocol={protocol.value}"
                 if requested_model:
@@ -82,6 +87,23 @@ class _RoutePlanner:
             ]
             fallbacks.sort(key=self._health.score, reverse=True)
         return RouteSelection(primary=primary, fallbacks=fallbacks)
+
+    def _cooled_targets_summary(self, targets: list[RouteTarget]) -> str:
+        """Name the cooled targets so a routing failure points at real channels."""
+        now = monotonic()
+        labels = list(
+            dict.fromkeys(self._cooled_target_label(target, now) for target in targets)
+        )
+        if len(labels) > _COOLED_TARGET_LABEL_LIMIT:
+            dropped = len(labels) - _COOLED_TARGET_LABEL_LIMIT
+            labels = [*labels[:_COOLED_TARGET_LABEL_LIMIT], f"+{dropped} more"]
+        return ", ".join(labels)
+
+    def _cooled_target_label(self, target: RouteTarget, now: float) -> str:
+        name = target.channel.name or target.channel.id
+        model = f"/{target.model_name}" if target.model_name else ""
+        reason = self._health.cooldown_reason(target, now=now)
+        return f"{name}{model} ({reason})" if reason else f"{name}{model}"
 
     def build_route_state(
         self, channels: list[ChannelConfig], protocol: ProtocolKind, *, now: float
