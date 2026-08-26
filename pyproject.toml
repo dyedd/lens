@@ -3,7 +3,7 @@ name = "lens"
 dynamic = ["version"]
 description = "Multi-provider LLM gateway for OpenAI Chat, OpenAI Responses, Anthropic, and Gemini"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 license = "MIT"
 dependencies = [
     "aiosqlite>=0.20.0",
@@ -34,7 +34,7 @@ dev = [
 filterwarnings = ["error"]
 
 [tool.black]
-target-version = ["py311"]
+target-version = ["py314"]
 
 [project.scripts]
 lens = "lens_api.cli:main"
