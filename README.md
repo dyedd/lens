@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/Python-3.14%2B-3776AB?logo=python&logoColor=white" alt="Python 3.14+">
   <img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI 0.115+">
   <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs" alt="Next.js 16">
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111" alt="React 19">
@@ -180,7 +180,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 ### 本地开发
 
-需要 Python 3.11+、uv 和 pnpm。
+需要 Python 3.14+、uv 和 pnpm。
 下面的命令只在 `.env` 不存在时生成随机签名密钥，不会覆盖已有配置。
 
 ```bash
@@ -248,7 +248,7 @@ pnpm dev
 
 | 层   | 技术                                                            |
 | ---- | --------------------------------------------------------------- |
-| 后端 | Python 3.11+、FastAPI、SQLAlchemy、Alembic、SQLite / PostgreSQL |
+| 后端 | Python 3.14+、FastAPI、SQLAlchemy、Alembic、SQLite / PostgreSQL |
 | 前端 | Next.js 16、React 19、TypeScript、TanStack Query、shadcn/ui     |
 
 ## 配置

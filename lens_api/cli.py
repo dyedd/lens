@@ -57,11 +57,6 @@ def _write_private_text(path: Path, value: str) -> None:
             pass
 
 
-def _configure_asyncio_event_loop_policy() -> None:
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-
 def _selector_event_loop_factory() -> asyncio.AbstractEventLoop:
     return asyncio.SelectorEventLoop()
 
@@ -241,13 +236,16 @@ def seed_admin(args: argparse.Namespace) -> None:
         else:
             print("admin user already exists; skipped seed")
 
-    asyncio.run(_run())
+    asyncio.run(
+        _run(),
+        loop_factory=(
+            _selector_event_loop_factory if sys.platform == "win32" else None
+        ),
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
     """Parse CLI arguments and dispatch the selected Lens command."""
-    _configure_asyncio_event_loop_policy()
-
     parser = argparse.ArgumentParser(prog="lens", description="Lens CLI")
     subparsers = parser.add_subparsers(dest="group")
 
