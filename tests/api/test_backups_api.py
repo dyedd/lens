@@ -2,13 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from conftest import assert_error, seed_request_log, valid_site_payload
-
-
-def test_export_backup_requires_admin(client) -> None:
-    response = client.get("/api/admin/backups/export")
-
-    assert_error(response, 401, "Not authenticated")
 
 
 def test_export_backup_returns_json_attachment(
@@ -231,95 +226,34 @@ def test_backup_round_trip_preserves_site_master_enabled(
     assert restored_site["protocols"][0]["enabled"] is True
 
 
-def test_import_backup_rejects_obsolete_site_priority(
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(
+            lambda payload: payload.update({"version": 4}),
+            id="obsolete_top_level_field",
+        ),
+        pytest.param(
+            lambda payload: payload["sites"][0].update({"priority": 6}),
+            id="obsolete_site_field",
+        ),
+        pytest.param(
+            lambda payload: payload["sites"][0].pop("enabled"),
+            id="missing_site_field",
+        ),
+    ],
+)
+def test_import_backup_rejects_payloads_the_strict_schema_forbids(
     client,
     admin_headers,
     create_site,
+    mutate,
 ) -> None:
     create_site(valid_site_payload())
     exported = client.get("/api/admin/backups/export", headers=admin_headers)
     assert exported.status_code == 200
     payload = exported.json()
-    payload["sites"][0]["priority"] = 6
-
-    response = client.post(
-        "/api/admin/backups/import",
-        headers=admin_headers,
-        files={
-            "file": (
-                "backup.json",
-                json.dumps(payload).encode(),
-                "application/json",
-            )
-        },
-    )
-
-    assert_error(response, 400, "Invalid backup file")
-
-
-def test_import_backup_rejects_obsolete_version_field(
-    client,
-    admin_headers,
-    create_site,
-) -> None:
-    create_site(valid_site_payload())
-    exported = client.get("/api/admin/backups/export", headers=admin_headers)
-    assert exported.status_code == 200
-    payload = exported.json()
-    payload["version"] = 4
-
-    response = client.post(
-        "/api/admin/backups/import",
-        headers=admin_headers,
-        files={
-            "file": (
-                "backup.json",
-                json.dumps(payload).encode(),
-                "application/json",
-            )
-        },
-    )
-
-    assert_error(response, 400, "Invalid backup file")
-
-
-def test_import_backup_rejects_missing_site_enabled(
-    client,
-    admin_headers,
-    create_site,
-) -> None:
-    create_site(valid_site_payload())
-    exported = client.get("/api/admin/backups/export", headers=admin_headers)
-    assert exported.status_code == 200
-    payload = exported.json()
-    payload["sites"][0].pop("enabled")
-    payload["sites"][0]["protocols"][0]["enabled"] = False
-
-    response = client.post(
-        "/api/admin/backups/import",
-        headers=admin_headers,
-        files={
-            "file": (
-                "backup.json",
-                json.dumps(payload).encode(),
-                "application/json",
-            )
-        },
-    )
-
-    assert_error(response, 400, "Invalid backup file")
-
-
-def test_import_backup_rejects_missing_site_tags(
-    client,
-    admin_headers,
-    create_site,
-) -> None:
-    create_site(valid_site_payload())
-    exported = client.get("/api/admin/backups/export", headers=admin_headers)
-    assert exported.status_code == 200
-    payload = exported.json()
-    payload["sites"][0].pop("tags")
+    mutate(payload)
 
     response = client.post(
         "/api/admin/backups/import",

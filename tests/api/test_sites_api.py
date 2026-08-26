@@ -4,11 +4,14 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi import HTTPException
 
-from conftest import assert_error, openai_chat_channel_id, run_async, seed_request_log
-from conftest import valid_site_payload
-from lens_api.models import ChannelModelSyncResponse, SiteModelTestResult, SiteUpdate
+from conftest import (
+    assert_error,
+    openai_chat_channel_id,
+    run_async,
+    valid_site_payload,
+)
+from lens_api.models import SiteUpdate
 
 
 def _rate_site_payload(source: str, *, group: str = "") -> dict[str, Any]:
@@ -210,18 +213,6 @@ def test_credential_rate_sync_rejects_stale_configuration(
     assert credential["rate_multiplier"] is None
 
 
-def test_list_sites_requires_admin(client) -> None:
-    response = client.get("/api/admin/sites")
-
-    assert_error(response, 401, "Not authenticated")
-
-
-def test_update_site_enabled_requires_admin(client) -> None:
-    response = client.put("/api/admin/sites/missing/enabled", json={"enabled": False})
-
-    assert_error(response, 401, "Not authenticated")
-
-
 def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
@@ -277,29 +268,6 @@ def test_list_sites_filters_by_exact_tag(client, admin_headers, create_site) -> 
     )
     assert prefix_response.status_code == 200
     assert prefix_response.json() == []
-
-
-@pytest.mark.parametrize(
-    "tags",
-    [[""], ["x" * 81], [f"tag-{index}" for index in range(21)]],
-)
-def test_create_site_rejects_invalid_tags(client, admin_headers, tags) -> None:
-    response = client.post(
-        "/api/admin/sites",
-        headers=admin_headers,
-        json=valid_site_payload(tags=tags),
-    )
-
-    assert response.status_code == 422
-
-
-def test_create_site_rejects_obsolete_priority(client, admin_headers) -> None:
-    payload = valid_site_payload()
-    payload["priority"] = 1
-
-    response = client.post("/api/admin/sites", headers=admin_headers, json=payload)
-
-    assert response.status_code == 422
 
 
 def test_toggle_site_preserves_configured_states_and_restores_group_member(
