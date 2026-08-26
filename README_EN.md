@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/Python-3.14%2B-3776AB?logo=python&logoColor=white" alt="Python 3.14+">
   <img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI 0.115+">
   <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs" alt="Next.js 16">
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111" alt="React 19">
@@ -183,7 +183,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 ### Local Development
 
-Requires Python 3.11+, uv, and pnpm.
+Requires Python 3.14+, uv, and pnpm.
 The command below generates a random signing key only when `.env` does not exist and does not overwrite existing configuration.
 
 ```bash
@@ -251,7 +251,7 @@ Clients only need: Lens Base URL + Gateway API Key + Model group name.
 
 | Layer    | Technologies                                                    |
 | -------- | --------------------------------------------------------------- |
-| Backend  | Python 3.11+, FastAPI, SQLAlchemy, Alembic, SQLite / PostgreSQL |
+| Backend  | Python 3.14+, FastAPI, SQLAlchemy, Alembic, SQLite / PostgreSQL |
 | Frontend | Next.js 16, React 19, TypeScript, TanStack Query, shadcn/ui     |
 
 ## Configuration

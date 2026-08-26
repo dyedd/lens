@@ -286,6 +286,7 @@ async def main(export_path: str) -> None:
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python scripts/import_octopus_export.py <export.json>")
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(main(sys.argv[1]))
+    asyncio.run(
+        main(sys.argv[1]),
+        loop_factory=(asyncio.SelectorEventLoop if sys.platform == "win32" else None),
+    )
