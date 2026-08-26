@@ -223,6 +223,32 @@ class _HealthTracker:
     def score(self, target: RouteTarget) -> float:
         return self._score_model(self._model_key(target.channel.id, target.model_name))
 
+    def cooldown_reason(self, target: RouteTarget, *, now: float) -> str:
+        """Name the fault domain and remaining cooldown of an unavailable target."""
+        states = [
+            state
+            for state in (
+                self._model_health.get(
+                    self._model_key(target.channel.id, target.model_name)
+                ),
+                self._credential_health.get(
+                    self._credential_key(target.channel.id, target.credential_id)
+                ),
+            )
+            if state is not None and state.cooled_until > now
+        ]
+        if not states:
+            return ""
+        state = max(states, key=lambda item: item.cooled_until)
+        category = (
+            state.last_error_category.value
+            if state.last_error_category is not None
+            else "unknown"
+        )
+        return (
+            f"{category}, {self._remaining_seconds(state.cooled_until, now=now)}s left"
+        )
+
     def build_channel_health(
         self, channel: ChannelConfig, *, now: float
     ) -> ChannelHealth:

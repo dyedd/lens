@@ -305,6 +305,19 @@ async def _proxy_protocol(
         failed_status_code, failed_error_type, failed_message = _final_upstream_failure(
             errors, failure_status_codes
         )
+        if not log_ctx.attempts:
+            await log_ctx.update(
+                requested_group_name=plan.requested_group_name,
+                resolved_group_name=plan.resolved_group_name,
+                upstream_model_name=None,
+                channel=None,
+                user_agent=upstream_user_agent,
+                lifecycle_status=RequestLogLifecycleStatus.FAILED,
+                status_code=failed_status_code,
+                success=False,
+                is_stream=is_stream_body,
+                error_message=failed_message,
+            )
         return _protocol_error_response(
             protocol=protocol,
             status_code=failed_status_code,

@@ -21,7 +21,7 @@ import type { ProtocolKind, RequestLogFilterOption } from "@/lib/api";
 import { titleForLocale, type Locale } from "@/lib/I18nContext";
 
 import {
-  filterOptionLabel,
+  channelFilterOptionLabel,
   gatewayKeyFilterOptionLabel,
   type SortMode,
   type StatusFilter,
@@ -199,7 +199,7 @@ export function RequestFiltersPanel(props: RequestFiltersPanelProps) {
                 </ComboboxOption>
                 {channelOptions.map((channel) => (
                   <ComboboxOption key={channel.id} value={channel.id}>
-                    {filterOptionLabel(channel)}
+                    {channelFilterOptionLabel(channel, locale)}
                   </ComboboxOption>
                 ))}
               </Combobox>

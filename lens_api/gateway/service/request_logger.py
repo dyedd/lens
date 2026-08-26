@@ -27,6 +27,7 @@ class _RequestLogger:
     body: dict[str, Any]
     request_content: str | None
     attempts: list[AttemptLog]
+    last_channel: ChannelConfig | None = None
 
     async def update(
         self,
@@ -47,6 +48,10 @@ class _RequestLogger:
         error_message: str | None = None,
         result: UpstreamResult | None = None,
     ) -> None:
+        if channel is not None:
+            self.last_channel = channel
+        else:
+            channel = self.last_channel
         kwargs: dict[str, Any] = {"rate_multiplier": rate_multiplier}
         if result is not None:
             kwargs.update(
