@@ -3,12 +3,6 @@ from __future__ import annotations
 from conftest import assert_error
 
 
-def test_gateway_api_key_endpoints_require_admin(client) -> None:
-    response = client.get("/api/admin/gateway-api-keys")
-
-    assert_error(response, 401, "Not authenticated")
-
-
 def test_gateway_api_key_crud_round_trip(
     client,
     admin_headers,

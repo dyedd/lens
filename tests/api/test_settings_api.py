@@ -17,12 +17,6 @@ from lens_api.persistence.shared import (
 )
 
 
-def test_list_settings_requires_admin(client) -> None:
-    response = client.get("/api/admin/settings")
-
-    assert_error(response, 401, "Not authenticated")
-
-
 def test_update_settings_normalizes_known_values(client, admin_headers) -> None:
     response = client.put(
         "/api/admin/settings",

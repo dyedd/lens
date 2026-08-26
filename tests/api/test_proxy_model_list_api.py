@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from conftest import create_site_group_and_key, gateway_headers, valid_site_payload
+from conftest import gateway_headers, valid_site_payload
 from lens_api.core.runtime_channel_ids import compose_runtime_channel_id
 from lens_api.models import ProtocolKind
 from lens_api.persistence.shared import SETTING_MODEL_LIST_COMPAT_MODE_ENABLED

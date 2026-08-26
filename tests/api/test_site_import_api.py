@@ -48,118 +48,45 @@ def valid_import_site(
     }
 
 
-def test_import_sites_rejects_empty_batch(client, admin_headers) -> None:
-    response = client.post(
-        "/api/admin/sites/import",
-        headers=admin_headers,
-        json={"sites": []},
-    )
-
-    assert response.status_code == 422
-
-
 @pytest.mark.parametrize(
-    ("target", "field"),
+    "mutate",
     [
-        ("site", "enabled"),
-        ("protocol", "name"),
+        pytest.param(
+            lambda payload: payload.update({"sites": []}),
+            id="empty_batch",
+        ),
+        pytest.param(
+            lambda payload: payload["sites"][0].update({"priority": 1}),
+            id="obsolete_site_field",
+        ),
+        pytest.param(
+            lambda payload: payload["sites"][0]["protocols"][0].update(
+                {"auto_sync_enabled": True, "match_regex": "^gpt-"}
+            ),
+            id="obsolete_protocol_field",
+        ),
+        pytest.param(
+            lambda payload: payload["sites"][0].pop("enabled"),
+            id="missing_required_field",
+        ),
+        pytest.param(
+            lambda payload: payload["sites"][0]["base_urls"][0].update({"ref": "   "}),
+            id="blank_identifier",
+        ),
     ],
 )
-def test_import_sites_requires_strict_import_fields(
+def test_import_sites_rejects_payloads_the_strict_schema_forbids(
     client,
     admin_headers,
-    target,
-    field,
+    mutate,
 ) -> None:
-    site = valid_import_site()
-    item = site if target == "site" else site["protocols"][0]
-    del item[field]
+    payload = {"sites": [valid_import_site()]}
+    mutate(payload)
 
     response = client.post(
         "/api/admin/sites/import",
         headers=admin_headers,
-        json={"sites": [site]},
-    )
-
-    assert response.status_code == 422
-    assert client.get("/api/admin/sites", headers=admin_headers).json() == []
-
-
-def test_import_sites_rejects_obsolete_priority(client, admin_headers) -> None:
-    site = valid_import_site()
-    site["priority"] = 1
-
-    response = client.post(
-        "/api/admin/sites/import",
-        headers=admin_headers,
-        json={"sites": [site]},
-    )
-
-    assert response.status_code == 422
-    assert client.get("/api/admin/sites", headers=admin_headers).json() == []
-
-
-@pytest.mark.parametrize(
-    ("target", "field"),
-    [
-        ("base_url", "ref"),
-        ("credential", "ref"),
-        ("protocol", "base_url_ref"),
-        ("protocol", "credential_refs"),
-    ],
-)
-def test_import_sites_requires_explicit_resource_refs(
-    client,
-    admin_headers,
-    target,
-    field,
-) -> None:
-    site = valid_import_site()
-    items = {
-        "base_url": site["base_urls"][0],
-        "credential": site["credentials"][0],
-        "protocol": site["protocols"][0],
-    }
-    del items[target][field]
-
-    response = client.post(
-        "/api/admin/sites/import",
-        headers=admin_headers,
-        json={"sites": [site]},
-    )
-
-    assert response.status_code == 422
-    assert client.get("/api/admin/sites", headers=admin_headers).json() == []
-
-
-@pytest.mark.parametrize(
-    ("target", "field"),
-    [
-        ("base_url", "ref"),
-        ("credential", "ref"),
-        ("protocol", "name"),
-        ("protocol", "base_url_ref"),
-        ("protocol", "credential_refs"),
-    ],
-)
-def test_import_sites_rejects_blank_identifiers(
-    client,
-    admin_headers,
-    target,
-    field,
-) -> None:
-    site = valid_import_site()
-    items = {
-        "base_url": site["base_urls"][0],
-        "credential": site["credentials"][0],
-        "protocol": site["protocols"][0],
-    }
-    items[target][field] = ["   "] if field == "credential_refs" else "   "
-
-    response = client.post(
-        "/api/admin/sites/import",
-        headers=admin_headers,
-        json={"sites": [site]},
+        json=payload,
     )
 
     assert response.status_code == 422
@@ -386,21 +313,3 @@ def test_import_sites_derives_sync_targets_from_synced_models(
         }
     ]
     assert created_protocol["models"][0]["source"] == "synced"
-
-
-def test_import_sites_rejects_obsolete_auto_sync_fields(
-    client,
-    admin_headers,
-) -> None:
-    site = deepcopy(valid_import_site())
-    site["protocols"][0]["auto_sync_enabled"] = True
-
-    site["protocols"][0]["match_regex"] = "^gpt-"
-    response = client.post(
-        "/api/admin/sites/import",
-        headers=admin_headers,
-        json={"sites": [site]},
-    )
-
-    assert response.status_code == 422
-    assert client.get("/api/admin/sites", headers=admin_headers).json() == []

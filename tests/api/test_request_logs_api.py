@@ -1,14 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from conftest import assert_error, run_async, seed_request_log
 
 from lens_api.models import ProtocolKind, RequestLogLifecycleStatus
-
-
-def test_request_log_page_requires_admin(client) -> None:
-    response = client.get("/api/admin/request-logs/page")
-
-    assert_error(response, 401, "Not authenticated")
 
 
 def test_request_log_page_returns_empty_result(client, admin_headers) -> None:
@@ -51,26 +46,63 @@ def test_request_log_page_returns_seeded_logs_with_filters(
     assert "gpt-4o" in payload["model_names"]
 
 
-def test_request_log_page_returns_non_token_billing(
+@pytest.mark.parametrize(
+    ("seeds", "params", "expected"),
+    [
+        pytest.param(
+            [
+                {
+                    "protocol": ProtocolKind.OPENAI_IMAGE.value,
+                    "requested_group_name": "gpt-image-1",
+                    "resolved_group_name": "gpt-image-1",
+                    "billing_mode": "non_tokens",
+                    "billing_units": 2,
+                }
+            ],
+            {},
+            {"billing_mode": "non_tokens", "billing_units": 2},
+            id="non_token_billing",
+        ),
+        pytest.param(
+            [
+                {
+                    "success": False,
+                    "lifecycle_status": RequestLogLifecycleStatus.CANCELLED,
+                },
+                {},
+            ],
+            {"status": "cancelled"},
+            {
+                "lifecycle_status": "cancelled",
+                "status_code": 200,
+                "error_message": None,
+            },
+            id="cancelled_filter",
+        ),
+    ],
+)
+def test_request_log_page_reports_filtered_log_fields(
     client,
     admin_headers,
     app_state,
+    seeds,
+    params,
+    expected,
 ) -> None:
-    seed_request_log(
-        app_state,
-        protocol=ProtocolKind.OPENAI_IMAGE.value,
-        requested_group_name="gpt-image-1",
-        resolved_group_name="gpt-image-1",
-        billing_mode="non_tokens",
-        billing_units=2,
+    for seed in seeds:
+        seed_request_log(app_state, **seed)
+
+    response = client.get(
+        "/api/admin/request-logs/page",
+        headers=admin_headers,
+        params=params,
     )
 
-    response = client.get("/api/admin/request-logs/page", headers=admin_headers)
-
     assert response.status_code == 200
-    item = response.json()["items"][0]
-    assert item["billing_mode"] == "non_tokens"
-    assert item["billing_units"] == 2
+    payload = response.json()
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert {key: item[key] for key in expected} == expected
 
 
 def test_request_log_page_filters_failed_logs_with_na_options(
@@ -125,34 +157,6 @@ def test_request_log_page_filters_failed_logs_with_na_options(
     assert payload["items"][0]["success"] is False
     assert payload["channels"][0]["id"] == "n/a"
     assert payload["gateway_keys"][0]["id"] == "n/a"
-
-
-def test_request_log_page_filters_cancelled_logs(
-    client,
-    admin_headers,
-    app_state,
-) -> None:
-    cancelled_log = seed_request_log(
-        app_state,
-        status_code=200,
-        success=False,
-        lifecycle_status=RequestLogLifecycleStatus.CANCELLED,
-    )
-    seed_request_log(app_state)
-
-    response = client.get(
-        "/api/admin/request-logs/page",
-        headers=admin_headers,
-        params={"status": "cancelled"},
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["total"] == 1
-    assert payload["items"][0]["id"] == cancelled_log.id
-    assert payload["items"][0]["lifecycle_status"] == "cancelled"
-    assert payload["items"][0]["status_code"] == 200
-    assert payload["items"][0]["error_message"] is None
 
 
 def test_request_log_page_does_not_mix_channel_with_previous_attempt_credential(

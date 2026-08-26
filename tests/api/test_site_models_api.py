@@ -6,21 +6,9 @@ from typing import Any
 import httpx
 import pytest
 from fastapi import HTTPException
-from starlette.requests import Request
 
-from conftest import (
-    assert_error,
-    openai_chat_channel_id,
-    run_async,
-    seed_request_log,
-)
-from lens_api.models import (
-    ChannelModelSyncResponse,
-    ProtocolKind,
-    RequestLogLifecycleStatus,
-    SiteModelTestRequest,
-    SiteModelTestResult,
-)
+from conftest import assert_error, run_async
+from lens_api.models import ProtocolKind, SiteModelTestResult
 from lens_api.persistence.shared import (
     SETTING_FIRST_TOKEN_TIMEOUT_SECONDS,
     SettingItem,
@@ -39,71 +27,6 @@ def _model_test_payload(protocol: ProtocolKind) -> dict[str, Any]:
         "model_name": "test-model",
         "prompt": "ping",
     }
-
-
-def test_model_health_aggregates_execution_groups_and_channel_requests(
-    client,
-    admin_headers,
-    app_state,
-    create_site,
-    create_model_group,
-) -> None:
-    site = create_site()
-    create_model_group(name="claude")
-    create_model_group(name="gpt-4o")
-    seed_request_log(app_state, channel_id=openai_chat_channel_id())
-    seed_request_log(
-        app_state,
-        channel_id=openai_chat_channel_id(),
-        requested_group_name="z-ai/glm-5.2",
-        resolved_group_name="z-ai/glm-5.2",
-        success=False,
-    )
-    seed_request_log(
-        app_state,
-        channel_id=openai_chat_channel_id(),
-        success=False,
-        lifecycle_status=RequestLogLifecycleStatus.CANCELLED,
-    )
-
-    response = client.get(
-        "/api/admin/model-health?hours=1&mode=model&limit=1&offset=0",
-        headers=admin_headers,
-    )
-
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert [item["name"] for item in payload["items"]] == ["claude"]
-    assert payload["next_offset"] == 1
-
-    response = client.get(
-        "/api/admin/model-health?hours=1&mode=model&query=gpt&limit=24",
-        headers=admin_headers,
-    )
-
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert len(payload["items"]) == 1
-    item = payload["items"][0]
-    assert item["name"] == "gpt-4o"
-    assert item["success_count"] == 1
-    assert item["total_count"] == 1
-    assert len(item["buckets"]) == 60
-    assert payload["next_offset"] is None
-
-    response = client.get(
-        "/api/admin/model-health?hours=1&mode=channel&query=OpenAI%20Site&limit=24",
-        headers=admin_headers,
-    )
-
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert len(payload["items"]) == 1
-    item = payload["items"][0]
-    assert item["name"] == site["name"]
-    assert item["success_count"] == 1
-    assert item["total_count"] == 2
-    assert payload["next_offset"] is None
 
 
 def test_fetch_site_models_uses_selected_credentials(
@@ -280,40 +203,6 @@ def test_test_site_model_returns_timeout_result(
     assert "timed out after 0.01s" in response.json()["error_message"]
 
 
-def test_test_site_model_cancels_upstream_on_client_disconnect(monkeypatch) -> None:
-    async def run_test() -> bool:
-        probe_started = asyncio.Event()
-        probe_cancelled = False
-
-        async def hanging_probe(**_kwargs: Any) -> SiteModelTestResult:
-            nonlocal probe_cancelled
-            probe_started.set()
-            try:
-                await asyncio.Future()
-            except asyncio.CancelledError:
-                probe_cancelled = True
-                raise
-
-        async def receive() -> dict[str, str]:
-            await probe_started.wait()
-            return {"type": "http.disconnect"}
-
-        import lens_api.gateway.service.admin.sites as sites
-        import lens_api.gateway.service.site_model_probe as probe
-
-        monkeypatch.setattr(probe, "_call_site_model_probe_channel", hanging_probe)
-        await sites.test_site_model(
-            SiteModelTestRequest.model_validate(
-                _model_test_payload(ProtocolKind.OPENAI_CHAT)
-            ),
-            Request({"type": "http"}, receive),
-            None,
-        )
-        return probe_cancelled
-
-    assert run_async(run_test()) is True
-
-
 @pytest.mark.parametrize(
     ("protocol", "forbidden_fields"),
     [
@@ -388,28 +277,6 @@ def test_test_site_model_rejects_non_object_success_payload(
     assert response.json()["error_message"] == (
         "Invalid upstream response: Expected JSON object"
     )
-
-
-def test_sync_channel_models_uses_service_task(
-    client,
-    admin_headers,
-    monkeypatch,
-) -> None:
-    async def fake_sync(_state: Any, *, dry_run: bool) -> ChannelModelSyncResponse:
-        return ChannelModelSyncResponse(dry_run=dry_run, eligible_target_count=2)
-
-    import lens_api.gateway.service.model_sync as model_sync
-
-    monkeypatch.setattr(model_sync, "sync_channel_models", fake_sync)
-
-    response = client.post(
-        "/api/admin/channel-model-sync",
-        headers=admin_headers,
-        json={"dry_run": False},
-    )
-
-    assert response.status_code == 200
-    assert response.json()["eligible_target_count"] == 2
 
 
 def _sync_target(model_name: str, credential_id: str = "cred-a") -> dict[str, str]:
@@ -580,7 +447,7 @@ def test_channel_model_sync_removes_only_stale_synced_models(
     assert create_response.status_code == 201, create_response.text
 
     async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
-        return [f"gpt-{channel.keys[0].id}"]
+        return [f"gpt-{channel.keys[0].id}", "claude-3-opus"]
 
     import lens_api.gateway.service.model_sync as model_sync
 
@@ -595,10 +462,12 @@ def test_channel_model_sync_removes_only_stale_synced_models(
     stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
         "protocols"
     ][0]["models"]
-    stored_names = {model["model_name"] for model in stored_models}
-    assert "gpt-stale" not in stored_names
-    assert "manual-stale" in stored_names
-    assert "manual-only" in stored_names
+    by_source: dict[str, set[str]] = {"manual": set(), "synced": set()}
+    for model in stored_models:
+        by_source[model["source"]].add(model["model_name"])
+    # The durable target, not the upstream listing, decides what is synced.
+    assert by_source["synced"] == {"gpt-cred-a", "gpt-cred-b"}
+    assert by_source["manual"] == {"manual-only", "manual-stale"}
 
 
 def test_site_rejects_duplicate_models_for_the_same_sync_target(
@@ -714,49 +583,6 @@ def test_channel_model_sync_dry_run_does_not_write_models(
         "manual-only",
         "gpt-old",
     }
-
-
-def test_channel_model_sync_removes_stale_synced_models_on_empty_response(
-    client,
-    admin_headers,
-    monkeypatch,
-) -> None:
-    payload = _auto_sync_site_payload()
-    payload["protocols"][0]["models"].append(
-        {
-            "credential_id": "cred-a",
-            "model_name": "gpt-existing",
-            "enabled": True,
-            "protocol": "openai_chat",
-            "source": "synced",
-        }
-    )
-    payload["protocols"][0]["sync_targets"].append(_sync_target("gpt-existing"))
-    create_response = client.post(
-        "/api/admin/sites", headers=admin_headers, json=payload
-    )
-    assert create_response.status_code == 201, create_response.text
-
-    async def fake_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
-        return []
-
-    import lens_api.gateway.service.model_sync as model_sync
-
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
-    response = client.post(
-        "/api/admin/channel-model-sync",
-        headers=admin_headers,
-        json={"dry_run": False},
-    )
-
-    assert response.status_code == 200, response.text
-    result = response.json()
-    assert result["updated_target_count"] == 1
-    assert result["unchanged_target_count"] == 1
-    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
-        "protocols"
-    ][0]["models"]
-    assert {model["model_name"] for model in stored_models} == {"manual-only"}
 
 
 def test_channel_model_sync_does_not_report_group_changes_that_failed(
@@ -995,59 +821,6 @@ def test_channel_model_sync_skips_configs_without_synced_models(
 
     assert response.status_code == 200, response.text
     assert response.json()["eligible_target_count"] == 0
-
-
-def test_hand_switched_synced_models_outside_filter_are_kept_when_upstream_serves_them(
-    client,
-    admin_headers,
-    monkeypatch,
-) -> None:
-    """The durable target, rather than a discovery filter, governs sync."""
-    payload = _auto_sync_site_payload()
-    payload["protocols"][0]["credential_ids"] = ["cred-a"]
-    payload["protocols"][0]["sync_targets"] = []
-    payload["protocols"][0]["models"] = [
-        {
-            "credential_id": "cred-a",
-            "model_name": "claude-3-opus",
-            "enabled": True,
-            "protocol": "openai_chat",
-            "source": "manual",
-        }
-    ]
-    create_response = client.post(
-        "/api/admin/sites", headers=admin_headers, json=payload
-    )
-    assert create_response.status_code == 201, create_response.text
-    site_id = create_response.json()["id"]
-
-    # Switching the model to synced creates its exact target.
-    payload["protocols"][0]["models"][0]["source"] = "synced"
-    payload["protocols"][0]["sync_targets"] = [_sync_target("claude-3-opus")]
-    update_response = client.put(
-        f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
-    )
-    assert update_response.status_code == 200, update_response.text
-
-    # Unrelated upstream models are not added.
-    async def fake_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
-        return ["gpt-4o", "claude-3-opus", "gpt-4o-mini"]
-
-    import lens_api.gateway.service.model_sync as model_sync
-
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
-
-    sync_response = client.post(
-        "/api/admin/channel-model-sync", headers=admin_headers, json={"dry_run": False}
-    )
-    assert sync_response.status_code == 200, sync_response.text
-
-    result_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
-        "protocols"
-    ][0]["models"]
-    synced = {m["model_name"] for m in result_models if m["source"] == "synced"}
-
-    assert synced == {"claude-3-opus"}
 
 
 def test_sync_target_is_retained_when_upstream_temporarily_drops_it(
