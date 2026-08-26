@@ -126,7 +126,10 @@ export function formatChannelCredentialLabel(
   >,
   locale: "zh-CN" | "en-US",
 ) {
-  const channelLabel = item.channel_name || item.channel_id || "n/a";
+  const channelLabel =
+    item.channel_name ||
+    item.channel_id ||
+    titleForLocale(locale, "未选择渠道", "No channel");
   if (!item.channel_has_multiple_credentials) {
     return channelLabel;
   }
@@ -136,8 +139,14 @@ export function formatChannelCredentialLabel(
     : channelLabel;
 }
 
-/** Return a filter option label with an identifier fallback. */
-export function filterOptionLabel(item: RequestLogFilterOption) {
+/** Format a localized channel filter option label. */
+export function channelFilterOptionLabel(
+  item: RequestLogFilterOption,
+  locale: "zh-CN" | "en-US",
+) {
+  if (item.id === EMPTY_FILTER_OPTION_ID) {
+    return titleForLocale(locale, "未选择渠道", "No channel");
+  }
   return item.label.trim() || item.id;
 }
 

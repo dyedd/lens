@@ -987,6 +987,59 @@ def test_all_upstream_fail_returns_first_specific_message(
     assert attempted == ["m-a", "m-b"]
 
 
+def test_all_channels_in_cooldown_logs_the_cooled_channel_names(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    from lens_api.gateway.service import proxy_upstream
+
+    _create_failover_group(
+        client=client,
+        admin_headers=admin_headers,
+        create_site=create_site,
+        create_model_group=create_model_group,
+    )
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        return httpx.Response(
+            429,
+            json={"error": {"message": "rate limited"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+    first = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "fail-group", "messages": []},
+    )
+    assert first.status_code == 502, first.text
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "fail-group", "messages": []},
+    )
+
+    assert response.status_code == 503, response.text
+    page = client.get("/api/admin/request-logs/page", headers=admin_headers)
+    assert page.status_code == 200, page.text
+    error_message = page.json()["items"][0]["error_message"]
+    assert "First/m-a (rate_limit," in error_message
+    assert "Second/m-b (rate_limit," in error_message
+
+
 def _anthropic_group(
     create_site: Any, create_model_group: Any, *, name: str = "claude-group"
 ) -> None:

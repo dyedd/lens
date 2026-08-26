@@ -18,28 +18,7 @@ export function AttemptChain({
   detail: RequestLogDetail;
   locale: "zh-CN" | "en-US";
 }) {
-  const attempts = detail.attempts.length
-    ? detail.attempts
-    : [
-        {
-          channel_id: detail.channel_id || "n/a",
-          channel_name: detail.channel_name || detail.channel_id || "n/a",
-          credential_id: detail.credential_id,
-          credential_name: detail.credential_name,
-          credential_number: detail.credential_number,
-          channel_has_multiple_credentials:
-            detail.channel_has_multiple_credentials,
-          model_name:
-            detail.upstream_model_name ||
-            detail.resolved_group_name ||
-            detail.requested_group_name ||
-            null,
-          status_code: detail.status_code,
-          success: detail.success,
-          duration_ms: detail.latency_ms,
-          error_message: detail.error_message || null,
-        },
-      ];
+  const attempts = detail.attempts;
 
   return (
     <div className="overflow-hidden rounded-xl bg-muted/20">
