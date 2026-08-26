@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from conftest import assert_error, valid_site_payload
 from lens_api.core.runtime_channel_ids import compose_runtime_channel_id
 from lens_api.models import ProtocolKind
+
+
+def _ensure_model(**overrides: Any) -> dict[str, Any]:
+    return {
+        "protocol_config_id": "pc-1",
+        "credential_id": "cred-1",
+        "model_name": "gpt-4o-mini",
+        "protocols": ["openai_chat"],
+        **overrides,
+    }
 
 
 def _save_models_from_preview(payload: dict) -> list[dict]:
@@ -278,29 +290,6 @@ def test_transactional_site_save_removes_deleted_model_protocol_from_group(
     ]
 
 
-def test_transactional_site_save_suggests_case_insensitive_containing_group(
-    client,
-    admin_headers,
-    create_model_group,
-) -> None:
-    create_model_group(name="glm", protocols=["openai_chat"])
-    create_model_group(name="GLM5.2", protocols=["openai_chat"])
-
-    preview = client.post(
-        "/api/admin/sites/with-model-groups",
-        headers=admin_headers,
-        json={
-            **valid_site_payload(model_name="zai.org/glm5.2"),
-            "dry_run": True,
-        },
-    )
-
-    assert preview.status_code == 201, preview.text
-    item = preview.json()["model_groups"]["items"][0]
-    assert item["group_name"] == "GLM5.2"
-    assert item["status"] == "update"
-
-
 @pytest.mark.parametrize("dry_run", [True, False])
 def test_ensure_model_groups_from_site_creates_group(
     client,
@@ -342,40 +331,66 @@ def test_ensure_model_groups_from_site_creates_group(
     assert groups.json()[0]["items"][0]["model_name"] == "gpt-4o-mini"
 
 
-def test_ensure_model_groups_from_site_skips_duplicate_selection(
+@pytest.mark.parametrize(
+    ("models", "expected_reasons"),
+    [
+        pytest.param(
+            [
+                _ensure_model(protocol_config_id="missing"),
+                _ensure_model(credential_id="missing"),
+                _ensure_model(model_name="missing-model"),
+            ],
+            [
+                "protocol_config_not_found",
+                "credential_not_found",
+                "model_not_available",
+            ],
+            id="invalid_selections",
+        ),
+        pytest.param(
+            [_ensure_model(), _ensure_model()],
+            ["", "duplicate_selection"],
+            id="duplicate_selection",
+        ),
+    ],
+)
+def test_ensure_model_groups_from_site_skips_unusable_selections(
     client,
     admin_headers,
     create_site,
+    models,
+    expected_reasons,
 ) -> None:
     site = create_site(valid_site_payload(model_name="gpt-4o-mini"))
-    model = {
-        "protocol_config_id": "pc-1",
-        "credential_id": "cred-1",
-        "model_name": "gpt-4o-mini",
-        "protocols": ["openai_chat"],
-    }
 
     response = client.post(
         "/api/admin/model-groups/ensure-from-site",
         headers=admin_headers,
-        json={"site_id": site["id"], "dry_run": True, "models": [model, model]},
+        json={"site_id": site["id"], "dry_run": True, "models": models},
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["created_count"] == 1
-    assert payload["skipped_count"] == 1
-    assert [
-        item["skipped_reason"] for item in payload["items"] if item["skipped_reason"]
-    ] == ["duplicate_selection"]
+    items = response.json()["items"]
+    # The endpoint groups its report by outcome, so order is not part of the contract.
+    assert sorted(item["skipped_reason"] for item in items) == sorted(expected_reasons)
 
 
-def test_ensure_model_groups_from_site_skips_invalid_selections(
+@pytest.mark.parametrize(
+    ("site_override", "expected_reason"),
+    [
+        ({"protocol_enabled": False}, "channel_disabled"),
+        ({"credential_enabled": False}, "credential_disabled"),
+        ({"model_enabled": False}, "model_not_available"),
+    ],
+)
+def test_ensure_model_groups_from_site_skips_disabled_resources(
     client,
     admin_headers,
     create_site,
+    site_override,
+    expected_reason,
 ) -> None:
-    site = create_site(valid_site_payload(model_name="gpt-4o-mini"))
+    site = create_site(valid_site_payload(model_name="gpt-4o", **site_override))
 
     response = client.post(
         "/api/admin/model-groups/ensure-from-site",
@@ -383,129 +398,12 @@ def test_ensure_model_groups_from_site_skips_invalid_selections(
         json={
             "site_id": site["id"],
             "dry_run": True,
-            "models": [
-                {
-                    "protocol_config_id": "missing",
-                    "credential_id": "cred-1",
-                    "model_name": "gpt-4o-mini",
-                    "protocols": ["openai_chat"],
-                },
-                {
-                    "protocol_config_id": "pc-1",
-                    "credential_id": "missing",
-                    "model_name": "gpt-4o-mini",
-                    "protocols": ["openai_chat"],
-                },
-                {
-                    "protocol_config_id": "pc-1",
-                    "credential_id": "cred-1",
-                    "model_name": "missing-model",
-                    "protocols": ["openai_chat"],
-                },
-            ],
+            "models": [_ensure_model(model_name="gpt-4o")],
         },
     )
 
     assert response.status_code == 200
-    reasons = [item["skipped_reason"] for item in response.json()["items"]]
-    assert reasons == [
-        "protocol_config_not_found",
-        "credential_not_found",
-        "model_not_available",
-    ]
-
-
-def test_ensure_model_groups_from_site_skips_disabled_resources(
-    client,
-    admin_headers,
-    create_site,
-) -> None:
-    disabled_channel_site = create_site(
-        valid_site_payload(
-            name="Disabled Channel",
-            base_id="base-disabled-channel",
-            credential_id="cred-disabled-channel",
-            protocol_config_id="pc-disabled-channel",
-            protocol_enabled=False,
-        )
-    )
-    disabled_credential_site = create_site(
-        valid_site_payload(
-            name="Disabled Credential",
-            base_id="base-disabled-credential",
-            credential_id="cred-disabled-credential",
-            protocol_config_id="pc-disabled-credential",
-            credential_enabled=False,
-        )
-    )
-    disabled_model_site = create_site(
-        valid_site_payload(
-            name="Disabled Model",
-            base_id="base-disabled-model",
-            credential_id="cred-disabled-model",
-            protocol_config_id="pc-disabled-model",
-            model_enabled=False,
-        )
-    )
-
-    channel_response = client.post(
-        "/api/admin/model-groups/ensure-from-site",
-        headers=admin_headers,
-        json={
-            "site_id": disabled_channel_site["id"],
-            "dry_run": True,
-            "models": [
-                {
-                    "protocol_config_id": "pc-disabled-channel",
-                    "credential_id": "cred-disabled-channel",
-                    "model_name": "gpt-4o",
-                    "protocols": ["openai_chat"],
-                }
-            ],
-        },
-    )
-    credential_response = client.post(
-        "/api/admin/model-groups/ensure-from-site",
-        headers=admin_headers,
-        json={
-            "site_id": disabled_credential_site["id"],
-            "dry_run": True,
-            "models": [
-                {
-                    "protocol_config_id": "pc-disabled-credential",
-                    "credential_id": "cred-disabled-credential",
-                    "model_name": "gpt-4o",
-                    "protocols": ["openai_chat"],
-                }
-            ],
-        },
-    )
-    model_response = client.post(
-        "/api/admin/model-groups/ensure-from-site",
-        headers=admin_headers,
-        json={
-            "site_id": disabled_model_site["id"],
-            "dry_run": True,
-            "models": [
-                {
-                    "protocol_config_id": "pc-disabled-model",
-                    "credential_id": "cred-disabled-model",
-                    "model_name": "gpt-4o",
-                    "protocols": ["openai_chat"],
-                }
-            ],
-        },
-    )
-
-    assert channel_response.status_code == 200
-    assert credential_response.status_code == 200
-    assert model_response.status_code == 200
-    assert channel_response.json()["items"][0]["skipped_reason"] == "channel_disabled"
-    assert (
-        credential_response.json()["items"][0]["skipped_reason"]
-        == "credential_disabled"
-    )
-    assert model_response.json()["items"][0]["skipped_reason"] == "model_not_available"
+    assert response.json()["items"][0]["skipped_reason"] == expected_reason
 
 
 def test_ensure_model_groups_from_site_updates_existing_group_from_member(

@@ -30,26 +30,6 @@ def _member(
     }
 
 
-def test_list_model_groups_requires_admin(client) -> None:
-    response = client.get("/api/admin/model-groups")
-
-    assert_error(response, 401, "Not authenticated")
-
-
-def test_model_group_model_test_requires_admin(client) -> None:
-    response = client.post(
-        "/api/admin/model-groups/missing/model-tests",
-        json={
-            "channel_id": "channel",
-            "credential_id": "credential",
-            "model_name": "model",
-            "prompt": "ping",
-        },
-    )
-
-    assert_error(response, 401, "Not authenticated")
-
-
 def test_model_group_model_test_uses_persisted_image_credential(
     client,
     admin_headers,

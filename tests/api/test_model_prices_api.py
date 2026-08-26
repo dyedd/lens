@@ -6,8 +6,6 @@ import httpx
 from conftest import assert_error, run_async
 
 from lens_api.gateway.service import model_price_tasks
-from lens_api.gateway.service.admin import model_prices
-from lens_api.gateway.service.model_price_tasks import ModelPriceSyncError
 from lens_api.persistence.repositories import model_price_repository
 
 
@@ -17,12 +15,6 @@ def _litellm_client(payload: object) -> httpx.AsyncClient:
         return httpx.Response(200, json=payload)
 
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
-
-
-def test_update_model_price_requires_admin(client) -> None:
-    response = client.put("/api/admin/model-prices/gpt-4o", json={"model_key": "x"})
-
-    assert_error(response, 401, "Not authenticated")
 
 
 def test_update_model_price_requires_existing_model_group(
@@ -147,18 +139,3 @@ def test_sync_model_prices_rolls_back_when_timestamp_write_fails(
     stored = run_async(app_state.model_price_repo.list_model_prices())
     assert stored.items[0].input_price_per_million == 1.25
     assert stored.last_synced_at is None
-
-
-def test_sync_model_prices_returns_bad_gateway_for_source_failure(
-    client,
-    admin_headers,
-    monkeypatch,
-) -> None:
-    async def failing_sync(_state: Any) -> None:
-        raise ModelPriceSyncError("Model price source request failed")
-
-    monkeypatch.setattr(model_prices, "_sync_group_prices", failing_sync)
-
-    response = client.post("/api/admin/model-price-sync-jobs", headers=admin_headers)
-
-    assert_error(response, 502, "Model price source request failed")

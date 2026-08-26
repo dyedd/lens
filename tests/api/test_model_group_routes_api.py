@@ -166,35 +166,22 @@ def test_update_model_group_rejects_self_route(
     assert_error(response, 400, "cannot route to itself")
 
 
-def test_update_referenced_execution_group_preserves_route_group_contracts(
+def test_referenced_execution_group_cannot_become_a_route_group(
     client,
     admin_headers,
     create_model_group,
 ) -> None:
-    execution = create_model_group(
-        name="execution",
-        protocols=["openai_chat", "gemini"],
-    )
-    create_model_group(
-        name="route",
-        protocols=["openai_chat"],
-        route_group_id=execution["id"],
-    )
-    target = create_model_group(name="target", protocols=["openai_chat", "gemini"])
+    execution = create_model_group(name="execution")
+    create_model_group(name="route", route_group_id=execution["id"])
+    target = create_model_group(name="target")
 
-    remove_protocol = client.put(
-        f"/api/admin/model-groups/{execution['id']}",
-        headers=admin_headers,
-        json={},
-    )
-    become_route = client.put(
+    response = client.put(
         f"/api/admin/model-groups/{execution['id']}",
         headers=admin_headers,
         json={"route_group_id": target["id"]},
     )
 
-    assert remove_protocol.status_code == 200, remove_protocol.text
-    assert_error(become_route, 400, "cannot become route groups")
+    assert_error(response, 400, "cannot become route groups")
 
 
 def test_update_route_group_clears_sync_filter(

@@ -1,6 +1,27 @@
 from __future__ import annotations
 
+import re
+
 from conftest import assert_error
+
+_UNAUTHENTICATED_ADMIN_ROUTES = {("/api/admin/session", "POST")}
+
+
+def test_every_admin_route_rejects_missing_token(client) -> None:
+    """Guard the whole admin surface, including routes added later."""
+    checked = 0
+    for route in client.app.routes:
+        path = getattr(route, "path", "")
+        if not path.startswith("/api/admin"):
+            continue
+        for method in sorted(getattr(route, "methods", set()) - {"HEAD", "OPTIONS"}):
+            if (path, method) in _UNAUTHENTICATED_ADMIN_ROUTES:
+                continue
+            response = client.request(method, re.sub(r"\{[^}]+\}", "missing", path))
+            assert_error(response, 401, "Not authenticated")
+            checked += 1
+
+    assert checked > 30
 
 
 def test_login_returns_bearer_token(client) -> None:
