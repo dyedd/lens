@@ -2,85 +2,76 @@ import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 import { isRecord, parseJsonObject } from "./upstreamConfigUtils";
 
-export type HeaderItem = { key: string; value: string };
+export type HeaderItem = {
+  key: string;
+  value: string;
+  action: "remove" | "override" | "append";
+};
 export interface UpstreamHeadersDraft {
-  global: HeaderItem[];
+  rules: HeaderItem[];
 }
 
-const EMPTY_HEADERS: HeaderItem[] = [{ key: "", value: "" }];
+const EMPTY_HEADERS: HeaderItem[] = [
+  { key: "", value: "", action: "override" },
+];
 
 export function parseHeaderRows(value: unknown): HeaderItem[] {
-  if (!isRecord(value)) {
-    return [{ key: "", value: "" }];
-  }
-  const rows = Object.entries(value)
-    .map(([key, rawValue]) => ({
-      key,
-      value: typeof rawValue === "string" ? rawValue : String(rawValue ?? ""),
+  if (!Array.isArray(value)) return [...EMPTY_HEADERS];
+  const rows = value
+    .filter(isRecord)
+    .map((item) => ({
+      key: typeof item.name === "string" ? item.name : "",
+      value:
+        typeof item.value === "string" ? item.value : String(item.value ?? ""),
+      action: (item.action === "remove" || item.action === "append"
+        ? item.action
+        : "override") as HeaderItem["action"],
     }))
     .filter((item) => item.key.trim());
-  return rows.length ? rows : [{ key: "", value: "" }];
+  return rows.length ? rows : [...EMPTY_HEADERS];
 }
 
-export function headersToRecord(headers: HeaderItem[]) {
-  const output: Record<string, string> = {};
-  const lowerToKey = new Map<string, string>();
-  for (const item of headers) {
-    const key = item.key.trim();
-    if (!key) {
-      continue;
-    }
-    const lowerKey = key.toLowerCase();
-    const existingKey = lowerToKey.get(lowerKey);
-    if (existingKey) {
-      delete output[existingKey];
-    }
-    lowerToKey.set(lowerKey, key);
-    output[key] = item.value.trim();
-  }
-  return output;
+export function headersToRules(headers: HeaderItem[]) {
+  return headers
+    .filter((item) => item.key.trim())
+    .map((item) => ({
+      name: item.key.trim(),
+      action: item.action,
+      value: item.action === "remove" ? item.value.trim() : item.value,
+    }));
 }
 
-function _hasHeaderValueWithoutKey(headers: HeaderItem[]) {
+function hasHeaderValueWithoutKey(headers: HeaderItem[]) {
   return headers.some((header) => header.value.trim() && !header.key.trim());
 }
 
-/** Create an empty upstream header configuration draft. */
 export function createEmptyUpstreamHeadersDraft(): UpstreamHeadersDraft {
-  return { global: [...EMPTY_HEADERS] };
+  return { rules: [...EMPTY_HEADERS] };
 }
 
-/** Parse persisted upstream header settings into an editable draft. */
 export function parseUpstreamHeadersConfig(
   rawValue: string | undefined,
 ): UpstreamHeadersDraft {
-  if (!rawValue?.trim()) {
-    return createEmptyUpstreamHeadersDraft();
-  }
+  if (!rawValue?.trim()) return createEmptyUpstreamHeadersDraft();
   const payload = parseJsonObject(rawValue);
-  if (!payload) {
-    return createEmptyUpstreamHeadersDraft();
-  }
   return {
-    global: parseHeaderRows(payload.global),
+    rules: parseHeaderRows(payload?.rules),
   };
 }
 
-/** Serialize an upstream header draft for persistence. */
 export function serializeUpstreamHeadersConfig(config: UpstreamHeadersDraft) {
-  return JSON.stringify({ global: headersToRecord(config.global) });
+  return JSON.stringify({ rules: headersToRules(config.rules) });
 }
 
-/** Validate an upstream header draft and return a localized error. */
 export function validateUpstreamHeadersConfig(
   config: UpstreamHeadersDraft,
   locale: Locale,
 ) {
-  if (_hasHeaderValueWithoutKey(config.global)) {
+  if (hasHeaderValueWithoutKey(config.rules)) {
     return titleForLocale(
       locale,
-      "全局请求头名称不能为空。",
-      "Global header keys are required.",
+      "请求头名称不能为空。",
+      "Header names are required.",
     );
   }
   return null;

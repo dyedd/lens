@@ -45,10 +45,18 @@ def test_model_group_model_test_uses_persisted_image_credential(
         protocols=[protocol.value],
         model_name="gpt-image-1",
     )
-    site_payload["protocols"][0]["headers"] = {
-        "X-Persisted-Header": "model-group-test",
-        "User-Agent": "configured-model-group-probe",
-    }
+    site_payload["protocols"][0]["headers"] = [
+        {
+            "name": "X-Persisted-Header",
+            "action": "override",
+            "value": "model-group-test",
+        },
+        {
+            "name": "User-Agent",
+            "action": "override",
+            "value": "configured-model-group-probe",
+        },
+    ]
     create_site(site_payload)
     group = create_model_group(
         name="image-group",
@@ -166,12 +174,14 @@ def test_model_group_crud_round_trip(client, admin_headers, create_model_group) 
         headers=admin_headers,
         json={
             "name": "gpt-4.1",
-            "headers": {" X-Group ": " first ", "x-group": " second "},
+            "headers": [{"name": "X-Group", "action": "override", "value": "second"}],
         },
     )
     assert update.status_code == 200
     assert update.json()["name"] == "gpt-4.1"
-    assert update.json()["headers"] == {"x-group": "second"}
+    assert update.json()["headers"] == [
+        {"name": "X-Group", "action": "override", "value": "second", "match": None}
+    ]
 
     delete = client.delete(
         f"/api/admin/model-groups/{group['id']}", headers=admin_headers
