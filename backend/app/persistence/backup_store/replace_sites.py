@@ -145,10 +145,22 @@ async def _replace_sites(
                         ensure_ascii=True,
                     ),
                     enabled=1 if protocol_config.enabled else 0,
-                    headers_json=json.dumps(protocol_config.headers, ensure_ascii=True),
+                    headers_json=json.dumps(
+                        [
+                            rule.model_dump(mode="json")
+                            for rule in protocol_config.headers
+                        ],
+                        ensure_ascii=True,
+                    ),
                     proxy_mode=protocol_config.proxy_mode.value,
                     channel_proxy=protocol_config.channel_proxy,
-                    param_override=protocol_config.param_override,
+                    param_override=json.dumps(
+                        [
+                            rule.model_dump(mode="json")
+                            for rule in protocol_config.param_override
+                        ],
+                        ensure_ascii=True,
+                    ),
                     base_url_id=protocol_config.base_url_id,
                 )
             )

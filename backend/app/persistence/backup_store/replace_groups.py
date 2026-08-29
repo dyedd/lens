@@ -105,8 +105,14 @@ async def _replace_groups(
                 route_group_id=group.route_group_id,
                 sync_filter_mode=group.sync_filter_mode.value,
                 sync_filter_query=group.sync_filter_query,
-                param_override=group.param_override,
-                headers_json=json.dumps(group.headers, ensure_ascii=True),
+                param_override=json.dumps(
+                    [rule.model_dump(mode="json") for rule in group.param_override],
+                    ensure_ascii=True,
+                ),
+                headers_json=json.dumps(
+                    [rule.model_dump(mode="json") for rule in group.headers],
+                    ensure_ascii=True,
+                ),
             )
         )
 

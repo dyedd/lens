@@ -24,6 +24,7 @@ from ...core.model_group_status import (
 )
 from ...core.protocol_reachability import infer_client_protocols
 from ...models.protocols import ProtocolKind
+from ...models.upstream_rules import HeaderRule, ParamOverrideRule
 
 
 class _GroupMappingMixin:
@@ -209,8 +210,14 @@ class _GroupMappingMixin:
             route_group_name=route_group_name,
             sync_filter_mode=entity.sync_filter_mode,
             sync_filter_query=entity.sync_filter_query,
-            param_override=entity.param_override,
-            headers=json.loads(entity.headers_json),
+            param_override=[
+                ParamOverrideRule.model_validate(item)
+                for item in json.loads(entity.param_override)
+            ],
+            headers=[
+                HeaderRule.model_validate(item)
+                for item in json.loads(entity.headers_json)
+            ],
             input_price_per_million=(
                 float(price.input_price_per_million) if price is not None else 0.0
             ),

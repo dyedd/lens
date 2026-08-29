@@ -17,7 +17,10 @@ from ..converters import (
     convert_stream_iterator,
     repair_chat_tool_call_stream,
 )
-from ..router.cooldown import ErrorCategory
+from ..router.cooldown import (
+    ErrorCategory,
+    classify_error,
+)
 from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
 from .app_state import app_state
 from .payload_serialization import (
@@ -560,11 +563,25 @@ async def _call_channel(
             else None
         )
         stop_fallback = _is_request_level_client_error(status_code)
+        classification = classify_error(
+            status_code,
+            detail,
+            app_state.router.cooldown_detection_rules,
+            response.headers,
+        )
         raise UpstreamRequestError(
             status_code=status_code,
             detail=detail,
             router_status_code=status_code,
-            router_cooldown_seconds=retry_after_seconds,
+            router_error_category=classification.category if classification else None,
+            router_error_scope=classification.scope if classification else "model",
+            router_cooldown_seconds=(
+                retry_after_seconds
+                if retry_after_seconds is not None
+                else classification.cooldown_seconds
+                if classification
+                else None
+            ),
             stop_fallback=stop_fallback,
         ) from exc
     except httpx.HTTPError as exc:

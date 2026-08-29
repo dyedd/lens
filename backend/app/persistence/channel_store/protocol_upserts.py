@@ -20,6 +20,16 @@ from app.persistence.protocol_serialization import (
 )
 
 
+def _dump_rules(rules: list[object]) -> str:
+    return json.dumps(
+        [
+            rule.model_dump(mode="json") if hasattr(rule, "model_dump") else rule
+            for rule in rules
+        ],
+        ensure_ascii=True,
+    )
+
+
 class ChannelProtocolUpsertsMixin:
     async def _upsert_protocol_configs(
         self,
@@ -77,10 +87,10 @@ class ChannelProtocolUpsertsMixin:
             entity.name = protocol_config.name.strip()
             entity.protocols_json = dump_protocols(input_protocols)
             entity.enabled = int(protocol_config.enabled)
-            entity.headers_json = json.dumps(protocol_config.headers, ensure_ascii=True)
+            entity.headers_json = _dump_rules(protocol_config.headers)
             entity.proxy_mode = protocol_config.proxy_mode.value
             entity.channel_proxy = protocol_config.channel_proxy
-            entity.param_override = protocol_config.param_override
+            entity.param_override = _dump_rules(protocol_config.param_override)
             entity.base_url_id = protocol_config.base_url_id
 
             await session.execute(

@@ -194,6 +194,7 @@ def _apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
             network_cooldown_seconds=int(runtime["circuit_breaker_network_cooldown"]),
             backoff_multiplier=float(runtime["circuit_breaker_backoff_multiplier"]),
             max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+            detection_rules=runtime["cooldown_detection_rules"],
         ),
     )
 

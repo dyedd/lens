@@ -30,6 +30,7 @@ from .routing_request import (
     _apply_glm_chat_reasoning_compat,
     _apply_global_param_override,
     _apply_param_override,
+    _apply_reasoning_intent,
     _extract_request_reasoning_effort,
     _is_deepseek_thinking_target,
 )
@@ -65,7 +66,12 @@ async def _record_target_failure(
     channel = target.channel
     message = _format_channel_error(exc.detail)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
-    category = exc.router_error_category or classify_error(exc.router_status_code)
+    category = exc.router_error_category
+    scope = exc.router_error_scope
+    if category is None:
+        classification = classify_error(exc.router_status_code)
+        if classification is not None:
+            category, scope, _ = classification
     if (
         category is not None
         and not exc.skip_route_failure
@@ -75,6 +81,7 @@ async def _record_target_failure(
             channel.id,
             message,
             category=category,
+            scope=scope,
             credential_id=target.credential_id,
             model_name=target.model_name,
             cooldown_seconds=exc.router_cooldown_seconds,
@@ -201,6 +208,9 @@ async def _try_target(
             )
         upstream_body = _apply_deepseek_thinking_compat(channel, upstream_body)
         upstream_body = _apply_glm_chat_reasoning_compat(channel, upstream_body, body)
+        upstream_body = _apply_reasoning_intent(
+            channel, upstream_body, plan.parsed_model
+        )
     except UpstreamRequestError as exc:
         return await _record_target_failure(
             target=target,

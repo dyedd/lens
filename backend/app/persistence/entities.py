@@ -108,12 +108,12 @@ class SiteProtocolConfigEntity(Base):
     protocols_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     proxy_mode: Mapped[str] = mapped_column(
         String(16), nullable=False, default="inherit"
     )
     channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    param_override: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     base_url_id: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
@@ -207,8 +207,8 @@ class ModelGroupEntity(Base):
         String(20), nullable=False, default=""
     )
     sync_filter_query: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    param_override: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    param_override: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
 
 class ModelGroupItemEntity(Base):

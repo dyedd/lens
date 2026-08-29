@@ -180,8 +180,14 @@ class GroupRepository(
                 route_group_id=route_group.id if route_group is not None else "",
                 sync_filter_mode=payload.sync_filter_mode.value,
                 sync_filter_query=payload.sync_filter_query,
-                param_override=payload.param_override,
-                headers_json=json.dumps(payload.headers, ensure_ascii=True),
+                param_override=json.dumps(
+                    [rule.model_dump(mode="json") for rule in payload.param_override],
+                    ensure_ascii=True,
+                ),
+                headers_json=json.dumps(
+                    [rule.model_dump(mode="json") for rule in payload.headers],
+                    ensure_ascii=True,
+                ),
             )
             session.add(entity)
             await session.flush()
@@ -259,7 +265,25 @@ class GroupRepository(
                 elif key == "items":
                     continue
                 elif key == "headers":
-                    entity.headers_json = json.dumps(value, ensure_ascii=True)
+                    entity.headers_json = json.dumps(
+                        [
+                            rule.model_dump(mode="json")
+                            if hasattr(rule, "model_dump")
+                            else rule
+                            for rule in value
+                        ],
+                        ensure_ascii=True,
+                    )
+                elif key == "param_override":
+                    entity.param_override = json.dumps(
+                        [
+                            rule.model_dump(mode="json")
+                            if hasattr(rule, "model_dump")
+                            else rule
+                            for rule in value
+                        ],
+                        ensure_ascii=True,
+                    )
                 elif key == "route_group_id":
                     entity.route_group_id = (
                         route_group.id if route_group is not None else ""

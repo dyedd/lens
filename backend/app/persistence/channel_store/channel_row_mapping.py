@@ -11,6 +11,7 @@ from app.models.sites import (
     SiteProtocolConfig,
     SiteSyncTarget,
 )
+from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,
@@ -131,10 +132,16 @@ class ChannelRowMappingMixin:
                     name=row.name,
                     protocols=parse_supported_protocols(row.protocols_json),
                     enabled=bool(row.enabled),
-                    headers=json.loads(row.headers_json),
+                    headers=[
+                        HeaderRule.model_validate(item)
+                        for item in json.loads(row.headers_json)
+                    ],
                     proxy_mode=row.proxy_mode,
                     channel_proxy=row.channel_proxy,
-                    param_override=row.param_override,
+                    param_override=[
+                        ParamOverrideRule.model_validate(item)
+                        for item in json.loads(row.param_override)
+                    ],
                     base_url_id=row.base_url_id,
                     credential_ids=credential_ids_by_protocol_config.get(row.id, []),
                     sync_targets=sync_targets_by_protocol_config.get(row.id, []),

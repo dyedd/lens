@@ -15,7 +15,6 @@ from app.persistence.editable_settings import (
     effective_editable_setting_items,
 )
 from app.persistence.entities import SettingEntity
-from app.persistence.settings_keys import SETTING_UPSTREAM_HEADERS_CONFIG
 
 
 class BackupExportImportMixin:
@@ -28,29 +27,6 @@ class BackupExportImportMixin:
                 for group in data["groups"]:
                     if isinstance(group, dict):
                         group.pop("protocols", None)
-            if isinstance(data, dict) and isinstance(data.get("settings"), list):
-                for setting in data["settings"]:
-                    if (
-                        not isinstance(setting, dict)
-                        or setting.get("key") != SETTING_UPSTREAM_HEADERS_CONFIG
-                    ):
-                        continue
-                    try:
-                        config = json.loads(setting.get("value", ""))
-                    except (TypeError, json.JSONDecodeError):
-                        continue
-                    if isinstance(config, dict) and "rules" in config:
-                        global_headers = config.get("global")
-                        setting["value"] = json.dumps(
-                            {
-                                "global": (
-                                    global_headers
-                                    if isinstance(global_headers, dict)
-                                    else {}
-                                )
-                            },
-                            ensure_ascii=True,
-                        )
             return ConfigBackupDump.model_validate(data)
         except ValueError as exc:
             raise ValueError("Invalid backup file") from exc
