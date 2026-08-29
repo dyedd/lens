@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.model_prices import canonical_model_price_key
 from app.core.runtime_channel_ids import extract_protocol_config_id
 from app.models.model_groups import ModelGroup
+from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
@@ -112,8 +113,14 @@ async def _load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                     "route_group_name": route_group_names.get(row.route_group_id, ""),
                     "sync_filter_mode": row.sync_filter_mode,
                     "sync_filter_query": row.sync_filter_query,
-                    "param_override": row.param_override,
-                    "headers": json.loads(row.headers_json),
+                    "param_override": [
+                        ParamOverrideRule.model_validate(item)
+                        for item in json.loads(row.param_override)
+                    ],
+                    "headers": [
+                        HeaderRule.model_validate(item)
+                        for item in json.loads(row.headers_json)
+                    ],
                     "input_price_per_million": (
                         price.input_price_per_million if price is not None else 0.0
                     ),

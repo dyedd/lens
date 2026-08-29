@@ -9,6 +9,7 @@ from .protocols import (
     ChannelStatus,
     ProtocolKind,
 )
+from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import StrictBaseModel
 
 
@@ -39,13 +40,13 @@ class ChannelConfig(StrictBaseModel):
     base_url: HttpUrl
     api_key: str = Field(min_length=1)
     status: ChannelStatus = ChannelStatus.ENABLED
-    headers: dict[str, str] = Field(default_factory=dict)
+    headers: list[HeaderRule] = Field(default_factory=list)
     model_patterns: list[str] = Field(default_factory=list)
     keys: list[ChannelKeyItem] = Field(default_factory=list)
     models: list[ChannelDiscoveredModel] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
-    param_override: str = ""
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     _canonicalize_base_url = field_validator("base_url", mode="before")(
         canonicalize_base_url
     )

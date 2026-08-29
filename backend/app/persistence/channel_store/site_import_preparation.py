@@ -230,11 +230,7 @@ def _import_protocols(
                 name=protocol.name,
                 protocols=[protocol.protocol],
                 enabled=protocol.enabled,
-                headers={
-                    key.strip(): value
-                    for key, value in protocol.headers.items()
-                    if key.strip()
-                },
+                headers=protocol.headers,
                 proxy_mode=protocol.proxy_mode,
                 channel_proxy=protocol.channel_proxy.strip(),
                 param_override=protocol.param_override,

@@ -145,6 +145,10 @@ class _HealthTracker:
     def failure_revision(self) -> int:
         return self._failure_revision
 
+    @property
+    def cooldown_detection_rules(self):
+        return self._cooldown_policy.detection_rules
+
     def record_success(
         self,
         channel_id: str,
@@ -182,14 +186,23 @@ class _HealthTracker:
         category: ErrorCategory,
         credential_id: str | None,
         model_name: str | None,
+        scope: str,
         cooldown_seconds: float | None,
     ) -> None:
         now = monotonic()
         self._failure_revision += 1
-        if category == ErrorCategory.AUTH:
+        if category == ErrorCategory.AUTH or scope == "key":
             state = self._credential_health.setdefault(
                 self._credential_key(channel_id, credential_id), _CooldownState()
             )
+        elif scope == "channel":
+            model_key = self._model_key(channel_id, "")
+            self._health_windows[model_key].record(
+                now=now,
+                bucket_seconds=self._health_bucket_seconds,
+                success=False,
+            )
+            state = self._model_health.setdefault(model_key, _CooldownState())
         else:
             model_key = self._model_key(channel_id, model_name)
             self._health_windows[model_key].record(
@@ -212,6 +225,9 @@ class _HealthTracker:
         model_state = self._model_health.get(
             self._model_key(target.channel.id, target.model_name)
         )
+        channel_state = self._model_health.get(self._model_key(target.channel.id, ""))
+        if channel_state is not None and channel_state.cooled_until > now:
+            return False
         if model_state is not None and model_state.cooled_until > now:
             return False
         credential_state = self._credential_health.get(
@@ -598,10 +614,16 @@ class _HealthTracker:
         return (
             channel.protocol.value,
             str(channel.base_url),
-            tuple(sorted(channel.headers.items())),
+            tuple(
+                tuple(sorted(rule.model_dump(mode="json").items()))
+                for rule in channel.headers
+            ),
             channel.proxy_mode.value,
             channel.channel_proxy,
-            channel.param_override,
+            tuple(
+                tuple(sorted(rule.model_dump(mode="json").items()))
+                for rule in channel.param_override
+            ),
         )
 
     @staticmethod

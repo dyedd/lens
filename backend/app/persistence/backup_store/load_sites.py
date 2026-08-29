@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.protocols import ProtocolKind
 from app.models.sites import SiteConfig
+from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 
 from ..site_loader import fetch_site_rows
 
@@ -93,11 +94,6 @@ async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
 
     protocol_configs_by_site: dict[str, list[dict[str, object]]] = {}
     for row in rows.protocol_configs:
-        raw_headers = json.loads(row.headers_json)
-        if not isinstance(raw_headers, dict):
-            raise ValueError(f"Invalid headers JSON for protocol config {row.id}")
-        headers = {str(key): str(value) for key, value in raw_headers.items()}
-
         protocol_configs_by_site.setdefault(row.site_id, []).append(
             {
                 "id": row.id,
@@ -108,10 +104,16 @@ async def _load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                     if p in valid_protocol_values
                 ],
                 "enabled": bool(row.enabled),
-                "headers": headers,
+                "headers": [
+                    HeaderRule.model_validate(item)
+                    for item in json.loads(row.headers_json)
+                ],
                 "proxy_mode": row.proxy_mode,
                 "channel_proxy": row.channel_proxy,
-                "param_override": row.param_override,
+                "param_override": [
+                    ParamOverrideRule.model_validate(item)
+                    for item in json.loads(row.param_override)
+                ],
                 "base_url_id": row.base_url_id,
                 "credential_ids": credential_ids_by_protocol_config.get(row.id, []),
                 "sync_targets": sync_targets_by_protocol_config.get(row.id, []),

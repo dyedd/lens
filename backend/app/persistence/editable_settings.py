@@ -18,6 +18,7 @@ from app.persistence.settings_keys import (
     SETTING_CIRCUIT_BREAKER_THRESHOLD,
     SETTING_CIRCUIT_BREAKER_TIMEOUT_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_TIMEOUT_THRESHOLD,
+    SETTING_COOLDOWN_DETECTION_RULES,
     SETTING_CORS_ALLOW_ORIGINS,
     SETTING_FIRST_TOKEN_TIMEOUT_SECONDS,
     SETTING_HEALTH_MIN_SAMPLES,
@@ -27,6 +28,7 @@ from app.persistence.settings_keys import (
     SETTING_MAX_REQUEST_BODY_BYTES,
     SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
     SETTING_MODEL_TEST_PROMPTS,
+    SETTING_MULTIMODAL_FALLBACK,
     SETTING_PROXY_URL,
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_ENABLED,
@@ -42,6 +44,7 @@ from app.persistence.settings_keys import (
 from ..core.time_zone import validate_time_zone_name
 from ..models.settings import SettingItem
 from ..models.upstream_rules import (
+    serialize_cooldown_detection_rules_json,
     serialize_upstream_headers_config_json,
     serialize_upstream_param_override_config_json,
 )
@@ -76,6 +79,8 @@ EDITABLE_SETTING_DEFAULTS: dict[str, str] = {
     SETTING_MODEL_TEST_PROMPTS: "",
     SETTING_UPSTREAM_HEADERS_CONFIG: "",
     SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG: "",
+    SETTING_COOLDOWN_DETECTION_RULES: '{"rules":[]}',
+    SETTING_MULTIMODAL_FALLBACK: "{}",
     SETTING_SITE_NAME: "Lens",
     SETTING_SITE_LOGO_URL: "",
     SETTING_TIME_ZONE: "Asia/Shanghai",
@@ -201,6 +206,12 @@ def canonicalize_editable_setting(key: str, raw_value: str) -> str:
         return serialize_upstream_headers_config_json(value)
     if key == SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG:
         return serialize_upstream_param_override_config_json(value)
+    if key == SETTING_COOLDOWN_DETECTION_RULES:
+        return serialize_cooldown_detection_rules_json(value)
+    if key == SETTING_MULTIMODAL_FALLBACK:
+        from ..core.multimodal_fallback import serialize_multimodal_fallback
+
+        return serialize_multimodal_fallback(value)
     if key == SETTING_SITE_NAME:
         return value or "Lens"
     if key == SETTING_CORS_ALLOW_ORIGINS:
