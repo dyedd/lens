@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
+from ...core.model_name_parser import parse_model_name
 from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
@@ -16,6 +17,7 @@ from .app_state import app_state
 from .auth import _gateway_key_allows_model
 from .error_responses import _protocol_error_response
 from .errors import _apply_router_runtime_settings
+from .multimodal import body_has_multimodal_content
 from .payload_serialization import _dump_log_json
 from .proxy_attempt import _try_target
 from .request_logger import _RequestLogger
@@ -76,10 +78,13 @@ async def _resolve_proxy_route(
     log_ctx: _RequestLogger,
     upstream_user_agent: str,
     is_stream_body: bool,
+    parsed_model: object | None = None,
 ) -> tuple[RoutingPlan | None, RouteSelection | None, JSONResponse | None]:
     plan: RoutingPlan | None = None
     try:
-        plan = await _resolve_routing_plan(protocol, requested_model, channels)
+        plan = await _resolve_routing_plan(
+            protocol, requested_model, channels, parsed_model=parsed_model
+        )
         selection = app_state.router.select(
             channels,
             protocol,
@@ -209,21 +214,35 @@ async def _proxy_protocol(
             message="Request model is required",
         )
     requested_model = requested_model.strip()
-    plan: RoutingPlan | None = None
+    original_requested_model = requested_model
+    try:
+        parsed_model = parse_model_name(requested_model)
+    except ValueError as exc:
+        return _protocol_error_response(
+            protocol=protocol,
+            status_code=400,
+            error_type="invalid_model",
+            message=str(exc),
+        )
+    requested_model = parsed_model.base_model
+    if body_has_multimodal_content(body, protocol):
+        fallback_map = runtime.get("multimodal_fallback", {})
+        requested_model = fallback_map.get(requested_model, requested_model)
+
     log_ctx = await _create_pending_proxy_log_context(
         protocol=protocol,
         user_agent=upstream_user_agent,
         gateway_key=gateway_key,
         started_at=started_at,
         body=body,
-        requested_group_name=requested_model,
+        requested_group_name=original_requested_model,
         is_stream=is_stream_body,
         request_content=request_content,
     )
     if not _gateway_key_allows_model(gateway_key, requested_model):
         error_message = "Gateway API key is not allowed to use this model"
         await log_ctx.update(
-            requested_group_name=requested_model,
+            requested_group_name=original_requested_model,
             resolved_group_name=None,
             upstream_model_name=None,
             channel=None,
@@ -250,6 +269,7 @@ async def _proxy_protocol(
             log_ctx=log_ctx,
             upstream_user_agent=upstream_user_agent,
             is_stream_body=is_stream_body,
+            parsed_model=parsed_model,
         )
         if routing_error is not None:
             return routing_error

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -8,6 +9,7 @@ from fastapi import HTTPException
 from ..core.urls import append_url_path, canonicalize_base_url
 from ..models.channels import ChannelConfig
 from ..models.protocols import ChannelProxyMode, ProtocolKind
+from ..models.upstream_rules import HeaderRule
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,14 +50,17 @@ def build_upstream_request(
     user_agent: str | None = None,
     forwarded_headers: Mapping[str, str] | None = None,
     upstream_headers_config: Mapping[str, Any] | None = None,
-    model_group_headers: Mapping[str, str] | None = None,
+    model_group_headers: list[HeaderRule] | None = None,
     path_suffix: str | None = None,
 ) -> UpstreamRequest:
     """Build an authenticated request for an upstream channel."""
     api_key = resolve_channel_api_key(channel, credential_id=credential_id)
 
     if channel.protocol == ProtocolKind.GEMINI:
+        from ..core.model_name_parser import parse_model_name
+
         model_name = str(body.get("model") or "")
+        model_name = parse_model_name(model_name).base_model
         if not model_name:
             raise HTTPException(status_code=400, detail="Gemini request requires model")
 
@@ -117,20 +122,94 @@ def build_upstream_request(
 
 def build_upstream_headers(
     default_headers: dict[str, str],
-    channel_headers: dict[str, str],
+    channel_headers: list[HeaderRule],
     user_agent: str | None = None,
     upstream_headers_config: Mapping[str, Any] | None = None,
-    model_group_headers: Mapping[str, str] | None = None,
+    model_group_headers: list[HeaderRule] | None = None,
+    *,
+    path: str = "",
+    model_name: str = "",
 ) -> dict[str, str]:
-    """Merge default, global, channel, and model-group upstream headers."""
+    """Apply default, global, channel, and model-group header rules."""
     headers: dict[str, str] = {}
     _merge_headers(headers, default_headers)
-    if user_agent and not any(key.lower() == "user-agent" for key in channel_headers):
+    if user_agent and not any(
+        rule.name.lower() == "user-agent"
+        and rule.action in {"override", "append", "remove"}
+        for rule in channel_headers
+    ):
         _set_header(headers, "user-agent", user_agent)
-    _merge_headers(headers, _upstream_global_headers(upstream_headers_config))
-    _merge_headers(headers, channel_headers)
-    _merge_headers(headers, model_group_headers)
+    global_rules = (
+        []
+        if not upstream_headers_config
+        else [
+            HeaderRule.model_validate(rule)
+            for rule in upstream_headers_config.get("rules", [])
+        ]
+    )
+    _apply_header_rules(headers, global_rules, path=path, model_name=model_name)
+    _apply_header_rules(headers, channel_headers, path=path, model_name=model_name)
+    _apply_header_rules(
+        headers, model_group_headers or [], path=path, model_name=model_name
+    )
     return headers
+
+
+def _apply_header_rules(
+    headers: dict[str, str], rules: list[HeaderRule], *, path: str, model_name: str
+) -> None:
+    protected = {"authorization", "x-api-key", "x-goog-api-key"}
+    for rule in rules:
+        name = rule.name.strip()
+        if name.lower() in protected or not _header_rule_matches(
+            rule, path, model_name
+        ):
+            continue
+        if rule.action == "remove":
+            _remove_header(headers, name, rule.value)
+        elif rule.action == "override":
+            _set_header(headers, name, rule.value)
+        else:
+            current = _get_header(headers, name)
+            _set_header(
+                headers, name, f"{current}, {rule.value}" if current else rule.value
+            )
+
+
+def _header_rule_matches(rule: HeaderRule, path: str, model_name: str) -> bool:
+    if rule.match is None:
+        return True
+    return all(
+        value is None or bool(re.search(value, candidate))
+        for value, candidate in (
+            (rule.match.path_regex, path),
+            (rule.match.model_regex, model_name),
+        )
+    )
+
+
+def _get_header(headers: dict[str, str], name: str) -> str | None:
+    return next(
+        (value for key, value in headers.items() if key.lower() == name.lower()), None
+    )
+
+
+def _remove_header(headers: dict[str, str], name: str, token: str) -> None:
+    for key in list(headers):
+        if key.lower() != name.lower():
+            continue
+        if not token:
+            headers.pop(key)
+            return
+        tokens = [
+            part.strip()
+            for part in headers[key].split(",")
+            if part.strip().lower() != token.lower()
+        ]
+        if tokens:
+            headers[key] = ", ".join(tokens)
+        else:
+            headers.pop(key)
 
 
 def _set_header(headers: dict[str, str], key: str, value: str) -> None:
@@ -150,14 +229,6 @@ def _merge_headers(headers: dict[str, str], updates: Mapping[str, str] | None) -
         return
     for key, value in updates.items():
         _set_header(headers, key, value)
-
-
-def _upstream_global_headers(
-    upstream_headers_config: Mapping[str, Any] | None,
-) -> dict[str, str] | None:
-    if not upstream_headers_config:
-        return None
-    return upstream_headers_config.get("global")
 
 
 def _protocol_base_url(channel: ChannelConfig) -> str:
