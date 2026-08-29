@@ -3,13 +3,12 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from .headers import canonicalize_header_map
-from .param_override import validate_param_override
 from .protocols import (
     ModelGroupSyncFilterMode,
     ProtocolKind,
     RoutingStrategy,
 )
+from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import StrictBaseModel, _validate_regex_pattern
 
 
@@ -38,8 +37,8 @@ class ModelGroup(StrictBaseModel):
     route_group_name: str = ""
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
     sync_filter_query: str = ""
-    param_override: str = ""
-    headers: dict[str, str] = Field(default_factory=dict)
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    headers: list[HeaderRule] = Field(default_factory=list)
     input_price_per_million: float = 0.0
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
@@ -49,9 +48,11 @@ class ModelGroup(StrictBaseModel):
     items: list["ModelGroupItem"] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(
-        validate_param_override
+        lambda value: [ParamOverrideRule.model_validate(item) for item in value]
     )
-    _canonicalize_headers = field_validator("headers")(canonicalize_header_map)
+    _canonicalize_headers = field_validator("headers")(
+        lambda value: [HeaderRule.model_validate(item) for item in value]
+    )
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroup":
@@ -104,14 +105,16 @@ class ModelGroupCreate(StrictBaseModel):
     route_group_id: str = ""
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
     sync_filter_query: str = ""
-    param_override: str = ""
-    headers: dict[str, str] = Field(default_factory=dict)
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    headers: list[HeaderRule] = Field(default_factory=list)
     items: list[ModelGroupItemInput] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(
-        validate_param_override
+        lambda value: [ParamOverrideRule.model_validate(item) for item in value]
     )
-    _canonicalize_headers = field_validator("headers")(canonicalize_header_map)
+    _canonicalize_headers = field_validator("headers")(
+        lambda value: [HeaderRule.model_validate(item) for item in value]
+    )
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroupCreate":
@@ -131,21 +134,17 @@ class ModelGroupUpdate(StrictBaseModel):
     route_group_id: str | None = None
     sync_filter_mode: ModelGroupSyncFilterMode | None = None
     sync_filter_query: str | None = None
-    param_override: str | None = None
-    headers: dict[str, str] | None = None
+    param_override: list[ParamOverrideRule] | None = None
+    headers: list[HeaderRule] | None = None
     items: list[ModelGroupItemInput] | None = None
 
-    @field_validator("param_override")
-    @classmethod
-    def validate_param_override(cls, value: str | None) -> str | None:
-        return validate_param_override(value) if value is not None else None
-
-    @field_validator("headers")
-    @classmethod
-    def canonicalize_headers(
-        cls, value: dict[str, str] | None
-    ) -> dict[str, str] | None:
-        return canonicalize_header_map(value) if value is not None else None
+    _canonicalize_headers = field_validator("headers")(
+        lambda value: (
+            [HeaderRule.model_validate(item) for item in value]
+            if value is not None
+            else None
+        )
+    )
 
     @model_validator(mode="after")
     def validate_sync_filter(self) -> "ModelGroupUpdate":

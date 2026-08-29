@@ -3,12 +3,9 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
 
 from ..core.urls import canonicalize_base_url
-from .model_groups import (
-    ModelGroupEnsureFromSiteResponse,
-    ModelGroupEnsureModelInput,
-)
-from .param_override import validate_param_override
+from .model_groups import ModelGroupEnsureFromSiteResponse, ModelGroupEnsureModelInput
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
+from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import StrictBaseModel, _validate_regex_pattern
 
 
@@ -145,10 +142,10 @@ class SiteProtocolConfig(StrictBaseModel):
     name: str = ""
     protocols: list[ProtocolKind] = Field(default_factory=list)
     enabled: bool = True
-    headers: dict[str, str] = Field(default_factory=dict)
+    headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
-    param_override: str = ""
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     base_url_id: str = Field(min_length=1)
     credential_ids: list[str] = Field(min_length=1)
     sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
@@ -160,10 +157,10 @@ class SiteProtocolConfigInput(StrictBaseModel):
     name: str = ""
     protocols: list[ProtocolKind] = Field(default_factory=list)
     enabled: bool = True
-    headers: dict[str, str] = Field(default_factory=dict)
+    headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
-    param_override: str = ""
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     base_url_id: str = Field(min_length=1)
     credential_ids: list[str] = Field(min_length=1)
     sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
@@ -171,10 +168,6 @@ class SiteProtocolConfigInput(StrictBaseModel):
 
     _canonicalize_credential_ids = field_validator("credential_ids")(
         _canonicalize_text_list
-    )
-
-    _validate_param_override = field_validator("param_override")(
-        validate_param_override
     )
 
 
@@ -272,10 +265,10 @@ class SiteImportProtocolInput(StrictBaseModel):
     name: str
     protocol: ProtocolKind
     enabled: bool = True
-    headers: dict[str, str] = Field(default_factory=dict)
+    headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
-    param_override: str = ""
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     base_url_ref: str
     credential_refs: list[str] = Field(min_length=1)
     models: list[SiteImportModelInput] = Field(default_factory=list)
@@ -285,10 +278,6 @@ class SiteImportProtocolInput(StrictBaseModel):
     )
     _canonicalize_credential_refs = field_validator("credential_refs")(
         _canonicalize_text_list
-    )
-
-    _validate_param_override = field_validator("param_override")(
-        validate_param_override
     )
 
 
@@ -330,7 +319,7 @@ class SiteBatchImportResult(StrictBaseModel):
 
 class SiteModelFetchRequest(StrictBaseModel):
     base_url: HttpUrl
-    headers: dict[str, str] = Field(default_factory=dict)
+    headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
     match_regex: str = ""
@@ -359,10 +348,10 @@ class SiteModelTestCredential(StrictBaseModel):
 class SiteModelTestRequest(StrictBaseModel):
     protocol: ProtocolKind
     base_url: HttpUrl
-    headers: dict[str, str] = Field(default_factory=dict)
+    headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
-    param_override: str = ""
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     credential: SiteModelTestCredential
     model_name: str = Field(min_length=1)
     prompt: str = Field(min_length=1, max_length=2000)

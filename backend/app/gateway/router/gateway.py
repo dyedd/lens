@@ -116,6 +116,12 @@ class GatewayRouter:
         with self._lock:
             return self._health.failure_revision
 
+    @property
+    def cooldown_detection_rules(self):
+        """Return the compiled upstream error detection rules."""
+        with self._lock:
+            return self._health.cooldown_detection_rules
+
     def record_failure(
         self,
         channel_id: str,
@@ -124,6 +130,7 @@ class GatewayRouter:
         category: ErrorCategory,
         credential_id: str | None = None,
         model_name: str | None = None,
+        scope: str = "model",
         cooldown_seconds: float | None = None,
     ) -> None:
         """Record failure for its target or credential fault domain."""
@@ -134,6 +141,7 @@ class GatewayRouter:
                 category=category,
                 credential_id=credential_id,
                 model_name=model_name,
+                scope=scope,
                 cooldown_seconds=cooldown_seconds,
             )
 
