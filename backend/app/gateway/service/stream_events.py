@@ -4,6 +4,10 @@ import json
 from typing import Any
 
 from ...models.protocols import ProtocolKind
+from ..router.cooldown import (
+    ErrorCategory,
+    parse_cooldown_seconds,
+)
 from .runtime_types import (
     StreamCapture,
     _record_stream_error,
@@ -246,7 +250,14 @@ def _record_stream_event_payload(
         _mark_stream_first_chunk(capture, stream_started_at)
     error_message = _stream_payload_error_message(protocol, payload)
     if error_message is not None:
-        _record_stream_error(capture, error_message, status_code=502)
+        message, category, cooldown_seconds = error_message
+        _record_stream_error(
+            capture,
+            message,
+            status_code=200,
+            category=category,
+            cooldown_seconds=cooldown_seconds,
+        )
     is_terminal = error_message is not None or _record_stream_completion(
         protocol, capture, payload
     )
@@ -273,7 +284,7 @@ def _record_stream_event_payload(
 
 def _stream_payload_error_message(
     protocol: ProtocolKind, payload: dict[str, Any]
-) -> str | None:
+) -> tuple[str, ErrorCategory, float | None] | None:
     event_type = payload.get("type")
     error: Any
     if protocol == ProtocolKind.OPENAI_RESPONSES:
@@ -300,7 +311,76 @@ def _stream_payload_error_message(
         message = payload.get("message")
     if not isinstance(message, str) or not message.strip():
         message = str(event_type or "error")
-    return f"{protocol.value} stream failed: {message.strip()}"
+    category = _infer_stream_error_category(error)
+    cooldown_seconds = _extract_stream_cooldown_seconds(error)
+    return (
+        f"{protocol.value} stream failed: {message.strip()}",
+        category,
+        cooldown_seconds,
+    )
+
+
+_RATE_LIMIT_MARKERS = (
+    "rate_limit",
+    "rate_limit_exceeded",
+    "too_many_requests",
+    "quota_exceeded",
+    "resource_exhausted",
+)
+_AUTH_MARKERS = (
+    "authentication",
+    "unauthenticated",
+    "unauthorized",
+    "permission_denied",
+    "forbidden",
+    "invalid_api_key",
+    "invalid_api",
+)
+_NOT_FOUND_MARKERS = (
+    "model_not_found",
+    "model_not_available",
+    "not_found",
+)
+_SERVER_MARKERS = (
+    "overloaded",
+    "capacity",
+    "unavailable",
+    "server_error",
+    "internal_error",
+)
+
+
+def _extract_stream_cooldown_seconds(error_obj: Any) -> float | None:
+    if not isinstance(error_obj, dict):
+        return None
+    for key in ("retry_after", "retry-after", "reset_in", "cooldown_seconds"):
+        value = parse_cooldown_seconds(error_obj.get(key))
+        if value is not None:
+            return value
+    for key in ("cooldown_until", "reset_at", "resetAt"):
+        value = parse_cooldown_seconds(error_obj.get(key), absolute=True)
+        if value is not None:
+            return value
+    return None
+
+
+def _infer_stream_error_category(error_obj: Any) -> ErrorCategory:
+    """Map a stream error payload to the closest ErrorCategory."""
+    if error_obj is None:
+        return ErrorCategory.SERVER
+    try:
+        serialized = json.dumps(error_obj, ensure_ascii=False).lower()
+    except (TypeError, ValueError):
+        return ErrorCategory.SERVER
+    if any(marker in serialized for marker in _RATE_LIMIT_MARKERS):
+        return ErrorCategory.RATE_LIMIT
+    if any(marker in serialized for marker in _AUTH_MARKERS):
+        return ErrorCategory.AUTH
+    if any(marker in serialized for marker in _NOT_FOUND_MARKERS):
+        return ErrorCategory.NOT_FOUND
+    if any(marker in serialized for marker in _SERVER_MARKERS):
+        return ErrorCategory.SERVER
+    return ErrorCategory.SERVER
 
 
 def _stream_capture_usage(capture: StreamCapture | None) -> dict[str, int | str | None]:

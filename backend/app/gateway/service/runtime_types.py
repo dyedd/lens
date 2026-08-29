@@ -43,6 +43,7 @@ class RoutingPlan:
     route_targets: list[RouteTarget] | None
     use_model_matching: bool
     cursor_key: str | None = None
+    parsed_model: Any | None = None
 
 
 @dataclass(slots=True)
@@ -137,6 +138,7 @@ class UpstreamRequestError(HTTPException):
         *,
         router_status_code: int | None,
         router_error_category: ErrorCategory | None = None,
+        router_error_scope: str = "model",
         router_cooldown_seconds: float | None = None,
         error_type: str = "upstream_error",
         skip_route_failure: bool = False,
@@ -146,6 +148,7 @@ class UpstreamRequestError(HTTPException):
         super().__init__(status_code=status_code, detail=detail)
         self.router_status_code = router_status_code
         self.router_error_category = router_error_category
+        self.router_error_scope = router_error_scope
         self.router_cooldown_seconds = router_cooldown_seconds
         self.error_type = error_type
         self.skip_route_failure = skip_route_failure
@@ -210,6 +213,7 @@ class StreamCapture:
     route_started_revision: int = -1
     error_status_code: int | None = None
     error_category: ErrorCategory | None = None
+    error_cooldown_seconds: float | None = None
     skip_route_failure: bool = False
     content_decoder: codecs.IncrementalDecoder = field(
         default_factory=_new_incremental_utf8_decoder
@@ -261,12 +265,15 @@ def _record_stream_error(
     *,
     status_code: int | None = None,
     category: ErrorCategory | None = None,
+    cooldown_seconds: float | None = None,
     skip_route_failure: bool = False,
 ) -> None:
     if status_code is not None:
         capture.error_status_code = status_code
     if category is not None and capture.error_category is None:
         capture.error_category = category
+    if cooldown_seconds is not None and capture.error_cooldown_seconds is None:
+        capture.error_cooldown_seconds = cooldown_seconds
     if skip_route_failure:
         capture.skip_route_failure = True
     _append_error_sample(capture.errors, message)
