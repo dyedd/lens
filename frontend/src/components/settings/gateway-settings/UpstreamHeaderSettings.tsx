@@ -15,7 +15,7 @@ export function UpstreamHeaderSettings({
     <div className="flex flex-col gap-5 rounded-lg border bg-muted/20 p-4">
       <HeaderRows
         title={titleForLocale(locale, "全局请求头", "Global headers")}
-        headers={config.global}
+        headers={config.rules}
         locale={locale}
         onAdd={onAddGlobalHeader}
         onUpdate={onUpdateGlobalHeader}

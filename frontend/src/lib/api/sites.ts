@@ -1,6 +1,8 @@
 import type {
+  HeaderRule,
   ModelGroupEnsureFromSiteResponse,
   ModelGroupEnsureModelInput,
+  ParamOverrideRule,
 } from "./groups";
 import type { ProtocolKind } from "./protocols";
 
@@ -71,10 +73,10 @@ export type SiteProtocolConfig = {
   name: string;
   protocols: ProtocolKind[];
   enabled: boolean;
-  headers: Record<string, string>;
+  headers: HeaderRule[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
-  param_override: string;
+  param_override: ParamOverrideRule[];
   base_url_id: string;
   credential_ids: string[];
   sync_targets: SiteSyncTarget[];
@@ -85,10 +87,10 @@ export type SiteProtocolConfigInput = {
   name: string;
   protocols: ProtocolKind[];
   enabled: boolean;
-  headers: Record<string, string>;
+  headers: HeaderRule[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
-  param_override: string;
+  param_override: ParamOverrideRule[];
   base_url_id: string;
   credential_ids: string[];
   sync_targets: SiteSyncTarget[];
@@ -159,10 +161,10 @@ export type SiteBatchImportProtocolInput = {
   name: string;
   protocol: ProtocolKind;
   enabled?: boolean;
-  headers?: Record<string, string>;
+  headers?: HeaderRule[];
   proxy_mode?: ChannelProxyMode;
   channel_proxy?: string;
-  param_override?: string;
+  param_override?: ParamOverrideRule[];
   base_url_ref: string;
   credential_refs: string[];
   models?: SiteBatchImportModelInput[];
@@ -213,7 +215,7 @@ export type SiteBatchImportResult = {
 };
 export type SiteModelFetchPayload = {
   base_url: string;
-  headers: Record<string, string>;
+  headers: HeaderRule[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   match_regex: string;
@@ -233,10 +235,10 @@ export type SiteModelFetchItem = {
 export type SiteModelTestPayload = {
   protocol: ProtocolKind;
   base_url: string;
-  headers: Record<string, string>;
+  headers: HeaderRule[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
-  param_override: string;
+  param_override: ParamOverrideRule[];
   credential: { id: string; name: string; api_key: string };
   model_name: string;
   prompt: string;

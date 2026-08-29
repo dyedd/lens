@@ -3,6 +3,13 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 import type { HeaderItem } from "./gatewaySettingsTypes";
@@ -62,6 +69,32 @@ export function HeaderRows({
               }
               placeholder="value"
             />
+          </Field>
+          <Field>
+            <FieldLabel>{titleForLocale(locale, "动作", "Action")}</FieldLabel>
+            <Select
+              value={header.action}
+              onValueChange={(value) =>
+                onUpdate(headerIndex, {
+                  action: value as HeaderItem["action"],
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="override">
+                  {titleForLocale(locale, "覆盖", "Override")}
+                </SelectItem>
+                <SelectItem value="append">
+                  {titleForLocale(locale, "追加", "Append")}
+                </SelectItem>
+                <SelectItem value="remove">
+                  {titleForLocale(locale, "删除", "Remove")}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           <Button
             type="button"

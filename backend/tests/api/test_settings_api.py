@@ -100,7 +100,7 @@ def test_update_settings_serializes_upstream_headers_config(
             "items": [
                 {
                     "key": SETTING_UPSTREAM_HEADERS_CONFIG,
-                    "value": ('{"global":{" X-Test ":" value "}}'),
+                    "value": '{"rules":[{"name":"X-Test","action":"override","value":" value "}]}',
                 }
             ]
         },
@@ -112,8 +112,10 @@ def test_update_settings_serializes_upstream_headers_config(
             SETTING_UPSTREAM_HEADERS_CONFIG
         ]
     )
-    assert stored["global"] == {"X-Test": "value"}
-    assert set(stored) == {"global"}
+    assert stored["rules"] == [
+        {"name": "X-Test", "action": "override", "value": "value", "match": None}
+    ]
+    assert set(stored) == {"rules"}
 
 
 def test_update_settings_rejects_model_param_override(
@@ -127,7 +129,7 @@ def test_update_settings_rejects_model_param_override(
             "items": [
                 {
                     "key": SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
-                    "value": '{"global":{"model":"gpt-4o"}}',
+                    "value": '{"rules":[{"path":"model","action":"set","value":"gpt-4o"}]}',
                 }
             ]
         },

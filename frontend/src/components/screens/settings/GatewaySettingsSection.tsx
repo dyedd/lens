@@ -75,7 +75,9 @@ export function GatewaySettingsSection({
           onUpdateGlobalHeader={settings.updateGlobalHeader}
           onRemoveGlobalHeader={settings.removeGlobalHeader}
           upstreamParamOverrideConfig={draft.upstreamParamOverrideConfig}
-          onGlobalParamOverrideChange={settings.updateGlobalParamOverride}
+          onGlobalParamOverrideChange={(rules) =>
+            settings.setDraftValue("upstreamParamOverrideConfig", { rules })
+          }
         />
       </SettingsSectionCard>
     </TabsContent>

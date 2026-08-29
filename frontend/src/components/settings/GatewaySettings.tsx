@@ -36,7 +36,9 @@ interface GatewaySettingsProps {
   onAddGlobalHeader: () => void;
   onUpdateGlobalHeader: (index: number, patch: Partial<HeaderItem>) => void;
   onRemoveGlobalHeader: (index: number) => void;
-  onGlobalParamOverrideChange: (value: string) => void;
+  onGlobalParamOverrideChange: (
+    rules: UpstreamParamOverrideDraft["rules"],
+  ) => void;
 }
 
 /** Renders gateway proxy, CORS, logging, header, and override settings. */

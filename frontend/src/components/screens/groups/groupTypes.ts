@@ -7,6 +7,7 @@ import type {
   RoutingStrategy,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import type { ParamOverrideRule } from "@/lib/settingsTypes";
 import type { HeaderItem } from "../settings/upstreamHeaderConfig";
 
 export type FormItem = {
@@ -34,7 +35,7 @@ export type FormState = {
   route_group_id: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
   sync_filter_query: string;
-  param_override: string;
+  param_override: ParamOverrideRule[];
   headers: HeaderItem[];
   input_price_per_million: string;
   output_price_per_million: string;
@@ -129,8 +130,8 @@ export const EMPTY_FORM: FormState = {
   route_group_id: "",
   sync_filter_mode: "",
   sync_filter_query: "",
-  param_override: "",
-  headers: [{ key: "", value: "" }],
+  param_override: [{ path: "", action: "set", value: "" }],
+  headers: [{ key: "", value: "", action: "override" }],
   input_price_per_million: "0",
   output_price_per_million: "0",
   cache_read_price_per_million: "0",

@@ -27,7 +27,7 @@ export function useSettingsDraftActions(
   const addGlobalHeader = useCallback(() => {
     updateUpstreamHeadersConfig((current) => ({
       ...current,
-      global: [...current.global, { key: "", value: "" }],
+      rules: [...current.rules, { key: "", value: "", action: "override" }],
     }));
   }, [updateUpstreamHeadersConfig]);
 
@@ -35,7 +35,7 @@ export function useSettingsDraftActions(
     (index: number, patch: Partial<HeaderItem>) => {
       updateUpstreamHeadersConfig((current) => ({
         ...current,
-        global: current.global.map((header, currentIndex) =>
+        rules: current.rules.map((header, currentIndex) =>
           currentIndex === index ? { ...header, ...patch } : header,
         ),
       }));
@@ -46,12 +46,14 @@ export function useSettingsDraftActions(
   const removeGlobalHeader = useCallback(
     (index: number) => {
       updateUpstreamHeadersConfig((current) => {
-        const nextHeaders = current.global.filter(
+        const nextHeaders = current.rules.filter(
           (_, currentIndex) => currentIndex !== index,
         );
         return {
           ...current,
-          global: nextHeaders.length ? nextHeaders : [{ key: "", value: "" }],
+          rules: nextHeaders.length
+            ? nextHeaders
+            : [{ key: "", value: "", action: "override" }],
         };
       });
     },
@@ -75,11 +77,8 @@ export function useSettingsDraftActions(
   );
 
   const updateGlobalParamOverride = useCallback(
-    (value: string) => {
-      updateUpstreamParamOverrideConfig((current) => ({
-        ...current,
-        global: value,
-      }));
+    (rules: SettingsDraft["upstreamParamOverrideConfig"]["rules"]) => {
+      updateUpstreamParamOverrideConfig(() => ({ rules }));
     },
     [updateUpstreamParamOverrideConfig],
   );

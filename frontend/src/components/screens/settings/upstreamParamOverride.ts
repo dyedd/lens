@@ -1,50 +1,79 @@
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
-import type { UpstreamParamOverrideDraft } from "@/lib/settingsTypes";
 
+import type {
+  ParamOverrideRule,
+  UpstreamParamOverrideDraft,
+} from "@/lib/settingsTypes";
 import { formatJsonObject, parseJsonObject } from "./upstreamConfigUtils";
 
-/** Create an empty upstream parameter override configuration. */
+export type { ParamOverrideRule };
+
 export function createEmptyUpstreamParamOverrideDraft(): UpstreamParamOverrideDraft {
-  return { global: "{}" };
+  return { rules: [{ path: "", action: "set", value: "" }] };
 }
 
-/** Parse persisted parameter overrides into an editable draft. */
 export function parseUpstreamParamOverrideConfig(
   rawValue: string | undefined,
 ): UpstreamParamOverrideDraft {
   const payload = rawValue?.trim() ? parseJsonObject(rawValue) : null;
+  const rules = Array.isArray(payload?.rules)
+    ? payload.rules
+        .filter(
+          (rule): rule is Record<string, unknown> =>
+            Boolean(rule) && typeof rule === "object",
+        )
+        .map((rule) => ({
+          path: typeof rule.path === "string" ? rule.path : "",
+          action:
+            rule.action === "delete" ? ("delete" as const) : ("set" as const),
+          value: rule.value === undefined ? "" : JSON.stringify(rule.value),
+        }))
+    : [];
   return {
-    global: formatJsonObject(payload?.global) || "{}",
+    rules: rules.length ? rules : [{ path: "", action: "set", value: "" }],
   };
 }
 
-/** Serialize a parameter override draft for persistence. */
 export function serializeUpstreamParamOverrideConfig(
   config: UpstreamParamOverrideDraft,
 ) {
-  const globalOverride = parseJsonObject(config.global);
-  return JSON.stringify({ global: globalOverride ?? {} });
+  return JSON.stringify({
+    rules: config.rules
+      .filter((rule) => rule.path.trim())
+      .map((rule) => ({
+        path: rule.path.trim(),
+        action: rule.action,
+        ...(rule.action === "set"
+          ? { value: parseJsonObject(rule.value) ?? rule.value }
+          : {}),
+      })),
+  });
 }
 
-/** Validate a parameter override draft and return a localized error. */
 export function validateUpstreamParamOverrideConfig(
   config: UpstreamParamOverrideDraft,
   locale: Locale,
 ) {
-  const globalOverride = parseJsonObject(config.global);
-  if (globalOverride === null) {
-    return titleForLocale(
-      locale,
-      "全局参数不是合法的 JSON 对象。",
-      "Global params must be a valid JSON object.",
-    );
-  }
-  if ("model" in globalOverride) {
-    return titleForLocale(
-      locale,
-      "全局参数不可包含 model。",
-      "Global params cannot include model.",
-    );
+  for (const rule of config.rules) {
+    if (!rule.path.trim()) continue;
+    if (rule.path.trim() === "model" || rule.path.trim().startsWith("model.")) {
+      return titleForLocale(
+        locale,
+        "参数规则不可覆盖 model。",
+        "Parameter rules cannot override model.",
+      );
+    }
+    if (
+      rule.action === "set" &&
+      parseJsonObject(rule.value) === null &&
+      !rule.value.trim()
+    ) {
+      return titleForLocale(
+        locale,
+        "参数值不能为空。",
+        "Parameter values are required.",
+      );
+    }
   }
   return null;
 }

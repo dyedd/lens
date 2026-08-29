@@ -104,8 +104,8 @@ def test_import_backup_accepts_exported_bundle(
         headers=admin_headers,
         json={
             "name": "backup-group",
-            "param_override": '{"temperature":0.2}',
-            "headers": {"X-Group": "enabled"},
+            "param_override": [{"path": "temperature", "action": "set", "value": 0.2}],
+            "headers": [{"name": "X-Group", "action": "override", "value": "enabled"}],
         },
     )
     assert group.status_code == 201, group.text
@@ -116,13 +116,9 @@ def test_import_backup_accepts_exported_bundle(
         if item["key"] == "upstream_headers_config":
             item["value"] = json.dumps(
                 {
-                    "global": {"X-Global": "enabled"},
                     "rules": [
-                        {
-                            "models": ["backup-group"],
-                            "headers": {"X-Old-Rule": "discarded"},
-                        }
-                    ],
+                        {"name": "X-Global", "action": "override", "value": "enabled"}
+                    ]
                 }
             )
             break
@@ -150,14 +146,25 @@ def test_import_backup_accepts_exported_bundle(
     restored_group = client.get(
         "/api/admin/model-groups", headers=admin_headers
     ).json()[0]
-    assert restored_group["param_override"] == '{"temperature":0.2}'
-    assert restored_group["headers"] == {"X-Group": "enabled"}
+    assert restored_group["param_override"] == [
+        {"path": "temperature", "action": "set", "value": 0.2}
+    ]
+    assert restored_group["headers"] == [
+        {"name": "X-Group", "action": "override", "value": "enabled", "match": None}
+    ]
     settings = {
         item["key"]: item["value"]
         for item in client.get("/api/admin/settings", headers=admin_headers).json()
     }
     assert json.loads(settings["upstream_headers_config"]) == {
-        "global": {"X-Global": "enabled"}
+        "rules": [
+            {
+                "name": "X-Global",
+                "action": "override",
+                "value": "enabled",
+                "match": None,
+            }
+        ]
     }
 
 
