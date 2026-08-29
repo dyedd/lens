@@ -33,10 +33,10 @@ export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
           enabled: true,
           base_url_ref: "main",
           credential_refs: ["key1"],
-          headers: {},
+          headers: [],
           proxy_mode: "inherit",
           channel_proxy: "",
-          param_override: "",
+          param_override: [],
           models: [
             {
               model_name: "gpt-4.1",

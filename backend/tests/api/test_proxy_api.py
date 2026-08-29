@@ -434,17 +434,39 @@ def test_model_group_param_override_has_highest_priority(
                     "key": "upstream_param_override_config",
                     "value": json.dumps(
                         {
-                            "global": {
-                                "temperature": 0.8,
-                                "metadata": {"global": True, "priority": "global"},
-                            }
+                            "rules": [
+                                {"path": "temperature", "action": "set", "value": 0.8},
+                                {
+                                    "path": "metadata.global",
+                                    "action": "set",
+                                    "value": True,
+                                },
+                                {
+                                    "path": "metadata.priority",
+                                    "action": "set",
+                                    "value": "global",
+                                },
+                            ]
                         }
                     ),
                 },
                 {
                     "key": "upstream_headers_config",
                     "value": json.dumps(
-                        {"global": {"X-Priority": "global", "X-Global": "yes"}}
+                        {
+                            "rules": [
+                                {
+                                    "name": "X-Priority",
+                                    "action": "override",
+                                    "value": "global",
+                                },
+                                {
+                                    "name": "X-Global",
+                                    "action": "override",
+                                    "value": "yes",
+                                },
+                            ]
+                        }
                     ),
                 },
             ]
@@ -452,23 +474,30 @@ def test_model_group_param_override_has_highest_priority(
     )
     assert settings.status_code == 200, settings.text
     site_payload = valid_site_payload(model_name="gpt-4o")
-    site_payload["protocols"][0]["param_override"] = json.dumps(
-        {"temperature": 0.5, "metadata": {"channel": True, "priority": "channel"}}
-    )
-    site_payload["protocols"][0]["headers"] = {
-        "X-Priority": "channel",
-        "X-Channel": "yes",
-    }
+    site_payload["protocols"][0]["param_override"] = [
+        {"path": "temperature", "action": "set", "value": 0.5},
+        {"path": "metadata.channel", "action": "set", "value": True},
+        {"path": "metadata.priority", "action": "set", "value": "channel"},
+    ]
+    site_payload["protocols"][0]["headers"] = [
+        {"name": "X-Priority", "action": "override", "value": "channel"},
+        {"name": "X-Channel", "action": "override", "value": "yes"},
+    ]
     create_site(site_payload)
     group_response = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
         json={
             "name": "client-model",
-            "param_override": json.dumps(
-                {"temperature": 0.2, "metadata": {"group": True, "priority": "group"}}
-            ),
-            "headers": {"X-Priority": "group", "X-Group": "yes"},
+            "param_override": [
+                {"path": "temperature", "action": "set", "value": 0.2},
+                {"path": "metadata.group", "action": "set", "value": True},
+                {"path": "metadata.priority", "action": "set", "value": "group"},
+            ],
+            "headers": [
+                {"name": "X-Priority", "action": "override", "value": "group"},
+                {"name": "X-Group", "action": "override", "value": "yes"},
+            ],
             "items": [_protocol_group_item("openai_chat", "gpt-4o")],
         },
     )

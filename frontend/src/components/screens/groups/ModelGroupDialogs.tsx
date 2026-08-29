@@ -232,7 +232,10 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               onAdd={() =>
                 setForm((current) => ({
                   ...current,
-                  headers: [...current.headers, { key: "", value: "" }],
+                  headers: [
+                    ...current.headers,
+                    { key: "", value: "", action: "override" },
+                  ],
                 }))
               }
               onUpdate={(index, patch) =>
@@ -262,11 +265,15 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               <Textarea
                 id="group-param-override"
                 className="min-h-32 font-mono text-sm"
-                value={form.param_override}
+                value={form.param_override[0]?.value ?? ""}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    param_override: event.target.value,
+                    param_override: current.param_override.map((rule, index) =>
+                      index === 0
+                        ? { ...rule, value: event.target.value }
+                        : rule,
+                    ),
                   }))
                 }
               />

@@ -1,5 +1,17 @@
 import type { ProtocolKind } from "./protocols";
 
+export type HeaderRule = {
+  name: string;
+  action: "remove" | "override" | "append";
+  value: string;
+  match?: { path_regex?: string | null; model_regex?: string | null } | null;
+};
+export type ParamOverrideRule = {
+  path: string;
+  action: "set" | "delete";
+  value?: unknown;
+};
+
 export type RoutingStrategy = "round_robin" | "failover";
 export type ModelGroupSyncFilterMode = "" | "contains" | "regex";
 export type ModelGroupItemState =
@@ -43,8 +55,8 @@ export type ModelGroup = {
   route_group_name?: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
   sync_filter_query: string;
-  param_override: string;
-  headers: Record<string, string>;
+  param_override: ParamOverrideRule[];
+  headers: HeaderRule[];
   input_price_per_million: number;
   output_price_per_million: number;
   cache_read_price_per_million: number;
@@ -59,8 +71,8 @@ export type ModelGroupPayload = {
   route_group_id?: string;
   sync_filter_mode: ModelGroupSyncFilterMode;
   sync_filter_query: string;
-  param_override: string;
-  headers: Record<string, string>;
+  param_override: ParamOverrideRule[];
+  headers: HeaderRule[];
   items: ModelGroupItemPayload[];
 };
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {

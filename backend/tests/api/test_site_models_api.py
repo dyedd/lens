@@ -46,6 +46,7 @@ def test_fetch_site_models_uses_selected_credentials(
         headers=admin_headers,
         json={
             "base_url": "https://upstream.example/v1",
+            "headers": [],
             "credentials": [
                 {
                     "id": "cred-a",
@@ -90,6 +91,7 @@ def test_fetch_site_models_rejects_unavailable_credentials(
         headers=admin_headers,
         json={
             "base_url": "https://upstream.example/v1",
+            "headers": [],
             "credentials": [
                 {
                     "id": "cred-a",
@@ -122,6 +124,7 @@ def test_fetch_site_models_returns_bad_gateway_when_all_upstreams_fail(
         headers=admin_headers,
         json={
             "base_url": "https://upstream.example/v1",
+            "headers": [],
             "credentials": [
                 {
                     "id": "cred-a",

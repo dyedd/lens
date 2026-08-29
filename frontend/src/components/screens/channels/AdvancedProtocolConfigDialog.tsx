@@ -113,7 +113,7 @@ export function AdvancedProtocolConfigDialog({
                     onUpdateProtocolConfig(protocolConfigIndex, {
                       headers: [
                         ...protocolConfig.headers,
-                        { key: "", value: "" },
+                        { key: "", value: "", action: "override" },
                       ],
                     })
                   }
@@ -192,10 +192,12 @@ export function AdvancedProtocolConfigDialog({
               <Textarea
                 id="protocol-param-override"
                 className="min-h-24"
-                value={protocolConfig.param_override}
+                value={JSON.stringify(protocolConfig.param_override)}
                 onChange={(event) =>
                   onUpdateProtocolConfig(protocolConfigIndex, {
-                    param_override: event.target.value,
+                    param_override: [
+                      { path: "", action: "set", value: event.target.value },
+                    ],
                   })
                 }
               />

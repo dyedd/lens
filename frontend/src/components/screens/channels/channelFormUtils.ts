@@ -1,3 +1,4 @@
+import type { HeaderRule } from "@/lib/api/groups";
 import type {
   FormProtocolConfig,
   FormState,
@@ -37,15 +38,17 @@ export function activeBaseUrlValue(
   return form.base_urls[0]?.url || "";
 }
 
-/** Converts editable header rows into a request header record. */
+/** Converts editable header rows into upstream header rules. */
 export function formHeaders(
   protocolConfig: Pick<FormProtocolConfig, "headers">,
-) {
-  return Object.fromEntries(
-    protocolConfig.headers
-      .map((entry) => [entry.key.trim(), entry.value] as const)
-      .filter(([key]) => key),
-  );
+): HeaderRule[] {
+  return protocolConfig.headers
+    .filter((entry) => entry.key.trim())
+    .map((entry) => ({
+      name: entry.key.trim(),
+      value: entry.value,
+      action: entry.action,
+    }));
 }
 
 /** Coerce nullable text to a string. */

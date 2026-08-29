@@ -50,7 +50,7 @@ def _model_list_request(
     channel: ChannelConfig, upstream_headers_config: Mapping[str, Any] | None = None
 ) -> dict[str, Any]:
     api_key = resolve_channel_api_key(channel)
-    headers = dict(channel.headers)
+    headers = list(channel.headers)
 
     return {
         "method": "GET",

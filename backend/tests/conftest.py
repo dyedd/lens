@@ -66,6 +66,8 @@ def valid_site_payload(
                 "name": "primary",
                 "protocols": protocol_values,
                 "enabled": protocol_enabled,
+                "headers": [],
+                "param_override": [],
                 "base_url_id": base_id,
                 "credential_ids": [credential_id],
                 "models": [
@@ -312,6 +314,8 @@ def create_model_group(
             "name": name,
             "strategy": "round_robin",
             "route_group_id": route_group_id,
+            "headers": [],
+            "param_override": [],
             "items": items or [],
         }
         response = client.post(

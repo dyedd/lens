@@ -2,6 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import type { ParamOverrideRule } from "@/lib/settingsTypes";
+
+function parseRuleValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 import type {
   SiteModelTestPayload,
   SiteModelTestResult,
@@ -126,7 +137,15 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       headers: formHeaders(config),
       proxy_mode: config.proxy_mode,
       channel_proxy: config.channel_proxy.trim(),
-      param_override: config.param_override.trim(),
+      param_override: config.param_override
+        .filter((rule) => rule.path.trim())
+        .map((rule) => ({
+          path: rule.path.trim(),
+          action: rule.action,
+          ...(rule.action === "set"
+            ? { value: parseRuleValue(rule.value) }
+            : {}),
+        })),
       credential: {
         id: credential.id,
         name: credential.name.trim() || fallbackCredentialName(credentialIndex),

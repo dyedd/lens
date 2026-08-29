@@ -1,9 +1,17 @@
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
 import {
-  headersToRecord,
+  headersToRules,
   parseHeaderRows,
 } from "../settings/upstreamHeaderConfig";
 import type { FormItem, FormState } from "./groupTypes";
+
+function parseRuleValue(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
 
 /** Convert candidate payload items into editable model group members. */
 export function candidatePayloadToFormItems(
@@ -35,8 +43,16 @@ export function modelGroupToForm(group: ModelGroup): FormState {
     route_group_id: group.route_group_id ?? "",
     sync_filter_mode: group.sync_filter_mode,
     sync_filter_query: group.sync_filter_query,
-    param_override: group.param_override,
-    headers: parseHeaderRows(group.headers),
+    param_override: group.param_override.map((rule) => ({
+      path: rule.path,
+      action: rule.action,
+      value: rule.value === undefined ? "" : JSON.stringify(rule.value),
+    })),
+    headers: group.headers.map((rule) => ({
+      key: rule.name,
+      value: rule.value,
+      action: rule.action,
+    })),
     input_price_per_million: String(group.input_price_per_million),
     output_price_per_million: String(group.output_price_per_million),
     cache_read_price_per_million: String(group.cache_read_price_per_million),
@@ -78,8 +94,14 @@ export function formToModelGroupPayload(form: FormState) {
     sync_filter_query: form.route_group_id.trim()
       ? ""
       : form.sync_filter_query.trim(),
-    param_override: form.param_override.trim(),
-    headers: headersToRecord(form.headers),
+    param_override: form.param_override
+      .filter((rule) => rule.path.trim())
+      .map((rule) => ({
+        path: rule.path.trim(),
+        action: rule.action,
+        ...(rule.action === "set" ? { value: parseRuleValue(rule.value) } : {}),
+      })),
+    headers: headersToRules(form.headers),
     items: form.items.map((item) => ({
       channel_id: item.channel_id,
       credential_id: item.credential_id,
