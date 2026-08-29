@@ -50,36 +50,78 @@ function useDebouncedValue(value: string, delay: number) {
   return debouncedValue;
 }
 
+type HealthTier =
+  | "no-data"
+  | "healthy"
+  | "mostly-healthy"
+  | "partial"
+  | "major"
+  | "all-failed";
+
+const HEALTH_TIER_META: Record<
+  HealthTier,
+  { zh: string; en: string; badge: string; bar: string }
+> = {
+  "no-data": {
+    zh: "无数据",
+    en: "No data",
+    badge: "border-muted-foreground/30 text-muted-foreground",
+    bar: "bg-muted",
+  },
+  healthy: {
+    zh: "健康",
+    en: "Healthy",
+    badge: "border-emerald-500/40 text-emerald-700 dark:text-emerald-300",
+    bar: "bg-emerald-500",
+  },
+  "mostly-healthy": {
+    zh: "基本健康",
+    en: "Mostly healthy",
+    badge: "border-emerald-500/40 text-emerald-700 dark:text-emerald-300",
+    bar: "bg-emerald-300",
+  },
+  partial: {
+    zh: "部分失败",
+    en: "Partial failures",
+    badge: "border-amber-500/40 text-amber-700 dark:text-amber-300",
+    bar: "bg-amber-500",
+  },
+  major: {
+    zh: "大量失败",
+    en: "Major failures",
+    badge: "border-orange-500/40 text-orange-700 dark:text-orange-300",
+    bar: "bg-orange-500",
+  },
+  "all-failed": {
+    zh: "全部失败",
+    en: "All failed",
+    badge: "border-destructive/40 text-destructive",
+    bar: "bg-destructive",
+  },
+};
+
+function healthTier(totalCount: number, successCount: number): HealthTier {
+  if (!totalCount) return "no-data";
+  if (successCount === totalCount) return "healthy";
+  if (!successCount) return "all-failed";
+  const rate = successCount / totalCount;
+  if (rate >= 0.99) return "mostly-healthy";
+  if (rate >= 0.9) return "partial";
+  return "major";
+}
+
 function healthState(item: HealthItem, isChineseLocale: boolean) {
-  if (!item.total_count) {
-    return {
-      label: isChineseLocale ? "无数据" : "No data",
-      className: "border-muted-foreground/30 text-muted-foreground",
-    };
-  }
-  if (item.success_count === item.total_count) {
-    return {
-      label: isChineseLocale ? "健康" : "Healthy",
-      className: "border-emerald-500/40 text-emerald-700 dark:text-emerald-300",
-    };
-  }
-  if (!item.success_count) {
-    return {
-      label: isChineseLocale ? "异常" : "Failed",
-      className: "border-destructive/40 text-destructive",
-    };
-  }
+  const meta =
+    HEALTH_TIER_META[healthTier(item.total_count, item.success_count)];
   return {
-    label: isChineseLocale ? "降级" : "Degraded",
-    className: "border-amber-500/40 text-amber-700 dark:text-amber-300",
+    label: isChineseLocale ? meta.zh : meta.en,
+    className: meta.badge,
   };
 }
 
 function bucketClassName(bucket: HealthItem["buckets"][number]) {
-  if (!bucket.total_count) return "bg-muted";
-  if (bucket.success_count === bucket.total_count) return "bg-emerald-500";
-  if (!bucket.success_count) return "bg-destructive";
-  return "bg-amber-500";
+  return HEALTH_TIER_META[healthTier(bucket.total_count, bucket.success_count)]
+    .bar;
 }
 
 function HealthTimeline({
