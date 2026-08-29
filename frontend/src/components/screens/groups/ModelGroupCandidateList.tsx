@@ -1,0 +1,105 @@
+import { AlertCircle, ChevronDown } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { Separator } from "@/components/ui/Separator";
+import type { ModelGroupCandidateItem } from "@/lib/api/groups";
+import { cn } from "@/lib/classNames";
+import { modelGroupItemKey } from "./groupSearch";
+import type { CandidateChannelGroup } from "./groupTypes";
+import { CandidateRow } from "./ModelGroupMemberRows";
+
+interface ModelGroupCandidateListProps {
+  locale: "zh-CN" | "en-US";
+  groupedCandidates: CandidateChannelGroup[];
+  expandedChannels: string[];
+  existingItemKeys: Set<string>;
+  toggleChannel: (channelId: string) => void;
+  addCandidate: (candidate: ModelGroupCandidateItem) => void;
+  candidateIsError: boolean;
+  candidateListError: unknown;
+}
+
+/** Render candidate models grouped by channel. */
+export function ModelGroupCandidateList({
+  locale,
+  groupedCandidates,
+  expandedChannels,
+  existingItemKeys,
+  toggleChannel,
+  addCandidate,
+  candidateIsError,
+  candidateListError,
+}: ModelGroupCandidateListProps) {
+  return (
+    <div className="px-2 pb-2">
+      <div className="flex flex-col">
+        {groupedCandidates.map((channelGroup) => {
+          const isOpen = expandedChannels.includes(channelGroup.key);
+          return (
+            <div key={channelGroup.key} className="border-b last:border-b-0">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto min-h-11 w-full justify-start gap-3 rounded-none px-3 py-2 text-left hover:bg-muted"
+                onClick={() => toggleChannel(channelGroup.key)}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {channelGroup.channel_name}
+                  </div>
+                </div>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                  {channelGroup.candidates.length}
+                </span>
+                <ChevronDown
+                  size={15}
+                  className={cn(
+                    "text-muted-foreground transition-transform",
+                    isOpen && "rotate-180",
+                  )}
+                />
+              </Button>
+              {isOpen ? (
+                <div className="flex flex-col gap-0.5 px-3 pb-2 pt-1">
+                  <Separator className="mb-1" />
+                  {channelGroup.candidates.map((candidate) => (
+                    <CandidateRow
+                      key={`${candidate.protocol_config_id}-${candidate.credential_id}-${candidate.model_name}`}
+                      candidate={candidate}
+                      active={candidate.items.every((item) =>
+                        existingItemKeys.has(modelGroupItemKey(item)),
+                      )}
+                      locale={locale}
+                      onClick={() => addCandidate(candidate)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+        {candidateIsError ? (
+          <Alert variant="destructive" className="my-2">
+            <AlertCircle />
+            <AlertTitle>
+              {locale === "zh-CN"
+                ? "候选模型加载失败"
+                : "Failed to load candidates"}
+            </AlertTitle>
+            <AlertDescription>
+              {candidateListError instanceof Error
+                ? candidateListError.message
+                : locale === "zh-CN"
+                  ? "无法读取候选模型"
+                  : "Unable to read candidates"}
+            </AlertDescription>
+          </Alert>
+        ) : !groupedCandidates.length ? (
+          <p className="px-1 py-6 text-center text-sm text-muted-foreground">
+            {locale === "zh-CN" ? "暂无可选模型" : "No candidates found"}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}

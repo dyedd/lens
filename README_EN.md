@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./ui/public/logo.svg" alt="Lens" width="88" height="88">
+  <img src="./frontend/public/logo.svg" alt="Lens" width="88" height="88">
 </p>
 
 <h1 align="center">Lens</h1>
@@ -10,8 +10,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.14%2B-3776AB?logo=python&logoColor=white" alt="Python 3.14+">
-  <img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI 0.115+">
-  <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs" alt="Next.js 16">
+  <img src="https://img.shields.io/badge/FastAPI-0.139%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI 0.139+">
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite 8">
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111" alt="React 19">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
 </p>
@@ -187,8 +187,8 @@ Requires Python 3.14+, uv, and pnpm.
 The command below generates a random signing key only when `.env` does not exist and does not overwrite existing configuration.
 
 ```bash
-uv sync --extra dev --locked
-cd ui && pnpm install && cd ..
+uv sync --locked
+cd frontend && pnpm install && cd ..
 uv run --no-sync python -c "import os, secrets; from pathlib import Path; path = Path('.env'); os.umask(0o077); path.exists() or path.write_text(f'LENS_AUTH_SECRET_KEY={secrets.token_hex(32)}\n', encoding='utf-8')"
 uv run --no-sync lens db upgrade
 uv run --no-sync lens seed-admin --username admin --generate-password
@@ -197,7 +197,7 @@ uv run --no-sync lens dev
 
 Default local development ports:
 
-- Next.js dev server: `http://127.0.0.1:3000`
+- Vite dev server: `http://127.0.0.1:3000` (Vite proxies `/api`, `/v1` and `/v1beta` to the backend, so this is the only address you need to open)
 - FastAPI backend: `http://127.0.0.1:18080`
 
 You can also run them separately:
@@ -205,7 +205,7 @@ You can also run them separately:
 ```bash
 uv run --no-sync lens serve
 
-cd ui
+cd frontend
 pnpm dev
 ```
 
@@ -252,7 +252,7 @@ Clients only need: Lens Base URL + Gateway API Key + Model group name.
 | Layer    | Technologies                                                    |
 | -------- | --------------------------------------------------------------- |
 | Backend  | Python 3.14+, FastAPI, SQLAlchemy, Alembic, SQLite / PostgreSQL |
-| Frontend | Next.js 16, React 19, TypeScript, TanStack Query, shadcn/ui     |
+| Frontend | Vite 8, React 19, React Router 7, TypeScript, TanStack Query, shadcn/ui     |
 
 ## Configuration
 
@@ -366,9 +366,9 @@ The first `lens` is the database username, the last `lens` is the database name,
 ## Database Migrations
 
 ```bash
-uv run lens db upgrade  # upgrade to latest
-uv run lens db downgrade  # downgrade one revision
-uv run lens db revision -m "describe your change"  # create a migration
+uv run --no-sync lens db upgrade  # upgrade to latest
+uv run --no-sync lens db downgrade  # downgrade one revision
+uv run --no-sync lens db revision -m "describe your change"  # create a migration
 ```
 
 To move from SQLite to PostgreSQL: export config at `/backups` → change `LENS_DATABASE_URL` → start Lens → import config.

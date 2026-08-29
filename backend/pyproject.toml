@@ -1,0 +1,76 @@
+[project]
+name = "app"
+dynamic = ["version"]
+description = "Multi-provider LLM gateway for OpenAI Chat, OpenAI Responses, Anthropic, and Gemini"
+requires-python = ">=3.14"
+license = "MIT"
+dependencies = [
+    "aiosqlite>=0.20.0",
+    "alembic>=1.18.0",
+    "fastapi>=0.139.0",
+    "httpx>=0.28.0",
+    "packaging>=24.0",
+    "psycopg[binary]>=3.2.0",
+    "PyJWT>=2.10.1",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.5.0",
+    "python-multipart>=0.0.20",
+    "sqlalchemy>=2.0.36",
+    "tzdata>=2026.2",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.0.0",
+    "prek>=0.4.11",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=1.3.0",
+    "pytest-xdist>=3.6.0",
+    "ruff>=0.15.0",
+]
+
+[tool.pytest.ini_options]
+filterwarnings = ["error"]
+
+[tool.ruff]
+# Deliberately below requires-python: at py314 the formatter strips the parens
+# from `except (TypeError, ValueError):` (PEP 758), which reads like a Python 2
+# bug for no benefit. Nothing here needs a 3.14-only modernization.
+target-version = "py313"
+exclude = ["app/alembic"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line length is handled by the formatter
+    "B008",  # FastAPI relies on function calls in argument defaults (Depends/Query)
+    "B904",  # HTTPException is raised without chaining on purpose
+    "UP042", # `str, Enum` -> `StrEnum` changes __str__, which log and payload text depends on
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Package facades may re-export their documented public surface.
+"**/__init__.py" = ["F401"]
+
+[project.scripts]
+lens = "app.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "app.__version__"}

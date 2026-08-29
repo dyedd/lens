@@ -3,10 +3,12 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 node_modules/
-.next/
 dist/
 build/
 .env
 data/
 *.tsbuildinfo
 .ccg/
+backend/app/frontend/
+.zcode/
+.ruff_cache/

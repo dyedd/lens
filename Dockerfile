@@ -6,7 +6,7 @@ ARG UV_VERSION=0.11.28
 
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS ui-base
 
-WORKDIR /app/ui
+WORKDIR /app/frontend
 
 ARG PNPM_VERSION
 ENV PNPM_HOME=/pnpm
@@ -17,16 +17,16 @@ RUN corepack enable pnpm \
 
 FROM ui-base AS ui-deps
 
-COPY ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
+COPY frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm fetch
 
-COPY ui/package.json ./
+COPY frontend/package.json ./
 RUN pnpm install --frozen-lockfile --offline
 
 FROM ui-base AS ui-builder
 
-COPY --from=ui-deps /app/ui/node_modules ./node_modules
-COPY ui ./
+COPY --from=ui-deps /app/frontend/node_modules ./node_modules
+COPY frontend ./
 
 ENV NODE_ENV=production
 
@@ -50,21 +50,24 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml ./backend/
 RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --no-install-project --link-mode=copy \
+    uv sync --locked --no-dev --no-install-workspace --package app --link-mode=copy \
     && mkdir -p /app/data
 
-COPY README.md ./
-COPY lens_api ./lens_api
+# Installed editable on purpose: `app.cli` resolves `alembic.ini` and the Alembic
+# script directory relative to the package, so the source tree must stay in place.
+COPY backend/alembic.ini ./backend/
+COPY backend/app ./backend/app
 RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --link-mode=copy
+    uv sync --locked --no-dev --package app --link-mode=copy
 
-COPY alembic.ini ./
-COPY migrations ./migrations
 COPY --chmod=755 scripts/docker/app-entrypoint.sh /usr/local/bin/app-entrypoint
-COPY --from=ui-builder /app/ui/out /app/ui
+# vite.config.ts writes the build into the Python package, so the path mirrors
+# the repository layout: /app/frontend/../backend/app/frontend.
+COPY --from=ui-builder /app/backend/app/frontend /app/backend/app/frontend
 
 EXPOSE 3000
 

@@ -1,6 +1,5 @@
 .git
 .github
-.next
 .venv
 __pycache__/
 *.pyc
@@ -8,11 +7,9 @@ __pycache__/
 *.pyd
 .pytest_cache
 node_modules
-ui/.next
-ui/node_modules
-ui/out
-ui/dist
-ui/build
+frontend/node_modules
+backend/app/frontend
+frontend/dist
 scripts/__pycache__/
 dist
 build
@@ -22,4 +19,4 @@ data
 AGENTS.md
 CLAUDE.md
 GEMINI.md
-ui/*.tsbuildinfo
+frontend/*.tsbuildinfo
