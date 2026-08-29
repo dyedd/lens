@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lens</title>
+    <meta name="description" content="渠道、模型组与系统配置管理后台" />
+    <link rel="icon" href="/logo.svg" />
+    <link rel="apple-touch-icon" href="/logo.svg" />
+    <!--
+      Applies the stored theme before first paint. Must stay a classic inline
+      script: a module script is deferred and would flash the default theme.
+      The storage key matches THEME_STORAGE_KEY in src/lib/theme.ts.
+    -->
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("lens_theme");
+          const dark =
+            stored === "dark" ||
+            (stored !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          const root = document.documentElement;
+          root.classList.toggle("dark", dark);
+          root.style.colorScheme = dark ? "dark" : "light";
+        } catch {
+          // localStorage may throw on quota/private mode; default theme still applies
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

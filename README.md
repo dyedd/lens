@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./ui/public/logo.svg" alt="Lens" width="88" height="88">
+  <img src="./frontend/public/logo.svg" alt="Lens" width="88" height="88">
 </p>
 
 <h1 align="center">Lens</h1>
@@ -10,8 +10,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.14%2B-3776AB?logo=python&logoColor=white" alt="Python 3.14+">
-  <img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI 0.115+">
-  <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs" alt="Next.js 16">
+  <img src="https://img.shields.io/badge/FastAPI-0.139%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI 0.139+">
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite 8">
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111" alt="React 19">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
 </p>
@@ -184,8 +184,8 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 下面的命令只在 `.env` 不存在时生成随机签名密钥，不会覆盖已有配置。
 
 ```bash
-uv sync --extra dev --locked
-cd ui && pnpm install && cd ..
+uv sync --locked
+cd frontend && pnpm install && cd ..
 uv run --no-sync python -c "import os, secrets; from pathlib import Path; path = Path('.env'); os.umask(0o077); path.exists() or path.write_text(f'LENS_AUTH_SECRET_KEY={secrets.token_hex(32)}\n', encoding='utf-8')"
 uv run --no-sync lens db upgrade
 uv run --no-sync lens seed-admin --username admin --generate-password
@@ -194,7 +194,7 @@ uv run --no-sync lens dev
 
 本地开发默认端口：
 
-- Next.js dev server：`http://127.0.0.1:3000`
+- Vite dev server：`http://127.0.0.1:3000`（`/api`、`/v1`、`/v1beta` 由 Vite 代理到后端，所以只需要打开这一个地址）
 - FastAPI 后端：`http://127.0.0.1:18080`
 
 也可以分开启动：
@@ -202,7 +202,7 @@ uv run --no-sync lens dev
 ```bash
 uv run --no-sync lens serve
 
-cd ui
+cd frontend
 pnpm dev
 ```
 
@@ -249,7 +249,7 @@ pnpm dev
 | 层   | 技术                                                            |
 | ---- | --------------------------------------------------------------- |
 | 后端 | Python 3.14+、FastAPI、SQLAlchemy、Alembic、SQLite / PostgreSQL |
-| 前端 | Next.js 16、React 19、TypeScript、TanStack Query、shadcn/ui     |
+| 前端 | Vite 8、React 19、React Router 7、TypeScript、TanStack Query、shadcn/ui     |
 
 ## 配置
 
@@ -363,9 +363,9 @@ LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgresql:5432/lens
 ## 数据库迁移
 
 ```bash
-uv run lens db upgrade  # 升级到最新
-uv run lens db downgrade  # 回退一步
-uv run lens db revision -m "describe your change"  # 生成新迁移
+uv run --no-sync lens db upgrade  # 升级到最新
+uv run --no-sync lens db downgrade  # 回退一步
+uv run --no-sync lens db revision -m "describe your change"  # 生成新迁移
 ```
 
 从 SQLite 切换到 PostgreSQL：在 `/backups` 导出配置 → 修改 `LENS_DATABASE_URL` → 启动 Lens → 导入配置。

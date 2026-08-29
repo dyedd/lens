@@ -1,0 +1,371 @@
+import argparse
+import asyncio
+import os
+import secrets
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+from types import FrameType
+
+from alembic import command
+from alembic.config import Config
+
+from .core.auth import validate_admin_password
+from .core.config import settings
+from .core.db import create_engine, create_session_factory
+
+SOURCE_BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+
+def _admin_password_argument(value: str) -> str:
+    try:
+        return validate_admin_password(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _write_private_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    descriptor = os.open(
+        temporary_path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            descriptor = -1
+            output.write(value)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary_path, path)
+        os.chmod(path, 0o600)
+        if os.name != "nt":
+            directory_descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _selector_event_loop_factory() -> asyncio.AbstractEventLoop:
+    return asyncio.SelectorEventLoop()
+
+
+def _uvicorn_loop_factory_path() -> str:
+    if sys.platform == "win32":
+        return "app.cli:_selector_event_loop_factory"
+    return "auto"
+
+
+def _backend_dir() -> Path:
+    cwd = Path.cwd()
+    if (cwd / "alembic.ini").is_file():
+        return cwd
+    return SOURCE_BACKEND_DIR
+
+
+def _repo_dir() -> Path:
+    """Return the repository root, which holds `.env`, `data/`, and `frontend/`."""
+    return _backend_dir().parent
+
+
+def _alembic_cfg() -> Config:
+    backend_dir = _backend_dir()
+    config = Config(str(backend_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_dir / "app" / "alembic"))
+    return config
+
+
+def db_upgrade(args: argparse.Namespace) -> None:
+    """Upgrade the database to the requested Alembic revision."""
+    command.upgrade(_alembic_cfg(), args.revision)
+
+
+def db_downgrade(args: argparse.Namespace) -> None:
+    """Downgrade the database to the requested Alembic revision."""
+    command.downgrade(_alembic_cfg(), args.revision)
+
+
+def db_revision(args: argparse.Namespace) -> None:
+    """Create a new Alembic migration revision."""
+    command.revision(
+        _alembic_cfg(),
+        message=args.message,
+        autogenerate=args.autogenerate,
+    )
+
+
+def db_current(_args: argparse.Namespace) -> None:
+    """Display the current database revision."""
+    command.current(_alembic_cfg(), verbose=True)
+
+
+def db_history(_args: argparse.Namespace) -> None:
+    """Display the database migration history."""
+    command.history(_alembic_cfg(), verbose=True)
+
+
+def db_stamp(args: argparse.Namespace) -> None:
+    """Stamp the database with the requested Alembic revision."""
+    command.stamp(_alembic_cfg(), args.revision)
+
+
+def serve(args: argparse.Namespace) -> None:
+    """Start the Lens API server."""
+    import uvicorn
+
+    from .api import create_app
+
+    uvicorn.run(
+        create_app(ui_static_dir=args.ui_static_dir),
+        host=args.host,
+        port=args.port,
+        loop=_uvicorn_loop_factory_path(),
+    )
+
+
+def dev(_args: argparse.Namespace) -> None:
+    """Start the API and UI development servers together."""
+    repo_dir = _repo_dir()
+    frontend_dir = repo_dir / "frontend"
+    if not frontend_dir.is_dir():
+        raise RuntimeError(f"Frontend directory does not exist: {frontend_dir}")
+
+    backend_host = "127.0.0.1"
+    backend_port = "18080"
+    frontend_port = "3000"  # keep in sync with server.port in frontend/vite.config.ts
+
+    backend = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "app.cli",
+            "serve",
+            "--host",
+            backend_host,
+            "--port",
+            backend_port,
+        ],
+        cwd=repo_dir,
+    )
+    # Vite proxies /api, /v1 and /v1beta to this target, so the backend port is
+    # defined here only; see frontend/vite.config.ts.
+    frontend_environment = {
+        **os.environ,
+        "LENS_DEV_BACKEND": f"http://{backend_host}:{backend_port}",
+    }
+    frontend_command = "pnpm dev" if os.name == "nt" else ["pnpm", "dev"]
+    frontend = subprocess.Popen(
+        frontend_command,
+        cwd=frontend_dir,
+        shell=os.name == "nt",
+        env=frontend_environment,
+    )
+
+    print(f"Lens dev UI: http://{backend_host}:{frontend_port}", flush=True)
+
+    processes = (backend, frontend)
+
+    def stop_processes() -> None:
+        if os.name == "nt":
+            for process in processes:
+                if process.poll() is None:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+            return
+
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline and any(
+            process.poll() is None for process in processes
+        ):
+            time.sleep(0.1)
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+
+    def handle_signal(signum: int, _frame: FrameType | None) -> None:
+        stop_processes()
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    try:
+        while True:
+            for process in processes:
+                return_code = process.poll()
+                if return_code is not None:
+                    raise SystemExit(return_code)
+            time.sleep(0.25)
+    finally:
+        stop_processes()
+
+
+def seed_admin(args: argparse.Namespace) -> None:
+    """Create the initial administrator when none exists."""
+    from .persistence.repositories import AdminRepository
+
+    password_file = Path(args.password_file) if args.password_file is not None else None
+    password = secrets.token_urlsafe(24) if args.generate_password else args.password
+    assert isinstance(password, str)
+
+    def publish_initial_password() -> None:
+        assert password_file is not None
+        _write_private_text(password_file, f"{password}\n")
+
+    async def _run() -> None:
+        engine = create_engine(settings.database_url)
+        session_factory = create_session_factory(engine)
+        store = AdminRepository(session_factory)
+        try:
+            created = await store.ensure_default_admin(
+                args.username,
+                password,
+                publish_initial_password=(
+                    publish_initial_password if password_file is not None else None
+                ),
+            )
+        finally:
+            await engine.dispose()
+        if created:
+            print(f"seeded admin: {args.username}")
+            if args.generate_password:
+                if password_file is not None:
+                    print(f"generated admin password written to: {password_file}")
+                else:
+                    print(f"generated admin password: {password}")
+        else:
+            print("admin user already exists; skipped seed")
+
+    asyncio.run(
+        _run(),
+        loop_factory=(
+            _selector_event_loop_factory if sys.platform == "win32" else None
+        ),
+    )
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Parse CLI arguments and dispatch the selected Lens command."""
+    parser = argparse.ArgumentParser(prog="lens", description="Lens CLI")
+    subparsers = parser.add_subparsers(dest="group")
+
+    db_parser = subparsers.add_parser("db", help="Database migration commands")
+    db_sub = db_parser.add_subparsers(dest="command")
+
+    upgrade_parser = db_sub.add_parser("upgrade", help="Upgrade database to a revision")
+    upgrade_parser.add_argument("revision", nargs="?", default="head")
+    upgrade_parser.set_defaults(func=db_upgrade)
+
+    down = db_sub.add_parser("downgrade", help="Downgrade database by a revision")
+    down.add_argument("revision", nargs="?", default="-1")
+    down.set_defaults(func=db_downgrade)
+
+    revision_parser = db_sub.add_parser(
+        "revision", help="Create a new migration revision"
+    )
+    revision_parser.add_argument(
+        "-m", "--message", required=True, help="Revision message"
+    )
+    revision_parser.add_argument(
+        "--autogenerate",
+        action="store_true",
+        default=True,
+        help="Auto-detect changes (default)",
+    )
+    revision_parser.add_argument(
+        "--no-autogenerate", dest="autogenerate", action="store_false"
+    )
+    revision_parser.set_defaults(func=db_revision)
+
+    current_parser = db_sub.add_parser("current", help="Show current revision")
+    current_parser.set_defaults(func=db_current)
+
+    history_parser = db_sub.add_parser("history", help="Show revision history")
+    history_parser.set_defaults(func=db_history)
+
+    stamp_parser = db_sub.add_parser(
+        "stamp", help="Stamp database with a revision without running migrations"
+    )
+    stamp_parser.add_argument("revision", nargs="?", default="head")
+    stamp_parser.set_defaults(func=db_stamp)
+
+    serve_parser = subparsers.add_parser("serve", help="Start the API server")
+    serve_parser.add_argument("--host", default="127.0.0.1", help="Listen host")
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=settings.port,
+        help="Listen port (default from LENS_PORT or 18080)",
+    )
+    serve_parser.add_argument(
+        "--ui-static-dir",
+        default="",
+        help="Serve the built UI from this directory",
+    )
+    serve_parser.set_defaults(func=serve)
+
+    dev_parser = subparsers.add_parser(
+        "dev", help="Start API and UI development servers"
+    )
+    dev_parser.set_defaults(func=dev)
+
+    seed_admin_parser = subparsers.add_parser(
+        "seed-admin", help="Create an initial admin user when none exists"
+    )
+    seed_admin_parser.add_argument("--username", required=True, help="Admin username")
+    password_group = seed_admin_parser.add_mutually_exclusive_group(required=True)
+    password_group.add_argument(
+        "--password",
+        type=_admin_password_argument,
+        help="Administrator password",
+    )
+    password_group.add_argument(
+        "--generate-password",
+        action="store_true",
+        help="Generate a secure random password for the initial admin",
+    )
+    seed_admin_parser.add_argument(
+        "--password-file",
+        help="Write a generated password to this file instead of standard output",
+    )
+    seed_admin_parser.set_defaults(func=seed_admin)
+
+    args = parser.parse_args(argv)
+
+    if (
+        args.group == "seed-admin"
+        and args.password_file is not None
+        and not args.generate_password
+    ):
+        seed_admin_parser.error("--password-file requires --generate-password")
+
+    if not hasattr(args, "func"):
+        if args.group == "db":
+            db_parser.print_help()
+        else:
+            parser.print_help()
+        sys.exit(1)
+
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
