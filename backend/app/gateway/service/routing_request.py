@@ -1,14 +1,60 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 from urllib.parse import urlsplit
 
+from ...core.model_name_parser import ParsedModelName
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
+from ...models.upstream_rules import ParamOverrideRule
 from .runtime_types import UpstreamRequestError
+
+
+def _apply_reasoning_intent(
+    channel: ChannelConfig, body: dict[str, Any], parsed: ParsedModelName | None
+) -> dict[str, Any]:
+    if parsed is None or not parsed.reasoning_explicit:
+        return body
+    if channel.protocol == ProtocolKind.OPENAI_CHAT:
+        body["reasoning_effort"] = parsed.reasoning_effort or str(
+            parsed.reasoning_budget
+        )
+    elif channel.protocol == ProtocolKind.OPENAI_RESPONSES:
+        body["reasoning"] = {
+            "effort": parsed.reasoning_effort or str(parsed.reasoning_budget)
+        }
+    elif channel.protocol == ProtocolKind.ANTHROPIC:
+        if parsed.reasoning_effort == "none":
+            body["thinking"] = {"type": "disabled"}
+        else:
+            effort = parsed.reasoning_effort
+            budget = parsed.reasoning_budget or {
+                "minimal": 1024,
+                "low": 2048,
+                "medium": 4096,
+                "high": 8192,
+                "xhigh": 16384,
+                "max": 32768,
+                "auto": 4096,
+            }.get(effort or "", 4096)
+            body["thinking"] = {"type": "enabled", "budget_tokens": budget}
+    elif channel.protocol == ProtocolKind.GEMINI:
+        budget = parsed.reasoning_budget or {
+            "minimal": 1024,
+            "low": 2048,
+            "medium": 4096,
+            "high": 8192,
+            "xhigh": 16384,
+            "max": 32768,
+            "auto": 4096,
+        }.get(parsed.reasoning_effort or "")
+        if budget is not None:
+            body.setdefault("generationConfig", {})["thinkingConfig"] = {
+                "thinkingBudget": budget
+            }
+    return body
 
 
 def _extract_request_reasoning_effort(
@@ -107,53 +153,60 @@ def _apply_glm_chat_reasoning_compat(
 
 
 def _apply_param_override(
-    body: dict[str, Any], raw_override: str, *, source: str
+    body: dict[str, Any], rules: list[ParamOverrideRule], *, source: str
 ) -> dict[str, Any]:
-    """Apply a validated parameter override from a routing layer."""
-    raw_override = raw_override.strip()
-    if not raw_override:
-        return body
-
-    try:
-        override = json.loads(raw_override)
-    except json.JSONDecodeError as exc:
-        raise UpstreamRequestError(
-            status_code=400,
-            detail=(
-                f"Invalid param override JSON for {source}: "
-                f"{exc.msg} at line {exc.lineno} column {exc.colno}"
-            ),
-            router_status_code=None,
-        ) from exc
-
-    if not isinstance(override, dict):
-        raise UpstreamRequestError(
-            status_code=400,
-            detail=f"Invalid param override for {source}: expected a JSON object",
-            router_status_code=None,
-        )
-    if "model" in override:
-        raise UpstreamRequestError(
-            status_code=400,
-            detail=(f"Invalid param override for {source}: model cannot be overridden"),
-            router_status_code=None,
-        )
-
-    return _deep_merge_json_objects(body, override)
+    """Apply parameter set/delete rules from a routing layer."""
+    merged = deepcopy(body)
+    for rule in rules:
+        if rule.path == "model":
+            raise UpstreamRequestError(
+                status_code=400,
+                detail=f"Invalid param override for {source}: model cannot be overridden",
+                router_status_code=None,
+            )
+        parts = rule.path.split(".")
+        parent: Any = merged
+        for part in parts[:-1]:
+            if isinstance(parent, dict):
+                if part not in parent or not isinstance(parent[part], (dict, list)):
+                    if rule.action == "delete":
+                        parent = None
+                        break
+                    parent[part] = {} if not part.isdigit() else []
+                parent = parent[part]
+            elif (
+                isinstance(parent, list) and part.isdigit() and int(part) < len(parent)
+            ):
+                parent = parent[int(part)]
+            else:
+                parent = None
+                break
+        if parent is None:
+            continue
+        leaf = parts[-1]
+        if isinstance(parent, dict):
+            if rule.action == "set":
+                parent[leaf] = deepcopy(rule.value)
+            else:
+                parent.pop(leaf, None)
+        elif isinstance(parent, list) and leaf.isdigit() and int(leaf) < len(parent):
+            if rule.action == "delete":
+                parent.pop(int(leaf))
+            elif rule.action == "set":
+                parent[int(leaf)] = deepcopy(rule.value)
+    return merged
 
 
 def _apply_global_param_override(
-    body: dict[str, Any],
-    config: Mapping[str, Any] | None,
+    body: dict[str, Any], config: Mapping[str, Any] | None
 ) -> dict[str, Any]:
-    """Apply the global parameter override."""
-    merged = dict(body)
     if not config:
-        return merged
-    global_override = config.get("global")
-    if isinstance(global_override, Mapping):
-        merged = _deep_merge_json_objects(merged, global_override)
-    return merged
+        return deepcopy(body)
+    return _apply_param_override(
+        body,
+        [ParamOverrideRule.model_validate(rule) for rule in config.get("rules", [])],
+        source="global settings",
+    )
 
 
 def _clean_reasoning_effort(value: Any) -> str | None:
