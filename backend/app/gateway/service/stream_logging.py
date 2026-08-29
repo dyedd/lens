@@ -220,11 +220,18 @@ async def _record_stream_route_health(
 
     status_code = capture.error_status_code if capture is not None else None
     category = capture.error_category if capture is not None else None
-    category = category or classify_error(status_code) or ErrorCategory.SERVER
+    cooldown_seconds = capture.error_cooldown_seconds if capture is not None else None
+    if category is None:
+        classification = classify_error(status_code)
+        if classification is not None:
+            category, _, classified_cooldown = classification
+            cooldown_seconds = cooldown_seconds or classified_cooldown
+    category = category or ErrorCategory.SERVER
     app_state.router.record_failure(
         channel.id,
         _format_channel_error(capture_issue),
         category=category,
+        cooldown_seconds=cooldown_seconds,
         credential_id=credential_id,
         model_name=model_name,
     )
