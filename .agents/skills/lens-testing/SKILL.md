@@ -16,14 +16,14 @@ Delete a test once the behavior it guarded is covered elsewhere, or once the fie
 ## Workflow
 
 1. Trace the affected HTTP path and decide whether it is a high-risk contract.
-2. Reuse the nearest area file under `tests/api/`, and the fixtures and helpers in `tests/conftest.py`.
+2. Reuse the nearest area file under `backend/tests/api/`, and the fixtures and helpers in `backend/tests/conftest.py`.
 3. If coverage is justified, add the smallest request-and-response behavior test.
 4. Format the touched files, then run the backend suite in parallel; narrow to one file only to debug a single failure.
 5. Let CI repeat the backend suite and run the frontend lint, type check, and build.
 
 ## Conventions
 
-One file per area, named `tests/api/test_<area>_api.py`. Name each test after the behavior it asserts, and separate arrange, act, and assert with blank lines.
+One file per area, named `backend/tests/api/test_<area>_api.py`. Name each test after the behavior it asserts, and separate arrange, act, and assert with blank lines.
 
 - Drive every test through the `client` fixture. A test that bypasses HTTP, by calling a service function directly or by hand-building a `Request`, is testing an implementation detail.
 - Build state through the admin API with the shared fixtures `admin_headers`, `create_site`, `create_model_group`, `create_gateway_key`, and `create_site_group_and_key`. Import helpers with `from conftest import ...`: `valid_site_payload`, `gateway_headers`, `openai_chat_channel_id`, `seed_request_log`, `assert_error`, and `json_response`.
@@ -36,13 +36,14 @@ One file per area, named `tests/api/test_<area>_api.py`. Name each test after th
 
 ## Commands
 
-Call every backend tool through `uv run --no-sync`, so it comes from the `dev` extra instead of a global install.
+Call every backend tool through `uv run --no-sync`, so it comes from the `dev` dependency group instead of a global install. Run every command from the repository root, not from `backend/`.
 
-- Format touched files: `uv run --no-sync black <paths>`
-- Backend suite: `uv run --no-sync python -m pytest tests/api -q --confcutdir=tests -n auto --dist worksteal`
-- One file, while debugging: `uv run --no-sync python -m pytest tests/api/test_<area>_api.py -q --confcutdir=tests`
-- Frontend checks: `pnpm lint`, `pnpm exec tsc --noEmit`, and `pnpm build`
+- Format and lint touched files: `uv run --no-sync ruff format <paths>` then `uv run --no-sync ruff check --fix <paths>`
+- Local pre-commit formatting: `uv run --no-sync prek install -f`, then `uv run --no-sync prek run --all-files`
+- Backend suite: `uv run --no-sync python -m pytest backend/tests/api -q --confcutdir=backend/tests -n auto --dist worksteal`
+- One file, while debugging: `uv run --no-sync python -m pytest backend/tests/api/test_<area>_api.py -q --confcutdir=backend/tests`
+- Frontend checks: `pnpm format` for local fixes, then `pnpm lint`, `pnpm exec tsc --noEmit`, and `pnpm build`
 
-`pytest-xdist` and `black` ship in the `dev` extra; install them with `uv sync --extra dev --locked`. With a package index mirror configured, `--locked` misreports lockfile drift, so use `uv sync --extra dev --frozen` and do not run `uv lock`, which would rewrite every URL in `uv.lock` to the mirror.
+`pytest-xdist` and `ruff` ship in the `dev` dependency group; install them with `uv sync --locked`. With a package index mirror configured, `--locked` misreports lockfile drift, so use `uv sync --frozen`.
 
 Do not add another test runner or a custom parallel harness.

@@ -36,7 +36,7 @@ jobs:
           from pathlib import Path
 
           base_version = sys.argv[1]
-          version_path = Path("lens_api/__init__.py")
+          version_path = Path("backend/app/__init__.py")
           source = version_path.read_text(encoding="utf-8")
           match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', source)
           if match is None:
@@ -72,10 +72,10 @@ jobs:
           PY
           )"
 
-          if ! git diff --quiet -- lens_api/__init__.py; then
+          if ! git diff --quiet -- backend/app/__init__.py; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add lens_api/__init__.py
+            git add backend/app/__init__.py
             git commit -m "chore: 更新版本号至 ${next_version}"
             git push origin HEAD:refs/heads/dev
           fi

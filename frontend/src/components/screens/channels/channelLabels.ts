@@ -1,0 +1,79 @@
+import { formatCredentialDisplayName } from "@/lib/credentialLabels";
+import { safeText } from "./channelFormUtils";
+
+/** Builds the fallback persisted name for a credential. */
+export function fallbackCredentialName(index: number) {
+  return `Key ${index + 1}`;
+}
+
+/** Formats a positional credential label for the requested locale. */
+export function credentialIndexLabel(index: number, locale: string) {
+  return locale === "zh-CN" ? `密钥 ${index + 1}` : `Key ${index + 1}`;
+}
+
+/** Returns a credential name or its localized positional fallback. */
+export function credentialLabel(
+  item: { name: string },
+  index: number,
+  locale: string,
+) {
+  return formatCredentialDisplayName(item.name, index + 1, locale);
+}
+
+/** Formats a positional base URL label for the requested locale. */
+export function baseUrlIndexLabel(index: number, locale: string) {
+  return locale === "zh-CN" ? `地址 ${index + 1}` : `URL ${index + 1}`;
+}
+
+/** Returns a base URL name or its localized positional fallback. */
+export function baseUrlLabel(
+  item: { name: string },
+  index: number,
+  locale: string,
+) {
+  const name = item.name.trim();
+  if (name) return name;
+  return baseUrlIndexLabel(index, locale);
+}
+
+/** Builds a localized default name for a protocol configuration. */
+export function defaultProtocolConfigName(index: number, locale: string) {
+  return locale === "zh-CN"
+    ? `协议配置 ${index + 1}`
+    : `Protocol config ${index + 1}`;
+}
+
+/** Returns a protocol configuration name or its localized fallback. */
+export function protocolConfigDisplayName(
+  item: { name?: string | null },
+  index: number,
+  locale: string,
+) {
+  const name = safeText(item.name).trim();
+  return name || defaultProtocolConfigName(index, locale);
+}
+
+/** Finds the next unused localized protocol configuration name. */
+export function nextProtocolConfigName(
+  protocolConfigs: Array<{ name?: string | null }>,
+  locale: string,
+) {
+  const usedNames = new Set(
+    protocolConfigs
+      .map((item, index) =>
+        protocolConfigDisplayName(item, index, locale).toLowerCase(),
+      )
+      .filter(Boolean),
+  );
+  for (
+    let index = protocolConfigs.length;
+    index < protocolConfigs.length + 1000;
+    index += 1
+  ) {
+    const candidate = defaultProtocolConfigName(index, locale);
+    if (!usedNames.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+  return defaultProtocolConfigName(protocolConfigs.length, locale);
+}
