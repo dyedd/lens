@@ -15,7 +15,11 @@ from .runtime_types import RoutingPlan, _GatewayTimeoutError
 
 
 async def _resolve_routing_plan(
-    protocol: ProtocolKind, requested_model: str, channels: list[ChannelConfig]
+    protocol: ProtocolKind,
+    requested_model: str,
+    channels: list[ChannelConfig],
+    *,
+    parsed_model: object | None = None,
 ) -> RoutingPlan:
     matched_group = await app_state.group_repo.find_group_by_name(
         protocol.value, requested_model, channels=channels
@@ -76,6 +80,7 @@ async def _resolve_routing_plan(
         route_targets=route_targets,
         use_model_matching=False,
         cursor_key=f"{protocol.value}:{resolved_group.id}",
+        parsed_model=parsed_model,
     )
 
 
