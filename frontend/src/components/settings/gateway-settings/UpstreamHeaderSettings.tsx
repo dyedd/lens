@@ -12,15 +12,13 @@ export function UpstreamHeaderSettings({
   onRemoveGlobalHeader,
 }: UpstreamHeaderSettingsProps) {
   return (
-    <div className="flex flex-col gap-5 rounded-lg border bg-muted/20 p-4">
-      <HeaderRows
-        title={titleForLocale(locale, "全局请求头", "Global headers")}
-        headers={config.rules}
-        locale={locale}
-        onAdd={onAddGlobalHeader}
-        onUpdate={onUpdateGlobalHeader}
-        onRemove={onRemoveGlobalHeader}
-      />
-    </div>
+    <HeaderRows
+      title={titleForLocale(locale, "全局请求头", "Global headers")}
+      headers={config.rules}
+      locale={locale}
+      onAdd={onAddGlobalHeader}
+      onUpdate={onUpdateGlobalHeader}
+      onRemove={onRemoveGlobalHeader}
+    />
   );
 }

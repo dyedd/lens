@@ -20,9 +20,15 @@ async def _resolve_routing_plan(
     channels: list[ChannelConfig],
     *,
     parsed_model: object | None = None,
+    group_id: str | None = None,
+    requested_group_name: str | None = None,
 ) -> RoutingPlan:
-    matched_group = await app_state.group_repo.find_group_by_name(
-        protocol.value, requested_model, channels=channels
+    matched_group = (
+        await app_state.group_repo.get_group(group_id, channels=channels)
+        if group_id is not None
+        else await app_state.group_repo.find_group_by_name(
+            protocol.value, requested_model, channels=channels
+        )
     )
     if matched_group is None or protocol not in matched_group.client_protocols:
         raise LookupError(f"No model group matched {requested_model}")
@@ -72,7 +78,7 @@ async def _resolve_routing_plan(
             target for targets in targets_by_site.values() for target in targets
         ]
     return RoutingPlan(
-        requested_group_name=matched_group.name,
+        requested_group_name=requested_group_name or matched_group.name,
         resolved_group_name=resolved_group.name,
         requested_group=matched_group,
         resolved_group=resolved_group,
@@ -81,6 +87,7 @@ async def _resolve_routing_plan(
         use_model_matching=False,
         cursor_key=f"{protocol.value}:{resolved_group.id}",
         parsed_model=parsed_model,
+        fallback_group_ids=list(matched_group.fallback_group_ids),
     )
 
 

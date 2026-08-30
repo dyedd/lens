@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping, Sequence
 from time import perf_counter
 from typing import Any
 
 import httpx
 from fastapi import HTTPException, Request
 
+from ...core.upstream_rules import (
+    RuleEvaluationError,
+    apply_param_rules,
+    param_rule_layers,
+)
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
 from ...models.sites import SiteModelTestRequest, SiteModelTestResult
@@ -18,8 +24,7 @@ from ..upstream_request import (
 from .app_state import app_state
 from .payload_serialization import _decode_content_bytes
 from .routing_plan import _elapsed_ms, _gateway_timeout_scope
-from .routing_request import _apply_param_override
-from .runtime_types import UpstreamRequestError, _GatewayTimeoutError, _RequestDeadline
+from .runtime_types import _GatewayTimeoutError, _RequestDeadline
 from .site_model_output import (
     extract_site_model_output,
     extract_site_model_stream_output,
@@ -58,12 +63,23 @@ def _site_model_probe_channel(payload: SiteModelTestRequest) -> ChannelConfig:
 
 
 async def run_site_model_probe(
-    payload: SiteModelTestRequest, request: Request
+    payload: SiteModelTestRequest,
+    request: Request,
+    *,
+    model_group_headers: Sequence[Any] = (),
+    model_group_param_override: Sequence[Any] = (),
 ) -> SiteModelTestResult:
     """Run a model probe while honoring request disconnects."""
     channel = _site_model_probe_channel(payload)
+    runtime = await app_state.settings_repo.get_runtime_settings()
     body = _site_model_probe_body(payload)
-    prepared_body = _apply_site_model_probe_param_override(channel, body, payload)
+    prepared_body = _apply_site_model_probe_param_override(
+        channel,
+        body,
+        payload,
+        runtime["upstream_param_override_config"],
+        model_group_param_override=model_group_param_override,
+    )
     if isinstance(prepared_body, SiteModelTestResult):
         return prepared_body
     return await _call_site_model_probe_for_request(
@@ -72,6 +88,8 @@ async def run_site_model_probe(
         body=prepared_body,
         model_name=payload.model_name,
         credential_id=payload.credential.id,
+        runtime=runtime,
+        model_group_headers=model_group_headers,
     )
 
 
@@ -82,6 +100,8 @@ async def _call_site_model_probe_for_request(
     body: dict[str, Any],
     model_name: str,
     credential_id: str,
+    runtime: Mapping[str, Any],
+    model_group_headers: Sequence[Any],
 ) -> SiteModelTestResult:
     probe_task = asyncio.create_task(
         _call_site_model_probe_channel(
@@ -89,6 +109,8 @@ async def _call_site_model_probe_for_request(
             body=body,
             model_name=model_name,
             credential_id=credential_id,
+            runtime=runtime,
+            model_group_headers=model_group_headers,
         )
     )
     disconnect_task = asyncio.create_task(_wait_for_request_disconnect(request))
@@ -125,14 +147,16 @@ async def _call_site_model_probe_channel(
     body: dict[str, Any],
     model_name: str,
     credential_id: str,
+    runtime: Mapping[str, Any],
+    model_group_headers: Sequence[Any],
 ) -> SiteModelTestResult:
-    runtime = await app_state.settings_repo.get_runtime_settings()
     upstream = build_upstream_request(
         channel,
         body,
         credential_id=credential_id,
         user_agent=_default_lens_user_agent(),
         upstream_headers_config=runtime["upstream_headers_config"],
+        model_group_headers=list(model_group_headers),
     )
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client = _resolve_http_client(proxy_url)
@@ -288,28 +312,36 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
 
 
 def _apply_site_model_probe_param_override(
-    channel: ChannelConfig, body: dict[str, Any], payload: SiteModelTestRequest
+    channel: ChannelConfig,
+    body: dict[str, Any],
+    payload: SiteModelTestRequest,
+    global_config: Mapping[str, Any] | None,
+    *,
+    model_group_param_override: Sequence[Any] = (),
 ) -> dict[str, Any] | SiteModelTestResult:
     try:
-        prepared_body = _apply_param_override(
+        prepared_body = apply_param_rules(
             body,
-            channel.param_override,
-            source=f"channel {channel.name}",
+            param_rule_layers(
+                global_config,
+                channel_rules=channel.param_override,
+                model_group_rules=model_group_param_override,
+            ),
         )
-    except UpstreamRequestError as exc:
+    except RuleEvaluationError as exc:
         return SiteModelTestResult(
             success=False,
-            status_code=exc.status_code,
+            status_code=400,
             latency_ms=0,
             model_name=payload.model_name,
             credential_id=payload.credential.id,
-            error_message=_format_channel_error(exc.detail),
+            error_message=_format_channel_error(str(exc)),
         )
-    if payload.protocol in (
+    if payload.protocol in {
         ProtocolKind.OPENAI_EMBEDDING,
         ProtocolKind.OPENAI_IMAGE,
         ProtocolKind.RERANK,
-    ):
+    }:
         prepared_body.pop("stream", None)
     else:
         prepared_body["stream"] = False

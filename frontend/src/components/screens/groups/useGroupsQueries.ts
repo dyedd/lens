@@ -65,7 +65,12 @@ export function useGroupsQueries({
   const routeTargetOptions = useMemo(
     () =>
       (groupsQuery.data ?? [])
-        .filter((group) => !group.route_group_id && group.id !== editingId)
+        .filter(
+          (group) =>
+            !group.route_group_id &&
+            group.id !== editingId &&
+            group.items.some((item) => item.enabled && item.state === "ready"),
+        )
         .sort((left, right) => left.name.localeCompare(right.name, locale)),
     [editingId, groupsQuery.data, locale],
   );

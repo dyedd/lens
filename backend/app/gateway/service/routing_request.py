@@ -8,8 +8,6 @@ from urllib.parse import urlsplit
 from ...core.model_name_parser import ParsedModelName
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
-from ...models.upstream_rules import ParamOverrideRule
-from .runtime_types import UpstreamRequestError
 
 
 def _apply_reasoning_intent(
@@ -150,63 +148,6 @@ def _apply_glm_chat_reasoning_compat(
         if thinking_type in {"enabled", "disabled"}:
             body["thinking"] = {"type": thinking_type}
     return body
-
-
-def _apply_param_override(
-    body: dict[str, Any], rules: list[ParamOverrideRule], *, source: str
-) -> dict[str, Any]:
-    """Apply parameter set/delete rules from a routing layer."""
-    merged = deepcopy(body)
-    for rule in rules:
-        if rule.path == "model":
-            raise UpstreamRequestError(
-                status_code=400,
-                detail=f"Invalid param override for {source}: model cannot be overridden",
-                router_status_code=None,
-            )
-        parts = rule.path.split(".")
-        parent: Any = merged
-        for part in parts[:-1]:
-            if isinstance(parent, dict):
-                if part not in parent or not isinstance(parent[part], (dict, list)):
-                    if rule.action == "delete":
-                        parent = None
-                        break
-                    parent[part] = {} if not part.isdigit() else []
-                parent = parent[part]
-            elif (
-                isinstance(parent, list) and part.isdigit() and int(part) < len(parent)
-            ):
-                parent = parent[int(part)]
-            else:
-                parent = None
-                break
-        if parent is None:
-            continue
-        leaf = parts[-1]
-        if isinstance(parent, dict):
-            if rule.action == "set":
-                parent[leaf] = deepcopy(rule.value)
-            else:
-                parent.pop(leaf, None)
-        elif isinstance(parent, list) and leaf.isdigit() and int(leaf) < len(parent):
-            if rule.action == "delete":
-                parent.pop(int(leaf))
-            elif rule.action == "set":
-                parent[int(leaf)] = deepcopy(rule.value)
-    return merged
-
-
-def _apply_global_param_override(
-    body: dict[str, Any], config: Mapping[str, Any] | None
-) -> dict[str, Any]:
-    if not config:
-        return deepcopy(body)
-    return _apply_param_override(
-        body,
-        [ParamOverrideRule.model_validate(rule) for rule in config.get("rules", [])],
-        source="global settings",
-    )
 
 
 def _clean_reasoning_effort(value: Any) -> str | None:

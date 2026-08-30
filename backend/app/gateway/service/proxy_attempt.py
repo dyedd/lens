@@ -8,6 +8,11 @@ from typing import Any
 from fastapi import HTTPException, Response
 from starlette.background import BackgroundTask
 
+from ...core.upstream_rules import (
+    RuleEvaluationError,
+    apply_param_rules,
+    param_rule_layers,
+)
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from ..converters import convert_request
 from ..router import RouteTarget
@@ -28,8 +33,6 @@ from .routing_plan import (
 from .routing_request import (
     _apply_deepseek_thinking_compat,
     _apply_glm_chat_reasoning_compat,
-    _apply_global_param_override,
-    _apply_param_override,
     _apply_reasoning_intent,
     _extract_request_reasoning_effort,
     _is_deepseek_thinking_target,
@@ -191,25 +194,40 @@ async def _try_target(
         if target.model_name:
             upstream_body["model"] = target.model_name
     try:
-        upstream_body = _apply_global_param_override(
+        upstream_body = apply_param_rules(
             upstream_body,
-            runtime["upstream_param_override_config"],
+            param_rule_layers(
+                runtime["upstream_param_override_config"],
+                channel_rules=channel.param_override,
+                model_group_rules=(
+                    plan.requested_group.param_override
+                    if plan.requested_group is not None
+                    else ()
+                ),
+            ),
         )
-        upstream_body = _apply_param_override(
-            upstream_body,
-            channel.param_override,
-            source=f"channel {channel.name}",
-        )
-        if plan.requested_group is not None:
-            upstream_body = _apply_param_override(
-                upstream_body,
-                plan.requested_group.param_override,
-                source=f"model group {plan.requested_group.name}",
-            )
         upstream_body = _apply_deepseek_thinking_compat(channel, upstream_body)
         upstream_body = _apply_glm_chat_reasoning_compat(channel, upstream_body, body)
         upstream_body = _apply_reasoning_intent(
             channel, upstream_body, plan.parsed_model
+        )
+    except RuleEvaluationError as exc:
+        return await _record_target_failure(
+            target=target,
+            runtime=runtime,
+            log_ctx=log_ctx,
+            plan=plan,
+            errors=errors,
+            failure_status_codes=failure_status_codes,
+            attempt_started_at=attempt_started_at,
+            effective_user_agent=upstream_user_agent,
+            upstream_body=upstream_body,
+            exc=UpstreamRequestError(
+                status_code=400,
+                detail=str(exc),
+                router_status_code=None,
+            ),
+            attempt=attempt,
         )
     except UpstreamRequestError as exc:
         return await _record_target_failure(

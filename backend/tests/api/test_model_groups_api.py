@@ -190,6 +190,36 @@ def test_model_group_crud_round_trip(client, admin_headers, create_model_group) 
     assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
 
 
+def test_model_group_fallback_groups_round_trip(
+    client, admin_headers, create_model_group
+) -> None:
+    primary = create_model_group(name="primary")
+    fallback = create_model_group(name="fallback")
+
+    response = client.put(
+        f"/api/admin/model-groups/{primary['id']}",
+        headers=admin_headers,
+        json={"fallback_group_ids": [fallback["id"]]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["fallback_group_ids"] == [fallback["id"]]
+
+
+def test_model_group_rejects_missing_fallback_group(
+    client, admin_headers, create_model_group
+) -> None:
+    group = create_model_group(name="primary")
+
+    response = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"fallback_group_ids": ["missing"]},
+    )
+
+    assert_error(response, 400, "Fallback model group not found")
+
+
 def test_model_group_derives_client_protocols_from_member(
     client, admin_headers, create_site
 ) -> None:

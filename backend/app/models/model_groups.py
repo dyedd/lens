@@ -12,6 +12,22 @@ from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import StrictBaseModel, _validate_regex_pattern
 
 
+def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | None:
+    if value is None:
+        return None
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        group_id = item.strip()
+        if not group_id:
+            raise ValueError("Fallback model group ids must not be empty")
+        if group_id in seen:
+            raise ValueError(f"Duplicate fallback model group id: {group_id}")
+        seen.add(group_id)
+        result.append(group_id)
+    return result
+
+
 class ModelGroupItemState(str, Enum):
     READY = "ready"
     DISABLED = "disabled"
@@ -39,6 +55,7 @@ class ModelGroup(StrictBaseModel):
     sync_filter_query: str = ""
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
+    fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
     input_price_per_million: float = 0.0
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
@@ -52,6 +69,9 @@ class ModelGroup(StrictBaseModel):
     )
     _canonicalize_headers = field_validator("headers")(
         lambda value: [HeaderRule.model_validate(item) for item in value]
+    )
+    _validate_fallback_group_ids = field_validator("fallback_group_ids")(
+        lambda value: _canonicalize_fallback_group_ids(value)
     )
 
     @model_validator(mode="after")
@@ -107,6 +127,7 @@ class ModelGroupCreate(StrictBaseModel):
     sync_filter_query: str = ""
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
+    fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
     items: list[ModelGroupItemInput] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(
@@ -114,6 +135,9 @@ class ModelGroupCreate(StrictBaseModel):
     )
     _canonicalize_headers = field_validator("headers")(
         lambda value: [HeaderRule.model_validate(item) for item in value]
+    )
+    _validate_fallback_group_ids = field_validator("fallback_group_ids")(
+        lambda value: _canonicalize_fallback_group_ids(value)
     )
 
     @model_validator(mode="after")
@@ -136,6 +160,7 @@ class ModelGroupUpdate(StrictBaseModel):
     sync_filter_query: str | None = None
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None
+    fallback_group_ids: list[str] | None = Field(default=None, max_length=20)
     items: list[ModelGroupItemInput] | None = None
 
     _canonicalize_headers = field_validator("headers")(

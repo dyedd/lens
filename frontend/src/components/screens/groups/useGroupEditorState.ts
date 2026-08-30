@@ -86,6 +86,7 @@ export function useGroupEditorState() {
       route_group_id: routeGroupId,
       sync_filter_mode: routeGroupId ? "" : current.sync_filter_mode,
       sync_filter_query: routeGroupId ? "" : current.sync_filter_query,
+      fallback_group_ids: routeGroupId ? [] : current.fallback_group_ids,
     }));
     setExpandedChannels([]);
   }

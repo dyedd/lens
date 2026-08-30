@@ -11,8 +11,9 @@ from .validation import StrictBaseModel, _validate_regex_pattern
 class HeaderRuleMatch(StrictBaseModel):
     path_regex: str | None = None
     model_regex: str | None = None
+    protocol_regex: str | None = None
 
-    @field_validator("path_regex", "model_regex")
+    @field_validator("path_regex", "model_regex", "protocol_regex")
     @classmethod
     def validate_regex(cls, value: str | None) -> str | None:
         if value is None:

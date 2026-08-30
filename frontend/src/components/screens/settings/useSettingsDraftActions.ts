@@ -1,7 +1,11 @@
 import { type Dispatch, type SetStateAction, useCallback } from "react";
-
+import type {
+  HeaderRuleDraft,
+  UpstreamHeadersDraft,
+} from "@/lib/upstreamRules";
 import type { SettingsDraft } from "./settingsDraft";
-import type { HeaderItem, UpstreamHeadersDraft } from "./upstreamHeaderConfig";
+
+type HeaderItem = HeaderRuleDraft;
 
 /** Provide stable immutable update actions for a settings draft. */
 export function useSettingsDraftActions(

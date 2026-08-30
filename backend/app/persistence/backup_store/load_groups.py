@@ -121,6 +121,7 @@ async def _load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                         HeaderRule.model_validate(item)
                         for item in json.loads(row.headers_json)
                     ],
+                    "fallback_group_ids": json.loads(row.fallback_group_ids_json),
                     "input_price_per_million": (
                         price.input_price_per_million if price is not None else 0.0
                     ),

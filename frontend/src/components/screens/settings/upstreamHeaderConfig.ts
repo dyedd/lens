@@ -1,19 +1,17 @@
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
+import {
+  EMPTY_HEADER_RULE,
+  type HeaderRuleDraft,
+  headerDraftToRules,
+  type UpstreamHeadersDraft,
+} from "@/lib/upstreamRules";
 
 import { isRecord, parseJsonObject } from "./upstreamConfigUtils";
 
-export type HeaderItem = {
-  key: string;
-  value: string;
-  action: "remove" | "override" | "append";
-};
-export interface UpstreamHeadersDraft {
-  rules: HeaderItem[];
-}
+export type HeaderItem = HeaderRuleDraft;
+export type { UpstreamHeadersDraft };
 
-const EMPTY_HEADERS: HeaderItem[] = [
-  { key: "", value: "", action: "override" },
-];
+const EMPTY_HEADERS: HeaderItem[] = [EMPTY_HEADER_RULE];
 
 export function parseHeaderRows(value: unknown): HeaderItem[] {
   if (!Array.isArray(value)) return [...EMPTY_HEADERS];
@@ -32,13 +30,7 @@ export function parseHeaderRows(value: unknown): HeaderItem[] {
 }
 
 export function headersToRules(headers: HeaderItem[]) {
-  return headers
-    .filter((item) => item.key.trim())
-    .map((item) => ({
-      name: item.key.trim(),
-      action: item.action,
-      value: item.action === "remove" ? item.value.trim() : item.value,
-    }));
+  return headerDraftToRules(headers);
 }
 
 function hasHeaderValueWithoutKey(headers: HeaderItem[]) {

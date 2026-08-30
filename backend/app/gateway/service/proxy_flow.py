@@ -79,11 +79,18 @@ async def _resolve_proxy_route(
     upstream_user_agent: str,
     is_stream_body: bool,
     parsed_model: object | None = None,
+    group_id: str | None = None,
+    requested_group_name: str | None = None,
 ) -> tuple[RoutingPlan | None, RouteSelection | None, JSONResponse | None]:
     plan: RoutingPlan | None = None
     try:
         plan = await _resolve_routing_plan(
-            protocol, requested_model, channels, parsed_model=parsed_model
+            protocol,
+            requested_model,
+            channels,
+            parsed_model=parsed_model,
+            group_id=group_id,
+            requested_group_name=requested_group_name,
         )
         selection = app_state.router.select(
             channels,
@@ -225,9 +232,6 @@ async def _proxy_protocol(
             message=str(exc),
         )
     requested_model = parsed_model.base_model
-    if body_has_multimodal_content(body, protocol):
-        fallback_map = runtime.get("multimodal_fallback", {})
-        requested_model = fallback_map.get(requested_model, requested_model)
 
     log_ctx = await _create_pending_proxy_log_context(
         protocol=protocol,
@@ -270,6 +274,7 @@ async def _proxy_protocol(
             upstream_user_agent=upstream_user_agent,
             is_stream_body=is_stream_body,
             parsed_model=parsed_model,
+            requested_group_name=original_requested_model,
         )
         if routing_error is not None:
             return routing_error
@@ -278,46 +283,75 @@ async def _proxy_protocol(
 
         errors: list[str] = []
         failure_status_codes: list[int | None] = []
-        for target in [selection.primary, *selection.fallbacks]:
-            if deadline.is_first_token_expired():
-                timeout_message = deadline.timeout_message(kind="first_token")
-                await log_ctx.update(
-                    requested_group_name=plan.requested_group_name,
-                    resolved_group_name=plan.resolved_group_name,
-                    upstream_model_name=None,
-                    channel=None,
-                    user_agent=upstream_user_agent,
-                    lifecycle_status=RequestLogLifecycleStatus.FAILED,
-                    status_code=504,
-                    success=False,
-                    is_stream=is_stream_body,
-                    error_message=timeout_message,
-                )
-                return _protocol_error_response(
+        route_plans = [(plan, selection)]
+        seen_group_ids = {plan.resolved_group.id if plan.resolved_group else ""}
+        if body_has_multimodal_content(body, protocol):
+            for fallback_group_id in plan.fallback_group_ids:
+                if fallback_group_id in seen_group_ids:
+                    continue
+                seen_group_ids.add(fallback_group_id)
+                (
+                    fallback_plan,
+                    fallback_selection,
+                    fallback_error,
+                ) = await _resolve_proxy_route(
+                    channels=channels,
                     protocol=protocol,
-                    status_code=504,
-                    error_type="gateway_timeout",
-                    message=timeout_message,
+                    requested_model=requested_model,
+                    log_ctx=log_ctx,
+                    upstream_user_agent=upstream_user_agent,
+                    is_stream_body=is_stream_body,
+                    parsed_model=parsed_model,
+                    group_id=fallback_group_id,
+                    requested_group_name=original_requested_model,
                 )
-            if not app_state.router.is_target_available(target):
-                continue
-            response = await _try_target(
-                target=target,
-                protocol=protocol,
-                body=body,
-                runtime=runtime,
-                upstream_user_agent=upstream_user_agent,
-                inbound_headers=inbound_headers,
-                plan=plan,
-                log_ctx=log_ctx,
-                errors=errors,
-                failure_status_codes=failure_status_codes,
-                deadline=deadline,
-                path_suffix=path_suffix,
-                multipart_files=multipart_files,
-            )
-            if response is not None:
-                return response
+                if fallback_error is not None:
+                    errors.append(fallback_error.body.decode(errors="replace"))
+                    failure_status_codes.append(fallback_error.status_code)
+                    continue
+                if fallback_plan is not None and fallback_selection is not None:
+                    route_plans.append((fallback_plan, fallback_selection))
+        for current_plan, current_selection in route_plans:
+            for target in [current_selection.primary, *current_selection.fallbacks]:
+                if deadline.is_first_token_expired():
+                    timeout_message = deadline.timeout_message(kind="first_token")
+                    await log_ctx.update(
+                        requested_group_name=current_plan.requested_group_name,
+                        resolved_group_name=current_plan.resolved_group_name,
+                        upstream_model_name=None,
+                        channel=None,
+                        user_agent=upstream_user_agent,
+                        lifecycle_status=RequestLogLifecycleStatus.FAILED,
+                        status_code=504,
+                        success=False,
+                        is_stream=is_stream_body,
+                        error_message=timeout_message,
+                    )
+                    return _protocol_error_response(
+                        protocol=protocol,
+                        status_code=504,
+                        error_type="gateway_timeout",
+                        message=timeout_message,
+                    )
+                if not app_state.router.is_target_available(target):
+                    continue
+                response = await _try_target(
+                    target=target,
+                    protocol=protocol,
+                    body=body,
+                    runtime=runtime,
+                    upstream_user_agent=upstream_user_agent,
+                    inbound_headers=inbound_headers,
+                    plan=current_plan,
+                    log_ctx=log_ctx,
+                    errors=errors,
+                    failure_status_codes=failure_status_codes,
+                    deadline=deadline,
+                    path_suffix=path_suffix,
+                    multipart_files=multipart_files,
+                )
+                if response is not None:
+                    return response
 
         failed_status_code, failed_error_type, failed_message = _final_upstream_failure(
             errors, failure_status_codes

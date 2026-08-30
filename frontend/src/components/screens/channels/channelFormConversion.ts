@@ -1,8 +1,13 @@
-import type { HeaderRule, ParamOverrideRule } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Site, SitePayload } from "@/lib/api/sites";
 import { isGeneratedCredentialName } from "@/lib/credentialLabels";
 import type { Locale } from "@/lib/I18nContext";
+import {
+  headerDraftToRules,
+  headerRulesToDraft,
+  paramOverrideDraftToRules,
+  paramOverrideRulesToDraft,
+} from "@/lib/upstreamRules";
 import { createLocalId } from "./channelDefaults";
 import {
   canonicalizeCredentialIds,
@@ -19,17 +24,10 @@ import {
 } from "./channelModelUtils";
 import type { FormState } from "./channelTypes";
 
-function parseRuleValue(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-/** Converts a persisted site into channel editor state. */
-export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
+/** Converts a persisted site into channel editor state. */ export function toForm(
+  site: Site,
+  locale: Locale = "zh-CN",
+): FormState {
   const baseUrls = site.base_urls.length
     ? site.base_urls.map((item) => ({
         id: item.id,
@@ -88,18 +86,12 @@ export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
             locale,
           ),
           enabled: protocolConfig.enabled,
-          headers: protocolConfig.headers.map((rule) => ({
-            key: rule.name,
-            value: rule.value,
-            action: rule.action,
-          })),
+          headers: headerRulesToDraft(protocolConfig.headers),
           proxy_mode: protocolConfig.proxy_mode,
           channel_proxy: protocolConfig.channel_proxy,
-          param_override: protocolConfig.param_override.map((rule) => ({
-            path: rule.path,
-            action: rule.action,
-            value: rule.value === undefined ? "" : JSON.stringify(rule.value),
-          })),
+          param_override: paramOverrideRulesToDraft(
+            protocolConfig.param_override,
+          ),
           model_filter: "",
           sync_new_models: false,
           manual_model_name: "",
@@ -202,24 +194,12 @@ export function toPayload(form: FormState): SitePayload {
         name: protocolConfig.name.trim(),
         protocols: protocolConfigProtocols,
         enabled: protocolConfig.enabled,
-        headers: protocolConfig.headers
-          .filter((entry) => entry.key.trim())
-          .map((entry) => ({
-            name: entry.key.trim(),
-            action: entry.action,
-            value: entry.value,
-          })),
+        headers: headerDraftToRules(protocolConfig.headers),
         proxy_mode: protocolConfig.proxy_mode,
         channel_proxy: protocolConfig.channel_proxy.trim(),
-        param_override: protocolConfig.param_override
-          .filter((rule) => rule.path.trim())
-          .map((rule) => ({
-            path: rule.path.trim(),
-            action: rule.action,
-            ...(rule.action === "set"
-              ? { value: parseRuleValue(rule.value) }
-              : {}),
-          })),
+        param_override: paramOverrideDraftToRules(
+          protocolConfig.param_override,
+        ),
         base_url_id: protocolConfig.base_url_id,
         credential_ids: selectedCredentialIds,
         sync_targets: syncTargets,

@@ -4,7 +4,11 @@ export type HeaderRule = {
   name: string;
   action: "remove" | "override" | "append";
   value: string;
-  match?: { path_regex?: string | null; model_regex?: string | null } | null;
+  match?: {
+    path_regex?: string | null;
+    model_regex?: string | null;
+    protocol_regex?: string | null;
+  } | null;
 };
 export type ParamOverrideRule = {
   path: string;
@@ -57,6 +61,7 @@ export type ModelGroup = {
   sync_filter_query: string;
   param_override: ParamOverrideRule[];
   headers: HeaderRule[];
+  fallback_group_ids?: string[];
   input_price_per_million: number;
   output_price_per_million: number;
   cache_read_price_per_million: number;
@@ -73,6 +78,7 @@ export type ModelGroupPayload = {
   sync_filter_query: string;
   param_override: ParamOverrideRule[];
   headers: HeaderRule[];
+  fallback_group_ids?: string[];
   items: ModelGroupItemPayload[];
 };
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {

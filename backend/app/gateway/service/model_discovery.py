@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
+from ...core.upstream_rules import request_rule_context
 from ...models.channels import ChannelConfig
 from ..upstream_request import (
     build_upstream_headers,
@@ -60,6 +61,11 @@ def _model_list_request(
             headers,
             user_agent=_default_lens_user_agent(),
             upstream_headers_config=upstream_headers_config,
+            context=request_rule_context(
+                resolve_channel_model_list_url(channel),
+                model_name="",
+                protocol=channel.protocol,
+            ),
         ),
     }
 

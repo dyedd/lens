@@ -188,7 +188,6 @@ export function ChannelsDialogs({
             if (!open) setAdvancedConfigIndex(null);
           }}
           onUpdateProtocolConfig={editor.updateProtocolConfig}
-          onUpdateProtocolConfigHeader={editor.updateProtocolConfigHeader}
         />
       ) : null}
       {persistence.deleteTarget ? (
