@@ -5,13 +5,15 @@ import {
   parseModelTestPrompts,
   serializeModelTestPrompts,
 } from "@/lib/modelTestPrompts";
-import type { UpstreamParamOverrideDraft } from "@/lib/settingsTypes";
+import type {
+  UpstreamHeadersDraft,
+  UpstreamParamOverrideDraft,
+} from "@/lib/upstreamRules";
 
 import {
   createEmptyUpstreamHeadersDraft,
   parseUpstreamHeadersConfig,
   serializeUpstreamHeadersConfig,
-  type UpstreamHeadersDraft,
 } from "./upstreamHeaderConfig";
 import {
   createEmptyUpstreamParamOverrideDraft,

@@ -1,12 +1,12 @@
 import type { Locale } from "@/lib/I18nContext";
-import type { UpstreamParamOverrideDraft } from "@/lib/settingsTypes";
-
 import type {
-  HeaderItem,
+  HeaderRuleDraft,
   UpstreamHeadersDraft,
-} from "../../screens/settings/upstreamHeaderConfig";
+  UpstreamParamOverrideDraft,
+} from "@/lib/upstreamRules";
 
-export type { HeaderItem, UpstreamHeadersDraft };
+export type HeaderItem = HeaderRuleDraft;
+export type { UpstreamHeadersDraft };
 
 export type GatewayGeneralSettingsProps = {
   locale: Locale;

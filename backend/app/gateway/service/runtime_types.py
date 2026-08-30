@@ -44,6 +44,7 @@ class RoutingPlan:
     use_model_matching: bool
     cursor_key: str | None = None
     parsed_model: Any | None = None
+    fallback_group_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

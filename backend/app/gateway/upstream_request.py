@@ -1,4 +1,3 @@
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -6,6 +5,13 @@ from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 
+from ..core.upstream_rules import (
+    RuleContext,
+    RuleLayer,
+    apply_header_rules,
+    request_rule_context,
+    rules_from_config,
+)
 from ..core.urls import append_url_path, canonicalize_base_url
 from ..models.channels import ChannelConfig
 from ..models.protocols import ChannelProxyMode, ProtocolKind
@@ -55,69 +61,62 @@ def build_upstream_request(
 ) -> UpstreamRequest:
     """Build an authenticated request for an upstream channel."""
     api_key = resolve_channel_api_key(channel, credential_id=credential_id)
+    context_model_name = str(body.get("model") or "")
 
     if channel.protocol == ProtocolKind.GEMINI:
         from ..core.model_name_parser import parse_model_name
 
         model_name = str(body.get("model") or "")
         model_name = parse_model_name(model_name).base_model
+        context_model_name = model_name
         if not model_name:
             raise HTTPException(status_code=400, detail="Gemini request requires model")
 
-        path = "streamGenerateContent" if body.get("stream") else "generateContent"
+        operation = "streamGenerateContent" if body.get("stream") else "generateContent"
         payload = {
             key: value for key, value in body.items() if key not in {"model", "stream"}
         }
-        return UpstreamRequest(
-            method="POST",
-            url=append_url_path(
-                _protocol_base_url(channel),
-                "models",
-                f"{model_name}:{path}",
-                query_params={"key": api_key},
-            ),
-            headers=build_upstream_headers(
-                {"content-type": "application/json"},
-                channel.headers,
-                user_agent=user_agent,
-                upstream_headers_config=upstream_headers_config,
-                model_group_headers=model_group_headers,
-            ),
-            json_body=payload,
+        url = append_url_path(
+            _protocol_base_url(channel),
+            "models",
+            f"{model_name}:{operation}",
+            query_params={"key": api_key},
         )
-
-    suffix = path_suffix or _OPENAI_LIKE_PATH.get(channel.protocol)
-    if suffix is None:
-        raise HTTPException(
-            status_code=500, detail=f"Unsupported protocol={channel.protocol.value}"
-        )
-
-    if channel.protocol == ProtocolKind.ANTHROPIC:
-        default_headers = {
-            "x-api-key": api_key,
-            "anthropic-version": ANTHROPIC_VERSION,
-            "content-type": "application/json",
-        }
-        if forwarded_headers:
-            default_headers.update(forwarded_headers)
+        default_headers = {"content-type": "application/json"}
     else:
-        default_headers = {
-            "authorization": f"Bearer {api_key}",
-            "content-type": "application/json",
-        }
+        suffix = path_suffix or _OPENAI_LIKE_PATH.get(channel.protocol)
+        if suffix is None:
+            raise HTTPException(
+                status_code=500, detail=f"Unsupported protocol={channel.protocol.value}"
+            )
+        if channel.protocol == ProtocolKind.ANTHROPIC:
+            default_headers = {
+                "x-api-key": api_key,
+                "anthropic-version": ANTHROPIC_VERSION,
+                "content-type": "application/json",
+            }
+            if forwarded_headers:
+                default_headers.update(forwarded_headers)
+        else:
+            default_headers = {
+                "authorization": f"Bearer {api_key}",
+                "content-type": "application/json",
+            }
+        url = append_url_path(_protocol_base_url(channel), suffix)
+        payload = dict(body)
 
-    return UpstreamRequest(
-        method="POST",
-        url=append_url_path(_protocol_base_url(channel), suffix),
-        headers=build_upstream_headers(
-            default_headers,
-            channel.headers,
-            user_agent=user_agent,
-            upstream_headers_config=upstream_headers_config,
-            model_group_headers=model_group_headers,
-        ),
-        json_body=dict(body),
+    context = request_rule_context(
+        url, model_name=context_model_name, protocol=channel.protocol
     )
+    headers = build_upstream_headers(
+        default_headers,
+        channel.headers,
+        user_agent=user_agent,
+        upstream_headers_config=upstream_headers_config,
+        model_group_headers=model_group_headers,
+        context=context,
+    )
+    return UpstreamRequest(method="POST", url=url, headers=headers, json_body=payload)
 
 
 def build_upstream_headers(
@@ -129,8 +128,11 @@ def build_upstream_headers(
     *,
     path: str = "",
     model_name: str = "",
+    context: RuleContext | None = None,
 ) -> dict[str, str]:
     """Apply default, global, channel, and model-group header rules."""
+    if context is None:
+        context = RuleContext(path=path, model_name=model_name, protocol="")
     headers: dict[str, str] = {}
     _merge_headers(headers, default_headers)
     if user_agent and not any(
@@ -139,52 +141,15 @@ def build_upstream_headers(
         for rule in channel_headers
     ):
         _set_header(headers, "user-agent", user_agent)
-    global_rules = (
-        []
-        if not upstream_headers_config
-        else [
-            HeaderRule.model_validate(rule)
-            for rule in upstream_headers_config.get("rules", [])
-        ]
-    )
-    _apply_header_rules(headers, global_rules, path=path, model_name=model_name)
-    _apply_header_rules(headers, channel_headers, path=path, model_name=model_name)
-    _apply_header_rules(
-        headers, model_group_headers or [], path=path, model_name=model_name
-    )
-    return headers
-
-
-def _apply_header_rules(
-    headers: dict[str, str], rules: list[HeaderRule], *, path: str, model_name: str
-) -> None:
-    protected = {"authorization", "x-api-key", "x-goog-api-key"}
-    for rule in rules:
-        name = rule.name.strip()
-        if name.lower() in protected or not _header_rule_matches(
-            rule, path, model_name
-        ):
-            continue
-        if rule.action == "remove":
-            _remove_header(headers, name, rule.value)
-        elif rule.action == "override":
-            _set_header(headers, name, rule.value)
-        else:
-            current = _get_header(headers, name)
-            _set_header(
-                headers, name, f"{current}, {rule.value}" if current else rule.value
-            )
-
-
-def _header_rule_matches(rule: HeaderRule, path: str, model_name: str) -> bool:
-    if rule.match is None:
-        return True
-    return all(
-        value is None or bool(re.search(value, candidate))
-        for value, candidate in (
-            (rule.match.path_regex, path),
-            (rule.match.model_regex, model_name),
-        )
+    global_rules = rules_from_config(upstream_headers_config, "headers")
+    return apply_header_rules(
+        headers,
+        [
+            RuleLayer("global", headers=global_rules),
+            RuleLayer("channel", headers=channel_headers),
+            RuleLayer("model group", headers=model_group_headers or []),
+        ],
+        context=context,
     )
 
 

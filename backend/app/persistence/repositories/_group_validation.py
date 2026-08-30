@@ -23,6 +23,7 @@ class _GroupValidationMixin:
         route_group_id: str = "",
         items: list[ModelGroupItemInput] | None = None,
         exclude_group_id: str | None = None,
+        fallback_group_ids: list[str] | None = None,
         *,
         channels: list[ChannelConfig],
         existing_items: list[ModelGroupItemView] | None = None,
@@ -56,6 +57,32 @@ class _GroupValidationMixin:
                 raise ValueError(
                     f"Route target must be an execution group: {route_group.name}"
                 )
+
+        fallback_ids = [item.strip() for item in (fallback_group_ids or [])]
+        if exclude_group_id is not None and exclude_group_id in fallback_ids:
+            raise ValueError("Model group cannot fall back to itself")
+        if fallback_ids and trimmed_route_group_id:
+            raise ValueError("Route groups cannot configure multimodal fallbacks")
+        if fallback_ids:
+            fallback_rows = (
+                (
+                    await session.execute(
+                        select(ModelGroupEntity).where(
+                            ModelGroupEntity.id.in_(fallback_ids)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            found_ids = {row.id for row in fallback_rows}
+            missing_id = next(
+                (item for item in fallback_ids if item not in found_ids), None
+            )
+            if missing_id is not None:
+                raise ValueError(f"Fallback model group not found: {missing_id}")
+            if any(row.route_group_id.strip() for row in fallback_rows):
+                raise ValueError("Fallback model groups must be execution groups")
 
         if items is None:
             return route_group

@@ -209,6 +209,9 @@ class ModelGroupEntity(Base):
     sync_filter_query: Mapped[str] = mapped_column(Text, nullable=False, default="")
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    fallback_group_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]"
+    )
 
 
 class ModelGroupItemEntity(Base):

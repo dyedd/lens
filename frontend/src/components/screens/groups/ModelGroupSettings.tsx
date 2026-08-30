@@ -1,11 +1,13 @@
 import { Settings } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
+
 import { Button } from "@/components/ui/Button";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Separator } from "@/components/ui/Separator";
 import type { ModelGroup } from "@/lib/api/groups";
+
 import type { FormState } from "./groupTypes";
 import { EditablePriceRow, StrategyToggle } from "./ModelGroupEditorFields";
 
@@ -18,7 +20,6 @@ interface ModelGroupSettingsProps {
   onOpenAdvanced: () => void;
 }
 
-/** Render model group identity, routing, strategy, and pricing fields. */
 export function ModelGroupSettings({
   locale,
   form,
