@@ -89,7 +89,12 @@ async def test_model_group_model(
         model_name=member.model_name,
         prompt=payload.prompt,
     )
-    return await run_site_model_probe(probe_payload, request)
+    return await run_site_model_probe(
+        probe_payload,
+        request,
+        model_group_headers=group.headers,
+        model_group_param_override=group.param_override,
+    )
 
 
 async def create_model_group(

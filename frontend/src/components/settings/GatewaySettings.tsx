@@ -1,7 +1,6 @@
 import { FieldGroup } from "@/components/ui/Field";
 import { useI18n } from "@/lib/I18nContext";
-import type { UpstreamParamOverrideDraft } from "@/lib/settingsTypes";
-
+import type { UpstreamParamOverrideDraft } from "@/lib/upstreamRules";
 import { GatewayGeneralSettings } from "./gateway-settings/GatewayGeneralSettings";
 import type {
   HeaderItem,

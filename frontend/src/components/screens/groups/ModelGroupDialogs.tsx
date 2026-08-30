@@ -5,11 +5,10 @@ import {
   useState,
 } from "react";
 import { HeaderRows } from "@/components/settings/gateway-settings/HeaderRows";
+import { ParamRuleRows } from "@/components/settings/gateway-settings/ParamRuleRows";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import { Field, FieldLabel } from "@/components/ui/Field";
 import { Separator } from "@/components/ui/Separator";
-import { Textarea } from "@/components/ui/Textarea";
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
 import { modelGroupItemKey } from "./groupSearch";
 import type {
@@ -24,6 +23,7 @@ import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
 import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
 import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
 import { ModelGroupSettings } from "./ModelGroupSettings";
+import { MultimodalFallbackGroups } from "./MultimodalFallbackGroups";
 
 interface GroupEditorDialogProps {
   dialogOpen: boolean;
@@ -224,7 +224,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
           className="max-w-2xl"
           title={locale === "zh-CN" ? "更多设置" : "More settings"}
         >
-          <div className="grid gap-5">
+          <div className="grid max-h-[75dvh] gap-5 overflow-y-auto pr-1">
             <HeaderRows
               title={locale === "zh-CN" ? "请求头" : "Request headers"}
               headers={form.headers}
@@ -258,26 +258,30 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 }))
               }
             />
-            <Field>
-              <FieldLabel htmlFor="group-param-override">
-                {locale === "zh-CN" ? "参数覆盖" : "Param Override"}
-              </FieldLabel>
-              <Textarea
-                id="group-param-override"
-                className="min-h-32 font-mono text-sm"
-                value={form.param_override[0]?.value ?? ""}
-                onChange={(event) =>
+            <ParamRuleRows
+              title={locale === "zh-CN" ? "参数规则" : "Parameter rules"}
+              locale={locale}
+              rules={form.param_override}
+              onChange={(rules) =>
+                setForm((current) => ({
+                  ...current,
+                  param_override: rules,
+                }))
+              }
+            />
+            {!form.route_group_id ? (
+              <MultimodalFallbackGroups
+                locale={locale}
+                options={props.routeTargetOptions}
+                selectedIds={form.fallback_group_ids}
+                onChange={(ids) =>
                   setForm((current) => ({
                     ...current,
-                    param_override: current.param_override.map((rule, index) =>
-                      index === 0
-                        ? { ...rule, value: event.target.value }
-                        : rule,
-                    ),
+                    fallback_group_ids: ids,
                   }))
                 }
               />
-            </Field>
+            ) : null}
             <div className="flex justify-end">
               <Button
                 type="button"

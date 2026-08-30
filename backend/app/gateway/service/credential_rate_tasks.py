@@ -11,6 +11,7 @@ from ...core.upstream_endpoints import (
     resolve_newapi_pricing_url,
     resolve_sub2api_billing_url,
 )
+from ...core.upstream_rules import request_rule_context
 from ...models.channels import ChannelConfig
 from ...models.protocols import ChannelStatus
 from ...models.sites import SiteConfig, SiteCredential
@@ -147,6 +148,9 @@ async def _fetch_credential_rate(
         channel.headers,
         user_agent=_default_lens_user_agent(),
         upstream_headers_config=runtime["upstream_headers_config"],
+        context=request_rule_context(
+            endpoint, model_name="", protocol=channel.protocol
+        ),
     )
     try:
         response = await client.get(endpoint, headers=headers, timeout=30)

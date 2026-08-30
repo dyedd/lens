@@ -1,53 +1,40 @@
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
+import {
+  EMPTY_PARAM_OVERRIDE_RULE,
+  type ParamOverrideRule,
+  paramOverrideDraftToRules,
+  paramOverrideRulesToDraft,
+  type UpstreamParamOverrideDraft,
+} from "@/lib/upstreamRules";
 
-import type {
-  ParamOverrideRule,
-  UpstreamParamOverrideDraft,
-} from "@/lib/settingsTypes";
-import { formatJsonObject, parseJsonObject } from "./upstreamConfigUtils";
+import { parseJsonObject } from "./upstreamConfigUtils";
 
-export type { ParamOverrideRule };
+export type { ParamOverrideRule, UpstreamParamOverrideDraft };
 
 export function createEmptyUpstreamParamOverrideDraft(): UpstreamParamOverrideDraft {
-  return { rules: [{ path: "", action: "set", value: "" }] };
+  return { rules: [{ ...EMPTY_PARAM_OVERRIDE_RULE }] };
 }
 
 export function parseUpstreamParamOverrideConfig(
   rawValue: string | undefined,
 ): UpstreamParamOverrideDraft {
   const payload = rawValue?.trim() ? parseJsonObject(rawValue) : null;
-  const rules = Array.isArray(payload?.rules)
-    ? payload.rules
-        .filter(
-          (rule): rule is Record<string, unknown> =>
-            Boolean(rule) && typeof rule === "object",
-        )
-        .map((rule) => ({
-          path: typeof rule.path === "string" ? rule.path : "",
-          action:
-            rule.action === "delete" ? ("delete" as const) : ("set" as const),
-          value: rule.value === undefined ? "" : JSON.stringify(rule.value),
-        }))
-    : [];
   return {
-    rules: rules.length ? rules : [{ path: "", action: "set", value: "" }],
+    rules: Array.isArray(payload?.rules)
+      ? paramOverrideRulesToDraft(
+          payload.rules.filter(
+            (rule): rule is ParamOverrideRule =>
+              Boolean(rule) && typeof rule === "object",
+          ),
+        )
+      : [{ ...EMPTY_PARAM_OVERRIDE_RULE }],
   };
 }
 
 export function serializeUpstreamParamOverrideConfig(
   config: UpstreamParamOverrideDraft,
 ) {
-  return JSON.stringify({
-    rules: config.rules
-      .filter((rule) => rule.path.trim())
-      .map((rule) => ({
-        path: rule.path.trim(),
-        action: rule.action,
-        ...(rule.action === "set"
-          ? { value: parseJsonObject(rule.value) ?? rule.value }
-          : {}),
-      })),
-  });
+  return JSON.stringify({ rules: paramOverrideDraftToRules(config.rules) });
 }
 
 export function validateUpstreamParamOverrideConfig(
@@ -55,19 +42,16 @@ export function validateUpstreamParamOverrideConfig(
   locale: Locale,
 ) {
   for (const rule of config.rules) {
-    if (!rule.path.trim()) continue;
-    if (rule.path.trim() === "model" || rule.path.trim().startsWith("model.")) {
+    const path = rule.path.trim();
+    if (!path) continue;
+    if (path === "model" || path.startsWith("model.")) {
       return titleForLocale(
         locale,
         "参数规则不可覆盖 model。",
         "Parameter rules cannot override model.",
       );
     }
-    if (
-      rule.action === "set" &&
-      parseJsonObject(rule.value) === null &&
-      !rule.value.trim()
-    ) {
+    if (rule.action === "set" && !rule.value.trim()) {
       return titleForLocale(
         locale,
         "参数值不能为空。",

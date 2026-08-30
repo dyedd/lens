@@ -171,6 +171,7 @@ class GroupRepository(
                 payload.name,
                 payload.route_group_id,
                 payload.items,
+                fallback_group_ids=payload.fallback_group_ids,
                 channels=channels,
             )
             entity = ModelGroupEntity(
@@ -187,6 +188,9 @@ class GroupRepository(
                 headers_json=json.dumps(
                     [rule.model_dump(mode="json") for rule in payload.headers],
                     ensure_ascii=True,
+                ),
+                fallback_group_ids_json=json.dumps(
+                    payload.fallback_group_ids, ensure_ascii=True
                 ),
             )
             session.add(entity)
@@ -246,12 +250,18 @@ class GroupRepository(
                     )
                     for item in current_item_views
                 ]
+            next_fallback_group_ids = (
+                payload.fallback_group_ids
+                if payload.fallback_group_ids is not None
+                else json.loads(entity.fallback_group_ids_json)
+            )
             route_group = await self._validate_group_payload(
                 session,
                 next_name,
                 next_route_group_id,
                 next_items if validates_items else None,
                 exclude_group_id=group_id,
+                fallback_group_ids=next_fallback_group_ids,
                 channels=channels,
                 existing_items=current_item_views,
             )
@@ -264,6 +274,10 @@ class GroupRepository(
                     entity.sync_filter_mode = value.value
                 elif key == "items":
                     continue
+                elif key == "fallback_group_ids":
+                    entity.fallback_group_ids_json = json.dumps(
+                        value, ensure_ascii=True
+                    )
                 elif key == "headers":
                     entity.headers_json = json.dumps(
                         [

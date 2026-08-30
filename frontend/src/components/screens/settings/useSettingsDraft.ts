@@ -107,7 +107,6 @@ export function useSettingsDraft(locale: Locale) {
       toast.error(upstreamParamOverrideError);
       return;
     }
-
     setIsSaving(true);
     try {
       await apiRequest<SettingItem[]>("/admin/settings", {

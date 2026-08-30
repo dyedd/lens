@@ -55,6 +55,16 @@ async def _replace_groups(
                 raise ValueError(
                     f"Route target must be an execution group: {route_group.name}"
                 )
+        for fallback_group_id in group.fallback_group_ids:
+            if fallback_group_id == group.id:
+                raise ValueError(
+                    f"Model group cannot fall back to itself: {group.name}"
+                )
+            fallback_group = groups_by_id.get(fallback_group_id)
+            if fallback_group is None:
+                raise ValueError(f"Fallback model group not found: {fallback_group_id}")
+            if fallback_group.route_group_id:
+                raise ValueError("Fallback model groups must be execution groups")
 
         resolved_items: list[tuple[int, ModelGroupItem, str]] = []
         resolved_item_keys: set[tuple[str, str, str]] = set()
@@ -112,6 +122,9 @@ async def _replace_groups(
                 headers_json=json.dumps(
                     [rule.model_dump(mode="json") for rule in group.headers],
                     ensure_ascii=True,
+                ),
+                fallback_group_ids_json=json.dumps(
+                    group.fallback_group_ids, ensure_ascii=True
                 ),
             )
         )

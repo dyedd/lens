@@ -34,7 +34,6 @@ from app.persistence.settings_keys import (
     SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_MAX_REQUEST_BODY_BYTES,
     SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
-    SETTING_MULTIMODAL_FALLBACK,
     SETTING_PROXY_URL,
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_ENABLED,
@@ -54,12 +53,6 @@ from ...models.upstream_rules import (
     UpstreamParamOverrideConfig,
 )
 from ..editable_settings import effective_editable_setting_items
-
-
-def _parse_multimodal_fallback(value: str | None) -> dict[str, str]:
-    from ...core.multimodal_fallback import parse_multimodal_fallback
-
-    return parse_multimodal_fallback(value)
 
 
 def _parse_upstream_config(
@@ -220,9 +213,6 @@ class SettingsRepository:
                 CooldownDetectionRulesConfig.model_validate(
                     json.loads(mapping[SETTING_COOLDOWN_DETECTION_RULES])
                 ).rules
-            ),
-            "multimodal_fallback": _parse_multimodal_fallback(
-                mapping.get(SETTING_MULTIMODAL_FALLBACK)
             ),
             "site_name": mapping.get(SETTING_SITE_NAME, "Lens").strip() or "Lens",
             "site_logo_url": mapping.get(SETTING_SITE_LOGO_URL, "").strip(),
