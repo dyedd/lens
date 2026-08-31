@@ -84,6 +84,19 @@ def _looks_like_sse_body(content: bytes) -> bool:
     return content[:64].lstrip().startswith((b"event:", b"data:"))
 
 
+def _response_with_buffered_body(
+    response: httpx.Response, content: bytes, media_type: str
+) -> httpx.Response:
+    headers = httpx.Headers(response.headers)
+    headers["content-type"] = media_type
+    return httpx.Response(
+        response.status_code,
+        content=content,
+        headers=headers,
+        request=response.request,
+    )
+
+
 def _describe_upstream_body(response: httpx.Response, content: bytes) -> str:
     content_type = response.headers.get("content-type") or "unknown"
     label = (
@@ -201,7 +214,6 @@ async def _build_stream_result(
     log_body_enabled: bool,
     *,
     deadline: _RequestDeadline,
-    owned_client: httpx.AsyncClient | None = None,
 ) -> UpstreamResult:
     chat_expected_choices = body.get("n", 1)
     if (
@@ -268,7 +280,6 @@ async def _build_stream_result(
             status_code=response.status_code,
             media_type=stream_media,
             headers=_passthrough_headers(response.headers),
-            owned_client=owned_client,
         ),
         is_stream=True,
         status_code=response.status_code,
@@ -453,7 +464,6 @@ async def _call_channel(
     client = _resolve_http_client(proxy_url)
     is_stream_request = bool(body.get("stream"))
     response: httpx.Response | None = None
-    retry_client: httpx.AsyncClient | None = None
 
     try:
         stream_started_at = perf_counter()
@@ -469,29 +479,38 @@ async def _call_channel(
             )
         response.raise_for_status()
 
-        if (
-            is_stream_request
-            and response.status_code == 200
-            and _response_media_type(response) == "text/html"
-        ):
-            await response.aclose()
-            response = None
-            retry_client = app_state._create_http_client(proxy_url)
+        media_type = _response_media_type(response)
+        is_event_stream = media_type == "text/event-stream"
+        is_ndjson_stream = is_stream_request and media_type in _NDJSON_MEDIA_TYPES
+        if is_stream_request and not is_event_stream and not is_ndjson_stream:
+            # Proxies often default Content-Type to text/html; classify the body.
             async with _gateway_timeout_scope(
                 deadline.first_token_remaining_seconds(),
                 timeout_message=deadline.timeout_message(kind="first_token"),
             ):
-                response = await _send_upstream(
-                    retry_client,
-                    upstream,
-                    stream=True,
-                    body_bytes=body_bytes,
+                content = await response.aread()
+            if _looks_like_sse_body(content):
+                buffered = _response_with_buffered_body(
+                    response, content, "text/event-stream"
                 )
-            response.raise_for_status()
+                await response.aclose()
+                response = buffered
+                is_event_stream = True
+            else:
+                result = await _build_json_result(
+                    response,
+                    content,
+                    channel,
+                    client_protocol,
+                    body,
+                    pricing_group_name,
+                    rate_multiplier,
+                    request_content,
+                    log_body_enabled,
+                )
+                result.first_token_latency_ms = _elapsed_ms(stream_started_at)
+                return result
 
-        media_type = _response_media_type(response)
-        is_event_stream = media_type == "text/event-stream"
-        is_ndjson_stream = is_stream_request and media_type in _NDJSON_MEDIA_TYPES
         wants_anthropic_json = (
             not is_stream_request and channel.protocol == ProtocolKind.ANTHROPIC
         )
@@ -519,10 +538,8 @@ async def _call_channel(
                 stream_started_at,
                 log_body_enabled,
                 deadline=deadline,
-                owned_client=retry_client,
             )
             response = None  # _FinalizingStreamingResponse owns the upstream response
-            retry_client = None
         else:
             if is_stream_request:
                 async with _gateway_timeout_scope(
@@ -602,8 +619,6 @@ async def _call_channel(
     finally:
         if response is not None:
             await response.aclose()
-        if retry_client is not None:
-            await retry_client.aclose()
 
 
 async def _send_upstream(
