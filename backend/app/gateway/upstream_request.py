@@ -82,7 +82,10 @@ def build_upstream_request(
             f"{model_name}:{operation}",
             query_params={"key": api_key},
         )
-        default_headers = {"content-type": "application/json"}
+        default_headers = {
+            "content-type": "application/json",
+            "accept": "application/json",
+        }
     else:
         suffix = path_suffix or _OPENAI_LIKE_PATH.get(channel.protocol)
         if suffix is None:
@@ -94,6 +97,7 @@ def build_upstream_request(
                 "x-api-key": api_key,
                 "anthropic-version": ANTHROPIC_VERSION,
                 "content-type": "application/json",
+                "accept": "application/json",
             }
             if forwarded_headers:
                 default_headers.update(forwarded_headers)
@@ -101,6 +105,7 @@ def build_upstream_request(
             default_headers = {
                 "authorization": f"Bearer {api_key}",
                 "content-type": "application/json",
+                "accept": "application/json",
             }
         url = append_url_path(_protocol_base_url(channel), suffix)
         payload = dict(body)
