@@ -73,7 +73,6 @@ export type ModelTestTarget = {
 export type TestableModelOption = BatchModelTestSource<ModelTestTarget>;
 
 export type SiteRow = Site & {
-  subtitle: string;
   enabled_protocol_channel_count: number;
   model_count: number;
   endpoint_summary: string;

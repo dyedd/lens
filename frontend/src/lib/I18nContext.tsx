@@ -8,8 +8,6 @@ export function titleForLocale(locale: Locale, zh: string, en: string) {
 }
 
 type Copy = {
-  loginTitle: string;
-  loginSubtitle: string;
   username: string;
   password: string;
   signIn: string;
@@ -30,9 +28,6 @@ type Copy = {
 
 const MESSAGES: Record<Locale, Copy> = {
   "zh-CN": {
-    loginTitle: "统一管理渠道、模型组与系统配置",
-    loginSubtitle:
-      "OpenAI Chat / OpenAI Responses / OpenAI Embedding / Rerank / Anthropic / Gemini",
     username: "用户名",
     password: "密码",
     signIn: "登录",
@@ -51,9 +46,6 @@ const MESSAGES: Record<Locale, Copy> = {
     refresh: "刷新",
   },
   "en-US": {
-    loginTitle: "Manage channels, model groups, and system settings",
-    loginSubtitle:
-      "OpenAI Chat / OpenAI Responses / OpenAI Embedding / Rerank / Anthropic / Gemini",
     username: "Username",
     password: "Password",
     signIn: "Sign in",

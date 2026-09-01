@@ -7,7 +7,6 @@ import {
   isSiteProtocolConfigEnabled,
   siteEndpointSummary,
   siteModelCount,
-  siteSubtitle,
 } from "./channelDisplay";
 import type {
   ChannelSort,
@@ -40,7 +39,6 @@ export function useChannelQueries(locale: Locale) {
     () =>
       (sites ?? []).map((site) => ({
         ...site,
-        subtitle: siteSubtitle(site, locale),
         enabled_protocol_channel_count: site.enabled
           ? site.protocols.reduce(
               (total, protocolConfig) =>
@@ -81,7 +79,6 @@ export function useChannelQueries(locale: Locale) {
       if (!keyword) return true;
       return [
         site.name,
-        site.subtitle,
         site.endpoint_summary,
         ...site.tags,
         ...site.protocols.flatMap((config) =>

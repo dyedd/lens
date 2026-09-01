@@ -23,10 +23,6 @@ class BackupExportImportMixin:
         """Parse and validate a serialized configuration backup."""
         try:
             data = json.loads(payload)
-            if isinstance(data, dict) and isinstance(data.get("groups"), list):
-                for group in data["groups"]:
-                    if isinstance(group, dict):
-                        group.pop("protocols", None)
             return ConfigBackupDump.model_validate(data)
         except ValueError as exc:
             raise ValueError("Invalid backup file") from exc
@@ -87,11 +83,9 @@ class BackupExportImportMixin:
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 
-            (
-                protocol_config_ids,
-                protocols_by_config_id,
-                model_keys,
-            ) = await self._replace_sites(session, dump.sites)
+            protocol_config_ids, model_keys = await self._replace_sites(
+                session, dump.sites
+            )
             rows_affected["sites"] = len(dump.sites)
             rows_affected["site_base_urls"] = sum(
                 len(site.base_urls) for site in dump.sites
@@ -112,7 +106,6 @@ class BackupExportImportMixin:
                 session,
                 dump.groups,
                 available_protocol_config_ids=protocol_config_ids,
-                protocols_by_config_id=protocols_by_config_id,
                 model_keys=model_keys,
             )
             rows_affected["model_groups"] = len(dump.groups)
