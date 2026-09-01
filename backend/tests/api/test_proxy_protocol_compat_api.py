@@ -22,6 +22,15 @@ def _chat_group_item(model_name: str) -> dict[str, Any]:
     }
 
 
+def _anthropic_group_item(model_name: str) -> dict[str, Any]:
+    return {
+        "channel_id": compose_runtime_channel_id("pc-1", ProtocolKind.ANTHROPIC),
+        "credential_id": "cred-1",
+        "model_name": model_name,
+        "enabled": True,
+    }
+
+
 def _stream_payloads(response_text: str) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for block in response_text.split("\n\n"):
@@ -243,6 +252,79 @@ def test_openai_chat_stream_logs_kimi_sse_as_json(
     logged_chunks = json.loads(request_log.response_content or "null")
     assert isinstance(logged_chunks, list)
     assert logged_chunks[0]["choices"][0]["delta"]["reasoning"] == "用户"
+
+
+def test_anthropic_stream_with_openai_semantic_usage_does_not_double_count_cache(
+    client,
+    monkeypatch,
+    app_state,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+    import app.gateway.service.stream_logging as stream_logging
+
+    # GLM-style upstream: input_tokens follows OpenAI prompt semantics, where
+    # cache is already included, and billing_usage.semantic marks that.
+    stream_body = (
+        'event: message_start\ndata: {"type":"message_start","message":{"type":"message","model":"glm-5.3-flash","usage":{"input_tokens":51630,"cache_creation_input_tokens":0,"cache_read_input_tokens":51456,"output_tokens":0,"billing_usage":{"source":"oai_chat","semantic":"openai","openai_usage":{"prompt_tokens":51630,"completion_tokens":384,"total_tokens":52014}}},"role":"assistant","id":"msg_glm","content":[]}}\n\n'
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n'
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":384}}\n\n'
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+    )
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream
+        return httpx.Response(
+            200,
+            content=stream_body.encode(),
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    monkeypatch.setattr(stream_logging, "app_state", app_state)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.ANTHROPIC.value],
+            model_name="glm-5.3-flash",
+        )
+    )
+    create_model_group(
+        name="glm-5.3-flash",
+        items=[_anthropic_group_item("glm-5.3-flash")],
+    )
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(key),
+        json={
+            "model": "glm-5.3-flash",
+            "messages": [],
+            "max_tokens": 16,
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    request_log_item = run_async(
+        app_state.request_log_store.list_request_log_page()
+    ).items[0]
+    request_log = run_async(
+        app_state.request_log_store.get_request_log(request_log_item.id)
+    )
+    assert request_log.input_tokens == 51630
+    assert request_log.cache_read_input_tokens == 51456
+    assert request_log.output_tokens == 384
+    assert request_log.total_tokens == 52014
 
 
 def test_openai_chat_stream_repairs_reused_tool_call_index(
