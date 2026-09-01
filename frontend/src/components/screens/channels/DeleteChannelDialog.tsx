@@ -2,7 +2,6 @@ import type { Dispatch, SetStateAction } from "react";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import type { Site } from "@/lib/api/sites";
-import { siteSubtitle } from "./channelDisplay";
 import type { Locale } from "./channelTypes";
 
 type Props = {
@@ -40,9 +39,6 @@ export function DeleteChannelDialog({
         <div className="grid gap-5">
           <div className="rounded-md border bg-muted/30 p-4">
             <strong className="text-foreground">{deleteTarget?.name}</strong>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {deleteTarget ? siteSubtitle(deleteTarget, locale) : ""}
-            </p>
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
             <Button
