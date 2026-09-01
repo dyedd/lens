@@ -9,8 +9,10 @@ from ..core.upstream_rules import (
     RuleContext,
     RuleLayer,
     apply_header_rules,
+    merge_headers,
     request_rule_context,
     rules_from_config,
+    set_header,
 )
 from ..core.urls import append_url_path, canonicalize_base_url
 from ..models.channels import ChannelConfig
@@ -139,13 +141,13 @@ def build_upstream_headers(
     if context is None:
         context = RuleContext(path=path, model_name=model_name, protocol="")
     headers: dict[str, str] = {}
-    _merge_headers(headers, default_headers)
+    merge_headers(headers, default_headers)
     if user_agent and not any(
         rule.name.lower() == "user-agent"
         and rule.action in {"override", "append", "remove"}
         for rule in channel_headers
     ):
-        _set_header(headers, "user-agent", user_agent)
+        set_header(headers, "user-agent", user_agent)
     global_rules = rules_from_config(upstream_headers_config, "headers")
     return apply_header_rules(
         headers,
@@ -156,49 +158,6 @@ def build_upstream_headers(
         ],
         context=context,
     )
-
-
-def _get_header(headers: dict[str, str], name: str) -> str | None:
-    return next(
-        (value for key, value in headers.items() if key.lower() == name.lower()), None
-    )
-
-
-def _remove_header(headers: dict[str, str], name: str, token: str) -> None:
-    for key in list(headers):
-        if key.lower() != name.lower():
-            continue
-        if not token:
-            headers.pop(key)
-            return
-        tokens = [
-            part.strip()
-            for part in headers[key].split(",")
-            if part.strip().lower() != token.lower()
-        ]
-        if tokens:
-            headers[key] = ", ".join(tokens)
-        else:
-            headers.pop(key)
-
-
-def _set_header(headers: dict[str, str], key: str, value: str) -> None:
-    trimmed_key = key.strip()
-    if not trimmed_key:
-        return
-    lower_key = trimmed_key.lower()
-    for existing_key in list(headers):
-        if existing_key.lower() == lower_key:
-            headers.pop(existing_key)
-            break
-    headers[trimmed_key] = str(value)
-
-
-def _merge_headers(headers: dict[str, str], updates: Mapping[str, str] | None) -> None:
-    if not updates:
-        return
-    for key, value in updates.items():
-        _set_header(headers, key, value)
 
 
 def _protocol_base_url(channel: ChannelConfig) -> str:

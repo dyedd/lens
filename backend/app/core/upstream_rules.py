@@ -90,7 +90,7 @@ def apply_header_rules(
 ) -> dict[str, str]:
     """Apply header layers in order, using one shared request context."""
     result: dict[str, str] = {}
-    _merge_headers(result, headers)
+    merge_headers(result, headers)
     for layer in layers:
         for rule in layer.headers:
             if rule.name.lower() in {"authorization", "x-api-key", "x-goog-api-key"}:
@@ -101,10 +101,10 @@ def apply_header_rules(
             if rule.action == "remove":
                 _remove_header(result, name, rule.value)
             elif rule.action == "override":
-                _set_header(result, name, rule.value)
+                set_header(result, name, rule.value)
             else:
                 current = _get_header(result, name)
-                _set_header(
+                set_header(
                     result, name, f"{current}, {rule.value}" if current else rule.value
                 )
     return result
@@ -157,13 +157,13 @@ def _get_header(headers: Mapping[str, str], name: str) -> str | None:
     )
 
 
-def _merge_headers(headers: dict[str, str], updates: Mapping[str, str] | None) -> None:
+def merge_headers(headers: dict[str, str], updates: Mapping[str, str] | None) -> None:
     if updates:
         for key, value in updates.items():
-            _set_header(headers, key, value)
+            set_header(headers, key, value)
 
 
-def _set_header(headers: dict[str, str], key: str, value: str) -> None:
+def set_header(headers: dict[str, str], key: str, value: str) -> None:
     trimmed_key = key.strip()
     if not trimmed_key:
         return
