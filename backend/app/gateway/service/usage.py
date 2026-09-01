@@ -46,9 +46,19 @@ def _anthropic_usage(
     base_input_tokens = _usage_int(usage, "input_tokens")
     cache_read_input_tokens = _usage_int(usage, "cache_read_input_tokens")
     cache_write_input_tokens = _usage_int(usage, "cache_creation_input_tokens")
-    input_tokens = (
-        base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
-    )
+    # Anthropic reports input_tokens excluding cache; OpenAI-style upstreams
+    # report it including cache and mark that with billing_usage.semantic.
+    if (
+        _usage_mapping(usage.get("billing_usage"), "billing_usage").get("semantic")
+        == "openai"
+    ):
+        input_tokens = max(
+            base_input_tokens, cache_read_input_tokens + cache_write_input_tokens
+        )
+    else:
+        input_tokens = (
+            base_input_tokens + cache_read_input_tokens + cache_write_input_tokens
+        )
     output_tokens = _usage_int(usage, "output_tokens")
     return {
         "resolved_model": model,
