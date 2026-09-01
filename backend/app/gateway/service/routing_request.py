@@ -9,6 +9,16 @@ from ...core.model_name_parser import ParsedModelName
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
 
+_REASONING_BUDGET_TOKENS = {
+    "minimal": 1024,
+    "low": 2048,
+    "medium": 4096,
+    "high": 8192,
+    "xhigh": 16384,
+    "max": 32768,
+    "auto": 4096,
+}
+
 
 def _apply_reasoning_intent(
     channel: ChannelConfig, body: dict[str, Any], parsed: ParsedModelName | None
@@ -28,26 +38,14 @@ def _apply_reasoning_intent(
             body["thinking"] = {"type": "disabled"}
         else:
             effort = parsed.reasoning_effort
-            budget = parsed.reasoning_budget or {
-                "minimal": 1024,
-                "low": 2048,
-                "medium": 4096,
-                "high": 8192,
-                "xhigh": 16384,
-                "max": 32768,
-                "auto": 4096,
-            }.get(effort or "", 4096)
+            budget = parsed.reasoning_budget or _REASONING_BUDGET_TOKENS.get(
+                effort or "", 4096
+            )
             body["thinking"] = {"type": "enabled", "budget_tokens": budget}
     elif channel.protocol == ProtocolKind.GEMINI:
-        budget = parsed.reasoning_budget or {
-            "minimal": 1024,
-            "low": 2048,
-            "medium": 4096,
-            "high": 8192,
-            "xhigh": 16384,
-            "max": 32768,
-            "auto": 4096,
-        }.get(parsed.reasoning_effort or "")
+        budget = parsed.reasoning_budget or _REASONING_BUDGET_TOKENS.get(
+            parsed.reasoning_effort or ""
+        )
         if budget is not None:
             body.setdefault("generationConfig", {})["thinkingConfig"] = {
                 "thinkingBudget": budget
