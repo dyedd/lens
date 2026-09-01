@@ -84,35 +84,37 @@ class CooldownPolicy:
 
 def parse_cooldown_seconds(value: object, *, absolute: bool = False) -> float | None:
     """Parse a relative duration or UTC timestamp into non-negative seconds."""
+    seconds = _parse_duration_or_timestamp(value, absolute=absolute)
+    if seconds is None:
+        return None
+    return seconds if seconds >= 0 else 0.0
+
+
+def _parse_duration_or_timestamp(value: object, *, absolute: bool) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
         seconds = float(value)
-        if absolute:
-            seconds -= datetime.now(UTC).timestamp()
-        return seconds if seconds >= 0 else 0.0
+        return seconds - datetime.now(UTC).timestamp() if absolute else seconds
     if not isinstance(value, str):
         return None
     text = value.strip()
     if not text:
         return None
     try:
-        seconds = float(text)
+        return float(text)
     except ValueError:
+        pass
+    try:
+        timestamp = parsedate_to_datetime(text)
+    except (TypeError, ValueError, OverflowError):
         try:
-            timestamp = parsedate_to_datetime(text)
-        except (TypeError, ValueError, OverflowError):
-            try:
-                timestamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            except ValueError:
-                return None
-        if timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=UTC)
-        seconds = (timestamp - datetime.now(UTC)).total_seconds()
-        return seconds if seconds >= 0 else 0.0
-    if absolute:
-        seconds -= datetime.now(UTC).timestamp()
-    return seconds if seconds >= 0 else 0.0
+            timestamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+    return (timestamp - datetime.now(UTC)).total_seconds()
 
 
 def _relative_cooldown_from_headers(
