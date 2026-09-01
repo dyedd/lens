@@ -5,13 +5,8 @@ import json
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.runtime_channel_ids import (
-    extract_protocol_config_id,
-    resolve_group_item_runtime_channel_id,
-    runtime_channel_protocol,
-)
-from app.models.model_groups import ModelGroup, ModelGroupItem
-from app.models.protocols import ProtocolKind
+from app.core.runtime_channel_ids import split_runtime_channel_id
+from app.models.model_groups import ModelGroup
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
@@ -24,7 +19,6 @@ async def _replace_groups(
     groups: list[ModelGroup],
     *,
     available_protocol_config_ids: set[str],
-    protocols_by_config_id: dict[str, list[ProtocolKind]],
     model_keys: set[tuple[str, str, str]],
 ) -> None:
     await session.execute(delete(ModelGroupItemEntity))
@@ -66,38 +60,22 @@ async def _replace_groups(
             if fallback_group.route_group_id:
                 raise ValueError("Fallback model groups must be execution groups")
 
-        resolved_items: list[tuple[int, ModelGroupItem, str]] = []
         resolved_item_keys: set[tuple[str, str, str]] = set()
 
-        for index, item in enumerate(group.items):
-            protocol_config_id = extract_protocol_config_id(
-                item.channel_id, available_protocol_config_ids
-            )
-            if (
+        for item in group.items:
+            parsed_channel_id = split_runtime_channel_id(item.channel_id)
+            if parsed_channel_id is None or (
                 is_synced_group
-                and protocol_config_id not in available_protocol_config_ids
+                and parsed_channel_id[0] not in available_protocol_config_ids
             ):
                 raise ValueError(
                     f"Model group channel not found in backup sites: {item.channel_id}"
                 )
-            resolved_channel_id = (
-                resolve_group_item_runtime_channel_id(
-                    item.channel_id,
-                    known_protocol_config_ids=available_protocol_config_ids,
-                    protocols_by_config_id=protocols_by_config_id,
-                )
-                if protocol_config_id in available_protocol_config_ids
-                else item.channel_id
-            )
-            if runtime_channel_protocol(resolved_channel_id) is None:
-                raise ValueError(
-                    f"Model group channel not found in backup sites: {item.channel_id}"
-                )
-            target = (resolved_channel_id, item.credential_id, item.model_name)
+            target = (item.channel_id, item.credential_id, item.model_name)
             if target in resolved_item_keys:
                 raise ValueError(
                     "Duplicate model group member in backup "
-                    f"{group.name}: channel={resolved_channel_id} "
+                    f"{group.name}: channel={item.channel_id} "
                     f"credential={item.credential_id} model={item.model_name}"
                 )
             resolved_item_keys.add(target)
@@ -105,7 +83,6 @@ async def _replace_groups(
                 raise ValueError(
                     f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
                 )
-            resolved_items.append((index, item, resolved_channel_id))
 
         session.add(
             ModelGroupEntity(
@@ -129,11 +106,11 @@ async def _replace_groups(
             )
         )
 
-        for index, item, resolved_channel_id in resolved_items:
+        for index, item in enumerate(group.items):
             session.add(
                 ModelGroupItemEntity(
                     group_id=group.id,
-                    channel_id=resolved_channel_id,
+                    channel_id=item.channel_id,
                     credential_id=item.credential_id,
                     model_name=item.model_name,
                     enabled=1 if item.enabled else 0,

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.model_prices import canonical_model_price_key
-from app.core.runtime_channel_ids import extract_protocol_config_id
+from app.core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from app.models.model_groups import ModelGroup
 from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import (
@@ -75,13 +75,9 @@ async def _load_groups(self, session: AsyncSession) -> list[ModelGroup]:
             )
         ).all()
     }
-    protocol_config_ids = set(channel_site_ids)
-
     items_by_group: dict[str, list[dict[str, object]]] = {}
     for row in item_rows:
-        protocol_config_id = extract_protocol_config_id(
-            row.channel_id, protocol_config_ids
-        )
+        protocol_config_id = protocol_config_id_from_runtime_channel_id(row.channel_id)
         items_by_group.setdefault(row.group_id, []).append(
             {
                 "channel_id": row.channel_id,

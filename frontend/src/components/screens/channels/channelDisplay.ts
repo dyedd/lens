@@ -1,21 +1,4 @@
 import type { Site, SiteProtocolConfig } from "@/lib/api/sites";
-import { protocolLabel } from "@/lib/protocols";
-
-/** Returns the unique protocols configured for a site. */
-function siteProtocols(site: Site) {
-  return Array.from(
-    new Set(
-      site.protocols.flatMap((protocolConfig) => protocolConfig.protocols),
-    ),
-  );
-}
-
-/** Builds a localized protocol summary for a site. */
-export function siteSubtitle(site: Site, locale: "zh-CN" | "en-US") {
-  return siteProtocols(site)
-    .map((p) => protocolLabel(p, locale))
-    .join(" / ");
-}
 
 /** Builds a compact summary of a site's configured base URLs. */
 export function siteEndpointSummary(site: Site, locale: string = "zh-CN") {

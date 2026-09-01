@@ -23,7 +23,7 @@ from app.persistence.entities import (
 
 async def _replace_sites(
     self, session: AsyncSession, sites: list[SiteConfig]
-) -> tuple[set[str], dict[str, list[ProtocolKind]], set[tuple[str, str, str]]]:
+) -> tuple[set[str], set[tuple[str, str, str]]]:
     await session.execute(delete(SiteCredentialRateEntity))
     await session.execute(delete(SiteDiscoveredModelEntity))
     await session.execute(delete(SiteProtocolConfigCredentialEntity))
@@ -286,4 +286,4 @@ async def _replace_sites(
                 )
             )
 
-    return protocol_config_ids, protocols_by_config_id, model_keys
+    return protocol_config_ids, model_keys
