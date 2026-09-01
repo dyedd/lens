@@ -1,5 +1,6 @@
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { protocolConfigSelectedCredentialIds } from "./channelFormUtils";
+import { genericModelKey } from "./channelModelUtils";
 import type { FormProtocolConfig, FormState } from "./channelTypes";
 
 const MODEL_ACTION_COOLDOWN_MS = 800;
@@ -25,6 +26,13 @@ export function activeSelectedCredentialIds(
     const credential = credentials.get(id);
     return Boolean(credential?.enabled && credential.api_key.trim());
   });
+}
+
+/** Includes unmatched sync targets, which also appear in the model overview. */
+export function existingPickerModelKeys(config: FormProtocolConfig) {
+  return new Set(
+    [...config.models, ...config.sync_targets].map(genericModelKey),
+  );
 }
 
 export function buildModels(

@@ -227,13 +227,7 @@ export function ChannelsDialogs({
           onOpenChange={(open) => {
             if (!open) picker.closeModelPicker();
           }}
-          onToggleModel={(key) =>
-            picker.setPickerSelectedModelKeys((current) =>
-              current.includes(key)
-                ? current.filter((item) => item !== key)
-                : [...current, key],
-            )
-          }
+          onToggleModel={(key) => picker.togglePickerModelSelection(key)}
           onImportProtocolsChange={picker.setPickerImportProtocols}
           onFilteredModelProtocolsChange={(keys, protocols) =>
             picker.setPickerModelProtocols((current) => {

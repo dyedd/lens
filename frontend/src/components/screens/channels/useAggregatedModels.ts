@@ -6,7 +6,11 @@ import {
   credentialLabel,
   protocolConfigDisplayName,
 } from "./channelLabels";
-import { protocolConfigModelKey, syncTargetKey } from "./channelModelUtils";
+import {
+  aggregateModelGroupKey,
+  protocolConfigModelKey,
+  syncTargetKey,
+} from "./channelModelUtils";
 import type {
   FormBaseUrl,
   FormCredential,
@@ -14,16 +18,39 @@ import type {
   Locale,
 } from "./channelTypes";
 
+export type AggregatedModelMember = {
+  /** Per-credential key matching protocolConfigModelKey semantics. */
+  key: string;
+  credentialName: string;
+  source: SiteModelInput["source"];
+  isTargetOnly: boolean;
+};
+
 export type AggregatedModel = {
+  /** Group key shared by every same-name model inside one protocol config. */
   key: string;
   modelName: string;
   protocols: ProtocolKind[];
   sourceLabel: string;
   source: SiteModelInput["source"];
-  isTargetOnly: boolean;
+  /** Per-credential rows for expanding the collapsed overview row. */
+  members: AggregatedModelMember[];
+  /** Per-credential key used to open the single-model test dialog. */
+  testKey: string | null;
 };
 
-/** Builds the model rows shown in the channel overview. */
+type ModelGroupSeed = {
+  modelName: string;
+  protocols: Set<ProtocolKind>;
+  sources: Set<SiteModelInput["source"]>;
+  members: AggregatedModelMember[];
+  testKey: string | null;
+};
+
+/**
+ * Builds the channel overview rows, collapsing models that share a name
+ * within one protocol configuration so multi-key duplicates stay one row.
+ */
 export function useAggregatedModels(
   protocolConfigs: FormProtocolConfig[],
   baseUrls: FormBaseUrl[],
@@ -53,22 +80,57 @@ export function useAggregatedModels(
       const sourceName = baseUrl
         ? `${protocolConfigName} · ${baseUrlLabel(baseUrl, baseUrlIndex, locale)}`
         : protocolConfigName;
-      const rows = new Map<string, AggregatedModel>(
-        protocolConfig.models.map((model) => {
-          const key = protocolConfigModelKey(protocolConfig, model);
-          return [
-            key,
-            {
-              key,
-              modelName: model.model_name,
-              protocols: model.protocols,
-              sourceLabel: `${sourceName} · ${credentialName(model.credential_id)}`,
-              source: model.source,
-              isTargetOnly: false,
-            },
-          ] as const;
-        }),
-      );
+      const groups = new Map<string, ModelGroupSeed>();
+      const groupOf = (modelName: string) => {
+        const existing = groups.get(modelName);
+        if (existing) return existing;
+        const created: ModelGroupSeed = {
+          modelName,
+          protocols: new Set(),
+          sources: new Set(),
+          members: [],
+          testKey: null,
+        };
+        groups.set(modelName, created);
+        return created;
+      };
+      const addMember = (
+        group: ModelGroupSeed,
+        memberKey: string,
+        credentialId: string,
+        source: SiteModelInput["source"],
+        isTargetOnly: boolean,
+      ) => {
+        const existing = group.members.find(
+          (member) => member.key === memberKey,
+        );
+        if (existing) {
+          existing.isTargetOnly = existing.isTargetOnly && isTargetOnly;
+          return;
+        }
+        group.members.push({
+          key: memberKey,
+          credentialName: credentialName(credentialId),
+          source,
+          isTargetOnly,
+        });
+        if (!group.testKey && !isTargetOnly) group.testKey = memberKey;
+      };
+
+      for (const model of protocolConfig.models) {
+        const group = groupOf(model.model_name);
+        for (const protocol of model.protocols) {
+          group.protocols.add(protocol);
+        }
+        group.sources.add(model.source);
+        addMember(
+          group,
+          protocolConfigModelKey(protocolConfig, model),
+          model.credential_id,
+          model.source,
+          false,
+        );
+      }
 
       const syncedProtocolKeys = new Set(
         protocolConfig.models
@@ -85,29 +147,32 @@ export function useAggregatedModels(
       );
       for (const target of protocolConfig.sync_targets) {
         if (syncedProtocolKeys.has(syncTargetKey(target))) continue;
-
-        const key = protocolConfigModelKey(protocolConfig, {
-          ...target,
-          source: "synced",
-        });
-        const existing = rows.get(key);
-        if (existing) {
-          existing.protocols = Array.from(
-            new Set([...existing.protocols, target.protocol]),
-          );
-          continue;
-        }
-        rows.set(key, {
-          key,
-          modelName: target.model_name,
-          protocols: [target.protocol],
-          sourceLabel: `${sourceName} · ${credentialName(target.credential_id)}`,
-          source: "synced",
-          isTargetOnly: true,
-        });
+        const group = groupOf(target.model_name);
+        group.protocols.add(target.protocol);
+        group.sources.add("synced");
+        addMember(
+          group,
+          protocolConfigModelKey(protocolConfig, {
+            ...target,
+            source: "synced",
+          }),
+          target.credential_id,
+          "synced",
+          true,
+        );
       }
 
-      return Array.from(rows.values());
+      return Array.from(groups.values()).map((group) => ({
+        key: aggregateModelGroupKey(protocolConfig, group.modelName),
+        modelName: group.modelName,
+        protocols: Array.from(group.protocols),
+        sourceLabel: `${sourceName} · ${group.members
+          .map((member) => member.credentialName)
+          .join(locale === "zh-CN" ? "、" : ", ")}`,
+        source: group.sources.has("manual") ? "manual" : "synced",
+        members: group.members,
+        testKey: group.testKey,
+      }));
     });
   }, [baseUrls, credentials, protocolConfigs, locale]);
 }
