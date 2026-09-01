@@ -24,7 +24,9 @@ import {
 } from "./channelFormValidationUtils";
 import { nextProtocolConfigName } from "./channelLabels";
 import {
+  aggregateModelGroupKey,
   coalesceFormModels,
+  isAggregateModelGroupKey,
   protocolConfigModelKey,
   syncTargetKey,
 } from "./channelModelUtils";
@@ -288,28 +290,30 @@ export function useChannelForm(locale: Locale) {
       );
       return;
     }
+    const nextProtocols = Array.from(new Set(protocols));
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => {
-        const selected = config.models.find(
-          (model) => protocolConfigModelKey(config, model) === key,
+        // A collapsed overview row is keyed by model name, so protocol
+        // changes cover every credential carrying that model.
+        const selected = config.models.filter(
+          (model) => aggregateModelGroupKey(config, model.model_name) === key,
         );
-        if (!selected) return config;
-        const nextModel = {
-          ...selected,
-          protocols: Array.from(new Set(protocols)),
-        };
+        if (!selected.length) return config;
         return {
           ...config,
           models: config.models.map((model) =>
-            protocolConfigModelKey(config, model) === key ? nextModel : model,
+            aggregateModelGroupKey(config, model.model_name) === key
+              ? { ...model, protocols: nextProtocols }
+              : model,
           ),
-          sync_targets:
-            selected.source === "synced"
-              ? replaceSyncTargets(config, [selected], "manual").concat(
-                  syncTargetsForModel(nextModel),
-                )
-              : config.sync_targets,
+          sync_targets: selected.some((model) => model.source === "synced")
+            ? replaceSyncTargets(config, selected, "manual").concat(
+                selected.flatMap((model) =>
+                  syncTargetsForModel({ ...model, protocols: nextProtocols }),
+                ),
+              )
+            : config.sync_targets,
         };
       }),
     }));
@@ -318,18 +322,23 @@ export function useChannelForm(locale: Locale) {
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => {
-        const targetMatches = (
-          target: FormProtocolConfig["sync_targets"][number],
-        ) =>
-          protocolConfigModelKey(config, { ...target, source: "synced" }) ===
-          key;
+        // Group keys delete every same-name model in this config; per-member
+        // keys (from an expanded row) delete just that credential's copy.
+        const isGroupKey = isAggregateModelGroupKey(key);
         return {
           ...config,
-          models: config.models.filter(
-            (model) => protocolConfigModelKey(config, model) !== key,
+          models: config.models.filter((model) =>
+            isGroupKey
+              ? aggregateModelGroupKey(config, model.model_name) !== key
+              : protocolConfigModelKey(config, model) !== key,
           ),
-          sync_targets: config.sync_targets.filter(
-            (target) => !targetMatches(target),
+          sync_targets: config.sync_targets.filter((target) =>
+            isGroupKey
+              ? aggregateModelGroupKey(config, target.model_name) !== key
+              : protocolConfigModelKey(config, {
+                  ...target,
+                  source: "synced",
+                }) !== key,
           ),
         };
       }),
@@ -343,7 +352,7 @@ export function useChannelForm(locale: Locale) {
         ...updateModelSources(
           config,
           config.models.filter(
-            (model) => protocolConfigModelKey(config, model) === key,
+            (model) => aggregateModelGroupKey(config, model.model_name) === key,
           ),
           source,
         ),

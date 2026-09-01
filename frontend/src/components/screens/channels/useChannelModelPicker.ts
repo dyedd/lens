@@ -16,6 +16,7 @@ import {
   activeSelectedCredentialIds,
   buildModels,
   canRunModelAction,
+  existingPickerModelKeys,
 } from "./channelModelPickerUtils";
 import {
   genericModelKey,
@@ -221,7 +222,31 @@ export function useChannelModelPicker({
   async function fetchProtocolModels(configIndex: number) {
     const result = await requestUpstreamModels(configIndex);
     if (!result) return;
-    setAvailableModels(result.models);
+    const existingKeys = existingPickerModelKeys(result.config);
+    const fetchedModels = groupPickerModels(result.models);
+    const selectableModels = fetchedModels.filter(
+      (model) => !existingKeys.has(genericModelKey(model)),
+    );
+    const fetchedNameCount = new Set(
+      fetchedModels.map((model) => model.model_name),
+    ).size;
+    const selectableNameCount = new Set(
+      selectableModels.map((model) => model.model_name),
+    ).size;
+    const hiddenCount = fetchedNameCount - selectableNameCount;
+    if (!selectableModels.length) {
+      toast.info(
+        result.models.length
+          ? locale === "zh-CN"
+            ? "获取到的模型均已在总览中"
+            : "Fetched models are already in the overview"
+          : locale === "zh-CN"
+            ? "未获取到可选模型"
+            : "No models fetched",
+      );
+      return;
+    }
+    setAvailableModels(selectableModels);
     setPickerSelectedModelKeys([]);
     setPickerImportProtocols(
       Array.from(new Set(result.config.manual_protocols)),
@@ -229,9 +254,13 @@ export function useChannelModelPicker({
     setPickerModelProtocols({});
     setModelPickerProtocolConfigIndex(configIndex);
     toast.success(
-      locale === "zh-CN"
-        ? `已获取 ${result.models.length} 个可选模型`
-        : `Fetched ${result.models.length} available models`,
+      hiddenCount
+        ? locale === "zh-CN"
+          ? `已获取 ${selectableNameCount} 个可选模型，已隐藏 ${hiddenCount} 个已在总览中的模型`
+          : `Fetched ${selectableNameCount} available models, hid ${hiddenCount} already in the overview`
+        : locale === "zh-CN"
+          ? `已获取 ${selectableNameCount} 个可选模型`
+          : `Fetched ${selectableNameCount} available models`,
     );
   }
   function closeModelPicker() {
@@ -241,23 +270,54 @@ export function useChannelModelPicker({
     setPickerImportProtocols([]);
     setPickerModelProtocols({});
   }
+  /**
+   * Toggles a selection entry: a model name covers every key at once, while
+   * a "credential:model" entry only covers that key from an expanded row.
+   */
+  function togglePickerModelSelection(key: string) {
+    setPickerSelectedModelKeys((current) => {
+      if (current.includes(key)) {
+        return current.filter((item) => item !== key);
+      }
+      const memberKeys = availableModels
+        .filter((item) => item.model_name === key)
+        .map(genericModelKey);
+      if (memberKeys.length <= 1) return [...current, key];
+      const withoutMembers = current.filter(
+        (item) => !memberKeys.includes(item),
+      );
+      return [...withoutMembers, key];
+    });
+  }
   function applyModelSelection(keys: string[]) {
     if (modelPickerProtocolConfigIndex === null) return;
     const config = form.protocolConfigs[modelPickerProtocolConfigIndex];
     if (!config) return;
-    const protocolsForKey = (key: string) =>
+    const protocolsForName = (modelName: string) =>
       Array.from(
         new Set(
           resolvePickerModelProtocols(
-            key,
+            modelName,
             pickerModelProtocols,
             pickerImportProtocols,
           ),
         ),
       );
-    const selected = new Set(keys);
+    // Selection holds model names for whole-model picks and
+    // "credential:model" keys for single-key picks from an expanded row.
+    const memberKeySet = new Set(availableModels.map(genericModelKey));
+    const selectedNames = new Set(keys.filter((key) => !memberKeySet.has(key)));
+    const selectedMemberKeys = new Set(
+      keys.filter((key) => memberKeySet.has(key)),
+    );
+    const existingKeys = existingPickerModelKeys(config);
     const selectedModels = groupPickerModels(
-      availableModels.filter((item) => selected.has(genericModelKey(item))),
+      availableModels.filter(
+        (item) =>
+          !existingKeys.has(genericModelKey(item)) &&
+          (selectedNames.has(item.model_name) ||
+            selectedMemberKeys.has(genericModelKey(item))),
+      ),
     );
     if (!selectedModels.length) {
       toast.info(locale === "zh-CN" ? "未选择模型" : "No models selected");
@@ -265,9 +325,7 @@ export function useChannelModelPicker({
       return;
     }
     if (
-      selectedModels.some(
-        (model) => !protocolsForKey(genericModelKey(model)).length,
-      )
+      selectedModels.some((model) => !protocolsForName(model.model_name).length)
     ) {
       toast.error(
         locale === "zh-CN"
@@ -276,6 +334,10 @@ export function useChannelModelPicker({
       );
       return;
     }
+    const selectedKeys = new Set(selectedModels.map(genericModelKey));
+    const selectedNameCount = new Set(
+      selectedModels.map((model) => model.model_name),
+    ).size;
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((item, index) => {
@@ -285,7 +347,7 @@ export function useChannelModelPicker({
           expanded: true,
           models: [
             ...item.models.filter(
-              (model) => !selected.has(genericModelKey(model)),
+              (model) => !selectedKeys.has(genericModelKey(model)),
             ),
             ...selectedModels.map((model) => {
               const key = genericModelKey(model);
@@ -296,7 +358,7 @@ export function useChannelModelPicker({
                 ? "synced"
                 : "manual";
               return {
-                protocols: protocolsForKey(key),
+                protocols: protocolsForName(model.model_name),
                 protocolIds: existingModels.reduce<FormModel["protocolIds"]>(
                   (ids, candidate) => {
                     Object.assign(ids, candidate.protocolIds);
@@ -313,11 +375,11 @@ export function useChannelModelPicker({
           ],
           sync_targets: [
             ...item.sync_targets.filter(
-              (target) => !selected.has(genericModelKey(target)),
+              (target) => !selectedKeys.has(genericModelKey(target)),
             ),
             ...(item.sync_new_models
               ? selectedModels.flatMap((model) =>
-                  protocolsForKey(genericModelKey(model)).map((protocol) => ({
+                  protocolsForName(model.model_name).map((protocol) => ({
                     credential_id: model.credential_id,
                     model_name: model.model_name,
                     protocol,
@@ -331,8 +393,8 @@ export function useChannelModelPicker({
     closeModelPicker();
     toast.success(
       locale === "zh-CN"
-        ? `已选择 ${selectedModels.length} 个模型`
-        : `Selected ${selectedModels.length} models`,
+        ? `已选择 ${selectedNameCount} 个模型`
+        : `Selected ${selectedNameCount} models`,
     );
   }
   return {
@@ -348,6 +410,7 @@ export function useChannelModelPicker({
     addManualProtocolConfigModel,
     fetchProtocolModels,
     closeModelPicker,
+    togglePickerModelSelection,
     applyModelSelection,
   };
 }

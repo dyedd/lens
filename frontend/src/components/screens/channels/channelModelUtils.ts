@@ -34,6 +34,20 @@ export function protocolConfigModelKey(
   ]);
 }
 
+/** Builds the collapsed overview row key shared by same-name models. */
+export function aggregateModelGroupKey(
+  protocolConfig: Pick<FormProtocolConfig, "id">,
+  modelName: string,
+) {
+  return JSON.stringify([protocolConfig.id, modelName]);
+}
+
+/** Reports whether a key targets a whole model group instead of one model. */
+export function isAggregateModelGroupKey(key: string) {
+  // Group keys hold two JSON parts; model keys hold four.
+  return key.startsWith("[") && key.split(",").length === 2;
+}
+
 /** Merges form models that represent the same persisted model rows. */
 export function coalesceFormModels(models: FormModel[]) {
   const groups = new Map<string, FormModel>();
@@ -79,6 +93,23 @@ export function groupPickerModels(models: PickerModelItem[]) {
     });
   }
   return Array.from(groups.values());
+}
+
+/** Groups picker rows by model name so one choice can cover every key. */
+export function groupPickerModelsByName(models: PickerModelItem[]) {
+  const groups = new Map<string, PickerModelItem[]>();
+  for (const model of groupPickerModels(models)) {
+    const items = groups.get(model.model_name);
+    if (items) {
+      items.push(model);
+      continue;
+    }
+    groups.set(model.model_name, [model]);
+  }
+  return Array.from(groups, ([model_name, items]) => ({
+    model_name,
+    items,
+  }));
 }
 
 /** Reports whether a picker model has an explicit protocol override. */
