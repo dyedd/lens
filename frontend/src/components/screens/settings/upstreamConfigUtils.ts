@@ -1,11 +1,3 @@
-/** Format an object value for an editable JSON textarea. */
-export function formatJsonObject(value: unknown): string {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return JSON.stringify(value, null, 2);
-  }
-  return "";
-}
-
 /** Return whether a value is a non-array object. */
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
