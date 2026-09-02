@@ -31,22 +31,22 @@
 │ Lens Gateway                                                         │
 │                                                                      │
 │  多协议入口                                                          │
-│  /v1/chat/completions                                                │
-│  /v1/messages                                                        │
-│  /v1/responses                                                       │
-│  /v1/embeddings                                                      │
-│  /v1/rerank                                                          │
+│  /v1/chat/completions        /v1/messages                            │
+│  /v1/responses               /v1/embeddings      /v1/rerank          │
+│  /v1/images/generations      /v1/images/edits                        │
 │  /v1beta/models/{model}:generateContent                              │
+│  /v1beta/models/{model}:streamGenerateContent                        │
 │                                                                      │
 │  请求解析                                                            │
 │  - 校验网关 Key                                                       │
-│  - 解析客户端协议和必填模型名                                         │
-│  - 按入口协议和模型名匹配模型组，可指向另一个执行模型组               │
+│  - 解析客户端协议和必填模型名（支持思考后缀）                          │
+│  - 按入口协议和模型名匹配模型组，可指向另一个执行模型组，             │
+│    多模态请求可按模型组回退到备用模型组                               │
 │                                                                      │
 │  路由计划                                                            │
 │  - 模型组成员：运行时渠道 + 凭证 + 上游模型                           │
 │  - 路由策略：轮询 / 故障切换                                          │
-│  - 协议转换：OpenAI Chat -> Anthropic / Responses                    │
+│  - 协议转换：Anthropic / Responses 客户端 ↔ OpenAI Chat / Responses  │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
@@ -78,11 +78,15 @@
 │  故障切换：按模型组成员顺序尝试，失败后切到下一个凭证 / 渠道          │
 │                                                                      │
 │  冷却粒度                                                            │
+│  自定义冷却检测规则优先，其次按状态码默认分类：                       │
 │  401 / 403：冷却当前凭证；404 / 429 / 5xx / 超时 / 网络：冷却模型    │
 │  同渠道其他模型继续可用；没有可用 Key + 模型绑定时渠道才整体不可用   │
 │                                                                      │
+│  健康排序                                                            │
+│  按渠道 + 模型的滑动窗口成功率打分，作为轮询权重                     │
+│                                                                      │
 │  请求日志                                                            │
-│  记录生命周期、Token、成本、User-Agent、尝试链路和错误摘要            │
+│  记录生命周期、Token、成本、User-Agent、尝试链路和错误摘要           │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
@@ -95,11 +99,15 @@
 
 ## 功能
 
-- 统一入口：一个 Base URL，一套网关 Key，支持 OpenAI / Anthropic / Gemini / Rerank 入口协议
-- 站点管理：一个站点可配置多个 Base URL、多个凭证和多个协议组合，支持模型发现、手动模型和批量导入
-- 模型组路由：按“运行时渠道 + 凭证 + 上游模型”组成候选，支持轮询、故障切换和执行模型组复用
-- 协议转换：OpenAI Chat 可转发到 Anthropic Messages 或 OpenAI Responses
-- 请求日志：记录协议、模型、延迟、Token、成本、User-Agent 和每次上游尝试链路
+- 统一入口：一个 Base URL，一套网关 Key，支持 OpenAI Chat / Responses / Embeddings / Images、Anthropic、Gemini、Rerank 入口协议
+- 站点管理：一个站点可配置多个 Base URL、多个凭证和多个协议组合，支持模型发现、手动模型、批量导入和站点标签
+- 模型组路由：按“运行时渠道 + 凭证 + 上游模型”组成候选，支持轮询、故障切换、执行模型组复用、渠道级启停和多模态回退
+- 协议转换：Anthropic / OpenAI Responses 客户端可转发到 OpenAI Chat 或 Responses 上游，OpenAI Chat 客户端可转发到 Responses 上游
+- 模型测试：单模型测试与批量模型测试，测试提示词可配置
+- 请求日志：记录协议、模型、延迟、Token、成本、User-Agent 和每次上游尝试链路；支持请求体 / 响应体留存
+- 健康与冷却：按成功率分级的模型健康页，内置熔断冷却与指数退避，冷却检测规则可自定义
+- 计价：接入 LiteLLM 模型价格库，支持按凭证倍率计费与图像单价
+- 定时任务：渠道模型自动同步、价格同步、凭证倍率同步等内置任务
 - 配置备份：导出/导入站点、模型组、设置、价格、定时任务、统计数据，可选包含网关 Key 和请求日志
 
 ## 截图
@@ -154,12 +162,13 @@ docker compose exec app cat /app/data/admin-password
 
 ### 本地构建镜像
 
+在仓库根目录执行：
+
 ```bash
-sh scripts/docker/deploy.sh
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
-`docker-compose.local.yml` 需要和 `docker-compose.yml` 放在同一目录。仓库中已提供该文件，会把镜像名改成 `lens:local` 并从当前源码构建。
+仓库中已提供 `docker-compose.local.yml`，会把镜像名改成 `lens:local` 并从当前源码构建。
 
 如果在独立部署目录中本地构建，手动创建 `docker-compose.local.yml`：
 
@@ -219,12 +228,12 @@ pnpm dev
 
 常见 Base URL：
 
-| 上游类型        | Base URL 示例                               | 协议选择                             |
-| --------------- | ------------------------------------------- | ------------------------------------ |
-| OpenAI          | `https://api.openai.com`                    | OpenAI Chat / Responses / Embeddings |
-| Anthropic       | `https://api.anthropic.com`                 | Anthropic                            |
-| Gemini          | `https://generativelanguage.googleapis.com` | Gemini                               |
-| NewAPI / Rerank | `https://newapi.example.com`                | Rerank（透传到 `POST /v1/rerank`）   |
+| 上游类型        | Base URL 示例                               | 协议选择                                    |
+| --------------- | ------------------------------------------- | ------------------------------------------- |
+| OpenAI          | `https://api.openai.com`                    | OpenAI Chat / Responses / Embeddings / Images |
+| Anthropic       | `https://api.anthropic.com`                 | Anthropic                                   |
+| Gemini          | `https://generativelanguage.googleapis.com` | Gemini                                      |
+| NewAPI / Rerank | `https://newapi.example.com`                | Rerank（透传到 `POST /v1/rerank`）          |
 
 ### 2. 创建模型组
 
@@ -233,8 +242,9 @@ pnpm dev
 - **轮询**：在模型组候选之间平滑轮询
 - **故障切换**：优先使用前面的成员，失败后切到下一个凭证或渠道
 - **执行组复用**：展示组可以指向另一个执行模型组，复用其候选和策略
+- **多模态回退**：配置按顺序尝试的备用模型组，主组没有可用候选时自动回退
 
-**协议转换**：当前支持把 OpenAI Chat 上游加入 Anthropic 或 OpenAI Responses 模型组，运行时会自动转换。
+**协议转换**：OpenAI Chat 或 OpenAI Responses 上游可以加入 Anthropic、OpenAI Responses 模型组，OpenAI Responses 上游可以加入 OpenAI Chat 模型组，运行时自动转换。
 
 ### 3. 发放网关 Key
 
@@ -243,6 +253,12 @@ pnpm dev
 ### 4. 客户端调用
 
 客户端只需要：Lens Base URL + 网关 API Key + 模型组名称。
+
+### 5. 观察健康与日志
+
+- `/model-health`：按请求日志统计各模型组 / 站点的成功率分级与时间线
+- `/requests`：每次请求的完整尝试链路、Token 与成本
+- `/overview`：用量总览与趋势
 
 ## 技术栈
 
@@ -274,9 +290,11 @@ pnpm dev
 | `stream_idle_timeout_seconds` | `180` 秒   | 流式请求首个有效输出后，相邻上游数据块的最长等待；范围 `0`–`86400`，`0` 不限制                           |
 | `max_request_body_bytes`      | `32000000` | 发送到上游的请求体上限；`0` 不限制                                                                      |
 
+其余可在页面修改的设置包括：全局代理、CORS 允许来源、上游全局 Header / 参数覆盖规则、冷却检测规则（自定义状态码 + 响应体正则 → 错误分类与冷却时长）、模型测试提示词、请求体 / 响应体日志留存、站点名称与 Logo、时区等。
+
 #### 冷却与健康排序
 
-冷却首先作用于能够被错误证据直接定位的资源。`401` / `403` 冷却当前 Key；`404`、`429`、`5xx`、上游 `408`、网关超时和网络错误冷却当前实际上游模型。同渠道其他模型或其他 Key 仍可参与路由。除 `401` / `403` / `404` / `408` / `429` 外的普通 `4xx` 通常只说明当前请求不可接受，不计入冷却。`429` / `503` 的标准 `Retry-After` 会立即触发当前模型冷却，并在最大冷却限制内优先于分类默认值；`0` 表示立即恢复。
+优先命中管理员配置的冷却检测规则（按状态码与响应体正则匹配，可指定错误分类、冷却时长和作用范围），未命中时按状态码默认分类。`401` / `403` 冷却当前 Key；`404`、`429`、`5xx`、上游 `408`、网关超时和网络错误冷却当前实际上游模型。同渠道其他模型或其他 Key 仍可参与路由。除 `401` / `403` / `404` / `408` / `429` 外的普通 `4xx` 通常只说明当前请求不可接受，不计入冷却。`429` / `503` 的标准 `Retry-After` 会立即触发当前模型冷却，并在最大冷却限制内优先于分类默认值；`0` 表示立即恢复。
 
 渠道没有独立的冷却计时器。对每个已启用的“Key + 模型”绑定：
 
