@@ -60,9 +60,4 @@ def parse_model_name(value: str) -> ParsedModelName:
     raise ValueError(f"Invalid reasoning suffix in model name: {model_name}")
 
 
-def canonical_model_name(value: str) -> str:
-    """Return the routable base model name."""
-    return parse_model_name(value).base_model
-
-
-__all__ = ["ParsedModelName", "canonical_model_name", "parse_model_name"]
+__all__ = ["ParsedModelName", "parse_model_name"]
