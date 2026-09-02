@@ -1,11 +1,11 @@
 import { ChevronDown, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { ProtocolMultiSelect } from "@/components/ui/ProtocolMultiSelect";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
 import type { Locale } from "./channelTypes";
+import { ProtocolMultiSelect } from "./ProtocolMultiSelect";
 import type { AggregatedModel } from "./useAggregatedModels";
 
 /** Renders aggregated channel models with protocol and test actions. */

@@ -4,13 +4,15 @@ import uuid
 from dataclasses import dataclass
 
 from ...models.protocols import ProtocolKind
-from ...models.sites import (
-    SiteBaseUrlInput,
+from ...models.site_import import (
     SiteBatchImportFieldError,
-    SiteCreate,
-    SiteCredentialInput,
     SiteImportItem,
     SiteImportModelInput,
+)
+from ...models.sites import (
+    SiteBaseUrlInput,
+    SiteCreate,
+    SiteCredentialInput,
     SiteModelInput,
     SiteProtocolConfigInput,
 )

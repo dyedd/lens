@@ -4,8 +4,8 @@ import {
   type SetStateAction,
   useState,
 } from "react";
-import { HeaderRows } from "@/components/settings/gateway-settings/HeaderRows";
-import { ParamRuleRows } from "@/components/settings/gateway-settings/ParamRuleRows";
+import { HeaderRows } from "@/components/ruleEditors/HeaderRows";
+import { ParamRuleRows } from "@/components/ruleEditors/ParamRuleRows";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Separator } from "@/components/ui/Separator";

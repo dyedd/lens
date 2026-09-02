@@ -213,7 +213,7 @@ def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
     import app.gateway.service.proxy_routes as proxy_routes_mod
     import app.gateway.service.request_logger as request_logger_mod
     import app.gateway.service.routing_plan as routing_plan_mod
-    import app.gateway.service.site_model_probe as site_model_probe_mod
+    import app.gateway.service.tasks.site_model_probe as site_model_probe_mod
 
     for module in (
         backups_mod,

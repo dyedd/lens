@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from enum import Enum
+from math import ceil
 from re import Pattern
+from time import monotonic
 from typing import Literal, NamedTuple
 
 
@@ -203,14 +205,296 @@ def calculate_exponential_cooldown(
     return min(max(next_cooldown, 0.0), float(max_cooldown))
 
 
+ModelKey = tuple[str, str]
+CredentialKey = tuple[str, str]
+
+
+@dataclass(slots=True)
+class CooldownState:
+    consecutive_failures: int = 0
+    last_error: str | None = None
+    last_error_category: ErrorCategory | None = None
+    cooled_until: float = 0.0
+    last_cooldown: float = 0.0
+    last_failure_at: float = 0.0
+    failure_revision: int = 0
+
+
+def model_key(channel_id: str, model_name: str | None) -> ModelKey:
+    """Model fault-domain key; the empty model name is the channel-wide domain."""
+    return channel_id, model_name or ""
+
+
+def credential_key(channel_id: str, credential_id: str | None) -> CredentialKey:
+    """Credential fault-domain key; the empty credential id means the channel key."""
+    return channel_id, credential_id or ""
+
+
+def remaining_seconds(until: float, *, now: float) -> int:
+    if until <= now:
+        return 0
+    return max(ceil(until - now), 0)
+
+
+class CooldownLedger:
+    """Own the per-target cooldown state for model and credential fault domains."""
+
+    def __init__(self, policy: CooldownPolicy | None = None) -> None:
+        self._policy = policy or CooldownPolicy()
+        self._model_states: dict[ModelKey, CooldownState] = {}
+        self._credential_states: dict[CredentialKey, CooldownState] = {}
+        self._failure_revision = 0
+
+    @property
+    def policy(self) -> CooldownPolicy:
+        return self._policy
+
+    @property
+    def detection_rules(self):
+        return self._policy.detection_rules
+
+    @property
+    def failure_revision(self) -> int:
+        return self._failure_revision
+
+    def clear(self) -> None:
+        self._model_states.clear()
+        self._credential_states.clear()
+
+    def configure_policy(self, policy: CooldownPolicy) -> None:
+        self._policy = policy
+        self._clamp_active_cooldowns(now=monotonic())
+
+    def record_model_failure(
+        self,
+        channel_id: str,
+        model_name: str | None,
+        *,
+        error: str,
+        category: ErrorCategory,
+        cooldown_seconds: float | None,
+    ) -> None:
+        now = monotonic()
+        self._failure_revision += 1
+        state = self._model_states.setdefault(
+            model_key(channel_id, model_name), CooldownState()
+        )
+        self._record_failure(
+            state, error, category, cooldown_seconds=cooldown_seconds, now=now
+        )
+
+    def record_credential_failure(
+        self,
+        channel_id: str,
+        credential_id: str | None,
+        *,
+        error: str,
+        category: ErrorCategory,
+        cooldown_seconds: float | None,
+    ) -> None:
+        now = monotonic()
+        self._failure_revision += 1
+        state = self._credential_states.setdefault(
+            credential_key(channel_id, credential_id), CooldownState()
+        )
+        self._record_failure(
+            state, error, category, cooldown_seconds=cooldown_seconds, now=now
+        )
+
+    def record_success(
+        self,
+        channel_id: str,
+        *,
+        credential_id: str | None,
+        model_name: str | None,
+        started_revision: int | None,
+    ) -> None:
+        model_state = self._model_states.get(model_key(channel_id, model_name))
+        if model_state is not None and (
+            started_revision is None or model_state.failure_revision <= started_revision
+        ):
+            self._model_states.pop(model_key(channel_id, model_name), None)
+        credential_state = self._credential_states.get(
+            credential_key(channel_id, credential_id)
+        )
+        if credential_state is not None and (
+            started_revision is None
+            or credential_state.failure_revision <= started_revision
+        ):
+            self._credential_states.pop(credential_key(channel_id, credential_id), None)
+
+    def model_state(
+        self, channel_id: str, model_name: str | None
+    ) -> CooldownState | None:
+        return self._model_states.get(model_key(channel_id, model_name))
+
+    def credential_state(
+        self, channel_id: str, credential_id: str | None
+    ) -> CooldownState | None:
+        return self._credential_states.get(credential_key(channel_id, credential_id))
+
+    def model_keys(self) -> set[ModelKey]:
+        return set(self._model_states)
+
+    def credential_keys(self) -> set[CredentialKey]:
+        return set(self._credential_states)
+
+    def states_for_channel(self, channel_id: str) -> list[CooldownState]:
+        """All cooldown states recorded for a channel's fault domains."""
+        return [
+            state
+            for states in (self._model_states, self._credential_states)
+            for key, state in states.items()
+            if key[0] == channel_id
+        ]
+
+    def evict(self, keys: set[ModelKey] | set[CredentialKey]) -> None:
+        for key in keys:
+            self._model_states.pop(key, None)  # type: ignore[arg-type]
+            self._credential_states.pop(key, None)  # type: ignore[arg-type]
+
+    def model_cooled_until(
+        self, channel_id: str, model_name: str | None, *, now: float
+    ) -> float:
+        state = self._model_states.get(model_key(channel_id, model_name))
+        return state.cooled_until if state else 0.0
+
+    def credential_cooled_until(
+        self, channel_id: str, credential_id: str | None, *, now: float
+    ) -> float:
+        state = self._credential_states.get(credential_key(channel_id, credential_id))
+        return state.cooled_until if state else 0.0
+
+    def cooldown_reason(
+        self,
+        channel_id: str,
+        model_name: str | None,
+        credential_id: str | None,
+        *,
+        now: float,
+    ) -> str:
+        """Name the fault domain and remaining cooldown of an unavailable target."""
+        states = [
+            state
+            for state in (
+                self._model_states.get(model_key(channel_id, model_name)),
+                self._credential_states.get(credential_key(channel_id, credential_id)),
+            )
+            if state is not None and state.cooled_until > now
+        ]
+        if not states:
+            return ""
+        state = max(states, key=lambda item: item.cooled_until)
+        category = (
+            state.last_error_category.value
+            if state.last_error_category is not None
+            else "unknown"
+        )
+        return f"{category}, {remaining_seconds(state.cooled_until, now=now)}s left"
+
+    def prune_stale(self, *, now: float) -> None:
+        stale_before = now - self._policy.failure_window_seconds
+        for key, state in list(self._model_states.items()):
+            if (
+                state.cooled_until <= now
+                and max(state.last_failure_at, state.cooled_until) < stale_before
+            ):
+                self._model_states.pop(key, None)
+        for key, state in list(self._credential_states.items()):
+            if (
+                state.cooled_until <= now
+                and max(state.last_failure_at, state.cooled_until) < stale_before
+            ):
+                self._credential_states.pop(key, None)
+
+    def _record_failure(
+        self,
+        state: CooldownState,
+        error: str,
+        category: ErrorCategory,
+        *,
+        cooldown_seconds: float | None,
+        now: float,
+    ) -> None:
+        if state.cooled_until > now:
+            state.failure_revision = self._failure_revision
+            return
+        failure_gap_started_at = max(state.last_failure_at, state.cooled_until)
+        if (
+            failure_gap_started_at > 0
+            and now - failure_gap_started_at > self._policy.failure_window_seconds
+        ):
+            state.consecutive_failures = 0
+            state.last_cooldown = 0.0
+        if state.last_error_category != category:
+            state.consecutive_failures = 0
+            state.last_cooldown = 0.0
+
+        state.last_error = error
+        state.last_error_category = category
+        state.last_failure_at = now
+        state.failure_revision = self._failure_revision
+        initial_cooldown = self._policy.initial_cooldown(category)
+        if initial_cooldown <= 0 or self._policy.max_cooldown_seconds <= 0:
+            state.consecutive_failures = 0
+            state.last_cooldown = 0.0
+            state.cooled_until = 0.0
+            return
+
+        state.consecutive_failures += 1
+        threshold = (
+            1 if cooldown_seconds is not None else self._policy.threshold(category)
+        )
+        if state.consecutive_failures < threshold:
+            return
+        if cooldown_seconds is not None:
+            cooldown = min(
+                max(cooldown_seconds, 0.0), float(self._policy.max_cooldown_seconds)
+            )
+        else:
+            cooldown = calculate_exponential_cooldown(
+                state.last_cooldown,
+                initial_cooldown,
+                self._policy.backoff_multiplier,
+                self._policy.max_cooldown_seconds,
+            )
+        state.last_cooldown = cooldown
+        state.cooled_until = now + cooldown if cooldown > 0 else 0.0
+
+    def _clamp_active_cooldowns(self, *, now: float) -> None:
+        for state in [*self._model_states.values(), *self._credential_states.values()]:
+            category = state.last_error_category
+            if category is None:
+                continue
+            if (
+                self._policy.max_cooldown_seconds <= 0
+                or self._policy.initial_cooldown(category) <= 0
+            ):
+                state.cooled_until = 0.0
+                state.last_cooldown = 0.0
+                state.consecutive_failures = 0
+                continue
+            state.last_cooldown = min(
+                state.last_cooldown, float(self._policy.max_cooldown_seconds)
+            )
+            state.cooled_until = min(
+                state.cooled_until, now + self._policy.max_cooldown_seconds
+            )
+
+
 __all__ = [
     "CompiledCooldownDetectionRule",
+    "CooldownLedger",
     "CooldownPolicy",
     "CooldownScope",
+    "CooldownState",
     "ErrorCategory",
     "ErrorClassification",
     "calculate_exponential_cooldown",
     "classify_error",
     "compile_detection_rules",
+    "credential_key",
+    "model_key",
     "parse_cooldown_seconds",
+    "remaining_seconds",
 ]

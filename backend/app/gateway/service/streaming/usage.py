@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ...models.protocols import ProtocolKind
-from .runtime_types import StreamCapture
+from ....models.protocols import ProtocolKind
+from ..runtime_types import StreamCapture
 from .stream_types import OPENAI_RESPONSES_TERMINAL_EVENTS
 
 

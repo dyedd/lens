@@ -1,5 +1,5 @@
-import { HeaderRows } from "@/components/settings/gateway-settings/HeaderRows";
-import { ParamRuleRows } from "@/components/settings/gateway-settings/ParamRuleRows";
+import { HeaderRows } from "@/components/ruleEditors/HeaderRows";
+import { ParamRuleRows } from "@/components/ruleEditors/ParamRuleRows";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";

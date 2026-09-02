@@ -11,7 +11,7 @@ import type { useChannelTransfer } from "./useChannelTransfer";
 import type { useModelGroupEnsure } from "./useModelGroupEnsure";
 
 const ChannelEditorDialog = lazyComponent(() =>
-  import("./ChannelDialogs").then((module) => module.ChannelEditorDialog),
+  import("./ChannelEditorDialog").then((module) => module.ChannelEditorDialog),
 );
 const DeleteChannelDialog = lazyComponent(() =>
   import("./DeleteChannelDialog").then((module) => module.DeleteChannelDialog),

@@ -1,7 +1,6 @@
+import { ParamRuleRows } from "@/components/ruleEditors/ParamRuleRows";
 import { titleForLocale } from "@/lib/I18nContext";
-
 import type { ParamOverrideSettingsProps } from "./gatewaySettingsTypes";
-import { ParamRuleRows } from "./ParamRuleRows";
 
 /** Renders the global upstream parameter rules. */
 export function ParamOverrideSettings({

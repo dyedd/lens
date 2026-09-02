@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...models.protocols import ProtocolKind
+from ....models.protocols import ProtocolKind
 from .usage import (
     _EMPTY_USAGE,
     _anthropic_usage,

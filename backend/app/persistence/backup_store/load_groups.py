@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import json
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.model_prices import canonical_model_price_key
 from app.core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from app.models.model_groups import ModelGroup
-from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
@@ -16,6 +13,12 @@ from app.persistence.entities import (
     SiteCredentialEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+)
+from app.persistence.group_rule_codec import (
+    group_price_kwargs,
+    parse_fallback_group_ids,
+    parse_headers,
+    parse_param_override,
 )
 
 
@@ -109,35 +112,12 @@ async def _load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                     "route_group_name": route_group_names.get(row.route_group_id, ""),
                     "sync_filter_mode": row.sync_filter_mode,
                     "sync_filter_query": row.sync_filter_query,
-                    "param_override": [
-                        ParamOverrideRule.model_validate(item)
-                        for item in json.loads(row.param_override)
-                    ],
-                    "headers": [
-                        HeaderRule.model_validate(item)
-                        for item in json.loads(row.headers_json)
-                    ],
-                    "fallback_group_ids": json.loads(row.fallback_group_ids_json),
-                    "input_price_per_million": (
-                        price.input_price_per_million if price is not None else 0.0
+                    "param_override": parse_param_override(row.param_override),
+                    "headers": parse_headers(row.headers_json),
+                    "fallback_group_ids": parse_fallback_group_ids(
+                        row.fallback_group_ids_json
                     ),
-                    "output_price_per_million": (
-                        price.output_price_per_million if price is not None else 0.0
-                    ),
-                    "cache_read_price_per_million": (
-                        price.cache_read_price_per_million if price is not None else 0.0
-                    ),
-                    "cache_write_price_per_million": (
-                        price.cache_write_price_per_million
-                        if price is not None
-                        else 0.0
-                    ),
-                    "image_price_per_image": (
-                        price.image_price_per_image if price is not None else 0.0
-                    ),
-                    "pricing_mode": (
-                        price.pricing_mode if price is not None else "tokens"
-                    ),
+                    **group_price_kwargs(price),
                     "items": items_by_group.get(row.id, []),
                 }
             )

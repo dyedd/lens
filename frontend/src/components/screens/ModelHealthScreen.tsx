@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/Tooltip";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { apiRequest } from "@/lib/api/client";
-import type { HealthItem, HealthSummary } from "@/lib/api/sites";
+import type { HealthItem, HealthSummary, HealthTier } from "@/lib/api/sites";
 import { cn } from "@/lib/classNames";
 import { useI18n } from "@/lib/I18nContext";
 
@@ -49,14 +49,6 @@ function useDebouncedValue(value: string, delay: number) {
 
   return debouncedValue;
 }
-
-type HealthTier =
-  | "no-data"
-  | "healthy"
-  | "mostly-healthy"
-  | "partial"
-  | "major"
-  | "all-failed";
 
 const HEALTH_TIER_META: Record<
   HealthTier,
@@ -100,19 +92,8 @@ const HEALTH_TIER_META: Record<
   },
 };
 
-function healthTier(totalCount: number, successCount: number): HealthTier {
-  if (!totalCount) return "no-data";
-  if (successCount === totalCount) return "healthy";
-  if (!successCount) return "all-failed";
-  const rate = successCount / totalCount;
-  if (rate >= 0.99) return "mostly-healthy";
-  if (rate >= 0.9) return "partial";
-  return "major";
-}
-
 function healthState(item: HealthItem, isChineseLocale: boolean) {
-  const meta =
-    HEALTH_TIER_META[healthTier(item.total_count, item.success_count)];
+  const meta = HEALTH_TIER_META[item.tier];
   return {
     label: isChineseLocale ? meta.zh : meta.en,
     className: meta.badge,
@@ -120,8 +101,7 @@ function healthState(item: HealthItem, isChineseLocale: boolean) {
 }
 
 function bucketClassName(bucket: HealthItem["buckets"][number]) {
-  return HEALTH_TIER_META[healthTier(bucket.total_count, bucket.success_count)]
-    .bar;
+  return HEALTH_TIER_META[bucket.tier].bar;
 }
 
 function HealthTimeline({

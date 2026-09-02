@@ -11,31 +11,32 @@ from ....models.channels import (
     ChannelModelSyncRequest,
     ChannelModelSyncResponse,
 )
+from ....models.health import HealthSummary
 from ....models.model_groups import (
     ModelGroupEnsureFromSiteRequest,
     ModelGroupEnsureModelInput,
 )
 from ....models.protocols import ProtocolKind
+from ....models.site_import import SiteBatchImportRequest, SiteBatchImportResult
+from ....models.site_model_test import (
+    SiteModelFetchItem,
+    SiteModelFetchRequest,
+    SiteModelTestRequest,
+    SiteModelTestResult,
+)
 from ....models.sites import (
-    HealthSummary,
-    SiteBatchImportRequest,
-    SiteBatchImportResult,
     SiteConfig,
     SiteCreate,
     SiteCredential,
     SiteEnabledUpdate,
-    SiteModelFetchItem,
-    SiteModelFetchRequest,
     SiteModelGroupSaveRequest,
     SiteModelGroupSaveResponse,
-    SiteModelTestRequest,
-    SiteModelTestResult,
     SiteUpdate,
 )
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..model_discovery import _fetch_upstream_models, filter_model_names
-from ..site_model_probe import run_site_model_probe
+from ..tasks.model_discovery import _fetch_upstream_models, filter_model_names
+from ..tasks.site_model_probe import run_site_model_probe
 from ..upstream_support import _format_channel_error
 
 
@@ -313,7 +314,7 @@ async def sync_channel_models(
     payload: ChannelModelSyncRequest, _: Any = Depends(get_current_admin)
 ) -> ChannelModelSyncResponse:
     """Synchronize stored channel models with their upstream sites."""
-    from ..model_sync import sync_channel_models as run_channel_model_sync
+    from ..tasks.model_sync import sync_channel_models as run_channel_model_sync
 
     return await run_channel_model_sync(app_state, dry_run=payload.dry_run)
 
@@ -324,12 +325,12 @@ async def sync_site_credential_rate(
     _: Any = Depends(get_current_admin),
 ) -> SiteCredential:
     """Synchronize one configured upstream credential rate."""
-    from ..credential_rate_tasks import (
+    from ..tasks.credential_rate_tasks import (
         CredentialRateConflictError,
         CredentialRateNotConfiguredError,
         CredentialRateSyncError,
     )
-    from ..credential_rate_tasks import (
+    from ..tasks.credential_rate_tasks import (
         sync_site_credential_rate as run_credential_rate_sync,
     )
 

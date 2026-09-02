@@ -4,8 +4,8 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from ...models.protocols import ProtocolKind
-from .payload_serialization import _dump_log_json
+from ....models.protocols import ProtocolKind
+from ..payload_serialization import _dump_log_json
 from .stream_types import OPENAI_RESPONSES_TERMINAL_EVENTS
 from .usage import _parse_sse_payloads
 

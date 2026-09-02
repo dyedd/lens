@@ -7,18 +7,21 @@ from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from starlette.types import Receive, Scope, Send
 
-from ...models.protocols import ProtocolKind
-from ..router.cooldown import ErrorCategory
-from .app_state import logger
-from .routing_plan import _gateway_timeout_scope
-from .runtime_types import (
+from ....models.protocols import ProtocolKind
+from ...router.cooldown import ErrorCategory
+from ..app_state import logger
+from ..routing_plan import _gateway_timeout_scope
+from ..runtime_types import (
     StreamCapture,
     _capture_stream_content,
     _GatewayTimeoutError,
     _record_stream_error,
     _RequestDeadline,
 )
-from .stream_events import _capture_stream_event_chunk, _flush_stream_event_buffer
+from .stream_events import (
+    _capture_stream_event_chunk,
+    _flush_stream_event_buffer,
+)
 
 
 class _FinalizingStreamingResponse(StreamingResponse):

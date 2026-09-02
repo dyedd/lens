@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +15,12 @@ from app.persistence.entities import (
     ModelGroupItemEntity,
     ModelPriceEntity,
 )
+from app.persistence.group_rule_codec import (
+    group_price_kwargs,
+    parse_fallback_group_ids,
+    parse_headers,
+    parse_param_override,
+)
 
 from ...core.model_group_status import (
     build_model_group_channel_lookups,
@@ -24,7 +28,6 @@ from ...core.model_group_status import (
 )
 from ...core.protocol_reachability import infer_client_protocols
 from ...models.protocols import ProtocolKind
-from ...models.upstream_rules import HeaderRule, ParamOverrideRule
 
 
 class _GroupMappingMixin:
@@ -210,30 +213,9 @@ class _GroupMappingMixin:
             route_group_name=route_group_name,
             sync_filter_mode=entity.sync_filter_mode,
             sync_filter_query=entity.sync_filter_query,
-            param_override=[
-                ParamOverrideRule.model_validate(item)
-                for item in json.loads(entity.param_override)
-            ],
-            headers=[
-                HeaderRule.model_validate(item)
-                for item in json.loads(entity.headers_json)
-            ],
-            fallback_group_ids=json.loads(entity.fallback_group_ids_json),
-            input_price_per_million=(
-                float(price.input_price_per_million) if price is not None else 0.0
-            ),
-            output_price_per_million=(
-                float(price.output_price_per_million) if price is not None else 0.0
-            ),
-            cache_read_price_per_million=(
-                float(price.cache_read_price_per_million) if price is not None else 0.0
-            ),
-            cache_write_price_per_million=(
-                float(price.cache_write_price_per_million) if price is not None else 0.0
-            ),
-            image_price_per_image=(
-                float(price.image_price_per_image) if price is not None else 0.0
-            ),
-            pricing_mode=(price.pricing_mode if price is not None else "tokens"),
+            param_override=parse_param_override(entity.param_override),
+            headers=parse_headers(entity.headers_json),
+            fallback_group_ids=parse_fallback_group_ids(entity.fallback_group_ids_json),
+            **group_price_kwargs(price),
             items=items,
         )

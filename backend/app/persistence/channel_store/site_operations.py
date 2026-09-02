@@ -8,7 +8,8 @@ from sqlalchemy import (
 )
 
 from app.models.protocols import ModelSource, ProtocolKind
-from app.models.sites import SiteCredential, SiteModelFetchRequest
+from app.models.site_model_test import SiteModelFetchRequest
+from app.models.sites import SiteCredential
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,

@@ -1,7 +1,6 @@
+import { HeaderRows } from "@/components/ruleEditors/HeaderRows";
 import { titleForLocale } from "@/lib/I18nContext";
-
 import type { UpstreamHeaderSettingsProps } from "./gatewaySettingsTypes";
-import { HeaderRows } from "./HeaderRows";
 
 /** Renders global upstream request-header settings. */
 export function UpstreamHeaderSettings({
