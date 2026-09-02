@@ -275,6 +275,9 @@ class RequestLogEntity(Base):
     channel_id: Mapped[str | None] = mapped_column(
         String(160), nullable=True, index=True
     )
+    protocol_config_id: Mapped[str | None] = mapped_column(
+        String(160), nullable=True, index=True
+    )
     channel_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     gateway_key_id: Mapped[str | None] = mapped_column(
         String(80), nullable=True, index=True

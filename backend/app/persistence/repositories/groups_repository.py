@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import uuid
 
 from sqlalchemy import (
@@ -25,6 +24,11 @@ from app.models.protocols import ProtocolKind
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
+)
+from app.persistence.group_rule_codec import (
+    dump_fallback_group_ids,
+    dump_rules,
+    parse_fallback_group_ids,
 )
 
 from ..channel_store import ChannelStore
@@ -181,16 +185,10 @@ class GroupRepository(
                 route_group_id=route_group.id if route_group is not None else "",
                 sync_filter_mode=payload.sync_filter_mode.value,
                 sync_filter_query=payload.sync_filter_query,
-                param_override=json.dumps(
-                    [rule.model_dump(mode="json") for rule in payload.param_override],
-                    ensure_ascii=True,
-                ),
-                headers_json=json.dumps(
-                    [rule.model_dump(mode="json") for rule in payload.headers],
-                    ensure_ascii=True,
-                ),
-                fallback_group_ids_json=json.dumps(
-                    payload.fallback_group_ids, ensure_ascii=True
+                param_override=dump_rules(payload.param_override),
+                headers_json=dump_rules(payload.headers),
+                fallback_group_ids_json=dump_fallback_group_ids(
+                    payload.fallback_group_ids
                 ),
             )
             session.add(entity)
@@ -253,7 +251,7 @@ class GroupRepository(
             next_fallback_group_ids = (
                 payload.fallback_group_ids
                 if payload.fallback_group_ids is not None
-                else json.loads(entity.fallback_group_ids_json)
+                else parse_fallback_group_ids(entity.fallback_group_ids_json)
             )
             route_group = await self._validate_group_payload(
                 session,
@@ -275,29 +273,11 @@ class GroupRepository(
                 elif key == "items":
                     continue
                 elif key == "fallback_group_ids":
-                    entity.fallback_group_ids_json = json.dumps(
-                        value, ensure_ascii=True
-                    )
+                    entity.fallback_group_ids_json = dump_fallback_group_ids(value)
                 elif key == "headers":
-                    entity.headers_json = json.dumps(
-                        [
-                            rule.model_dump(mode="json")
-                            if hasattr(rule, "model_dump")
-                            else rule
-                            for rule in value
-                        ],
-                        ensure_ascii=True,
-                    )
+                    entity.headers_json = dump_rules(value)
                 elif key == "param_override":
-                    entity.param_override = json.dumps(
-                        [
-                            rule.model_dump(mode="json")
-                            if hasattr(rule, "model_dump")
-                            else rule
-                            for rule in value
-                        ],
-                        ensure_ascii=True,
-                    )
+                    entity.param_override = dump_rules(value)
                 elif key == "route_group_id":
                     entity.route_group_id = (
                         route_group.id if route_group is not None else ""

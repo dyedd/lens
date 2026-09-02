@@ -47,8 +47,8 @@ from app.persistence.settings_keys import (
 )
 
 from ...gateway.router.cooldown import compile_detection_rules
+from ...models.cooldown_rules import CooldownDetectionRulesConfig
 from ...models.upstream_rules import (
-    CooldownDetectionRulesConfig,
     UpstreamHeadersConfig,
     UpstreamParamOverrideConfig,
 )

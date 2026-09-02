@@ -2,7 +2,6 @@ import { CircleHelp, Plus, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
-import { ProtocolMultiSelect } from "@/components/ui/ProtocolMultiSelect";
 import { Separator } from "@/components/ui/Separator";
 import { Switch } from "@/components/ui/Switch";
 import {
@@ -11,6 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import type { FormProtocolConfig, Locale } from "./channelTypes";
+import { ProtocolMultiSelect } from "./ProtocolMultiSelect";
 
 type Props = {
   protocolConfig: FormProtocolConfig;

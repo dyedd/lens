@@ -8,10 +8,12 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.models.channels import ChannelConfig
-from app.models.sites import (
+from app.models.site_import import (
     SiteBatchImportItemResult,
     SiteBatchImportRequest,
     SiteBatchImportResult,
+)
+from app.models.sites import (
     SiteConfig,
     SiteCreate,
     SiteEnabledUpdate,

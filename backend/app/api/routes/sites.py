@@ -16,14 +16,10 @@ from ...gateway.service.admin.sites import (
     update_site_with_model_groups,
 )
 from ...models.channels import ChannelModelSyncResponse
-from ...models.sites import (
-    HealthSummary,
-    SiteBatchImportResult,
-    SiteCredential,
-    SiteModelFetchItem,
-    SiteModelGroupSaveResponse,
-    SiteModelTestResult,
-)
+from ...models.health import HealthSummary
+from ...models.site_import import SiteBatchImportResult
+from ...models.site_model_test import SiteModelFetchItem, SiteModelTestResult
+from ...models.sites import SiteCredential, SiteModelGroupSaveResponse
 
 
 def register(app: FastAPI) -> None:

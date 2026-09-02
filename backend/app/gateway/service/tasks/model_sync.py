@@ -6,27 +6,27 @@ from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 
-from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
-from ...models.channels import (
+from ....core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
+from ....models.channels import (
     ChannelConfig,
     ChannelModelSyncGroupChange,
     ChannelModelSyncResponse,
     ChannelModelSyncResultItem,
 )
-from ...models.model_groups import (
+from ....models.model_groups import (
     ModelGroup,
     ModelGroupEnsureFromSiteRequest,
     ModelGroupEnsureModelInput,
     ModelGroupEnsureResultItem,
 )
-from ...models.protocols import (
+from ....models.protocols import (
     ChannelModelSyncStatus,
     ModelGroupSyncFilterMode,
     ModelSource,
     ProtocolKind,
 )
-from ...models.sites import SiteConfig, SiteProtocolConfig
-from .app_state import logger
+from ....models.sites import SiteConfig, SiteProtocolConfig
+from ..app_state import logger
 from .model_discovery import _fetch_upstream_models
 
 if TYPE_CHECKING:

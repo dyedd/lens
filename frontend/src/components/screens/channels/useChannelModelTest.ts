@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  selectedModelTestProtocol,
+  useModelTestPrompts,
+} from "@/components/model-test/modelTestSession";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type {
@@ -7,10 +11,6 @@ import type {
   SiteModelTestResult,
 } from "@/lib/api/sites";
 import { paramOverrideDraftToRules } from "@/lib/upstreamRules";
-import {
-  selectedModelTestProtocol,
-  useModelTestPrompts,
-} from "../modelTestSession";
 import { activeBaseUrlValue, formHeaders } from "./channelFormUtils";
 import { credentialLabel, fallbackCredentialName } from "./channelLabels";
 import {

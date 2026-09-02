@@ -15,10 +15,10 @@ from ....models.model_groups import (
     ModelGroupUpdate,
     ModelGroupView,
 )
-from ....models.sites import SiteModelTestRequest, SiteModelTestResult
+from ....models.site_model_test import SiteModelTestRequest, SiteModelTestResult
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..site_model_probe import run_site_model_probe
+from ..tasks.site_model_probe import run_site_model_probe
 
 
 async def list_model_groups(

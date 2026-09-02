@@ -45,7 +45,7 @@
 | `State` | 状态快照 |
 | `Evaluation` | 评估结果 |
 
-领域术语沿用项目既有含义。Site、Protocol、Credential、Channel、ModelGroup 和 RouteTarget 不因个人偏好改名。
+领域术语沿用项目既有含义，不因个人偏好改名。核心词义：Site 是供应商账号，Channel 是它的协议出口（运行时 ID `{protocol_config_id}_{protocol}`），Credential 是站点密钥（冷却语境的 "key" 同物），ModelGroup 是对外模型名的路由单元（执行组直接承载成员，路由组转发给执行组），RouteTarget = channel × credential × model。
 
 ## 动作动词
 

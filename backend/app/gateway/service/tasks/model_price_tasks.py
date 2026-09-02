@@ -4,11 +4,11 @@ from datetime import UTC, datetime
 
 import httpx
 
-from ...core.model_prices import (
+from ....core.model_prices import (
     build_group_price_payloads,
     build_litellm_price_index,
 )
-from .app_state import AppState
+from ..app_state import AppState
 
 
 class ModelPriceSyncError(Exception):

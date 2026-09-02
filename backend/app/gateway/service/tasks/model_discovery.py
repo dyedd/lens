@@ -8,16 +8,16 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
-from ...core.upstream_rules import request_rule_context
-from ...models.channels import ChannelConfig
-from ..upstream_request import (
+from ....core.upstream_rules import request_rule_context
+from ....models.channels import ChannelConfig
+from ...upstream_request import (
     build_upstream_headers,
     resolve_channel_api_key,
     resolve_channel_model_list_url,
     resolve_upstream_proxy_url,
 )
-from .app_state import app_state
-from .upstream_support import (
+from ..app_state import app_state
+from ..upstream_support import (
     _default_lens_user_agent,
     _format_http_response_error,
     _resolve_http_client,

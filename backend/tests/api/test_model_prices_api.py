@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 from conftest import assert_error, run_async
 
-import app.gateway.service.model_price_tasks as model_price_tasks
+import app.gateway.service.tasks.model_price_tasks as model_price_tasks
 from app.persistence.repositories import model_price_repository
 
 

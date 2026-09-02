@@ -1,4 +1,8 @@
 import { RefreshCcw } from "lucide-react";
+import type {
+  BatchModelTestOption,
+  BatchModelTestRow,
+} from "@/components/model-test/batchModelTestSession";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
@@ -19,10 +23,6 @@ import {
 import { Textarea } from "@/components/ui/Textarea";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { protocolLabel } from "@/lib/protocols";
-import type {
-  BatchModelTestOption,
-  BatchModelTestRow,
-} from "../batchModelTestSession";
 import { BatchModelTestResults } from "./BatchModelTestResults";
 import type { Locale } from "./channelTypes";
 

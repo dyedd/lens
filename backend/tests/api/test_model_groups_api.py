@@ -85,7 +85,7 @@ def test_model_group_model_test_uses_persisted_image_credential(
         )
 
     upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    import app.gateway.service.site_model_probe as probe
+    import app.gateway.service.tasks.site_model_probe as probe
 
     monkeypatch.setattr(probe, "app_state", app_state)
     monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)

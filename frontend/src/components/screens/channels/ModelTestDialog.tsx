@@ -1,4 +1,8 @@
 import { RefreshCcw } from "lucide-react";
+import {
+  type ModelTestDialogTarget,
+  selectedModelTestProtocol,
+} from "@/components/model-test/modelTestSession";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
@@ -19,10 +23,6 @@ import {
   protocolBadgeClassName,
   protocolLabel,
 } from "@/lib/protocols";
-import {
-  type ModelTestDialogTarget,
-  selectedModelTestProtocol,
-} from "../modelTestSession";
 import type { Locale } from "./channelTypes";
 
 type Props = {

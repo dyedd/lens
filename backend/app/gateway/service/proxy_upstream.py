@@ -29,7 +29,6 @@ from .payload_serialization import (
     _dump_log_json,
     _json_body_bytes,
 )
-from .response_usage import _extract_response_usage
 from .routing_plan import (
     _elapsed_ms,
     _gateway_timeout_scope,
@@ -43,13 +42,15 @@ from .runtime_types import (
     _record_stream_error,
     _RequestDeadline,
 )
-from .stream_logging import _safe_estimate_cost
-from .stream_restore import _distill_stream_response_content
-from .stream_transport import (
+from .streaming.response_usage import _extract_response_usage
+from .streaming.stream_logging import _safe_estimate_cost
+from .streaming.stream_restore import _distill_stream_response_content
+from .streaming.stream_transport import (
     _capture_converted_stream_iterator,
     _FinalizingStreamingResponse,
     _stream_upstream_iterator,
 )
+from .streaming.usage import _extract_stream_usage
 from .upstream_support import (
     _format_http_response_error,
     _format_transport_error,
@@ -57,7 +58,6 @@ from .upstream_support import (
     _resolve_http_client,
     _summarize_html_error_detail,
 )
-from .usage import _extract_stream_usage
 
 _NDJSON_MEDIA_TYPES = {"application/x-ndjson", "application/ndjson"}
 

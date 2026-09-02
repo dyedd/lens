@@ -6,6 +6,12 @@ from typing import Literal
 from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.models.health import (
+    HealthBucket,
+    HealthItem,
+    HealthSummary,
+    health_tier,
+)
 from app.models.protocols import (
     ProtocolKind,
     RequestLogLifecycleStatus,
@@ -17,7 +23,6 @@ from app.models.request_logs import (
     RequestLogFilterOption,
     RequestLogPage,
 )
-from app.models.sites import HealthBucket, HealthItem, HealthSummary
 from app.persistence.entities import (
     ModelGroupEntity,
     RequestLogEntity,
@@ -114,9 +119,7 @@ class RequestLogQueries:
                     RequestLogEntity.created_at,
                 ).join(
                     SiteProtocolConfigEntity,
-                    RequestLogEntity.channel_id.like(
-                        SiteProtocolConfigEntity.id + literal("_%")
-                    ),
+                    SiteProtocolConfigEntity.id == RequestLogEntity.protocol_config_id,
                 )
             rows = item_rows.all()
             has_next_page = len(rows) > bounded_limit
@@ -177,12 +180,20 @@ class RequestLogQueries:
                     name=items_by_key[key],
                     success_count=sum(item["success_count"] for item in counts),
                     total_count=sum(item["total_count"] for item in counts),
+                    tier=health_tier(
+                        sum(item["total_count"] for item in counts),
+                        sum(item["success_count"] for item in counts),
+                    ),
                     buckets=[
                         HealthBucket(
                             started_at=start.isoformat(),
                             ended_at=end.isoformat(),
                             success_count=counts[index]["success_count"],
                             total_count=counts[index]["total_count"],
+                            tier=health_tier(
+                                counts[index]["total_count"],
+                                counts[index]["success_count"],
+                            ),
                         )
                         for index, (start, end) in enumerate(bucket_ranges)
                     ],

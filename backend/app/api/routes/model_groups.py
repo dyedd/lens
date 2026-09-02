@@ -15,7 +15,7 @@ from ...models.model_groups import (
     ModelGroupEnsureFromSiteResponse,
     ModelGroupView,
 )
-from ...models.sites import SiteModelTestResult
+from ...models.site_model_test import SiteModelTestResult
 
 
 def register(app: FastAPI) -> None:

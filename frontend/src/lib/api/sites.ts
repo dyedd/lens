@@ -105,16 +105,25 @@ export type Site = {
   credentials: SiteCredential[];
   protocols: SiteProtocolConfig[];
 };
+export type HealthTier =
+  | "no-data"
+  | "healthy"
+  | "mostly-healthy"
+  | "partial"
+  | "major"
+  | "all-failed";
 export type HealthBucket = {
   started_at: string;
   ended_at: string;
   success_count: number;
   total_count: number;
+  tier: HealthTier;
 };
 export type HealthItem = {
   name: string;
   success_count: number;
   total_count: number;
+  tier: HealthTier;
   buckets: HealthBucket[];
 };
 export type HealthSummary = {

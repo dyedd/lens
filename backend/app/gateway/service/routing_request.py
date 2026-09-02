@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from copy import deepcopy
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -211,16 +210,3 @@ def _apply_deepseek_chat_reasoning(body: dict[str, Any]) -> dict[str, Any]:
         if message.get("tool_calls") and message.get("reasoning_content") is None:
             message["reasoning_content"] = ""
     return body
-
-
-def _deep_merge_json_objects(
-    base: dict[str, Any], override: dict[str, Any]
-) -> dict[str, Any]:
-    merged = deepcopy(base)
-    for key, override_value in override.items():
-        base_value = merged.get(key)
-        if isinstance(base_value, dict) and isinstance(override_value, dict):
-            merged[key] = _deep_merge_json_objects(base_value, override_value)
-        else:
-            merged[key] = deepcopy(override_value)
-    return merged

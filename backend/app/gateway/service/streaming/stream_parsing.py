@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .runtime_types import _append_error_sample
+from ..runtime_types import _append_error_sample
 
 
 def _parse_sse_payloads(

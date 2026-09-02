@@ -185,7 +185,7 @@ def test_openai_chat_stream_logs_kimi_sse_as_json(
     create_gateway_key,
 ) -> None:
     import app.gateway.service.proxy_upstream as proxy_upstream
-    import app.gateway.service.stream_logging as stream_logging
+    import app.gateway.service.streaming.stream_logging as stream_logging
 
     stream_body = (
         ": keep-alive\n\n"
@@ -263,7 +263,7 @@ def test_anthropic_stream_with_openai_semantic_usage_does_not_double_count_cache
     create_gateway_key,
 ) -> None:
     import app.gateway.service.proxy_upstream as proxy_upstream
-    import app.gateway.service.stream_logging as stream_logging
+    import app.gateway.service.streaming.stream_logging as stream_logging
 
     # GLM-style upstream: input_tokens follows OpenAI prompt semantics, where
     # cache is already included, and billing_usage.semantic marks that.

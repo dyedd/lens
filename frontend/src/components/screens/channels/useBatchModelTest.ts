@@ -1,6 +1,6 @@
+import { useBatchModelTestSession } from "@/components/model-test/batchModelTestSession";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { SiteModelTestPayload } from "@/lib/api/sites";
-import { useBatchModelTestSession } from "../batchModelTestSession";
 import type {
   Locale,
   ModelTestTarget,

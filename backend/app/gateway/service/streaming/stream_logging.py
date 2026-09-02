@@ -1,23 +1,21 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
-from ...models.channels import ChannelConfig
-from ...models.gateway_keys import GatewayApiKey
-from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
-from ...persistence.repositories.model_price_repository import ModelCostEstimate
-from ..router.cooldown import ErrorCategory, classify_error
-from .app_state import app_state, logger
-from .request_logger import _update_request_log
-from .routing_plan import _elapsed_ms
-from .runtime_types import (
+from ....models.channels import ChannelConfig
+from ....models.protocols import RequestLogLifecycleStatus
+from ....persistence.repositories.model_price_repository import ModelCostEstimate
+from ..app_state import app_state, logger
+from ..request_logger import _RequestLogger, _update_request_log
+from ..routing_plan import _elapsed_ms
+from ..runtime_types import (
     StreamCapture,
     UpstreamResult,
     _record_stream_parse_error,
 )
 from .stream_events import _join_stream_chunks, _stream_capture_usage
 from .stream_restore import _distill_stream_response_content
-from .upstream_support import _format_channel_error
 from .usage import (
     _describe_stream_capture_issue,
     _extract_stream_usage,
@@ -50,19 +48,33 @@ async def _safe_estimate_cost(
         return ModelCostEstimate()
 
 
+@dataclass(frozen=True, slots=True)
+class StreamLogOutcome:
+    """Terminal stream state shared by route-health reporting and log finalization."""
+
+    lifecycle_status: RequestLogLifecycleStatus
+    capture_issue: str | None
+    status_code: int
+
+
+def _stream_log_outcome(
+    result: UpstreamResult, capture: StreamCapture | None
+) -> StreamLogOutcome:
+    capture_issue = _describe_stream_capture_issue(capture)
+    return StreamLogOutcome(
+        lifecycle_status=_stream_log_lifecycle_status(capture, capture_issue),
+        capture_issue=capture_issue,
+        status_code=_stream_log_status_code(result, capture, capture_issue),
+    )
+
+
 async def _record_stream_request_log(
     *,
-    request_log_id: int,
-    protocol: ProtocolKind,
-    requested_group_name: str | None,
-    resolved_group_name: str | None,
+    log_ctx: _RequestLogger,
     channel: ChannelConfig,
-    gateway_key: GatewayApiKey,
-    user_agent: str,
-    started_at: float,
     result: UpstreamResult,
     attempts: list[dict[str, Any]],
-    rate_multiplier: float | None,
+    outcome: StreamLogOutcome,
 ) -> None:
     capture = result.stream_capture
     if capture is not None and capture.first_token_update_task is not None:
@@ -83,8 +95,12 @@ async def _record_stream_request_log(
     )
     if capture is not None:
         capture.client_response_content_chunks.clear()
-    if capture is not None and protocol != channel.protocol and client_response_content:
-        response_protocol = protocol
+    if (
+        capture is not None
+        and log_ctx.protocol != channel.protocol
+        and client_response_content
+    ):
+        response_protocol = log_ctx.protocol
         response_raw_content = client_response_content
     parse_errors: list[str] = []
     # A body that ends mid-frame (client hung up, or capture hit its size cap) would
@@ -119,135 +135,61 @@ async def _record_stream_request_log(
         if capture is not None:
             _record_stream_parse_error(capture, str(exc))
         distilled_content = response_raw_content
-    capture_issue = _describe_stream_capture_issue(capture)
-    lifecycle_status = _stream_log_lifecycle_status(capture, capture_issue)
-    upstream_model_name = parsed["resolved_model"] or result.upstream_model_name
-    input_tokens = parsed["input_tokens"]
-    cache_read_input_tokens = parsed["cache_read_input_tokens"]
-    cache_write_input_tokens = parsed["cache_write_input_tokens"]
-    output_tokens = parsed["output_tokens"]
-    total_tokens = parsed["total_tokens"]
     first_token_latency_ms = (
         capture.first_token_latency_ms
         if capture is not None
         else result.first_token_latency_ms
     )
-    latency_ms = _elapsed_ms(started_at)
-    status_code = _stream_log_status_code(result, capture, capture_issue)
+    latency_ms = _elapsed_ms(log_ctx.started_at)
+    status_code = outcome.status_code
     attempt_logs = [dict(item) for item in attempts]
     if attempt_logs and attempt_logs[-1].get("success"):
         # Prefer full stream duration for attempt timing; first-token is tracked separately.
         attempt_logs[-1]["duration_ms"] = latency_ms
-        if capture_issue is not None:
+        if outcome.capture_issue is not None:
             attempt_logs[-1]["success"] = False
-            attempt_logs[-1]["error_message"] = capture_issue
+            attempt_logs[-1]["error_message"] = outcome.capture_issue
             if status_code != result.status_code:
                 attempt_logs[-1]["status_code"] = status_code
-    await _record_stream_route_health(
-        channel=channel,
-        capture=capture,
-        capture_issue=capture_issue,
-        lifecycle_status=lifecycle_status,
-        attempts=attempt_logs,
-    )
     cost = await _safe_estimate_cost(
-        resolved_group_name,
-        input_tokens,
-        output_tokens,
-        cache_read_input_tokens,
-        cache_write_input_tokens,
-        rate_multiplier=rate_multiplier,
+        log_ctx.resolved_group_name,
+        parsed["input_tokens"],
+        parsed["output_tokens"],
+        parsed["cache_read_input_tokens"],
+        parsed["cache_write_input_tokens"],
+        rate_multiplier=log_ctx.rate_multiplier,
     )
     await _update_request_log(
-        request_log_id,
-        protocol=protocol,
-        requested_group_name=requested_group_name,
-        resolved_group_name=resolved_group_name,
-        upstream_model_name=upstream_model_name,
+        log_ctx.request_log_id,
+        protocol=log_ctx.protocol,
+        requested_group_name=log_ctx.requested_group_name,
+        resolved_group_name=log_ctx.resolved_group_name,
+        upstream_model_name=parsed["resolved_model"] or result.upstream_model_name,
         channel_id=channel.id,
         channel_name=channel.name,
-        gateway_key=gateway_key,
-        user_agent=user_agent,
-        lifecycle_status=lifecycle_status,
+        gateway_key=log_ctx.gateway_key,
+        user_agent=log_ctx.user_agent,
+        lifecycle_status=outcome.lifecycle_status,
         status_code=status_code,
-        success=lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED,
+        success=outcome.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED,
         is_stream=True,
         first_token_latency_ms=first_token_latency_ms,
         latency_ms=latency_ms,
-        input_tokens=input_tokens,
-        cache_read_input_tokens=cache_read_input_tokens,
-        cache_write_input_tokens=cache_write_input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
+        input_tokens=parsed["input_tokens"],
+        cache_read_input_tokens=parsed["cache_read_input_tokens"],
+        cache_write_input_tokens=parsed["cache_write_input_tokens"],
+        output_tokens=parsed["output_tokens"],
+        total_tokens=parsed["total_tokens"],
         input_cost_usd=cost.input_cost_usd,
         output_cost_usd=cost.output_cost_usd,
         total_cost_usd=cost.total_cost_usd,
-        rate_multiplier=rate_multiplier,
+        rate_multiplier=log_ctx.rate_multiplier,
         billing_mode=cost.billing_mode,
         billing_units=cost.billing_units,
         request_content=result.request_content,
         response_content=distilled_content,
         attempts=attempt_logs,
-        error_message=capture_issue,
-    )
-
-
-async def _record_stream_route_health(
-    *,
-    channel: ChannelConfig,
-    capture: StreamCapture | None,
-    capture_issue: str | None,
-    lifecycle_status: RequestLogLifecycleStatus,
-    attempts: list[dict[str, Any]],
-) -> None:
-    credential_id, model_name = _last_attempt_target(attempts)
-    if lifecycle_status == RequestLogLifecycleStatus.CANCELLED:
-        return
-    if capture_issue is None:
-        app_state.router.record_success(
-            channel.id,
-            credential_id=credential_id,
-            model_name=model_name,
-            started_revision=(
-                capture.route_started_revision
-                if capture is not None and capture.route_started_revision >= 0
-                else None
-            ),
-        )
-        return
-    if capture is not None and capture.skip_route_failure:
-        return
-
-    status_code = capture.error_status_code if capture is not None else None
-    category = capture.error_category if capture is not None else None
-    cooldown_seconds = capture.error_cooldown_seconds if capture is not None else None
-    if category is None:
-        classification = classify_error(status_code)
-        if classification is not None:
-            category, _, classified_cooldown = classification
-            cooldown_seconds = cooldown_seconds or classified_cooldown
-    category = category or ErrorCategory.SERVER
-    app_state.router.record_failure(
-        channel.id,
-        _format_channel_error(capture_issue),
-        category=category,
-        cooldown_seconds=cooldown_seconds,
-        credential_id=credential_id,
-        model_name=model_name,
-    )
-
-
-def _last_attempt_target(
-    attempts: list[dict[str, Any]],
-) -> tuple[str | None, str | None]:
-    if not attempts:
-        return None, None
-    attempt = attempts[-1]
-    credential_id = attempt.get("credential_id")
-    model_name = attempt.get("model_name")
-    return (
-        credential_id if isinstance(credential_id, str) and credential_id else None,
-        model_name if isinstance(model_name, str) and model_name else None,
+        error_message=outcome.capture_issue,
     )
 
 

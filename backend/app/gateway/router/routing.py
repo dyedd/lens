@@ -2,16 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import monotonic
+from typing import Protocol
 
 from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouteState
-from .health import _HealthTracker
 from .targets import filter_enabled_targets
 from .types import RouteSelection, RouteTarget
 
 _COOLED_TARGET_LABEL_LIMIT = 5
+
+
+class RouteHealth(Protocol):
+    """What route planning needs to know about target health."""
+
+    def is_target_available(self, target: RouteTarget, *, now: float) -> bool: ...
+
+    def score(self, target: RouteTarget) -> float: ...
+
+    def cooldown_reason(self, target: RouteTarget, *, now: float) -> str: ...
 
 
 @dataclass(slots=True)
@@ -20,7 +30,7 @@ class _SWRRNode:
 
 
 class _RoutePlanner:
-    def __init__(self, health: _HealthTracker) -> None:
+    def __init__(self, health: RouteHealth) -> None:
         self._health = health
         self._swrr_nodes: dict[tuple[str, str, str, str], _SWRRNode] = {}
 
