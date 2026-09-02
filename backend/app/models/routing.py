@@ -4,7 +4,7 @@ from .protocols import ProtocolKind
 from .validation import StrictBaseModel
 
 
-class ChannelKeyHealth(StrictBaseModel):
+class ChannelCredentialHealth(StrictBaseModel):
     credential_id: str
     consecutive_failures: int = 0
     cooled_until: float = 0.0
@@ -39,7 +39,7 @@ class ChannelHealth(StrictBaseModel):
     cooled_key_count: int = 0
     available_model_count: int = 0
     cooled_model_count: int = 0
-    key_health: list[ChannelKeyHealth] = Field(default_factory=list)
+    credential_health: list[ChannelCredentialHealth] = Field(default_factory=list)
     model_health: list[ModelHealth] = Field(default_factory=list)
 
 

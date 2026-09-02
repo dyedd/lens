@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-import json
-
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.model_group_status import model_group_item_key
 from app.core.runtime_channel_ids import split_runtime_channel_id
 from app.models.model_groups import ModelGroup
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
+)
+from app.persistence.group_rule_codec import (
+    dump_fallback_group_ids,
+    dump_rules,
 )
 
 
@@ -71,7 +74,7 @@ async def _replace_groups(
                 raise ValueError(
                     f"Model group channel not found in backup sites: {item.channel_id}"
                 )
-            target = (item.channel_id, item.credential_id, item.model_name)
+            target = model_group_item_key(item)
             if target in resolved_item_keys:
                 raise ValueError(
                     "Duplicate model group member in backup "
@@ -92,16 +95,10 @@ async def _replace_groups(
                 route_group_id=group.route_group_id,
                 sync_filter_mode=group.sync_filter_mode.value,
                 sync_filter_query=group.sync_filter_query,
-                param_override=json.dumps(
-                    [rule.model_dump(mode="json") for rule in group.param_override],
-                    ensure_ascii=True,
-                ),
-                headers_json=json.dumps(
-                    [rule.model_dump(mode="json") for rule in group.headers],
-                    ensure_ascii=True,
-                ),
-                fallback_group_ids_json=json.dumps(
-                    group.fallback_group_ids, ensure_ascii=True
+                param_override=dump_rules(group.param_override),
+                headers_json=dump_rules(group.headers),
+                fallback_group_ids_json=dump_fallback_group_ids(
+                    group.fallback_group_ids
                 ),
             )
         )

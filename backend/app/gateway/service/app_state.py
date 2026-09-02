@@ -166,17 +166,17 @@ class AppState:
         return load_time_zone(str(runtime["time_zone"]))
 
     async def _sync_model_prices(self) -> None:
-        from .model_price_tasks import _sync_group_prices
+        from .tasks.model_price_tasks import _sync_group_prices
 
         await _sync_group_prices(self)
 
     async def _sync_channel_models(self) -> None:
-        from .model_sync import sync_channel_models
+        from .tasks.model_sync import sync_channel_models
 
         await sync_channel_models(self, dry_run=False)
 
     async def _sync_credential_rates(self) -> None:
-        from .credential_rate_tasks import sync_all_site_credential_rates
+        from .tasks.credential_rate_tasks import sync_all_site_credential_rates
 
         await sync_all_site_credential_rates(self)
 

@@ -41,9 +41,9 @@ from app.persistence.settings_keys import (
 )
 
 from ..core.time_zone import validate_time_zone_name
+from ..models.cooldown_rules import serialize_cooldown_detection_rules_json
 from ..models.settings import SettingItem
 from ..models.upstream_rules import (
-    serialize_cooldown_detection_rules_json,
     serialize_upstream_headers_config_json,
     serialize_upstream_param_override_config_json,
 )

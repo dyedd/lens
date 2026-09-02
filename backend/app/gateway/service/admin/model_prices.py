@@ -11,7 +11,7 @@ from ....models.model_prices import (
 )
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..model_price_tasks import ModelPriceSyncError, _sync_group_prices
+from ..tasks.model_price_tasks import ModelPriceSyncError, _sync_group_prices
 
 
 async def list_model_prices(

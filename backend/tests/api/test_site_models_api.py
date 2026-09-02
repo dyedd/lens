@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from app.models.protocols import ProtocolKind
 from app.models.settings import SettingItem
-from app.models.sites import SiteModelTestResult
+from app.models.site_model_test import SiteModelTestResult
 from app.persistence.settings_keys import SETTING_FIRST_TOKEN_TIMEOUT_SECONDS
 
 
@@ -155,7 +155,7 @@ def test_test_site_model_returns_probe_result(
             output_text="pong",
         )
 
-    import app.gateway.service.site_model_probe as probe
+    import app.gateway.service.tasks.site_model_probe as probe
 
     monkeypatch.setattr(probe, "_call_site_model_probe_channel", fake_probe)
 
@@ -180,7 +180,7 @@ def test_test_site_model_returns_timeout_result(
         return httpx.Response(200, json={}, request=request)
 
     upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    import app.gateway.service.site_model_probe as probe
+    import app.gateway.service.tasks.site_model_probe as probe
 
     monkeypatch.setattr(probe, "app_state", app_state)
     monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)
@@ -236,7 +236,7 @@ def test_test_site_model_omits_unsupported_upstream_fields(
             credential_id=kwargs["credential_id"],
         )
 
-    import app.gateway.service.site_model_probe as probe
+    import app.gateway.service.tasks.site_model_probe as probe
 
     monkeypatch.setattr(probe, "_call_site_model_probe_channel", fake_probe)
 
@@ -260,7 +260,7 @@ def test_test_site_model_rejects_non_object_success_payload(
         return httpx.Response(200, json=[], request=request)
 
     upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    import app.gateway.service.site_model_probe as probe
+    import app.gateway.service.tasks.site_model_probe as probe
 
     monkeypatch.setattr(probe, "app_state", app_state)
     monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)
@@ -392,7 +392,7 @@ def test_channel_model_sync_preserves_manual_models_and_syncs_each_credential(
         assert len(channel.keys) == 1
         return [f"gpt-{channel.keys[0].id}"]
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
     response = client.post(
@@ -451,7 +451,7 @@ def test_channel_model_sync_removes_only_stale_synced_models(
     async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
         return [f"gpt-{channel.keys[0].id}", "claude-3-opus"]
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
     response = client.post(
@@ -513,7 +513,7 @@ def test_channel_model_sync_isolates_target_failures(
             raise HTTPException(status_code=502, detail="credential failed")
         return ["gpt-cred-b"]
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
     response = client.post(
@@ -567,7 +567,7 @@ def test_channel_model_sync_dry_run_does_not_write_models(
     async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
         return [f"gpt-new-{channel.keys[0].id}"]
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
     response = client.post(
@@ -616,7 +616,7 @@ def test_channel_model_sync_does_not_report_group_changes_that_failed(
     async def fail_group_update(_payload: Any) -> None:
         raise RuntimeError("group update failed")
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
     monkeypatch.setattr(
@@ -664,7 +664,7 @@ def test_channel_model_sync_reports_applied_group_changes(
     async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
         return [f"gpt-{channel.keys[0].id}"]
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
     response = client.post(
@@ -719,7 +719,7 @@ def test_channel_model_sync_skips_disabled_resources_without_fetching(
     async def fail_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
         raise AssertionError("disabled resources must not trigger model discovery")
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fail_fetch)
     response = client.post(
@@ -812,7 +812,7 @@ def test_channel_model_sync_skips_configs_without_synced_models(
     async def fail_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
         raise AssertionError("upstream should not be queried without synced models")
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fail_fetch)
     response = client.post(
@@ -858,7 +858,7 @@ def test_sync_target_is_retained_when_upstream_temporarily_drops_it(
     async def fake_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
         return []
 
-    import app.gateway.service.model_sync as model_sync
+    import app.gateway.service.tasks.model_sync as model_sync
 
     monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
     response = client.post(

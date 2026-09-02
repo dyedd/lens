@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from ...core.model_name_parser import parse_model_name
 from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
-from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
+from ...models.protocols import ProtocolKind
 from ..router import RouteSelection
 from .app_state import app_state
 from .auth import _gateway_key_allows_model
@@ -19,10 +19,9 @@ from .error_responses import _protocol_error_response
 from .errors import _apply_router_runtime_settings
 from .multimodal import body_has_multimodal_content
 from .payload_serialization import _dump_log_json
-from .proxy_attempt import _try_target
+from .proxy_attempt import AttemptRequest, FailureLedger, run_attempt
 from .request_logger import _RequestLogger
 from .routing_plan import (
-    _final_upstream_failure,
     _resolve_routing_plan,
 )
 from .runtime_types import (
@@ -67,6 +66,8 @@ async def _create_pending_proxy_log_context(
         body=body,
         request_content=request_content,
         attempts=[],
+        user_agent=user_agent,
+        requested_group_name=requested_group_name,
     )
 
 
@@ -76,7 +77,6 @@ async def _resolve_proxy_route(
     protocol: ProtocolKind,
     requested_model: str,
     log_ctx: _RequestLogger,
-    upstream_user_agent: str,
     is_stream_body: bool,
     parsed_model: object | None = None,
     group_id: str | None = None,
@@ -101,17 +101,11 @@ async def _resolve_proxy_route(
             use_model_matching=plan.use_model_matching,
             cursor_key=plan.cursor_key,
         )
-        await log_ctx.update(
+        log_ctx.plan_route(
             requested_group_name=plan.requested_group_name,
             resolved_group_name=plan.resolved_group_name,
-            upstream_model_name=None,
-            channel=None,
-            user_agent=upstream_user_agent,
-            lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
-            status_code=None,
-            success=False,
-            is_stream=is_stream_body,
         )
+        await log_ctx.connecting(is_stream=is_stream_body)
         return plan, selection, None
     except LookupError as exc:
         return (
@@ -122,7 +116,6 @@ async def _resolve_proxy_route(
                 protocol=protocol,
                 requested_model=requested_model,
                 log_ctx=log_ctx,
-                upstream_user_agent=upstream_user_agent,
                 is_stream_body=is_stream_body,
                 exc=exc,
             ),
@@ -135,21 +128,17 @@ async def _routing_error_response(
     protocol: ProtocolKind,
     requested_model: str,
     log_ctx: _RequestLogger,
-    upstream_user_agent: str,
     is_stream_body: bool,
     exc: LookupError,
 ) -> JSONResponse:
-    await log_ctx.update(
+    log_ctx.plan_route(
         requested_group_name=plan.requested_group_name if plan else requested_model,
         resolved_group_name=plan.resolved_group_name if plan else None,
-        upstream_model_name=None,
-        channel=None,
-        user_agent=upstream_user_agent,
-        lifecycle_status=RequestLogLifecycleStatus.FAILED,
+    )
+    await log_ctx.failed(
         status_code=503,
-        success=False,
-        is_stream=is_stream_body,
         error_message=str(exc),
+        is_stream=is_stream_body,
     )
     return _protocol_error_response(
         protocol=protocol,
@@ -200,19 +189,11 @@ async def _proxy_protocol(
             is_stream=is_stream_body,
             request_content=request_content,
         )
-        await log_ctx.update(
-            requested_group_name=None,
-            resolved_group_name=None,
-            upstream_model_name=None,
-            channel=None,
-            user_agent=upstream_user_agent,
-            lifecycle_status=RequestLogLifecycleStatus.FAILED,
+        await log_ctx.failed(
             status_code=400,
-            success=False,
-            is_stream=is_stream_body,
-            first_token_latency_ms=0,
-            request_content=request_content,
             error_message="Request model is required",
+            is_stream=is_stream_body,
+            request_content=request_content,
         )
         return _protocol_error_response(
             protocol=protocol,
@@ -245,19 +226,11 @@ async def _proxy_protocol(
     )
     if not _gateway_key_allows_model(gateway_key, requested_model):
         error_message = "Gateway API key is not allowed to use this model"
-        await log_ctx.update(
-            requested_group_name=original_requested_model,
-            resolved_group_name=None,
-            upstream_model_name=None,
-            channel=None,
-            user_agent=upstream_user_agent,
-            lifecycle_status=RequestLogLifecycleStatus.FAILED,
+        await log_ctx.failed(
             status_code=403,
-            success=False,
-            is_stream=is_stream_body,
-            first_token_latency_ms=0,
-            request_content=request_content,
             error_message=error_message,
+            is_stream=is_stream_body,
+            request_content=request_content,
         )
         return _protocol_error_response(
             protocol=protocol,
@@ -271,7 +244,6 @@ async def _proxy_protocol(
             protocol=protocol,
             requested_model=requested_model,
             log_ctx=log_ctx,
-            upstream_user_agent=upstream_user_agent,
             is_stream_body=is_stream_body,
             parsed_model=parsed_model,
             requested_group_name=original_requested_model,
@@ -281,8 +253,16 @@ async def _proxy_protocol(
         if plan is None or selection is None:
             raise RuntimeError("Routing plan was not resolved")
 
-        errors: list[str] = []
-        failure_status_codes: list[int | None] = []
+        failures = FailureLedger()
+        request = AttemptRequest(
+            protocol=protocol,
+            body=body,
+            runtime=runtime,
+            upstream_user_agent=upstream_user_agent,
+            inbound_headers=inbound_headers,
+            path_suffix=path_suffix,
+            multipart_files=multipart_files,
+        )
         route_plans = [(plan, selection)]
         seen_group_ids = {plan.resolved_group.id if plan.resolved_group else ""}
         if body_has_multimodal_content(body, protocol):
@@ -299,15 +279,16 @@ async def _proxy_protocol(
                     protocol=protocol,
                     requested_model=requested_model,
                     log_ctx=log_ctx,
-                    upstream_user_agent=upstream_user_agent,
                     is_stream_body=is_stream_body,
                     parsed_model=parsed_model,
                     group_id=fallback_group_id,
                     requested_group_name=original_requested_model,
                 )
                 if fallback_error is not None:
-                    errors.append(fallback_error.body.decode(errors="replace"))
-                    failure_status_codes.append(fallback_error.status_code)
+                    failures.record(
+                        fallback_error.body.decode(errors="replace"),
+                        fallback_error.status_code,
+                    )
                     continue
                 if fallback_plan is not None and fallback_selection is not None:
                     route_plans.append((fallback_plan, fallback_selection))
@@ -315,17 +296,14 @@ async def _proxy_protocol(
             for target in [current_selection.primary, *current_selection.fallbacks]:
                 if deadline.is_first_token_expired():
                     timeout_message = deadline.timeout_message(kind="first_token")
-                    await log_ctx.update(
+                    log_ctx.plan_route(
                         requested_group_name=current_plan.requested_group_name,
                         resolved_group_name=current_plan.resolved_group_name,
-                        upstream_model_name=None,
-                        channel=None,
-                        user_agent=upstream_user_agent,
-                        lifecycle_status=RequestLogLifecycleStatus.FAILED,
+                    )
+                    await log_ctx.failed(
                         status_code=504,
-                        success=False,
-                        is_stream=is_stream_body,
                         error_message=timeout_message,
+                        is_stream=is_stream_body,
                     )
                     return _protocol_error_response(
                         protocol=protocol,
@@ -335,39 +313,27 @@ async def _proxy_protocol(
                     )
                 if not app_state.router.is_target_available(target):
                     continue
-                response = await _try_target(
-                    target=target,
-                    protocol=protocol,
-                    body=body,
-                    runtime=runtime,
-                    upstream_user_agent=upstream_user_agent,
-                    inbound_headers=inbound_headers,
+                response = await run_attempt(
+                    request=request,
                     plan=current_plan,
-                    log_ctx=log_ctx,
-                    errors=errors,
-                    failure_status_codes=failure_status_codes,
+                    target=target,
                     deadline=deadline,
-                    path_suffix=path_suffix,
-                    multipart_files=multipart_files,
+                    log_ctx=log_ctx,
+                    failures=failures,
                 )
                 if response is not None:
                     return response
 
-        failed_status_code, failed_error_type, failed_message = _final_upstream_failure(
-            errors, failure_status_codes
-        )
+        failed_status_code, failed_error_type, failed_message = failures.final_failure()
         if not log_ctx.attempts:
-            await log_ctx.update(
+            log_ctx.plan_route(
                 requested_group_name=plan.requested_group_name,
                 resolved_group_name=plan.resolved_group_name,
-                upstream_model_name=None,
-                channel=None,
-                user_agent=upstream_user_agent,
-                lifecycle_status=RequestLogLifecycleStatus.FAILED,
+            )
+            await log_ctx.failed(
                 status_code=failed_status_code,
-                success=False,
-                is_stream=is_stream_body,
                 error_message=failed_message,
+                is_stream=is_stream_body,
             )
         return _protocol_error_response(
             protocol=protocol,
@@ -376,16 +342,13 @@ async def _proxy_protocol(
             message=failed_message,
         )
     except Exception as exc:
-        await log_ctx.update(
+        log_ctx.plan_route(
             requested_group_name=plan.requested_group_name if plan else requested_model,
             resolved_group_name=plan.resolved_group_name if plan else None,
-            upstream_model_name=None,
-            channel=None,
-            user_agent=upstream_user_agent,
-            lifecycle_status=RequestLogLifecycleStatus.FAILED,
+        )
+        await log_ctx.failed(
             status_code=500,
-            success=False,
-            is_stream=is_stream_body,
             error_message=f"Unexpected proxy error: {type(exc).__name__}: {exc}",
+            is_stream=is_stream_body,
         )
         raise

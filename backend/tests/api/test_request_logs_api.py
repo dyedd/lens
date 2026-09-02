@@ -244,3 +244,25 @@ def test_clear_request_logs_removes_live_logs(client, admin_headers, app_state) 
     assert response.status_code == 204
     page = client.get("/api/admin/request-logs/page", headers=admin_headers)
     assert page.json()["total"] == 0
+
+
+def test_model_health_attributes_channel_logs_to_their_site(
+    client,
+    admin_headers,
+    app_state,
+    create_site,
+) -> None:
+    site = create_site()
+    seed_request_log(app_state, resolved_group_name=None)
+
+    response = client.get(
+        "/api/admin/model-health",
+        headers=admin_headers,
+        params={"mode": "channel", "hours": "24"},
+    )
+
+    assert response.status_code == 200
+    items = {item["name"]: item for item in response.json()["items"]}
+    assert items[site["name"]]["total_count"] == 1
+    assert items[site["name"]]["success_count"] == 1
+    assert items[site["name"]]["tier"] == "healthy"

@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from app.models.protocols import RequestLogLifecycleStatus
 from app.models.request_logs import RequestLogItem
 from app.persistence.entities import RequestLogEntity
@@ -12,6 +13,13 @@ from app.persistence.request_log_constants import REQUEST_LOG_TERMINAL_STATUSES
 
 from .dto_mapping import to_request_log
 from .ports import GatewayKeyPort
+
+
+def protocol_config_id_for_channel(channel_id: str | None) -> str | None:
+    """Attribute a runtime channel ID to its protocol configuration."""
+    if not channel_id:
+        return None
+    return protocol_config_id_from_runtime_channel_id(channel_id)
 
 
 def gateway_key_spend_contribution(
@@ -131,6 +139,7 @@ class RequestLogCommands:
                 resolved_group_name=resolved_group_name,
                 upstream_model_name=upstream_model_name,
                 channel_id=channel_id,
+                protocol_config_id=protocol_config_id_for_channel(channel_id),
                 channel_name=channel_name,
                 gateway_key_id=gateway_key_id,
                 status_code=status_code,
@@ -223,6 +232,7 @@ class RequestLogCommands:
             entity.resolved_group_name = resolved_group_name
             entity.upstream_model_name = upstream_model_name
             entity.channel_id = channel_id
+            entity.protocol_config_id = protocol_config_id_for_channel(channel_id)
             entity.channel_name = channel_name
             entity.gateway_key_id = gateway_key_id
             entity.status_code = status_code

@@ -5,12 +5,11 @@ import {
   type SetStateAction,
   useState,
 } from "react";
-
+import type { BatchModelTestOption } from "@/components/model-test/batchModelTestSession";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Separator } from "@/components/ui/Separator";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { BatchModelTestOption } from "../batchModelTestSession";
 import { ChannelBasicInfoSection } from "./ChannelBasicInfoSection";
 import { ChannelModelOverviewSection } from "./ChannelModelOverviewSection";
 import { ChannelProtocolSection } from "./ChannelProtocolSection";

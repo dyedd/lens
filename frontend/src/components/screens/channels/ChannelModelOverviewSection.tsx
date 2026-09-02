@@ -6,6 +6,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { BatchModelTestOption } from "@/components/model-test/batchModelTestSession";
 import { Button } from "@/components/ui/Button";
 import {
   DropdownMenu,
@@ -16,7 +17,6 @@ import {
 } from "@/components/ui/DropdownMenu";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { BatchModelTestOption } from "../batchModelTestSession";
 import type { Locale, TestableModelOption } from "./channelTypes";
 import { SiteModelAggregateView } from "./SiteModelAggregateView";
 import type { AggregatedModel } from "./useAggregatedModels";

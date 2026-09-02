@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...models.sites import (
+from ...models.site_import import (
     SiteBatchImportFieldError,
     SiteBatchImportItemResult,
     SiteBatchImportResult,

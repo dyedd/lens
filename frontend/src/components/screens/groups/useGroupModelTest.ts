@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
+import {
+  type BatchModelTestSource,
+  useBatchModelTestSession,
+} from "@/components/model-test/batchModelTestSession";
+import { useModelTestPrompts } from "@/components/model-test/modelTestSession";
 import type {
   ModelGroupItem,
   ModelGroupModelTestPayload,
 } from "@/lib/api/groups";
-import {
-  type BatchModelTestSource,
-  useBatchModelTestSession,
-} from "../batchModelTestSession";
-import { useModelTestPrompts } from "../modelTestSession";
 import { modelGroupItemKey } from "./groupSearch";
 import type { GroupRow } from "./groupTypes";
 import { credentialDisplayLabel } from "./modelGroupFormatting";

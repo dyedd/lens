@@ -1,3 +1,7 @@
+import type {
+  BatchModelTestRow,
+  BatchModelTestStatus,
+} from "@/components/model-test/batchModelTestSession";
 import { Badge } from "@/components/ui/Badge";
 import {
   Table,
@@ -9,10 +13,6 @@ import {
 } from "@/components/ui/Table";
 import { cn } from "@/lib/classNames";
 import { compactProtocolLabel, protocolBadgeClassName } from "@/lib/protocols";
-import type {
-  BatchModelTestRow,
-  BatchModelTestStatus,
-} from "../batchModelTestSession";
 import type { Locale } from "./channelTypes";
 
 type Props = {

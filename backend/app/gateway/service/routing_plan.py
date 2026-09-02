@@ -124,30 +124,3 @@ def _request_body_too_large_message(size: int, limit: int) -> str | None:
         f"{bounded_limit} bytes. Split the context or increase "
         "the maximum request body size in Settings."
     )
-
-
-def _final_upstream_failure(
-    errors: list[str], failure_status_codes: list[int | None]
-) -> tuple[int, str, str]:
-    for error, status_code in zip(errors, failure_status_codes, strict=False):
-        if _is_request_too_large_error(status_code, error):
-            return 413, "request_too_large", error
-    if failure_status_codes and all(
-        status_code == 504 for status_code in failure_status_codes
-    ):
-        return 504, "gateway_timeout", "All upstream channels timed out"
-    if errors:
-        return 502, "upstream_error", errors[0]
-    return 502, "upstream_error", "All upstream channels failed"
-
-
-def _is_request_too_large_error(status_code: int | None, message: str) -> bool:
-    if status_code != 413:
-        return False
-    lower_message = message.lower()
-    return (
-        "request body exceeds" in lower_message
-        or "request_too_large" in lower_message
-        or "too large" in lower_message
-        or "exceeds lens limit" in lower_message
-    )

@@ -3,7 +3,6 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import { ProtocolMultiSelect } from "@/components/ui/ProtocolMultiSelect";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
@@ -14,6 +13,7 @@ import {
   resolvePickerModelProtocols,
 } from "./channelModelUtils";
 import type { Locale, PickerModelItem } from "./channelTypes";
+import { ProtocolMultiSelect } from "./ProtocolMultiSelect";
 
 type PickerModelGroup = ReturnType<typeof groupPickerModelsByName>[number];
 

@@ -1,5 +1,13 @@
+"""Protocol conversion dispatch.
+
+Each (client protocol, upstream protocol) pair registers one adapter; the
+public ``convert_*`` entrypoints look the pair up instead of repeating the
+matrix as if/elif chains.
+"""
+
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from ...core.protocol_reachability import can_reach_protocol
@@ -34,6 +42,72 @@ __all__ = [
     "repair_chat_tool_call_stream",
 ]
 
+RequestConverter = Callable[[dict[str, Any], bool], dict[str, Any]]
+ResponseConverter = Callable[[dict[str, Any], str], dict[str, Any]]
+StreamConverter = Callable[[AsyncIterator[bytes], str, bool], AsyncIterator[bytes]]
+
+
+@dataclass(frozen=True)
+class ProtocolPairConverter:
+    """Adapters normalizing one (client, upstream) pair's converter signatures."""
+
+    request: RequestConverter
+    response: ResponseConverter
+    stream: StreamConverter
+
+
+def _unsupported(
+    client_protocol: ProtocolKind, channel_protocol: ProtocolKind
+) -> ValueError:
+    return ValueError(
+        f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
+    )
+
+
+_CONVERTERS: dict[tuple[ProtocolKind, ProtocolKind], ProtocolPairConverter] = {
+    (ProtocolKind.ANTHROPIC, ProtocolKind.OPENAI_CHAT): ProtocolPairConverter(
+        request=lambda body, preserve_reasoning: anthropic_request_to_chat(
+            body, preserve_thinking=preserve_reasoning
+        ),
+        response=chat_response_to_anthropic,
+        stream=lambda raw_iterator, original_model, include_usage: (
+            chat_stream_to_anthropic_stream(raw_iterator, original_model)
+        ),
+    ),
+    (ProtocolKind.OPENAI_RESPONSES, ProtocolKind.OPENAI_CHAT): ProtocolPairConverter(
+        request=lambda body, preserve_reasoning: responses_request_to_chat(body),
+        response=chat_response_to_responses,
+        stream=lambda raw_iterator, original_model, include_usage: (
+            chat_stream_to_responses_stream(raw_iterator, original_model)
+        ),
+    ),
+    (ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES): ProtocolPairConverter(
+        request=lambda body, preserve_reasoning: chat_request_to_responses(body),
+        response=responses_response_to_chat,
+        stream=lambda raw_iterator, original_model, include_usage: (
+            responses_stream_to_chat_stream(
+                raw_iterator, original_model, include_usage=include_usage
+            )
+        ),
+    ),
+    (ProtocolKind.ANTHROPIC, ProtocolKind.OPENAI_RESPONSES): ProtocolPairConverter(
+        request=lambda body, preserve_reasoning: anthropic_request_to_responses(body),
+        response=responses_response_to_anthropic,
+        stream=lambda raw_iterator, original_model, include_usage: (
+            responses_stream_to_anthropic_stream(raw_iterator, original_model)
+        ),
+    ),
+}
+
+
+def _lookup(
+    client_protocol: ProtocolKind, channel_protocol: ProtocolKind
+) -> ProtocolPairConverter:
+    converter = _CONVERTERS.get((client_protocol, channel_protocol))
+    if converter is None:
+        raise _unsupported(client_protocol, channel_protocol)
+    return converter
+
 
 def convert_request(
     client_protocol: ProtocolKind,
@@ -43,30 +117,9 @@ def convert_request(
     preserve_reasoning: bool = False,
 ) -> dict[str, Any]:
     """Convert a client request into the selected upstream protocol."""
-    if (
-        client_protocol == ProtocolKind.ANTHROPIC
-        and channel_protocol == ProtocolKind.OPENAI_CHAT
-    ):
-        result = anthropic_request_to_chat(body, preserve_thinking=preserve_reasoning)
-    elif (
-        client_protocol == ProtocolKind.OPENAI_RESPONSES
-        and channel_protocol == ProtocolKind.OPENAI_CHAT
-    ):
-        result = responses_request_to_chat(body)
-    elif (
-        client_protocol == ProtocolKind.OPENAI_CHAT
-        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
-    ):
-        result = chat_request_to_responses(body)
-    elif (
-        client_protocol == ProtocolKind.ANTHROPIC
-        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
-    ):
-        result = anthropic_request_to_responses(body)
-    else:
-        raise ValueError(
-            f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
-        )
+    result = _lookup(client_protocol, channel_protocol).request(
+        body, preserve_reasoning
+    )
     if target_model:
         result["model"] = target_model
     return result
@@ -80,30 +133,9 @@ def convert_response(
 ) -> bytes:
     """Convert an upstream response into the client protocol."""
     chat_data = json.loads(response_body)
-    if (
-        client_protocol == ProtocolKind.ANTHROPIC
-        and channel_protocol == ProtocolKind.OPENAI_CHAT
-    ):
-        converted = chat_response_to_anthropic(chat_data, original_model)
-    elif (
-        client_protocol == ProtocolKind.OPENAI_RESPONSES
-        and channel_protocol == ProtocolKind.OPENAI_CHAT
-    ):
-        converted = chat_response_to_responses(chat_data, original_model)
-    elif (
-        client_protocol == ProtocolKind.OPENAI_CHAT
-        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
-    ):
-        converted = responses_response_to_chat(chat_data, original_model)
-    elif (
-        client_protocol == ProtocolKind.ANTHROPIC
-        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
-    ):
-        converted = responses_response_to_anthropic(chat_data, original_model)
-    else:
-        raise ValueError(
-            f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
-        )
+    converted = _lookup(client_protocol, channel_protocol).response(
+        chat_data, original_model
+    )
     return json.dumps(converted, ensure_ascii=False).encode("utf-8")
 
 
@@ -116,39 +148,8 @@ async def convert_stream_iterator(
     include_usage: bool = False,
 ) -> AsyncIterator[bytes]:
     """Convert an upstream byte stream into the client protocol stream."""
-    if (
-        client_protocol == ProtocolKind.ANTHROPIC
-        and channel_protocol == ProtocolKind.OPENAI_CHAT
-    ):
-        async for chunk in chat_stream_to_anthropic_stream(
-            raw_iterator, original_model
-        ):
-            yield chunk
-    elif (
-        client_protocol == ProtocolKind.OPENAI_RESPONSES
-        and channel_protocol == ProtocolKind.OPENAI_CHAT
-    ):
-        async for chunk in chat_stream_to_responses_stream(
-            raw_iterator, original_model
-        ):
-            yield chunk
-    elif (
-        client_protocol == ProtocolKind.OPENAI_CHAT
-        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
-    ):
-        async for chunk in responses_stream_to_chat_stream(
-            raw_iterator, original_model, include_usage=include_usage
-        ):
-            yield chunk
-    elif (
-        client_protocol == ProtocolKind.ANTHROPIC
-        and channel_protocol == ProtocolKind.OPENAI_RESPONSES
-    ):
-        async for chunk in responses_stream_to_anthropic_stream(
-            raw_iterator, original_model
-        ):
-            yield chunk
-    else:
-        raise ValueError(
-            f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
-        )
+    stream = _lookup(client_protocol, channel_protocol).stream(
+        raw_iterator, original_model, include_usage
+    )
+    async for chunk in stream:
+        yield chunk

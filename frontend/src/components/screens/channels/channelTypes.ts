@@ -1,3 +1,4 @@
+import type { BatchModelTestSource } from "@/components/model-test/batchModelTestSession";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type {
   ChannelProxyMode,
@@ -11,7 +12,6 @@ import type {
   HeaderRuleDraft,
   ParamOverrideRuleDraft,
 } from "@/lib/upstreamRules";
-import type { BatchModelTestSource } from "../batchModelTestSession";
 
 export type HeaderItem = HeaderRuleDraft;
 export type FormCredential = Omit<SiteCredential, "sort_order">;

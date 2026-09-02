@@ -91,7 +91,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           {
             key: "modelHealth" as DashboardView,
             href: DASHBOARD_ROUTES.modelHealth,
-            label: locale === "zh-CN" ? "模型健康" : "Model Health",
+            label: locale === "zh-CN" ? "模型组健康" : "Model Group Health",
             icon: HeartPulse,
           },
           {
