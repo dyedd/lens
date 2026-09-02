@@ -31,22 +31,24 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │ Lens Gateway                                                         │
 │                                                                      │
 │  Multi-protocol entry                                                │
-│  /v1/chat/completions                                                │
-│  /v1/messages                                                        │
-│  /v1/responses                                                       │
-│  /v1/embeddings                                                      │
-│  /v1/rerank                                                          │
+│  /v1/chat/completions        /v1/messages                            │
+│  /v1/responses               /v1/embeddings      /v1/rerank          │
+│  /v1/images/generations      /v1/images/edits                        │
 │  /v1beta/models/{model}:generateContent                              │
+│  /v1beta/models/{model}:streamGenerateContent                        │
 │                                                                      │
 │  Request resolution                                                  │
 │  - Validate gateway key                                              │
-│  - Resolve client protocol and required model name                   │
-│  - Match model group; routed groups may point to execution groups    │
+│  - Resolve client protocol and required model name (thinking         │
+│    suffix supported)                                                 │
+│  - Match model group; routed groups may point to execution groups,   │
+│    multimodal requests can fall back to backup model groups          │
 │                                                                      │
 │  Routing plan                                                        │
 │  - Model group item: runtime channel + credential + upstream model   │
 │  - Strategy: round robin / failover                                  │
-│  - Protocol conversion: OpenAI Chat -> Anthropic / Responses         │
+│  - Protocol conversion: Anthropic / Responses clients ↔ OpenAI       │
+│    Chat / Responses upstreams                                        │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
@@ -81,8 +83,12 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  channel                                                             │
 │                                                                      │
 │  Cooldown scope                                                      │
-│  401 / 403 cool the key; model faults cool only the upstream model    │
+│  Custom detection rules take precedence; otherwise status defaults:  │
+│  401 / 403 cool the key; model faults cool only the upstream model   │
 │  The channel is unavailable only when no key-model binding remains   │
+│                                                                      │
+│  Health scoring                                                      │
+│  Sliding-window success rate per channel + model weights round robin │
 │                                                                      │
 │  Request logs                                                        │
 │  Record lifecycle, tokens, cost, User-Agent, attempt chain, errors   │
@@ -98,11 +104,15 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 
 ## Features
 
-- Unified entry: One Base URL and one gateway key for OpenAI / Anthropic / Gemini / Rerank entry protocols
-- Site management: Configure multiple Base URLs, credentials, and protocol configs per site, with model discovery, manual models, and batch import
-- Model group routing: Build candidates from runtime channel + credential + upstream model, with round robin, failover, and reusable execution groups
-- Protocol conversion: Forward OpenAI Chat to Anthropic Messages or OpenAI Responses
-- Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt
+- Unified entry: One Base URL and one gateway key for OpenAI Chat / Responses / Embeddings / Images, Anthropic, Gemini, and Rerank entry protocols
+- Site management: Configure multiple Base URLs, credentials, and protocol configs per site, with model discovery, manual models, batch import, and site tags
+- Model group routing: Build candidates from runtime channel + credential + upstream model, with round robin, failover, reusable execution groups, per-channel toggles, and multimodal fallback
+- Protocol conversion: Anthropic / OpenAI Responses clients can forward to OpenAI Chat or Responses upstreams; OpenAI Chat clients can forward to Responses upstreams
+- Model testing: Single-model and batch model tests with configurable test prompts
+- Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt; optional request/response body capture
+- Health and cooldown: Model health page graded by success rate, built-in circuit-breaker cooldown with exponential backoff, and custom cooldown detection rules
+- Pricing: LiteLLM model price sync, credential rate multipliers, and per-image pricing
+- Scheduled tasks: Built-in jobs for channel model sync, price sync, and credential rate sync
 - Config backup: Export/import sites, model groups, settings, pricing, cron jobs, and stats; optionally include gateway keys and request logs
 
 ## Screenshots
@@ -157,12 +167,13 @@ Visit `http://127.0.0.1:3000`, change the administrator password immediately aft
 
 ### Build Locally
 
+Run from the repository root:
+
 ```bash
-sh scripts/docker/deploy.sh
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
-`docker-compose.local.yml` must be in the same directory as `docker-compose.yml`. The repository includes this file, which changes the image name to `lens:local` and builds from the current source tree.
+The repository includes `docker-compose.local.yml`, which changes the image name to `lens:local` and builds from the current source tree.
 
 If building from a standalone deployment directory, create `docker-compose.local.yml` manually:
 
@@ -222,12 +233,12 @@ Open `/channels`, create a site, configure Base URLs, credentials, and protocol 
 
 Common Base URLs:
 
-| Upstream type   | Base URL example                            | Protocol                               |
-| --------------- | ------------------------------------------- | -------------------------------------- |
-| OpenAI          | `https://api.openai.com`                    | OpenAI Chat / Responses / Embeddings   |
-| Anthropic       | `https://api.anthropic.com`                 | Anthropic                              |
-| Gemini          | `https://generativelanguage.googleapis.com` | Gemini                                 |
-| NewAPI / Rerank | `https://newapi.example.com`                | Rerank (forwards to `POST /v1/rerank`) |
+| Upstream type   | Base URL example                            | Protocol                                          |
+| --------------- | ------------------------------------------- | ------------------------------------------------- |
+| OpenAI          | `https://api.openai.com`                    | OpenAI Chat / Responses / Embeddings / Images      |
+| Anthropic       | `https://api.anthropic.com`                 | Anthropic                                          |
+| Gemini          | `https://generativelanguage.googleapis.com` | Gemini                                             |
+| NewAPI / Rerank | `https://newapi.example.com`                | Rerank (forwards to `POST /v1/rerank`)             |
 
 ### 2. Create Model Groups
 
@@ -236,8 +247,9 @@ Open `/groups`, create a model group, select entry protocols, add upstream model
 - **Round robin**: Smoothly rotate across model group candidates
 - **Failover**: Prefer earlier members, then switch to the next credential or channel after failures
 - **Execution group reuse**: A visible group can point to another execution model group and reuse its candidates and strategy
+- **Multimodal fallback**: Configure ordered backup model groups tried when the primary group has no available candidate
 
-**Protocol conversion**: Lens can currently put OpenAI Chat upstream models into Anthropic or OpenAI Responses model groups and convert at runtime.
+**Protocol conversion**: OpenAI Chat or OpenAI Responses upstream models can join Anthropic and OpenAI Responses model groups, and OpenAI Responses upstream models can join OpenAI Chat model groups; conversion happens at runtime.
 
 ### 3. Issue Gateway Keys
 
@@ -246,6 +258,12 @@ Open `/api-keys`, create a key, copy `sk-lens-...` to clients.
 ### 4. Client Integration
 
 Clients only need: Lens Base URL + Gateway API Key + Model group name.
+
+### 5. Observe Health and Logs
+
+- `/model-health`: success-rate grading and timelines per model group / site from request logs
+- `/requests`: the full attempt chain, tokens, and cost of every request
+- `/overview`: usage overview and trends
 
 ## Tech Stack
 
@@ -277,9 +295,11 @@ Configure these values on `/settings`:
 | `stream_idle_timeout_seconds` | 180 seconds | Maximum wait between upstream chunks after the first meaningful streaming output; range `0`–`86400`, where `0` is unlimited                                                    |
 | `max_request_body_bytes`      | `32000000`  | Maximum request body sent upstream; `0` is unlimited                                                                                                                             |
 
+Other settings configurable on the page include: global proxy, CORS allowed origins, upstream global header / parameter override rules, cooldown detection rules (custom status code + body regex → error category, cooldown, and scope), model test prompts, request/response body log capture, site name and logo, time zone, and more.
+
 #### Cooldown and Health Scoring
 
-Cooldown is applied first to the smallest resource identified by the error. `401` / `403` cool the current key; `404`, `429`, `5xx`, upstream `408`, gateway timeouts, and network errors cool the actual upstream model. Other models and keys on the same channel remain routable. Ordinary `4xx` responses other than `401` / `403` / `404` / `408` / `429` usually describe the current request and do not affect cooldown. Standard `Retry-After` on `429` / `503` immediately cools the current model and takes precedence over category defaults within the maximum cooldown cap; `0` means immediate recovery.
+Custom cooldown detection rules configured by the administrator are matched first (by status code and body regex, mapping to an error category, cooldown, and scope); the status-code defaults apply when no rule matches. `401` / `403` cool the current key; `404`, `429`, `5xx`, upstream `408`, gateway timeouts, and network errors cool the actual upstream model. Other models and keys on the same channel remain routable. Ordinary `4xx` responses other than `401` / `403` / `404` / `408` / `429` usually describe the current request and do not affect cooldown. Standard `Retry-After` on `429` / `503` immediately cools the current model and takes precedence over category defaults within the maximum cooldown cap; `0` means immediate recovery.
 
 Channels do not maintain a separate cooldown timer. For every enabled key-model binding:
 
