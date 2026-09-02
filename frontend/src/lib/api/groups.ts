@@ -70,17 +70,6 @@ export type ModelGroup = {
   pricing_mode: "tokens" | "non_tokens";
   items: ModelGroupItem[];
 };
-export type ModelGroupPayload = {
-  name: string;
-  strategy: RoutingStrategy;
-  route_group_id?: string;
-  sync_filter_mode: ModelGroupSyncFilterMode;
-  sync_filter_query: string;
-  param_override: ParamOverrideRule[];
-  headers: HeaderRule[];
-  fallback_group_ids?: string[];
-  items: ModelGroupItemPayload[];
-};
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {
   protocol_config_id: string;
   protocol: ProtocolKind;
