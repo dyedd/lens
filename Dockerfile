@@ -53,7 +53,7 @@ COPY pyproject.toml uv.lock ./
 COPY backend/pyproject.toml ./backend/
 RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-workspace --package app --link-mode=copy \
+    uv sync --locked --no-dev --no-install-workspace --package lens --link-mode=copy \
     && mkdir -p /app/data
 
 # Installed editable on purpose: `app.cli` resolves `alembic.ini` and the Alembic
@@ -62,7 +62,7 @@ COPY backend/alembic.ini ./backend/
 COPY backend/app ./backend/app
 RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --package app --link-mode=copy
+    uv sync --locked --no-dev --package lens --link-mode=copy
 
 COPY --chmod=755 scripts/docker/app-entrypoint.sh /usr/local/bin/app-entrypoint
 # vite.config.ts writes the build into the Python package, so the path mirrors
