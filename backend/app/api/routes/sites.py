@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from ...gateway.service.admin.foreign_imports import preview_foreign_site_import
 from ...gateway.service.admin.sites import (
     create_site,
     create_site_with_model_groups,
@@ -16,6 +17,7 @@ from ...gateway.service.admin.sites import (
     update_site_with_model_groups,
 )
 from ...models.channels import ChannelModelSyncResponse
+from ...models.foreign_imports import ForeignSiteImportPreview
 from ...models.health import HealthSummary
 from ...models.site_import import SiteBatchImportResult
 from ...models.site_model_test import SiteModelFetchItem, SiteModelTestResult
@@ -48,6 +50,12 @@ def register(app: FastAPI) -> None:
         import_sites,
         methods=["POST"],
         response_model=SiteBatchImportResult,
+    )
+    app.add_api_route(
+        "/api/admin/sites/import/preview",
+        preview_foreign_site_import,
+        methods=["POST"],
+        response_model=ForeignSiteImportPreview,
     )
     app.add_api_route("/api/admin/sites/{site_id}", update_site, methods=["PUT"])
     app.add_api_route(
