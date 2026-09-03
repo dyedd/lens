@@ -162,15 +162,16 @@ docker compose exec app cat /app/data/admin-password
 
 ### 本地构建镜像
 
-在仓库根目录执行：
+在仓库根目录先运行部署脚本，生成 `.env`（含随机 `LENS_AUTH_SECRET_KEY`）和 `data/` 目录：
 
 ```bash
+sh scripts/docker/deploy.sh
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
 仓库中已提供 `docker-compose.local.yml`，会把镜像名改成 `lens:local` 并从当前源码构建。
 
-如果在独立部署目录中本地构建，手动创建 `docker-compose.local.yml`：
+如果在独立部署目录中本地构建，同样先运行 `sh scripts/docker/deploy.sh`（脚本会自动下载缺失的 `docker-compose.yml` 和 `.env.example`），再手动创建 `docker-compose.local.yml`：
 
 ```yaml
 services:
@@ -242,7 +243,7 @@ pnpm dev
 - **轮询**：在模型组候选之间平滑轮询
 - **故障切换**：优先使用前面的成员，失败后切到下一个凭证或渠道
 - **执行组复用**：展示组可以指向另一个执行模型组，复用其候选和策略
-- **多模态回退**：配置按顺序尝试的备用模型组，主组没有可用候选时自动回退
+- **多模态回退**：为模型组配置按顺序尝试的备用模型组；请求含多模态内容时，主组候选耗尽后自动尝试备用组
 
 **协议转换**：OpenAI Chat 或 OpenAI Responses 上游可以加入 Anthropic、OpenAI Responses 模型组，OpenAI Responses 上游可以加入 OpenAI Chat 模型组，运行时自动转换。
 
@@ -290,11 +291,11 @@ pnpm dev
 | `stream_idle_timeout_seconds` | `180` 秒   | 流式请求首个有效输出后，相邻上游数据块的最长等待；范围 `0`–`86400`，`0` 不限制                           |
 | `max_request_body_bytes`      | `32000000` | 发送到上游的请求体上限；`0` 不限制                                                                      |
 
-其余可在页面修改的设置包括：全局代理、CORS 允许来源、上游全局 Header / 参数覆盖规则、冷却检测规则（自定义状态码 + 响应体正则 → 错误分类与冷却时长）、模型测试提示词、请求体 / 响应体日志留存、站点名称与 Logo、时区等。
+其余可在页面修改的设置包括：全局代理、CORS 允许来源、上游全局 Header / 参数覆盖规则、模型测试提示词、请求体 / 响应体日志留存、站点名称与 Logo、时区等。
 
 #### 冷却与健康排序
 
-优先命中管理员配置的冷却检测规则（按状态码与响应体正则匹配，可指定错误分类、冷却时长和作用范围），未命中时按状态码默认分类。`401` / `403` 冷却当前 Key；`404`、`429`、`5xx`、上游 `408`、网关超时和网络错误冷却当前实际上游模型。同渠道其他模型或其他 Key 仍可参与路由。除 `401` / `403` / `404` / `408` / `429` 外的普通 `4xx` 通常只说明当前请求不可接受，不计入冷却。`429` / `503` 的标准 `Retry-After` 会立即触发当前模型冷却，并在最大冷却限制内优先于分类默认值；`0` 表示立即恢复。
+优先命中管理员配置的冷却检测规则（设置键 `cooldown_detection_rules`：按状态码与响应体正则匹配，指定错误分类、冷却时长和作用范围；可通过设置接口或配置备份修改），未命中时按状态码默认分类。`401` / `403` 冷却当前 Key；`404`、`429`、`5xx`、上游 `408`、网关超时和网络错误冷却当前实际上游模型。同渠道其他模型或其他 Key 仍可参与路由。除 `401` / `403` / `404` / `408` / `429` 外的普通 `4xx` 通常只说明当前请求不可接受，不计入冷却。`429` / `503` 的标准 `Retry-After` 会立即触发当前模型冷却，并在最大冷却限制内优先于分类默认值；`0` 表示立即恢复。
 
 渠道没有独立的冷却计时器。对每个已启用的“Key + 模型”绑定：
 
@@ -489,6 +490,25 @@ curl http://127.0.0.1:3000/v1/embeddings \
     "input": "hello world"
   }'
 ```
+
+</details>
+
+<details>
+<summary>OpenAI Images (curl)</summary>
+
+```bash
+curl http://127.0.0.1:3000/v1/images/generations \
+  -H "Authorization: Bearer sk-lens-..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "your-image-group",
+    "prompt": "a white cat",
+    "n": 1,
+    "size": "1024x1024"
+  }'
+```
+
+请求体透传到上游 `/v1/images/generations`；`/v1/images/edits` 同理（multipart 上传）。图像按张计费，单价在模型价格中配置。
 
 </details>
 
