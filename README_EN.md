@@ -167,15 +167,16 @@ Visit `http://127.0.0.1:3000`, change the administrator password immediately aft
 
 ### Build Locally
 
-Run from the repository root:
+From the repository root, run the deploy script first to generate `.env` (with a random `LENS_AUTH_SECRET_KEY`) and the `data/` directory:
 
 ```bash
+sh scripts/docker/deploy.sh
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
 The repository includes `docker-compose.local.yml`, which changes the image name to `lens:local` and builds from the current source tree.
 
-If building from a standalone deployment directory, create `docker-compose.local.yml` manually:
+If building from a standalone deployment directory, run `sh scripts/docker/deploy.sh` first (it downloads any missing `docker-compose.yml` and `.env.example`), then create `docker-compose.local.yml` manually:
 
 ```yaml
 services:
@@ -247,7 +248,7 @@ Open `/groups`, create a model group, select entry protocols, add upstream model
 - **Round robin**: Smoothly rotate across model group candidates
 - **Failover**: Prefer earlier members, then switch to the next credential or channel after failures
 - **Execution group reuse**: A visible group can point to another execution model group and reuse its candidates and strategy
-- **Multimodal fallback**: Configure ordered backup model groups tried when the primary group has no available candidate
+- **Multimodal fallback**: Configure ordered backup model groups for a model group; for multimodal requests, backup groups are tried once the primary group's candidates are exhausted
 
 **Protocol conversion**: OpenAI Chat or OpenAI Responses upstream models can join Anthropic and OpenAI Responses model groups, and OpenAI Responses upstream models can join OpenAI Chat model groups; conversion happens at runtime.
 
@@ -295,11 +296,11 @@ Configure these values on `/settings`:
 | `stream_idle_timeout_seconds` | 180 seconds | Maximum wait between upstream chunks after the first meaningful streaming output; range `0`–`86400`, where `0` is unlimited                                                    |
 | `max_request_body_bytes`      | `32000000`  | Maximum request body sent upstream; `0` is unlimited                                                                                                                             |
 
-Other settings configurable on the page include: global proxy, CORS allowed origins, upstream global header / parameter override rules, cooldown detection rules (custom status code + body regex → error category, cooldown, and scope), model test prompts, request/response body log capture, site name and logo, time zone, and more.
+Other settings configurable on the page include: global proxy, CORS allowed origins, upstream global header / parameter override rules, model test prompts, request/response body log capture, site name and logo, time zone, and more.
 
 #### Cooldown and Health Scoring
 
-Custom cooldown detection rules configured by the administrator are matched first (by status code and body regex, mapping to an error category, cooldown, and scope); the status-code defaults apply when no rule matches. `401` / `403` cool the current key; `404`, `429`, `5xx`, upstream `408`, gateway timeouts, and network errors cool the actual upstream model. Other models and keys on the same channel remain routable. Ordinary `4xx` responses other than `401` / `403` / `404` / `408` / `429` usually describe the current request and do not affect cooldown. Standard `Retry-After` on `429` / `503` immediately cools the current model and takes precedence over category defaults within the maximum cooldown cap; `0` means immediate recovery.
+Custom cooldown detection rules configured by the administrator are matched first (setting key `cooldown_detection_rules`: status code + body regex → error category, cooldown, and scope; editable through the settings API or config backup); the status-code defaults apply when no rule matches. `401` / `403` cool the current key; `404`, `429`, `5xx`, upstream `408`, gateway timeouts, and network errors cool the actual upstream model. Other models and keys on the same channel remain routable. Ordinary `4xx` responses other than `401` / `403` / `404` / `408` / `429` usually describe the current request and do not affect cooldown. Standard `Retry-After` on `429` / `503` immediately cools the current model and takes precedence over category defaults within the maximum cooldown cap; `0` means immediate recovery.
 
 Channels do not maintain a separate cooldown timer. For every enabled key-model binding:
 
@@ -494,6 +495,25 @@ curl http://127.0.0.1:3000/v1/embeddings \
     "input": "hello world"
   }'
 ```
+
+</details>
+
+<details>
+<summary>OpenAI Images (curl)</summary>
+
+```bash
+curl http://127.0.0.1:3000/v1/images/generations \
+  -H "Authorization: Bearer sk-lens-..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "your-image-group",
+    "prompt": "a white cat",
+    "n": 1,
+    "size": "1024x1024"
+  }'
+```
+
+The request body is forwarded to the upstream `/v1/images/generations`; `/v1/images/edits` works the same way (multipart upload). Images are billed per image, with the unit price configured in model prices.
 
 </details>
 
