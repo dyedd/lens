@@ -27,7 +27,7 @@ function ConfigPreviewMeta({ label, value }: { label: string; value: string }) {
   return (
     <Item variant="muted" size="sm">
       <ItemContent>
-        <ItemDescription className="text-[11px] uppercase tracking-[0.08em]">
+        <ItemDescription className="text-[11px] text-muted-foreground">
           {label}
         </ItemDescription>
         <ItemTitle>{value}</ItemTitle>
