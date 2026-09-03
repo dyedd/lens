@@ -1,11 +1,15 @@
-import { CircleAlert, Download } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Download } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/Alert";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/Card";
 import {
   Field,
   FieldDescription,
@@ -22,18 +26,6 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
   const [shouldIncludeGatewayApiKeys, setShouldIncludeGatewayApiKeys] =
     useState(false);
   const [isExporting, setIsExporting] = useState(false);
-
-  const alwaysIncludedItems = useMemo(
-    () => [
-      titleForLocale(locale, "系统设置", "Settings"),
-      titleForLocale(locale, "渠道与上游凭据", "Channels & credentials"),
-      titleForLocale(locale, "模型组配置", "Model groups"),
-      titleForLocale(locale, "模型价格", "Model prices"),
-      titleForLocale(locale, "定时任务", "Cron jobs"),
-      titleForLocale(locale, "统计数据", "Stats"),
-    ],
-    [locale],
-  );
 
   async function handleExport() {
     setIsExporting(true);
@@ -65,17 +57,24 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
       <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
         <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
           <Download className="size-4 text-muted-foreground" />
-          <span>{titleForLocale(locale, "导出配置", "Export backup")}</span>
+          <span>{titleForLocale(locale, "导出备份", "Export backup")}</span>
         </CardTitle>
+        <CardDescription>
+          {titleForLocale(
+            locale,
+            "把当前实例的完整配置打包为 JSON 文件。",
+            "Package the full configuration of this instance as a JSON file.",
+          )}
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
-        <div className="flex flex-wrap gap-2">
-          {alwaysIncludedItems.map((item) => (
-            <Badge key={item} variant="outline">
-              {item}
-            </Badge>
-          ))}
-        </div>
+        <p className="text-sm text-muted-foreground">
+          {titleForLocale(
+            locale,
+            "始终包含：系统设置 · 渠道与凭据 · 模型组 · 模型价格 · 定时任务 · 统计",
+            "Always included: settings · channels & credentials · model groups · prices · cron jobs · stats",
+          )}
+        </p>
 
         <FieldGroup>
           <Field
@@ -125,20 +124,6 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
             />
           </Field>
         </FieldGroup>
-
-        <Alert>
-          <CircleAlert />
-          <AlertTitle>
-            {titleForLocale(locale, "导出说明", "Export notes")}
-          </AlertTitle>
-          <AlertDescription>
-            {titleForLocale(
-              locale,
-              "渠道配置始终包含上游凭据，统计数据会一并备份；导出文件可直接用于新实例覆盖导入恢复。",
-              "Channel configuration always includes upstream credentials, and stats are backed up together; the exported file can be imported directly into a fresh instance.",
-            )}
-          </AlertDescription>
-        </Alert>
 
         <Button
           type="button"
