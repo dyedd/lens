@@ -160,9 +160,9 @@ export function SiteModelAggregateView({
                   ) : null}
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="destructive"
                     size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    className="h-8 w-8"
                     aria-label={deleteLabel}
                     title={deleteLabel}
                     onClick={() => onRemoveModel(modelKey)}
@@ -215,9 +215,9 @@ export function SiteModelAggregateView({
                         ) : null}
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="destructive"
                           size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          className="h-6 w-6"
                           aria-label={memberDeleteLabel}
                           title={memberDeleteLabel}
                           onClick={() => onRemoveModel(member.key)}

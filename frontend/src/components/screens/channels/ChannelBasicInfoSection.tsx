@@ -208,8 +208,11 @@ export function ChannelBasicInfoSection({
                 {tag}
                 <button
                   type="button"
-                  className="inline-flex size-4 items-center justify-center rounded-full outline-none hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex size-4 items-center justify-center rounded-full text-destructive outline-none hover:bg-destructive/10 active:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label={
+                    locale === "zh-CN" ? `移除标签 ${tag}` : `Remove tag ${tag}`
+                  }
+                  title={
                     locale === "zh-CN" ? `移除标签 ${tag}` : `Remove tag ${tag}`
                   }
                   onClick={() =>

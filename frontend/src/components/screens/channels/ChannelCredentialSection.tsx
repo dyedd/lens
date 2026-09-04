@@ -202,9 +202,12 @@ export function ChannelCredentialSection({
                 </div>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="destructive"
                   size="icon"
-                  className="text-muted-foreground"
+                  aria-label={
+                    locale === "zh-CN" ? "删除密钥" : "Remove API key"
+                  }
+                  title={locale === "zh-CN" ? "删除密钥" : "Remove API key"}
                   onClick={() => onRemove(index)}
                 >
                   <X />

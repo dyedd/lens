@@ -259,8 +259,8 @@ export function RequestFiltersPanel(props: RequestFiltersPanelProps) {
         <div className="mt-4 border-t pt-4">
           <Button
             type="button"
-            variant="outline"
-            className="w-full text-destructive hover:text-destructive"
+            variant="destructive"
+            className="w-full"
             onClick={onClear}
             disabled={clearingLogs}
           >

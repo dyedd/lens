@@ -1,5 +1,6 @@
 import { ChevronsUpDown } from "lucide-react";
 
+import { SettingsHint } from "@/components/screens/settings/SettingsSectionCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -14,7 +15,6 @@ import {
 import {
   Field,
   FieldContent,
-  FieldDescription,
   FieldLabel,
   FieldLegend,
   FieldSet,
@@ -68,22 +68,28 @@ export function GatewayApiKeyModelPermissions({
         className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
       >
         <FieldContent>
-          <FieldLabel className="w-auto">
-            {titleForLocale(
-              locale,
-              "仅允许选定模型组",
-              "Restrict to selected groups",
-            )}
-          </FieldLabel>
-          <FieldDescription>
-            {titleForLocale(
-              locale,
-              "关闭时可调用当前全部启用模型组",
-              "Disabled means the key can use every enabled model group",
-            )}
-          </FieldDescription>
+          <div className="flex items-center gap-1">
+            <FieldLabel
+              htmlFor="gateway-key-model-restriction"
+              className="w-auto"
+            >
+              {titleForLocale(
+                locale,
+                "仅允许选定模型组",
+                "Restrict to selected groups",
+              )}
+            </FieldLabel>
+            <SettingsHint
+              description={titleForLocale(
+                locale,
+                "关闭时可调用当前全部启用模型组；开启后必须至少选择一个模型组。",
+                "When disabled, the key can use every enabled model group. When enabled, select at least one group.",
+              )}
+            />
+          </div>
         </FieldContent>
         <Switch
+          id="gateway-key-model-restriction"
           checked={isRestrictionEnabled}
           onCheckedChange={(checked) =>
             onRestrictionEnabledChange(Boolean(checked))
@@ -173,19 +179,6 @@ export function GatewayApiKeyModelPermissions({
             </Command>
           </PopoverContent>
         </Popover>
-        <FieldDescription>
-          {isRestrictionEnabled
-            ? titleForLocale(
-                locale,
-                "权限来源于当前启用模型组；留空将无法保存",
-                "Permissions come from currently enabled model groups; choose at least one",
-              )
-            : titleForLocale(
-                locale,
-                "当前为全部放行模式",
-                "The key can currently access all model groups",
-              )}
-        </FieldDescription>
         {isRestrictionEnabled && allowedModels.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {allowedModels.map((modelName) => (

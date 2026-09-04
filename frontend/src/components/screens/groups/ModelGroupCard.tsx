@@ -240,9 +240,8 @@ export function ModelGroupCard({
         </Tooltip>
         <Button
           type="button"
-          variant="ghost"
+          variant="destructive"
           size="sm"
-          className="text-destructive hover:text-destructive"
           onClick={() => setDeleteTarget(group)}
         >
           <Trash2 data-icon="inline-start" />

@@ -109,9 +109,8 @@ export function ChannelModelOverviewSection({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="destructive"
             size="sm"
-            className="text-muted-foreground hover:text-destructive"
             onClick={onClearModels}
             disabled={!overviewModels.length}
           >

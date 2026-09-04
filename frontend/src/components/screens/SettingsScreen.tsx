@@ -99,34 +99,13 @@ export function SettingsScreen() {
         >
           <SettingsNavigation tabs={settingsTabs} />
           <div className="min-w-0">
-            <AppearanceSettingsSection
-              locale={locale}
-              description={settingsTabs[0]!.description}
-              settings={settings}
-            />
-            <AccountSettingsSection
-              locale={locale}
-              description={settingsTabs[1]!.description}
-              account={account}
-            />
-            <TimeSettingsSection
-              locale={locale}
-              description={settingsTabs[2]!.description}
-              settings={settings}
-            />
-            <GatewaySettingsSection
-              locale={locale}
-              description={settingsTabs[3]!.description}
-              settings={settings}
-            />
-            <ModelTestSettingsSection
-              locale={locale}
-              description={settingsTabs[4]!.description}
-              settings={settings}
-            />
+            <AppearanceSettingsSection locale={locale} settings={settings} />
+            <AccountSettingsSection locale={locale} account={account} />
+            <TimeSettingsSection locale={locale} settings={settings} />
+            <GatewaySettingsSection locale={locale} settings={settings} />
+            <ModelTestSettingsSection locale={locale} settings={settings} />
             <CircuitBreakerSettingsSection
               locale={locale}
-              description={settingsTabs[5]!.description}
               settings={settings}
             />
           </div>

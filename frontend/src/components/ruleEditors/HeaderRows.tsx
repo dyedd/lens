@@ -92,14 +92,14 @@ export function HeaderRows({
                 </select>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="destructive"
                   size="icon"
-                  className="text-muted-foreground"
                   aria-label={titleForLocale(
                     locale,
                     "删除请求头",
                     "Remove header",
                   )}
+                  title={titleForLocale(locale, "删除请求头", "Remove header")}
                   onClick={() => onRemove(index)}
                 >
                   <Trash2 />
