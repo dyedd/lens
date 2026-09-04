@@ -4,6 +4,7 @@ from .....models.foreign_imports import ForeignSiteImportPreview, ForeignSitePre
 from .....models.site_import import SiteBatchImportRequest, SiteImportItem
 from .all_api_hub import parse_all_api_hub_sites
 from .ccload import parse_ccload_sites
+from .cli_proxy_api import parse_cli_proxy_api_sites
 from .detection import UnknownForeignFormatError, detect_foreign_format
 from .metapi import parse_metapi_sites
 from .octopus import parse_octopus_sites
@@ -14,12 +15,13 @@ _LENS_BACKUP_WARNING = (
     "This is a Lens backup file; restore it with the Lens backup import instead"
 )
 
-# 各格式解析函数的输入形状由 detection 保证: ccload 收 CSV 文本, 其余收 JSON 对象。
-_JSON_PARSERS = {
+# 各格式解析函数的输入形状由 detection 保证: ccload 收 CSV 文本, 其余收结构化对象。
+_PARSERS = {
     "metapi": parse_metapi_sites,
     "sub2api": parse_sub2api_sites,
     "octopus": parse_octopus_sites,
     "all_api_hub": parse_all_api_hub_sites,
+    "cli_proxy_api": parse_cli_proxy_api_sites,
 }
 
 
@@ -37,7 +39,7 @@ def build_foreign_site_import_preview(raw: bytes) -> ForeignSiteImportPreview:
     if format_id == "ccload":
         parsed = parse_ccload_sites(str(content))
     else:
-        parser = _JSON_PARSERS.get(format_id)
+        parser = _PARSERS.get(format_id)
         if parser is None or not isinstance(content, dict):
             raise UnknownForeignFormatError("Unrecognized backup file format")
         parsed = parser(content)

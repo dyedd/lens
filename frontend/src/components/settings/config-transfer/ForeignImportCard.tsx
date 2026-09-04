@@ -25,6 +25,7 @@ const FORMAT_LABELS: Record<ForeignSiteFormat, [string, string]> = {
   ccload: ["ccLoad", "ccLoad"],
   all_api_hub: ["All API Hub", "All API Hub"],
   octopus: ["Octopus", "Octopus"],
+  cli_proxy_api: ["CLIProxyAPI", "CLIProxyAPI"],
 };
 
 const SKIP_REASON_LABELS: Record<string, [string, string]> = {
@@ -93,8 +94,8 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
         <CardDescription>
           {titleForLocale(
             locale,
-            "识别其他网关的备份文件，把其中的渠道追加进来，不改动现有配置。",
-            "Recognize backups from other gateways and append their channels without touching the current configuration.",
+            "支持 Octopus、CLIProxyAPI、metapi、Sub2API、ccLoad、All API Hub 导出的 JSON、YAML 或 CSV；只追加渠道，不改动现有配置。",
+            "Supports JSON, YAML, or CSV exports from Octopus, CLIProxyAPI, metapi, Sub2API, ccLoad, and All API Hub; only appends channels and leaves current configuration unchanged.",
           )}
         </CardDescription>
         <CardAction>
@@ -115,7 +116,7 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".json,.csv,application/json,text/csv"
+          accept=".json,.yaml,.yml,.csv,application/json,application/yaml,text/csv"
           className="hidden"
           onChange={(event) => {
             void loadFile(event.target.files?.[0] ?? null);
@@ -151,13 +152,6 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
                     "选择备份文件，或拖拽到此处",
                     "Choose a backup file, or drop it here",
                   )}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {titleForLocale(
-                locale,
-                "支持 Octopus、metapi、Sub2API、ccLoad、All API Hub 导出的 JSON 或 CSV",
-                "Supports JSON or CSV exports from Octopus, metapi, Sub2API, ccLoad, and All API Hub",
-              )}
             </span>
           </button>
         ) : (

@@ -5,7 +5,7 @@ from .site_import import SiteBatchImportRequest
 from .validation import StrictBaseModel
 
 ForeignSiteFormat = Literal[
-    "lens", "metapi", "sub2api", "ccload", "all_api_hub", "octopus"
+    "lens", "metapi", "sub2api", "ccload", "all_api_hub", "octopus", "cli_proxy_api"
 ]
 
 

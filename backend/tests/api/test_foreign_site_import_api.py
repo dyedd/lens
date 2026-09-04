@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import yaml
 from conftest import assert_error
 
 
@@ -12,6 +13,16 @@ def _json_file(payload: dict) -> dict:
             "backup.json",
             json.dumps(payload).encode(),
             "application/json",
+        )
+    }
+
+
+def _yaml_file(payload: dict) -> dict:
+    return {
+        "file": (
+            "config.yaml",
+            yaml.safe_dump(payload).encode(),
+            "application/yaml",
         )
     }
 
@@ -146,6 +157,39 @@ def _octopus_file() -> dict:
     )
 
 
+def _cli_proxy_api_file() -> dict:
+    return _yaml_file(
+        {
+            "port": 8317,
+            "api-keys": ["client-key"],
+            "openai-compatibility": [
+                {
+                    "name": "openrouter",
+                    "base-url": "https://openrouter.ai/api/v1",
+                    "api-key-entries": [
+                        {"api-key": "sk-or-1"},
+                        {"api-key": "sk-or-2"},
+                    ],
+                    "models": [{"name": "moonshotai/kimi-k2:free", "alias": "kimi-k2"}],
+                }
+            ],
+            "claude-api-key": [
+                {
+                    "api-key": "sk-ant",
+                    "base-url": "https://relay.example.com",
+                    "models": [{"name": "claude-sonnet-4", "alias": "sonnet"}],
+                }
+            ],
+            "gemini-api-key": [
+                {
+                    "api-key": "AIzaSy01",
+                    "models": [{"name": "gemini-2.5-flash", "alias": "flash"}],
+                }
+            ],
+        }
+    )
+
+
 @pytest.mark.parametrize(
     ("file_part", "expected_format", "expected_names"),
     [
@@ -156,6 +200,12 @@ def _octopus_file() -> dict:
             _all_api_hub_file(), "all_api_hub", ["hub-profile"], id="all-api-hub"
         ),
         pytest.param(_octopus_file(), "octopus", ["octopus-channel"], id="octopus"),
+        pytest.param(
+            _cli_proxy_api_file(),
+            "cli_proxy_api",
+            ["openrouter", "claude 1", "gemini 1"],
+            id="cli-proxy-api",
+        ),
     ],
 )
 def test_preview_foreign_backup_detects_format(

@@ -8,7 +8,8 @@ export type ForeignSiteFormat =
   | "sub2api"
   | "ccload"
   | "all_api_hub"
-  | "octopus";
+  | "octopus"
+  | "cli_proxy_api";
 
 export type ForeignSitePreview = {
   name: string;
