@@ -196,9 +196,8 @@ function GatewayApiKeyTableRow({
           </Button>
           <Button
             type="button"
-            variant="ghost"
+            variant="destructive"
             size="icon-sm"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => void onRemove(item.id)}
             title={titleForLocale(locale, "删除", "Delete")}
             disabled={isBusy}

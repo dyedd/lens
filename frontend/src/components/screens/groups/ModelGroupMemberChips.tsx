@@ -120,11 +120,14 @@ export function ModelGroupMemberChips({
           </Button>
           <Button
             type="button"
-            variant="ghost"
+            variant="destructive"
             size="icon-xs"
-            className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+            className="mr-1 shrink-0 rounded-full"
             disabled={busyId === group.id}
             aria-label={
+              locale === "zh-CN" ? "移除整个渠道" : "Remove entire channel"
+            }
+            title={
               locale === "zh-CN" ? "移除整个渠道" : "Remove entire channel"
             }
             onClick={() => void removeGroupChannel(group, channel.key)}
@@ -224,9 +227,11 @@ export function ModelGroupMemberChips({
         ) : null}
         <Button
           type="button"
-          variant="ghost"
+          variant="destructive"
           size="icon-xs"
-          className="mr-1 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+          className="mr-1 shrink-0 rounded-full"
+          aria-label={locale === "zh-CN" ? "移除成员" : "Remove member"}
+          title={locale === "zh-CN" ? "移除成员" : "Remove member"}
           disabled={busyId === group.id}
           onClick={() => void removeGroupMember(group, member.key)}
         >

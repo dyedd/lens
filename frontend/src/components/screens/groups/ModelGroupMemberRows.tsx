@@ -251,9 +251,10 @@ export function FoldedMemberRow({
       ) : null}
       <Button
         type="button"
-        variant="ghost"
+        variant="destructive"
         size="icon"
-        className="text-muted-foreground hover:text-destructive"
+        aria-label={locale === "zh-CN" ? "移除成员" : "Remove member"}
+        title={locale === "zh-CN" ? "移除成员" : "Remove member"}
         onClick={onRemove}
       >
         <X size={13} />

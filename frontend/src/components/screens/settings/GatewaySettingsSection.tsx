@@ -9,11 +9,9 @@ type SettingsDraftController = ReturnType<typeof useSettingsDraft>;
 
 /** Render the gateway settings tab content. */
 export function GatewaySettingsSection({
-  description,
   locale,
   settings,
 }: {
-  description: string;
   locale: Locale;
   settings: SettingsDraftController;
 }) {
@@ -21,10 +19,7 @@ export function GatewaySettingsSection({
 
   return (
     <TabsContent value="gateway" className="mt-0">
-      <SettingsSectionCard
-        title={titleForLocale(locale, "网关", "Gateway")}
-        description={description}
-      >
+      <SettingsSectionCard title={titleForLocale(locale, "网关", "Gateway")}>
         <GatewaySettings
           proxyUrl={draft.proxyUrl}
           corsAllowOrigins={draft.corsAllowOrigins}

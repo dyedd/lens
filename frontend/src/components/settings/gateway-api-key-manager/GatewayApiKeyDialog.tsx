@@ -1,12 +1,12 @@
 import { startTransition, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { SettingsHint } from "@/components/screens/settings/SettingsSectionCard";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog, DialogFooter } from "@/components/ui/Dialog";
 import {
   Field,
   FieldContent,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/Field";
@@ -64,24 +64,30 @@ function GatewayApiKeyBasicFields({
         className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
       >
         <FieldContent>
-          <FieldLabel className="w-auto">
+          <FieldLabel htmlFor="gateway-key-enabled" className="w-auto">
             {titleForLocale(locale, "启用", "Enabled")}
           </FieldLabel>
-          <FieldDescription>
-            {titleForLocale(
-              locale,
-              "关闭后立即拒绝该密钥请求",
-              "Reject requests immediately when disabled",
-            )}
-          </FieldDescription>
         </FieldContent>
-        <Switch checked={enabled} onCheckedChange={onEnabledChange} />
+        <Switch
+          id="gateway-key-enabled"
+          checked={enabled}
+          onCheckedChange={onEnabledChange}
+        />
       </Field>
 
       <Field>
-        <FieldLabel htmlFor="gateway-key-limit">
-          {titleForLocale(locale, "最大余额 (USD)", "Max balance (USD)")}
-        </FieldLabel>
+        <div className="flex items-center gap-1">
+          <FieldLabel htmlFor="gateway-key-limit">
+            {titleForLocale(locale, "最大余额 (USD)", "Max balance (USD)")}
+          </FieldLabel>
+          <SettingsHint
+            description={titleForLocale(
+              locale,
+              "填 0 表示不限制",
+              "Use 0 for unlimited",
+            )}
+          />
+        </div>
         <Input
           id="gateway-key-limit"
           type="number"
@@ -90,9 +96,6 @@ function GatewayApiKeyBasicFields({
           value={maxCostUsd}
           onChange={(event) => onMaxCostUsdChange(event.target.value)}
         />
-        <FieldDescription>
-          {titleForLocale(locale, "填 0 表示不限制", "Use 0 for unlimited")}
-        </FieldDescription>
       </Field>
     </>
   );

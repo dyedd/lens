@@ -151,9 +151,8 @@ export function ProtocolConfigItem({
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="destructive"
               size="icon"
-              className="text-destructive hover:text-destructive"
               aria-label={
                 locale === "zh-CN" ? "删除协议配置" : "Delete protocol config"
               }

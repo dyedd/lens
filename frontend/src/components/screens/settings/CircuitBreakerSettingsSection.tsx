@@ -1,7 +1,6 @@
 import {
   Field,
   FieldContent,
-  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -11,7 +10,7 @@ import { Switch } from "@/components/ui/Switch";
 import { TabsContent } from "@/components/ui/Tabs";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
-import { SettingsSectionCard } from "./SettingsSectionCard";
+import { SettingsHint, SettingsSectionCard } from "./SettingsSectionCard";
 import type { useSettingsDraft } from "./useSettingsDraft";
 
 type CircuitBreakerKey =
@@ -35,7 +34,7 @@ interface CircuitBreakerFieldDefinition {
   key: CircuitBreakerKey;
   id: string;
   label: string;
-  description: string;
+  description?: string;
   min: string;
   max?: string;
   step?: string;
@@ -43,7 +42,6 @@ interface CircuitBreakerFieldDefinition {
 
 interface CircuitBreakerFieldGroup {
   title: string;
-  description: string;
   showHealthToggle?: boolean;
   fields: ReadonlyArray<CircuitBreakerFieldDefinition>;
 }
@@ -51,12 +49,10 @@ interface CircuitBreakerFieldGroup {
 type SettingsDraftController = ReturnType<typeof useSettingsDraft>;
 
 const HEALTH_SCORING_TOGGLE_ID = "settings-health-scoring-enabled";
-const HEALTH_SCORING_DESCRIPTION_ID = `${HEALTH_SCORING_TOGGLE_ID}-description`;
-
 interface NumberSettingFieldProps {
   id: string;
   label: string;
-  description: string;
+  description?: string;
   min: string;
   max?: string;
   step?: string;
@@ -76,12 +72,14 @@ function NumberSettingField({
   error,
   onChange,
 }: NumberSettingFieldProps) {
-  const descriptionId = `${id}-description`;
   const errorId = `${id}-error`;
 
   return (
     <Field data-invalid={Boolean(error)}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <div className="flex items-center gap-1">
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        {description ? <SettingsHint description={description} /> : null}
+      </div>
       <Input
         id={id}
         type="number"
@@ -91,10 +89,9 @@ function NumberSettingField({
         step={step}
         value={value}
         aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${descriptionId} ${errorId}` : descriptionId}
+        aria-describedby={error ? errorId : undefined}
         onChange={(event) => onChange(event.target.value)}
       />
-      <FieldDescription id={descriptionId}>{description}</FieldDescription>
       {error ? <FieldError id={errorId}>{error}</FieldError> : null}
     </Field>
   );
@@ -106,11 +103,6 @@ function _getCircuitBreakerFieldGroups(
   return [
     {
       title: titleForLocale(locale, "失败阈值", "Failure thresholds"),
-      description: titleForLocale(
-        locale,
-        "连续失败按实际模型分别累计，达到对应阈值后才冷却该模型。",
-        "Consecutive failures are counted per actual model before that model enters cooldown.",
-      ),
       fields: [
         {
           key: "circuitBreakerThreshold",
@@ -151,11 +143,6 @@ function _getCircuitBreakerFieldGroups(
             "超时失败阈值",
             "Timeout failure threshold",
           ),
-          description: titleForLocale(
-            locale,
-            "同一实际模型连续发生上游超时的触发次数。",
-            "Consecutive upstream timeouts required for the same actual model.",
-          ),
           min: "1",
         },
         {
@@ -166,22 +153,12 @@ function _getCircuitBreakerFieldGroups(
             "网络失败阈值",
             "Network failure threshold",
           ),
-          description: titleForLocale(
-            locale,
-            "同一实际模型连续发生连接或网络错误的触发次数。",
-            "Consecutive connection or network errors required for the same actual model.",
-          ),
           min: "1",
         },
       ],
     },
     {
       title: titleForLocale(locale, "分类初始冷却", "Initial cooldowns"),
-      description: titleForLocale(
-        locale,
-        "模型错误先冷却实际模型，认证错误只冷却对应 Key；没有任何启用的 Key + 模型绑定可用时，渠道才整体不可用。初始冷却设为 0 可关闭对应类别。",
-        "Model errors first cool the actual model, while authentication errors cool only the affected key; the channel becomes unavailable only when no enabled key-model binding remains available. Set an initial cooldown to 0 to disable that category.",
-      ),
       fields: [
         {
           key: "circuitBreakerAuthCooldown",
@@ -223,11 +200,6 @@ function _getCircuitBreakerFieldGroups(
             "限流初始冷却（秒）",
             "Rate-limit initial cooldown (seconds)",
           ),
-          description: titleForLocale(
-            locale,
-            "上游限流当前实际模型时使用。",
-            "Applied when the upstream rate-limits the current actual model.",
-          ),
           min: "0",
           max: "604800",
         },
@@ -238,11 +210,6 @@ function _getCircuitBreakerFieldGroups(
             locale,
             "5xx 初始冷却（秒）",
             "5xx initial cooldown (seconds)",
-          ),
-          description: titleForLocale(
-            locale,
-            "上游 5xx 达到失败阈值后使用。",
-            "Applied after upstream 5xx responses reach the failure threshold.",
           ),
           min: "0",
           max: "604800",
@@ -255,11 +222,6 @@ function _getCircuitBreakerFieldGroups(
             "超时初始冷却（秒）",
             "Timeout initial cooldown (seconds)",
           ),
-          description: titleForLocale(
-            locale,
-            "上游超时达到失败阈值后使用。",
-            "Applied after upstream timeouts reach the failure threshold.",
-          ),
           min: "0",
           max: "604800",
         },
@@ -271,11 +233,6 @@ function _getCircuitBreakerFieldGroups(
             "网络错误初始冷却（秒）",
             "Network initial cooldown (seconds)",
           ),
-          description: titleForLocale(
-            locale,
-            "连接或网络错误达到失败阈值后使用。",
-            "Applied after connection or network errors reach the failure threshold.",
-          ),
           min: "0",
           max: "604800",
         },
@@ -283,11 +240,6 @@ function _getCircuitBreakerFieldGroups(
     },
     {
       title: titleForLocale(locale, "冷却退避", "Cooldown backoff"),
-      description: titleForLocale(
-        locale,
-        "同一模型或 Key 反复失败时延长冷却，但始终受最大冷却限制。",
-        "Repeated failures extend cooldown for the same model or key, bounded by the maximum cooldown.",
-      ),
       fields: [
         {
           key: "circuitBreakerBackoffMultiplier",
@@ -330,11 +282,6 @@ function _getCircuitBreakerFieldGroups(
         "健康排序参数",
         "Health ranking parameters",
       ),
-      description: titleForLocale(
-        locale,
-        "冷却过滤之后，轮询策略按近期健康分分配流量；故障切换策略仍保持配置顺序。",
-        "After cooldown filtering, round-robin traffic is weighted by recent health while failover preserves configured order.",
-      ),
       showHealthToggle: true,
       fields: [
         {
@@ -344,11 +291,6 @@ function _getCircuitBreakerFieldGroups(
             locale,
             "健康窗口（秒）",
             "Health window (seconds)",
-          ),
-          description: titleForLocale(
-            locale,
-            "健康评分统计近期请求结果的时间范围。",
-            "Time range of recent request outcomes used for health scoring.",
           ),
           min: "1",
           max: "604800",
@@ -392,11 +334,9 @@ function _getCircuitBreakerFieldGroups(
 
 /** Render circuit breaker and health scoring settings. */
 export function CircuitBreakerSettingsSection({
-  description,
   locale,
   settings,
 }: {
-  description: string;
   locale: Locale;
   settings: SettingsDraftController;
 }) {
@@ -408,19 +348,13 @@ export function CircuitBreakerSettingsSection({
           "冷却与健康排序",
           "Cooldown and health ranking",
         )}
-        description={description}
       >
         <FieldGroup>
           {_getCircuitBreakerFieldGroups(locale).map((group) => (
             <section key={group.title} className="flex flex-col gap-3">
-              <div>
-                <h3 className="text-sm font-medium text-foreground">
-                  {group.title}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {group.description}
-                </p>
-              </div>
+              <h3 className="text-sm font-medium text-foreground">
+                {group.title}
+              </h3>
 
               {group.showHealthToggle ? (
                 <Field
@@ -428,27 +362,28 @@ export function CircuitBreakerSettingsSection({
                   className="items-center justify-between gap-4 rounded-lg border p-3"
                 >
                   <FieldContent>
-                    <FieldLabel
-                      htmlFor={HEALTH_SCORING_TOGGLE_ID}
-                      className="w-auto"
-                    >
-                      {titleForLocale(
-                        locale,
-                        "启用健康排序",
-                        "Enable health ranking",
-                      )}
-                    </FieldLabel>
-                    <FieldDescription id={HEALTH_SCORING_DESCRIPTION_ID}>
-                      {titleForLocale(
-                        locale,
-                        "关闭后仅按所选路由策略的原始顺序或等权轮询选择可用模型。",
-                        "When disabled, available models use the configured order or equal-weight round robin for the selected strategy.",
-                      )}
-                    </FieldDescription>
+                    <div className="flex items-center gap-1">
+                      <FieldLabel
+                        htmlFor={HEALTH_SCORING_TOGGLE_ID}
+                        className="w-auto"
+                      >
+                        {titleForLocale(
+                          locale,
+                          "启用健康排序",
+                          "Enable health ranking",
+                        )}
+                      </FieldLabel>
+                      <SettingsHint
+                        description={titleForLocale(
+                          locale,
+                          "关闭后仅按所选路由策略的原始顺序或等权轮询选择可用模型。",
+                          "When disabled, available models use the configured order or equal-weight round robin for the selected strategy.",
+                        )}
+                      />
+                    </div>
                   </FieldContent>
                   <Switch
                     id={HEALTH_SCORING_TOGGLE_ID}
-                    aria-describedby={HEALTH_SCORING_DESCRIPTION_ID}
                     checked={settings.draft.isHealthScoringEnabled}
                     onCheckedChange={(checked) =>
                       settings.setDraftValue("isHealthScoringEnabled", checked)

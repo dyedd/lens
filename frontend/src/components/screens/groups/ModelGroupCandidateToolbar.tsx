@@ -151,9 +151,8 @@ export function ModelGroupCandidateToolbar({
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="destructive"
               size="sm"
-              className="text-muted-foreground"
               onClick={clearSavedFilter}
             >
               <X data-icon="inline-start" />

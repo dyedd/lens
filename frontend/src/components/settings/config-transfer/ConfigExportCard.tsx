@@ -2,20 +2,10 @@ import { Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { SettingsHint } from "@/components/screens/settings/SettingsSectionCard";
 import { Button } from "@/components/ui/Button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/Card";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/Field";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Switch } from "@/components/ui/Switch";
 import { downloadConfigBackup } from "@/lib/api/backups";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -59,41 +49,34 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
           <Download className="size-4 text-muted-foreground" />
           <span>{titleForLocale(locale, "导出备份", "Export backup")}</span>
         </CardTitle>
-        <CardDescription>
-          {titleForLocale(
-            locale,
-            "把当前实例的完整配置打包为 JSON 文件。",
-            "Package the full configuration of this instance as a JSON file.",
-          )}
-        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
         <p className="text-sm text-muted-foreground">
           {titleForLocale(
             locale,
-            "始终包含：系统设置 · 渠道与凭据 · 模型组 · 模型价格 · 定时任务 · 统计",
-            "Always included: settings · channels & credentials · model groups · prices · cron jobs · stats",
+            "始终包含：系统设置、渠道与凭据、模型组、模型价格、定时任务和统计",
+            "Always included: settings, channels and credentials, model groups, prices, cron jobs, and stats",
           )}
         </p>
-
         <FieldGroup>
           <Field
             orientation="horizontal"
             className="flex-wrap items-center justify-between"
           >
-            <div className="flex min-w-0 flex-col gap-1">
-              <FieldLabel className="w-auto">
+            <div className="flex min-w-0 items-center gap-1">
+              <FieldLabel htmlFor="config-export-logs" className="w-auto">
                 {titleForLocale(locale, "包含请求日志", "Include request logs")}
               </FieldLabel>
-              <FieldDescription>
-                {titleForLocale(
+              <SettingsHint
+                description={titleForLocale(
                   locale,
                   "导出所有请求日志明细，文件体积可能明显增大",
                   "Export all request log details; this can increase file size significantly",
                 )}
-              </FieldDescription>
+              />
             </div>
             <Switch
+              id="config-export-logs"
               checked={shouldIncludeLogs}
               onCheckedChange={setShouldIncludeLogs}
             />
@@ -102,23 +85,24 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
             orientation="horizontal"
             className="flex-wrap items-center justify-between"
           >
-            <div className="flex min-w-0 flex-col gap-1">
-              <FieldLabel className="w-auto">
+            <div className="flex min-w-0 items-center gap-1">
+              <FieldLabel htmlFor="config-export-api-keys" className="w-auto">
                 {titleForLocale(
                   locale,
                   "包含网关 API Key",
                   "Include gateway API keys",
                 )}
               </FieldLabel>
-              <FieldDescription>
-                {titleForLocale(
+              <SettingsHint
+                description={titleForLocale(
                   locale,
                   "会把网关鉴权 Key 一并写入备份，导出后请妥善保管",
                   "Gateway auth keys will be included in the backup; keep the file secure",
                 )}
-              </FieldDescription>
+              />
             </div>
             <Switch
+              id="config-export-api-keys"
               checked={shouldIncludeGatewayApiKeys}
               onCheckedChange={setShouldIncludeGatewayApiKeys}
             />
