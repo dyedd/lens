@@ -5,9 +5,24 @@ import io
 import json
 from typing import Any, Literal
 
-ForeignFormat = Literal["lens", "metapi", "sub2api", "ccload", "all_api_hub", "octopus"]
+import yaml
+
+ForeignFormat = Literal[
+    "lens", "metapi", "sub2api", "ccload", "all_api_hub", "octopus", "cli_proxy_api"
+]
 
 _SUB2API_TYPES = {"sub2api-data", "sub2api-bundle"}
+
+# CLIProxyAPI config.yaml 的提供商 key 段, 出现任一即认格式。
+_CLI_PROXY_API_SECTIONS = (
+    "openai-compatibility",
+    "claude-api-key",
+    "gemini-api-key",
+    "codex-api-key",
+    "xai-api-key",
+    "vertex-api-key",
+    "interactions-api-key",
+)
 
 
 class UnknownForeignFormatError(ValueError):
@@ -36,6 +51,11 @@ def detect_foreign_format(raw: bytes) -> tuple[ForeignFormat, dict[str, Any] | s
             return "octopus", payload
     if _is_ccload_csv(text):
         return "ccload", text
+    payload = _decode_yaml_object(text)
+    if isinstance(payload, dict) and any(
+        section in payload for section in _CLI_PROXY_API_SECTIONS
+    ):
+        return "cli_proxy_api", payload
     raise UnknownForeignFormatError("Unrecognized backup file format")
 
 
@@ -43,6 +63,13 @@ def _decode_json_object(text: str) -> Any:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        return None
+
+
+def _decode_yaml_object(text: str) -> Any:
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError:
         return None
 
 
