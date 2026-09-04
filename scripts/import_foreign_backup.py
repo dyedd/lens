@@ -1,8 +1,9 @@
 """Import channels from a foreign gateway backup into the configured Lens database.
 
-Supports the same formats as the backups-page migration card: Octopus, metapi,
-Sub2API, ccLoad (CSV), and All API Hub. The import is additive: existing
-channels are never modified, and channels whose name already exists are skipped.
+Supports the same formats as the backups-page migration card: Octopus,
+CLIProxyAPI (config.yaml), metapi, Sub2API, ccLoad (CSV), and All API Hub.
+The import is additive: existing channels are never modified, and channels
+whose name already exists are skipped.
 """
 
 from __future__ import annotations
