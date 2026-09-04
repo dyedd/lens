@@ -20,7 +20,6 @@ export interface SettingsTabDefinition {
     | "model-test"
     | "circuit-breaker";
   label: string;
-  description: string;
   icon: LucideIcon;
 }
 
@@ -32,61 +31,31 @@ export function createSettingsTabs(
     {
       value: "appearance",
       label: titleForLocale(locale, "站点外观", "Appearance"),
-      description: titleForLocale(
-        locale,
-        "站点名称、Logo 和默认语言。",
-        "Site name, logo, and default language.",
-      ),
       icon: Palette,
     },
     {
       value: "account",
       label: titleForLocale(locale, "账号", "Account"),
-      description: titleForLocale(
-        locale,
-        "管理员用户名和登录密码。",
-        "Admin username and sign-in password.",
-      ),
       icon: UserRound,
     },
     {
       value: "time",
       label: titleForLocale(locale, "时间", "Time"),
-      description: titleForLocale(
-        locale,
-        "系统显示和统计使用的时区。",
-        "Time zone used by display and statistics.",
-      ),
       icon: TimerReset,
     },
     {
       value: "gateway",
       label: titleForLocale(locale, "网关", "Gateway"),
-      description: titleForLocale(
-        locale,
-        "代理、跨域、日志和上游请求设置。",
-        "Proxy, CORS, logs, and upstream request settings.",
-      ),
       icon: ServerCog,
     },
     {
       value: "model-test",
       label: titleForLocale(locale, "模型测试", "Model test"),
-      description: titleForLocale(
-        locale,
-        "批量测试模型时使用的预设问题。",
-        "Preset prompts used when testing models.",
-      ),
       icon: TestTubeDiagonal,
     },
     {
       value: "circuit-breaker",
       label: titleForLocale(locale, "冷却与健康", "Cooldown and health"),
-      description: titleForLocale(
-        locale,
-        "模型与 Key 冷却、渠道可用性和健康排序参数。",
-        "Model and key cooldown, channel availability, and health ranking parameters.",
-      ),
       icon: ShieldAlert,
     },
   ];

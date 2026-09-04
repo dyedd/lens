@@ -4,13 +4,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/Card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
@@ -179,13 +173,6 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
             <Upload className="size-4 text-muted-foreground" />
             <span>{titleForLocale(locale, "恢复备份", "Restore backup")}</span>
           </CardTitle>
-          <CardDescription>
-            {titleForLocale(
-              locale,
-              "用 Lens 导出的备份文件覆盖当前实例的全部配置。",
-              "Overwrite this instance's configuration with a Lens backup file.",
-            )}
-          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
           <FieldGroup>
@@ -239,7 +226,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
 
           <Button
             type="button"
-            variant="outline"
+            variant="destructive"
             disabled={!selectedFile || Boolean(previewError) || isImporting}
             onClick={() => setConfirmImportOpen(true)}
           >

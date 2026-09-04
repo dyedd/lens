@@ -3,7 +3,7 @@ import { ChevronsUpDown } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Calendar } from "@/components/ui/Calendar";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/Field";
+import { Field, FieldLabel } from "@/components/ui/Field";
 import {
   Popover,
   PopoverContent,
@@ -62,13 +62,6 @@ export function GatewayApiKeyExpiryField({
           {titleForLocale(locale, "清空", "Clear")}
         </Button>
       </div>
-      <FieldDescription>
-        {titleForLocale(
-          locale,
-          "留空表示永不过期",
-          "Leave blank to keep the key active forever",
-        )}
-      </FieldDescription>
     </Field>
   );
 }

@@ -75,9 +75,14 @@ export function ChannelBaseUrlSection({
                 </div>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="destructive"
                   size="icon"
-                  className="text-muted-foreground"
+                  aria-label={
+                    locale === "zh-CN" ? "删除请求地址" : "Remove base URL"
+                  }
+                  title={
+                    locale === "zh-CN" ? "删除请求地址" : "Remove base URL"
+                  }
                   onClick={() => onRemove(index)}
                   disabled={baseUrls.length <= 1}
                 >

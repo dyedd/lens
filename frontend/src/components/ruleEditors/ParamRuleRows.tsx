@@ -104,10 +104,11 @@ export function ParamRuleRows({ title, rules, locale, onChange }: Props) {
               </Field>
               <Button
                 type="button"
-                variant="outline"
+                variant="destructive"
                 size="icon"
-                className="self-end text-muted-foreground"
+                className="self-end"
                 aria-label={titleForLocale(locale, "删除规则", "Remove rule")}
+                title={titleForLocale(locale, "删除规则", "Remove rule")}
                 onClick={() => removeRule(index)}
               >
                 <Trash2 />

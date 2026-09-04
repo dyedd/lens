@@ -140,9 +140,8 @@ export function ChannelsOverview({
                       />
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="destructive"
                         size="sm"
-                        className="rounded-full text-destructive hover:text-destructive"
                         onClick={() => setDeleteTarget(site)}
                       >
                         <Trash2 data-icon="inline-start" />

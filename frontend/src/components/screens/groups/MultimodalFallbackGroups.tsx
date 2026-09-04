@@ -139,9 +139,10 @@ export function MultimodalFallbackGroups({
               </Button>
               <Button
                 type="button"
-                variant="ghost"
+                variant="destructive"
                 size="icon"
                 aria-label={titleForLocale(locale, "删除", "Remove")}
+                title={titleForLocale(locale, "删除", "Remove")}
                 onClick={() =>
                   onChange(selectedIds.filter((id) => id !== group.id))
                 }
