@@ -8,6 +8,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import ResourceNotFoundError
 from app.core.runtime_channel_ids import split_runtime_channel_id
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
@@ -81,7 +82,7 @@ class GroupRepository(
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
-                raise KeyError(group_id)
+                raise ResourceNotFoundError(group_id)
             hydrated = await self._hydrate_groups(session, [entity], effective_channels)
             return hydrated[0]
 
@@ -207,7 +208,7 @@ class GroupRepository(
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
-                raise KeyError(group_id)
+                raise ResourceNotFoundError(group_id)
 
             next_name = payload.name if payload.name is not None else entity.name
             next_route_group_id = (
@@ -311,7 +312,7 @@ class GroupRepository(
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
-                raise KeyError(group_id)
+                raise ResourceNotFoundError(group_id)
             inbound_route_group = await session.execute(
                 select(ModelGroupEntity.id)
                 .where(ModelGroupEntity.route_group_id == group_id)

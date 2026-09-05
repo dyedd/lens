@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ...core.errors import LensError
 from ..cronjob_runner import CronjobAlreadyRunningError
 from ..router.cooldown import CooldownPolicy
 from .app_state import app_state, logger
@@ -18,7 +19,6 @@ from .error_responses import (
     build_database_error_response,
     build_error_response,
     detail_message,
-    key_error_message,
     status_error_type,
     status_message,
 )
@@ -31,9 +31,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         (RequestValidationError, handle_validation_error),
         (OperationalError, handle_operational_error),
         (jwt.InvalidTokenError, handle_invalid_token_error),
+        (LensError, handle_lens_error),
         (CronjobAlreadyRunningError, handle_cronjob_already_running),
-        (KeyError, handle_key_error),
-        (LookupError, handle_lookup_error),
         (ValueError, handle_value_error),
         (json.JSONDecodeError, handle_json_decode_error),
         (Exception, handle_unexpected_error),
@@ -100,22 +99,13 @@ async def handle_cronjob_already_running(
     )
 
 
-async def handle_key_error(request: Request, exc: KeyError) -> JSONResponse:
-    """Return a missing-resource response for a key lookup failure."""
+async def handle_lens_error(request: Request, exc: LensError) -> JSONResponse:
+    """Return an expected application error without guessing from its class."""
     return build_error_response(
-        status_code=status.HTTP_404_NOT_FOUND,
-        error_type="not_found",
-        message=key_error_message(exc),
-        request=request,
-    )
-
-
-async def handle_lookup_error(request: Request, exc: LookupError) -> JSONResponse:
-    """Return a missing-resource response for a lookup failure."""
-    return build_error_response(
-        status_code=status.HTTP_404_NOT_FOUND,
-        error_type="not_found",
-        message=str(exc) or "Resource not found",
+        status_code=exc.status_code,
+        error_type=exc.error_type,
+        message=exc.public_message,
+        details=exc.details,
         request=request,
     )
 

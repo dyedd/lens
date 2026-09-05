@@ -15,6 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import ResourceNotFoundError
 from app.models.gateway_keys import (
     GatewayApiKey,
     GatewayApiKeyCreate,
@@ -96,7 +97,7 @@ class GatewayApiKeyRepository:
         async with self._session_factory() as session:
             entity = await session.get(GatewayApiKeyEntity, key_id)
             if entity is None:
-                raise KeyError(key_id)
+                raise ResourceNotFoundError(key_id)
             entity.remark = payload.remark.strip()
             entity.enabled = 1 if payload.enabled else 0
             entity.allowed_models_json = self._dump_gateway_key_models(
@@ -114,7 +115,7 @@ class GatewayApiKeyRepository:
         async with self._session_factory() as session:
             entity = await session.get(GatewayApiKeyEntity, key_id)
             if entity is None:
-                raise KeyError(key_id)
+                raise ResourceNotFoundError(key_id)
             await session.delete(entity)
             await session.commit()
 

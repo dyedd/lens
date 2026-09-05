@@ -132,6 +132,17 @@ def _is_request_level_client_error(status_code: int) -> bool:
     return status_code in (400, 422)
 
 
+async def _read_response_body(
+    response: httpx.Response, deadline: _RequestDeadline
+) -> bytes:
+    """Read a buffered upstream body within the request's first-token budget."""
+    async with _gateway_timeout_scope(
+        deadline.first_token_remaining_seconds(),
+        timeout_message=deadline.timeout_message(kind="first_token"),
+    ):
+        return await response.aread()
+
+
 async def _build_anthropic_sse_to_json_result(
     response: httpx.Response,
     channel: ChannelConfig,
@@ -139,8 +150,12 @@ async def _build_anthropic_sse_to_json_result(
     rate_multiplier: float | None,
     request_content: str | None,
     log_body_enabled: bool,
+    *,
+    content: bytes | None = None,
+    deadline: _RequestDeadline,
 ) -> UpstreamResult:
-    content = await response.aread()
+    if content is None:
+        content = await _read_response_body(response, deadline)
     raw_content = _decode_content_bytes(content)
     try:
         parsed = _extract_stream_usage(channel.protocol, raw_content)
@@ -484,11 +499,7 @@ async def _call_channel(
         is_ndjson_stream = is_stream_request and media_type in _NDJSON_MEDIA_TYPES
         if is_stream_request and not is_event_stream and not is_ndjson_stream:
             # Proxies often default Content-Type to text/html; classify the body.
-            async with _gateway_timeout_scope(
-                deadline.first_token_remaining_seconds(),
-                timeout_message=deadline.timeout_message(kind="first_token"),
-            ):
-                content = await response.aread()
+            content = await _read_response_body(response, deadline)
             if _looks_like_sse_body(content):
                 buffered = _response_with_buffered_body(
                     response, content, "text/event-stream"
@@ -514,9 +525,11 @@ async def _call_channel(
         wants_anthropic_json = (
             not is_stream_request and channel.protocol == ProtocolKind.ANTHROPIC
         )
+        buffered_content: bytes | None = None
         if wants_anthropic_json and not is_event_stream:
             # Some upstreams answer a non-stream request with SSE but label it JSON.
-            is_event_stream = _looks_like_sse_body(await response.aread())
+            buffered_content = await _read_response_body(response, deadline)
+            is_event_stream = _looks_like_sse_body(buffered_content)
         if wants_anthropic_json and is_event_stream:
             result = await _build_anthropic_sse_to_json_result(
                 response,
@@ -525,6 +538,8 @@ async def _call_channel(
                 rate_multiplier,
                 request_content,
                 log_body_enabled,
+                content=buffered_content,
+                deadline=deadline,
             )
             result.first_token_latency_ms = _elapsed_ms(stream_started_at)
         elif is_event_stream or is_ndjson_stream:
@@ -541,17 +556,11 @@ async def _call_channel(
             )
             response = None  # _FinalizingStreamingResponse owns the upstream response
         else:
-            if is_stream_request:
-                async with _gateway_timeout_scope(
-                    deadline.first_token_remaining_seconds(),
-                    timeout_message=deadline.timeout_message(kind="first_token"),
-                ):
-                    content = await response.aread()
-            else:
-                content = await response.aread()
+            if buffered_content is None:
+                buffered_content = await _read_response_body(response, deadline)
             result = await _build_json_result(
                 response,
-                content,
+                buffered_content,
                 channel,
                 client_protocol,
                 body,

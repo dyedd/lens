@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import perf_counter
 
+from ...core.errors import ResourceNotFoundError, RoutingError
 from ...models.channels import ChannelConfig
 from ...models.model_groups import ModelGroupItemState
 from ...models.protocols import ProtocolKind, RoutingStrategy
@@ -31,7 +32,7 @@ async def _resolve_routing_plan(
         )
     )
     if matched_group is None or protocol not in matched_group.client_protocols:
-        raise LookupError(f"No model group matched {requested_model}")
+        raise RoutingError(f"No model group matched {requested_model}")
 
     resolved_group = matched_group
     if matched_group.route_group_id.strip():
@@ -39,16 +40,16 @@ async def _resolve_routing_plan(
             resolved_group = await app_state.group_repo.get_group(
                 matched_group.route_group_id, channels=channels
             )
-        except KeyError as exc:
-            raise LookupError(
+        except ResourceNotFoundError as exc:
+            raise RoutingError(
                 f"Route target model group not found: {matched_group.route_group_id}"
             ) from exc
         if resolved_group.route_group_id.strip():
-            raise LookupError(
+            raise RoutingError(
                 f"Route target must be an execution group: {resolved_group.name}"
             )
         if protocol not in resolved_group.client_protocols:
-            raise LookupError(f"No model group matched {requested_model}")
+            raise RoutingError(f"No model group matched {requested_model}")
 
     channel_map = {channel.id: channel for channel in channels}
     route_targets: list[RouteTarget] = []

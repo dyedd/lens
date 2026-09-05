@@ -7,6 +7,7 @@ from sqlalchemy import (
     select,
 )
 
+from app.core.errors import ResourceNotFoundError
 from app.models.protocols import ModelSource, ProtocolKind
 from app.models.site_model_test import SiteModelFetchRequest
 from app.models.sites import SiteCredential
@@ -28,7 +29,7 @@ class ChannelSiteOperationsMixin:
         async with self._session_factory() as session:
             site = await session.get(SiteEntity, site_id)
             if site is None:
-                raise KeyError(site_id)
+                raise ResourceNotFoundError(site_id)
 
             protocol_config_ids = await self._site_protocol_config_ids(session, site_id)
             credential_ids = await self._site_credential_ids(session, site_id)
@@ -103,7 +104,7 @@ class ChannelSiteOperationsMixin:
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
-                raise KeyError(protocol_config_id)
+                raise ResourceNotFoundError(protocol_config_id)
             association = (
                 await session.execute(
                     select(SiteProtocolConfigCredentialEntity.id).where(
