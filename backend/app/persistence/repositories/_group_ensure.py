@@ -7,6 +7,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ResourceNotFoundError
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.model_groups import (
     ModelGroupEnsureFromSiteRequest,
@@ -74,7 +75,7 @@ class _GroupEnsureMixin:
         """Plan or apply group changes inside a caller-owned transaction."""
         site = await session.get(SiteEntity, payload.site_id)
         if site is None:
-            raise KeyError(payload.site_id)
+            raise ResourceNotFoundError(payload.site_id)
 
         lookups = await self._load_ensure_site_lookups(session, payload.site_id)
         result_items: list[ModelGroupEnsureResultItem] = []

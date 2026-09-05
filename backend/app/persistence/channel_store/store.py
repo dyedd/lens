@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 
+from app.core.errors import ResourceNotFoundError
 from app.models.channels import ChannelConfig
 from app.models.site_import import (
     SiteBatchImportItemResult,
@@ -68,7 +69,7 @@ class ChannelStore(
         """Return a site from a caller-owned transaction."""
         sites = await self._load_sites(session, site_ids=[site_id])
         if not sites:
-            raise KeyError(site_id)
+            raise ResourceNotFoundError(site_id)
         return sites[0]
 
     async def create_site(self, payload: SiteCreate) -> SiteConfig:
@@ -90,7 +91,7 @@ class ChannelStore(
         """Create or update a site without committing the caller's transaction."""
         site = await session.get(SiteEntity, site_id)
         if not creating and site is None:
-            raise KeyError(site_id)
+            raise ResourceNotFoundError(site_id)
         if creating and site is not None:
             raise ValueError(f"Site already exists: {site_id}")
         if creating:
@@ -168,7 +169,7 @@ class ChannelStore(
         async with self._session_factory() as session:
             site = await session.get(SiteEntity, site_id)
             if site is None:
-                raise KeyError(site_id)
+                raise ResourceNotFoundError(site_id)
             site.enabled = int(payload.enabled)
             await session.commit()
         return await self.get_site(site_id)

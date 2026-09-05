@@ -29,6 +29,27 @@ async def _read_json_object(request: Request, body_name: str) -> dict[str, Any]:
     return body
 
 
+async def _proxy_json_request(
+    request: Request,
+    gateway_key: GatewayApiKey,
+    *,
+    protocol: ProtocolKind,
+    body_name: str,
+    strip_stream: bool = False,
+    path_suffix: str | None = None,
+) -> Response:
+    body = await _read_json_object(request, body_name)
+    if strip_stream:
+        body.pop("stream", None)
+    return await _proxy_protocol(
+        protocol,
+        body,
+        gateway_key,
+        request.headers.get("user-agent"),
+        path_suffix=path_suffix,
+    )
+
+
 def _promote_anthropic_system_messages(body: dict[str, Any]) -> dict[str, Any]:
     messages = body.get("messages")
     if not isinstance(messages, list):
@@ -67,12 +88,11 @@ async def proxy_openai_chat(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
     """Proxy an authenticated OpenAI chat completion request."""
-    body = await _read_json_object(request, "Chat completion")
-    return await _proxy_protocol(
-        ProtocolKind.OPENAI_CHAT,
-        body,
+    return await _proxy_json_request(
+        request,
         gateway_key,
-        request.headers.get("user-agent"),
+        protocol=ProtocolKind.OPENAI_CHAT,
+        body_name="Chat completion",
     )
 
 
@@ -80,12 +100,11 @@ async def proxy_openai_responses(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
     """Proxy an authenticated OpenAI Responses request."""
-    body = await _read_json_object(request, "Responses")
-    return await _proxy_protocol(
-        ProtocolKind.OPENAI_RESPONSES,
-        body,
+    return await _proxy_json_request(
+        request,
         gateway_key,
-        request.headers.get("user-agent"),
+        protocol=ProtocolKind.OPENAI_RESPONSES,
+        body_name="Responses",
     )
 
 
@@ -109,13 +128,12 @@ async def proxy_openai_embeddings(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
     """Proxy an authenticated OpenAI embeddings request without streaming."""
-    body = await _read_json_object(request, "Embeddings")
-    body.pop("stream", None)
-    return await _proxy_protocol(
-        ProtocolKind.OPENAI_EMBEDDING,
-        body,
+    return await _proxy_json_request(
+        request,
         gateway_key,
-        request.headers.get("user-agent"),
+        protocol=ProtocolKind.OPENAI_EMBEDDING,
+        body_name="Embeddings",
+        strip_stream=True,
     )
 
 
@@ -123,13 +141,12 @@ async def proxy_rerank(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
     """Proxy an authenticated rerank request without streaming."""
-    body = await _read_json_object(request, "Rerank")
-    body.pop("stream", None)
-    return await _proxy_protocol(
-        ProtocolKind.RERANK,
-        body,
+    return await _proxy_json_request(
+        request,
         gateway_key,
-        request.headers.get("user-agent"),
+        protocol=ProtocolKind.RERANK,
+        body_name="Rerank",
+        strip_stream=True,
     )
 
 
@@ -137,12 +154,11 @@ async def proxy_openai_image_generations(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
     """Proxy an authenticated OpenAI image generation request."""
-    body = await _read_json_object(request, "Image generations")
-    return await _proxy_protocol(
-        ProtocolKind.OPENAI_IMAGE,
-        body,
+    return await _proxy_json_request(
+        request,
         gateway_key,
-        request.headers.get("user-agent"),
+        protocol=ProtocolKind.OPENAI_IMAGE,
+        body_name="Image generations",
         path_suffix="images/generations",
     )
 

@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
+from ...core.errors import RoutingError
 from ...core.model_name_parser import parse_model_name
 from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
@@ -18,7 +19,7 @@ from ..router.types import RouteTarget
 from .app_state import app_state
 from .auth import _gateway_key_allows_model
 from .error_responses import _protocol_error_response
-from .errors import _apply_router_runtime_settings
+from .http_handlers import _apply_router_runtime_settings
 from .multimodal import body_has_multimodal_content
 from .payload_serialization import _dump_log_json
 from .proxy_attempt import AttemptLog, AttemptRequest, FailureLedger, run_attempt
@@ -109,21 +110,9 @@ async def _resolve_proxy_route(
         )
         await log_ctx.connecting(is_stream=is_stream_body)
         return plan, selection, None
-    except CooldownRoutingError as exc:
-        _log_cooldown_attempts(log_ctx, exc.cooled_targets)
-        return (
-            plan,
-            None,
-            await _routing_error_response(
-                plan=plan,
-                protocol=protocol,
-                requested_model=requested_model,
-                log_ctx=log_ctx,
-                is_stream_body=is_stream_body,
-                exc=exc,
-            ),
-        )
-    except LookupError as exc:
+    except (CooldownRoutingError, RoutingError) as exc:
+        if isinstance(exc, CooldownRoutingError):
+            _log_cooldown_attempts(log_ctx, exc.cooled_targets)
         return (
             plan,
             None,
@@ -166,7 +155,7 @@ async def _routing_error_response(
     requested_model: str,
     log_ctx: _RequestLogger,
     is_stream_body: bool,
-    exc: LookupError,
+    exc: Exception,
 ) -> JSONResponse:
     log_ctx.plan_route(
         requested_group_name=plan.requested_group_name if plan else requested_model,
@@ -183,6 +172,96 @@ async def _routing_error_response(
         error_type="routing_error",
         message="Gateway routing failed",
     )
+
+
+async def _resolve_route_plans(
+    *,
+    initial_plan: RoutingPlan,
+    initial_selection: RouteSelection,
+    channels: list[ChannelConfig],
+    protocol: ProtocolKind,
+    requested_model: str,
+    parsed_model: object,
+    requested_group_name: str,
+    body: dict[str, Any],
+    log_ctx: _RequestLogger,
+    is_stream_body: bool,
+    failures: FailureLedger,
+) -> list[tuple[RoutingPlan, RouteSelection]]:
+    """Resolve the initial route and eligible multimodal fallback groups."""
+    route_plans = [(initial_plan, initial_selection)]
+    if not body_has_multimodal_content(body, protocol):
+        return route_plans
+
+    seen_group_ids = {
+        initial_plan.resolved_group.id if initial_plan.resolved_group else ""
+    }
+    for fallback_group_id in initial_plan.fallback_group_ids:
+        if fallback_group_id in seen_group_ids:
+            continue
+        seen_group_ids.add(fallback_group_id)
+        fallback_plan, fallback_selection, fallback_error = await _resolve_proxy_route(
+            channels=channels,
+            protocol=protocol,
+            requested_model=requested_model,
+            log_ctx=log_ctx,
+            is_stream_body=is_stream_body,
+            parsed_model=parsed_model,
+            group_id=fallback_group_id,
+            requested_group_name=requested_group_name,
+        )
+        if fallback_error is not None:
+            failures.record(
+                fallback_error.body.decode(errors="replace"),
+                fallback_error.status_code,
+            )
+        elif fallback_plan is not None and fallback_selection is not None:
+            route_plans.append((fallback_plan, fallback_selection))
+    return route_plans
+
+
+async def _run_route_attempts(
+    *,
+    route_plans: list[tuple[RoutingPlan, RouteSelection]],
+    request: AttemptRequest,
+    deadline: _RequestDeadline,
+    log_ctx: _RequestLogger,
+    failures: FailureLedger,
+    is_stream_body: bool,
+) -> Response | None:
+    """Try each available target, returning the first successful response."""
+    for current_plan, current_selection in route_plans:
+        for target in [current_selection.primary, *current_selection.fallbacks]:
+            if deadline.is_first_token_expired():
+                timeout_message = deadline.timeout_message(kind="first_token")
+                log_ctx.plan_route(
+                    requested_group_name=current_plan.requested_group_name,
+                    resolved_group_name=current_plan.resolved_group_name,
+                )
+                await log_ctx.failed(
+                    status_code=504,
+                    error_message=timeout_message,
+                    is_stream=is_stream_body,
+                )
+                return _protocol_error_response(
+                    protocol=request.protocol,
+                    status_code=504,
+                    error_type="gateway_timeout",
+                    message=timeout_message,
+                )
+            if not app_state.router.is_target_available(target):
+                continue
+            response = await run_attempt(
+                request=request,
+                plan=current_plan,
+                target=target,
+                deadline=deadline,
+                log_ctx=log_ctx,
+                failures=failures,
+            )
+            if response is not None:
+                return response
+    return None
 
 
 async def _proxy_protocol(
@@ -300,66 +379,29 @@ async def _proxy_protocol(
             path_suffix=path_suffix,
             multipart_files=multipart_files,
         )
-        route_plans = [(plan, selection)]
-        seen_group_ids = {plan.resolved_group.id if plan.resolved_group else ""}
-        if body_has_multimodal_content(body, protocol):
-            for fallback_group_id in plan.fallback_group_ids:
-                if fallback_group_id in seen_group_ids:
-                    continue
-                seen_group_ids.add(fallback_group_id)
-                (
-                    fallback_plan,
-                    fallback_selection,
-                    fallback_error,
-                ) = await _resolve_proxy_route(
-                    channels=channels,
-                    protocol=protocol,
-                    requested_model=requested_model,
-                    log_ctx=log_ctx,
-                    is_stream_body=is_stream_body,
-                    parsed_model=parsed_model,
-                    group_id=fallback_group_id,
-                    requested_group_name=original_requested_model,
-                )
-                if fallback_error is not None:
-                    failures.record(
-                        fallback_error.body.decode(errors="replace"),
-                        fallback_error.status_code,
-                    )
-                    continue
-                if fallback_plan is not None and fallback_selection is not None:
-                    route_plans.append((fallback_plan, fallback_selection))
-        for current_plan, current_selection in route_plans:
-            for target in [current_selection.primary, *current_selection.fallbacks]:
-                if deadline.is_first_token_expired():
-                    timeout_message = deadline.timeout_message(kind="first_token")
-                    log_ctx.plan_route(
-                        requested_group_name=current_plan.requested_group_name,
-                        resolved_group_name=current_plan.resolved_group_name,
-                    )
-                    await log_ctx.failed(
-                        status_code=504,
-                        error_message=timeout_message,
-                        is_stream=is_stream_body,
-                    )
-                    return _protocol_error_response(
-                        protocol=protocol,
-                        status_code=504,
-                        error_type="gateway_timeout",
-                        message=timeout_message,
-                    )
-                if not app_state.router.is_target_available(target):
-                    continue
-                response = await run_attempt(
-                    request=request,
-                    plan=current_plan,
-                    target=target,
-                    deadline=deadline,
-                    log_ctx=log_ctx,
-                    failures=failures,
-                )
-                if response is not None:
-                    return response
+        route_plans = await _resolve_route_plans(
+            initial_plan=plan,
+            initial_selection=selection,
+            channels=channels,
+            protocol=protocol,
+            requested_model=requested_model,
+            parsed_model=parsed_model,
+            requested_group_name=original_requested_model,
+            body=body,
+            log_ctx=log_ctx,
+            is_stream_body=is_stream_body,
+            failures=failures,
+        )
+        response = await _run_route_attempts(
+            route_plans=route_plans,
+            request=request,
+            deadline=deadline,
+            log_ctx=log_ctx,
+            failures=failures,
+            is_stream_body=is_stream_body,
+        )
+        if response is not None:
+            return response
 
         failed_status_code, failed_error_type, failed_message = failures.final_failure()
         if not log_ctx.attempts:

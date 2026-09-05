@@ -1,4 +1,4 @@
 interface:
   display_name: "Lens Testing"
-  short_description: "Protect only critical backend HTTP contracts"
-  default_prompt: "Use $lens-testing to keep only high-risk backend API behavior coverage, write it through the HTTP client fixtures, and run the backend suite in parallel with the uv-managed toolchain."
+  short_description: "Add risk-based Lens HTTP contract coverage"
+  default_prompt: "Use $lens-testing to decide whether this change needs backend HTTP contract coverage, then write the smallest API-level test through the shared fixtures and run the relevant uv-managed checks."

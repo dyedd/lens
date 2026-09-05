@@ -206,7 +206,7 @@ def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
     import app.gateway.service.admin.sites as sites_mod
     import app.gateway.service.app_state as state_mod
     import app.gateway.service.auth as auth_mod
-    import app.gateway.service.errors as errors_mod
+    import app.gateway.service.http_handlers as handlers_mod
     import app.gateway.service.lifecycle as lifecycle_mod
     import app.gateway.service.proxy_attempt as proxy_attempt_mod
     import app.gateway.service.proxy_flow as proxy_flow_mod
@@ -227,7 +227,7 @@ def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
         settings_mod,
         sites_mod,
         auth_mod,
-        errors_mod,
+        handlers_mod,
         lifecycle_mod,
         proxy_attempt_mod,
         proxy_flow_mod,

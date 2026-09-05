@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from time import monotonic
 from typing import Protocol
 
+from ...core.errors import RoutingError
 from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
@@ -92,7 +93,7 @@ class _RoutePlanner:
             detail = f"No enabled channels available for protocol={protocol.value}"
             if requested_model:
                 detail = f"No enabled channels matched {requested_model}"
-            raise LookupError(detail)
+            raise RoutingError(detail)
 
         route_key = cursor_key or protocol.value
         primary_index = (

@@ -28,7 +28,7 @@ class UpstreamRequest:
     json_body: dict[str, Any]
 
 
-_OPENAI_LIKE_PATH = {
+_PROTOCOL_PATHS = {
     ProtocolKind.OPENAI_CHAT: "chat/completions",
     ProtocolKind.OPENAI_RESPONSES: "responses",
     ProtocolKind.OPENAI_EMBEDDING: "embeddings",
@@ -89,7 +89,7 @@ def build_upstream_request(
             "accept": "application/json",
         }
     else:
-        suffix = path_suffix or _OPENAI_LIKE_PATH.get(channel.protocol)
+        suffix = path_suffix or _PROTOCOL_PATHS.get(channel.protocol)
         if suffix is None:
             raise HTTPException(
                 status_code=500, detail=f"Unsupported protocol={channel.protocol.value}"
