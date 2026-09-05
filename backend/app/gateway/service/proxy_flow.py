@@ -13,13 +13,15 @@ from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind
 from ..router import RouteSelection
+from ..router.routing import CooldownRoutingError
+from ..router.types import RouteTarget
 from .app_state import app_state
 from .auth import _gateway_key_allows_model
 from .error_responses import _protocol_error_response
 from .errors import _apply_router_runtime_settings
 from .multimodal import body_has_multimodal_content
 from .payload_serialization import _dump_log_json
-from .proxy_attempt import AttemptRequest, FailureLedger, run_attempt
+from .proxy_attempt import AttemptLog, AttemptRequest, FailureLedger, run_attempt
 from .request_logger import _RequestLogger
 from .routing_plan import (
     _resolve_routing_plan,
@@ -107,6 +109,20 @@ async def _resolve_proxy_route(
         )
         await log_ctx.connecting(is_stream=is_stream_body)
         return plan, selection, None
+    except CooldownRoutingError as exc:
+        _log_cooldown_attempts(log_ctx, exc.cooled_targets)
+        return (
+            plan,
+            None,
+            await _routing_error_response(
+                plan=plan,
+                protocol=protocol,
+                requested_model=requested_model,
+                log_ctx=log_ctx,
+                is_stream_body=is_stream_body,
+                exc=exc,
+            ),
+        )
     except LookupError as exc:
         return (
             plan,
@@ -119,6 +135,27 @@ async def _resolve_proxy_route(
                 is_stream_body=is_stream_body,
                 exc=exc,
             ),
+        )
+
+
+def _log_cooldown_attempts(
+    log_ctx: _RequestLogger,
+    cooled_targets: list[tuple[RouteTarget, str]],
+) -> None:
+    """Record every cooled target as a skipped attempt for the chain dialog."""
+    for target, reason in cooled_targets:
+        log_ctx.attempts.append(
+            AttemptLog(
+                channel_id=target.channel.id,
+                channel_name=target.channel.name or target.channel.id,
+                credential_id=target.credential_id,
+                credential_name=target.credential_name or "",
+                model_name=target.model_name,
+                status_code=503,
+                success=False,
+                duration_ms=0,
+                error_message=reason,
+            )
         )
 
 

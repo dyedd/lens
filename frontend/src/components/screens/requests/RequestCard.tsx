@@ -37,7 +37,6 @@ import {
   getResolvedGroupName,
   getSecondaryModelName,
 } from "./requestDisplay";
-import { formatErrorDisplay } from "./requestPayloadParsing";
 import { formatUserAgentDisplay } from "./requestUserAgent";
 
 /** Render a request log summary card and its available actions. */
@@ -73,7 +72,6 @@ export function RequestCard({
   const attemptCount = Number.isFinite(item.attempt_count)
     ? item.attempt_count
     : 0;
-  const errorDisplay = formatErrorDisplay(item.error_message);
   const running =
     item.lifecycle_status === "connecting" ||
     item.lifecycle_status === "streaming";
@@ -137,9 +135,9 @@ export function RequestCard({
                 status={item.lifecycle_status}
                 statusCode={item.status_code}
                 locale={locale}
-                errorMessage={errorDisplay}
+                errorMessage={item.error_message}
               />
-              {attemptCount > 1 ? (
+              {item.lifecycle_status === "failed" && attemptCount > 0 ? (
                 <Button
                   type="button"
                   variant="outline"

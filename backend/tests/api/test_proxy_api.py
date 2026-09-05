@@ -1061,9 +1061,23 @@ def test_all_channels_in_cooldown_logs_the_cooled_channel_names(
     assert response.status_code == 503, response.text
     page = client.get("/api/admin/request-logs/page", headers=admin_headers)
     assert page.status_code == 200, page.text
-    error_message = page.json()["items"][0]["error_message"]
-    assert "First/m-a (rate_limit," in error_message
-    assert "Second/m-b (rate_limit," in error_message
+    item = page.json()["items"][0]
+    assert item["error_message"] == "All 2 matching channels are in cooldown"
+    assert item["attempt_count"] == 2
+
+    detail_response = client.get(
+        f"/api/admin/request-logs/{item['id']}",
+        headers=admin_headers,
+    )
+    assert detail_response.status_code == 200, detail_response.text
+    attempts = detail_response.json()["attempts"]
+    assert [attempt["channel_name"] for attempt in attempts] == [
+        "First",
+        "Second",
+    ]
+    assert [attempt["status_code"] for attempt in attempts] == [503, 503]
+    assert [attempt["success"] for attempt in attempts] == [False, False]
+    assert all("rate_limit" in attempt["error_message"] for attempt in attempts)
 
 
 def _anthropic_group(

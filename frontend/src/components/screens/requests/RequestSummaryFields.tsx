@@ -8,6 +8,7 @@ import {
 import type { RequestLogItem } from "@/lib/api/requests";
 import { cn } from "@/lib/classNames";
 import { titleForLocale } from "@/lib/I18nContext";
+import { formatErrorSummary } from "./requestPayloadParsing";
 
 /** Render the localized lifecycle outcome badge for a request. */
 export function RequestOutcomeBadge({
@@ -63,11 +64,8 @@ export function RequestOutcomeBadge({
       <TooltipTrigger asChild>
         <span className="inline-flex">{content}</span>
       </TooltipTrigger>
-      <TooltipContent
-        className="max-w-sm whitespace-pre-wrap break-words"
-        side="bottom"
-      >
-        {errorMessage}
+      <TooltipContent className="max-w-sm" side="bottom">
+        <span className="line-clamp-3">{formatErrorSummary(errorMessage)}</span>
       </TooltipContent>
     </Tooltip>
   );
