@@ -1,25 +1,25 @@
 ---
 name: lens-testing
-description: Apply Lens's scope policy and writing conventions for critical backend HTTP API tests, and run the backend suite in parallel through the uv-managed toolchain. Validate the frontend with static checks instead of frontend tests.
+description: Use when a Lens change needs backend HTTP contract coverage. Keep tests risk-based, drive them through the API fixtures, and use the repository's uv-managed checks.
 ---
 
 # Lens Testing
 
 ## Scope
 
-Cover only critical, high-risk backend HTTP contracts: authentication and authorization, data persistence or loss, gateway protocol compatibility, and routing or failover behavior. A new route or a reproducible bug does not by itself justify a test; add one only when the affected HTTP contract warrants the maintenance cost.
+Cover only critical, high-risk backend HTTP contracts: authentication and authorization, data persistence or loss, gateway protocol compatibility, and routing or failover behavior. A new route or reproducible bug alone does not justify a test; the affected HTTP contract must warrant the coverage.
 
-Never add frontend tests, nor direct tests of units, services, helpers, converters, repositories, or other implementation details.
+Do not automatically add frontend tests or direct tests of units, services, helpers, converters, or repositories. Follow explicit user instructions when they change the scope.
 
 Delete a test once the behavior it guarded is covered elsewhere, or once the field or option it pinned has been removed or derived.
 
 ## Workflow
 
-1. Trace the affected HTTP path and decide whether it is a high-risk contract.
-2. Reuse the nearest area file under `backend/tests/api/`, and the fixtures and helpers in `backend/tests/conftest.py`.
+1. Trace the affected HTTP path and decide whether it is a contract worth protecting.
+2. Reuse the nearest area file under `backend/tests/api/`, plus fixtures and helpers in `backend/tests/conftest.py`.
 3. If coverage is justified, add the smallest request-and-response behavior test.
-4. Format the touched files, then run the backend suite in parallel; narrow to one file only to debug a single failure.
-5. Let CI repeat the backend suite and run the frontend lint, type check, and build.
+4. Format touched files and run the smallest relevant check. For backend contract changes, run the API suite in parallel; narrow to one file only while debugging.
+5. Run frontend lint, type check, or build only when frontend files or the requested verification require them; CI remains the full repository check.
 
 ## Conventions
 
@@ -36,13 +36,12 @@ One file per area, named `backend/tests/api/test_<area>_api.py`. Name each test 
 
 ## Commands
 
-Call every backend tool through `uv run --no-sync`, so it comes from the `dev` dependency group instead of a global install. Run every command from the repository root, not from `backend/`.
+Call every backend tool through `uv run --no-sync` from the repository root, so it comes from the `dev` dependency group instead of a global install.
 
 - Format and lint touched files: `uv run --no-sync ruff format <paths>` then `uv run --no-sync ruff check --fix <paths>`
-- Local pre-commit formatting: `uv run --no-sync prek install -f`, then `uv run --no-sync prek run --all-files`
 - Backend suite: `uv run --no-sync python -m pytest backend/tests/api -q --confcutdir=backend/tests -n auto --dist worksteal`
 - One file, while debugging: `uv run --no-sync python -m pytest backend/tests/api/test_<area>_api.py -q --confcutdir=backend/tests`
-- Frontend checks: `pnpm format` for local fixes, then `pnpm lint`, `pnpm exec tsc --noEmit`, and `pnpm build`
+- Frontend checks, from `frontend/`: `pnpm lint`, `pnpm exec tsc --noEmit`, and `pnpm build`
 
 `pytest-xdist` and `ruff` ship in the `dev` dependency group; install them with `uv sync --locked`. With a package index mirror configured, `--locked` misreports lockfile drift, so use `uv sync --frozen`.
 

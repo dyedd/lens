@@ -10,6 +10,7 @@ from ....core.aggregator_billing_urls import (
     resolve_newapi_pricing_url,
     resolve_sub2api_billing_url,
 )
+from ....core.errors import ResourceNotFoundError
 from ....core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
@@ -211,14 +212,14 @@ async def sync_site_credential_rate(
     site = await state.channel_store.get_site(site_id)
     credential = _site_credential(site, credential_id)
     if credential is None:
-        raise KeyError(credential_id)
+        raise ResourceNotFoundError(credential_id)
     if credential.rate_source == "none":
         raise CredentialRateNotConfiguredError("Credential rate source is disabled")
     recorded = await _sync_credential_rate_target(state, site, credential)
     refreshed = await state.channel_store.get_site(site_id)
     current = _site_credential(refreshed, credential_id)
     if current is None:
-        raise KeyError(credential_id)
+        raise ResourceNotFoundError(credential_id)
     if not recorded:
         raise CredentialRateConflictError(
             "Credential rate configuration changed during sync"

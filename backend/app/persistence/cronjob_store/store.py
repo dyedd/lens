@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ...core.errors import ResourceNotFoundError
 from ...models.cronjobs import CronjobItem
 from ...models.protocols import CronjobStatus
 from ..entities import CronjobEntity
@@ -105,7 +106,7 @@ class CronjobStore:
         async with self._session_factory() as session:
             entity = await session.get(CronjobEntity, task_id)
             if entity is None:
-                raise KeyError(task_id)
+                raise ResourceNotFoundError(task_id)
 
             was_enabled = bool(entity.enabled)
             current_schedule = _entity_schedule(entity)

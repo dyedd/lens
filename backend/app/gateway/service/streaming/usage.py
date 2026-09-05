@@ -5,6 +5,7 @@ from typing import Any
 
 from ....models.protocols import ProtocolKind
 from ..runtime_types import StreamCapture
+from .stream_parsing import _parse_ndjson_payloads, _parse_sse_payloads
 from .stream_types import OPENAI_RESPONSES_TERMINAL_EVENTS
 
 
@@ -197,14 +198,6 @@ def _extract_stream_usage(
         int(merged["input_tokens"] or 0) + int(merged["output_tokens"] or 0),
     )
     return merged
-
-
-# Imported at the bottom to break the cycle with stream_parsing, which imports
-# helpers defined above.
-from .stream_parsing import (  # noqa: E402
-    _parse_ndjson_payloads,
-    _parse_sse_payloads,
-)
 
 
 def _describe_stream_capture_issue(capture: StreamCapture | None) -> str | None:

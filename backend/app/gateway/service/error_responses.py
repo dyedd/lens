@@ -12,6 +12,18 @@ from sqlalchemy.exc import OperationalError
 from ...models.auth import ErrorResponse
 from ...models.protocols import ProtocolKind
 
+_OPENAI_ERROR_PATHS = frozenset(
+    {
+        "/v1/chat/completions",
+        "/v1/responses",
+        "/v1/embeddings",
+        "/v1/images/generations",
+        "/v1/images/edits",
+        "/v1/rerank",
+        "/v1/models",
+    }
+)
+
 
 def build_error_response(
     *,
@@ -99,13 +111,6 @@ def detail_message(detail: Any, fallback: str) -> str:
     return fallback
 
 
-def key_error_message(exc: KeyError) -> str:
-    """Format a missing-resource message from a key error."""
-    if not exc.args:
-        return "Resource not found"
-    return f"Resource not found: {exc.args[0]}"
-
-
 def _request_error_protocol(request: Request | None) -> ProtocolKind | None:
     if request is None:
         return None
@@ -116,13 +121,7 @@ def _request_error_protocol(request: Request | None) -> ProtocolKind | None:
         return ProtocolKind.ANTHROPIC
     if path == "/v1/models" and request.headers.get("anthropic-version"):
         return ProtocolKind.ANTHROPIC
-    if path in {
-        "/v1/chat/completions",
-        "/v1/responses",
-        "/v1/embeddings",
-        "/v1/rerank",
-        "/v1/models",
-    }:
+    if path in _OPENAI_ERROR_PATHS:
         return ProtocolKind.OPENAI_CHAT
     return None
 

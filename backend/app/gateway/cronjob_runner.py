@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import OperationalError
 
+from ..core.errors import ResourceNotFoundError
 from ..models.cronjobs import CronjobItem
 from ..persistence.cronjob_store import CronjobRecord, CronjobSpec, CronjobStore
 
@@ -78,7 +79,7 @@ class CronjobRunner:
         """Update a cron job schedule and return its current state."""
         spec = self._specs_by_id.get(task_id)
         if spec is None:
-            raise KeyError(task_id)
+            raise ResourceNotFoundError(task_id)
         record = await self._store.update_cronjob(
             task_id,
             enabled=enabled,
@@ -123,10 +124,10 @@ class CronjobRunner:
     async def _run_cronjob(self, task_id: str, *, manual: bool) -> CronjobItem:
         spec = self._specs_by_id.get(task_id)
         if spec is None:
-            raise KeyError(task_id)
+            raise ResourceNotFoundError(task_id)
         handler = self._handlers.get(task_id)
         if handler is None:
-            raise KeyError(task_id)
+            raise ResourceNotFoundError(task_id)
 
         record = await self._get_or_ensure_record(task_id)
 
@@ -172,5 +173,5 @@ class CronjobRunner:
             await self._store.ensure_cronjobs(self._specs)
             record = await self._store.find_record(task_id)
         if record is None:
-            raise KeyError(task_id)
+            raise ResourceNotFoundError(task_id)
         return record

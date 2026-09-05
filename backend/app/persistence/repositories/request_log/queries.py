@@ -6,6 +6,7 @@ from typing import Literal
 from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import ResourceNotFoundError
 from app.models.health import (
     HealthBucket,
     HealthItem,
@@ -381,7 +382,7 @@ class RequestLogQueries:
         async with self.session_factory() as session:
             entity = await session.get(RequestLogEntity, log_id)
             if entity is None:
-                raise KeyError(log_id)
+                raise ResourceNotFoundError(log_id)
             remarks = await self.gateway_key_repo.remarks_by_id(
                 session, [entity.gateway_key_id]
             )

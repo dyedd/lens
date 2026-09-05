@@ -3,6 +3,7 @@ import { getStoredToken } from "@/lib/auth";
 type ApiErrorPayload = {
   error?: {
     message?: string;
+    type?: string;
     details?: Array<{ loc?: Array<string | number>; msg?: string }>;
   };
 };
@@ -10,12 +11,19 @@ type ApiErrorPayload = {
 /** Represents an unsuccessful API response with its HTTP status. */
 export class ApiError extends Error {
   status: number;
+  errorType?: string;
   override cause?: unknown;
 
-  constructor(message: string, status: number, cause?: unknown) {
+  constructor(
+    message: string,
+    status: number,
+    cause?: unknown,
+    errorType?: string,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.errorType = errorType;
     this.cause = cause;
   }
 }
@@ -53,12 +61,14 @@ export async function apiFetch(
     const contentType = response.headers.get("content-type") ?? "";
     const text = await response.text();
     let errorMessage = "";
+    let errorType: string | undefined;
     if (contentType.includes("application/json") && text) {
       const payload = parseJsonResponse<ApiErrorPayload>(
         text,
         response.status,
         "Invalid JSON error response from API",
       );
+      errorType = payload.error?.type;
       if (payload.error?.message) {
         errorMessage = payload.error.message;
         const detail = payload.error.details?.[0];
@@ -75,6 +85,8 @@ export async function apiFetch(
     throw new ApiError(
       errorMessage || text || `Request failed with status ${response.status}`,
       response.status,
+      undefined,
+      errorType,
     );
   }
   return response;

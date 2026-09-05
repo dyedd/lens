@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from starlette.middleware.gzip import GZipMiddleware
 
-from ..gateway.service.errors import (
+from ..gateway.service.http_handlers import (
     dynamic_cors_middleware,
     register_exception_handlers,
 )

@@ -110,6 +110,30 @@ async def _set_gateway_spend(app_state: Any, key_id: str, spent: float) -> None:
             },
         ),
         (
+            "/v1/images/generations",
+            {"model": "gpt-image-1", "prompt": "test"},
+            {
+                "error": {
+                    "message": "Missing gateway API key",
+                    "type": "unauthorized",
+                    "param": None,
+                    "code": None,
+                }
+            },
+        ),
+        (
+            "/v1/images/edits",
+            {},
+            {
+                "error": {
+                    "message": "Missing gateway API key",
+                    "type": "unauthorized",
+                    "param": None,
+                    "code": None,
+                }
+            },
+        ),
+        (
             "/v1/messages",
             {"model": "claude-3"},
             {
@@ -956,6 +980,54 @@ def test_upstream_400_stream_passes_through_body(
 
     assert response.status_code == 400, response.text
     assert "缺少 text 字段" in response.json()["error"]["message"]
+
+
+def test_openai_chat_stream_error_frame_terminates_response(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    create_site(valid_site_payload(model_name="stream-model"))
+    create_model_group(
+        name="stream-model",
+        items=[_protocol_group_item("openai_chat", "stream-model")],
+    )
+    stream_body = (
+        b'data: {"error":{"message":"quota exceeded",'
+        b'"type":"rate_limit_error"}}\n\n'
+        b'data: {"choices":[{"delta":{"content":"should not pass"}}]}\n\n'
+    )
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream
+        return httpx.Response(
+            200,
+            content=stream_body,
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "stream-model", "messages": [], "stream": True},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.text == stream_body.split(b"\n\ndata:", 1)[0].decode() + "\n\n"
 
 
 def test_all_upstream_fail_returns_first_specific_message(

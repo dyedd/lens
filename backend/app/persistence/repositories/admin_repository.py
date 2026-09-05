@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from ...core.auth import PBKDF2_ITERATIONS, hash_password, verify_password
+from ...core.errors import ResourceNotFoundError
 from ..entities import AdminUserEntity
 
 _DUMMY_PASSWORD_HASH = (
@@ -97,7 +98,7 @@ class AdminRepository:
             )
             user = result.scalar_one_or_none()
             if user is None or user.is_active != 1:
-                raise KeyError(username)
+                raise ResourceNotFoundError(username)
             original_password_hash = user.password_hash
             original_token_version = user.auth_token_version
             if not await run_in_threadpool(
@@ -143,7 +144,7 @@ class AdminRepository:
             )
             user = result.scalar_one_or_none()
             if user is None or user.is_active != 1:
-                raise KeyError(current_username)
+                raise ResourceNotFoundError(current_username)
 
             original_username = user.username
             original_password_hash = user.password_hash
