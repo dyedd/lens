@@ -7,7 +7,6 @@ import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 import { AttemptChain } from "./RequestAttemptChain";
 import { RequestPayloadViewer } from "./RequestPayloadViewer";
-import { formatErrorDisplay } from "./requestPayloadParsing";
 
 type DetailState = {
   data: RequestLogDetail | undefined;
@@ -133,7 +132,7 @@ export function RequestLogDialogs(props: RequestLogDialogsProps) {
         }}
       >
         <AppDialogContent
-          className="max-w-4xl"
+          className="max-w-xl"
           title={titleForLocale(locale, "尝试链路", "Attempts")}
         >
           {attemptState.isError ? (
@@ -147,19 +146,7 @@ export function RequestLogDialogs(props: RequestLogDialogsProps) {
               )}
             </div>
           ) : (
-            <div className="grid gap-4">
-              {formatErrorDisplay(attemptState.data.error_message) ? (
-                <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-4 text-sm text-destructive">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                    <span className="whitespace-pre-wrap break-words">
-                      {formatErrorDisplay(attemptState.data.error_message)}
-                    </span>
-                  </div>
-                </div>
-              ) : null}
-              <AttemptChain detail={attemptState.data} locale={locale} />
-            </div>
+            <AttemptChain detail={attemptState.data} locale={locale} />
           )}
         </AppDialogContent>
       </Dialog>
