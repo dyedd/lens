@@ -22,6 +22,16 @@ def _has_price_value(price_payload: dict[str, Any]) -> bool:
 def _pricing_mode(payload: dict[str, Any]) -> str:
     mode = str(payload.get("mode") or "").strip().lower()
     if "image" in mode or "video" in mode:
+        if any(
+            field in payload
+            for field in (
+                "input_cost_per_token",
+                "output_cost_per_token",
+                "input_cost_per_image_token",
+                "output_cost_per_image_token",
+            )
+        ):
+            return "tokens"
         return "non_tokens"
     return "tokens"
 
@@ -38,7 +48,11 @@ def _price_value(cost_payload: dict[str, Any], field: str) -> float:
     return price
 
 
-def _litellm_price(payload: dict[str, Any], field: str) -> float:
+def _litellm_price(
+    payload: dict[str, Any], field: str, fallback_field: str | None = None
+) -> float:
+    if field not in payload and fallback_field is not None:
+        field = fallback_field
     return _price_value(payload, field) * 1_000_000
 
 
@@ -65,10 +79,14 @@ def build_litellm_price_index(
         else:
             price_payload = {
                 "input_price_per_million": _litellm_price(
-                    model_payload, "input_cost_per_token"
+                    model_payload,
+                    "input_cost_per_token",
+                    "input_cost_per_image_token",
                 ),
                 "output_price_per_million": _litellm_price(
-                    model_payload, "output_cost_per_token"
+                    model_payload,
+                    "output_cost_per_token",
+                    "output_cost_per_image_token",
                 ),
                 "cache_read_price_per_million": _litellm_price(
                     model_payload, "cache_read_input_token_cost"

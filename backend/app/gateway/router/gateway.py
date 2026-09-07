@@ -59,7 +59,7 @@ class GatewayRouter:
         channels: list[ChannelConfig],
         protocol: ProtocolKind,
         requested_model: str | None = None,
-        strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN,
+        strategy: RoutingStrategy = RoutingStrategy.FAILOVER,
         allowed_channel_ids: set[str] | None = None,
         use_model_matching: bool = True,
         route_targets: list[RouteTarget] | None = None,

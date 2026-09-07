@@ -13,8 +13,8 @@ export const STRATEGY_OPTIONS: Array<{
   zh: string;
   en: string;
 }> = [
-  { value: "round_robin", zh: "轮询", en: "Round Robin" },
   { value: "failover", zh: "故障转移", en: "Failover" },
+  { value: "round_robin", zh: "轮询", en: "Round Robin" },
 ];
 
 export function modelGroupReasonsForState(

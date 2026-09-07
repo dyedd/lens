@@ -190,6 +190,17 @@ def test_model_group_crud_round_trip(client, admin_headers, create_model_group) 
     assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
 
 
+def test_model_group_defaults_to_failover(client, admin_headers) -> None:
+    response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "default-failover-group", "items": []},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["strategy"] == "failover"
+
+
 def test_model_group_fallback_groups_round_trip(
     client, admin_headers, create_model_group
 ) -> None:

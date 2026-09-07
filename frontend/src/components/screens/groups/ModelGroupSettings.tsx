@@ -9,7 +9,11 @@ import { Separator } from "@/components/ui/Separator";
 import type { ModelGroup } from "@/lib/api/groups";
 
 import type { FormState } from "./groupTypes";
-import { EditablePriceRow, StrategyToggle } from "./ModelGroupEditorFields";
+import {
+  EditablePriceRow,
+  PricingModeToggle,
+  StrategyToggle,
+} from "./ModelGroupEditorFields";
 
 interface ModelGroupSettingsProps {
   locale: "zh-CN" | "en-US";
@@ -28,6 +32,10 @@ export function ModelGroupSettings({
   changeRouteTarget,
   onOpenAdvanced,
 }: ModelGroupSettingsProps) {
+  const canUseNonTokenPricing = form.items.some(
+    (item) => item.protocol === "openai_image",
+  );
+
   return (
     <>
       <section className="grid gap-4">
@@ -106,8 +114,19 @@ export function ModelGroupSettings({
         <>
           <Separator />
           <section className="grid gap-4">
-            <div className="text-base font-semibold text-foreground">
-              {locale === "zh-CN" ? "价格" : "Pricing"}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-base font-semibold text-foreground">
+                {locale === "zh-CN" ? "价格" : "Pricing"}
+              </div>
+              {canUseNonTokenPricing ? (
+                <PricingModeToggle
+                  value={form.pricing_mode}
+                  locale={locale}
+                  onChange={(value) =>
+                    setForm((current) => ({ ...current, pricing_mode: value }))
+                  }
+                />
+              ) : null}
             </div>
             <div className="grid gap-3 xl:grid-cols-2">
               {form.pricing_mode === "non_tokens" ? (
