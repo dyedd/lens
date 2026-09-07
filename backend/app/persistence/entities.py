@@ -198,7 +198,7 @@ class ModelGroupEntity(Base):
         String(120), nullable=False, unique=True, index=True
     )
     strategy: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="round_robin"
+        String(32), nullable=False, default="failover"
     )
     route_group_id: Mapped[str] = mapped_column(
         String(80), nullable=False, default="", index=True

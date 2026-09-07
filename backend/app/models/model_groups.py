@@ -121,7 +121,7 @@ class ModelGroupItemInput(StrictBaseModel):
 
 class ModelGroupCreate(StrictBaseModel):
     name: str
-    strategy: RoutingStrategy = RoutingStrategy.ROUND_ROBIN
+    strategy: RoutingStrategy = RoutingStrategy.FAILOVER
     route_group_id: str = ""
     sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
     sync_filter_query: str = ""

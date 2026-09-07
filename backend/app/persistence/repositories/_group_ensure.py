@@ -328,7 +328,7 @@ class _GroupEnsureMixin:
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=operation.group_name,
-                strategy="round_robin",
+                strategy="failover",
                 route_group_id="",
                 sync_filter_mode="",
                 sync_filter_query="",
