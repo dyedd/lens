@@ -68,6 +68,8 @@ def test_sync_model_prices_fetches_source_and_returns_updated_prices(
 ) -> None:
     create_model_group(name="nano-banana-pro")
     create_model_group(name="gpt-4o")
+    create_model_group(name="gpt-image-2")
+    create_model_group(name="image-token-only")
     source_client = _litellm_client(
         {
             "nano-banana-pro": {
@@ -79,6 +81,16 @@ def test_sync_model_prices_fetches_source_and_returns_updated_prices(
                 "input_cost_per_token": 2.5e-6,
                 "output_cost_per_token": 1e-5,
                 "input_cost_per_image": 0.04,
+            },
+            "gpt-image-2": {
+                "mode": "image_generation",
+                "input_cost_per_token": 5e-6,
+                "output_cost_per_token": 1e-5,
+            },
+            "image-token-only": {
+                "mode": "image_generation",
+                "input_cost_per_image_token": 8e-6,
+                "output_cost_per_image_token": 3e-5,
             },
         }
     )
@@ -99,6 +111,11 @@ def test_sync_model_prices_fetches_source_and_returns_updated_prices(
     assert items["gpt-4o"]["pricing_mode"] == "tokens"
     assert items["gpt-4o"]["input_price_per_million"] == 2.5
     assert items["gpt-4o"]["image_price_per_image"] == 0
+    assert items["gpt-image-2"]["pricing_mode"] == "tokens"
+    assert items["gpt-image-2"]["input_price_per_million"] == 5
+    assert items["gpt-image-2"]["output_price_per_million"] == 10
+    assert items["image-token-only"]["input_price_per_million"] == 8
+    assert items["image-token-only"]["output_price_per_million"] == 30
     assert payload["last_synced_at"]
 
 

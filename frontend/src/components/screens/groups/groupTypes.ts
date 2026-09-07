@@ -129,7 +129,7 @@ export type GroupRow = ModelGroup & {
 
 export const EMPTY_FORM: FormState = {
   name: "",
-  strategy: "round_robin",
+  strategy: "failover",
   route_group_id: "",
   sync_filter_mode: "",
   sync_filter_query: "",

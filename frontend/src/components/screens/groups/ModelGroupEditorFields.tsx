@@ -123,6 +123,40 @@ export function EditablePriceRow({
   );
 }
 
+/** Render the token or per-image billing mode selector. */
+export function PricingModeToggle({
+  value,
+  locale,
+  onChange,
+}: {
+  value: "tokens" | "non_tokens";
+  locale: "zh-CN" | "en-US";
+  onChange: (value: "tokens" | "non_tokens") => void;
+}) {
+  return (
+    <ToggleGroup
+      type="single"
+      value={value}
+      onValueChange={(nextValue) => {
+        if (nextValue === "tokens" || nextValue === "non_tokens") {
+          onChange(nextValue);
+        }
+      }}
+      variant="outline"
+      size="sm"
+      spacing={1}
+      className="max-w-full flex-wrap"
+    >
+      <ToggleGroupItem value="tokens">
+        {locale === "zh-CN" ? "按 Token" : "Per token"}
+      </ToggleGroupItem>
+      <ToggleGroupItem value="non_tokens">
+        {locale === "zh-CN" ? "按张/次" : "Per image/run"}
+      </ToggleGroupItem>
+    </ToggleGroup>
+  );
+}
+
 /** Render the routing strategy selector for a model group. */
 export function StrategyToggle({
   value,
