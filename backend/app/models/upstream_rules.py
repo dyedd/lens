@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .headers import validate_header_name, validate_header_value
-from .validation import StrictBaseModel, _validate_regex_pattern
+from .validation import StrictBaseModel, validate_regex_pattern
 
 
 class HeaderRuleMatch(StrictBaseModel):
@@ -19,7 +19,7 @@ class HeaderRuleMatch(StrictBaseModel):
         if value is None:
             return None
         value = value.strip()
-        return _validate_regex_pattern(value, error_label="header rule regex")
+        return validate_regex_pattern(value, error_label="header rule regex")
 
 
 class HeaderRule(StrictBaseModel):

@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from .cronjobs import _validate_cronjob_schedule, validate_weekday_list
+from .cronjobs import validate_cronjob_schedule, validate_weekday_list
 from .gateway_keys import GatewayApiKeyBase
 from .model_groups import ModelGroup
 from .model_prices import ModelPriceItem
@@ -89,7 +89,7 @@ class ConfigBackupCronjob(StrictBaseModel):
 
     @model_validator(mode="after")
     def validate_schedule(self) -> "ConfigBackupCronjob":
-        _validate_cronjob_schedule(self.schedule_type, self.run_at_time, self.weekdays)
+        validate_cronjob_schedule(self.schedule_type, self.run_at_time, self.weekdays)
         return self
 
 

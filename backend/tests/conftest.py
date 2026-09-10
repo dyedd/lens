@@ -194,15 +194,8 @@ async def _create_schema(state: Any) -> None:
 
 
 def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
-    import app.gateway.service.admin.backups as backups_mod
-    import app.gateway.service.admin.cronjobs as cronjobs_mod
-    import app.gateway.service.admin.gateway_api_keys as gateway_api_keys_mod
     import app.gateway.service.admin.model_groups as model_groups_mod
-    import app.gateway.service.admin.model_prices as model_prices_mod
-    import app.gateway.service.admin.overview as overview_mod
-    import app.gateway.service.admin.request_logs as request_logs_mod
-    import app.gateway.service.admin.routing as routing_mod
-    import app.gateway.service.admin.settings as settings_mod
+    import app.gateway.service.admin.ops as ops_mod
     import app.gateway.service.admin.sites as sites_mod
     import app.gateway.service.app_state as state_mod
     import app.gateway.service.auth as auth_mod
@@ -216,15 +209,8 @@ def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
     import app.gateway.service.tasks.site_model_probe as site_model_probe_mod
 
     for module in (
-        backups_mod,
-        cronjobs_mod,
-        gateway_api_keys_mod,
         model_groups_mod,
-        model_prices_mod,
-        overview_mod,
-        request_logs_mod,
-        routing_mod,
-        settings_mod,
+        ops_mod,
         sites_mod,
         auth_mod,
         handlers_mod,

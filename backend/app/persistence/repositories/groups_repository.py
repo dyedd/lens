@@ -33,17 +33,15 @@ from app.persistence.group_rule_codec import (
 )
 
 from ..channel_store import ChannelStore
-from ._group_candidates import _GroupCandidatesMixin
-from ._group_ensure import _GroupEnsureMixin
-from ._group_mapping import _GroupMappingMixin
-from ._group_validation import _GroupValidationMixin
+from .group_read import GroupCandidatesMixin, GroupMappingMixin
+from .group_write import GroupEnsureMixin, GroupValidationMixin
 
 
-class GroupRepository(
-    _GroupCandidatesMixin,
-    _GroupEnsureMixin,
-    _GroupValidationMixin,
-    _GroupMappingMixin,
+class ModelGroupRepository(
+    GroupCandidatesMixin,
+    GroupEnsureMixin,
+    GroupValidationMixin,
+    GroupMappingMixin,
 ):
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

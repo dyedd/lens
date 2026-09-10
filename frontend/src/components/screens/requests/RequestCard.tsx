@@ -33,11 +33,11 @@ import {
   formatMaybeCount,
   formatMaybeMoney,
   formatMs,
+  formatUserAgentDisplay,
   getModelChain,
   getResolvedGroupName,
   getSecondaryModelName,
-} from "./requestDisplay";
-import { formatUserAgentDisplay } from "./requestUserAgent";
+} from "./requestView";
 
 /** Render a request log summary card and its available actions. */
 export function RequestCard({

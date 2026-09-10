@@ -7,16 +7,16 @@ from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from .app_state import app_state
-from .routing_plan import _elapsed_ms
+from .routing_plan import elapsed_ms
 from .runtime_types import (
     AttemptLog,
     UpstreamResult,
-    _attempt_logs_to_dicts,
+    attempt_logs_to_dicts,
 )
 
 
 @dataclass(slots=True)
-class _RequestLogger:
+class RequestLogger:
     """Sole writer of one request-log row across its lifecycle.
 
     Holds the request-scoped context (route names, user agent, last target) so
@@ -45,7 +45,7 @@ class _RequestLogger:
         self.requested_group_name = requested_group_name
         self.resolved_group_name = resolved_group_name
 
-    async def connecting(
+    async def record_connecting(
         self,
         *,
         is_stream: bool,
@@ -70,7 +70,7 @@ class _RequestLogger:
             request_content=request_content,
         )
 
-    async def failed(
+    async def record_failure(
         self,
         *,
         status_code: int,
@@ -98,7 +98,7 @@ class _RequestLogger:
             error_message=error_message,
         )
 
-    async def streaming(
+    async def record_streaming(
         self,
         *,
         upstream_model_name: str | None,
@@ -125,7 +125,7 @@ class _RequestLogger:
             request_content=request_content,
         )
 
-    async def succeeded(
+    async def record_success(
         self,
         *,
         upstream_model_name: str | None,
@@ -190,7 +190,7 @@ class _RequestLogger:
                 billing_mode=result.billing_mode,
                 billing_units=result.billing_units,
             )
-        await _update_request_log(
+        await update_request_log(
             self.request_log_id,
             protocol=self.protocol,
             requested_group_name=self.requested_group_name,
@@ -205,18 +205,18 @@ class _RequestLogger:
             success=success,
             is_stream=is_stream,
             first_token_latency_ms=first_token_latency_ms,
-            latency_ms=_elapsed_ms(self.started_at),
+            latency_ms=elapsed_ms(self.started_at),
             request_content=(
                 request_content if request_content is not None else self.request_content
             ),
             response_content=response_content,
-            attempts=_attempt_logs_to_dicts(self.attempts),
+            attempts=attempt_logs_to_dicts(self.attempts),
             error_message=error_message,
             **kwargs,
         )
 
 
-async def _update_request_log(
+async def update_request_log(
     request_log_id: int,
     *,
     protocol: ProtocolKind,

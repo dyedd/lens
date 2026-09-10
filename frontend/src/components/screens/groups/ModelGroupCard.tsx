@@ -19,10 +19,9 @@ import {
 } from "@/components/ui/Tooltip";
 import type { ModelGroup, RoutingStrategy } from "@/lib/api/groups";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
-import type { GroupCardDragging } from "./groupOverviewTypes";
-import type { GroupRow } from "./groupTypes";
+import type { GroupCardDragging, GroupRow } from "./groupTypes";
 import { CompactPriceSummary, StrategyToggle } from "./ModelGroupEditorFields";
-import { ModelGroupMemberChips } from "./ModelGroupMemberChips";
+import { ModelGroupMembers } from "./ModelGroupMembers";
 import { isGroupEnabled } from "./modelGroupFormatting";
 
 interface ModelGroupCardProps {
@@ -193,7 +192,7 @@ export function ModelGroupCard({
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <ModelGroupMemberChips
+          <ModelGroupMembers
             group={group}
             locale={locale}
             busyId={busyId}

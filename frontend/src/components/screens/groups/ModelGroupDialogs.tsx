@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Separator } from "@/components/ui/Separator";
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
-import { modelGroupItemKey } from "./groupSearch";
 import type {
   CandidateChannelGroup,
   CandidateSearchMode,
@@ -24,6 +23,7 @@ import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
 import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
 import { ModelGroupSettings } from "./ModelGroupSettings";
 import { MultimodalFallbackGroups } from "./MultimodalFallbackGroups";
+import { modelGroupItemKey } from "./modelGroupFormatting";
 
 interface GroupEditorDialogProps {
   dialogOpen: boolean;

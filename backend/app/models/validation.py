@@ -7,7 +7,7 @@ class StrictBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _validate_regex_pattern(pattern: str, *, error_label: str = "regex pattern") -> str:
+def validate_regex_pattern(pattern: str, *, error_label: str = "regex pattern") -> str:
     if not pattern:
         return pattern
     try:

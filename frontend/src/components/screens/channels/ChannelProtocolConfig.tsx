@@ -6,18 +6,18 @@ import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/classNames";
 import { CredentialMultiSelect } from "./CredentialMultiSelect";
-import { formBaseUrlsForPayload } from "./channelFormConversion";
 import {
   activeBaseUrlValue,
   protocolConfigSelectedCredentialIds,
   resolveBaseUrlId,
-} from "./channelFormUtils";
-import { protocolConfigCredentialKeys } from "./channelFormValidationUtils";
+} from "./channelForm";
+import { formBaseUrlsForPayload } from "./channelFormConversion";
 import {
   baseUrlLabel,
   credentialLabel,
   defaultProtocolConfigName,
-} from "./channelLabels";
+  protocolConfigCredentialKeys,
+} from "./channelModels";
 import type { FormProtocolConfig, FormState, Locale } from "./channelTypes";
 import { ProtocolConfigModelActions } from "./ProtocolConfigModelActions";
 

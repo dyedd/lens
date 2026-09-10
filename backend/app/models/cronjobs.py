@@ -18,7 +18,7 @@ def validate_weekday_list(value: list[int]) -> list[int]:
     return sorted(sorted_weekdays)
 
 
-def _validate_cronjob_schedule(
+def validate_cronjob_schedule(
     schedule_type: CronjobScheduleType | None,
     run_at_time: str | None,
     weekdays: list[int] | None,
@@ -66,7 +66,7 @@ class CronjobUpdate(StrictBaseModel):
 
     @model_validator(mode="after")
     def validate_schedule(self) -> "CronjobUpdate":
-        _validate_cronjob_schedule(self.schedule_type, self.run_at_time, self.weekdays)
+        validate_cronjob_schedule(self.schedule_type, self.run_at_time, self.weekdays)
         return self
 
 

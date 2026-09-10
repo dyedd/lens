@@ -19,7 +19,7 @@ import {
   isGatewayKeyExpired,
   isGatewayKeyOutOfBalance,
   maskGatewayKey,
-} from "./gatewayApiKeyUtils";
+} from "./gatewayApiKeyModel";
 import { formatDateOnly, formatDateTime } from "./gatewayDateTime";
 
 type GatewayApiKeyTableProps = {

@@ -27,7 +27,7 @@ from ....models.protocols import (
 )
 from ....models.sites import SiteConfig, SiteProtocolConfig
 from ..app_state import logger
-from .model_discovery import _fetch_upstream_models
+from .model_discovery import fetch_upstream_models
 
 if TYPE_CHECKING:
     from .app_state import AppState
@@ -75,7 +75,7 @@ def _channels_by_protocol_config(
     state: AppState, site: SiteConfig
 ) -> dict[str, list[ChannelConfig]]:
     grouped: dict[str, list[ChannelConfig]] = defaultdict(list)
-    for channel in state.channel_store._flatten_site(site):
+    for channel in state.channel_store.flatten_site(site):
         grouped[protocol_config_id_from_runtime_channel_id(channel.id)].append(channel)
     return grouped
 
@@ -131,7 +131,7 @@ def _failed_item(
     )
 
 
-def _channel_for_credential(
+def channel_for_credential(
     channel: ChannelConfig, credential_id: str
 ) -> ChannelConfig | None:
     key = next((item for item in channel.keys if item.id == credential_id), None)
@@ -192,7 +192,7 @@ async def sync_channel_models(
                         continue
                     channel = channels_by_protocol.get(protocol)
                     target_channel = (
-                        _channel_for_credential(channel, credential_id)
+                        channel_for_credential(channel, credential_id)
                         if channel is not None
                         else None
                     )
@@ -210,7 +210,7 @@ async def sync_channel_models(
                         continue
 
                     try:
-                        all_upstream = await _fetch_upstream_models(target_channel)
+                        all_upstream = await fetch_upstream_models(target_channel)
                     except HTTPException as exc:
                         items.append(
                             _failed_item(

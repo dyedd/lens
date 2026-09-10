@@ -18,7 +18,7 @@ from app.persistence.entities import (
 from ...core.runtime_channel_ids import compose_runtime_channel_id
 
 
-class ChannelCleanupMixin:
+class SiteConfigurationCleanupMixin:
     async def _cleanup_deleted_protocol_configs(
         self, session: AsyncSession, protocol_config_ids: set[str]
     ) -> None:

@@ -6,15 +6,14 @@ import type {
   ModelGroupCandidatesPayload,
   ModelGroupCandidatesResponse,
 } from "@/lib/api/groups";
-import { candidatePayloadToFormItems } from "./groupForm";
-import { groupModelCandidates } from "./groupScreenData";
+import type { CandidateSearchMode, FormItem, FormState } from "./groupTypes";
+import { candidatePayloadToFormItems, groupModelCandidates } from "./groupView";
 import {
   compileCandidateRegex,
   matchesCandidateSearch,
+  modelGroupErrorMessage,
   modelGroupItemKey,
-} from "./groupSearch";
-import type { CandidateSearchMode, FormItem, FormState } from "./groupTypes";
-import { modelGroupErrorMessage } from "./modelGroupFormatting";
+} from "./modelGroupFormatting";
 
 type GroupCandidateOptions = {
   candidateResponse?: ModelGroupCandidatesResponse;

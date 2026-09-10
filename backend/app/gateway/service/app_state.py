@@ -18,7 +18,7 @@ from ...persistence.cronjob_store import CronjobSpec, CronjobStore
 from ...persistence.repositories import (
     AdminRepository,
     GatewayApiKeyRepository,
-    GroupRepository,
+    ModelGroupRepository,
     ModelPriceRepository,
     RequestLogRepository,
     SettingsRepository,
@@ -83,7 +83,7 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _read_system_version() -> str:
+def read_system_version() -> str:
     from app import __version__
 
     return __version__
@@ -98,7 +98,7 @@ class AppState:
         self.admin_repo = AdminRepository(self.session_factory)
         self.settings_repo = SettingsRepository(self.session_factory)
         self.gateway_api_key_repo = GatewayApiKeyRepository(self.session_factory)
-        self.group_repo = GroupRepository(self.session_factory)
+        self.group_repo = ModelGroupRepository(self.session_factory)
         self.model_price_repo = ModelPriceRepository(self.session_factory)
         self.site_credential_rate_repo = SiteCredentialRateRepository(
             self.session_factory
@@ -166,9 +166,9 @@ class AppState:
         return load_time_zone(str(runtime["time_zone"]))
 
     async def _sync_model_prices(self) -> None:
-        from .tasks.model_price_tasks import _sync_group_prices
+        from .tasks.model_price_tasks import sync_group_prices
 
-        await _sync_group_prices(self)
+        await sync_group_prices(self)
 
     async def _sync_channel_models(self) -> None:
         from .tasks.model_sync import sync_channel_models
@@ -192,7 +192,7 @@ class AppState:
             latest_version = data.get("tag_name", "").lstrip("v")
             release_url = data.get("html_url", "")
 
-            current_version = _read_system_version()
+            current_version = read_system_version()
 
             if latest_version and version.parse(latest_version) > version.parse(
                 current_version

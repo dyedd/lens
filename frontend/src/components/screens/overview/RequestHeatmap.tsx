@@ -24,7 +24,7 @@ import {
   formatDuration,
   type HeatmapMetric,
   type HeatmapPoint,
-} from "./overviewUtils";
+} from "./overviewMetrics";
 
 const METRIC_OPTIONS = [
   { value: "requests", zhLabel: "请求", enLabel: "Requests" },

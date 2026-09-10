@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/Button";
 import { Separator } from "@/components/ui/Separator";
 import type { ModelGroupCandidateItem } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
-import { modelGroupItemKey } from "./groupSearch";
 import type { CandidateChannelGroup } from "./groupTypes";
-import { CandidateRow } from "./ModelGroupMemberRows";
+import { CandidateRow } from "./ModelGroupMembers";
+import { modelGroupItemKey } from "./modelGroupFormatting";
 
 interface ModelGroupCandidateListProps {
   locale: "zh-CN" | "en-US";

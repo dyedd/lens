@@ -20,38 +20,37 @@ from ..converters import convert_request
 from ..router import RouteTarget
 from ..router.cooldown import ErrorCategory, classify_error
 from .app_state import app_state
-from .error_responses import _protocol_error_response
-from .payload_serialization import _dump_log_json
+from .compat import (
+    apply_deepseek_thinking_compat,
+    apply_glm_chat_reasoning_compat,
+    is_deepseek_thinking_target,
+)
+from .error_responses import protocol_error_response
+from .payload_serialization import dump_log_json
 from .proxy_upstream import (
-    _call_channel,
-    _client_stream_includes_usage,
-    _prepare_channel_request,
+    execute_upstream_request,
+    prepare_upstream_request,
+    request_includes_stream_usage,
 )
-from .request_logger import _RequestLogger
-from .routing_plan import _elapsed_ms
-from .routing_request import (
-    _apply_deepseek_thinking_compat,
-    _apply_glm_chat_reasoning_compat,
-    _apply_reasoning_intent,
-    _extract_request_reasoning_effort,
-    _is_deepseek_thinking_target,
-)
+from .request_logger import RequestLogger
+from .routing_plan import elapsed_ms
+from .routing_request import apply_reasoning_intent, extract_request_reasoning_effort
 from .runtime_types import (
     AttemptLog,
+    RequestDeadline,
     RoutingPlan,
     StreamCapture,
     UpstreamRequestError,
     UpstreamResult,
-    _attempt_logs_to_dicts,
-    _RequestDeadline,
+    attempt_logs_to_dicts,
 )
-from .streaming.stream_logging import (
-    _record_stream_request_log,
-    _stream_log_outcome,
+from .streaming.logging import (
+    record_stream_request_log,
+    stream_log_outcome,
 )
 from .upstream_support import (
-    _effective_user_agent_from_headers,
-    _format_channel_error,
+    effective_user_agent_from_headers,
+    format_channel_error,
 )
 
 
@@ -90,11 +89,12 @@ class _AttemptRun:
     request: AttemptRequest
     plan: RoutingPlan
     target: RouteTarget
-    deadline: _RequestDeadline
-    log_ctx: _RequestLogger
+    deadline: RequestDeadline
+    log_ctx: RequestLogger
     failures: FailureLedger
     attempt: AttemptLog
     attempt_started_at: float
+    route_started_revision: int
     effective_user_agent: str
 
     @property
@@ -102,13 +102,243 @@ class _AttemptRun:
         return bool(self.request.runtime["relay_log_body_enabled"])
 
 
+@dataclass(slots=True)
+class _PreparedAttempt:
+    upstream_body: dict[str, Any]
+    upstream: Any
+    body_bytes: bytes
+    request_content: str | None
+    reasoning_effort: str | None
+
+
+async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | None:
+    request = run.request
+    plan = run.plan
+    target = run.target
+    channel = target.channel
+
+    if request.protocol != channel.protocol:
+        try:
+            upstream_body = convert_request(
+                request.protocol,
+                channel.protocol,
+                request.body,
+                target.model_name,
+                preserve_reasoning=is_deepseek_thinking_target(
+                    channel, target.model_name
+                ),
+            )
+        except ValueError as exc:
+            return await _record_target_failure(
+                run,
+                UpstreamRequestError(
+                    status_code=400,
+                    detail=str(exc),
+                    router_status_code=None,
+                    skip_route_failure=True,
+                ),
+                upstream_body=request.body,
+            )
+    else:
+        upstream_body = deepcopy(request.body)
+        if target.model_name:
+            upstream_body["model"] = target.model_name
+
+    try:
+        upstream_body = apply_param_rules(
+            upstream_body,
+            param_rule_layers(
+                request.runtime["upstream_param_override_config"],
+                channel_rules=channel.param_override,
+                model_group_rules=(
+                    plan.requested_group.param_override
+                    if plan.requested_group is not None
+                    else ()
+                ),
+            ),
+        )
+        upstream_body = apply_deepseek_thinking_compat(channel, upstream_body)
+        upstream_body = apply_glm_chat_reasoning_compat(
+            channel, upstream_body, request.body
+        )
+        upstream_body = apply_reasoning_intent(
+            channel, upstream_body, plan.parsed_model
+        )
+    except RuleEvaluationError as exc:
+        return await _record_target_failure(
+            run,
+            UpstreamRequestError(
+                status_code=400,
+                detail=str(exc),
+                router_status_code=None,
+            ),
+            upstream_body=upstream_body,
+        )
+    except UpstreamRequestError as exc:
+        return await _record_target_failure(run, exc, upstream_body=upstream_body)
+
+    if request.protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
+        upstream_body.pop("stream", None)
+
+    reasoning_effort = extract_request_reasoning_effort(request.body, upstream_body)
+    try:
+        upstream, body_bytes, upstream_request_content = prepare_upstream_request(
+            channel,
+            upstream_body,
+            credential_id=target.credential_id,
+            user_agent=request.upstream_user_agent,
+            forwarded_headers=request.inbound_headers,
+            upstream_headers_config=request.runtime["upstream_headers_config"],
+            model_group_headers=(
+                plan.requested_group.headers
+                if plan.requested_group is not None
+                else None
+            ),
+            log_body_enabled=run.log_body_enabled,
+            max_request_body_bytes=int(request.runtime["max_request_body_bytes"]),
+            path_suffix=request.path_suffix,
+            multipart_files=request.multipart_files,
+        )
+        run.effective_user_agent = effective_user_agent_from_headers(
+            upstream.headers, request.upstream_user_agent
+        )
+    except UpstreamRequestError as exc:
+        return await _record_target_failure(
+            run,
+            exc,
+            upstream_body=upstream_body,
+            request_content=exc.request_content,
+        )
+    except HTTPException as exc:
+        return await _record_target_failure(
+            run,
+            UpstreamRequestError(
+                status_code=exc.status_code,
+                detail=exc.detail,
+                router_status_code=exc.status_code,
+                skip_route_failure=True,
+            ),
+            upstream_body=upstream_body,
+        )
+
+    return _PreparedAttempt(
+        upstream_body=upstream_body,
+        upstream=upstream,
+        body_bytes=body_bytes,
+        request_content=upstream_request_content,
+        reasoning_effort=reasoning_effort,
+    )
+
+
+async def _send_attempt(
+    run: _AttemptRun, prepared: _PreparedAttempt
+) -> UpstreamResult | Response | None:
+    request = run.request
+    plan = run.plan
+    target = run.target
+    channel = target.channel
+    run.attempt.reasoning_effort = prepared.reasoning_effort
+    await run.log_ctx.record_connecting(
+        is_stream=bool(prepared.upstream_body.get("stream")),
+        upstream_model_name=target.model_name,
+        channel=channel,
+        user_agent=run.effective_user_agent,
+        rate_multiplier=target.rate_multiplier,
+        request_content=prepared.request_content,
+    )
+    try:
+        return await execute_upstream_request(
+            channel,
+            prepared.upstream_body,
+            prepared.upstream,
+            prepared.body_bytes,
+            prepared.request_content,
+            pricing_group_name=plan.resolved_group_name,
+            rate_multiplier=target.rate_multiplier,
+            client_protocol=request.protocol,
+            include_stream_usage=request_includes_stream_usage(
+                request.protocol, request.body
+            ),
+            log_body_enabled=run.log_body_enabled,
+            deadline=run.deadline,
+            global_proxy_url=str(request.runtime["proxy_url"]),
+        )
+    except UpstreamRequestError as exc:
+        return await _record_target_failure(
+            run,
+            exc,
+            upstream_body=prepared.upstream_body,
+            request_content=prepared.request_content,
+        )
+
+
+async def _finish_attempt(
+    run: _AttemptRun, prepared: _PreparedAttempt, result: UpstreamResult
+) -> Response:
+    channel = run.target.channel
+    target = run.target
+    run.attempt.status_code = result.status_code
+    run.attempt.success = True
+    run.attempt.duration_ms = elapsed_ms(run.attempt_started_at)
+
+    if not result.is_stream:
+        app_state.router.record_success(
+            channel.id,
+            credential_id=target.credential_id,
+            model_name=target.model_name,
+            started_revision=run.route_started_revision,
+        )
+
+    merged_request_content = result.request_content or prepared.request_content
+    if result.is_stream:
+        if result.stream_capture is not None:
+            result.stream_capture.request_log_id = run.log_ctx.request_log_id
+            result.stream_capture.stream_started_at = run.log_ctx.started_at
+            result.stream_capture.route_started_revision = run.route_started_revision
+        first_token_latency_ms = (
+            result.stream_capture.first_token_latency_ms
+            if result.stream_capture is not None
+            else result.first_token_latency_ms
+        )
+        await run.log_ctx.record_streaming(
+            upstream_model_name=result.upstream_model_name,
+            status_code=result.status_code,
+            first_token_latency_ms=first_token_latency_ms,
+            request_content=merged_request_content,
+            channel=channel,
+            user_agent=run.effective_user_agent,
+            rate_multiplier=target.rate_multiplier,
+        )
+        result.response.background = BackgroundTask(
+            _finalize_stream_request,
+            log_ctx=run.log_ctx,
+            channel=channel,
+            result=result,
+            attempts=attempt_logs_to_dicts(run.log_ctx.attempts),
+        )
+        return result.response
+
+    await run.log_ctx.record_success(
+        upstream_model_name=result.upstream_model_name,
+        status_code=result.status_code,
+        first_token_latency_ms=result.first_token_latency_ms,
+        request_content=merged_request_content,
+        response_content=result.response_content,
+        result=result,
+        channel=channel,
+        user_agent=run.effective_user_agent,
+        rate_multiplier=target.rate_multiplier,
+    )
+    return result.response
+
+
 async def run_attempt(
     *,
     request: AttemptRequest,
     plan: RoutingPlan,
     target: RouteTarget,
-    deadline: _RequestDeadline,
-    log_ctx: _RequestLogger,
+    deadline: RequestDeadline,
+    log_ctx: RequestLogger,
     failures: FailureLedger,
 ) -> Response | None:
     """Run one upstream target. None hands the failover loop the next target."""
@@ -135,208 +365,27 @@ async def run_attempt(
         failures=failures,
         attempt=attempt,
         attempt_started_at=attempt_started_at,
+        route_started_revision=route_started_revision,
         effective_user_agent=request.upstream_user_agent,
     )
-
-    if request.protocol != channel.protocol:
-        try:
-            upstream_body = convert_request(
-                request.protocol,
-                channel.protocol,
-                request.body,
-                target.model_name,
-                preserve_reasoning=_is_deepseek_thinking_target(
-                    channel, target.model_name
-                ),
-            )
-        except ValueError as exc:
-            return await _record_target_failure(
-                run,
-                UpstreamRequestError(
-                    status_code=400,
-                    detail=str(exc),
-                    router_status_code=None,
-                    skip_route_failure=True,
-                ),
-                upstream_body=request.body,
-            )
-    else:
-        upstream_body = deepcopy(request.body)
-        if target.model_name:
-            upstream_body["model"] = target.model_name
-    try:
-        upstream_body = apply_param_rules(
-            upstream_body,
-            param_rule_layers(
-                request.runtime["upstream_param_override_config"],
-                channel_rules=channel.param_override,
-                model_group_rules=(
-                    plan.requested_group.param_override
-                    if plan.requested_group is not None
-                    else ()
-                ),
-            ),
-        )
-        upstream_body = _apply_deepseek_thinking_compat(channel, upstream_body)
-        upstream_body = _apply_glm_chat_reasoning_compat(
-            channel, upstream_body, request.body
-        )
-        upstream_body = _apply_reasoning_intent(
-            channel, upstream_body, plan.parsed_model
-        )
-    except RuleEvaluationError as exc:
-        return await _record_target_failure(
-            run,
-            UpstreamRequestError(
-                status_code=400,
-                detail=str(exc),
-                router_status_code=None,
-            ),
-            upstream_body=upstream_body,
-        )
-    except UpstreamRequestError as exc:
-        return await _record_target_failure(run, exc, upstream_body=upstream_body)
-    if request.protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
-        upstream_body.pop("stream", None)
-
-    log_body_enabled = run.log_body_enabled
-    reasoning_effort = _extract_request_reasoning_effort(request.body, upstream_body)
-    try:
-        upstream, body_bytes, upstream_request_content = _prepare_channel_request(
-            channel,
-            upstream_body,
-            credential_id=target.credential_id,
-            user_agent=request.upstream_user_agent,
-            forwarded_headers=request.inbound_headers,
-            upstream_headers_config=request.runtime["upstream_headers_config"],
-            model_group_headers=(
-                plan.requested_group.headers
-                if plan.requested_group is not None
-                else None
-            ),
-            log_body_enabled=log_body_enabled,
-            max_request_body_bytes=int(request.runtime["max_request_body_bytes"]),
-            path_suffix=request.path_suffix,
-            multipart_files=request.multipart_files,
-        )
-        run.effective_user_agent = _effective_user_agent_from_headers(
-            upstream.headers, request.upstream_user_agent
-        )
-    except UpstreamRequestError as exc:
-        return await _record_target_failure(
-            run,
-            exc,
-            upstream_body=upstream_body,
-            request_content=exc.request_content,
-        )
-    except HTTPException as exc:
-        return await _record_target_failure(
-            run,
-            UpstreamRequestError(
-                status_code=exc.status_code,
-                detail=exc.detail,
-                router_status_code=exc.status_code,
-                skip_route_failure=True,
-            ),
-            upstream_body=upstream_body,
-        )
-    attempt.reasoning_effort = reasoning_effort
-    await log_ctx.connecting(
-        is_stream=bool(upstream_body.get("stream")),
-        upstream_model_name=target.model_name,
-        channel=channel,
-        user_agent=run.effective_user_agent,
-        rate_multiplier=target.rate_multiplier,
-        request_content=upstream_request_content,
-    )
-    try:
-        result = await _call_channel(
-            channel,
-            upstream_body,
-            upstream,
-            body_bytes,
-            upstream_request_content,
-            pricing_group_name=plan.resolved_group_name,
-            rate_multiplier=target.rate_multiplier,
-            client_protocol=request.protocol,
-            include_stream_usage=_client_stream_includes_usage(
-                request.protocol, request.body
-            ),
-            log_body_enabled=log_body_enabled,
-            deadline=deadline,
-            global_proxy_url=str(request.runtime["proxy_url"]),
-        )
-    except UpstreamRequestError as exc:
-        return await _record_target_failure(
-            run,
-            exc,
-            upstream_body=upstream_body,
-            request_content=upstream_request_content,
-        )
-
-    attempt.status_code = result.status_code
-    attempt.success = True
-    attempt.duration_ms = _elapsed_ms(attempt_started_at)
-
-    if not result.is_stream:
-        app_state.router.record_success(
-            channel.id,
-            credential_id=target.credential_id,
-            model_name=target.model_name,
-            started_revision=route_started_revision,
-        )
-
-    merged_request_content = result.request_content or upstream_request_content
-    if result.is_stream:
-        if result.stream_capture is not None:
-            result.stream_capture.request_log_id = log_ctx.request_log_id
-            result.stream_capture.stream_started_at = log_ctx.started_at
-            result.stream_capture.route_started_revision = route_started_revision
-        first_token_latency_ms = (
-            result.stream_capture.first_token_latency_ms
-            if result.stream_capture is not None
-            else result.first_token_latency_ms
-        )
-        await log_ctx.streaming(
-            upstream_model_name=result.upstream_model_name,
-            status_code=result.status_code,
-            first_token_latency_ms=first_token_latency_ms,
-            request_content=merged_request_content,
-            channel=channel,
-            user_agent=run.effective_user_agent,
-            rate_multiplier=target.rate_multiplier,
-        )
-        result.response.background = BackgroundTask(
-            _finalize_stream_request,
-            log_ctx=log_ctx,
-            channel=channel,
-            result=result,
-            attempts=_attempt_logs_to_dicts(log_ctx.attempts),
-        )
-        return result.response
-    await log_ctx.succeeded(
-        upstream_model_name=result.upstream_model_name,
-        status_code=result.status_code,
-        first_token_latency_ms=result.first_token_latency_ms,
-        request_content=merged_request_content,
-        response_content=result.response_content,
-        result=result,
-        channel=channel,
-        user_agent=run.effective_user_agent,
-        rate_multiplier=target.rate_multiplier,
-    )
-    return result.response
+    prepared = await _prepare_attempt(run)
+    if not isinstance(prepared, _PreparedAttempt):
+        return prepared
+    result = await _send_attempt(run, prepared)
+    if not isinstance(result, UpstreamResult):
+        return result
+    return await _finish_attempt(run, prepared, result)
 
 
 async def _finalize_stream_request(
     *,
-    log_ctx: _RequestLogger,
+    log_ctx: RequestLogger,
     channel: ChannelConfig,
     result: UpstreamResult,
     attempts: list[dict[str, Any]],
 ) -> None:
     """Background close-out of a streamed attempt: route health, then the log row."""
-    outcome = _stream_log_outcome(result, result.stream_capture)
+    outcome = stream_log_outcome(result, result.stream_capture)
     await _record_stream_route_health(
         channel=channel,
         capture=result.stream_capture,
@@ -344,7 +393,7 @@ async def _finalize_stream_request(
         lifecycle_status=outcome.lifecycle_status,
         attempts=attempts,
     )
-    await _record_stream_request_log(
+    await record_stream_request_log(
         log_ctx=log_ctx,
         channel=channel,
         result=result,
@@ -390,7 +439,7 @@ async def _record_stream_route_health(
     category = category or ErrorCategory.SERVER
     app_state.router.record_failure(
         channel.id,
-        _format_channel_error(capture_issue),
+        format_channel_error(capture_issue),
         category=category,
         cooldown_seconds=cooldown_seconds,
         credential_id=credential_id,
@@ -421,7 +470,7 @@ async def _record_target_failure(
 ) -> Response | None:
     """Log the failed attempt, feed cooldowns, and honor stop-fallback."""
     channel = run.target.channel
-    message = _format_channel_error(exc.detail)
+    message = format_channel_error(exc.detail)
     category = exc.router_error_category
     scope = exc.router_error_scope
     if category is None:
@@ -444,12 +493,12 @@ async def _record_target_failure(
         )
     run.failures.record(message, exc.status_code)
     run.attempt.status_code = exc.status_code
-    run.attempt.duration_ms = _elapsed_ms(run.attempt_started_at)
+    run.attempt.duration_ms = elapsed_ms(run.attempt_started_at)
     run.attempt.error_message = message
-    run.attempt.reasoning_effort = _extract_request_reasoning_effort(
+    run.attempt.reasoning_effort = extract_request_reasoning_effort(
         run.log_ctx.body, upstream_body
     )
-    await run.log_ctx.failed(
+    await run.log_ctx.record_failure(
         status_code=exc.status_code,
         error_message=message,
         is_stream=bool(upstream_body.get("stream")),
@@ -462,12 +511,12 @@ async def _record_target_failure(
             else (
                 request_content
                 if request_content is not None
-                else (_dump_log_json(upstream_body) if run.log_body_enabled else None)
+                else (dump_log_json(upstream_body) if run.log_body_enabled else None)
             )
         ),
     )
     if exc.stop_fallback:
-        return _protocol_error_response(
+        return protocol_error_response(
             protocol=run.log_ctx.protocol,
             status_code=exc.status_code,
             error_type=exc.error_type,

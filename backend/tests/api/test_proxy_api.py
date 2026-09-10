@@ -256,7 +256,7 @@ def test_proxy_json_endpoints_forward_expected_protocol_and_body(
 
     import app.gateway.service.proxy_routes as proxy_routes
 
-    monkeypatch.setattr(proxy_routes, "_proxy_protocol", fake_proxy)
+    monkeypatch.setattr(proxy_routes, "proxy_protocol", fake_proxy)
     headers = {**gateway_headers(key), "User-Agent": "lens-tests"}
 
     cases = [
@@ -566,7 +566,7 @@ def test_image_proxy_logs_non_token_billing(
     create_gateway_key,
 ) -> None:
     import app.gateway.service.proxy_upstream as proxy_upstream
-    import app.gateway.service.streaming.stream_logging as stream_logging
+    import app.gateway.service.streaming.logging as stream_logging
 
     async def fake_send_upstream(
         _client: httpx.AsyncClient,

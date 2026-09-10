@@ -1,6 +1,6 @@
 import { ChevronsUpDown } from "lucide-react";
 
-import { SettingsHint } from "@/components/screens/settings/SettingsSectionCard";
+import { SettingsHint } from "@/components/settings/SettingsSectionCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -27,7 +27,7 @@ import {
 import { Switch } from "@/components/ui/Switch";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
-import type { GatewayModelGroupOption } from "./gatewayApiKeyUtils";
+import type { GatewayModelGroupOption } from "./gatewayApiKeyModel";
 
 type GatewayApiKeyModelPermissionsProps = {
   locale: Locale;

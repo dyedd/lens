@@ -39,7 +39,7 @@ def test_fetch_site_models_uses_selected_credentials(
 
     import app.gateway.service.admin.sites as sites
 
-    monkeypatch.setattr(sites, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(sites, "fetch_upstream_models", fake_fetch)
 
     response = client.post(
         "/api/admin/site-model-discoveries",
@@ -117,7 +117,7 @@ def test_fetch_site_models_returns_bad_gateway_when_all_upstreams_fail(
 
     import app.gateway.service.admin.sites as sites
 
-    monkeypatch.setattr(sites, "_fetch_upstream_models", failing_fetch)
+    monkeypatch.setattr(sites, "fetch_upstream_models", failing_fetch)
 
     response = client.post(
         "/api/admin/site-model-discoveries",
@@ -183,7 +183,7 @@ def test_test_site_model_returns_timeout_result(
     import app.gateway.service.tasks.site_model_probe as probe
 
     monkeypatch.setattr(probe, "app_state", app_state)
-    monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream_client)
     run_async(
         app_state.settings_repo.upsert_settings(
             [SettingItem(key=SETTING_FIRST_TOKEN_TIMEOUT_SECONDS, value="0.01")]
@@ -263,7 +263,7 @@ def test_test_site_model_rejects_non_object_success_payload(
     import app.gateway.service.tasks.site_model_probe as probe
 
     monkeypatch.setattr(probe, "app_state", app_state)
-    monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream_client)
     try:
         response = client.post(
             "/api/admin/site-model-tests",
@@ -394,7 +394,7 @@ def test_channel_model_sync_preserves_manual_models_and_syncs_each_credential(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
     response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,
@@ -453,7 +453,7 @@ def test_channel_model_sync_removes_only_stale_synced_models(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
     response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,
@@ -515,7 +515,7 @@ def test_channel_model_sync_isolates_target_failures(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
     response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,
@@ -569,7 +569,7 @@ def test_channel_model_sync_dry_run_does_not_write_models(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
     response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,
@@ -618,7 +618,7 @@ def test_channel_model_sync_does_not_report_group_changes_that_failed(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
     monkeypatch.setattr(
         app_state.group_repo,
         "ensure_groups_from_site",
@@ -666,7 +666,7 @@ def test_channel_model_sync_reports_applied_group_changes(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
     response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,
@@ -721,7 +721,7 @@ def test_channel_model_sync_skips_disabled_resources_without_fetching(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fail_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fail_fetch)
     response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,
@@ -814,7 +814,7 @@ def test_channel_model_sync_skips_configs_without_synced_models(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fail_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fail_fetch)
     response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,
@@ -860,7 +860,7 @@ def test_sync_target_is_retained_when_upstream_temporarily_drops_it(
 
     import app.gateway.service.tasks.model_sync as model_sync
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
     response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,
@@ -878,7 +878,7 @@ def test_sync_target_is_retained_when_upstream_temporarily_drops_it(
     async def restored_fetch(_channel: Any) -> list[str]:
         return ["gpt-pinned"]
 
-    monkeypatch.setattr(model_sync, "_fetch_upstream_models", restored_fetch)
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", restored_fetch)
     restore_response = client.post(
         "/api/admin/channel-model-sync",
         headers=admin_headers,

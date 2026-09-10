@@ -8,26 +8,23 @@ import {
   paramOverrideDraftToRules,
   paramOverrideRulesToDraft,
 } from "@/lib/upstreamRules";
-import { createLocalId } from "./channelDefaults";
+
 import {
   canonicalizeCredentialIds,
   protocolConfigSelectedCredentialIds,
   resolveBaseUrlId,
-} from "./channelFormUtils";
-import {
-  fallbackCredentialName,
-  protocolConfigDisplayName,
-} from "./channelLabels";
+} from "./channelForm";
 import {
   coalesceFormModels,
+  createLocalId,
+  fallbackCredentialName,
+  protocolConfigDisplayName,
   protocolConfigEffectiveProtocols,
-} from "./channelModelUtils";
+} from "./channelModels";
 import type { FormState } from "./channelTypes";
 
-/** Converts a persisted site into channel editor state. */ export function toForm(
-  site: Site,
-  locale: Locale = "zh-CN",
-): FormState {
+/** Converts a persisted site into channel editor state. */
+export function toForm(site: Site, locale: Locale = "zh-CN"): FormState {
   const baseUrls = site.base_urls.length
     ? site.base_urls.map((item) => ({
         id: item.id,
