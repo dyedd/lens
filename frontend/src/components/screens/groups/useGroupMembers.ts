@@ -1,13 +1,13 @@
 import { type Dispatch, type SetStateAction, useMemo } from "react";
 import type { ModelGroup } from "@/lib/api/groups";
-import {
-  foldGroupMembers,
-  groupFoldedMembersByChannel,
-} from "./groupScreenData";
-import { modelGroupItemKey } from "./groupSearch";
 import type { FormItem, FormState, MemberStatusFilter } from "./groupTypes";
-import { moveItems } from "./modelGroupFormatting";
-import { modelFoldKey, modelGroupChannelKey } from "./modelGroupMembers";
+import { foldGroupMembers, groupFoldedMembersByChannel } from "./groupView";
+import {
+  modelFoldKey,
+  modelGroupChannelKey,
+  modelGroupItemKey,
+  moveItems,
+} from "./modelGroupFormatting";
 
 function formItemMemberKey(item: FormItem) {
   return modelFoldKey(

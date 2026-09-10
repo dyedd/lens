@@ -2,13 +2,9 @@ from pydantic import Field, HttpUrl, field_validator
 
 from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
-from .sites import (
-    SiteCredentialInput,
-    _require_non_empty_text,
-    _validate_match_regex,
-)
+from .sites import SiteCredentialInput, require_non_empty_text
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel
+from .validation import StrictBaseModel, validate_regex_pattern
 
 
 class SiteModelFetchRequest(StrictBaseModel):
@@ -24,7 +20,7 @@ class SiteModelFetchRequest(StrictBaseModel):
         canonicalize_base_url
     )
 
-    validate_match_regex = _validate_match_regex
+    validate_match_regex = field_validator("match_regex")(validate_regex_pattern)
 
 
 class SiteModelFetchItem(StrictBaseModel):
@@ -54,7 +50,7 @@ class SiteModelTestRequest(StrictBaseModel):
         canonicalize_base_url
     )
     _require_non_empty_text = field_validator("model_name", "prompt")(
-        _require_non_empty_text
+        require_non_empty_text
     )
 
 

@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/Badge";
 import type { RequestLogDetail } from "@/lib/api/requests";
 import { cn } from "@/lib/classNames";
-import { formatInternalCredentialLabel, formatMs } from "./requestDisplay";
+import { formatInternalCredentialLabel, formatMs } from "./requestView";
 
 /** A cooldown-skip is a routing-level skip: no upstream request was made. */
 function isSkippedAttempt(attempt: RequestLogDetail["attempts"][number]) {

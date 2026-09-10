@@ -1,11 +1,11 @@
-from .scheduling import (
+from .store import (
+    CronjobStore,
     build_cronjob_schedule,
     canonical_weekday_tuple,
     decode_weekdays,
     encode_weekdays,
     next_cronjob_run_at,
 )
-from .store import CronjobStore
 from .types import (
     MIN_CRONJOB_INTERVAL_HOURS,
     SCHEDULE_TYPE_DAILY,

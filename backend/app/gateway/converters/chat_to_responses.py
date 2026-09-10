@@ -4,8 +4,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
-from ._sse import (
+from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
+from .sse import (
     FINISH_REASON_CHAT_TO_RESPONSES,
     format_sse_event,
     parse_sse_json_stream,

@@ -13,9 +13,9 @@ import {
   canSubmitModelGroupEnsureItem,
   executionModelGroups,
   modelGroupEnsureResultKey,
+  nextCreateModelGroupName,
   selectableModelGroupsForEnsureItem,
 } from "./modelGroupEnsure";
-import { nextCreateModelGroupName } from "./modelGroupEnsureDialogUtils";
 
 type Props = {
   open: boolean;

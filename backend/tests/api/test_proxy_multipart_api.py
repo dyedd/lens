@@ -46,7 +46,7 @@ def test_proxy_image_edits_forwards_form_fields_and_files(
 
     import app.gateway.service.proxy_routes as proxy_routes
 
-    monkeypatch.setattr(proxy_routes, "_proxy_protocol", fake_proxy)
+    monkeypatch.setattr(proxy_routes, "proxy_protocol", fake_proxy)
 
     response = client.post(
         "/v1/images/edits",

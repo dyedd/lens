@@ -9,7 +9,7 @@ import type {
   FoldedMember,
   MemberStatusFilter,
 } from "./groupTypes";
-import { FoldedMemberRow } from "./ModelGroupMemberRows";
+import { FoldedMemberRow } from "./ModelGroupMembers";
 
 interface ModelGroupSelectedMemberListProps {
   locale: "zh-CN" | "en-US";

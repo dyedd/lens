@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from .app_state import _read_system_version, app_state
+from .app_state import app_state, read_system_version
 
 GENERIC_USER_AGENT_TOKENS = (
     "python-httpx",
@@ -39,7 +39,7 @@ ANTHROPIC_FORWARD_HEADERS = frozenset(
 )
 
 
-def _passthrough_headers(headers: httpx.Headers) -> dict[str, str]:
+def passthrough_headers(headers: httpx.Headers) -> dict[str, str]:
     allowed = {}
     for key in (
         "content-type",
@@ -53,11 +53,11 @@ def _passthrough_headers(headers: httpx.Headers) -> dict[str, str]:
     return allowed
 
 
-def _format_channel_error(detail: Any) -> str:
+def format_channel_error(detail: Any) -> str:
     detail_text = str(detail).strip() if detail is not None else ""
     if not detail_text:
         detail_text = "Unknown error"
-    return _summarize_html_error_detail(detail_text)
+    return summarize_html_error_detail(detail_text)
 
 
 class _HtmlTitleParser(HTMLParser):
@@ -82,16 +82,16 @@ class _HtmlTitleParser(HTMLParser):
         return re.sub(r"\s+", " ", "".join(self._title_parts)).strip()
 
 
-def _format_http_response_error(response: httpx.Response) -> str:
+def format_http_response_error(response: httpx.Response) -> str:
     detail = response.text or f"HTTP {response.status_code}"
-    return _summarize_html_error_detail(
+    return summarize_html_error_detail(
         detail,
         status_code=response.status_code,
         content_type=response.headers.get("content-type"),
     )
 
 
-def _summarize_html_error_detail(
+def summarize_html_error_detail(
     detail: str,
     *,
     status_code: int | None = None,
@@ -127,7 +127,7 @@ def _extract_html_title(detail: str) -> str:
     return parser.title()[:200]
 
 
-def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
+def format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
     error_type = exc.__class__.__name__
     request = exc.request if hasattr(exc, "request") else None
     target_url = (
@@ -144,11 +144,11 @@ def _format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
 
 
 @lru_cache(maxsize=1)
-def _default_lens_user_agent() -> str:
-    return f"Lens/{_read_system_version()}"
+def default_lens_user_agent() -> str:
+    return f"Lens/{read_system_version()}"
 
 
-def _sanitize_user_agent(value: str | None) -> str:
+def sanitize_user_agent(value: str | None) -> str:
     clean_value = (value or "").strip()
     if not clean_value:
         return ""
@@ -157,23 +157,21 @@ def _sanitize_user_agent(value: str | None) -> str:
     )[:300].strip()
 
 
-def _effective_user_agent_from_headers(
-    headers: Mapping[str, str], fallback: str
-) -> str:
+def effective_user_agent_from_headers(headers: Mapping[str, str], fallback: str) -> str:
     for name, value in headers.items():
         if name.lower() == "user-agent":
-            return _sanitize_user_agent(value)
+            return sanitize_user_agent(value)
     return fallback
 
 
-def _is_generic_user_agent(value: str) -> bool:
+def is_generic_user_agent(value: str) -> bool:
     lower_value = value.strip().lower()
     if not lower_value:
         return True
     return any(token in lower_value for token in GENERIC_USER_AGENT_TOKENS)
 
 
-def _forward_anthropic_headers(headers: Mapping[str, str]) -> dict[str, str]:
+def forward_anthropic_headers(headers: Mapping[str, str]) -> dict[str, str]:
     forwarded: dict[str, str] = {}
     for name, value in headers.items():
         lower_header_name = name.lower()
@@ -187,5 +185,5 @@ def _forward_anthropic_headers(headers: Mapping[str, str]) -> dict[str, str]:
     return forwarded
 
 
-def _resolve_http_client(proxy_url: str | None) -> httpx.AsyncClient:
+def resolve_http_client(proxy_url: str | None) -> httpx.AsyncClient:
     return app_state.get_http_client(proxy_url)

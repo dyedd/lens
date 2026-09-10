@@ -4,20 +4,20 @@ from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._responses import (
-    _raise_for_failed_response,
-    _usage_int,
-    _validate_terminal_response,
+from .responses_common import (
+    raise_for_failed_response,
+    usage_int,
+    validate_terminal_response,
 )
-from ._sse import format_sse_event, parse_sse_json_stream
-from ._validation import _required_string
+from .sse import format_sse_event, parse_sse_json_stream
+from .validation import required_string
 
 
 def responses_response_to_chat(response: Any, original_model: str) -> dict[str, Any]:
     """Convert a Responses API response into a Chat Completions response."""
     if not isinstance(response, Mapping):
         raise ValueError("Responses upstream response must be an object")
-    output = _validate_terminal_response(response)
+    output = validate_terminal_response(response)
     message, has_tool_calls = _responses_output_to_chat_message(output)
     result = {
         "id": response.get("id") or "",
@@ -59,7 +59,7 @@ def _responses_output_to_chat_message(
                     raise ValueError("Responses message content must contain objects")
                 if part.get("type") == "output_text":
                     text_parts.append(
-                        _required_string(
+                        required_string(
                             part.get("text"),
                             "Responses output_text must contain text",
                             allow_empty=True,
@@ -67,7 +67,7 @@ def _responses_output_to_chat_message(
                     )
                 elif part.get("type") == "refusal":
                     refusal_parts.append(
-                        _required_string(
+                        required_string(
                             part.get("refusal"),
                             "Responses refusal must contain refusal text",
                             allow_empty=True,
@@ -76,17 +76,17 @@ def _responses_output_to_chat_message(
         elif item.get("type") == "function_call":
             tool_calls.append(
                 {
-                    "id": _required_string(
+                    "id": required_string(
                         item.get("call_id"),
                         "Responses function_call must contain call_id",
                     ),
                     "type": "function",
                     "function": {
-                        "name": _required_string(
+                        "name": required_string(
                             item.get("name"),
                             "Responses function_call must contain name",
                         ),
-                        "arguments": _required_string(
+                        "arguments": required_string(
                             item.get("arguments"),
                             "Responses function_call must contain arguments",
                             allow_empty=True,
@@ -106,23 +106,23 @@ def _responses_output_to_chat_message(
 
 
 def _responses_usage_to_chat(usage: Mapping[str, Any]) -> dict[str, Any]:
-    prompt_tokens = _usage_int(usage, "input_tokens")
-    completion_tokens = _usage_int(usage, "output_tokens")
+    prompt_tokens = usage_int(usage, "input_tokens")
+    completion_tokens = usage_int(usage, "output_tokens")
     result = {
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
-        "total_tokens": _usage_int(usage, "total_tokens")
+        "total_tokens": usage_int(usage, "total_tokens")
         or prompt_tokens + completion_tokens,
     }
     input_details = usage.get("input_tokens_details")
     if isinstance(input_details, Mapping):
         result["prompt_tokens_details"] = {
-            "cached_tokens": _usage_int(input_details, "cached_tokens")
+            "cached_tokens": usage_int(input_details, "cached_tokens")
         }
     output_details = usage.get("output_tokens_details")
     if isinstance(output_details, Mapping):
         result["completion_tokens_details"] = {
-            "reasoning_tokens": _usage_int(output_details, "reasoning_tokens")
+            "reasoning_tokens": usage_int(output_details, "reasoning_tokens")
         }
     return result
 
@@ -172,7 +172,7 @@ async def responses_stream_to_chat_stream(
             yield _chat_stream_chunk(
                 state,
                 delta={
-                    "content": _required_string(
+                    "content": required_string(
                         payload.get("delta"),
                         "Responses output_text delta must be a string",
                         allow_empty=True,
@@ -183,7 +183,7 @@ async def responses_stream_to_chat_stream(
             yield _chat_stream_chunk(
                 state,
                 delta={
-                    "refusal": _required_string(
+                    "refusal": required_string(
                         payload.get("delta"),
                         "Responses refusal delta must be a string",
                         allow_empty=True,
@@ -202,7 +202,7 @@ async def responses_stream_to_chat_stream(
             expected_status = (
                 "completed" if event_type == "response.completed" else "incomplete"
             )
-            output = _validate_terminal_response(
+            output = validate_terminal_response(
                 response, expected_status=expected_status
             )
             has_tool_calls = bool(state.tool_indices) or _output_has_tool_calls(output)
@@ -220,7 +220,7 @@ async def responses_stream_to_chat_stream(
             return
         elif event_type in {"response.failed", "error"}:
             if isinstance(response, Mapping):
-                _raise_for_failed_response(response)
+                raise_for_failed_response(response)
             error = payload.get("error")
             message = error.get("message") if isinstance(error, Mapping) else None
             message = message or payload.get("message")
@@ -249,13 +249,13 @@ def _response_tool_start_chunk(
             "tool_calls": [
                 {
                     "index": tool_index,
-                    "id": _required_string(
+                    "id": required_string(
                         item.get("call_id"),
                         "Responses function_call must contain call_id",
                     ),
                     "type": "function",
                     "function": {
-                        "name": _required_string(
+                        "name": required_string(
                             item.get("name"),
                             "Responses function_call must contain name",
                         ),
@@ -282,7 +282,7 @@ def _response_tool_arguments_chunk(
                 {
                     "index": state.tool_indices[output_index],
                     "function": {
-                        "arguments": _required_string(
+                        "arguments": required_string(
                             payload.get("delta"),
                             "Responses function arguments delta must be a string",
                             allow_empty=True,

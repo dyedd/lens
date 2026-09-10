@@ -4,8 +4,8 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from ._responses import _decode_reasoning_item
-from ._validation import _required_string
+from .responses_common import decode_reasoning_item
+from .validation import required_string
 
 
 def anthropic_request_to_responses(body: dict[str, Any]) -> dict[str, Any]:
@@ -103,7 +103,7 @@ def _anthropic_message_to_responses(
         flush_parts()
         if block_type in {"thinking", "redacted_thinking"}:
             envelope = block.get("signature" if block_type == "thinking" else "data")
-            reasoning_item = _decode_reasoning_item(envelope)
+            reasoning_item = decode_reasoning_item(envelope)
             if reasoning_item is not None:
                 result.append(reasoning_item)
                 has_reasoning = True
@@ -114,10 +114,10 @@ def _anthropic_message_to_responses(
             result.append(
                 {
                     "type": "function_call",
-                    "call_id": _required_string(
+                    "call_id": required_string(
                         block.get("id"), "Anthropic tool_use must contain id"
                     ),
-                    "name": _required_string(
+                    "name": required_string(
                         block.get("name"), "Anthropic tool_use must contain name"
                     ),
                     "arguments": json.dumps(dict(tool_input), ensure_ascii=False),
@@ -127,7 +127,7 @@ def _anthropic_message_to_responses(
             result.append(
                 {
                     "type": "function_call_output",
-                    "call_id": _required_string(
+                    "call_id": required_string(
                         block.get("tool_use_id"),
                         "Anthropic tool_result must contain tool_use_id",
                     ),
@@ -152,7 +152,7 @@ def _anthropic_content_to_responses(value: list[Any]) -> list[dict[str, Any]]:
             result.append(
                 {
                     "type": "input_text",
-                    "text": _required_string(
+                    "text": required_string(
                         block.get("text"),
                         "Anthropic text blocks must contain text",
                         allow_empty=True,
@@ -173,15 +173,15 @@ def _anthropic_image_to_responses(source: Any) -> dict[str, Any]:
         raise ValueError("Anthropic images must contain a source object")
     source_type = source.get("type")
     if source_type == "url":
-        image_url = _required_string(
+        image_url = required_string(
             source.get("url"), "Anthropic URL images must contain url"
         )
     elif source_type == "base64":
-        media_type = _required_string(
+        media_type = required_string(
             source.get("media_type"),
             "Anthropic base64 images must contain media_type",
         )
-        data = _required_string(
+        data = required_string(
             source.get("data"), "Anthropic base64 images must contain data"
         )
         image_url = f"data:{media_type};base64,{data}"
@@ -204,17 +204,17 @@ def _anthropic_document_to_responses(
         return [
             {
                 "type": "input_file",
-                "file_url": _required_string(
+                "file_url": required_string(
                     source.get("url"), "Anthropic URL documents must contain url"
                 ),
             }
         ]
     if source_type == "base64":
-        media_type = _required_string(
+        media_type = required_string(
             source.get("media_type"),
             "Anthropic base64 documents must contain media_type",
         )
-        data = _required_string(
+        data = required_string(
             source.get("data"), "Anthropic base64 documents must contain data"
         )
         return [
@@ -228,7 +228,7 @@ def _anthropic_document_to_responses(
         return [
             {
                 "type": "input_text",
-                "text": _required_string(
+                "text": required_string(
                     source.get("data"),
                     "Anthropic text documents must contain data",
                     allow_empty=True,
@@ -290,7 +290,7 @@ def _anthropic_tools_to_responses(
             raise ValueError("Anthropic tools must contain objects")
         if tool.get("type") not in {None, "custom"}:
             continue
-        name = _required_string(
+        name = required_string(
             tool.get("name"), "Anthropic custom tools must contain name"
         )
         input_schema = tool.get("input_schema")
@@ -328,7 +328,7 @@ def _anthropic_tool_choice_to_responses(
     elif choice_type == "none":
         choice = "none"
     elif choice_type == "tool":
-        name = _required_string(
+        name = required_string(
             value.get("name"), "Anthropic tool_choice tool must contain name"
         )
         if name not in tool_names:

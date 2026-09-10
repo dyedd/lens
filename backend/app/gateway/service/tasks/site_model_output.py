@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from ....models.protocols import ProtocolKind
-from ..payload_serialization import _stringify_text_content
-from ..streaming.stream_parsing import _parse_sse_payloads
+from ..payload_serialization import stringify_text_content
+from ..streaming.types import parse_sse_payloads
 
 
 def extract_site_model_output(
@@ -34,7 +34,7 @@ def extract_site_model_stream_output(protocol: ProtocolKind, raw_content: str) -
         return ""
 
     parts: list[str] = []
-    for payload in _parse_sse_payloads(raw_content):
+    for payload in parse_sse_payloads(raw_content):
         choices = payload.get("choices")
         if not isinstance(choices, list):
             continue
@@ -44,7 +44,7 @@ def extract_site_model_stream_output(protocol: ProtocolKind, raw_content: str) -
             delta = choice.get("delta")
             if not isinstance(delta, dict):
                 continue
-            text = _stringify_text_content(delta.get("content"))
+            text = stringify_text_content(delta.get("content"))
             if text:
                 parts.append(text)
     return "".join(parts).strip()
@@ -60,7 +60,7 @@ def _extract_openai_chat_output(raw_payload: dict[str, Any]) -> str:
         message = choice.get("message")
         if not isinstance(message, dict):
             continue
-        text = _stringify_text_content(message.get("content")).strip()
+        text = stringify_text_content(message.get("content")).strip()
         if text:
             return text
     return ""

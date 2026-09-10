@@ -32,7 +32,7 @@ from ...persistence.settings_keys import (
     SETTING_LATEST_VERSION_URL,
     SETTING_VERSION_CHECK_AT,
 )
-from .app_state import _read_system_version, app_state, logger
+from .app_state import app_state, logger, read_system_version
 from .lifecycle import auth_scheme
 
 _LOGIN_FAILURE_LIMIT = 5
@@ -179,7 +179,7 @@ def _is_gateway_key_expired(gateway_key: GatewayApiKey) -> bool:
     return expires_at <= datetime.now(UTC)
 
 
-def _gateway_key_allows_model(
+def gateway_key_allows_model(
     gateway_key: GatewayApiKey, model_name: str | None
 ) -> bool:
     if not gateway_key.allowed_models:
@@ -218,7 +218,7 @@ async def get_app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
     """Return administrative application metadata and capabilities."""
     runtime = await app_state.settings_repo.get_runtime_settings()
     return AppInfo(
-        system_version=_read_system_version(),
+        system_version=read_system_version(),
         site_name=str(runtime["site_name"]),
         logo_url=str(runtime["site_logo_url"]),
         time_zone=str(runtime["time_zone"]),
@@ -227,7 +227,7 @@ async def get_app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
 
 async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResult:
     """Return the latest stored application update status."""
-    current_version = _read_system_version()
+    current_version = read_system_version()
 
     settings = await app_state.settings_repo.list_settings()
     settings_dict = {setting.key: setting.value for setting in settings}

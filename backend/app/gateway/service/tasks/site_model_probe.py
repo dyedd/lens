@@ -22,15 +22,15 @@ from ...upstream_request import (
     resolve_upstream_proxy_url,
 )
 from ..app_state import app_state
-from ..payload_serialization import _decode_content_bytes
-from ..routing_plan import _elapsed_ms, _gateway_timeout_scope
-from ..runtime_types import _GatewayTimeoutError, _RequestDeadline
+from ..payload_serialization import decode_content_bytes
+from ..routing_plan import elapsed_ms, gateway_timeout_scope
+from ..runtime_types import GatewayTimeoutError, RequestDeadline
 from ..upstream_support import (
-    _default_lens_user_agent,
-    _format_channel_error,
-    _format_http_response_error,
-    _format_transport_error,
-    _resolve_http_client,
+    default_lens_user_agent,
+    format_channel_error,
+    format_http_response_error,
+    format_transport_error,
+    resolve_http_client,
 )
 from .site_model_output import (
     extract_site_model_output,
@@ -154,21 +154,21 @@ async def _call_site_model_probe_channel(
         channel,
         body,
         credential_id=credential_id,
-        user_agent=_default_lens_user_agent(),
+        user_agent=default_lens_user_agent(),
         upstream_headers_config=runtime["upstream_headers_config"],
         model_group_headers=list(model_group_headers),
     )
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
-    client = _resolve_http_client(proxy_url)
+    client = resolve_http_client(proxy_url)
 
     started_at = perf_counter()
-    deadline = _RequestDeadline(
+    deadline = RequestDeadline(
         started_at=started_at,
         first_token_timeout_seconds=float(runtime["first_token_timeout_seconds"]),
         stream_idle_timeout_seconds=float(runtime["stream_idle_timeout_seconds"]),
     )
     try:
-        async with _gateway_timeout_scope(
+        async with gateway_timeout_scope(
             deadline.first_token_remaining_seconds(),
             timeout_message=deadline.timeout_message(kind="first_token"),
         ):
@@ -180,11 +180,11 @@ async def _call_site_model_probe_channel(
                 credential_id=credential_id,
                 started_at=started_at,
             )
-    except _GatewayTimeoutError as exc:
+    except GatewayTimeoutError as exc:
         return SiteModelTestResult(
             success=False,
             status_code=504,
-            latency_ms=_elapsed_ms(started_at),
+            latency_ms=elapsed_ms(started_at),
             model_name=model_name,
             credential_id=credential_id,
             error_message=str(exc),
@@ -207,7 +207,7 @@ async def _run_site_model_probe_request(
             headers=upstream.headers,
             json=upstream.json_body,
         )
-        latency_ms = _elapsed_ms(started_at)
+        latency_ms = elapsed_ms(started_at)
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -218,11 +218,11 @@ async def _run_site_model_probe_request(
                 latency_ms=latency_ms,
                 model_name=model_name,
                 credential_id=credential_id,
-                error_message=_format_http_response_error(exc.response),
+                error_message=format_http_response_error(exc.response),
             )
         content_type = (response.headers.get("content-type") or "").lower()
         if "text/event-stream" in content_type:
-            raw_content = _decode_content_bytes(response.content) or ""
+            raw_content = decode_content_bytes(response.content) or ""
             output_text = extract_site_model_stream_output(
                 channel.protocol, raw_content
             )
@@ -243,16 +243,16 @@ async def _run_site_model_probe_request(
         return SiteModelTestResult(
             success=False,
             status_code=502,
-            latency_ms=_elapsed_ms(started_at),
+            latency_ms=elapsed_ms(started_at),
             model_name=model_name,
             credential_id=credential_id,
-            error_message=_format_transport_error(exc, upstream.url),
+            error_message=format_transport_error(exc, upstream.url),
         )
     except ValueError as exc:
         return SiteModelTestResult(
             success=False,
             status_code=502,
-            latency_ms=_elapsed_ms(started_at),
+            latency_ms=elapsed_ms(started_at),
             model_name=model_name,
             credential_id=credential_id,
             error_message=f"Invalid upstream response: {exc}",
@@ -335,7 +335,7 @@ def _apply_site_model_probe_param_override(
             latency_ms=0,
             model_name=payload.model_name,
             credential_id=payload.credential.id,
-            error_message=_format_channel_error(str(exc)),
+            error_message=format_channel_error(str(exc)),
         )
     if payload.protocol in {
         ProtocolKind.OPENAI_EMBEDDING,

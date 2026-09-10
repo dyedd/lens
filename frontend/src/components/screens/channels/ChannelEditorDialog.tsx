@@ -21,7 +21,7 @@ import type {
   Locale,
   TestableModelOption,
 } from "./channelTypes";
-import type { AggregatedModel } from "./useAggregatedModels";
+import type { AggregatedModel } from "./useChannelQueries";
 
 type ChannelEditorDialogProps = {
   isDialogOpen: boolean;

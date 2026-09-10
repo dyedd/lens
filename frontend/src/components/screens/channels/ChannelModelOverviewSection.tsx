@@ -19,7 +19,7 @@ import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Locale, TestableModelOption } from "./channelTypes";
 import { SiteModelAggregateView } from "./SiteModelAggregateView";
-import type { AggregatedModel } from "./useAggregatedModels";
+import type { AggregatedModel } from "./useChannelQueries";
 
 type Props = {
   locale: Locale;

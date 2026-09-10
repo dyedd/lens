@@ -1,14 +1,28 @@
+import { Plus, RefreshCcw } from "lucide-react";
+import { type Dispatch, type SetStateAction, useState } from "react";
+import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
+import { Button } from "@/components/ui/Button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
+import type { ModelGroup } from "@/lib/api/groups";
 import { useI18n } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
-import { GroupsHeaderActions } from "./groups/GroupsHeaderActions";
 import { GroupsOverview } from "./groups/GroupsOverview";
+import {
+  type CandidateSearchMode,
+  EMPTY_FORM,
+  type FormState,
+  type MemberStatusFilter,
+} from "./groups/groupTypes";
+import { modelGroupToForm } from "./groups/groupView";
 import { useGroupCandidates } from "./groups/useGroupCandidates";
 import { useGroupCommands } from "./groups/useGroupCommands";
-import { useGroupEditorState } from "./groups/useGroupEditorState";
-import { useGroupFilters } from "./groups/useGroupFilters";
 import { useGroupMembers } from "./groups/useGroupMembers";
 import { useGroupModelTest } from "./groups/useGroupModelTest";
-import { useGroupsQueries } from "./groups/useGroupsQueries";
+import { useGroupFilters, useGroupsQueries } from "./groups/useGroupsQueries";
 
 const GroupEditorDialog = lazyComponent(() =>
   import("./groups/ModelGroupDialogs").then(
@@ -25,6 +39,97 @@ const BatchModelTestDialog = lazyComponent(() =>
     (module) => module.BatchModelTestDialog,
   ),
 );
+
+function useGroupEditorState() {
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpenState] = useState(false);
+  const [candidateSearchMode, setCandidateSearchMode] =
+    useState<CandidateSearchMode>("contains");
+  const [candidateSearchValue, setCandidateSearchValue] = useState("");
+  const [candidateSearchUsesGroupName, setCandidateSearchUsesGroupName] =
+    useState(true);
+  const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
+  const [memberStatusFilter, setMemberStatusFilter] =
+    useState<MemberStatusFilter>("all");
+  const candidateSearch =
+    candidateSearchMode === "contains" && candidateSearchUsesGroupName
+      ? form.name
+      : candidateSearchValue;
+  const setDialogOpen: Dispatch<SetStateAction<boolean>> = (value) => {
+    const isOpen = typeof value === "function" ? value(dialogOpen) : value;
+    if (!isOpen) {
+      setCandidateSearchValue("");
+      setCandidateSearchMode("contains");
+      setCandidateSearchUsesGroupName(true);
+      setExpandedChannels([]);
+    }
+    setDialogOpenState(isOpen);
+  };
+  function openCreate() {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setCandidateSearchValue("");
+    setCandidateSearchMode("contains");
+    setCandidateSearchUsesGroupName(true);
+    setDialogOpen(true);
+  }
+  function openEdit(group: ModelGroup) {
+    const saved = Boolean(
+      group.sync_filter_mode && group.sync_filter_query.trim(),
+    );
+    setEditingId(group.id);
+    setForm(modelGroupToForm(group));
+    setCandidateSearchValue(saved ? group.sync_filter_query : group.name);
+    setCandidateSearchMode(
+      group.sync_filter_mode === "regex" ? "regex" : "contains",
+    );
+    setCandidateSearchUsesGroupName(
+      !saved && group.sync_filter_mode !== "regex",
+    );
+    setDialogOpen(true);
+  }
+  function changeCandidateSearchMode(mode: CandidateSearchMode) {
+    setCandidateSearchMode(mode);
+    if (mode === "contains") {
+      setCandidateSearchValue(form.name);
+      setCandidateSearchUsesGroupName(true);
+    } else setCandidateSearchUsesGroupName(false);
+  }
+  function changeCandidateSearch(value: string) {
+    setCandidateSearchValue(value);
+    setCandidateSearchUsesGroupName(false);
+  }
+  function changeRouteTarget(routeGroupId: string) {
+    setForm((current) => ({
+      ...current,
+      route_group_id: routeGroupId,
+      sync_filter_mode: routeGroupId ? "" : current.sync_filter_mode,
+      sync_filter_query: routeGroupId ? "" : current.sync_filter_query,
+      fallback_group_ids: routeGroupId ? [] : current.fallback_group_ids,
+    }));
+    setExpandedChannels([]);
+  }
+  return {
+    candidateSearch,
+    candidateSearchMode,
+    changeCandidateSearch,
+    changeCandidateSearchMode,
+    changeRouteTarget,
+    dialogOpen,
+    editingId,
+    expandedChannels,
+    form,
+    memberStatusFilter,
+    openCreate,
+    openEdit,
+    setDialogOpen,
+    setEditingId,
+    setExpandedChannels,
+    setForm,
+    setMemberStatusFilter,
+  };
+}
 
 /** Render the model group management screen. */
 export function GroupsScreen() {
@@ -189,5 +294,71 @@ export function GroupsScreen() {
         ) : null}
       </section>
     </>
+  );
+}
+
+/** Render model group creation and price synchronization actions. */
+function GroupsHeaderActions({
+  locale,
+  openCreate,
+  syncingPrices,
+  syncPrices,
+}: {
+  locale: "zh-CN" | "en-US";
+  openCreate: () => void;
+  syncingPrices: boolean;
+  syncPrices: () => void;
+}) {
+  const syncPricesLabel = syncingPrices
+    ? locale === "zh-CN"
+      ? "同步中..."
+      : "Syncing..."
+    : locale === "zh-CN"
+      ? "同步价格"
+      : "Sync prices";
+  const createGroupLabel =
+    locale === "zh-CN" ? "新增模型组" : "New model group";
+
+  return (
+    <DashboardHeaderActions>
+      <div className="flex items-center justify-end gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={syncPricesLabel}
+              onClick={() => void syncPrices()}
+              disabled={syncingPrices}
+            >
+              <RefreshCcw
+                data-icon="inline-start"
+                className={syncingPrices ? "animate-spin" : ""}
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            {syncPricesLabel}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon-sm"
+              type="button"
+              variant="ghost"
+              aria-label={createGroupLabel}
+              onClick={openCreate}
+            >
+              <Plus />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            {createGroupLabel}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </DashboardHeaderActions>
   );
 }

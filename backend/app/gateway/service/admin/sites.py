@@ -35,9 +35,9 @@ from ....models.sites import (
 )
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..tasks.model_discovery import _fetch_upstream_models, filter_model_names
+from ..tasks.model_discovery import fetch_upstream_models, filter_model_names
 from ..tasks.site_model_probe import run_site_model_probe
-from ..upstream_support import _format_channel_error
+from ..upstream_support import format_channel_error
 
 
 async def list_sites(
@@ -275,10 +275,10 @@ async def fetch_site_models(
         )
         try:
             model_names = filter_model_names(
-                await _fetch_upstream_models(channel), payload.match_regex
+                await fetch_upstream_models(channel), payload.match_regex
             )
         except HTTPException as exc:
-            errors.append(_format_channel_error(exc.detail))
+            errors.append(format_channel_error(exc.detail))
             continue
 
         for model_name in model_names:

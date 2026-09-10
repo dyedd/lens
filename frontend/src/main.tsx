@@ -102,7 +102,7 @@ const router = createBrowserRouter([
           {
             path: "settings",
             lazy: lazyScreen(
-              () => import("@/components/screens/SettingsScreen"),
+              () => import("@/components/settings/SettingsScreen"),
               (module) => module.SettingsScreen,
             ),
           },

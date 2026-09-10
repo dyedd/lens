@@ -23,10 +23,10 @@ from ...upstream_request import (
 )
 from ..app_state import AppState
 from ..upstream_support import (
-    _default_lens_user_agent,
-    _format_http_response_error,
+    default_lens_user_agent,
+    format_http_response_error,
 )
-from .model_sync import _channel_for_credential
+from .model_sync import channel_for_credential
 
 
 class CredentialRateSyncError(Exception):
@@ -113,10 +113,10 @@ def _rate_channel(
     if protocol_config is None or credential.id not in protocol_config.credential_ids:
         raise CredentialRateSyncError("Credential rate channel is no longer available")
 
-    for channel in state.channel_store._flatten_site(site):
+    for channel in state.channel_store.flatten_site(site):
         if protocol_config_id_from_runtime_channel_id(channel.id) != protocol_config_id:
             continue
-        target = _channel_for_credential(channel, credential.id)
+        target = channel_for_credential(channel, credential.id)
         if target is not None and target.status == ChannelStatus.ENABLED:
             return target
     raise CredentialRateSyncError("Credential rate channel is disabled or unavailable")
@@ -147,7 +147,7 @@ async def _fetch_credential_rate(
     headers = build_upstream_headers(
         default_headers,
         channel.headers,
-        user_agent=_default_lens_user_agent(),
+        user_agent=default_lens_user_agent(),
         upstream_headers_config=runtime["upstream_headers_config"],
         context=request_rule_context(
             endpoint, model_name="", protocol=channel.protocol
@@ -163,7 +163,7 @@ async def _fetch_credential_rate(
             return _parse_sub2api_rate(payload)
         return _parse_newapi_rate(payload, credential.rate_group, synced_at)
     except httpx.HTTPStatusError as exc:
-        detail = _format_http_response_error(exc.response)
+        detail = format_http_response_error(exc.response)
         raise CredentialRateSyncError(
             f"Credential rate source returned HTTP {exc.response.status_code}: {detail}"
         ) from exc

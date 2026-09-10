@@ -11,7 +11,7 @@ import {
   groupPickerModelsByName,
   hasPickerModelProtocolOverride,
   resolvePickerModelProtocols,
-} from "./channelModelUtils";
+} from "./channelModels";
 import type { Locale, PickerModelItem } from "./channelTypes";
 import { ProtocolMultiSelect } from "./ProtocolMultiSelect";
 

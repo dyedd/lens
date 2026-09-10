@@ -61,7 +61,7 @@ class CronjobRunner:
         await self._store.ensure_cronjobs(self._specs)
         records = await self._store.list_records(self._specs)
         return [
-            self._store.to_item(spec, records[spec.id])
+            self._store.build_cronjob_item(spec, records[spec.id])
             for spec in self._specs
             if spec.id in records
         ]
@@ -89,7 +89,7 @@ class CronjobRunner:
             weekdays=weekdays,
             time_zone=await self._time_zone_provider(),
         )
-        return self._store.to_item(spec, record)
+        return self._store.build_cronjob_item(spec, record)
 
     async def run_cronjob_now(self, task_id: str) -> CronjobItem:
         """Run a cron job immediately and return its resulting state."""
@@ -164,8 +164,8 @@ class CronjobRunner:
 
         if finished_record is None:
             record = await self._get_or_ensure_record(task_id)
-            return self._store.to_item(spec, record)
-        return self._store.to_item(spec, finished_record)
+            return self._store.build_cronjob_item(spec, record)
+        return self._store.build_cronjob_item(spec, finished_record)
 
     async def _get_or_ensure_record(self, task_id: str) -> CronjobRecord:
         record = await self._store.find_record(task_id)

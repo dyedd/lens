@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ._validation import _required_string
+from .validation import required_string
 
 
 def responses_request_to_chat(body: dict[str, Any]) -> dict[str, Any]:
@@ -81,12 +81,12 @@ def _responses_input_to_chat_messages(
 
 def _responses_function_call_to_chat(item: Mapping[str, Any]) -> dict[str, Any]:
     return _build_chat_tool_call(
-        _required_string(
+        required_string(
             item.get("call_id"),
             "Responses function_call must contain call_id",
         ),
-        _required_string(item.get("name"), "Responses function_call must contain name"),
-        _required_string(
+        required_string(item.get("name"), "Responses function_call must contain name"),
+        required_string(
             item.get("arguments"),
             "Responses function_call must contain arguments",
             allow_empty=True,
@@ -99,7 +99,7 @@ def _responses_function_output_to_chat(
 ) -> dict[str, Any]:
     return {
         "role": "tool",
-        "tool_call_id": _required_string(
+        "tool_call_id": required_string(
             item.get("call_id"),
             "Responses function_call_output must contain call_id",
         ),
@@ -181,7 +181,7 @@ def _responses_content_to_chat(value: Any) -> Any:
         block_type = block.get("type")
         if block_type in {"input_text", "output_text", "text"}:
             text.append(
-                _required_string(
+                required_string(
                     block.get("text"),
                     "Responses text parts must contain text",
                     allow_empty=True,
@@ -205,7 +205,7 @@ def _responses_image_to_chat(block: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "type": "image_url",
         "image_url": {
-            "url": _required_string(
+            "url": required_string(
                 image_url,
                 "Responses input_image parts must contain image_url",
             )
@@ -234,7 +234,7 @@ def _responses_tools_to_chat(value: Any) -> list[dict[str, Any]]:
         if tool.get("type") != "function":
             raise ValueError("Unsupported Responses tool type")
         function: dict[str, Any] = {
-            "name": _required_string(
+            "name": required_string(
                 tool.get("name"),
                 "Responses function tools must contain name",
             )
@@ -254,7 +254,7 @@ def _responses_tool_choice_to_chat(value: Any) -> Any:
     return {
         "type": "function",
         "function": {
-            "name": _required_string(
+            "name": required_string(
                 value.get("name"),
                 "Responses function tool_choice must contain name",
             )
@@ -281,7 +281,7 @@ def _responses_text_format_to_chat(value: Any) -> dict[str, Any] | None:
     if format_type != "json_schema":
         return None
     json_schema: dict[str, Any] = {
-        "name": _required_string(
+        "name": required_string(
             format_value.get("name"),
             "Responses json_schema format must contain name",
         )

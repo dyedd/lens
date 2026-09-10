@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/classNames";
 import { titleForLocale } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
-import { type JsonValue, tryParseJsonValue } from "./requestPayloadParsing";
+import { type JsonValue, tryParseJsonValue } from "./requestView";
 
 const JsonView = lazyComponent(() =>
   import("@uiw/react-json-view").then((module) => module.default),

@@ -8,13 +8,13 @@ import {
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api/client";
 import type { ModelGroup, RoutingStrategy } from "@/lib/api/groups";
-import { formToModelGroupPayload, modelGroupToForm } from "./groupForm";
-import type { GroupCardDragging } from "./groupOverviewTypes";
-import { modelGroupItemKey } from "./groupSearch";
+import type { GroupCardDragging } from "./groupTypes";
 import { EMPTY_FORM, type FormState, type GroupRow } from "./groupTypes";
+import { formToModelGroupPayload, modelGroupToForm } from "./groupView";
 import {
   isGroupEnabled,
   modelGroupErrorMessage,
+  modelGroupItemKey,
   moveItems,
 } from "./modelGroupFormatting";
 

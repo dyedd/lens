@@ -16,12 +16,10 @@ import { ModelGroupTargetSelector } from "./ModelGroupTargetSelector";
 import {
   canSubmitModelGroupEnsureItem,
   modelGroupEnsureResultKey,
-  selectableModelGroupsForEnsureItem,
-} from "./modelGroupEnsure";
-import {
   modelGroupEnsureStatusLabel,
   modelGroupEnsureStatusVariant,
-} from "./modelGroupEnsureDialogUtils";
+  selectableModelGroupsForEnsureItem,
+} from "./modelGroupEnsure";
 
 type Props = {
   items: ModelGroupEnsureResultItem[];

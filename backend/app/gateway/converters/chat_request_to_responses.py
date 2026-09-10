@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ._validation import _required_string
+from .validation import required_string
 
 
 def chat_request_to_responses(body: dict[str, Any]) -> dict[str, Any]:
@@ -60,7 +60,7 @@ def _chat_messages_to_responses_input(messages: list[Any]) -> list[dict[str, Any
             result.append(
                 {
                     "type": "function_call_output",
-                    "call_id": _required_string(
+                    "call_id": required_string(
                         message.get("tool_call_id"),
                         "Chat tool messages must contain tool_call_id",
                     ),
@@ -97,7 +97,7 @@ def _chat_content_to_responses(content: Any) -> Any:
             parts.append(
                 {
                     "type": "input_text",
-                    "text": _required_string(
+                    "text": required_string(
                         part.get("text"),
                         "Chat text parts must contain text",
                         allow_empty=True,
@@ -110,7 +110,7 @@ def _chat_content_to_responses(content: Any) -> Any:
             if isinstance(image_url, dict):
                 detail = image_url.get("detail")
                 image_url = image_url.get("url")
-            image_url = _required_string(
+            image_url = required_string(
                 image_url, "Chat image_url parts must contain a URL"
             )
             image_part: dict[str, Any] = {
@@ -138,7 +138,7 @@ def _chat_tool_output(content: Any) -> str:
             raise ValueError("Chat tool message content must contain objects")
         if part.get("type") == "text":
             text_parts.append(
-                _required_string(
+                required_string(
                     part.get("text"),
                     "Chat tool text parts must contain text",
                     allow_empty=True,
@@ -164,14 +164,14 @@ def _chat_tool_calls_to_responses(tool_calls: list[Any]) -> list[dict[str, Any]]
         result.append(
             {
                 "type": "function_call",
-                "call_id": _required_string(
+                "call_id": required_string(
                     tool_call.get("id"), "Chat function tool calls must contain id"
                 ),
-                "name": _required_string(
+                "name": required_string(
                     function.get("name"),
                     "Chat function tool calls must contain function.name",
                 ),
-                "arguments": _required_string(
+                "arguments": required_string(
                     function.get("arguments"),
                     "Chat function tool calls must contain function.arguments",
                     allow_empty=True,
@@ -197,7 +197,7 @@ def _chat_tools_to_responses(value: Any) -> list[dict[str, Any]]:
             raise ValueError("Chat function tools must contain a function object")
         converted: dict[str, Any] = {
             "type": "function",
-            "name": _required_string(
+            "name": required_string(
                 function.get("name"), "Chat function tools must contain name"
             ),
         }
@@ -220,7 +220,7 @@ def _chat_tool_choice_to_responses(value: Any) -> Any:
         raise ValueError("Chat function tool_choice must contain a function object")
     return {
         "type": "function",
-        "name": _required_string(
+        "name": required_string(
             function.get("name"), "Chat function tool_choice must contain name"
         ),
     }
@@ -235,7 +235,7 @@ def _chat_text_config_to_responses(body: Mapping[str, Any]) -> dict[str, Any]:
             json_schema = response_format.get("json_schema")
             if not isinstance(json_schema, Mapping):
                 raise ValueError("Chat json_schema response_format is invalid")
-            name = _required_string(
+            name = required_string(
                 json_schema.get("name"),
                 "Chat json_schema response_format must contain name",
             )

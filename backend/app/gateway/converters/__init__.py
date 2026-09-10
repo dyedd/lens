@@ -12,10 +12,10 @@ from typing import Any
 
 from ...core.protocol_reachability import can_reach_protocol
 from ...models.protocols import ProtocolKind
-from ._chat_stream import repair_chat_tool_call_stream
 from .anthropic_request_to_chat import anthropic_request_to_chat
 from .anthropic_to_responses import anthropic_request_to_responses
 from .chat_request_to_responses import chat_request_to_responses
+from .chat_stream import repair_chat_tool_call_stream
 from .chat_to_anthropic import (
     chat_response_to_anthropic,
     chat_stream_to_anthropic_stream,

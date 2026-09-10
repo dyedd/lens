@@ -10,19 +10,17 @@ import {
   activeBaseUrlValue,
   classifyModelQueryInput,
   formHeaders,
-} from "./channelFormUtils";
-import { fallbackCredentialName } from "./channelLabels";
+} from "./channelForm";
 import {
   activeSelectedCredentialIds,
   buildModels,
   canRunModelAction,
   existingPickerModelKeys,
-} from "./channelModelPickerUtils";
-import {
+  fallbackCredentialName,
   genericModelKey,
   groupPickerModels,
   resolvePickerModelProtocols,
-} from "./channelModelUtils";
+} from "./channelModels";
 import type {
   FormModel,
   FormProtocolConfig,

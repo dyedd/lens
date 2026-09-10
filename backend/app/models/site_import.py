@@ -7,8 +7,8 @@ from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
 from .sites import (
     SiteConfig,
     SiteTags,
-    _canonicalize_text_list,
-    _require_non_empty_text,
+    canonicalize_text_list,
+    require_non_empty_text,
 )
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import StrictBaseModel
@@ -20,7 +20,7 @@ class SiteImportBaseUrlInput(StrictBaseModel):
     name: str = ""
     enabled: bool = True
 
-    _require_non_empty_ref = field_validator("ref")(_require_non_empty_text)
+    _require_non_empty_ref = field_validator("ref")(require_non_empty_text)
     _canonicalize_url = field_validator("url", mode="before")(canonicalize_base_url)
 
 
@@ -30,7 +30,7 @@ class SiteImportCredentialInput(StrictBaseModel):
     api_key: str = Field(min_length=1)
     enabled: bool = True
 
-    _require_non_empty_ref = field_validator("ref")(_require_non_empty_text)
+    _require_non_empty_ref = field_validator("ref")(require_non_empty_text)
 
 
 class SiteImportModelInput(StrictBaseModel):
@@ -53,10 +53,10 @@ class SiteImportProtocolInput(StrictBaseModel):
     models: list[SiteImportModelInput] = Field(default_factory=list)
 
     _validate_identifiers = field_validator("name", "base_url_ref")(
-        _require_non_empty_text
+        require_non_empty_text
     )
     _canonicalize_credential_refs = field_validator("credential_refs")(
-        _canonicalize_text_list
+        canonicalize_text_list
     )
 
 

@@ -88,7 +88,7 @@ def test_model_group_model_test_uses_persisted_image_credential(
     import app.gateway.service.tasks.site_model_probe as probe
 
     monkeypatch.setattr(probe, "app_state", app_state)
-    monkeypatch.setattr(probe, "_resolve_http_client", lambda _proxy: upstream_client)
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream_client)
     request_payload = {
         "channel_id": channel_id,
         "credential_id": "cred-1",

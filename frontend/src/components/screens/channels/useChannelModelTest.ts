@@ -1,22 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useBatchModelTestSession } from "@/components/model-test/batchModelTestSession";
 import {
   selectedModelTestProtocol,
   useModelTestPrompts,
 } from "@/components/model-test/modelTestSession";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
+
 import type {
   SiteModelTestPayload,
   SiteModelTestResult,
 } from "@/lib/api/sites";
 import { paramOverrideDraftToRules } from "@/lib/upstreamRules";
-import { activeBaseUrlValue, formHeaders } from "./channelFormUtils";
-import { credentialLabel, fallbackCredentialName } from "./channelLabels";
+import { activeBaseUrlValue, formHeaders } from "./channelForm";
 import {
+  credentialLabel,
+  fallbackCredentialName,
   modelSupportedProtocols,
   protocolConfigModelKey,
-} from "./channelModelUtils";
+} from "./channelModels";
 import type {
   FormState,
   Locale,
@@ -270,4 +273,40 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     setModelTestProtocol,
     testingModel,
   };
+}
+
+type PayloadBuilder = (
+  target: ModelTestTarget,
+  protocol: ProtocolKind | null,
+  prompt: string,
+) => SiteModelTestPayload | null;
+
+/** Adapts editable channel models to the shared batch-test session. */
+export function useBatchModelTest({
+  locale,
+  prompts,
+  optionByKey,
+  buildPayload,
+}: {
+  locale: Locale;
+  prompts: string[];
+  optionByKey: Map<string, TestableModelOption>;
+  buildPayload: PayloadBuilder;
+}) {
+  return useBatchModelTestSession({
+    locale,
+    prompts,
+    optionByKey,
+    prepareRequest: (target, protocol, prompt) => {
+      const payload = buildPayload(target, protocol, prompt);
+      if (!payload) return null;
+      return {
+        path: "/admin/site-model-tests",
+        payload,
+        modelName: payload.model_name,
+        credentialName: payload.credential.name,
+        protocol: payload.protocol,
+      };
+    },
+  });
 }

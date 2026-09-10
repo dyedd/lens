@@ -7,10 +7,11 @@ from time import perf_counter
 from typing import Any, Literal
 
 from fastapi import HTTPException, Response
+from fastapi.responses import JSONResponse
 
 from ...models.model_groups import ModelGroup
 from ...models.protocols import RoutingStrategy
-from ..router import RouteTarget
+from ..router import RouteSelection, RouteTarget
 from ..router.cooldown import ErrorCategory
 
 _STREAM_CONTENT_CAPTURE_LIMIT_BYTES = 1_000_000
@@ -22,7 +23,7 @@ def _new_incremental_utf8_decoder() -> codecs.IncrementalDecoder:
     return codecs.getincrementaldecoder("utf-8")(errors="replace")
 
 
-def _append_error_sample(errors: list[str] | None, message: str) -> None:
+def append_error_sample(errors: list[str] | None, message: str) -> None:
     """Deduplicated, capped append. Shared by parse errors and stream errors."""
     if errors is None or not message or message in errors:
         return
@@ -45,6 +46,13 @@ class RoutingPlan:
     cursor_key: str | None = None
     parsed_model: Any | None = None
     fallback_group_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class RouteResolution:
+    plan: RoutingPlan | None
+    selection: RouteSelection | None
+    error: JSONResponse | None
 
 
 @dataclass(slots=True)
@@ -84,7 +92,7 @@ class AttemptLog:
 
 
 @dataclass(frozen=True, slots=True)
-class _RequestDeadline:
+class RequestDeadline:
     started_at: float
     first_token_timeout_seconds: float
     stream_idle_timeout_seconds: float
@@ -127,7 +135,7 @@ class _RequestDeadline:
         return f"{timeout_seconds:.3f}".rstrip("0").rstrip(".")
 
 
-class _GatewayTimeoutError(TimeoutError):
+class GatewayTimeoutError(TimeoutError):
     """Raised only when a Lens-managed gateway timeout expires."""
 
 
@@ -157,7 +165,7 @@ class UpstreamRequestError(HTTPException):
         self.request_content = request_content
 
 
-def _attempt_logs_to_dicts(attempts: list[AttemptLog]) -> list[dict[str, Any]]:
+def attempt_logs_to_dicts(attempts: list[AttemptLog]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for attempt in attempts:
         item = {
@@ -180,7 +188,7 @@ def _attempt_logs_to_dicts(attempts: list[AttemptLog]) -> list[dict[str, Any]]:
 @dataclass(slots=True)
 class StreamCapture:
     capture_body: bool
-    deadline: _RequestDeadline
+    deadline: RequestDeadline
     has_seen_first_chunk: bool = False
     chat_expected_choices: int = 1
     chat_finished_choices: set[int] = field(default_factory=set)
@@ -224,7 +232,7 @@ class StreamCapture:
     )
 
 
-def _capture_stream_content(
+def capture_stream_content(
     capture: StreamCapture, text: str, *, client_response: bool = False
 ) -> None:
     if not capture.capture_body or not text:
@@ -260,7 +268,7 @@ def _capture_stream_content(
         capture.is_response_content_truncated = is_truncated
 
 
-def _record_stream_error(
+def record_stream_error(
     capture: StreamCapture,
     message: str,
     *,
@@ -277,8 +285,8 @@ def _record_stream_error(
         capture.error_cooldown_seconds = cooldown_seconds
     if skip_route_failure:
         capture.skip_route_failure = True
-    _append_error_sample(capture.errors, message)
+    append_error_sample(capture.errors, message)
 
 
-def _record_stream_parse_error(capture: StreamCapture, message: str) -> None:
-    _append_error_sample(capture.parse_errors, message)
+def record_stream_parse_error(capture: StreamCapture, message: str) -> None:
+    append_error_sample(capture.parse_errors, message)

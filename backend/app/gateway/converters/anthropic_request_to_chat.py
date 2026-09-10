@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._validation import _required_string
+from .validation import required_string
 
 
 def anthropic_request_to_chat(
@@ -53,7 +53,7 @@ def _anthropic_system_to_chat_messages(value: Any) -> list[dict[str, Any]]:
         if block.get("type") != "text":
             raise ValueError("Unsupported Anthropic system block type")
         text_parts.append(
-            _required_string(
+            required_string(
                 block.get("text"),
                 "Anthropic system text blocks must contain text",
                 allow_empty=True,
@@ -116,7 +116,7 @@ def _collect_anthropic_block(
     block_type = block.get("type")
     if block_type == "text":
         parts.text.append(
-            _required_string(
+            required_string(
                 block.get("text"),
                 "Anthropic text blocks must contain text",
                 allow_empty=True,
@@ -125,7 +125,7 @@ def _collect_anthropic_block(
     elif block_type == "thinking":
         if role == "assistant" and preserve_thinking:
             parts.thinking.append(
-                _required_string(
+                required_string(
                     block.get("thinking"),
                     "Anthropic thinking blocks must contain thinking",
                     allow_empty=True,
@@ -170,8 +170,8 @@ def _anthropic_tool_use_to_chat(block: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(tool_input, Mapping):
         raise ValueError("Anthropic tool_use input must be an object")
     return _build_chat_tool_call(
-        _required_string(block.get("id"), "Anthropic tool_use must contain id"),
-        _required_string(block.get("name"), "Anthropic tool_use must contain name"),
+        required_string(block.get("id"), "Anthropic tool_use must contain id"),
+        required_string(block.get("name"), "Anthropic tool_use must contain name"),
         json.dumps(dict(tool_input), ensure_ascii=False),
     )
 
@@ -179,7 +179,7 @@ def _anthropic_tool_use_to_chat(block: Mapping[str, Any]) -> dict[str, Any]:
 def _anthropic_tool_result_to_chat(block: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "role": "tool",
-        "tool_call_id": _required_string(
+        "tool_call_id": required_string(
             block.get("tool_use_id"),
             "Anthropic tool_result must contain tool_use_id",
         ),
@@ -212,7 +212,7 @@ def _collect_rich_content_part(
     block_type = block.get("type")
     if block_type == "text":
         text.append(
-            _required_string(
+            required_string(
                 block.get("text"),
                 "Anthropic text blocks must contain text",
                 allow_empty=True,
@@ -233,16 +233,16 @@ def _anthropic_image_to_chat(source: Any) -> dict[str, Any]:
         raise ValueError("Anthropic images must contain a source object")
     source_type = source.get("type")
     if source_type == "url":
-        url = _required_string(
+        url = required_string(
             source.get("url"),
             "Anthropic URL images must contain url",
         )
     elif source_type == "base64":
-        media_type = _required_string(
+        media_type = required_string(
             source.get("media_type"),
             "Anthropic base64 images must contain media_type",
         )
-        data = _required_string(
+        data = required_string(
             source.get("data"),
             "Anthropic base64 images must contain data",
         )
@@ -267,7 +267,7 @@ def _anthropic_document_to_chat(
             {
                 "type": "file",
                 "file": {
-                    "file_url": _required_string(
+                    "file_url": required_string(
                         source.get("url"),
                         "Anthropic URL documents must contain url",
                     ),
@@ -276,11 +276,11 @@ def _anthropic_document_to_chat(
             }
         ]
     if source_type == "base64":
-        media_type = _required_string(
+        media_type = required_string(
             source.get("media_type"),
             "Anthropic base64 documents must contain media_type",
         )
-        data = _required_string(
+        data = required_string(
             source.get("data"),
             "Anthropic base64 documents must contain data",
         )
@@ -295,7 +295,7 @@ def _anthropic_document_to_chat(
         ]
     if source_type == "text":
         return [
-            _required_string(
+            required_string(
                 source.get("data"),
                 "Anthropic text documents must contain data",
                 allow_empty=True,
@@ -331,7 +331,7 @@ def _anthropic_tools_to_chat(value: Any) -> list[dict[str, Any]]:
             {
                 "type": "function",
                 "function": {
-                    "name": _required_string(
+                    "name": required_string(
                         tool.get("name"),
                         "Anthropic tools must contain name",
                     ),
@@ -357,7 +357,7 @@ def _anthropic_tool_choice_to_chat(value: Any) -> Any:
         return {
             "type": "function",
             "function": {
-                "name": _required_string(
+                "name": required_string(
                     value.get("name"),
                     "Anthropic tool_choice tool must contain name",
                 )

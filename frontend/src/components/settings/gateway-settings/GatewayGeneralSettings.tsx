@@ -1,4 +1,4 @@
-import { SettingsHint } from "@/components/screens/settings/SettingsSectionCard";
+import { SettingsHint } from "@/components/settings/SettingsSectionCard";
 import {
   Field,
   FieldContent,

@@ -8,9 +8,11 @@ import type {
   ModelGroupItem,
   ModelGroupModelTestPayload,
 } from "@/lib/api/groups";
-import { modelGroupItemKey } from "./groupSearch";
 import type { GroupRow } from "./groupTypes";
-import { credentialDisplayLabel } from "./modelGroupFormatting";
+import {
+  credentialDisplayLabel,
+  modelGroupItemKey,
+} from "./modelGroupFormatting";
 
 type TestTarget = {
   groupId: string;

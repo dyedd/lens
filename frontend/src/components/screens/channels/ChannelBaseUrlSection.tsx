@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
-import { baseUrlIndexLabel } from "./channelLabels";
+import { baseUrlIndexLabel } from "./channelModels";
 import type { FormBaseUrl, Locale } from "./channelTypes";
 
 type Props = {

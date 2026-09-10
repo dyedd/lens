@@ -150,7 +150,7 @@ async def handle_operational_error(
     return build_database_error_response(exc, request)
 
 
-def _apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
+def apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
     app_state.router.configure(
         health_scoring_enabled=bool(runtime["health_scoring_enabled"]),
         health_window_seconds=int(runtime["health_window_seconds"]),
@@ -204,7 +204,7 @@ async def dynamic_cors_middleware(
     response = await call_next(request)
     try:
         runtime = await app_state.settings_repo.get_runtime_settings()
-        _apply_router_runtime_settings(runtime)
+        apply_router_runtime_settings(runtime)
     except OperationalError as exc:
         return build_database_error_response(exc, request)
     allow_origins = runtime["cors_allow_origins"]
@@ -223,7 +223,7 @@ async def dynamic_cors_middleware(
 async def _cors_preflight_response(request: Request) -> Response:
     """Return a preflight response using the configured allowed origins."""
     runtime = await app_state.settings_repo.get_runtime_settings()
-    _apply_router_runtime_settings(runtime)
+    apply_router_runtime_settings(runtime)
     allow_origins = runtime["cors_allow_origins"]
     origin = request.headers.get("origin", "")
     headers = {

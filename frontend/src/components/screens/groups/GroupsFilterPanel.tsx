@@ -1,5 +1,4 @@
 import { Filter } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
 import { Button } from "@/components/ui/Button";
 import {
   Field,
@@ -25,9 +24,9 @@ interface GroupsFilterPanelProps {
   strategyFilter: "all" | RoutingStrategy;
   sortBy: GroupSort;
   activeFilterCount: number;
-  setSearch: Dispatch<SetStateAction<string>>;
-  setStrategyFilter: Dispatch<SetStateAction<"all" | RoutingStrategy>>;
-  setSortBy: Dispatch<SetStateAction<GroupSort>>;
+  setSearch: (value: string) => void;
+  setStrategyFilter: (value: "all" | RoutingStrategy) => void;
+  setSortBy: (value: GroupSort) => void;
   resetFilters: () => void;
 }
 

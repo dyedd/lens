@@ -19,23 +19,23 @@ _INLINE_BASE64_CONTENT_MARKERS = (
 )
 
 
-def _json_body_bytes(value: Any) -> bytes:
+def json_body_bytes(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def _dump_json(value: Any) -> str | None:
     try:
-        return _json_body_bytes(value).decode("utf-8")
+        return json_body_bytes(value).decode("utf-8")
     except (TypeError, ValueError):
         return None
 
 
-def _dump_log_json(value: Any) -> str | None:
+def dump_log_json(value: Any) -> str | None:
     sanitized, has_changed = _sanitize_log_payload(value)
     return _dump_json(sanitized if has_changed else value)
 
 
-def _decode_content_bytes(content: bytes | None) -> str | None:
+def decode_content_bytes(content: bytes | None) -> str | None:
     if not content:
         return None
     try:
@@ -44,19 +44,19 @@ def _decode_content_bytes(content: bytes | None) -> str | None:
         return content.decode("utf-8", errors="replace")
 
 
-def _decode_log_content_bytes(content: bytes | None) -> str | None:
+def decode_log_content_bytes(content: bytes | None) -> str | None:
     if not content:
         return None
     if not _content_may_contain_inline_base64(content):
-        return _decode_content_bytes(content)
+        return decode_content_bytes(content)
     try:
         payload = json.loads(content)
     except (TypeError, ValueError, UnicodeDecodeError):
-        return _decode_content_bytes(content)
-    return _dump_log_json(payload)
+        return decode_content_bytes(content)
+    return dump_log_json(payload)
 
 
-def _stringify_text_content(value: Any) -> str:
+def stringify_text_content(value: Any) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, list):

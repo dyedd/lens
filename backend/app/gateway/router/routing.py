@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import monotonic
 from typing import Protocol
 
@@ -9,8 +9,15 @@ from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouteState
-from .targets import filter_enabled_targets
-from .types import RouteSelection, RouteTarget
+from .targets import RouteTarget, build_route_targets
+
+
+@dataclass(slots=True)
+class RouteSelection:
+    """Contain a selected primary route and its ordered fallbacks."""
+
+    primary: RouteTarget
+    fallbacks: list[RouteTarget] = field(default_factory=list)
 
 
 class CooldownRoutingError(LookupError):
@@ -38,7 +45,7 @@ class _SWRRNode:
     current_weight: int = 0
 
 
-class _RoutePlanner:
+class RoutePlanner:
     def __init__(self, health: RouteHealth) -> None:
         self._health = health
         self._swrr_nodes: dict[tuple[str, str, str, str], _SWRRNode] = {}
@@ -161,7 +168,7 @@ class _RoutePlanner:
         *,
         skip_health_filter: bool = False,
     ) -> list[RouteTarget]:
-        active = filter_enabled_targets(
+        active = build_route_targets(
             channels,
             protocol,
             requested_model,

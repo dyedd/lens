@@ -26,7 +26,7 @@ import {
   gatewayKeyFilterOptionLabel,
   type SortMode,
   type StatusFilter,
-} from "./requestDisplay";
+} from "./requestView";
 
 type RequestFiltersPanelProps = {
   activeFilterCount: number;

@@ -4,13 +4,13 @@ from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
-from ._sse import (
+from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
+from .sse import (
     FINISH_REASON_CHAT_TO_ANTHROPIC,
     format_sse_event,
     parse_sse_json_stream,
 )
-from ._validation import _required_string
+from .validation import required_string
 
 
 def chat_response_to_anthropic(
@@ -284,7 +284,7 @@ def _chat_tool_calls_to_anthropic_content(value: Any) -> list[dict[str, Any]]:
         function = tool_call.get("function")
         if not isinstance(function, Mapping):
             raise ValueError("Chat tool calls must contain a function object")
-        arguments = _required_string(
+        arguments = required_string(
             function.get("arguments"),
             "Chat tool calls must contain function.arguments",
             allow_empty=True,
@@ -296,10 +296,10 @@ def _chat_tool_calls_to_anthropic_content(value: Any) -> list[dict[str, Any]]:
         blocks.append(
             {
                 "type": "tool_use",
-                "id": _required_string(
+                "id": required_string(
                     tool_call.get("id"), "Chat tool calls must contain id"
                 ),
-                "name": _required_string(
+                "name": required_string(
                     function.get("name"),
                     "Chat tool calls must contain function.name",
                 ),

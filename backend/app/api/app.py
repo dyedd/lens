@@ -6,7 +6,7 @@ from ..gateway.service.http_handlers import (
     register_exception_handlers,
 )
 from ..gateway.service.lifecycle import lifespan
-from .routes import include_routes
+from .route_table import include_routes
 
 
 def create_app(ui_static_dir: str = "") -> FastAPI:

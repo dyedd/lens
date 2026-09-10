@@ -86,10 +86,10 @@ def _stub_upstream(
 
 def _enable_body_logging(monkeypatch: Any, app_state: Any) -> None:
     import app.gateway.service.proxy_upstream as proxy_upstream
-    import app.gateway.service.streaming.stream_logging as stream_logging
+    import app.gateway.service.streaming.logging as stream_logging
 
-    monkeypatch.setattr(proxy_upstream, "_safe_estimate_cost", _no_cost)
-    monkeypatch.setattr(stream_logging, "_safe_estimate_cost", _no_cost)
+    monkeypatch.setattr(proxy_upstream, "safe_estimate_cost", _no_cost)
+    monkeypatch.setattr(stream_logging, "safe_estimate_cost", _no_cost)
     monkeypatch.setattr(stream_logging, "app_state", app_state)
     run_async(
         app_state.settings_repo.upsert_settings(

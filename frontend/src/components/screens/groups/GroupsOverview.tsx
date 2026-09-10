@@ -1,5 +1,5 @@
 import { GroupsFilterPanel } from "./GroupsFilterPanel";
-import type { GroupsOverviewProps } from "./groupOverviewTypes";
+import type { GroupsOverviewProps } from "./groupTypes";
 import { ModelGroupList } from "./ModelGroupList";
 import { ModelSeriesSelector } from "./ModelSeriesSelector";
 

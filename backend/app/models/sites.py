@@ -6,20 +6,20 @@ from ..core.urls import canonicalize_base_url
 from .model_groups import ModelGroupEnsureFromSiteResponse, ModelGroupEnsureModelInput
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel, _validate_regex_pattern
+from .validation import StrictBaseModel, validate_regex_pattern
 
 
-def _require_non_empty_text(value: str) -> str:
+def require_non_empty_text(value: str) -> str:
     trimmed_text = value.strip()
     if not trimmed_text:
         raise ValueError("Value cannot be empty")
     return trimmed_text
 
 
-def _canonicalize_text_list(values: list[str]) -> list[str]:
+def canonicalize_text_list(values: list[str]) -> list[str]:
     unique_values: list[str] = []
     for value in values:
-        item = _require_non_empty_text(value)
+        item = require_non_empty_text(value)
         if item not in unique_values:
             unique_values.append(item)
     if not unique_values:
@@ -46,7 +46,7 @@ SiteTags = Annotated[list[str], AfterValidator(_canonicalize_site_tags)]
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
 
 
-_validate_match_regex = field_validator("match_regex")(_validate_regex_pattern)
+_validate_match_regex = field_validator("match_regex")(validate_regex_pattern)
 
 
 class SiteBaseUrl(StrictBaseModel):
@@ -167,7 +167,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
     models: list[SiteModelInput] = Field(default_factory=list)
 
     _canonicalize_credential_ids = field_validator("credential_ids")(
-        _canonicalize_text_list
+        canonicalize_text_list
     )
 
 

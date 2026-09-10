@@ -8,7 +8,7 @@ import {
 import type { RequestLogItem } from "@/lib/api/requests";
 import { cn } from "@/lib/classNames";
 import { titleForLocale } from "@/lib/I18nContext";
-import { formatErrorSummary } from "./requestPayloadParsing";
+import { formatErrorSummary } from "./requestView";
 
 /** Render the localized lifecycle outcome badge for a request. */
 export function RequestOutcomeBadge({
