@@ -19,14 +19,20 @@ import type { Site } from "@/lib/api/sites";
 import { useI18n } from "@/lib/I18nContext";
 import { ChannelsDialogs } from "./channels/ChannelsDialogs";
 import { ChannelsOverview } from "./channels/ChannelsOverview";
-import { useAggregatedModels } from "./channels/useAggregatedModels";
-import { useBatchModelTest } from "./channels/useBatchModelTest";
+import {
+  useChannelPersistence,
+  useChannelTransfer,
+} from "./channels/useChannelCommands";
 import { useChannelForm } from "./channels/useChannelForm";
 import { useChannelModelPicker } from "./channels/useChannelModelPicker";
-import { useChannelModelTest } from "./channels/useChannelModelTest";
-import { useChannelPersistence } from "./channels/useChannelPersistence";
-import { useChannelQueries } from "./channels/useChannelQueries";
-import { useChannelTransfer } from "./channels/useChannelTransfer";
+import {
+  useBatchModelTest,
+  useChannelModelTest,
+} from "./channels/useChannelModelTest";
+import {
+  useAggregatedModels,
+  useChannelQueries,
+} from "./channels/useChannelQueries";
 import { useModelGroupEnsure } from "./channels/useModelGroupEnsure";
 
 /** Coordinates channel management data, dialogs, and user actions. */

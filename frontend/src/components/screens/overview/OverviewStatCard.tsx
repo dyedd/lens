@@ -2,7 +2,7 @@ import type { ComponentType, ReactNode } from "react";
 import { Area, AreaChart, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ChartContainer } from "@/components/ui/Chart";
-import type { StatTrendPoint } from "./overviewUtils";
+import type { StatTrendPoint } from "./overviewMetrics";
 
 type Props = {
   icon: ComponentType<{ className?: string }>;

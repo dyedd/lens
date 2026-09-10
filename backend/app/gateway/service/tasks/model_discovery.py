@@ -18,17 +18,17 @@ from ...upstream_request import (
 )
 from ..app_state import app_state
 from ..upstream_support import (
-    _default_lens_user_agent,
-    _format_http_response_error,
-    _resolve_http_client,
+    default_lens_user_agent,
+    format_http_response_error,
+    resolve_http_client,
 )
 
 
-async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
+async def fetch_upstream_models(channel: ChannelConfig) -> list[str]:
     """List all model names currently offered by an upstream."""
     runtime = await app_state.settings_repo.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
-    client = _resolve_http_client(proxy_url)
+    client = resolve_http_client(proxy_url)
 
     try:
         response = await client.request(
@@ -37,7 +37,7 @@ async def _fetch_upstream_models(channel: ChannelConfig) -> list[str]:
         response.raise_for_status()
         return _parse_model_list(response.json())
     except httpx.HTTPStatusError as exc:
-        detail = _format_http_response_error(exc.response)
+        detail = format_http_response_error(exc.response)
         raise HTTPException(
             status_code=exc.response.status_code, detail=detail
         ) from exc
@@ -59,7 +59,7 @@ def _model_list_request(
         "headers": build_upstream_headers(
             {"authorization": f"Bearer {api_key}"},
             headers,
-            user_agent=_default_lens_user_agent(),
+            user_agent=default_lens_user_agent(),
             upstream_headers_config=upstream_headers_config,
             context=request_rule_context(
                 resolve_channel_model_list_url(channel),

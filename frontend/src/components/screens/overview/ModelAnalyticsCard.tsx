@@ -39,7 +39,7 @@ import {
   type PieMetric,
   TIME_RANGE_OPTIONS,
   type TimeRange,
-} from "./overviewUtils";
+} from "./overviewMetrics";
 
 type PieDatum = {
   model: string;

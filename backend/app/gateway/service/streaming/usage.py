@@ -5,8 +5,11 @@ from typing import Any
 
 from ....models.protocols import ProtocolKind
 from ..runtime_types import StreamCapture
-from .stream_parsing import _parse_ndjson_payloads, _parse_sse_payloads
-from .stream_types import OPENAI_RESPONSES_TERMINAL_EVENTS
+from .types import (
+    OPENAI_RESPONSES_TERMINAL_EVENTS,
+    parse_ndjson_payloads,
+    parse_sse_payloads,
+)
 
 
 def _usage_mapping(value: Any, key: str = "usage") -> Mapping[str, Any]:
@@ -147,7 +150,7 @@ def _openai_embedding_usage(payload: Mapping[str, Any]) -> dict[str, int | str |
     }
 
 
-_EMPTY_USAGE: dict[str, int | str | None] = {
+EMPTY_USAGE: dict[str, int | str | None] = {
     "resolved_model": None,
     "input_tokens": 0,
     "cache_read_input_tokens": 0,
@@ -157,7 +160,7 @@ _EMPTY_USAGE: dict[str, int | str | None] = {
 }
 
 
-def _extract_stream_usage(
+def extract_stream_usage(
     protocol: ProtocolKind,
     raw_content: str | None,
     parse_errors: list[str] | None = None,
@@ -167,16 +170,16 @@ def _extract_stream_usage(
         or protocol == ProtocolKind.RERANK
         or not raw_content
     ):
-        return dict(_EMPTY_USAGE)
+        return dict(EMPTY_USAGE)
 
     if protocol == ProtocolKind.GEMINI:
-        payloads = _parse_sse_payloads(
+        payloads = parse_sse_payloads(
             raw_content, errors=parse_errors
-        ) or _parse_ndjson_payloads(raw_content, errors=parse_errors)
-        return _extract_usage_from_payload(protocol, payloads[-1] if payloads else {})
+        ) or parse_ndjson_payloads(raw_content, errors=parse_errors)
+        return extract_usage_from_payload(protocol, payloads[-1] if payloads else {})
 
-    payloads = _parse_sse_payloads(raw_content, errors=parse_errors)
-    merged: dict[str, int | str | None] = dict(_EMPTY_USAGE)
+    payloads = parse_sse_payloads(raw_content, errors=parse_errors)
+    merged: dict[str, int | str | None] = dict(EMPTY_USAGE)
     int_keys = (
         "input_tokens",
         "cache_read_input_tokens",
@@ -185,7 +188,7 @@ def _extract_stream_usage(
         "total_tokens",
     )
     for payload in payloads:
-        parsed = _extract_usage_from_payload(protocol, payload)
+        parsed = extract_usage_from_payload(protocol, payload)
         if parsed["resolved_model"]:
             merged["resolved_model"] = parsed["resolved_model"]
         for key in int_keys:
@@ -222,7 +225,7 @@ def _is_pure_client_stream_disconnect(capture: StreamCapture | None) -> bool:
     return not capture.errors and not capture.parse_errors
 
 
-def _extract_usage_from_payload(
+def extract_usage_from_payload(
     protocol: ProtocolKind, payload: dict[str, Any]
 ) -> dict[str, int | str | None]:
     if protocol == ProtocolKind.OPENAI_CHAT:
@@ -245,6 +248,31 @@ def _extract_usage_from_payload(
             )
         if payload.get("type") == "message_delta":
             return _anthropic_usage(_usage_mapping(payload.get("usage")), model=None)
+        return _anthropic_usage(
+            _usage_mapping(payload.get("usage")), model=payload.get("model")
+        )
+    return _gemini_usage(payload)
+
+
+def extract_response_usage(
+    protocol: ProtocolKind, payload: Any, fallback_model: Any = None
+) -> dict[str, int | str | None]:
+    if not isinstance(payload, dict):
+        raise ValueError("Upstream response JSON must be an object")
+    if protocol == ProtocolKind.RERANK:
+        empty = dict(EMPTY_USAGE)
+        if isinstance(fallback_model, str) and fallback_model.strip():
+            empty["resolved_model"] = fallback_model.strip()
+        return empty
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        return _openai_chat_usage(payload)
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        return _openai_responses_usage(payload, model=payload.get("model"))
+    if protocol == ProtocolKind.OPENAI_IMAGE:
+        return _openai_image_usage(payload, model=fallback_model)
+    if protocol == ProtocolKind.OPENAI_EMBEDDING:
+        return _openai_embedding_usage(payload)
+    if protocol == ProtocolKind.ANTHROPIC:
         return _anthropic_usage(
             _usage_mapping(payload.get("usage")), model=payload.get("model")
         )

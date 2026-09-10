@@ -1,13 +1,17 @@
 import type { Dispatch, SetStateAction } from "react";
 import { lazyComponent } from "@/lib/lazyComponent";
 import type { Locale } from "./channelTypes";
-import type { useAggregatedModels } from "./useAggregatedModels";
-import type { useBatchModelTest } from "./useBatchModelTest";
+import type {
+  useChannelPersistence,
+  useChannelTransfer,
+} from "./useChannelCommands";
 import type { useChannelForm } from "./useChannelForm";
 import type { useChannelModelPicker } from "./useChannelModelPicker";
-import type { useChannelModelTest } from "./useChannelModelTest";
-import type { useChannelPersistence } from "./useChannelPersistence";
-import type { useChannelTransfer } from "./useChannelTransfer";
+import type {
+  useBatchModelTest,
+  useChannelModelTest,
+} from "./useChannelModelTest";
+import type { useAggregatedModels } from "./useChannelQueries";
 import type { useModelGroupEnsure } from "./useModelGroupEnsure";
 
 const ChannelEditorDialog = lazyComponent(() =>

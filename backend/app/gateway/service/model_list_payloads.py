@@ -6,7 +6,7 @@ from ...models.gateway_keys import GatewayApiKey
 from ...models.model_groups import ModelGroupItemState, ModelGroupView
 from ...models.protocols import ProtocolKind
 from ..converters import can_reach_protocol
-from .auth import _gateway_key_allows_model
+from .auth import gateway_key_allows_model
 
 OPENAI_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
     {
@@ -119,6 +119,6 @@ def _filtered_group_names(
             if group.name.strip()
             and set(group.client_protocols) & requested_protocols
             and has_ready_item(group)
-            and _gateway_key_allows_model(gateway_key, group.name)
+            and gateway_key_allows_model(gateway_key, group.name)
         }
     )

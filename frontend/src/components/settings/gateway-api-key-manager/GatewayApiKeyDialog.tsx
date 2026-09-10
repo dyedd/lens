@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { SettingsHint } from "@/components/screens/settings/SettingsSectionCard";
+import { SettingsHint } from "@/components/settings/SettingsSectionCard";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog, DialogFooter } from "@/components/ui/Dialog";
 import {
@@ -23,7 +23,7 @@ import {
   type GatewayModelGroupOption,
   toGatewayApiKeyForm,
   toGatewayApiKeyPayload,
-} from "./gatewayApiKeyUtils";
+} from "./gatewayApiKeyModel";
 
 type GatewayApiKeyBasicFieldsProps = {
   locale: Locale;

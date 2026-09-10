@@ -6,15 +6,15 @@ from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._responses import (
-    _encode_reasoning_item,
-    _reasoning_item_to_anthropic,
-    _reasoning_summary_text,
-    _usage_int,
-    _validate_terminal_response,
+from .responses_common import (
+    encode_reasoning_item,
+    reasoning_item_to_anthropic,
+    reasoning_summary_text,
+    usage_int,
+    validate_terminal_response,
 )
-from ._sse import format_sse_event, parse_sse_json_stream
-from ._validation import _required_string
+from .sse import format_sse_event, parse_sse_json_stream
+from .validation import required_string
 
 _TERMINAL_EVENTS = {"response.completed", "response.incomplete"}
 
@@ -25,7 +25,7 @@ def responses_response_to_anthropic(
     """Convert a Responses API response into an Anthropic Message."""
     if not isinstance(response, Mapping):
         raise ValueError("Responses upstream response must be an object")
-    output = _validate_terminal_response(response)
+    output = validate_terminal_response(response)
     content, has_tool_calls, has_refusal = _responses_output_to_anthropic(output)
     return {
         "id": response.get("id") or f"msg_{uuid.uuid4().hex[:24]}",
@@ -52,7 +52,7 @@ def _responses_output_to_anthropic(
             raise ValueError("Responses upstream output must contain objects")
         item_type = item.get("type")
         if item_type == "reasoning":
-            content.append(_reasoning_item_to_anthropic(item))
+            content.append(reasoning_item_to_anthropic(item))
         elif item_type == "message":
             raw_content = item.get("content")
             if not isinstance(raw_content, list):
@@ -65,7 +65,7 @@ def _responses_output_to_anthropic(
                     content.append(
                         {
                             "type": "text",
-                            "text": _required_string(
+                            "text": required_string(
                                 part.get("text"),
                                 "Responses output_text must contain text",
                                 allow_empty=True,
@@ -77,7 +77,7 @@ def _responses_output_to_anthropic(
                     content.append(
                         {
                             "type": "text",
-                            "text": _required_string(
+                            "text": required_string(
                                 part.get("refusal"),
                                 "Responses refusal must contain refusal text",
                                 allow_empty=True,
@@ -87,7 +87,7 @@ def _responses_output_to_anthropic(
         elif item_type == "function_call":
             try:
                 tool_input = json.loads(
-                    _required_string(
+                    required_string(
                         item.get("arguments"),
                         "Responses function_call must contain arguments",
                         allow_empty=True,
@@ -102,11 +102,11 @@ def _responses_output_to_anthropic(
             content.append(
                 {
                     "type": "tool_use",
-                    "id": _required_string(
+                    "id": required_string(
                         item.get("call_id"),
                         "Responses function_call must contain call_id",
                     ),
-                    "name": _required_string(
+                    "name": required_string(
                         item.get("name"),
                         "Responses function_call must contain name",
                     ),
@@ -137,14 +137,14 @@ def _responses_stop_reason(
 def _responses_usage_to_anthropic(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         return {"input_tokens": 0, "output_tokens": 0}
-    total_input = _usage_int(value, "input_tokens")
-    output_tokens = _usage_int(value, "output_tokens")
+    total_input = usage_int(value, "input_tokens")
+    output_tokens = usage_int(value, "output_tokens")
     input_details = value.get("input_tokens_details")
     cached_tokens = 0
     cache_write_tokens = 0
     if isinstance(input_details, Mapping):
-        cached_tokens = _usage_int(input_details, "cached_tokens")
-        cache_write_tokens = _usage_int(input_details, "cache_write_tokens")
+        cached_tokens = usage_int(input_details, "cached_tokens")
+        cache_write_tokens = usage_int(input_details, "cache_write_tokens")
     uncached_tokens = total_input - cached_tokens - cache_write_tokens
     if uncached_tokens < 0:
         raise ValueError("Responses cache token counts exceed input_tokens")
@@ -158,7 +158,7 @@ def _responses_usage_to_anthropic(value: Any) -> dict[str, Any]:
     output_details = value.get("output_tokens_details")
     if isinstance(output_details, Mapping):
         result["output_tokens_details"] = {
-            "thinking_tokens": _usage_int(output_details, "reasoning_tokens")
+            "thinking_tokens": usage_int(output_details, "reasoning_tokens")
         }
     return result
 
@@ -220,7 +220,7 @@ async def responses_stream_to_anthropic_stream(
             expected_status = (
                 "completed" if event_type == "response.completed" else "incomplete"
             )
-            output = _validate_terminal_response(
+            output = validate_terminal_response(
                 response, expected_status=expected_status
             )
             for index in sorted(state.open_blocks):
@@ -285,7 +285,7 @@ def _reasoning_delta_events(
         result.append(
             _content_block_start(block_index, {"type": "thinking", "thinking": ""})
         )
-    delta = _required_string(
+    delta = required_string(
         payload.get("delta"),
         "Responses reasoning summary delta must be a string",
         allow_empty=True,
@@ -315,7 +315,7 @@ def _text_delta_events(
             block_index,
             {
                 "type": "text_delta",
-                "text": _required_string(
+                "text": required_string(
                     payload.get("delta"),
                     "Responses text delta must be a string",
                     allow_empty=True,
@@ -344,11 +344,11 @@ def _output_item_added_events(
             block_index,
             {
                 "type": "tool_use",
-                "id": _required_string(
+                "id": required_string(
                     item.get("call_id"),
                     "Responses function_call must contain call_id",
                 ),
-                "name": _required_string(
+                "name": required_string(
                     item.get("name"),
                     "Responses function_call must contain name",
                 ),
@@ -369,7 +369,7 @@ def _function_arguments_delta_event(
         block_index,
         {
             "type": "input_json_delta",
-            "partial_json": _required_string(
+            "partial_json": required_string(
                 payload.get("delta"),
                 "Responses function arguments delta must be a string",
                 allow_empty=True,
@@ -407,14 +407,14 @@ def _reasoning_done_events(
     item: Mapping[str, Any],
 ) -> list[bytes]:
     block_index = state.output_blocks.get(output_index)
-    summary = _reasoning_summary_text(item)
+    summary = reasoning_summary_text(item)
     result: list[bytes] = []
     if block_index is None:
         block_index = state.new_block()
         state.output_blocks[output_index] = block_index
         if not summary:
             result.append(
-                _content_block_start(block_index, _reasoning_item_to_anthropic(item))
+                _content_block_start(block_index, reasoning_item_to_anthropic(item))
             )
             return result + _close_blocks(state, [block_index])
         result.extend(
@@ -438,7 +438,7 @@ def _reasoning_done_events(
             block_index,
             {
                 "type": "signature_delta",
-                "signature": _encode_reasoning_item(item),
+                "signature": encode_reasoning_item(item),
             },
         )
     )

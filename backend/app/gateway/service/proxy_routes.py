@@ -15,8 +15,8 @@ from .model_list_payloads import (
     build_gemini_models_payload,
     build_openai_models_payload,
 )
-from .proxy_flow import _proxy_protocol
-from .upstream_support import _forward_anthropic_headers
+from .proxy_flow import proxy_protocol
+from .upstream_support import forward_anthropic_headers
 
 
 async def _read_json_object(request: Request, body_name: str) -> dict[str, Any]:
@@ -41,7 +41,7 @@ async def _proxy_json_request(
     body = await _read_json_object(request, body_name)
     if strip_stream:
         body.pop("stream", None)
-    return await _proxy_protocol(
+    return await proxy_protocol(
         protocol,
         body,
         gateway_key,
@@ -115,12 +115,12 @@ async def proxy_anthropic_messages(
     body = _promote_anthropic_system_messages(
         await _read_json_object(request, "Anthropic messages")
     )
-    return await _proxy_protocol(
+    return await proxy_protocol(
         ProtocolKind.ANTHROPIC,
         body,
         gateway_key,
         request.headers.get("user-agent"),
-        _forward_anthropic_headers(request.headers),
+        forward_anthropic_headers(request.headers),
     )
 
 
@@ -184,7 +184,7 @@ async def proxy_openai_image_edits(
                 )
             else:
                 fields[field_name] = value
-    return await _proxy_protocol(
+    return await proxy_protocol(
         ProtocolKind.OPENAI_IMAGE,
         dict(fields),
         gateway_key,
@@ -226,7 +226,7 @@ async def proxy_gemini_generate_content(
     """Proxy an authenticated non-streaming Gemini content request."""
     body = await _read_json_object(request, "Gemini generateContent")
     body = {**body, "model": model_name, "stream": False}
-    return await _proxy_protocol(
+    return await proxy_protocol(
         ProtocolKind.GEMINI,
         body,
         gateway_key,
@@ -242,7 +242,7 @@ async def proxy_gemini_stream_generate_content(
     """Proxy an authenticated streaming Gemini content request."""
     body = await _read_json_object(request, "Gemini streamGenerateContent")
     body = {**body, "model": model_name, "stream": True}
-    return await _proxy_protocol(
+    return await proxy_protocol(
         ProtocolKind.GEMINI,
         body,
         gateway_key,

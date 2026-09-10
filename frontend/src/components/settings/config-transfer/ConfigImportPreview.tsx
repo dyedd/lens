@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/Item";
 import type { ConfigBackupDump } from "@/lib/api/backups";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
-import { formatExportedAt } from "./configTransferUtils";
+import { formatExportedAt } from "./backupPreview";
 
 export type ConfigPreviewSection = {
   key: string;

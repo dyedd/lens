@@ -15,13 +15,10 @@ import {
 } from "@/lib/api/backups";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
+import { parseBackupPreview, resultLabelForLocale } from "./backupPreview";
 import { ConfigImportConfirmDialog } from "./ConfigImportConfirmDialog";
 import { ConfigImportPreview } from "./ConfigImportPreview";
 import { ConfigImportResultSummary } from "./ConfigImportResult";
-import {
-  parseBackupPreview,
-  resultLabelForLocale,
-} from "./configTransferUtils";
 
 export function ConfigImportCard({ locale }: { locale: Locale }) {
   const queryClient = useQueryClient();

@@ -10,7 +10,7 @@ import {
   formatDuration,
   formatMoney,
   type StatTrendPoint,
-} from "./overviewUtils";
+} from "./overviewMetrics";
 
 type Props = {
   cacheReadTokens: number;

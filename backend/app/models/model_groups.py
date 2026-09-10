@@ -9,7 +9,7 @@ from .protocols import (
     RoutingStrategy,
 )
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel, _validate_regex_pattern
+from .validation import StrictBaseModel, validate_regex_pattern
 
 
 def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | None:
@@ -204,7 +204,7 @@ def canonicalize_model_group_sync_filter(
     if mode == ModelGroupSyncFilterMode.NONE:
         return ModelGroupSyncFilterMode.NONE, ""
     if mode == ModelGroupSyncFilterMode.REGEX:
-        _validate_regex_pattern(trimmed_query, error_label="model group sync regex")
+        validate_regex_pattern(trimmed_query, error_label="model group sync regex")
     return mode, trimmed_query
 
 

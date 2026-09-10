@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from "react";
 import { SeriesChip } from "@/components/SeriesChip";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
 import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";
@@ -7,7 +6,9 @@ interface ModelSeriesSelectorProps {
   locale: "zh-CN" | "en-US";
   modelPrefixOptions: ModelPrefixOption[];
   selectedModelPrefix: SelectedModelPrefix;
-  setSelectedModelPrefix: Dispatch<SetStateAction<SelectedModelPrefix>>;
+  setSelectedModelPrefix: React.Dispatch<
+    React.SetStateAction<SelectedModelPrefix>
+  >;
 }
 
 /** Render mobile and desktop model-series selectors. */

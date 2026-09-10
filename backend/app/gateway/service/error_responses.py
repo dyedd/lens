@@ -37,7 +37,7 @@ def build_error_response(
     """Build an API- or protocol-shaped error response."""
     protocol = _request_error_protocol(request)
     if protocol is not None:
-        return _protocol_error_response(
+        return protocol_error_response(
             protocol=protocol,
             status_code=status_code,
             error_type=error_type,
@@ -126,7 +126,7 @@ def _request_error_protocol(request: Request | None) -> ProtocolKind | None:
     return None
 
 
-def _protocol_error_response(
+def protocol_error_response(
     *,
     protocol: ProtocolKind,
     status_code: int,

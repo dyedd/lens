@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 
 from ...core.model_group_status import (
@@ -11,7 +12,17 @@ from ...models.channels import ChannelConfig, ChannelKeyItem
 from ...models.model_groups import ModelGroupItemInput, ModelGroupItemState
 from ...models.protocols import ChannelStatus, ProtocolKind
 from ..converters import can_reach_protocol
-from .types import RouteTarget
+
+
+@dataclass(slots=True)
+class RouteTarget:
+    """Describe a channel, model, and credential routing target."""
+
+    channel: ChannelConfig
+    model_name: str | None = None
+    credential_id: str | None = None
+    credential_name: str | None = None
+    rate_multiplier: float | None = None
 
 
 @lru_cache(maxsize=2048)
@@ -39,14 +50,16 @@ def _matches_model(channel: ChannelConfig, requested_model: str | None) -> bool:
     return True
 
 
-def _find_key(channel: ChannelConfig, credential_id: str) -> ChannelKeyItem | None:
+def _find_credential(
+    channel: ChannelConfig, credential_id: str
+) -> ChannelKeyItem | None:
     for key in channel.keys:
         if key.id == credential_id:
             return key
     return None
 
 
-def _candidate_keys(
+def _candidate_credentials(
     channel: ChannelConfig, model_name: str | None
 ) -> list[ChannelKeyItem]:
     enabled_keys = [key for key in channel.keys if key.enabled]
@@ -63,7 +76,7 @@ def _candidate_keys(
 
 def _expand_target_credentials(target: RouteTarget) -> list[RouteTarget]:
     if target.credential_id:
-        key = _find_key(target.channel, target.credential_id)
+        key = _find_credential(target.channel, target.credential_id)
         if key is None or not key.enabled:
             return []
         return [
@@ -87,11 +100,11 @@ def _expand_target_credentials(target: RouteTarget) -> list[RouteTarget]:
             credential_name=key.remark,
             rate_multiplier=key.rate_multiplier,
         )
-        for key in _candidate_keys(target.channel, target.model_name)
+        for key in _candidate_credentials(target.channel, target.model_name)
     ]
 
 
-def filter_enabled_targets(
+def build_route_targets(
     channels: list[ChannelConfig],
     protocol: ProtocolKind,
     requested_model: str | None,

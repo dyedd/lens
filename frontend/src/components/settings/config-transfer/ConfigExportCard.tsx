@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { SettingsHint } from "@/components/screens/settings/SettingsSectionCard";
+import { SettingsHint } from "@/components/settings/SettingsSectionCard";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";

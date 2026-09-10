@@ -52,7 +52,7 @@ async def _fetch_litellm_price_index(
         raise ModelPriceSyncError("Model price source returned invalid data") from exc
 
 
-async def _sync_group_prices(state: AppState) -> None:
+async def sync_group_prices(state: AppState) -> None:
     group_names = await state.group_repo.list_group_names(include_routed=True)
     if not group_names:
         await state.model_price_repo.replace_model_prices([])

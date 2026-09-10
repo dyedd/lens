@@ -26,7 +26,7 @@ import {
   REQUEST_LOG_DETAIL_GC_TIME,
   type SortMode,
   type StatusFilter,
-} from "./requestDisplay";
+} from "./requestView";
 
 /** Manage request log filters, queries, and actions. */
 export function useRequestsScreen() {

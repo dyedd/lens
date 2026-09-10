@@ -12,7 +12,7 @@ import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
 
 import { GatewayApiKeyTable } from "./gateway-api-key-manager/GatewayApiKeyTable";
-import { buildGatewayModelGroupOptions } from "./gateway-api-key-manager/gatewayApiKeyUtils";
+import { buildGatewayModelGroupOptions } from "./gateway-api-key-manager/gatewayApiKeyModel";
 
 const GatewayApiKeyDialog = lazyComponent(() =>
   import("./gateway-api-key-manager/GatewayApiKeyDialog").then(

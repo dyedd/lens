@@ -6,7 +6,7 @@ import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
 import type { Locale } from "./channelTypes";
 import { ProtocolMultiSelect } from "./ProtocolMultiSelect";
-import type { AggregatedModel } from "./useAggregatedModels";
+import type { AggregatedModel } from "./useChannelQueries";
 
 /** Renders aggregated channel models with protocol and test actions. */
 export function SiteModelAggregateView({

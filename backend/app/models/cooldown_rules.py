@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from .validation import StrictBaseModel, _validate_regex_pattern
+from .validation import StrictBaseModel, validate_regex_pattern
 
 
 class CooldownDetectionRule(StrictBaseModel):
@@ -28,7 +28,7 @@ class CooldownDetectionRule(StrictBaseModel):
     @classmethod
     def validate_body_regex(cls, value: str | None) -> str | None:
         if value:
-            _validate_regex_pattern(value, error_label="cooldown body regex")
+            validate_regex_pattern(value, error_label="cooldown body regex")
         return value
 
     @model_validator(mode="after")

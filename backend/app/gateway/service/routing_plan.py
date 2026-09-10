@@ -12,10 +12,10 @@ from ...models.protocols import ProtocolKind, RoutingStrategy
 from ..converters import can_reach_protocol
 from ..router import RouteTarget
 from .app_state import app_state
-from .runtime_types import RoutingPlan, _GatewayTimeoutError
+from .runtime_types import GatewayTimeoutError, RoutingPlan
 
 
-async def _resolve_routing_plan(
+async def resolve_routing_plan(
     protocol: ProtocolKind,
     requested_model: str,
     channels: list[ChannelConfig],
@@ -92,12 +92,12 @@ async def _resolve_routing_plan(
     )
 
 
-def _elapsed_ms(started_at: float) -> int:
+def elapsed_ms(started_at: float) -> int:
     return max(int((perf_counter() - started_at) * 1000), 0)
 
 
 @asynccontextmanager
-async def _gateway_timeout_scope(
+async def gateway_timeout_scope(
     wait: float | None, *, timeout_message: str
 ) -> AsyncIterator[None]:
     """Bound a critical section without rewriting unrelated TimeoutError values."""
@@ -105,7 +105,7 @@ async def _gateway_timeout_scope(
         yield
         return
     if wait <= 0:
-        raise _GatewayTimeoutError(timeout_message)
+        raise GatewayTimeoutError(timeout_message)
     timeout_scope = asyncio.timeout(wait)
     try:
         async with timeout_scope:
@@ -113,7 +113,7 @@ async def _gateway_timeout_scope(
     except TimeoutError as exc:
         if not timeout_scope.expired():
             raise
-        raise _GatewayTimeoutError(timeout_message) from exc
+        raise GatewayTimeoutError(timeout_message) from exc
 
 
 def _request_body_too_large_message(size: int, limit: int) -> str | None:

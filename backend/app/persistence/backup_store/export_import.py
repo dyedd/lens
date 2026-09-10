@@ -47,18 +47,18 @@ class BackupExportImportMixin:
                 .scalars()
                 .all()
             )
-            sites = await self._load_sites(session)
-            groups = await self._load_groups(session)
-            model_prices = await self._load_model_prices(session)
-            cronjobs = await self._load_cronjobs(session)
-            stats = await self._load_stats(session)
+            sites = await self.load_sites(session)
+            groups = await self.load_groups(session)
+            model_prices = await self.load_model_prices(session)
+            cronjobs = await self.load_cronjobs(session)
+            stats = await self.load_stats(session)
             gateway_api_keys = (
-                await self._load_gateway_api_keys(session)
+                await self.load_gateway_api_keys(session)
                 if include_gateway_api_keys
                 else []
             )
             request_logs = (
-                await self._load_request_logs(session) if include_request_logs else []
+                await self.load_request_logs(session) if include_request_logs else []
             )
 
         return ConfigBackupDump(
@@ -83,7 +83,7 @@ class BackupExportImportMixin:
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 
-            protocol_config_ids, model_keys = await self._replace_sites(
+            protocol_config_ids, model_keys = await self.replace_sites(
                 session, dump.sites
             )
             rows_affected["sites"] = len(dump.sites)
@@ -102,7 +102,7 @@ class BackupExportImportMixin:
                 for protocol in site.protocols
             )
 
-            await self._replace_groups(
+            await self.replace_groups(
                 session,
                 dump.groups,
                 available_protocol_config_ids=protocol_config_ids,
@@ -113,17 +113,17 @@ class BackupExportImportMixin:
                 len(group.items) for group in dump.groups
             )
 
-            await self._replace_model_prices(session, dump.model_prices)
+            await self.replace_model_prices(session, dump.model_prices)
             rows_affected["model_prices"] = len(dump.model_prices)
 
-            rows_affected["settings"] = await self._replace_settings(
+            rows_affected["settings"] = await self.replace_settings(
                 session, dump.settings
             )
 
-            await self._replace_cronjobs(session, dump.cronjobs)
+            await self.replace_cronjobs(session, dump.cronjobs)
             rows_affected["cronjobs"] = len(dump.cronjobs)
 
-            await self._replace_stats(session, dump.stats)
+            await self.replace_stats(session, dump.stats)
             rows_affected["imported_stats_total"] = (
                 1 if dump.stats.imported_total is not None else 0
             )
@@ -132,11 +132,11 @@ class BackupExportImportMixin:
             rows_affected["overview_model_daily_stats"] = len(dump.stats.model_daily)
 
             if dump.include_gateway_api_keys:
-                await self._replace_gateway_api_keys(session, dump.gateway_api_keys)
+                await self.replace_gateway_api_keys(session, dump.gateway_api_keys)
                 rows_affected["gateway_api_keys"] = len(dump.gateway_api_keys)
 
             if dump.include_request_logs:
-                await self._replace_request_logs(session, dump.request_logs)
+                await self.replace_request_logs(session, dump.request_logs)
                 rows_affected["request_logs"] = len(dump.request_logs)
 
             await session.commit()

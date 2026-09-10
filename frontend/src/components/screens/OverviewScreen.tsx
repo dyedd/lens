@@ -28,7 +28,7 @@ import {
   startOfHeatmapWeek,
   type TimeRange,
   toLocalDateKey,
-} from "./overview/overviewUtils";
+} from "./overview/overviewMetrics";
 import { RequestHeatmap } from "./overview/RequestHeatmap";
 
 /** Render gateway usage and model analytics dashboards. */

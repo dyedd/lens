@@ -7,9 +7,9 @@ from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouterSnapshot
 from .cooldown import CooldownPolicy, ErrorCategory
-from .health import _HealthTracker
-from .routing import _RoutePlanner
-from .types import RouteSelection, RouteTarget
+from .health import HealthTracker
+from .routing import RoutePlanner, RouteSelection
+from .targets import RouteTarget
 
 
 class GatewayRouter:
@@ -24,13 +24,13 @@ class GatewayRouter:
         health_min_samples: int = 10,
     ) -> None:
         self._lock = Lock()
-        self._health = _HealthTracker(
+        self._health = HealthTracker(
             health_scoring_enabled=health_scoring_enabled,
             health_window_seconds=health_window_seconds,
             health_penalty_weight=health_penalty_weight,
             health_min_samples=health_min_samples,
         )
-        self._routes = _RoutePlanner(self._health)
+        self._routes = RoutePlanner(self._health)
 
     def configure(
         self,
@@ -67,7 +67,7 @@ class GatewayRouter:
     ) -> RouteSelection:
         """Select a primary route and ordered fallbacks."""
         with self._lock:
-            self._routes.discard_channels(self._health.sync_channels(channels))
+            self._routes.discard_channels(self._health.reconcile_channels(channels))
             return self._routes.select(
                 channels,
                 protocol,
@@ -82,14 +82,14 @@ class GatewayRouter:
     def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:
         """Build a snapshot of route ordering and channel health."""
         with self._lock:
-            self._routes.discard_channels(self._health.sync_channels(channels))
+            self._routes.discard_channels(self._health.reconcile_channels(channels))
             now = monotonic()
             routes = [
                 self._routes.build_route_state(channels, protocol, now=now)
                 for protocol in ProtocolKind
             ]
             health = [
-                self._health.build_channel_health(channel, now=now)
+                self._health.project_channel_health(channel, now=now)
                 for channel in channels
             ]
         return RouterSnapshot(routes=routes, health=health)
