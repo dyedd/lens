@@ -7,7 +7,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
 RESERVED_PREFIXES = ("api", "v1", "v1beta", "docs", "redoc", "openapi.json")
-FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
 _IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
