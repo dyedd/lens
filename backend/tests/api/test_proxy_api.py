@@ -403,7 +403,11 @@ def test_responses_proxy_preserves_input_shape(
         },
     ]
     request_bodies = [
-        {"model": "response-model", "input": "  Keep surrounding whitespace.  "},
+        {
+            "model": "response-model",
+            "input": "  Keep surrounding whitespace.  ",
+            "prompt_cache_options": {"mode": "explicit"},
+        },
         {"model": "response-model", "input": input_items},
     ]
 

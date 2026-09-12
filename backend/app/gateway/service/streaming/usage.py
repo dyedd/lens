@@ -35,13 +35,18 @@ def _usage_int(mapping: Mapping[str, Any], key: str) -> int:
     return parsed
 
 
-def _openai_cached_tokens(usage: Mapping[str, Any], detail_key: str) -> int:
+def _openai_cache_tokens(
+    usage: Mapping[str, Any], detail_key: str
+) -> tuple[int, int]:
     details = usage.get(detail_key)
     if details is None:
-        return 0
+        return 0, 0
     if not isinstance(details, Mapping):
         raise ValueError(f"Invalid usage object: {detail_key}")
-    return _usage_int(details, "cached_tokens")
+    return (
+        _usage_int(details, "cached_tokens"),
+        _usage_int(details, "cache_write_tokens"),
+    )
 
 
 def _anthropic_usage(
@@ -94,13 +99,15 @@ def _gemini_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
 
 def _openai_chat_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
     usage = _usage_mapping(payload.get("usage"))
-    cache_read_input_tokens = _openai_cached_tokens(usage, "prompt_tokens_details")
+    cache_read_input_tokens, cache_write_input_tokens = _openai_cache_tokens(
+        usage, "prompt_tokens_details"
+    )
     input_tokens = _usage_int(usage, "prompt_tokens")
     return {
         "resolved_model": payload.get("model"),
         "input_tokens": input_tokens,
         "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-        "cache_write_input_tokens": 0,
+        "cache_write_input_tokens": min(cache_write_input_tokens, input_tokens),
         "output_tokens": _usage_int(usage, "completion_tokens"),
         "total_tokens": _usage_int(usage, "total_tokens"),
     }
@@ -110,13 +117,15 @@ def _openai_responses_usage(
     payload: Mapping[str, Any], *, model: str | None
 ) -> dict[str, int | str | None]:
     usage = _usage_mapping(payload.get("usage"))
-    cache_read_input_tokens = _openai_cached_tokens(usage, "input_tokens_details")
+    cache_read_input_tokens, cache_write_input_tokens = _openai_cache_tokens(
+        usage, "input_tokens_details"
+    )
     input_tokens = _usage_int(usage, "input_tokens")
     return {
         "resolved_model": model,
         "input_tokens": input_tokens,
         "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
-        "cache_write_input_tokens": 0,
+        "cache_write_input_tokens": min(cache_write_input_tokens, input_tokens),
         "output_tokens": _usage_int(usage, "output_tokens"),
         "total_tokens": _usage_int(usage, "total_tokens"),
     }
