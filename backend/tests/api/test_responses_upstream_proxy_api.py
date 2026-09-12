@@ -137,6 +137,10 @@ def _completed_frames() -> list[dict[str, Any]]:
                     "input_tokens": 5,
                     "output_tokens": 2,
                     "total_tokens": 7,
+                    "input_tokens_details": {
+                        "cached_tokens": 2,
+                        "cache_write_tokens": 2,
+                    },
                 },
             },
         },
@@ -168,7 +172,15 @@ def test_chat_proxy_uses_responses_channel_and_converts_response(
                     "content": [{"type": "output_text", "text": "Hello"}],
                 }
             ],
-            "usage": {"input_tokens": 3, "output_tokens": 1, "total_tokens": 4},
+            "usage": {
+                "input_tokens": 3,
+                "output_tokens": 1,
+                "total_tokens": 4,
+                "input_tokens_details": {
+                    "cached_tokens": 1,
+                    "cache_write_tokens": 1,
+                },
+            },
         },
     )
     monkeypatch.setattr(app_state.model_price_repo, "estimate_model_cost", _no_cost)
@@ -204,6 +216,7 @@ def test_chat_proxy_uses_responses_channel_and_converts_response(
         "prompt_tokens": 3,
         "completion_tokens": 1,
         "total_tokens": 4,
+        "prompt_tokens_details": {"cached_tokens": 1, "cache_write_tokens": 1},
     }
 
 
@@ -299,6 +312,7 @@ def test_streaming_chat_proxy_converts_responses_stream_and_logs_upstream_usage(
             "messages": [{"role": "user", "content": "Hello"}],
             "stream": True,
             "stream_options": {"include_usage": True},
+            "prompt_cache_options": {"mode": "implicit"},
             "n": 4,
         },
     )
@@ -310,6 +324,7 @@ def test_streaming_chat_proxy_converts_responses_stream_and_logs_upstream_usage(
             "model": "responses-model",
             "input": [{"role": "user", "content": "Hello"}],
             "stream": True,
+            "prompt_cache_options": {"mode": "implicit"},
         },
     }
     assert '"finish_reason": "stop"' in response.text
@@ -322,6 +337,8 @@ def test_streaming_chat_proxy_converts_responses_stream_and_logs_upstream_usage(
     assert request_log.input_tokens == 5
     assert request_log.output_tokens == 2
     assert request_log.total_tokens == 7
+    assert request_log.cache_read_input_tokens == 2
+    assert request_log.cache_write_input_tokens == 2
     assert json.loads(request_log.request_content or "null") == captured["body"]
     logged_chunks = json.loads(request_log.response_content or "null")
     assert isinstance(logged_chunks, list)

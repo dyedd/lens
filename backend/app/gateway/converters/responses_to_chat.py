@@ -117,7 +117,8 @@ def _responses_usage_to_chat(usage: Mapping[str, Any]) -> dict[str, Any]:
     input_details = usage.get("input_tokens_details")
     if isinstance(input_details, Mapping):
         result["prompt_tokens_details"] = {
-            "cached_tokens": usage_int(input_details, "cached_tokens")
+            "cached_tokens": usage_int(input_details, "cached_tokens"),
+            "cache_write_tokens": usage_int(input_details, "cache_write_tokens"),
         }
     output_details = usage.get("output_tokens_details")
     if isinstance(output_details, Mapping):
