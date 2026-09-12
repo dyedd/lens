@@ -24,6 +24,8 @@ def chat_request_to_responses(body: dict[str, Any]) -> dict[str, Any]:
         "user",
         "safety_identifier",
         "prompt_cache_key",
+        "prompt_cache_options",
+        "prompt_cache_retention",
     ):
         if key in body:
             result[key] = body[key]

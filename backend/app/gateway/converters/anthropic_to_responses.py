@@ -149,16 +149,17 @@ def _anthropic_content_to_responses(value: list[Any]) -> list[dict[str, Any]]:
             raise ValueError("Anthropic content must contain objects")
         block_type = block.get("type")
         if block_type == "text":
-            result.append(
-                {
-                    "type": "input_text",
-                    "text": required_string(
-                        block.get("text"),
-                        "Anthropic text blocks must contain text",
-                        allow_empty=True,
-                    ),
-                }
-            )
+            input_text = {
+                "type": "input_text",
+                "text": required_string(
+                    block.get("text"),
+                    "Anthropic text blocks must contain text",
+                    allow_empty=True,
+                ),
+            }
+            if isinstance(block.get("cache_control"), Mapping):
+                input_text["prompt_cache_breakpoint"] = {"mode": "explicit"}
+            result.append(input_text)
         elif block_type == "image":
             result.append(_anthropic_image_to_responses(block.get("source")))
         elif block_type == "document":
