@@ -386,7 +386,11 @@ def test_streaming_anthropic_proxy_converts_responses_stream_and_logs_usage(
     assert captured["url"] == "https://upstream.example/v1/responses"
     assert captured["body"]["stream"] is True
     assert '"type": "text_delta", "text": "Hello"' in response.text
-    assert '"input_tokens": 5, "output_tokens": 2' in response.text
+    assert (
+        '"usage": {"input_tokens": 1, "output_tokens": 2, '
+        '"cache_creation_input_tokens": 2, "cache_read_input_tokens": 2}'
+        in response.text
+    )
     assert response.text.endswith(
         'event: message_stop\ndata: {"type": "message_stop"}\n\n'
     )
@@ -396,4 +400,6 @@ def test_streaming_anthropic_proxy_converts_responses_stream_and_logs_usage(
     assert request_log.input_tokens == 5
     assert request_log.output_tokens == 2
     assert request_log.total_tokens == 7
+    assert request_log.cache_read_input_tokens == 2
+    assert request_log.cache_write_input_tokens == 2
     assert "response.output_text.delta" not in (request_log.response_content or "")

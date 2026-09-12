@@ -420,7 +420,12 @@ def test_responses_proxy_preserves_input_shape(
         assert response.status_code == 200, response.text
 
     assert captured_bodies == [
-        {"model": "gpt-5.6-sol", "input": body["input"]} for body in request_bodies
+        {
+            "model": "gpt-5.6-sol",
+            "input": "  Keep surrounding whitespace.  ",
+            "prompt_cache_options": {"mode": "explicit"},
+        },
+        {"model": "gpt-5.6-sol", "input": input_items},
     ]
 
 
