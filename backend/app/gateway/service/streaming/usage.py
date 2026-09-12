@@ -35,9 +35,7 @@ def _usage_int(mapping: Mapping[str, Any], key: str) -> int:
     return parsed
 
 
-def _openai_cache_tokens(
-    usage: Mapping[str, Any], detail_key: str
-) -> tuple[int, int]:
+def _openai_cache_tokens(usage: Mapping[str, Any], detail_key: str) -> tuple[int, int]:
     details = usage.get(detail_key)
     if details is None:
         return 0, 0
