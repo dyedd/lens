@@ -1,7 +1,8 @@
-import { Check, Copy, Eye, EyeOff, Pencil, Trash2 } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Pencil } from "lucide-react";
+import { useState } from "react";
 
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Switch } from "@/components/ui/Switch";
 import {
   Table,
@@ -11,203 +12,50 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { GatewayApiKey } from "@/lib/api/settings";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import {
-  formatGatewayAmount,
   formatGatewayLimit,
   isGatewayKeyExpired,
   isGatewayKeyOutOfBalance,
   maskGatewayKey,
 } from "./gatewayApiKeyModel";
-import { formatDateOnly, formatDateTime } from "./gatewayDateTime";
+import { formatDateOnly } from "./gatewayDateTime";
 
 type GatewayApiKeyTableProps = {
   locale: Locale;
   gatewayKeys: GatewayApiKey[];
   timeZone: string;
-  removingKeyId: string;
-  togglingKeyId: string;
+  selected: Set<string>;
+  busyId: string;
   copiedKey: string;
-  visibleKey: string;
-  onVisibleKeyChange: (keyId: string) => void;
-  onCopy: (value: string, itemId: string) => Promise<void>;
+  onSelectAll: (checked: boolean) => void;
+  onSelectOne: (keyId: string, checked: boolean) => void;
+  onCopy: (value: string) => Promise<void>;
   onEdit: (item: GatewayApiKey) => void;
-  onRemove: (keyId: string) => Promise<void>;
   onToggle: (item: GatewayApiKey, enabled: boolean) => Promise<void>;
 };
 
-type GatewayApiKeyTableRowProps = {
-  locale: Locale;
-  item: GatewayApiKey;
-  timeZone: string;
-  isBusy: boolean;
-  copiedKey: string;
-  visibleKey: string;
-  onVisibleKeyChange: (keyId: string) => void;
-  onCopy: (value: string, itemId: string) => Promise<void>;
-  onEdit: (item: GatewayApiKey) => void;
-  onRemove: (keyId: string) => Promise<void>;
-  onToggle: (item: GatewayApiKey, enabled: boolean) => Promise<void>;
-};
+function permissionLabel(item: GatewayApiKey, locale: Locale) {
+  if (item.allowed_models.length === 0) {
+    return titleForLocale(locale, "全部模型组", "All model groups");
+  }
+  return item.allowed_models.join(", ");
+}
 
-/** Renders one gateway API key with its status, permissions, and actions. */
-function GatewayApiKeyTableRow({
-  locale,
-  item,
-  timeZone,
-  isBusy,
-  copiedKey,
-  visibleKey,
-  onVisibleKeyChange,
-  onCopy,
-  onEdit,
-  onRemove,
-  onToggle,
-}: GatewayApiKeyTableRowProps) {
-  const isExpired = isGatewayKeyExpired(item);
-  const isOutOfBalance = isGatewayKeyOutOfBalance(item);
-  const isVisible = visibleKey === item.id;
-
-  return (
-    <TableRow>
-      <TableCell className="min-w-0">
-        <div className="flex min-w-36 flex-col gap-2">
-          <div className="truncate text-sm text-foreground">
-            {item.remark || titleForLocale(locale, "未命名", "Unnamed")}
-          </div>
-          {isExpired || isOutOfBalance ? (
-            <div className="flex flex-wrap gap-1">
-              {isExpired ? (
-                <Badge variant="destructive">
-                  {titleForLocale(locale, "已过期", "Expired")}
-                </Badge>
-              ) : null}
-              {isOutOfBalance ? (
-                <Badge variant="destructive">
-                  {titleForLocale(locale, "已超额", "Limit reached")}
-                </Badge>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </TableCell>
-      <TableCell className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-mono text-sm text-foreground">
-              {isVisible ? item.api_key : maskGatewayKey(item.api_key)}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {titleForLocale(
-                locale,
-                `已用 ${formatGatewayAmount(locale, item.spent_cost_usd)} USD`,
-                `Used ${formatGatewayAmount(locale, item.spent_cost_usd)} USD`,
-              )}
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onVisibleKeyChange(isVisible ? "" : item.id)}
-            title={
-              isVisible
-                ? titleForLocale(locale, "隐藏", "Hide")
-                : titleForLocale(locale, "显示", "Show")
-            }
-          >
-            {isVisible ? <EyeOff /> : <Eye />}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => void onCopy(item.api_key, item.id)}
-            title={titleForLocale(locale, "复制", "Copy")}
-          >
-            {copiedKey === item.api_key ? <Check /> : <Copy />}
-          </Button>
-        </div>
-      </TableCell>
-      <TableCell className="min-w-0">
-        <div className="flex min-w-0 flex-col gap-1">
-          <div>{formatGatewayLimit(locale, item)}</div>
-          <div className="text-xs text-muted-foreground">
-            {item.expires_at
-              ? titleForLocale(
-                  locale,
-                  `到期 ${formatDateOnly(locale, item.expires_at, timeZone)}`,
-                  `Expires ${formatDateOnly(locale, item.expires_at, timeZone)}`,
-                )
-              : titleForLocale(locale, "永不过期", "No expiry")}
-          </div>
-        </div>
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {formatDateTime(locale, item.created_at, timeZone)}
-      </TableCell>
-      <TableCell className="min-w-0">
-        {item.allowed_models.length > 0 ? (
-          <div className="flex max-w-56 flex-wrap gap-1">
-            {item.allowed_models.slice(0, 2).map((modelName) => (
-              <Badge key={modelName} variant="outline">
-                {modelName}
-              </Badge>
-            ))}
-            {item.allowed_models.length > 2 ? (
-              <Badge variant="outline">+{item.allowed_models.length - 2}</Badge>
-            ) : null}
-          </div>
-        ) : (
-          <div className="flex max-w-56 flex-wrap gap-1">
-            <Badge variant="outline">
-              {titleForLocale(locale, "全部模型组", "All model groups")}
-            </Badge>
-          </div>
-        )}
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center justify-end gap-3">
-          <Switch
-            checked={item.enabled}
-            onCheckedChange={(checked) => void onToggle(item, Boolean(checked))}
-            title={titleForLocale(
-              locale,
-              item.enabled ? "点击停用" : "点击启用",
-              item.enabled ? "Click to disable" : "Click to enable",
-            )}
-            aria-label={titleForLocale(
-              locale,
-              item.enabled ? "停用 API Key" : "启用 API Key",
-              item.enabled ? "Disable API key" : "Enable API key",
-            )}
-            disabled={isBusy}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onEdit(item)}
-            title={titleForLocale(locale, "编辑", "Edit")}
-            disabled={isBusy}
-          >
-            <Pencil />
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="icon-sm"
-            onClick={() => void onRemove(item.id)}
-            title={titleForLocale(locale, "删除", "Delete")}
-            disabled={isBusy}
-          >
-            <Trash2 />
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
-  );
+function statusHint(item: GatewayApiKey, locale: Locale) {
+  if (isGatewayKeyExpired(item)) {
+    return titleForLocale(locale, "已过期", "Expired");
+  }
+  if (isGatewayKeyOutOfBalance(item)) {
+    return titleForLocale(locale, "已超额", "Limit reached");
+  }
+  return null;
 }
 
 /** Renders the gateway API key list and empty state. */
@@ -215,71 +63,238 @@ export function GatewayApiKeyTable({
   locale,
   gatewayKeys,
   timeZone,
-  removingKeyId,
-  togglingKeyId,
+  selected,
+  busyId,
   copiedKey,
-  visibleKey,
-  onVisibleKeyChange,
+  onSelectAll,
+  onSelectOne,
   onCopy,
   onEdit,
-  onRemove,
   onToggle,
 }: GatewayApiKeyTableProps) {
+  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
+  const allSelected =
+    gatewayKeys.length > 0 &&
+    gatewayKeys.every((item) => selected.has(item.id));
+  const someSelected = gatewayKeys.some((item) => selected.has(item.id));
+  const bulkBusy = busyId === "bulk";
+
   return (
-    <div className="min-w-0 rounded-lg border">
-      <Table className="min-w-[1120px] table-fixed">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-40">
-              {titleForLocale(locale, "密钥名称", "Key name")}
-            </TableHead>
-            <TableHead className="w-[420px]">
-              {titleForLocale(locale, "密钥", "Key")}
-            </TableHead>
-            <TableHead className="w-44">
-              {titleForLocale(locale, "限额", "Limit")}
-            </TableHead>
-            <TableHead className="w-44">
-              {titleForLocale(locale, "创建时间", "Created")}
-            </TableHead>
-            <TableHead className="w-56">
-              {titleForLocale(locale, "权限", "Permissions")}
-            </TableHead>
-            <TableHead className="w-36 text-right">
-              {titleForLocale(locale, "操作", "Actions")}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {gatewayKeys.length > 0 ? (
-            gatewayKeys.map((item) => (
-              <GatewayApiKeyTableRow
-                key={item.id}
-                locale={locale}
-                item={item}
-                timeZone={timeZone}
-                isBusy={removingKeyId === item.id || togglingKeyId === item.id}
-                copiedKey={copiedKey}
-                visibleKey={visibleKey}
-                onVisibleKeyChange={onVisibleKeyChange}
-                onCopy={onCopy}
-                onEdit={onEdit}
-                onRemove={onRemove}
-                onToggle={onToggle}
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="w-[44px] text-center">
+            <div className="flex h-7 items-center justify-center">
+              <Checkbox
+                checked={
+                  allSelected ? true : someSelected ? "indeterminate" : false
+                }
+                onCheckedChange={(checked) => onSelectAll(checked === true)}
+                aria-label={titleForLocale(
+                  locale,
+                  "全选密钥",
+                  "Select all keys",
+                )}
+                disabled={bulkBusy}
               />
-            ))
-          ) : (
-            <TableRow>
-              <TableCell
-                colSpan={6}
-                className="py-10 text-center text-sm text-muted-foreground"
+            </div>
+          </TableHead>
+          <TableHead>{titleForLocale(locale, "名称", "Name")}</TableHead>
+          <TableHead>{titleForLocale(locale, "限额", "Limit")}</TableHead>
+          <TableHead>{titleForLocale(locale, "权限", "Permissions")}</TableHead>
+          <TableHead className="w-[72px] text-center">
+            {titleForLocale(locale, "状态", "Status")}
+          </TableHead>
+          <TableHead className="w-[56px]" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {gatewayKeys.length === 0 ? (
+          <TableRow className="hover:bg-transparent">
+            <TableCell
+              colSpan={6}
+              className="h-32 text-center text-sm text-muted-foreground"
+            >
+              {titleForLocale(locale, "当前没有 API 密钥", "No API keys")}
+            </TableCell>
+          </TableRow>
+        ) : (
+          gatewayKeys.map((item) => {
+            const isBusy = busyId === item.id || bulkBusy;
+            const hint = statusHint(item, locale);
+            const copied = copiedKey === item.api_key;
+            const isVisible = visibleKeys.has(item.id);
+            return (
+              <TableRow
+                key={item.id}
+                data-state={selected.has(item.id) ? "selected" : undefined}
               >
-                {titleForLocale(locale, "当前没有 API 密钥", "No API keys")}
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
+                <TableCell className="w-[44px] py-1 text-center">
+                  <div className="flex h-7 items-center justify-center">
+                    <Checkbox
+                      checked={selected.has(item.id)}
+                      onCheckedChange={(checked) =>
+                        onSelectOne(item.id, checked === true)
+                      }
+                      aria-label={titleForLocale(
+                        locale,
+                        "选择密钥",
+                        "Select key",
+                      )}
+                      disabled={isBusy}
+                    />
+                  </div>
+                </TableCell>
+                <TableCell className="min-w-0 max-w-[16rem] py-1">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {item.remark ||
+                        titleForLocale(locale, "未命名", "Unnamed")}
+                    </p>
+                    <div className="flex min-w-0 items-center gap-0.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                            {isVisible
+                              ? item.api_key
+                              : maskGatewayKey(item.api_key)}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="max-w-none font-mono"
+                        >
+                          {item.api_key}
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="shrink-0 text-muted-foreground shadow-none"
+                            onClick={() => {
+                              setVisibleKeys((current) => {
+                                const next = new Set(current);
+                                if (next.has(item.id)) next.delete(item.id);
+                                else next.add(item.id);
+                                return next;
+                              });
+                            }}
+                            aria-label={titleForLocale(
+                              locale,
+                              isVisible ? "隐藏完整 Key" : "显示完整 Key",
+                              isVisible ? "Hide full key" : "Show full key",
+                            )}
+                          >
+                            {isVisible ? <EyeOff /> : <Eye />}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {titleForLocale(
+                            locale,
+                            isVisible ? "隐藏 Key" : "显示完整 Key",
+                            isVisible ? "Hide key" : "Show full key",
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="shrink-0 text-muted-foreground shadow-none"
+                            onClick={() => void onCopy(item.api_key)}
+                            aria-label={titleForLocale(
+                              locale,
+                              "复制密钥",
+                              "Copy key",
+                            )}
+                          >
+                            {copied ? <Check /> : <Copy />}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {titleForLocale(locale, "复制密钥", "Copy key")}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="min-w-0 py-1">
+                  <p className="text-xs">{formatGatewayLimit(locale, item)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {hint ??
+                      (item.expires_at
+                        ? titleForLocale(
+                            locale,
+                            `到期 ${formatDateOnly(locale, item.expires_at, timeZone)}`,
+                            `Expires ${formatDateOnly(locale, item.expires_at, timeZone)}`,
+                          )
+                        : titleForLocale(locale, "永不过期", "No expiry"))}
+                  </p>
+                </TableCell>
+                <TableCell className="min-w-0 max-w-[14rem] py-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {permissionLabel(item, locale)}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {permissionLabel(item, locale)}
+                    </TooltipContent>
+                  </Tooltip>
+                </TableCell>
+                <TableCell className="w-[72px] py-1">
+                  <div className="flex h-7 items-center justify-center">
+                    <Switch
+                      checked={item.enabled}
+                      disabled={isBusy}
+                      onCheckedChange={(checked) =>
+                        void onToggle(item, Boolean(checked))
+                      }
+                      aria-label={titleForLocale(
+                        locale,
+                        item.enabled ? "停用 API Key" : "启用 API Key",
+                        item.enabled ? "Disable API key" : "Enable API key",
+                      )}
+                    />
+                  </div>
+                </TableCell>
+                <TableCell className="w-[56px] py-1">
+                  <div className="flex h-7 items-center justify-end">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          className="text-muted-foreground shadow-none"
+                          onClick={() => onEdit(item)}
+                          disabled={isBusy}
+                          aria-label={titleForLocale(
+                            locale,
+                            "编辑 API Key",
+                            "Edit API key",
+                          )}
+                        >
+                          <Pencil />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        {titleForLocale(locale, "编辑 API Key", "Edit API key")}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })
+        )}
+      </TableBody>
+    </Table>
   );
 }

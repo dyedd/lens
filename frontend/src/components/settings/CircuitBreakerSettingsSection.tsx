@@ -1,16 +1,15 @@
-import {
-  Field,
-  FieldContent,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/Field";
+import { FieldError } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { TabsContent } from "@/components/ui/Tabs";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
-import { SettingsHint, SettingsSectionCard } from "./SettingsSectionCard";
+import { SettingsSectionCard } from "./SettingsSectionCard";
+import {
+  SettingsFieldList,
+  SettingsFieldRow,
+  SettingsSectionSeparator,
+} from "./settingsLayout";
 import type { useSettingsDraft } from "./useSettingsDraft";
 
 type CircuitBreakerKey =
@@ -75,13 +74,15 @@ function NumberSettingField({
   const errorId = `${id}-error`;
 
   return (
-    <Field data-invalid={Boolean(error)}>
-      <div className="flex items-center gap-1">
-        <FieldLabel htmlFor={id}>{label}</FieldLabel>
-        {description ? <SettingsHint description={description} /> : null}
-      </div>
+    <SettingsFieldRow
+      htmlFor={id}
+      title={label}
+      description={description}
+      invalid={Boolean(error)}
+    >
       <Input
         id={id}
+        className="w-full"
         type="number"
         required
         min={min}
@@ -93,7 +94,7 @@ function NumberSettingField({
         onChange={(event) => onChange(event.target.value)}
       />
       {error ? <FieldError id={errorId}>{error}</FieldError> : null}
-    </Field>
+    </SettingsFieldRow>
   );
 }
 
@@ -349,39 +350,27 @@ export function CircuitBreakerSettingsSection({
           "Cooldown and health ranking",
         )}
       >
-        <FieldGroup>
-          {_getCircuitBreakerFieldGroups(locale).map((group) => (
-            <section key={group.title} className="flex flex-col gap-3">
-              <h3 className="text-sm font-medium text-foreground">
-                {group.title}
-              </h3>
-
+        {_getCircuitBreakerFieldGroups(locale).map((group, groupIndex) => (
+          <div key={group.title}>
+            {groupIndex > 0 ? <SettingsSectionSeparator /> : null}
+            <h4 className="mb-4 text-xs font-medium text-foreground/88">
+              {group.title}
+            </h4>
+            <SettingsFieldList>
               {group.showHealthToggle ? (
-                <Field
-                  orientation="horizontal"
-                  className="items-center justify-between gap-4 rounded-lg border p-3"
+                <SettingsFieldRow
+                  htmlFor={HEALTH_SCORING_TOGGLE_ID}
+                  title={titleForLocale(
+                    locale,
+                    "启用健康排序",
+                    "Enable health ranking",
+                  )}
+                  description={titleForLocale(
+                    locale,
+                    "关闭后仅按所选路由策略的原始顺序或等权轮询选择可用模型。",
+                    "When disabled, available models use the configured order or equal-weight round robin for the selected strategy.",
+                  )}
                 >
-                  <FieldContent>
-                    <div className="flex items-center gap-1">
-                      <FieldLabel
-                        htmlFor={HEALTH_SCORING_TOGGLE_ID}
-                        className="w-auto"
-                      >
-                        {titleForLocale(
-                          locale,
-                          "启用健康排序",
-                          "Enable health ranking",
-                        )}
-                      </FieldLabel>
-                      <SettingsHint
-                        description={titleForLocale(
-                          locale,
-                          "关闭后仅按所选路由策略的原始顺序或等权轮询选择可用模型。",
-                          "When disabled, available models use the configured order or equal-weight round robin for the selected strategy.",
-                        )}
-                      />
-                    </div>
-                  </FieldContent>
                   <Switch
                     id={HEALTH_SCORING_TOGGLE_ID}
                     checked={settings.draft.isHealthScoringEnabled}
@@ -389,30 +378,25 @@ export function CircuitBreakerSettingsSection({
                       settings.setDraftValue("isHealthScoringEnabled", checked)
                     }
                   />
-                </Field>
+                </SettingsFieldRow>
               ) : null}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                {group.fields.map((field) => (
-                  <NumberSettingField
-                    key={field.key}
-                    id={field.id}
-                    label={field.label}
-                    description={field.description}
-                    min={field.min}
-                    max={field.max}
-                    step={field.step}
-                    value={settings.draft[field.key]}
-                    error={settings.numericSettingErrors[field.key]}
-                    onChange={(value) =>
-                      settings.setDraftValue(field.key, value)
-                    }
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </FieldGroup>
+              {group.fields.map((field) => (
+                <NumberSettingField
+                  key={field.key}
+                  id={field.id}
+                  label={field.label}
+                  description={field.description}
+                  min={field.min}
+                  max={field.max}
+                  step={field.step}
+                  value={settings.draft[field.key]}
+                  error={settings.numericSettingErrors[field.key]}
+                  onChange={(value) => settings.setDraftValue(field.key, value)}
+                />
+              ))}
+            </SettingsFieldList>
+          </div>
+        ))}
       </SettingsSectionCard>
     </TabsContent>
   );

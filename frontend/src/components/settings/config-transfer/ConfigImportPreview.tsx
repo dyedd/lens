@@ -1,8 +1,6 @@
-import { CircleAlert, FileJson } from "lucide-react";
+import { FileJson } from "lucide-react";
 
-import { Alert, AlertDescription } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
-import { Card, CardContent } from "@/components/ui/Card";
 import {
   Item,
   ItemContent,
@@ -12,6 +10,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/Item";
+import { Spinner } from "@/components/ui/Spinner";
 import type { ConfigBackupDump } from "@/lib/api/backups";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { formatExportedAt } from "./backupPreview";
@@ -57,10 +56,9 @@ export function ConfigImportPreview({
   return (
     <>
       {previewError ? (
-        <Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription>{previewError}</AlertDescription>
-        </Alert>
+        <p className="rounded-md bg-muted/35 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          {previewError}
+        </p>
       ) : null}
 
       {selectedFile ? (
@@ -78,48 +76,47 @@ export function ConfigImportPreview({
       ) : null}
 
       {preview ? (
-        <Card className="py-0">
-          <CardContent className="flex flex-col gap-3 p-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <ConfigPreviewMeta
-                label={titleForLocale(locale, "系统版本", "Lens version")}
-                value={preview.lens_version || "n/a"}
-              />
-              <ConfigPreviewMeta
-                label={titleForLocale(locale, "导出时间", "Exported at")}
-                value={formatExportedAt(preview.exported_at, locale, timeZone)}
-              />
-            </div>
+        <div className="space-y-3 rounded-md bg-muted/35 px-3 py-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <ConfigPreviewMeta
+              label={titleForLocale(locale, "系统版本", "Lens version")}
+              value={preview.lens_version || "n/a"}
+            />
+            <ConfigPreviewMeta
+              label={titleForLocale(locale, "导出时间", "Exported at")}
+              value={formatExportedAt(preview.exported_at, locale, timeZone)}
+            />
+          </div>
 
-            <ItemGroup className="gap-2">
-              {previewSections.map((item) => (
-                <Item key={item.key} variant="outline" size="sm">
-                  <ItemContent>
-                    <ItemHeader>
-                      <ItemTitle>{item.label}</ItemTitle>
-                      <Badge variant="secondary">{item.count}</Badge>
-                    </ItemHeader>
-                  </ItemContent>
-                </Item>
-              ))}
-            </ItemGroup>
-          </CardContent>
-        </Card>
+          <ItemGroup className="gap-2">
+            {previewSections.map((item) => (
+              <Item key={item.key} variant="outline" size="sm">
+                <ItemContent>
+                  <ItemHeader>
+                    <ItemTitle>{item.label}</ItemTitle>
+                    <Badge
+                      variant="secondary"
+                      className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground"
+                    >
+                      {item.count}
+                    </Badge>
+                  </ItemHeader>
+                </ItemContent>
+              </Item>
+            ))}
+          </ItemGroup>
+        </div>
       ) : selectedFile && isPreviewPending ? (
-        <Item variant="muted">
-          <ItemMedia variant="icon">
-            <FileJson />
-          </ItemMedia>
-          <ItemContent>
-            <ItemTitle>
-              {titleForLocale(
-                locale,
-                "正在解析备份文件...",
-                "Parsing backup file...",
-              )}
-            </ItemTitle>
-          </ItemContent>
-        </Item>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Spinner className="size-3.5" />
+          <span>
+            {titleForLocale(
+              locale,
+              "正在解析备份文件...",
+              "Parsing backup file...",
+            )}
+          </span>
+        </div>
       ) : null}
     </>
   );

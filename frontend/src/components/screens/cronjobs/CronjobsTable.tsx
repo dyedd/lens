@@ -1,8 +1,7 @@
-import { Play, Save } from "lucide-react";
+import { Check, Pencil, Play, X } from "lucide-react";
 
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Switch } from "@/components/ui/Switch";
 import {
   Table,
@@ -12,84 +11,37 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { CronjobItem } from "@/lib/api/cronjobs";
-import type { SettingItem } from "@/lib/api/settings";
 import { formatLogDateTime } from "@/lib/datetime";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
-import { RetentionEditor, ScheduleEditor } from "./CronjobEditors";
 import {
-  isDraftChanged,
-  isDraftInvalid,
-  isRetentionDraftChanged,
-  isRetentionDraftInvalid,
-  REQUEST_LOG_PRUNE_TASK_ID,
-  REQUEST_LOG_STATS_PERSIST_TASK_ID,
-  type RetentionDraft,
-  type TaskDraft,
-  taskDraft,
-} from "./cronjobDrafts";
+  cronjobDescription,
+  cronjobScheduleLabel,
+  cronjobTitle,
+} from "./cronjobView";
 
-function statusLabel(locale: Locale, status: CronjobItem["status"]) {
-  const labels: Record<CronjobItem["status"], [string, string]> = {
-    idle: ["空闲", "Idle"],
-    running: ["运行中", "Running"],
-    succeeded: ["成功", "Succeeded"],
-    failed: ["失败", "Failed"],
-    disabled: ["已停用", "Disabled"],
-  };
-  const [zh, en] = labels[status];
-  return titleForLocale(locale, zh, en);
-}
-
-function statusVariant(status: CronjobItem["status"]) {
-  if (status === "failed") return "destructive" as const;
-  if (status === "running" || status === "succeeded")
-    return "secondary" as const;
-  return "outline" as const;
-}
-
-function taskTitle(locale: Locale, task: CronjobItem) {
-  const labels: Record<string, [string, string]> = {
-    [REQUEST_LOG_PRUNE_TASK_ID]: ["请求日志清理", "Request log cleanup"],
-    [REQUEST_LOG_STATS_PERSIST_TASK_ID]: [
-      "请求日志统计落库",
-      "Request log stats persist",
-    ],
-    model_price_sync: ["模型价格同步", "Model price sync"],
-    channel_model_sync: ["渠道模型同步", "Channel model sync"],
-    credential_rate_sync: ["凭据倍率同步", "Credential rate sync"],
-  };
-  const label = labels[task.id];
-  return label ? titleForLocale(locale, label[0], label[1]) : task.name;
-}
-
-function taskDescription(locale: Locale, task: CronjobItem) {
-  const labels: Record<string, [string, string]> = {
-    [REQUEST_LOG_PRUNE_TASK_ID]: [
-      "按日志保留天数清理过期请求日志",
-      "Prune request logs by the retention window",
-    ],
-    [REQUEST_LOG_STATS_PERSIST_TASK_ID]: [
-      "归档请求日志统计数据",
-      "Persist request log statistics",
-    ],
-    model_price_sync: [
-      "从 LiteLLM 同步模型价格",
-      "Sync model prices from LiteLLM",
-    ],
-    channel_model_sync: [
-      "按渠道自动同步配置更新上游模型",
-      "Update upstream models from channel auto-sync settings",
-    ],
-    credential_rate_sync: [
-      "同步 Sub2API 有效倍率与 NewAPI 分组参考倍率",
-      "Sync Sub2API effective rates and NewAPI group reference rates",
-    ],
-  };
-  const label = labels[task.id];
-  return label ? titleForLocale(locale, label[0], label[1]) : task.description;
-}
+type CronjobsTableProps = {
+  locale: Locale;
+  tasks: CronjobItem[];
+  isFetching: boolean;
+  tasksIsError: boolean;
+  timeZone: string;
+  selected: Set<string>;
+  bulkBusy: boolean;
+  togglingTaskId?: string;
+  runningTaskId?: string;
+  onSelectAll: (checked: boolean) => void;
+  onSelectOne: (taskId: string, checked: boolean) => void;
+  onEdit: (task: CronjobItem) => void;
+  onRun: (task: CronjobItem) => void;
+  onToggleEnabled: (task: CronjobItem, enabled: boolean) => void;
+};
 
 function formatTaskTime(
   locale: Locale,
@@ -101,210 +53,179 @@ function formatTaskTime(
     : titleForLocale(locale, "未执行", "Never");
 }
 
-type CronjobsTableProps = {
-  drafts: Record<string, TaskDraft>;
-  isFetching: boolean;
-  locale: Locale;
-  retentionDraft: RetentionDraft;
-  runningTaskId?: string;
-  savingTaskId?: string;
-  settings: SettingItem[] | undefined;
-  tasks: CronjobItem[];
-  tasksIsError: boolean;
-  timeZone: string;
-  onDraftChange: (task: CronjobItem, value: Partial<TaskDraft>) => void;
-  onRetentionChange: (value: Partial<RetentionDraft>) => void;
-  onRun: (task: CronjobItem) => void;
-  onSave: (task: CronjobItem) => void;
-};
+/** Render cron jobs as a compact table with enable/run actions. */
+export function CronjobsTable({
+  locale,
+  tasks,
+  isFetching,
+  tasksIsError,
+  timeZone,
+  selected,
+  bulkBusy,
+  togglingTaskId,
+  runningTaskId,
+  onSelectAll,
+  onSelectOne,
+  onEdit,
+  onRun,
+  onToggleEnabled,
+}: CronjobsTableProps) {
+  if (tasksIsError) return null;
+  const allSelected =
+    tasks.length > 0 && tasks.every((task) => selected.has(task.id));
+  const someSelected = tasks.some((task) => selected.has(task.id));
 
-/** Render the cron job schedule table. */
-export function CronjobsTable(props: CronjobsTableProps) {
-  const {
-    drafts,
-    isFetching,
-    locale,
-    retentionDraft,
-    runningTaskId,
-    savingTaskId,
-    settings,
-    tasks,
-    tasksIsError,
-    timeZone,
-    onDraftChange,
-    onRetentionChange,
-    onRun,
-    onSave,
-  } = props;
   return (
-    <Card className="min-w-0 py-0">
-      <CardContent className="min-w-0 p-3 sm:p-5">
-        <Table className="min-w-[1320px] table-fixed">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-64">
-                {titleForLocale(locale, "任务", "Task")}
-              </TableHead>
-              <TableHead className="w-16">
-                {titleForLocale(locale, "启用", "Enabled")}
-              </TableHead>
-              <TableHead className="w-72 text-center">
-                {titleForLocale(locale, "计划", "Schedule")}
-              </TableHead>
-              <TableHead className="w-56 text-center">
-                {titleForLocale(locale, "任务配置", "Task config")}
-              </TableHead>
-              <TableHead className="w-24">
-                {titleForLocale(locale, "状态", "Status")}
-              </TableHead>
-              <TableHead className="w-36">
-                {titleForLocale(locale, "上次执行", "Last run")}
-              </TableHead>
-              <TableHead className="w-36">
-                {titleForLocale(locale, "下次执行", "Next run")}
-              </TableHead>
-              <TableHead className="w-40 text-right">
-                {titleForLocale(locale, "操作", "Actions")}
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {!tasksIsError && tasks.length ? (
-              tasks.map((task) => {
-                const draft = drafts[task.id] ?? taskDraft(task);
-                const invalidDraft = isDraftInvalid(draft);
-                const isRetentionTask = task.id === REQUEST_LOG_PRUNE_TASK_ID;
-                const isWaitingForSettings =
-                  isRetentionTask && settings === undefined;
-                const invalidRetention =
-                  isRetentionTask && isRetentionDraftInvalid(retentionDraft);
-                const retentionChanged =
-                  isRetentionTask &&
-                  isRetentionDraftChanged(settings, retentionDraft);
-                const changed = isDraftChanged(task, draft) || retentionChanged;
-                const running =
-                  task.status === "running" || runningTaskId === task.id;
-                return (
-                  <TableRow key={task.id}>
-                    <TableCell>
-                      <div className="flex min-w-52 flex-col gap-1">
-                        <span className="font-medium text-foreground">
-                          {taskTitle(locale, task)}
-                        </span>
-                        <span className="max-w-80 truncate text-xs text-muted-foreground">
-                          {taskDescription(locale, task)}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={draft.enabled}
-                        onCheckedChange={(checked) =>
-                          onDraftChange(task, { enabled: checked })
-                        }
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="w-[44px] text-center">
+            <div className="flex h-7 items-center justify-center">
+              <Checkbox
+                checked={
+                  allSelected ? true : someSelected ? "indeterminate" : false
+                }
+                disabled={bulkBusy}
+                onCheckedChange={(checked) => onSelectAll(checked === true)}
+                aria-label={titleForLocale(
+                  locale,
+                  "全选定时任务",
+                  "Select all cron jobs",
+                )}
+              />
+            </div>
+          </TableHead>
+          <TableHead>{titleForLocale(locale, "任务", "Task")}</TableHead>
+          <TableHead>{titleForLocale(locale, "计划", "Schedule")}</TableHead>
+          <TableHead className="w-[72px]">
+            {titleForLocale(locale, "状态", "Status")}
+          </TableHead>
+          <TableHead>
+            {titleForLocale(locale, "下次执行", "Next run")}
+          </TableHead>
+          <TableHead className="w-[52px] text-right">
+            {titleForLocale(locale, "操作", "Actions")}
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {tasks.length === 0 ? (
+          <TableRow className="hover:bg-transparent">
+            <TableCell
+              colSpan={6}
+              className="h-32 text-center text-muted-foreground"
+            >
+              {isFetching
+                ? titleForLocale(locale, "加载中...", "Loading...")
+                : titleForLocale(locale, "暂无定时任务", "No cron jobs")}
+            </TableCell>
+          </TableRow>
+        ) : (
+          tasks.map((task) => {
+            const busy =
+              bulkBusy ||
+              task.status === "running" ||
+              togglingTaskId === task.id ||
+              runningTaskId === task.id;
+            return (
+              <TableRow
+                key={task.id}
+                data-state={selected.has(task.id) ? "selected" : undefined}
+              >
+                <TableCell className="w-[44px] py-1.5 text-center">
+                  <div className="flex h-7 items-center justify-center">
+                    <Checkbox
+                      checked={selected.has(task.id)}
+                      disabled={bulkBusy}
+                      onCheckedChange={(checked) =>
+                        onSelectOne(task.id, checked === true)
+                      }
+                      aria-label={titleForLocale(
+                        locale,
+                        `选择 ${cronjobTitle(locale, task)}`,
+                        `Select ${cronjobTitle(locale, task)}`,
+                      )}
+                    />
+                  </div>
+                </TableCell>
+                <TableCell className="max-w-[18rem]">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-foreground">
+                      {cronjobTitle(locale, task)}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {cronjobDescription(locale, task)}
+                    </p>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <button
+                    type="button"
+                    className="inline-flex max-w-[14rem] items-center gap-1.5 text-left text-xs text-foreground hover:text-foreground/80"
+                    onClick={() => onEdit(task)}
+                  >
+                    <span className="truncate">
+                      {cronjobScheduleLabel(locale, task)}
+                    </span>
+                    <Pencil className="size-3 shrink-0 text-muted-foreground" />
+                  </button>
+                </TableCell>
+                <TableCell>
+                  <Switch
+                    checked={task.enabled}
+                    disabled={busy}
+                    onCheckedChange={(checked) =>
+                      onToggleEnabled(task, checked)
+                    }
+                    aria-label={titleForLocale(
+                      locale,
+                      task.enabled ? "停用任务" : "启用任务",
+                      task.enabled ? "Disable task" : "Enable task",
+                    )}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title={task.last_error ?? undefined}
+                  >
+                    {task.status === "succeeded" ? (
+                      <Check className="size-3.5 shrink-0" />
+                    ) : null}
+                    {task.status === "failed" ? (
+                      <X className="size-3.5 shrink-0" />
+                    ) : null}
+                    {formatTaskTime(locale, task.next_run_at, timeZone)}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         aria-label={titleForLocale(
                           locale,
-                          "启用任务",
-                          "Enable task",
+                          "执行任务",
+                          "Run task",
                         )}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center align-middle">
-                      <ScheduleEditor
-                        draft={draft}
-                        locale={locale}
-                        invalid={invalidDraft}
-                        onChange={(value) => onDraftChange(task, value)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center align-middle">
-                      {isRetentionTask ? (
-                        <RetentionEditor
-                          draft={retentionDraft}
-                          locale={locale}
-                          invalid={invalidRetention}
-                          disabled={isWaitingForSettings}
-                          onChange={onRetentionChange}
-                        />
-                      ) : (
-                        <span className="text-sm text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <Badge variant={statusVariant(task.status)}>
-                          {statusLabel(locale, task.status)}
-                        </Badge>
-                        {task.last_error ? (
-                          <span
-                            className="max-w-64 truncate text-xs text-muted-foreground"
-                            title={task.last_error}
-                          >
-                            {task.last_error}
-                          </span>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {formatTaskTime(
-                        locale,
-                        task.last_finished_at ?? task.last_started_at,
-                        timeZone,
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {formatTaskTime(locale, task.next_run_at, timeZone)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={
-                            !changed ||
-                            isWaitingForSettings ||
-                            invalidDraft ||
-                            invalidRetention ||
-                            savingTaskId === task.id
-                          }
-                          onClick={() => onSave(task)}
-                        >
-                          <Save data-icon="inline-start" />
-                          {titleForLocale(locale, "保存", "Save")}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={running}
-                          onClick={() => onRun(task)}
-                        >
-                          <Play data-icon="inline-start" />
-                          {running
-                            ? titleForLocale(locale, "运行中", "Running")
-                            : titleForLocale(locale, "运行", "Run")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            ) : tasksIsError ? null : (
-              <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  {isFetching
-                    ? titleForLocale(locale, "加载中...", "Loading...")
-                    : titleForLocale(locale, "暂无定时任务", "No cron jobs")}
+                        disabled={busy}
+                        onClick={() => onRun(task)}
+                      >
+                        <Play />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {titleForLocale(locale, "执行任务", "Run task")}
+                    </TooltipContent>
+                  </Tooltip>
                 </TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+            );
+          })
+        )}
+      </TableBody>
+    </Table>
   );
 }

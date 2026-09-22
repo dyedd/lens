@@ -1,5 +1,4 @@
 import { Input } from "@/components/ui/Input";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   Select,
   SelectContent,
@@ -8,8 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import { Switch } from "@/components/ui/Switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/ToggleGroup";
+import { cn } from "@/lib/classNames";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 import {
@@ -28,18 +26,27 @@ const WEEKDAYS = [
   { value: "7", zh: "日", en: "Sun" },
 ];
 
-function scheduleTypeOptions(locale: Locale) {
-  return [
-    {
-      value: "interval" as const,
-      label: titleForLocale(locale, "小时", "Hourly"),
-    },
-    { value: "daily" as const, label: titleForLocale(locale, "每天", "Daily") },
-    {
-      value: "weekly" as const,
-      label: titleForLocale(locale, "每周", "Weekly"),
-    },
-  ];
+/** Format a compact schedule summary for collapsed task rows. */
+export function formatScheduleSummary(draft: TaskDraft, locale: Locale) {
+  if (draft.scheduleType === "interval") {
+    return titleForLocale(
+      locale,
+      `每 ${draft.intervalHours} 小时`,
+      `Every ${draft.intervalHours} hours`,
+    );
+  }
+  const time = `${draft.runAtHour}:${draft.runAtMinute}`;
+  if (draft.scheduleType === "daily") {
+    return titleForLocale(locale, `每天 ${time}`, `Daily ${time}`);
+  }
+  const days = WEEKDAYS.filter((item) => draft.weekdays.includes(item.value))
+    .map((item) => titleForLocale(locale, item.zh, item.en))
+    .join(locale === "zh-CN" ? "、" : ", ");
+  return titleForLocale(
+    locale,
+    `每周 ${days || "-"} ${time}`,
+    `Weekly ${days || "-"} ${time}`,
+  );
 }
 
 /** Render editable schedule controls for a cron job. */
@@ -55,20 +62,38 @@ export function ScheduleEditor({
   onChange: (value: Partial<TaskDraft>) => void;
 }) {
   return (
-    <div className="mx-auto flex min-w-72 max-w-72 flex-col items-center gap-2">
-      <SegmentedControl
-        className="self-center"
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <Select
         value={draft.scheduleType}
-        onValueChange={(value) => onChange({ scheduleType: value })}
-        options={scheduleTypeOptions(locale)}
-      />
+        onValueChange={(value) =>
+          onChange({ scheduleType: value as TaskDraft["scheduleType"] })
+        }
+      >
+        <SelectTrigger
+          className="h-8 w-[5.5rem]"
+          aria-label={titleForLocale(locale, "计划类型", "Schedule type")}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="interval">
+            {titleForLocale(locale, "小时", "Hourly")}
+          </SelectItem>
+          <SelectItem value="daily">
+            {titleForLocale(locale, "每天", "Daily")}
+          </SelectItem>
+          <SelectItem value="weekly">
+            {titleForLocale(locale, "每周", "Weekly")}
+          </SelectItem>
+        </SelectContent>
+      </Select>
       {draft.scheduleType === "interval" ? (
-        <div className="flex items-center justify-center gap-2">
-          <span className="text-sm text-muted-foreground">
+        <>
+          <span className="text-xs text-muted-foreground">
             {titleForLocale(locale, "每", "Every")}
           </span>
           <Input
-            className="w-20"
+            className="h-8 w-16"
             type="number"
             min="1"
             step="1"
@@ -78,12 +103,40 @@ export function ScheduleEditor({
               onChange({ intervalHours: event.target.value })
             }
           />
-          <span className="text-sm text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {titleForLocale(locale, "小时", "hours")}
           </span>
+        </>
+      ) : null}
+      {draft.scheduleType === "weekly" ? (
+        <div className="flex items-center gap-0.5">
+          {WEEKDAYS.map((weekday) => {
+            const selected = draft.weekdays.includes(weekday.value);
+            return (
+              <button
+                key={weekday.value}
+                type="button"
+                className={cn(
+                  "size-7 rounded-md text-[11px] transition-colors",
+                  selected
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                aria-pressed={selected}
+                onClick={() => {
+                  const next = selected
+                    ? draft.weekdays.filter((item) => item !== weekday.value)
+                    : [...draft.weekdays, weekday.value];
+                  onChange({ weekdays: sortedWeekdays(next) });
+                }}
+              >
+                {titleForLocale(locale, weekday.zh, weekday.en)}
+              </button>
+            );
+          })}
         </div>
       ) : null}
-      {draft.scheduleType === "daily" ? (
+      {draft.scheduleType === "daily" || draft.scheduleType === "weekly" ? (
         <TimeSelector
           locale={locale}
           hour={draft.runAtHour}
@@ -92,83 +145,6 @@ export function ScheduleEditor({
           onChange={onChange}
         />
       ) : null}
-      {draft.scheduleType === "weekly" ? (
-        <div className="flex flex-col items-center gap-2">
-          <ToggleGroup
-            type="multiple"
-            variant="outline"
-            size="sm"
-            value={draft.weekdays}
-            onValueChange={(value) =>
-              onChange({ weekdays: sortedWeekdays(value) })
-            }
-            aria-label={titleForLocale(locale, "执行星期", "Run weekdays")}
-          >
-            {WEEKDAYS.map((weekday) => (
-              <ToggleGroupItem key={weekday.value} value={weekday.value}>
-                {titleForLocale(locale, weekday.zh, weekday.en)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <TimeSelector
-            locale={locale}
-            hour={draft.runAtHour}
-            minute={draft.runAtMinute}
-            invalid={invalid}
-            onChange={onChange}
-          />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** Render request-log retention controls. */
-export function RetentionEditor({
-  draft,
-  locale,
-  invalid,
-  disabled,
-  onChange,
-}: {
-  draft: RetentionDraft;
-  locale: Locale;
-  invalid: boolean;
-  disabled: boolean;
-  onChange: (value: Partial<RetentionDraft>) => void;
-}) {
-  return (
-    <div className="mx-auto flex min-w-52 max-w-52 flex-col items-center gap-2">
-      <div className="flex items-center justify-center gap-2">
-        <Switch
-          checked={draft.enabled}
-          disabled={disabled}
-          onCheckedChange={(checked) => onChange({ enabled: checked })}
-          aria-label={titleForLocale(locale, "保留日志", "Keep logs")}
-        />
-        <span className="text-sm text-muted-foreground">
-          {titleForLocale(locale, "保留日志", "Keep logs")}
-        </span>
-      </div>
-      <div className="flex items-center justify-center gap-2">
-        <span className="text-sm text-muted-foreground">
-          {titleForLocale(locale, "保留", "Keep")}
-        </span>
-        <Input
-          className="w-20"
-          type="number"
-          min="1"
-          max="36500"
-          step="1"
-          value={draft.period}
-          aria-invalid={invalid}
-          disabled={disabled || !draft.enabled}
-          onChange={(event) => onChange({ period: event.target.value })}
-        />
-        <span className="text-sm text-muted-foreground">
-          {titleForLocale(locale, "天", "days")}
-        </span>
-      </div>
     </div>
   );
 }
@@ -195,13 +171,13 @@ function TimeSelector({
     String(index * 5).padStart(2, "0"),
   );
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <Select
         value={hour}
         onValueChange={(value) => onChange({ runAtHour: value })}
       >
         <SelectTrigger
-          className="w-16"
+          className="h-8 w-16"
           aria-invalid={invalid}
           aria-label={titleForLocale(locale, "小时", "Hour")}
         >
@@ -217,13 +193,13 @@ function TimeSelector({
           </SelectGroup>
         </SelectContent>
       </Select>
-      <span className="text-sm text-muted-foreground">:</span>
+      <span className="text-xs text-muted-foreground">:</span>
       <Select
         value={minute}
         onValueChange={(value) => onChange({ runAtMinute: value })}
       >
         <SelectTrigger
-          className="w-16"
+          className="h-8 w-16"
           aria-invalid={invalid}
           aria-label={titleForLocale(locale, "分钟", "Minute")}
         >
@@ -242,3 +218,5 @@ function TimeSelector({
     </div>
   );
 }
+
+export type { RetentionDraft };

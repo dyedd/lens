@@ -1,9 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { ListChecks, Plus, ToggleLeft, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent } from "@/components/ui/Card";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/Popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ModelGroup } from "@/lib/api/groups";
@@ -13,6 +24,7 @@ import { lazyComponent } from "@/lib/lazyComponent";
 
 import { GatewayApiKeyTable } from "./gateway-api-key-manager/GatewayApiKeyTable";
 import { buildGatewayModelGroupOptions } from "./gateway-api-key-manager/gatewayApiKeyModel";
+import { SettingsSection } from "./settingsLayout";
 
 const GatewayApiKeyDialog = lazyComponent(() =>
   import("./gateway-api-key-manager/GatewayApiKeyDialog").then(
@@ -43,10 +55,13 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<GatewayApiKey | null>(null);
-  const [removingKeyId, setRemovingKeyId] = useState("");
-  const [togglingKeyId, setTogglingKeyId] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busyId, setBusyId] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
-  const [visibleKey, setVisibleKey] = useState("");
+  const [bulkEnabled, setBulkEnabled] = useState<"enabled" | "disabled" | "">(
+    "",
+  );
+  const selectedKeys = gatewayKeys.filter((item) => selected.has(item.id));
 
   function openCreateDialog() {
     setEditingKey(null);
@@ -58,7 +73,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     setDialogOpen(true);
   }
 
-  async function copyGatewayKey(value: string, itemId: string) {
+  async function copyGatewayKey(value: string) {
     try {
       await navigator.clipboard.writeText(value);
       setCopiedKey(value);
@@ -67,12 +82,11 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         setCopiedKey((current) => (current === value ? "" : current));
       }, 1500);
     } catch {
-      setVisibleKey(itemId);
-      toast.info(
+      toast.error(
         titleForLocale(
           locale,
-          "非 HTTPS 环境，无法自动复制，已显示完整 Key 请手动复制",
-          "Non-HTTPS environment. Key revealed for manual copy.",
+          "复制失败，请在 HTTPS 环境下重试",
+          "Copy failed. Try again over HTTPS.",
         ),
       );
     }
@@ -82,47 +96,35 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     await queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] });
   }
 
-  async function removeGatewayKey(keyId: string) {
-    const confirmed = window.confirm(
-      titleForLocale(locale, "确认删除此 API Key？", "Delete this API key?"),
-    );
-    if (!confirmed) {
-      return;
-    }
+  function handleSelectAll(checked: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const item of gatewayKeys) {
+        if (checked) next.add(item.id);
+        else next.delete(item.id);
+      }
+      return next;
+    });
+  }
 
-    setRemovingKeyId(keyId);
-    try {
-      await apiRequest<void>(`/admin/gateway-api-keys/${keyId}`, {
-        method: "DELETE",
-      });
-      toast.success(
-        titleForLocale(locale, "API Key 已删除", "API key deleted"),
-      );
-      await refreshKeys();
-    } catch (requestError) {
-      const message = getApiErrorMessage(
-        requestError,
-        titleForLocale(locale, "删除 API Key 失败", "Failed to delete API key"),
-      );
-      toast.error(message);
-    } finally {
-      setRemovingKeyId("");
-    }
+  function handleSelectOne(keyId: string, checked: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (checked) next.add(keyId);
+      else next.delete(keyId);
+      return next;
+    });
   }
 
   async function toggleGatewayKeyEnabled(
     item: GatewayApiKey,
     enabled: boolean,
   ) {
-    if (
-      togglingKeyId === item.id ||
-      removingKeyId === item.id ||
-      item.enabled === enabled
-    ) {
+    if (busyId || item.enabled === enabled) {
       return;
     }
 
-    setTogglingKeyId(item.id);
+    setBusyId(item.id);
     try {
       const updated = await apiRequest<GatewayApiKey>(
         `/admin/gateway-api-keys/${item.id}`,
@@ -162,43 +164,210 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
       );
       toast.error(message);
     } finally {
-      setTogglingKeyId("");
+      setBusyId("");
+    }
+  }
+
+  async function bulkSetEnabled(enabled: boolean) {
+    const items = selectedKeys.filter((item) => item.enabled !== enabled);
+    if (!items.length) {
+      setSelected(new Set());
+      return;
+    }
+    setBusyId("bulk");
+    try {
+      for (const item of items) {
+        const updated = await apiRequest<GatewayApiKey>(
+          `/admin/gateway-api-keys/${item.id}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              remark: item.remark,
+              enabled,
+              allowed_models: item.allowed_models,
+              max_cost_usd: item.max_cost_usd,
+              expires_at: item.expires_at ?? null,
+            } satisfies GatewayApiKeyPayload),
+          },
+        );
+        queryClient.setQueryData<GatewayApiKey[]>(
+          ["gateway-api-keys"],
+          (current) =>
+            (current ?? []).map((entry) =>
+              entry.id === updated.id ? updated : entry,
+            ),
+        );
+      }
+      toast.success(
+        titleForLocale(
+          locale,
+          enabled
+            ? `已启用 ${items.length} 个 API Key`
+            : `已停用 ${items.length} 个 API Key`,
+          enabled
+            ? `Enabled ${items.length} API keys`
+            : `Disabled ${items.length} API keys`,
+        ),
+      );
+      setSelected(new Set());
+    } catch (requestError) {
+      const message = getApiErrorMessage(
+        requestError,
+        titleForLocale(
+          locale,
+          "批量更新 API Key 失败",
+          "Failed to update API keys",
+        ),
+      );
+      toast.error(message);
+      await refreshKeys();
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function bulkRemove() {
+    if (!selectedKeys.length) return;
+    const confirmed = window.confirm(
+      titleForLocale(
+        locale,
+        `确认删除选中的 ${selectedKeys.length} 个 API Key？`,
+        `Delete ${selectedKeys.length} selected API keys?`,
+      ),
+    );
+    if (!confirmed) return;
+    setBusyId("bulk");
+    try {
+      for (const item of selectedKeys) {
+        await apiRequest<void>(`/admin/gateway-api-keys/${item.id}`, {
+          method: "DELETE",
+        });
+      }
+      toast.success(
+        titleForLocale(
+          locale,
+          `已删除 ${selectedKeys.length} 个 API Key`,
+          `Deleted ${selectedKeys.length} API keys`,
+        ),
+      );
+      setSelected(new Set());
+      await refreshKeys();
+    } catch (requestError) {
+      const message = getApiErrorMessage(
+        requestError,
+        titleForLocale(
+          locale,
+          "批量删除 API Key 失败",
+          "Failed to delete API keys",
+        ),
+      );
+      toast.error(message);
+      await refreshKeys();
+    } finally {
+      setBusyId("");
     }
   }
 
   return (
     <>
-      <Card className="min-w-0 py-0">
-        <CardContent className="flex min-w-0 flex-col gap-4 px-3 py-3 sm:px-5 sm:py-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm text-muted-foreground">
-              {titleForLocale(
-                locale,
-                `共 ${gatewayKeys.length} 个密钥`,
-                `${gatewayKeys.length} keys`,
-              )}
-            </div>
-            <Button type="button" onClick={openCreateDialog}>
-              <Plus data-icon="inline-start" />
+      <SettingsSection
+        title={titleForLocale(locale, "API 密钥", "API keys")}
+        actions={
+          <>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+                  disabled={selectedKeys.length === 0 || Boolean(busyId)}
+                  aria-label={titleForLocale(locale, "批量", "Bulk")}
+                >
+                  <ListChecks className="size-3.5" />
+                  {titleForLocale(locale, "批量", "Bulk")}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-[240px] p-2">
+                <p className="flex h-7 items-center px-2 text-[11px] text-muted-foreground">
+                  {titleForLocale(
+                    locale,
+                    `已选 ${selectedKeys.length} 项`,
+                    `${selectedKeys.length} selected`,
+                  )}
+                </p>
+                <div className="flex h-7 w-full items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted"
+                    disabled={!bulkEnabled || Boolean(busyId)}
+                    onClick={() => {
+                      void bulkSetEnabled(bulkEnabled === "enabled");
+                    }}
+                  >
+                    <ToggleLeft className="size-3" />
+                    {titleForLocale(locale, "应用", "Apply")}
+                  </Button>
+                  <Select
+                    value={bulkEnabled || undefined}
+                    onValueChange={(value) =>
+                      setBulkEnabled(value as "enabled" | "disabled")
+                    }
+                  >
+                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                      <SelectValue
+                        placeholder={titleForLocale(locale, "状态", "Status")}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="enabled">
+                        {titleForLocale(locale, "启用", "Enable")}
+                      </SelectItem>
+                      <SelectItem value="disabled">
+                        {titleForLocale(locale, "停用", "Disable")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <button
+                  type="button"
+                  disabled={Boolean(busyId)}
+                  onClick={() => void bulkRemove()}
+                  className="mt-1 flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
+                >
+                  <Trash2 className="size-3.5" />
+                  {titleForLocale(locale, "批量删除", "Delete selected")}
+                </button>
+              </PopoverContent>
+            </Popover>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+              onClick={openCreateDialog}
+            >
+              <Plus className="size-3.5" />
               {titleForLocale(locale, "创建 Key", "Create key")}
             </Button>
-          </div>
-          <GatewayApiKeyTable
-            locale={locale}
-            gatewayKeys={gatewayKeys}
-            timeZone={timeZone}
-            removingKeyId={removingKeyId}
-            togglingKeyId={togglingKeyId}
-            copiedKey={copiedKey}
-            visibleKey={visibleKey}
-            onVisibleKeyChange={setVisibleKey}
-            onCopy={copyGatewayKey}
-            onEdit={openEditDialog}
-            onRemove={removeGatewayKey}
-            onToggle={toggleGatewayKeyEnabled}
-          />
-        </CardContent>
-      </Card>
+          </>
+        }
+      >
+        <GatewayApiKeyTable
+          locale={locale}
+          gatewayKeys={gatewayKeys}
+          timeZone={timeZone}
+          selected={selected}
+          busyId={busyId}
+          copiedKey={copiedKey}
+          onSelectAll={handleSelectAll}
+          onSelectOne={handleSelectOne}
+          onCopy={copyGatewayKey}
+          onEdit={openEditDialog}
+          onToggle={toggleGatewayKeyEnabled}
+        />
+      </SettingsSection>
 
       {dialogOpen ? (
         <GatewayApiKeyDialog
