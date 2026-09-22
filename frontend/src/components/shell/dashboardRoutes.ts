@@ -4,6 +4,7 @@ export type DashboardView =
   | "requests"
   | "channels"
   | "groups"
+  | "billing"
   | "settings"
   | "apiKeys"
   | "cronjobs"
@@ -15,6 +16,7 @@ export type DashboardHref =
   | "/requests"
   | "/channels"
   | "/groups"
+  | "/billing"
   | "/settings"
   | "/api-keys"
   | "/cronjobs"
@@ -26,6 +28,7 @@ export const DASHBOARD_ROUTES: Record<DashboardView, DashboardHref> = {
   requests: "/requests",
   channels: "/channels",
   groups: "/groups",
+  billing: "/billing",
   settings: "/settings",
   apiKeys: "/api-keys",
   cronjobs: "/cronjobs",

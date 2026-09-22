@@ -4,9 +4,11 @@ export type ModelPriceItem = {
   display_name: string;
   protocols: ProtocolKind[];
   input_price_per_million: number;
+  image_input_price_per_million: number;
   output_price_per_million: number;
   cache_read_price_per_million: number;
   cache_write_price_per_million: number;
   image_price_per_image: number;
-  pricing_mode: "tokens" | "non_tokens";
+  pricing_mode: "free" | "tokens" | "non_tokens";
+  manual_override: boolean;
 };

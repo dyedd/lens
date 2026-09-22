@@ -1,8 +1,14 @@
 import { Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { Field, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import type { ParamOverrideRuleDraft } from "@/lib/upstreamRules";
 
@@ -35,83 +41,75 @@ export function ParamRuleRows({ title, rules, locale, onChange }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-medium text-foreground">{title}</div>
+    <div className="space-y-2">
+      <div className="flex h-9 items-center justify-between gap-3">
+        <h4 className="text-xs font-medium text-foreground/88">{title}</h4>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
+          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
           onClick={() => onChange([...rules, { ...EMPTY_RULE }])}
         >
-          <Plus data-icon="inline-start" />
+          <Plus className="size-3.5" />
           {titleForLocale(locale, "添加", "Add")}
         </Button>
       </div>
       {rules.length ? (
-        <div className="max-h-72 overflow-y-auto pr-1">
+        <div className="space-y-2">
           {rules.map((rule, index) => (
-            <div
-              key={index}
-              className="grid gap-3 border-b py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)_auto]"
-            >
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "路径", "Path")}
-                </FieldLabel>
-                <Input
-                  value={rule.path}
-                  onChange={(event) =>
-                    updateRule(index, { path: event.target.value })
-                  }
-                  placeholder="metadata.trace"
-                />
-              </Field>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "动作", "Action")}
-                </FieldLabel>
-                <select
-                  className="h-9 rounded-md border bg-background px-2 text-sm"
-                  value={rule.action}
-                  onChange={(event) =>
-                    updateRule(index, {
-                      action: event.target
-                        .value as ParamOverrideRuleDraft["action"],
-                    })
-                  }
+            <div key={index} className="flex items-center gap-2">
+              <Input
+                className="min-w-0 flex-1"
+                value={rule.path}
+                onChange={(event) =>
+                  updateRule(index, { path: event.target.value })
+                }
+                placeholder="metadata.trace"
+                aria-label={titleForLocale(locale, "路径", "Path")}
+              />
+              <Select
+                value={rule.action}
+                onValueChange={(value) =>
+                  updateRule(index, {
+                    action: value as ParamOverrideRuleDraft["action"],
+                  })
+                }
+              >
+                <SelectTrigger
+                  className="h-8 w-[5.5rem] shrink-0"
+                  aria-label={titleForLocale(locale, "动作", "Action")}
                 >
-                  <option value="set">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="set">
                     {titleForLocale(locale, "设置", "Set")}
-                  </option>
-                  <option value="delete">
+                  </SelectItem>
+                  <SelectItem value="delete">
                     {titleForLocale(locale, "删除", "Delete")}
-                  </option>
-                </select>
-              </Field>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "JSON 值", "JSON value")}
-                </FieldLabel>
-                <Input
-                  disabled={rule.action === "delete"}
-                  value={rule.value}
-                  onChange={(event) =>
-                    updateRule(index, { value: event.target.value })
-                  }
-                  placeholder="true"
-                />
-              </Field>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                className="min-w-0 flex-1"
+                disabled={rule.action === "delete"}
+                value={rule.value}
+                onChange={(event) =>
+                  updateRule(index, { value: event.target.value })
+                }
+                placeholder="true"
+                aria-label={titleForLocale(locale, "JSON 值", "JSON value")}
+              />
               <Button
                 type="button"
-                variant="destructive"
-                size="icon"
-                className="self-end"
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0 text-muted-foreground shadow-none"
                 aria-label={titleForLocale(locale, "删除规则", "Remove rule")}
-                title={titleForLocale(locale, "删除规则", "Remove rule")}
                 onClick={() => removeRule(index)}
               >
-                <Trash2 />
+                <Trash2 className="size-3.5" />
               </Button>
             </div>
           ))}

@@ -63,11 +63,13 @@ export type ModelGroup = {
   headers: HeaderRule[];
   fallback_group_ids?: string[];
   input_price_per_million: number;
+  image_input_price_per_million: number;
+  manual_override: boolean;
   output_price_per_million: number;
   cache_read_price_per_million: number;
   cache_write_price_per_million: number;
   image_price_per_image: number;
-  pricing_mode: "tokens" | "non_tokens";
+  pricing_mode: "free" | "tokens" | "non_tokens";
   items: ModelGroupItem[];
 };
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {
@@ -98,6 +100,7 @@ export type ModelGroupModelTestPayload = {
   credential_id: string;
   model_name: string;
   prompt: string;
+  protocol?: ProtocolKind;
 };
 export type ModelGroupEnsureStatus =
   | "create"
@@ -138,7 +141,6 @@ export type ChannelModelSyncGroupChange = {
 export type ChannelModelSyncResultItem = {
   site_id: string;
   protocol_config_id: string;
-  protocol_config_name: string;
   channel_name: string;
   credential_id: string;
   credential_name: string;

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/classNames";
 
-/** Render a generic single-value segmented control. */
+/** Render a compact pill segmented control. */
 export function SegmentedControl<T extends string>({
   value,
   onValueChange,
@@ -15,7 +15,7 @@ export function SegmentedControl<T extends string>({
   return (
     <div
       className={cn(
-        "inline-flex w-fit max-w-full self-start items-center gap-1 overflow-x-auto rounded-xl border bg-muted p-0.5",
+        "inline-flex h-8 w-fit max-w-full items-center gap-1 rounded-full bg-muted/40 p-1",
         className,
       )}
     >
@@ -24,10 +24,10 @@ export function SegmentedControl<T extends string>({
           key={option.value}
           type="button"
           className={cn(
-            "h-7 min-w-0 max-w-[6.75rem] truncate rounded-lg px-3 text-sm font-medium leading-none transition-colors",
+            "h-6 min-w-0 truncate rounded-full px-2.5 text-[11px] font-medium whitespace-nowrap transition-colors",
             option.value === value
-              ? "bg-background text-foreground shadow-sm"
-              : "bg-transparent text-muted-foreground hover:text-foreground",
+              ? "bg-pure text-pure-foreground shadow-xs"
+              : "bg-transparent text-foreground/60 hover:text-foreground",
           )}
           onClick={() => onValueChange(option.value)}
         >

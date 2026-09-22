@@ -87,6 +87,7 @@ export type ConfigBackupRequestLog = {
   first_token_latency_ms: number;
   latency_ms: number;
   input_tokens: number;
+  image_input_tokens: number;
   cache_read_input_tokens: number;
   cache_write_input_tokens: number;
   output_tokens: number;
@@ -95,7 +96,7 @@ export type ConfigBackupRequestLog = {
   output_cost_usd: number;
   total_cost_usd: number;
   rate_multiplier: number | null;
-  billing_mode: "tokens" | "non_tokens";
+  billing_mode: "free" | "tokens" | "non_tokens";
   billing_units: number;
   error_message?: string | null;
   created_at: string;

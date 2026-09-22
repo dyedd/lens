@@ -1,6 +1,6 @@
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 // Single source of truth for the dev API port; `lens dev` exports this variable.

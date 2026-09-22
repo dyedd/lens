@@ -52,7 +52,7 @@ export function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className="inset-y-0 left-0 h-full w-(--sidebar-width) rounded-none border-0 bg-sidebar p-0 text-sidebar-foreground sm:max-w-none [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,

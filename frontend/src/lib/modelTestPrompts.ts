@@ -6,19 +6,19 @@ export const DEFAULT_MODEL_TEST_PROMPTS = [
   "请判断这句话是否矛盾，并简短说明理由：所有模型都会失败，但这个模型没有失败。",
 ] as const;
 
-/** Parses configured model test prompts and applies the default set when empty. */
+/** Defaults apply only when the setting is missing; an empty value stays empty. */
 export function parseModelTestPrompts(
   value: string | null | undefined,
 ): string[] {
-  const prompts = (value ?? "")
+  if (value == null) return [...DEFAULT_MODEL_TEST_PROMPTS];
+  return value
     .replace(/\r/g, "\n")
     .split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
-  return prompts.length ? prompts : [...DEFAULT_MODEL_TEST_PROMPTS];
 }
 
-/** Serialize configured prompts with defaults as newline-delimited text. */
+/** Serialize configured prompts as newline-delimited text. */
 export function serializeModelTestPrompts(value: string): string {
   return parseModelTestPrompts(value).join("\n");
 }
