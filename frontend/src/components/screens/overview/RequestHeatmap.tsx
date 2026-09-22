@@ -1,17 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/Card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/Select";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   Tooltip,
   TooltipContent,
@@ -112,13 +99,13 @@ export function RequestHeatmap({
     return "bg-primary";
   }
   return (
-    <Card size="sm" className="py-0">
-      <CardHeader className="flex flex-col items-start justify-between gap-3 border-b py-4 sm:flex-row sm:items-center">
+    <section className="space-y-3 px-1">
+      <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <CardTitle className="text-base">
+          <h3 className="text-sm font-semibold">
             {isChineseLocale ? "热力图" : "Heatmap"}
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
             {isChineseLocale ? (
               <>
                 最近一年，共{" "}
@@ -135,34 +122,18 @@ export function RequestHeatmap({
                 requests over the last year
               </>
             )}
-          </CardDescription>
+          </p>
         </div>
-        <Select
+        <SegmentedControl
           value={metric}
-          onValueChange={(value) => onMetricChange(value as HeatmapMetric)}
-        >
-          <SelectTrigger
-            className="w-full sm:w-36"
-            aria-label={
-              isChineseLocale ? "选择热力图指标" : "Select heatmap metric"
-            }
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align="end" className="rounded-xl">
-            {METRIC_OPTIONS.map((option) => (
-              <SelectItem
-                key={option.value}
-                value={option.value}
-                className="rounded-lg"
-              >
-                {isChineseLocale ? option.zhLabel : option.enLabel}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </CardHeader>
-      <CardContent className="px-4 py-4">
+          onValueChange={onMetricChange}
+          options={METRIC_OPTIONS.map((option) => ({
+            value: option.value,
+            label: isChineseLocale ? option.zhLabel : option.enLabel,
+          }))}
+        />
+      </div>
+      <div className="rounded-md bg-muted/35 p-2 md:p-3">
         <div className="overflow-x-auto pb-1">
           <div
             className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2"
@@ -251,7 +222,7 @@ export function RequestHeatmap({
           <span className="size-3 rounded-[3px] bg-primary ring-1 ring-foreground/5" />
           <span>{labels.high}</span>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

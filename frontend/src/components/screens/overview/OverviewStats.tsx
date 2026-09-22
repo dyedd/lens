@@ -1,16 +1,17 @@
 import {
   Activity,
+  Archive,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Braces,
+  CircleCheck,
+  Database,
   DollarSign,
+  HardDrive,
+  Timer,
 } from "lucide-react";
 import { OverviewStatCard } from "./OverviewStatCard";
-import {
-  formatCompact,
-  formatDuration,
-  formatMoney,
-  type StatTrendPoint,
-} from "./overviewMetrics";
+import { formatCompact, formatDuration, formatMoney } from "./overviewMetrics";
 
 type Props = {
   cacheReadTokens: number;
@@ -22,14 +23,9 @@ type Props = {
   outputCost: number;
   outputTokens: number;
   requestCount: number;
-  statTrends: {
-    requests: StatTrendPoint[];
-    cost: StatTrendPoint[];
-    inputTokens: StatTrendPoint[];
-    outputTokens: StatTrendPoint[];
-  };
   successRate: number;
   totalCost: number;
+  totalTokens: number;
 };
 
 /** Render the four overview summary metrics. */
@@ -44,52 +40,99 @@ export function OverviewStats(props: Props) {
     outputCost,
     outputTokens,
     requestCount,
-    statTrends,
     successRate,
     totalCost,
+    totalTokens,
   } = props;
+  const cycleLabel = isChineseLocale
+    ? "点击切换指标"
+    : "Click to switch metric";
+
   return (
-    <section>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="space-y-3">
+      <h3 className="px-1 text-sm font-semibold">
+        {isChineseLocale ? "用量统计" : "Usage"}
+      </h3>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <OverviewStatCard
-          icon={Activity}
-          title={isChineseLocale ? "请求总量" : "Total requests"}
-          value={formatCompact(requestCount)}
-          valueMeta={
-            <>
-              <span className="brand-times-italic tabular-nums">
-                {successRate}%
-              </span>{" "}
-              {isChineseLocale ? "成功率" : "success rate"}
-            </>
-          }
-          description={`${isChineseLocale ? "消耗时间" : "Time spent"} ${formatDuration(consumedTime)}`}
-          trend={statTrends.requests}
-          gradientId="overview-requests-trend"
+          cycleLabel={cycleLabel}
+          views={[
+            {
+              icon: Activity,
+              title: isChineseLocale ? "请求总量" : "Total requests",
+              value: formatCompact(requestCount),
+            },
+            {
+              icon: CircleCheck,
+              title: isChineseLocale ? "成功率" : "Success rate",
+              value: `${successRate}%`,
+            },
+            {
+              icon: Timer,
+              title: isChineseLocale ? "消耗时间" : "Time spent",
+              value: formatDuration(consumedTime),
+            },
+          ]}
         />
         <OverviewStatCard
-          icon={DollarSign}
-          title={isChineseLocale ? "总费用" : "Total spend"}
-          value={formatMoney(totalCost)}
-          description={`${isChineseLocale ? "输入" : "Input"} ${formatMoney(inputCost)} + ${isChineseLocale ? "输出" : "Output"} ${formatMoney(outputCost)}`}
-          trend={statTrends.cost}
-          gradientId="overview-cost-trend"
+          cycleLabel={cycleLabel}
+          views={[
+            {
+              icon: DollarSign,
+              title: isChineseLocale ? "总费用" : "Total spend",
+              value: formatMoney(totalCost),
+            },
+            {
+              icon: ArrowDownToLine,
+              title: isChineseLocale ? "输入费用" : "Input spend",
+              value: formatMoney(inputCost),
+            },
+            {
+              icon: ArrowUpFromLine,
+              title: isChineseLocale ? "输出费用" : "Output spend",
+              value: formatMoney(outputCost),
+            },
+          ]}
         />
         <OverviewStatCard
-          icon={ArrowDownToLine}
-          title={isChineseLocale ? "输入 Tokens" : "Input tokens"}
-          value={formatCompact(inputTokens)}
-          description={`${isChineseLocale ? "缓存读取" : "Cache read"} ${formatCompact(cacheReadTokens)}`}
-          trend={statTrends.inputTokens}
-          gradientId="overview-input-token-trend"
+          cycleLabel={cycleLabel}
+          views={[
+            {
+              icon: Braces,
+              title: isChineseLocale ? "总 Tokens" : "Total tokens",
+              value: formatCompact(totalTokens),
+            },
+            {
+              icon: ArrowDownToLine,
+              title: isChineseLocale ? "输入 Tokens" : "Input tokens",
+              value: formatCompact(inputTokens),
+            },
+            {
+              icon: ArrowUpFromLine,
+              title: isChineseLocale ? "输出 Tokens" : "Output tokens",
+              value: formatCompact(outputTokens),
+            },
+          ]}
         />
         <OverviewStatCard
-          icon={ArrowUpFromLine}
-          title={isChineseLocale ? "输出 Tokens" : "Output tokens"}
-          value={formatCompact(outputTokens)}
-          description={`${isChineseLocale ? "缓存写入" : "Cache write"} ${formatCompact(cacheWriteTokens)}`}
-          trend={statTrends.outputTokens}
-          gradientId="overview-output-token-trend"
+          cycleLabel={cycleLabel}
+          views={[
+            {
+              icon: Database,
+              title: isChineseLocale ? "缓存 Tokens" : "Cache tokens",
+              value: formatCompact(cacheReadTokens + cacheWriteTokens),
+            },
+            {
+              icon: Archive,
+              title: isChineseLocale ? "缓存读取" : "Cache read",
+              value: formatCompact(cacheReadTokens),
+            },
+            {
+              icon: HardDrive,
+              title: isChineseLocale ? "缓存写入" : "Cache write",
+              value: formatCompact(cacheWriteTokens),
+            },
+          ]}
         />
       </div>
     </section>

@@ -1,3 +1,5 @@
+import { CalendarDays, Check } from "lucide-react";
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -9,13 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 import {
   type ChartConfig,
   ChartContainer,
@@ -25,12 +21,12 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/Chart";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/Select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/Popover";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { cn } from "@/lib/classNames";
 import {
   CHART_COLORS,
   formatCompact,
@@ -66,7 +62,7 @@ type Props = {
 
 function EmptyBlock({ label }: { label: string }) {
   return (
-    <div className="flex min-h-[260px] w-full items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+    <div className="flex min-h-[220px] w-full items-center justify-center rounded-md bg-muted/35 text-sm text-muted-foreground">
       {label}
     </div>
   );
@@ -90,69 +86,89 @@ export function ModelAnalyticsCard(props: Props) {
     onMetricChange,
     onRangeChange,
   } = props;
+  const [rangeOpen, setRangeOpen] = useState(false);
+  const rangeLabel =
+    TIME_RANGE_OPTIONS.find((option) => option.value === modelRange)?.[
+      isChineseLocale ? "zhLabel" : "enLabel"
+    ] ?? (isChineseLocale ? "今天" : "Today");
   const formatMetric = (value: number) =>
     pieMetric === "cost" ? formatMoney(value) : formatCompact(value);
+  const formatTooltipValue = (value: unknown) => formatMetric(Number(value));
+  const tooltipFormatter = (value: unknown, name?: string | number) => (
+    <div className="flex min-w-44 items-center justify-between gap-8">
+      <span className="truncate text-muted-foreground">{name ?? ""}</span>
+      <span className="shrink-0 font-mono font-medium text-foreground tabular-nums">
+        {formatTooltipValue(value)}
+      </span>
+    </div>
+  );
   return (
-    <Card size="sm" className="py-0">
-      <CardHeader className="flex flex-col items-start justify-between gap-3 border-b py-4 lg:flex-row lg:items-center">
+    <section className="space-y-3 px-1">
+      <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <CardTitle className="text-base">
+          <h3 className="text-sm font-semibold">
             {isChineseLocale ? "模型分析" : "Model analytics"}
-          </CardTitle>
-          <CardDescription>{modelCardDescription}</CardDescription>
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {modelCardDescription}
+          </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Select
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <SegmentedControl
             value={pieMetric}
-            onValueChange={(value) => onMetricChange(value as PieMetric)}
-          >
-            <SelectTrigger
-              className="w-full sm:w-32"
-              aria-label={
-                isChineseLocale ? "选择模型占比指标" : "Select model metric"
-              }
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end" className="rounded-xl">
-              {PIE_METRIC_OPTIONS.map((option) => (
-                <SelectItem
-                  key={option.value}
-                  value={option.value}
-                  className="rounded-lg"
-                >
-                  {isChineseLocale ? option.zhLabel : option.enLabel}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={modelRange}
-            onValueChange={(value) => onRangeChange(value as TimeRange)}
-          >
-            <SelectTrigger
-              className="w-full sm:w-36"
-              aria-label={
-                isChineseLocale ? "选择模型统计范围" : "Select model range"
-              }
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end" className="rounded-xl">
-              {TIME_RANGE_OPTIONS.map((option) => (
-                <SelectItem
-                  key={option.value}
-                  value={option.value}
-                  className="rounded-lg"
-                >
-                  {isChineseLocale ? option.zhLabel : option.enLabel}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            onValueChange={onMetricChange}
+            options={PIE_METRIC_OPTIONS.map((option) => ({
+              value: option.value,
+              label: isChineseLocale ? option.zhLabel : option.enLabel,
+            }))}
+          />
+          <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 max-w-[220px] gap-1.5 px-2 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+                aria-label={
+                  isChineseLocale ? "选择模型统计范围" : "Select model range"
+                }
+              >
+                <span className="flex size-3.5 shrink-0 items-center justify-center">
+                  <CalendarDays className="size-3.5 stroke-1" />
+                </span>
+                <span className="truncate">{rangeLabel}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-44 p-2">
+              <div className="space-y-0.5">
+                {TIME_RANGE_OPTIONS.map((option) => {
+                  const selected = option.value === modelRange;
+                  return (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "h-8 w-full justify-start px-2 text-xs font-normal shadow-none",
+                        selected && "bg-accent/50",
+                      )}
+                      onClick={() => {
+                        onRangeChange(option.value);
+                        setRangeOpen(false);
+                      }}
+                    >
+                      {isChineseLocale ? option.zhLabel : option.enLabel}
+                      {selected ? <Check className="ml-auto size-3.5" /> : null}
+                    </Button>
+                  );
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
-      </CardHeader>
-      <CardContent className="grid gap-5 p-4 lg:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1fr)]">
+      </div>
+      <div className="grid gap-5 rounded-md bg-muted/35 p-2 md:p-3 lg:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1fr)]">
         <div className="min-w-0">
           <div className="mb-3 text-sm font-medium text-foreground">
             {isChineseLocale ? "模型组合" : "Model mix"}
@@ -165,7 +181,13 @@ export function ModelAnalyticsCard(props: Props) {
               >
                 <PieChart>
                   <ChartTooltip
-                    content={<ChartTooltipContent nameKey="model" hideLabel />}
+                    content={
+                      <ChartTooltipContent
+                        nameKey="model"
+                        hideLabel
+                        formatter={tooltipFormatter}
+                      />
+                    }
                   />
                   <Pie
                     data={pieData.data}
@@ -269,7 +291,9 @@ export function ModelAnalyticsCard(props: Props) {
                   fontSize={11}
                   tickFormatter={formatMetric}
                 />
-                <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartTooltip
+                  content={<ChartTooltipContent formatter={tooltipFormatter} />}
+                />
                 <ChartLegend
                   content={
                     <ChartLegendContent className="flex-wrap justify-start gap-x-3 gap-y-2 pb-3" />
@@ -292,7 +316,7 @@ export function ModelAnalyticsCard(props: Props) {
             />
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

@@ -6,7 +6,7 @@ import type { SettingItem } from "@/lib/api/settings";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
 import { titleForLocale } from "@/lib/I18nContext";
 
-export const PAGE_SIZE = 20;
+export const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 export const REQUEST_LOG_DETAIL_GC_TIME = 60_000;
 export const RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled";
 export const EMPTY_FILTER_OPTION_ID = "n/a";
@@ -167,21 +167,6 @@ export function getResolvedGroupName(
   );
 }
 
-/** Build the displayed requested-to-upstream model chain. */
-export function getModelChain(
-  item: Pick<
-    RequestLogItem,
-    "requested_group_name" | "resolved_group_name" | "upstream_model_name"
-  >,
-) {
-  const requested = item.requested_group_name?.trim();
-  const resolved = item.resolved_group_name?.trim();
-  if (requested && resolved && requested !== resolved) {
-    return `${requested} -> ${resolved}`;
-  }
-  return resolved || requested || item.upstream_model_name || "n/a";
-}
-
 /** Return the secondary resolved or upstream model label when distinct. */
 export function getSecondaryModelName(
   item: Pick<
@@ -192,26 +177,6 @@ export function getSecondaryModelName(
   const resolved = item.resolved_group_name?.trim();
   const upstream = item.upstream_model_name?.trim();
   return upstream && upstream !== resolved ? upstream : null;
-}
-
-/** Build compact pagination items around the current page. */
-export function buildPaginationItems(currentPage: number, totalPages: number) {
-  if (totalPages <= 1) return [1];
-  if (totalPages <= 5) {
-    return Array.from({ length: totalPages }, (_, index) => index + 1);
-  }
-  if (currentPage <= 2) return [1, 2, 3, "ellipsis", totalPages] as const;
-  if (currentPage >= totalPages - 2) {
-    return [1, "ellipsis", totalPages - 2, totalPages - 1, totalPages] as const;
-  }
-  return [
-    1,
-    "ellipsis",
-    currentPage,
-    currentPage + 1,
-    "ellipsis",
-    totalPages,
-  ] as const;
 }
 
 export const HIDDEN_USER_AGENT_PRODUCTS = new Set([
