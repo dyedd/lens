@@ -19,11 +19,7 @@ import {
 } from "@/components/ui/Table";
 import { Textarea } from "@/components/ui/Textarea";
 import type { SiteBatchImportResult } from "@/lib/api/sites";
-import {
-  importReasonLabel,
-  importStatusLabel,
-  importStatusVariant,
-} from "./channelBatchImport";
+import { importReasonLabel, importStatusLabel } from "./channelBatchImport";
 import type { Locale } from "./channelTypes";
 
 /** Renders the channel batch-import workflow and its validation results. */
@@ -67,6 +63,33 @@ export function BatchImportDialog({
         <AppDialogContent
           className="max-w-3xl"
           title={locale === "zh-CN" ? "批量导入渠道" : "Import channels"}
+          footer={
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                disabled={importing}
+              >
+                {locale === "zh-CN" ? "取消" : "Cancel"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={onImport}
+                disabled={importing}
+              >
+                {importing
+                  ? locale === "zh-CN"
+                    ? "导入中..."
+                    : "Importing..."
+                  : locale === "zh-CN"
+                    ? "导入"
+                    : "Import"}
+              </Button>
+            </>
+          }
         >
           <div className="grid gap-4">
             <input
@@ -99,7 +122,7 @@ export function BatchImportDialog({
 
             <FieldGroup>
               <Field data-invalid={Boolean(importError)}>
-                <FieldLabel htmlFor="channels-batch-import-json">
+                <FieldLabel htmlFor="channels-batch-import-json" required>
                   {locale === "zh-CN" ? "JSON 内容" : "JSON"}
                 </FieldLabel>
                 <Textarea
@@ -141,7 +164,7 @@ export function BatchImportDialog({
                 </div>
 
                 {resultRows.length ? (
-                  <div className="max-h-56 overflow-y-auto rounded-md border">
+                  <div className="max-h-56 overflow-y-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -175,9 +198,7 @@ export function BatchImportDialog({
                                 {row.name}
                               </TableCell>
                               <TableCell>
-                                <Badge
-                                  variant={importStatusVariant(row.status)}
-                                >
+                                <Badge variant="secondary">
                                   {importStatusLabel(row.status, locale)}
                                 </Badge>
                               </TableCell>
@@ -193,26 +214,6 @@ export function BatchImportDialog({
                 ) : null}
               </div>
             ) : null}
-
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={importing}
-              >
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button type="button" onClick={onImport} disabled={importing}>
-                {importing
-                  ? locale === "zh-CN"
-                    ? "导入中..."
-                    : "Importing..."
-                  : locale === "zh-CN"
-                    ? "导入"
-                    : "Import"}
-              </Button>
-            </div>
           </div>
         </AppDialogContent>
       ) : null}
@@ -228,7 +229,7 @@ export function ImportSummaryMetric({
   value: number;
 }) {
   return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2">
+    <div className="rounded-md bg-muted/35 px-3 py-2">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="text-base font-semibold text-foreground">{value}</div>
     </div>

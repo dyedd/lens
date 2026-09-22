@@ -2,15 +2,20 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { Site } from "@/lib/api/sites";
+import type { Site, SiteModelInput } from "@/lib/api/sites";
 import {
-  isSiteProtocolConfigEnabled,
+  aggregateModelGroupKey,
+  credentialLabel,
+  protocolConfigModelKey,
   siteEndpointSummary,
-  siteModelCount,
+  siteModelCounts,
+  syncTargetKey,
 } from "./channelModels";
 import type {
   ChannelSort,
   ChannelStatusFilter,
+  FormCredential,
+  FormProtocolConfig,
   Locale,
   SiteRow,
 } from "./channelTypes";
@@ -20,9 +25,6 @@ export function useChannelQueries(locale: Locale) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ChannelStatusFilter>("all");
-  const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
-    "all",
-  );
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<ChannelSort>("name-asc");
   const {
@@ -39,16 +41,7 @@ export function useChannelQueries(locale: Locale) {
     () =>
       (sites ?? []).map((site) => ({
         ...site,
-        enabled_protocol_channel_count: site.enabled
-          ? site.protocols.reduce(
-              (total, protocolConfig) =>
-                isSiteProtocolConfigEnabled(site, protocolConfig)
-                  ? total + protocolConfig.protocols.length
-                  : total,
-              0,
-            )
-          : 0,
-        model_count: siteModelCount(site),
+        model_count: siteModelCounts(site).enabled,
         endpoint_summary: siteEndpointSummary(site, locale),
       })),
     [sites, locale],
@@ -65,16 +58,6 @@ export function useChannelQueries(locale: Locale) {
     const filtered = siteRows.filter((site) => {
       if (statusFilter === "enabled" && !site.enabled) return false;
       if (statusFilter === "disabled" && site.enabled) return false;
-      if (
-        protocolFilter !== "all" &&
-        !site.protocols.some(
-          (config) =>
-            isSiteProtocolConfigEnabled(site, config) &&
-            config.protocols.includes(protocolFilter),
-        )
-      ) {
-        return false;
-      }
       if (tagFilter && !site.tags.includes(tagFilter)) return false;
       if (!keyword) return true;
       return [
@@ -99,23 +82,9 @@ export function useChannelQueries(locale: Locale) {
           right.model_count - left.model_count ||
           left.name.localeCompare(right.name, locale)
         );
-      if (sortBy === "protocols-desc")
-        return (
-          right.enabled_protocol_channel_count -
-            left.enabled_protocol_channel_count ||
-          left.name.localeCompare(right.name, locale)
-        );
       return left.name.localeCompare(right.name, locale);
     });
-  }, [
-    locale,
-    protocolFilter,
-    search,
-    siteRows,
-    sortBy,
-    statusFilter,
-    tagFilter,
-  ]);
+  }, [locale, search, siteRows, sortBy, statusFilter, tagFilter]);
 
   async function invalidateChannelData() {
     await Promise.all([
@@ -134,7 +103,6 @@ export function useChannelQueries(locale: Locale) {
   function resetFilters() {
     setSearch("");
     setStatusFilter("all");
-    setProtocolFilter("all");
     setTagFilter(null);
     setSortBy("name-asc");
   }
@@ -149,8 +117,6 @@ export function useChannelQueries(locale: Locale) {
     setSearch,
     statusFilter,
     setStatusFilter,
-    protocolFilter,
-    setProtocolFilter,
     tags,
     tagFilter,
     setTagFilter,
@@ -159,28 +125,12 @@ export function useChannelQueries(locale: Locale) {
     activeFilterCount: [
       Boolean(search.trim()),
       statusFilter !== "all",
-      protocolFilter !== "all",
       Boolean(tagFilter),
     ].filter(Boolean).length,
     resetFilters,
     invalidateChannelData,
   };
 }
-
-import type { SiteModelInput } from "@/lib/api/sites";
-import {
-  aggregateModelGroupKey,
-  baseUrlLabel,
-  credentialLabel,
-  protocolConfigDisplayName,
-  protocolConfigModelKey,
-  syncTargetKey,
-} from "./channelModels";
-import type {
-  FormBaseUrl,
-  FormCredential,
-  FormProtocolConfig,
-} from "./channelTypes";
 
 export type AggregatedModelMember = {
   /** Per-credential key matching protocolConfigModelKey semantics. */
@@ -195,8 +145,8 @@ export type AggregatedModel = {
   key: string;
   modelName: string;
   protocols: ProtocolKind[];
-  sourceLabel: string;
   source: SiteModelInput["source"];
+  enabled: boolean;
   /** Per-credential rows for expanding the collapsed overview row. */
   members: AggregatedModelMember[];
   /** Per-credential key used to open the single-model test dialog. */
@@ -207,6 +157,7 @@ type ModelGroupSeed = {
   modelName: string;
   protocols: Set<ProtocolKind>;
   sources: Set<SiteModelInput["source"]>;
+  enabled: boolean;
   members: AggregatedModelMember[];
   testKey: string | null;
 };
@@ -217,7 +168,6 @@ type ModelGroupSeed = {
  */
 export function useAggregatedModels(
   protocolConfigs: FormProtocolConfig[],
-  baseUrls: FormBaseUrl[],
   credentials: FormCredential[],
   locale: Locale,
 ): AggregatedModel[] {
@@ -231,19 +181,7 @@ export function useAggregatedModels(
     const credentialName = (credentialId: string) =>
       credentialNameById.get(credentialId) ||
       (locale === "zh-CN" ? "未知密钥" : "Unknown key");
-    return protocolConfigs.flatMap((protocolConfig, index) => {
-      const baseUrlIndex = baseUrls.findIndex(
-        (item) => item.id === protocolConfig.base_url_id,
-      );
-      const baseUrl = baseUrlIndex >= 0 ? baseUrls[baseUrlIndex] : undefined;
-      const protocolConfigName = protocolConfigDisplayName(
-        protocolConfig,
-        index,
-        locale,
-      );
-      const sourceName = baseUrl
-        ? `${protocolConfigName} · ${baseUrlLabel(baseUrl, baseUrlIndex, locale)}`
-        : protocolConfigName;
+    return protocolConfigs.flatMap((protocolConfig) => {
       const groups = new Map<string, ModelGroupSeed>();
       const groupOf = (modelName: string) => {
         const existing = groups.get(modelName);
@@ -252,6 +190,7 @@ export function useAggregatedModels(
           modelName,
           protocols: new Set(),
           sources: new Set(),
+          enabled: false,
           members: [],
           testKey: null,
         };
@@ -287,6 +226,7 @@ export function useAggregatedModels(
           group.protocols.add(protocol);
         }
         group.sources.add(model.source);
+        group.enabled = group.enabled || model.enabled;
         addMember(
           group,
           protocolConfigModelKey(protocolConfig, model),
@@ -330,13 +270,11 @@ export function useAggregatedModels(
         key: aggregateModelGroupKey(protocolConfig, group.modelName),
         modelName: group.modelName,
         protocols: Array.from(group.protocols),
-        sourceLabel: `${sourceName} · ${group.members
-          .map((member) => member.credentialName)
-          .join(locale === "zh-CN" ? "、" : ", ")}`,
         source: group.sources.has("manual") ? "manual" : "synced",
+        enabled: group.enabled,
         members: group.members,
         testKey: group.testKey,
       }));
     });
-  }, [baseUrls, credentials, protocolConfigs, locale]);
+  }, [credentials, protocolConfigs, locale]);
 }

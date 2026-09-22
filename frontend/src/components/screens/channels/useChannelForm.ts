@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Site } from "@/lib/api/sites";
 import {
-  defaultBaseUrlId,
-  protocolConfigSelectedCredentialIds,
-  resolveBaseUrlId,
-} from "./channelForm";
+  headerDraftsFromJson,
+  paramDraftsFromJson,
+} from "./channelAdvancedJson";
+import { resolveBaseUrlId } from "./channelForm";
 import {
   formBaseUrlsForPayload,
   toForm,
@@ -14,15 +14,13 @@ import {
 } from "./channelFormConversion";
 import {
   aggregateModelGroupKey,
-  coalesceFormModels,
+  buildModels,
   createLocalId,
   duplicateProtocolConfigKeys,
   emptyForm,
-  emptyProtocolConfig,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
   isAggregateModelGroupKey,
-  nextProtocolConfigName,
   protocolConfigModelKey,
   syncTargetKey,
 } from "./channelModels";
@@ -32,7 +30,6 @@ import type {
   FormModel,
   FormProtocolConfig,
   FormState,
-  HeaderItem,
   Locale,
 } from "./channelTypes";
 
@@ -57,31 +54,59 @@ function replaceSyncTargets(
   return source === "synced" ? [...targets, ...nextTargets] : targets;
 }
 
-function updateModelSources(
-  config: FormProtocolConfig,
-  selected: FormModel[],
-  source: FormModel["source"],
-) {
-  const modelKeys = new Set(
-    selected.map((model) => protocolConfigModelKey(config, model)),
-  );
-  return {
-    models: coalesceFormModels(
-      config.models.map((model) =>
-        modelKeys.has(protocolConfigModelKey(config, model))
-          ? { ...model, source }
-          : model,
-      ),
-    ),
-    sync_targets: replaceSyncTargets(config, selected, source),
-  };
-}
-
 function validateChannelForm(
   form: FormState,
   duplicatedConfigCount: number,
   locale: Locale,
 ) {
+  if (!form.name.trim()) {
+    toast.error(locale === "zh-CN" ? "请填写渠道名称" : "Enter a channel name");
+    return false;
+  }
+  if (!form.base_urls.some((item) => item.url.trim())) {
+    toast.error(locale === "zh-CN" ? "请填写渠道地址" : "Enter a channel URL");
+    return false;
+  }
+  if (!form.credentials.some((item) => item.api_key.trim())) {
+    toast.error(
+      locale === "zh-CN"
+        ? "请填写至少一个 API Key"
+        : "Enter at least one API key",
+    );
+    return false;
+  }
+  if (
+    form.base_urls
+      .slice(1)
+      .some(
+        (item) =>
+          item.url.trim() &&
+          item.shareKeys === false &&
+          !form.credentials.some(
+            (credential) =>
+              credential.baseUrlId === item.id && credential.api_key.trim(),
+          ),
+      )
+  ) {
+    toast.error(
+      locale === "zh-CN"
+        ? "独立密钥的地址至少填写一个 API Key"
+        : "Enter at least one API key for URLs that do not share keys",
+    );
+    return false;
+  }
+  if (headerDraftsFromJson(form.headersJson) === null) {
+    toast.error(
+      locale === "zh-CN" ? "请求头 JSON 格式无效" : "Header JSON is invalid",
+    );
+    return false;
+  }
+  if (paramDraftsFromJson(form.paramsJson) === null) {
+    toast.error(
+      locale === "zh-CN" ? "参数 JSON 格式无效" : "Parameter JSON is invalid",
+    );
+    return false;
+  }
   if (invalidProtocolBaseUrlCount(form)) {
     toast.error(
       locale === "zh-CN"
@@ -93,36 +118,27 @@ function validateChannelForm(
   if (duplicatedConfigCount) {
     toast.error(
       locale === "zh-CN"
-        ? "同一个渠道内不允许重复地址来源、密钥和协议"
-        : "Duplicate Base URL, key, and protocol sets are not allowed in one channel",
+        ? "同一个渠道内不允许同一地址重复配置同一种协议"
+        : "The same URL cannot expose the same protocol twice",
     );
     return false;
   }
   if (invalidModelProtocolCount(form)) {
     toast.error(
       locale === "zh-CN"
-        ? "请为每个模型选择至少一个有效协议"
-        : "Select at least one valid protocol for every model",
+        ? "请为每个模型选择自动透传或指定上游协议"
+        : "Choose automatic forwarding or an upstream protocol for every model",
     );
     return false;
   }
   return true;
 }
 
-/** Protects unsaved edits and focuses a newly added protocol configuration. */
-function useChannelFormEffects({
-  isDialogOpen,
-  hasUnsavedChanges,
-  shouldFocusAddedConfig,
-  protocolConfigCount,
-  finishAddedConfigFocus,
-}: {
-  isDialogOpen: boolean;
-  hasUnsavedChanges: boolean;
-  shouldFocusAddedConfig: boolean;
-  protocolConfigCount: number;
-  finishAddedConfigFocus: () => void;
-}) {
+/** Warns before closing a tab with unsaved channel edits. */
+function useUnsavedChannelGuard(
+  isDialogOpen: boolean,
+  hasUnsavedChanges: boolean,
+) {
   useEffect(() => {
     if (!isDialogOpen) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -133,61 +149,40 @@ function useChannelFormEffects({
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges, isDialogOpen]);
-
-  useEffect(() => {
-    if (!shouldFocusAddedConfig || !isDialogOpen) return;
-    const index = protocolConfigCount - 1;
-    if (index < 0) return;
-    const section = document.querySelector<HTMLElement>(
-      `[data-protocol-config-index="${index}"]`,
-    );
-    if (!section) return;
-    section.scrollIntoView({ behavior: "smooth", block: "center" });
-    (section.querySelector<HTMLInputElement>("input") ?? section).focus({
-      preventScroll: true,
-    });
-    finishAddedConfigFocus();
-  }, [
-    finishAddedConfigFocus,
-    isDialogOpen,
-    protocolConfigCount,
-    shouldFocusAddedConfig,
-  ]);
 }
 
 /** Owns the channel editor form and its local mutations. */
 export function useChannelForm(locale: Locale) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(() => emptyForm(locale));
+  const [form, setForm] = useState<FormState>(() => emptyForm());
   const [formSnapshot, setFormSnapshot] = useState("");
-  const [shouldFocusAddedConfig, setShouldFocusAddedConfig] = useState(false);
   const submittedBaseUrls = useMemo(() => formBaseUrlsForPayload(form), [form]);
   const duplicatedProtocolConfigKeys = useMemo(
     () => duplicateProtocolConfigKeys(form.protocolConfigs, submittedBaseUrls),
     [form.protocolConfigs, submittedBaseUrls],
   );
   const currentSnapshot = useMemo(
-    () => JSON.stringify(toPayload(form)),
+    () =>
+      JSON.stringify({
+        payload: toPayload(form),
+        headersJson: form.headersJson,
+        paramsJson: form.paramsJson,
+      }),
     [form],
   );
   const hasUnsavedChanges = isDialogOpen && currentSnapshot !== formSnapshot;
-
-  const finishAddedConfigFocus = useCallback(
-    () => setShouldFocusAddedConfig(false),
-    [],
-  );
-  useChannelFormEffects({
-    isDialogOpen,
-    hasUnsavedChanges,
-    shouldFocusAddedConfig,
-    protocolConfigCount: form.protocolConfigs.length,
-    finishAddedConfigFocus,
-  });
+  useUnsavedChannelGuard(isDialogOpen, hasUnsavedChanges);
 
   function applyPreparedForm(nextForm: FormState) {
     setForm(nextForm);
-    setFormSnapshot(JSON.stringify(toPayload(nextForm)));
+    setFormSnapshot(
+      JSON.stringify({
+        payload: toPayload(nextForm),
+        headersJson: nextForm.headersJson,
+        paramsJson: nextForm.paramsJson,
+      }),
+    );
   }
   function confirmDiscardChanges() {
     if (!hasUnsavedChanges) return true;
@@ -199,12 +194,12 @@ export function useChannelForm(locale: Locale) {
   }
   function openCreate() {
     setEditingSiteId(null);
-    applyPreparedForm(emptyForm(locale));
+    applyPreparedForm(emptyForm());
     setIsDialogOpen(true);
   }
   function openEdit(site: Site) {
     setEditingSiteId(site.id);
-    applyPreparedForm(toForm(site, locale));
+    applyPreparedForm(toForm(site));
     setIsDialogOpen(true);
   }
   function closeEditor() {
@@ -228,7 +223,6 @@ export function useChannelForm(locale: Locale) {
   }
   function removeCredential(index: number) {
     setForm((current) => {
-      if (current.credentials.length <= 1) return current;
       const target = current.credentials[index];
       if (!target) return current;
       const credentials = current.credentials.filter((_, i) => i !== index);
@@ -236,13 +230,9 @@ export function useChannelForm(locale: Locale) {
         ...current,
         credentials,
         protocolConfigs: current.protocolConfigs.map((config) => {
-          const ids = protocolConfigSelectedCredentialIds(config).filter(
-            (id) => id !== target.id,
-          );
           return {
             ...config,
-            credential_ids:
-              ids.length || !credentials[0] ? ids : [credentials[0].id],
+            credential_ids: credentials.map((item) => item.id),
             models: config.models.filter(
               (model) => model.credential_id !== target.id,
             ),
@@ -253,29 +243,6 @@ export function useChannelForm(locale: Locale) {
         }),
       };
     });
-  }
-  function updateProtocolConfig(
-    index: number,
-    patch: Partial<FormProtocolConfig>,
-  ) {
-    setForm((current) => ({
-      ...current,
-      protocolConfigs: current.protocolConfigs.map((config, i) => {
-        if (i !== index) return config;
-        const next = { ...config, ...patch };
-        if (!patch.credential_ids) return next;
-        const credentialIds = new Set(next.credential_ids);
-        return {
-          ...next,
-          models: next.models.filter((model) =>
-            credentialIds.has(model.credential_id),
-          ),
-          sync_targets: next.sync_targets.filter((target) =>
-            credentialIds.has(target.credential_id),
-          ),
-        };
-      }),
-    }));
   }
   function updateModelProtocols(key: string, protocols: ProtocolKind[]) {
     if (!protocols.length) {
@@ -340,73 +307,6 @@ export function useChannelForm(locale: Locale) {
       }),
     }));
   }
-  function updateModelSource(key: string, source: FormModel["source"]) {
-    setForm((current) => ({
-      ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => ({
-        ...config,
-        ...updateModelSources(
-          config,
-          config.models.filter(
-            (model) => aggregateModelGroupKey(config, model.model_name) === key,
-          ),
-          source,
-        ),
-      })),
-    }));
-  }
-  function updateAllModelSources(source: FormModel["source"]) {
-    const hasModelChanges = form.protocolConfigs.some((config) =>
-      config.models.some((model) => model.source !== source),
-    );
-    const hasTargetChanges =
-      source === "manual"
-        ? form.protocolConfigs.some((config) => config.sync_targets.length)
-        : false;
-    if (!hasModelChanges && !hasTargetChanges) return;
-    setForm((current) => ({
-      ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => {
-        const updated = updateModelSources(
-          config,
-          config.models.filter((model) => model.source !== source),
-          source,
-        );
-        return source === "manual"
-          ? { ...config, models: updated.models, sync_targets: [] }
-          : { ...config, ...updated };
-      }),
-    }));
-    toast.success(
-      locale === "zh-CN"
-        ? `已将模型切换为${source === "synced" ? "同步" : "手动"}`
-        : `Switched models to ${source === "synced" ? "synced" : "manual"}`,
-    );
-  }
-  function clearModels() {
-    setForm((current) => ({
-      ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => ({
-        ...config,
-        models: [],
-        sync_targets: [],
-      })),
-    }));
-  }
-  function addProtocolConfig() {
-    setShouldFocusAddedConfig(true);
-    setForm((current) => ({
-      ...current,
-      protocolConfigs: [
-        ...current.protocolConfigs,
-        emptyProtocolConfig(
-          defaultBaseUrlId(current.base_urls),
-          nextProtocolConfigName(current.protocolConfigs, locale),
-          current.credentials[0]?.id ?? "",
-        ),
-      ],
-    }));
-  }
   function addBaseUrl() {
     setForm((current) => ({
       ...current,
@@ -415,9 +315,8 @@ export function useChannelForm(locale: Locale) {
         {
           id: createLocalId("baseurl"),
           url: "",
-          name: "",
-          enabled: true,
-          supported_protocols: [] as ProtocolKind[],
+          shareKeys: true,
+          newApiKeysLines: "",
         },
       ],
     }));
@@ -434,10 +333,14 @@ export function useChannelForm(locale: Locale) {
     setForm((current) => {
       if (current.base_urls.length <= 1 || !current.base_urls[index])
         return current;
+      const removed = current.base_urls[index];
       const baseUrls = current.base_urls.filter((_, i) => i !== index);
       return {
         ...current,
         base_urls: baseUrls,
+        credentials: current.credentials.filter(
+          (item) => item.baseUrlId !== removed.id,
+        ),
         protocolConfigs: current.protocolConfigs.map((config) => ({
           ...config,
           base_url_id: resolveBaseUrlId(baseUrls, config.base_url_id),
@@ -445,24 +348,43 @@ export function useChannelForm(locale: Locale) {
       };
     });
   }
-  function updateProtocolConfigHeader(
-    configIndex: number,
-    headerIndex: number,
-    patch: Partial<HeaderItem>,
-  ) {
+  function toggleAggregateEnabled(key: string, enabled: boolean) {
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config, i) =>
-        i !== configIndex
-          ? config
-          : {
-              ...config,
-              headers: config.headers.map((header, j) =>
-                j === headerIndex ? { ...header, ...patch } : header,
-              ),
-            },
-      ),
+      protocolConfigs: current.protocolConfigs.map((config) => ({
+        ...config,
+        models: config.models.map((model) =>
+          aggregateModelGroupKey(config, model.model_name) === key
+            ? { ...model, enabled }
+            : model,
+        ),
+      })),
     }));
+  }
+  function addBinding(modelName: string, protocols: ProtocolKind[]) {
+    const name = modelName.trim();
+    if (!name || !protocols.length) return false;
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map((config) => {
+        const credentialIds = config.credential_ids.length
+          ? config.credential_ids
+          : current.credentials.map((item) => item.id);
+        const newModels = buildModels(
+          config,
+          credentialIds,
+          name,
+          protocols,
+          "manual",
+        );
+        if (!newModels.length) return config;
+        return {
+          ...config,
+          models: [...config.models, ...newModels],
+        };
+      }),
+    }));
+    return true;
   }
 
   return {
@@ -479,19 +401,14 @@ export function useChannelForm(locale: Locale) {
     closeEditor,
     validateSiteForm,
     hasUnsavedChanges,
-    duplicatedProtocolConfigKeys,
     updateCredential,
     removeCredential,
-    updateProtocolConfig,
     updateModelProtocols,
-    updateModelSource,
-    updateAllModelSources,
     removeAggregateModel,
-    clearModels,
-    addProtocolConfig,
+    toggleAggregateEnabled,
+    addBinding,
     addBaseUrl,
     updateBaseUrl,
     removeBaseUrl,
-    updateProtocolConfigHeader,
   };
 }

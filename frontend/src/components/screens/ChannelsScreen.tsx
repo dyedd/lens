@@ -1,20 +1,6 @@
-import { FileInput, Plus, RefreshCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
-import { Button } from "@/components/ui/Button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/DropdownMenu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
+import { TooltipProvider } from "@/components/ui/Tooltip";
 import type { Site } from "@/lib/api/sites";
 import { useI18n } from "@/lib/I18nContext";
 import { ChannelsDialogs } from "./channels/ChannelsDialogs";
@@ -38,9 +24,8 @@ import { useModelGroupEnsure } from "./channels/useModelGroupEnsure";
 /** Coordinates channel management data, dialogs, and user actions. */
 export function ChannelsScreen() {
   const { locale } = useI18n();
-  const [advancedConfigIndex, setAdvancedConfigIndex] = useState<number | null>(
-    null,
-  );
+  const [editorMode, setEditorMode] = useState<"channel" | "models">("channel");
+  const [syncOnOpen, setSyncOnOpen] = useState(false);
   const queries = useChannelQueries(locale);
   const editor = useChannelForm(locale);
   const modelGroups = useModelGroupEnsure({
@@ -73,7 +58,6 @@ export function ChannelsScreen() {
   });
   const overviewModels = useAggregatedModels(
     editor.form.protocolConfigs,
-    editor.form.base_urls,
     editor.form.credentials,
     locale,
   );
@@ -97,75 +81,41 @@ export function ChannelsScreen() {
   function openCreate() {
     if (!editor.confirmDiscardChanges()) return;
     batchTest.clearBatchModelTestResults();
+    setEditorMode("channel");
+    setSyncOnOpen(false);
     editor.openCreate();
   }
   function openEdit(site: Site) {
     if (!editor.confirmDiscardChanges()) return;
     batchTest.clearBatchModelTestResults();
+    setEditorMode("channel");
+    setSyncOnOpen(false);
+    editor.openEdit(site);
+  }
+  function openManageModels(site: Site) {
+    if (!editor.confirmDiscardChanges()) return;
+    batchTest.clearBatchModelTestResults();
+    setEditorMode("models");
+    setSyncOnOpen(false);
+    editor.openEdit(site);
+  }
+  function openSyncRemoteModels(site: Site) {
+    if (!editor.confirmDiscardChanges()) return;
+    batchTest.clearBatchModelTestResults();
+    setEditorMode("models");
+    setSyncOnOpen(true);
     editor.openEdit(site);
   }
 
   return (
     <TooltipProvider>
-      <DashboardHeaderActions>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={locale === "zh-CN" ? "同步模型" : "Sync models"}
-              disabled={transfer.channelSyncing}
-              onClick={() => void transfer.openChannelModelSync()}
-            >
-              <RefreshCcw
-                className={transfer.channelSyncing ? "animate-spin" : undefined}
-              />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {locale === "zh-CN" ? "同步模型" : "Sync models"}
-          </TooltipContent>
-        </Tooltip>
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={locale === "zh-CN" ? "新增渠道" : "Add channels"}
-                >
-                  <Plus />
-                </Button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" align="end">
-              {locale === "zh-CN" ? "新增渠道" : "Add channels"}
-            </TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={openCreate}>
-              <Plus />
-              {locale === "zh-CN" ? "新建渠道" : "New channel"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={transfer.openBatchImport}>
-              <FileInput />
-              {locale === "zh-CN" ? "批量导入" : "Import channels"}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </DashboardHeaderActions>
-      <section className="flex flex-col gap-4">
+      <section>
         <ChannelsOverview
           locale={locale}
           visibleSites={queries.visibleSites}
           isLoading={queries.isLoading}
-          sitesIsError={queries.sitesIsError}
           search={queries.search}
           statusFilter={queries.statusFilter}
-          protocolFilter={queries.protocolFilter}
           tags={queries.tags}
           tagFilter={queries.tagFilter}
           sortBy={queries.sortBy}
@@ -173,13 +123,21 @@ export function ChannelsScreen() {
           busyId={persistence.busyId}
           onSearchChange={queries.setSearch}
           onStatusChange={queries.setStatusFilter}
-          onProtocolChange={queries.setProtocolFilter}
           onTagChange={queries.setTagFilter}
           onSortChange={queries.setSortBy}
           onReset={queries.resetFilters}
+          onRefresh={() =>
+            void queries.queryClient.invalidateQueries({ queryKey: ["sites"] })
+          }
+          onCreate={openCreate}
+          onImport={transfer.openBatchImport}
           onOpenEdit={openEdit}
+          onManageModels={openManageModels}
+          onSyncRemoteModels={openSyncRemoteModels}
           onToggleSiteEnabled={persistence.toggleSiteEnabled}
-          setDeleteTarget={persistence.setDeleteTarget}
+          onDelete={persistence.setDeleteTarget}
+          onBulkEnabled={persistence.applyEnabled}
+          onBulkDelete={persistence.removeSites}
         />
         <ChannelsDialogs
           locale={locale}
@@ -192,8 +150,15 @@ export function ChannelsScreen() {
           batchTest={batchTest}
           modelGroups={modelGroups}
           overviewModels={overviewModels}
-          advancedConfigIndex={advancedConfigIndex}
-          setAdvancedConfigIndex={setAdvancedConfigIndex}
+          editorMode={editorMode}
+          syncOnOpen={syncOnOpen}
+          onSyncOnOpenHandled={() => setSyncOnOpen(false)}
+          onManageModels={() => {
+            const site = queries.visibleSites.find(
+              (item) => item.id === editor.editingSiteId,
+            );
+            if (site) openManageModels(site);
+          }}
         />
       </section>
     </TooltipProvider>

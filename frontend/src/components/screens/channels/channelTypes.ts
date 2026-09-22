@@ -3,21 +3,22 @@ import type { ProtocolKind } from "@/lib/api/protocols";
 import type {
   ChannelProxyMode,
   Site,
-  SiteBaseUrlInput,
   SiteCredential,
   SiteModelInput,
 } from "@/lib/api/sites";
 import type { Locale } from "@/lib/I18nContext";
-import type {
-  HeaderRuleDraft,
-  ParamOverrideRuleDraft,
-} from "@/lib/upstreamRules";
 
-export type HeaderItem = HeaderRuleDraft;
-export type FormCredential = Omit<SiteCredential, "sort_order">;
-export type FormBaseUrl = Omit<SiteBaseUrlInput, "id"> & {
+export type FormCredential = Omit<
+  SiteCredential,
+  "sort_order" | "base_url_id"
+> & {
+  baseUrlId: string;
+};
+export type FormBaseUrl = {
   id: string;
-  supported_protocols: ProtocolKind[];
+  url: string;
+  shareKeys: boolean;
+  newApiKeysLines: string;
 };
 export type { Locale };
 
@@ -28,21 +29,10 @@ export type FormModel = Omit<SiteModelInput, "id" | "protocol"> & {
 
 export type FormProtocolConfig = {
   id: string;
-  name: string;
-  enabled: boolean;
-  headers: HeaderItem[];
-  proxy_mode: ChannelProxyMode;
-  channel_proxy: string;
-  param_override: ParamOverrideRuleDraft[];
-  model_filter: string;
-  sync_new_models: boolean;
-  manual_model_name: string;
-  manual_protocols: ProtocolKind[];
   base_url_id: string;
   credential_ids: string[];
   sync_targets: FormSyncTarget[];
   models: FormModel[];
-  expanded: boolean;
 };
 
 export type FormSyncTarget = {
@@ -54,9 +44,14 @@ export type FormSyncTarget = {
 export type FormState = {
   name: string;
   tags: string[];
+  newApiKeysLines: string;
   base_urls: FormBaseUrl[];
   credentials: FormCredential[];
   protocolConfigs: FormProtocolConfig[];
+  proxy_mode: ChannelProxyMode;
+  channel_proxy: string;
+  headersJson: string;
+  paramsJson: string;
 };
 
 export type PickerModelItem = {
@@ -73,16 +68,9 @@ export type ModelTestTarget = {
 export type TestableModelOption = BatchModelTestSource<ModelTestTarget>;
 
 export type SiteRow = Site & {
-  enabled_protocol_channel_count: number;
   model_count: number;
   endpoint_summary: string;
 };
 
 export type ChannelStatusFilter = "all" | "enabled" | "disabled";
-export type ChannelSort =
-  | "name-asc"
-  | "name-desc"
-  | "models-desc"
-  | "protocols-desc";
-
-export type ModelQueryInputKind = "empty" | "plain" | "regex";
+export type ChannelSort = "name-asc" | "name-desc" | "models-desc";

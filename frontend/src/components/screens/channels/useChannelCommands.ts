@@ -99,12 +99,88 @@ export function useChannelPersistence({
     }
   }
 
+  async function applyEnabled(sites: Site[], enabled: boolean) {
+    const targets = sites.filter((site) => site.enabled !== enabled);
+    if (!targets.length) return;
+    setBusyId("bulk");
+    try {
+      for (const site of targets) {
+        const updatedSite = await apiRequest<Site>(
+          `/admin/sites/${site.id}/enabled`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ enabled }),
+          },
+        );
+        queryClient.setQueryData<Site[]>(["sites"], (current) =>
+          (current ?? []).map((item) =>
+            item.id === updatedSite.id ? updatedSite : item,
+          ),
+        );
+      }
+      toast.success(
+        enabled
+          ? locale === "zh-CN"
+            ? `已启用 ${targets.length} 个渠道`
+            : `Enabled ${targets.length} channels`
+          : locale === "zh-CN"
+            ? `已停用 ${targets.length} 个渠道`
+            : `Disabled ${targets.length} channels`,
+      );
+      await invalidateChannelData();
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          locale === "zh-CN"
+            ? "批量更新渠道状态失败"
+            : "Failed to update channel status",
+        ),
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removeSites(sites: Site[]) {
+    if (!sites.length) return;
+    setBusyId("bulk");
+    try {
+      const removedIds = new Set<string>();
+      for (const site of sites) {
+        await apiRequest<void>(`/admin/sites/${site.id}`, { method: "DELETE" });
+        removedIds.add(site.id);
+      }
+      queryClient.setQueryData<Site[]>(["sites"], (current) =>
+        (current ?? []).filter((item) => !removedIds.has(item.id)),
+      );
+      setDeleteTarget(null);
+      toast.success(
+        locale === "zh-CN"
+          ? `已删除 ${sites.length} 个渠道`
+          : `Deleted ${sites.length} channels`,
+      );
+      await invalidateChannelData();
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          locale === "zh-CN" ? "批量删除渠道失败" : "Failed to delete channels",
+        ),
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return {
     busyId,
     deleteTarget,
     setDeleteTarget,
     removeSite,
+    removeSites,
     toggleSiteEnabled,
+    applyEnabled,
   };
 }
 
