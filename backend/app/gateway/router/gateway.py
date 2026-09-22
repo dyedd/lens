@@ -87,6 +87,7 @@ class GatewayRouter:
             routes = [
                 self._routes.build_route_state(channels, protocol, now=now)
                 for protocol in ProtocolKind
+                if protocol != ProtocolKind.AUTO
             ]
             health = [
                 self._health.project_channel_health(channel, now=now)

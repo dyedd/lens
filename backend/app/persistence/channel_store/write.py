@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     delete,
@@ -13,10 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models.protocols import ProtocolKind
 from app.models.sites import (
     SiteBaseUrl,
-    SiteBaseUrlInput,
+    SiteCreate,
     SiteCredential,
-    SiteCredentialInput,
     SiteProtocolConfigInput,
+    SiteUpdate,
 )
 from app.persistence.entities import (
     SiteBaseUrlEntity,
@@ -24,16 +25,17 @@ from app.persistence.entities import (
     SiteCredentialRateEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
-    SiteProtocolConfigCredentialEntity,
     SiteProtocolConfigEntity,
     SiteProtocolConfigSyncTargetEntity,
 )
-from app.persistence.protocol_serialization import (
-    deduplicate_protocols,
-    dump_protocols,
-)
 
 from .cleanup import SiteConfigurationCleanupMixin
+from .endpoint_credentials import credential_ids_for_url
+from .mapping import credential_pairs
+
+
+def _naive_utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _dump_rules(rules: list[object]) -> str:
@@ -52,11 +54,11 @@ class SiteProtocolConfigUpsertsMixin:
         session: AsyncSession,
         site_id: str,
         protocol_configs: list[SiteProtocolConfigInput],
-        credential_ids: set[str],
+        credentials: list[SiteCredential],
         base_url_ids: set[str],
     ) -> set[str]:
         protocol_config_ids: set[str] = set()
-        protocol_config_keys: set[tuple[str, str, ProtocolKind]] = set()
+        seen_base_url_ids: set[str] = set()
         for protocol_config in protocol_configs:
             protocol_config_id = protocol_config.id or str(uuid.uuid4())
             protocol_config_ids.add(protocol_config_id)
@@ -65,77 +67,47 @@ class SiteProtocolConfigUpsertsMixin:
                     "Base URL not found for protocol config "
                     f"{protocol_config_id}: {protocol_config.base_url_id}"
                 )
-            selected_credential_ids = protocol_config.credential_ids
-            missing_credential_ids = set(selected_credential_ids) - credential_ids
-            if missing_credential_ids:
-                missing_label = ", ".join(sorted(missing_credential_ids))
+            if protocol_config.base_url_id in seen_base_url_ids:
                 raise ValueError(
-                    "Credential not found for protocol config "
-                    f"{protocol_config_id}: {missing_label}"
+                    "Duplicate protocol config for "
+                    f"base_url_id={protocol_config.base_url_id}"
                 )
-            input_protocols = deduplicate_protocols(protocol_config.protocols)
-            if not input_protocols:
+            seen_base_url_ids.add(protocol_config.base_url_id)
+            selected_credential_ids = set(
+                credential_ids_for_url(
+                    credential_pairs(credentials), protocol_config.base_url_id
+                )
+            )
+            if not selected_credential_ids:
                 raise ValueError(
-                    "At least one upstream protocol is required for protocol config "
+                    "At least one credential is required for protocol config "
                     f"{protocol_config_id}"
                 )
-            for credential_id in selected_credential_ids:
-                for protocol in input_protocols:
-                    protocol_config_key = (
-                        protocol_config.base_url_id,
-                        credential_id,
-                        protocol,
-                    )
-                    if protocol_config_key in protocol_config_keys:
-                        raise ValueError(
-                            "Duplicate protocol config for "
-                            f"base_url_id={protocol_config.base_url_id} "
-                            f"credential_id={credential_id} "
-                            f"protocol={protocol.value}"
-                        )
-                    protocol_config_keys.add(protocol_config_key)
 
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
                 entity = SiteProtocolConfigEntity(id=protocol_config_id)
                 session.add(entity)
             entity.site_id = site_id
-            entity.name = protocol_config.name.strip()
-            entity.protocols_json = dump_protocols(input_protocols)
-            entity.enabled = int(protocol_config.enabled)
-            entity.headers_json = _dump_rules(protocol_config.headers)
-            entity.proxy_mode = protocol_config.proxy_mode.value
-            entity.channel_proxy = protocol_config.channel_proxy
-            entity.param_override = _dump_rules(protocol_config.param_override)
             entity.base_url_id = protocol_config.base_url_id
-
-            await session.execute(
-                delete(SiteProtocolConfigCredentialEntity).where(
-                    SiteProtocolConfigCredentialEntity.protocol_config_id
-                    == protocol_config_id
-                )
-            )
-            for sort_order, credential_id in enumerate(selected_credential_ids):
-                session.add(
-                    SiteProtocolConfigCredentialEntity(
-                        id=str(uuid.uuid4()),
-                        protocol_config_id=protocol_config_id,
-                        credential_id=credential_id,
-                        sort_order=sort_order,
-                    )
-                )
 
             await self._upsert_protocol_config_models(
                 session,
                 protocol_config_id,
                 protocol_config,
-                set(selected_credential_ids),
+                selected_credential_ids,
             )
             await self._replace_protocol_config_sync_targets(
                 session,
                 protocol_config_id,
                 protocol_config,
-                set(selected_credential_ids),
+                selected_credential_ids,
+            )
+        missing_urls = base_url_ids - seen_base_url_ids
+        if missing_urls:
+            missing_label = ", ".join(sorted(missing_urls))
+            raise ValueError(
+                f"Each base URL must have exactly one protocol config: {missing_label}"
             )
         return protocol_config_ids
 
@@ -164,11 +136,6 @@ class SiteProtocolConfigUpsertsMixin:
                 raise ValueError(
                     "Model credential not found in protocol config "
                     f"{protocol_config_id}: {model.credential_id}"
-                )
-            if model.protocol not in protocol_config.protocols:
-                raise ValueError(
-                    "Model protocol is not enabled in protocol config "
-                    f"{protocol_config_id}: {model.protocol.value}"
                 )
 
             protocol_value = model.protocol.value
@@ -222,11 +189,6 @@ class SiteProtocolConfigUpsertsMixin:
                     "Sync target credential not found in protocol config "
                     f"{protocol_config_id}: {target.credential_id}"
                 )
-            if target.protocol not in protocol_config.protocols:
-                raise ValueError(
-                    "Sync target protocol is not enabled in protocol config "
-                    f"{protocol_config_id}: {target.protocol.value}"
-                )
             model_name = target.model_name.strip()
             target_key = (target.credential_id, model_name, target.protocol)
             if not model_name or target_key in seen_targets:
@@ -269,25 +231,21 @@ class SiteConfigUpsertsMixin(
         self,
         session: AsyncSession,
         site_id: str,
-        name: str,
+        payload: SiteCreate | SiteUpdate,
+        *,
         enabled: bool,
-        tags: list[str],
-        base_urls: list[SiteBaseUrlInput],
-        credentials: list[SiteCredentialInput],
-        protocols: list[SiteProtocolConfigInput],
     ) -> None:
-        trimmed_name = name.strip()
+        trimmed_name = payload.name.strip()
         if not trimmed_name:
             raise ValueError("Site name is required")
-        if not base_urls:
+        if not payload.base_urls:
             raise ValueError("At least one base URL is required")
 
-        built_base_urls = self._build_base_urls(base_urls)
-        built_credentials = self._build_credentials(credentials)
-        previous_credential_ids = set(await self._site_credential_ids(session, site_id))
-        credential_ids = {item.id for item in built_credentials}
+        built_base_urls = self._build_base_urls(payload.base_urls)
         base_url_ids = {item.id for item in built_base_urls}
-
+        built_credentials = self._build_credentials(payload.credentials, base_url_ids)
+        previous_credential_ids = set(await self._site_credential_ids(session, site_id))
+        now = _naive_utc_now()
         site = await session.get(SiteEntity, site_id)
         if site is None:
             session.add(
@@ -295,36 +253,47 @@ class SiteConfigUpsertsMixin(
                     id=site_id,
                     name=trimmed_name,
                     enabled=int(enabled),
-                    tags_json=json.dumps(tags, ensure_ascii=True),
+                    tags_json=json.dumps(payload.tags, ensure_ascii=True),
+                    updated_at=now,
+                    headers_json=_dump_rules(payload.headers),
+                    proxy_mode=payload.proxy_mode.value,
+                    channel_proxy=payload.channel_proxy.strip(),
+                    param_override=_dump_rules(payload.param_override),
                 )
             )
         else:
             site.name = trimmed_name
             site.enabled = int(enabled)
-            site.tags_json = json.dumps(tags, ensure_ascii=True)
+            site.tags_json = json.dumps(payload.tags, ensure_ascii=True)
+            site.updated_at = now
+            site.headers_json = _dump_rules(payload.headers)
+            site.proxy_mode = payload.proxy_mode.value
+            site.channel_proxy = payload.channel_proxy.strip()
+            site.param_override = _dump_rules(payload.param_override)
 
         await self._upsert_base_urls(session, site_id, built_base_urls)
         current_protocol_config_ids = set(
             await self._site_protocol_config_ids(session, site_id)
         )
         await self._upsert_credentials(session, site_id, built_credentials)
-
-        next_protocol_config_ids = await self._upsert_protocol_configs(
+        next_protocol_config_ids = {
+            protocol.id for protocol in payload.protocols if protocol.id
+        }
+        await self._cleanup_deleted_protocol_configs(
+            session, current_protocol_config_ids - next_protocol_config_ids
+        )
+        await self._upsert_protocol_configs(
             session,
             site_id,
-            protocols,
-            credential_ids,
+            payload.protocols,
+            built_credentials,
             base_url_ids,
         )
         await self._upsert_credential_rates(
             session,
             built_credentials,
-            protocols,
+            payload.protocols,
             previous_credential_ids,
-        )
-
-        await self._cleanup_deleted_protocol_configs(
-            session, current_protocol_config_ids - next_protocol_config_ids
         )
         await self._cleanup_invalid_group_items(
             session, current_protocol_config_ids | next_protocol_config_ids
@@ -342,10 +311,7 @@ class SiteConfigUpsertsMixin(
                     id=item.id,
                     site_id=site_id,
                     url=str(item.url),
-                    name=item.name,
-                    enabled=int(item.enabled),
                     sort_order=index,
-                    supported_protocols_json=dump_protocols(item.supported_protocols),
                 )
             )
 
@@ -362,8 +328,8 @@ class SiteConfigUpsertsMixin(
                     site_id=site_id,
                     name=item.name,
                     api_key=item.api_key,
-                    enabled=int(item.enabled),
                     sort_order=index,
+                    base_url_id=item.base_url_id,
                 )
             )
 
@@ -411,7 +377,12 @@ class SiteConfigUpsertsMixin(
                     "Rate protocol config not found for credential "
                     f"{credential.id}: {credential.rate_protocol_config_id}"
                 )
-            if credential.id not in protocol.credential_ids:
+            bound_ids = set(
+                credential_ids_for_url(
+                    credential_pairs(credentials), protocol.base_url_id
+                )
+            )
+            if credential.id not in bound_ids:
                 raise ValueError(
                     "Rate credential is not bound to protocol config "
                     f"{credential.rate_protocol_config_id}: {credential.id}"

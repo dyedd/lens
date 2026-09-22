@@ -3,6 +3,7 @@ from typing import Any
 
 PRICE_PAYLOAD_FIELDS = (
     "input_price_per_million",
+    "image_input_price_per_million",
     "output_price_per_million",
     "cache_read_price_per_million",
     "cache_write_price_per_million",
@@ -51,8 +52,12 @@ def _price_value(cost_payload: dict[str, Any], field: str) -> float:
 def _litellm_price(
     payload: dict[str, Any], field: str, fallback_field: str | None = None
 ) -> float:
-    if field not in payload and fallback_field is not None:
+    if (
+        field not in payload or payload.get(field) is None
+    ) and fallback_field is not None:
         field = fallback_field
+    if payload.get(field) is None:
+        return 0.0
     return _price_value(payload, field) * 1_000_000
 
 
@@ -83,6 +88,9 @@ def build_litellm_price_index(
                     "input_cost_per_token",
                     "input_cost_per_image_token",
                 ),
+                "image_input_price_per_million": _litellm_price(
+                    model_payload, "input_cost_per_image_token", "input_cost_per_token"
+                ),
                 "output_price_per_million": _litellm_price(
                     model_payload,
                     "output_cost_per_token",
@@ -97,8 +105,20 @@ def build_litellm_price_index(
                 "image_price_per_image": 0.0,
                 "pricing_mode": pricing_mode,
             }
-        if pricing_mode == "tokens" and not _has_price_value(price_payload):
-            continue
+        if not _has_price_value(price_payload):
+            if not any(
+                key in model_payload and model_payload[key] is not None
+                for key in (
+                    "input_cost_per_token",
+                    "output_cost_per_token",
+                    "input_cost_per_image_token",
+                    "output_cost_per_image_token",
+                    "input_cost_per_image",
+                    "output_cost_per_image",
+                )
+            ):
+                continue
+            price_payload["pricing_mode"] = "free"
         aliases = {canonical_model_price_key(str(model_id))}
         if "/" in str(model_id):
             tail = str(model_id).rsplit("/", 1)[-1].strip()
@@ -141,6 +161,9 @@ def build_group_price_payloads(
                 "model_key": model_key,
                 "display_name": display_name,
                 "input_price_per_million": price_payload["input_price_per_million"],
+                "image_input_price_per_million": price_payload[
+                    "image_input_price_per_million"
+                ],
                 "output_price_per_million": price_payload["output_price_per_million"],
                 "cache_read_price_per_million": price_payload[
                     "cache_read_price_per_million"

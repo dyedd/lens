@@ -127,6 +127,7 @@ class RequestLogCommands:
         first_token_latency_ms: int,
         latency_ms: int,
         input_tokens: int,
+        image_input_tokens: int = 0,
         output_tokens: int,
         total_tokens: int,
         input_cost_usd: float,
@@ -163,6 +164,7 @@ class RequestLogCommands:
                 first_token_latency_ms=max(first_token_latency_ms, 0),
                 latency_ms=latency_ms,
                 input_tokens=max(input_tokens, 0),
+                image_input_tokens=max(image_input_tokens, 0),
                 cache_read_input_tokens=max(cache_read_input_tokens, 0),
                 cache_write_input_tokens=max(cache_write_input_tokens, 0),
                 output_tokens=max(output_tokens, 0),
@@ -215,6 +217,7 @@ class RequestLogCommands:
         first_token_latency_ms: int,
         latency_ms: int,
         input_tokens: int = 0,
+        image_input_tokens: int = 0,
         cache_read_input_tokens: int = 0,
         cache_write_input_tokens: int = 0,
         output_tokens: int = 0,
@@ -256,6 +259,7 @@ class RequestLogCommands:
             entity.first_token_latency_ms = max(first_token_latency_ms, 0)
             entity.latency_ms = max(latency_ms, 0)
             entity.input_tokens = max(input_tokens, 0)
+            entity.image_input_tokens = max(image_input_tokens, 0)
             entity.cache_read_input_tokens = max(cache_read_input_tokens, 0)
             entity.cache_write_input_tokens = max(cache_write_input_tokens, 0)
             entity.output_tokens = max(output_tokens, 0)

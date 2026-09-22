@@ -32,6 +32,7 @@ async def safe_estimate_cost(
     cache_write_input_tokens: int = 0,
     image_count: int = 0,
     rate_multiplier: float | None = None,
+    image_input_tokens: int = 0,
 ) -> ModelCostEstimate:
     try:
         return await app_state.model_price_repo.estimate_model_cost(
@@ -42,6 +43,7 @@ async def safe_estimate_cost(
             cache_write_input_tokens,
             image_count,
             rate_multiplier,
+            image_input_tokens,
         )
     except Exception:
         logger.exception("Failed to estimate model cost")
@@ -157,6 +159,7 @@ async def record_stream_request_log(
         parsed["output_tokens"],
         parsed["cache_read_input_tokens"],
         parsed["cache_write_input_tokens"],
+        image_input_tokens=parsed["image_input_tokens"],
         rate_multiplier=log_ctx.rate_multiplier,
     )
     await update_request_log(
@@ -176,6 +179,7 @@ async def record_stream_request_log(
         first_token_latency_ms=first_token_latency_ms,
         latency_ms=latency_ms,
         input_tokens=parsed["input_tokens"],
+        image_input_tokens=parsed["image_input_tokens"],
         cache_read_input_tokens=parsed["cache_read_input_tokens"],
         cache_write_input_tokens=parsed["cache_write_input_tokens"],
         output_tokens=parsed["output_tokens"],

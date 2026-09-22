@@ -28,6 +28,7 @@ from ..gateway.service.admin.ops import (
     list_overview_daily,
     list_request_logs,
     list_settings,
+    restore_model_price,
     run_cronjob,
     sync_model_prices,
     update_cronjob,
@@ -345,6 +346,12 @@ def register_model_prices(app: FastAPI) -> None:
     app.add_api_route(
         "/api/admin/model-price-sync-jobs",
         sync_model_prices,
+        methods=["POST"],
+        response_model=ModelPriceListResponse,
+    )
+    app.add_api_route(
+        "/api/admin/model-prices/{model_key}/restore-automatic",
+        restore_model_price,
         methods=["POST"],
         response_model=ModelPriceListResponse,
     )

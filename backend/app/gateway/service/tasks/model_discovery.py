@@ -10,6 +10,7 @@ from fastapi import HTTPException
 
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
+from ....models.protocols import ProtocolKind
 from ...upstream_request import (
     build_upstream_headers,
     resolve_channel_api_key,
@@ -26,6 +27,8 @@ from ..upstream_support import (
 
 async def fetch_upstream_models(channel: ChannelConfig) -> list[str]:
     """List all model names currently offered by an upstream."""
+    if channel.protocol == ProtocolKind.AUTO:
+        channel = channel.model_copy(update={"protocol": ProtocolKind.OPENAI_CHAT})
     runtime = await app_state.settings_repo.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client = resolve_http_client(proxy_url)

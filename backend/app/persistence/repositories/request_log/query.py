@@ -28,13 +28,13 @@ from app.models.request_logs import (
     RequestLogItem,
     RequestLogPage,
 )
+from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
 from app.persistence.entities import (
     GatewayApiKeyEntity,
     ModelGroupEntity,
     RequestLogEntity,
     SiteCredentialEntity,
     SiteEntity,
-    SiteProtocolConfigCredentialEntity,
     SiteProtocolConfigEntity,
 )
 
@@ -131,6 +131,7 @@ def to_request_log(
         first_token_latency_ms=entity.first_token_latency_ms,
         latency_ms=entity.latency_ms,
         input_tokens=entity.input_tokens,
+        image_input_tokens=entity.image_input_tokens,
         cache_read_input_tokens=entity.cache_read_input_tokens,
         cache_write_input_tokens=entity.cache_write_input_tokens,
         output_tokens=entity.output_tokens,
@@ -450,40 +451,26 @@ class RequestLogHydrator:
         protocol_config_rows = (
             await session.execute(
                 select(
-                    SiteProtocolConfigEntity.id, SiteProtocolConfigEntity.site_id
+                    SiteProtocolConfigEntity.id,
+                    SiteProtocolConfigEntity.site_id,
+                    SiteProtocolConfigEntity.base_url_id,
                 ).where(SiteProtocolConfigEntity.id.in_(protocol_config_ids))
             )
         ).all()
         channels_by_site: dict[str, list[str]] = {}
-        for protocol_config_id, site_id in protocol_config_rows:
+        for protocol_config_id, site_id, _base_url_id in protocol_config_rows:
             channels_by_site.setdefault(str(site_id), []).extend(
                 channels_by_protocol_config.get(str(protocol_config_id), [])
             )
         if not channels_by_site:
             return ({}, {})
-        protocol_credential_rows = (
-            await session.execute(
-                select(
-                    SiteProtocolConfigCredentialEntity.protocol_config_id,
-                    SiteProtocolConfigCredentialEntity.credential_id,
-                ).where(
-                    SiteProtocolConfigCredentialEntity.protocol_config_id.in_(
-                        protocol_config_ids
-                    )
-                )
-            )
-        ).all()
-        credential_ids_by_config: dict[str, set[str]] = {}
-        for protocol_config_id, credential_id in protocol_credential_rows:
-            credential_ids_by_config.setdefault(str(protocol_config_id), set()).add(
-                str(credential_id)
-            )
         credential_rows = (
             await session.execute(
                 select(
                     SiteCredentialEntity.id,
                     SiteCredentialEntity.site_id,
                     SiteCredentialEntity.name,
+                    SiteCredentialEntity.base_url_id,
                 )
                 .where(SiteCredentialEntity.site_id.in_(list(channels_by_site)))
                 .order_by(
@@ -494,8 +481,9 @@ class RequestLogHydrator:
             )
         ).all()
         credentials_by_site: dict[str, dict[str, tuple[str, int]]] = {}
+        credential_pairs_by_site: dict[str, list[tuple[str, str]]] = {}
         credential_numbers_by_site: dict[str, int] = {}
-        for credential_id, site_id, credential_name in credential_rows:
+        for credential_id, site_id, credential_name, base_url_id in credential_rows:
             site_id_text = str(site_id)
             credential_numbers_by_site[site_id_text] = (
                 credential_numbers_by_site.get(site_id_text, 0) + 1
@@ -504,21 +492,23 @@ class RequestLogHydrator:
                 str(credential_name or ""),
                 credential_numbers_by_site[site_id_text],
             )
+            credential_pairs_by_site.setdefault(site_id_text, []).append(
+                (str(credential_id), str(base_url_id or ""))
+            )
         credential_counts: dict[str, int] = {}
         credential_metadata: dict[tuple[str, str], tuple[str, int]] = {}
-        for protocol_config_id, site_id in protocol_config_rows:
+        for protocol_config_id, site_id, base_url_id in protocol_config_rows:
             site_id_text = str(site_id)
             site_credentials = credentials_by_site.get(site_id_text, {})
+            bound_credential_ids = set(
+                credential_ids_for_url(
+                    credential_pairs_by_site.get(site_id_text, []),
+                    str(base_url_id),
+                )
+            )
             for channel_id in channels_by_protocol_config.get(
                 str(protocol_config_id), []
             ):
-                bound_credential_ids = {
-                    credential_id
-                    for credential_id in credential_ids_by_config.get(
-                        str(protocol_config_id), set()
-                    )
-                    if credential_id in site_credentials
-                }
                 credential_counts[channel_id] = len(bound_credential_ids)
                 for credential_id, (
                     credential_name,

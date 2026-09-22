@@ -85,14 +85,15 @@ def parse_sub2api_sites(payload: dict[str, Any]) -> ParsedForeignSites:
                             ref="c0", name="API key", api_key=api_key
                         )
                     ],
-                    protocols=[
-                        _protocol_config(
-                            protocol,
-                            proxy_url=proxies.get(
-                                _credential_text(account.get("proxy_key")), ""
-                            ),
-                        )
-                    ],
+                    channel_proxy=proxies.get(
+                        _credential_text(account.get("proxy_key")), ""
+                    ),
+                    proxy_mode=(
+                        ChannelProxyMode.CUSTOM
+                        if proxies.get(_credential_text(account.get("proxy_key")), "")
+                        else ChannelProxyMode.INHERIT
+                    ),
+                    protocols=[_protocol_config(protocol)],
                 )
             )
         except ValueError as exc:
@@ -122,15 +123,9 @@ def _base_url_input(url: str) -> SiteImportBaseUrlInput:
     return SiteImportBaseUrlInput(ref="u0", url=url)
 
 
-def _protocol_config(
-    protocol: ProtocolKind,
-    proxy_url: str,
-) -> SiteImportProtocolInput:
+def _protocol_config(protocol: ProtocolKind) -> SiteImportProtocolInput:
     return SiteImportProtocolInput(
-        name=protocol.value,
         protocol=protocol,
-        proxy_mode=ChannelProxyMode.CUSTOM if proxy_url else ChannelProxyMode.INHERIT,
-        channel_proxy=proxy_url,
         base_url_ref="u0",
         credential_refs=["c0"],
     )

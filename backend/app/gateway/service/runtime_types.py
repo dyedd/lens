@@ -63,6 +63,7 @@ class UpstreamResult:
     first_token_latency_ms: int = 0
     upstream_model_name: str | None = None
     input_tokens: int = 0
+    image_input_tokens: int = 0
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0
     output_tokens: int = 0
@@ -211,6 +212,7 @@ class StreamCapture:
     first_token_update_task: asyncio.Task[None] | None = None
     parse_errors: list[str] = field(default_factory=list)
     input_tokens: int = 0
+    image_input_tokens: int = 0
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0
     output_tokens: int = 0
