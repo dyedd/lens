@@ -17,8 +17,6 @@ import { OverviewStats } from "./overview/OverviewStats";
 import {
   addDays,
   CHART_COLORS,
-  ensureTrendPoints,
-  formatSparklineLabel,
   formatTrendLabel,
   getPieMetricLabels,
   type HeatmapMetric,
@@ -103,34 +101,12 @@ export function OverviewScreen() {
       ),
     [allDaily],
   );
-  const statTrends = useMemo(() => {
-    const dailyMap = new Map(
-      allDaily.map((point) => [parseDateKey(point.date), point]),
-    );
-    const today = new Date();
-    const buckets = Array.from({ length: 30 }, (_, index) => {
-      const date = toLocalDateKey(addDays(today, index - 29));
-      return { date, point: dailyMap.get(date) };
-    });
-    const buildTrend = (getValue: (point: OverviewDailyPoint) => number) =>
-      ensureTrendPoints(
-        buckets.map(({ date, point }) => ({
-          label: formatSparklineLabel(date),
-          value: point ? getValue(point) : 0,
-        })),
-      );
-    return {
-      requests: buildTrend((point) => point.request_count),
-      cost: buildTrend((point) => point.total_cost_usd),
-      inputTokens: buildTrend((point) => point.input_tokens ?? 0),
-      outputTokens: buildTrend((point) => point.output_tokens ?? 0),
-    };
-  }, [allDaily]);
   const summary = summaryQuery.data;
   const requestCount = summary?.request_count.value ?? 0;
   const totalCost = summary?.total_cost_usd.value ?? 0;
   const inputTokens = summary?.input_tokens.value ?? 0;
   const outputTokens = summary?.output_tokens.value ?? 0;
+  const totalTokens = summary?.total_tokens.value ?? 0;
   const inputCost = summary?.input_cost_usd.value ?? 0;
   const outputCost = summary?.output_cost_usd.value ?? 0;
   const cacheReadTokens = summary?.cache_read_input_tokens.value ?? 0;
@@ -261,7 +237,7 @@ export function OverviewScreen() {
   }, [heatmapQuery.data]);
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-10">
       <OverviewStats
         cacheReadTokens={cacheReadTokens}
         cacheWriteTokens={cacheWriteTokens}
@@ -272,9 +248,9 @@ export function OverviewScreen() {
         outputCost={outputCost}
         outputTokens={outputTokens}
         requestCount={requestCount}
-        statTrends={statTrends}
         successRate={successRate}
         totalCost={totalCost}
+        totalTokens={totalTokens}
       />
       <RequestHeatmap
         points={heatmap.points}

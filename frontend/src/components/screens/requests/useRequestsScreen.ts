@@ -19,9 +19,8 @@ import {
 } from "@/lib/modelPrefix";
 
 import {
-  buildPaginationItems,
   filterOptionsWithSelected,
-  PAGE_SIZE,
+  type PAGE_SIZE_OPTIONS,
   parseRelayLogBodyEnabled,
   REQUEST_LOG_DETAIL_GC_TIME,
   type SortMode,
@@ -34,9 +33,10 @@ export function useRequestsScreen() {
   const { locale } = useI18n();
   const timeZone = useAppTimeZone();
   const [detailId, setDetailId] = useState<number | null>(null);
-  const [attemptDetailId, setAttemptDetailId] = useState<number | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] =
+    useState<(typeof PAGE_SIZE_OPTIONS)[number]>(25);
   const [selectedModelPrefix, setSelectedModelPrefix] =
     useState<SelectedModelPrefix>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -56,8 +56,8 @@ export function useRequestsScreen() {
   const channel = channelFilter === "all" ? null : channelFilter;
   const requestLogsQuery = useMemo(() => {
     const params = new URLSearchParams({
-      limit: String(PAGE_SIZE),
-      offset: String(page * PAGE_SIZE),
+      limit: String(pageSize),
+      offset: String(page * pageSize),
     });
     if (selectedModelPrefix !== "all")
       params.set("model_prefix", selectedModelPrefix);
@@ -73,6 +73,7 @@ export function useRequestsScreen() {
     deferredKeyword,
     gatewayKeyId,
     page,
+    pageSize,
     protocol,
     selectedModelPrefix,
     sortMode,
@@ -82,6 +83,7 @@ export function useRequestsScreen() {
     queryKey: [
       "request-logs",
       page,
+      pageSize,
       selectedModelPrefix,
       status,
       protocol,
@@ -104,15 +106,7 @@ export function useRequestsScreen() {
     queryKey: ["request-log-detail", detailId],
     queryFn: () =>
       apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
-    enabled: relayLogBodyEnabled && detailId !== null,
-    staleTime: 60_000,
-    gcTime: REQUEST_LOG_DETAIL_GC_TIME,
-  });
-  const attemptQuery = useQuery({
-    queryKey: ["request-log-attempt-detail", attemptDetailId],
-    queryFn: () =>
-      apiRequest<RequestLogDetail>(`/admin/request-logs/${attemptDetailId}`),
-    enabled: attemptDetailId !== null,
+    enabled: detailId !== null,
     staleTime: 60_000,
     gcTime: REQUEST_LOG_DETAIL_GC_TIME,
   });
@@ -132,25 +126,22 @@ export function useRequestsScreen() {
     () => filterOptionsWithSelected(logsQuery.data?.gateway_keys, gatewayKeyId),
     [gatewayKeyId, logsQuery.data?.gateway_keys],
   );
-  const totalPages = Math.max(
-    Math.ceil((logsQuery.data?.total ?? 0) / PAGE_SIZE),
-    1,
-  );
+  const total = logsQuery.data?.total ?? 0;
+  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
   const activeFilterCount = [
     selectedModelPrefix !== "all",
     statusFilter !== "all",
     protocolFilter !== "all",
     channelFilter !== "all",
     gatewayKeyId !== null,
-    Boolean(keyword.trim()),
   ].filter(Boolean).length;
-  useEffect(() => {
-    if (!relayLogBodyEnabled && detailId !== null) setDetailId(null);
-  }, [detailId, relayLogBodyEnabled]);
   useEffect(() => {
     if (selectedModelPrefix !== effectiveModelPrefix)
       setSelectedModelPrefix(effectiveModelPrefix);
   }, [effectiveModelPrefix, selectedModelPrefix]);
+  useEffect(() => {
+    if (page > 0 && page >= totalPages) setPage(Math.max(0, totalPages - 1));
+  }, [page, totalPages]);
   useEffect(() => {
     if (!logsQuery.isError) return;
     toast.error(
@@ -180,13 +171,22 @@ export function useRequestsScreen() {
     callback();
     setPage(0);
   }
+  function resetFilters() {
+    setSelectedModelPrefix("all");
+    setStatusFilter("all");
+    setProtocolFilter("all");
+    setChannelFilter("all");
+    setSelectedGatewayKeyId("all");
+    setPage(0);
+  }
+  function changePageSize(size: (typeof PAGE_SIZE_OPTIONS)[number]) {
+    setPageSize(size);
+    setPage(0);
+  }
   async function refreshLogs() {
     await Promise.all([
       logsQuery.refetch(),
-      relayLogBodyEnabled && detailId !== null
-        ? detailQuery.refetch()
-        : Promise.resolve(),
-      attemptDetailId !== null ? attemptQuery.refetch() : Promise.resolve(),
+      detailId !== null ? detailQuery.refetch() : Promise.resolve(),
     ]);
   }
   async function clearRequestLogs() {
@@ -205,7 +205,6 @@ export function useRequestsScreen() {
       await apiRequest<void>("/admin/request-logs", { method: "DELETE" });
       setPage(0);
       setDetailId(null);
-      setAttemptDetailId(null);
       await Promise.all(
         [
           ["request-logs"],
@@ -235,8 +234,7 @@ export function useRequestsScreen() {
   }
   return {
     activeFilterCount,
-    attemptDetailId,
-    attemptQuery,
+    changePageSize,
     channelFilter,
     channelOptions,
     clearRequestLogs,
@@ -251,11 +249,12 @@ export function useRequestsScreen() {
     logsQuery,
     modelPrefixOptions,
     page,
+    pageSize,
     protocolFilter,
     refreshLogs,
     relayLogBodyEnabled,
+    resetFilters,
     selectedGatewayKeyId,
-    setAttemptDetailId,
     setChannelFilter,
     setDetailId,
     setKeyword,
@@ -269,8 +268,8 @@ export function useRequestsScreen() {
     sortMode,
     statusFilter,
     timeZone,
+    total,
     totalPages,
     updateFilter,
-    paginationItems: buildPaginationItems(page + 1, totalPages),
   };
 }
