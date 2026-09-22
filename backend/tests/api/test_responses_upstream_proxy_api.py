@@ -147,6 +147,57 @@ def _completed_frames() -> list[dict[str, Any]]:
     ]
 
 
+def test_auto_channel_preserves_responses_stream_and_logs_usage(
+    client,
+    admin_headers,
+    monkeypatch,
+    app_state,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    captured: dict[str, Any] = {}
+    frames = _completed_frames()
+    _stub_upstream(monkeypatch, captured, sse_frames=frames)
+    _enable_body_logging(monkeypatch, app_state)
+    create_site(valid_site_payload(protocols=["auto"], model_name="responses-model"))
+    create_model_group(
+        name="auto-model",
+        items=[
+            {
+                "channel_id": "pc-1_auto",
+                "credential_id": "cred-1",
+                "model_name": "responses-model",
+                "enabled": True,
+            }
+        ],
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={"model": "auto-model", "input": "hello", "stream": True},
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured == {
+        "url": "https://upstream.example/v1/responses",
+        "body": {"model": "responses-model", "input": "hello", "stream": True},
+    }
+    assert response.text == "".join(
+        f"event: {frame['type']}\ndata: {json.dumps(frame)}\n\n" for frame in frames
+    )
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()
+    request_log = logs["items"][0]
+    assert request_log["success"] is True
+    assert request_log["protocol"] == "openai_responses"
+    assert request_log["channel_id"] == "pc-1_auto"
+    assert request_log["input_tokens"] == 5
+    assert request_log["output_tokens"] == 2
+    assert request_log["cache_read_input_tokens"] == 2
+    assert request_log["cache_write_input_tokens"] == 2
+
+
 def test_chat_proxy_uses_responses_channel_and_converts_response(
     client,
     monkeypatch,

@@ -429,6 +429,125 @@ def test_responses_proxy_preserves_input_shape(
     ]
 
 
+@pytest.mark.parametrize(
+    ("protocol", "path", "body", "upstream_response"),
+    [
+        pytest.param(
+            "openai_chat",
+            "/v1/chat/completions",
+            {"model": "auto-model", "messages": [{"role": "user", "content": "hi"}]},
+            {"choices": [{"message": {"role": "assistant", "content": "hi"}}]},
+            id="chat",
+        ),
+        pytest.param(
+            "openai_responses",
+            "/v1/responses",
+            {"model": "auto-model", "input": "hello"},
+            {"id": "resp_auto", "object": "response", "output": []},
+            id="responses",
+        ),
+        pytest.param(
+            "anthropic",
+            "/v1/messages",
+            {"model": "auto-model", "messages": [], "max_tokens": 10},
+            {"type": "message", "content": [{"type": "text", "text": "hi"}]},
+            id="anthropic",
+        ),
+        pytest.param(
+            "gemini",
+            "/v1beta/models/auto-model:generateContent",
+            {"contents": [{"role": "user", "parts": [{"text": "hello"}]}]},
+            {"candidates": [{"content": {"parts": [{"text": "hi"}]}}]},
+            id="gemini",
+        ),
+        pytest.param(
+            "openai_embedding",
+            "/v1/embeddings",
+            {"model": "auto-model", "input": ["hello"]},
+            {"data": [{"object": "embedding", "embedding": [0.1], "index": 0}]},
+            id="embeddings",
+        ),
+        pytest.param(
+            "openai_image",
+            "/v1/images/generations",
+            {"model": "auto-model", "prompt": "a lens"},
+            {"data": [{"b64_json": "aW1hZ2U="}]},
+            id="images",
+        ),
+        pytest.param(
+            "rerank",
+            "/v1/rerank",
+            {"model": "auto-model", "query": "hello", "documents": ["world"]},
+            {"results": [{"index": 0, "relevance_score": 0.9}]},
+            id="rerank",
+        ),
+    ],
+)
+def test_auto_channel_uses_client_protocol_for_upstream_request(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+    protocol,
+    path,
+    body,
+    upstream_response,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    captured: dict[str, Any] = {}
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        captured["url"] = upstream.url
+        captured["body"] = json.loads(body_bytes)
+        captured["headers"] = httpx.Headers(upstream.headers)
+        assert not stream
+        return httpx.Response(
+            200,
+            json=upstream_response,
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    site_payload = valid_site_payload(protocols=["auto"], model_name="auto-model")
+    site_payload["base_urls"][0]["url"] = "https://upstream.example"
+    create_site(site_payload)
+    create_model_group(
+        name="auto-model",
+        items=[_protocol_group_item("auto", "auto-model")],
+    )
+    key = create_gateway_key()
+
+    response = client.post(
+        path,
+        headers=gateway_headers(key),
+        json={**body, "vendor_option": {"keep": True}},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == upstream_response
+    assert httpx.URL(captured["url"]).path == path
+    assert captured["body"] == {**body, "vendor_option": {"keep": True}}
+    if protocol == "gemini":
+        assert httpx.URL(captured["url"]).params["key"] == "upstream-secret"
+    elif protocol == "anthropic":
+        assert captured["headers"]["x-api-key"] == "upstream-secret"
+    else:
+        assert captured["headers"]["authorization"] == "Bearer upstream-secret"
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()
+    assert logs["items"][0]["protocol"] == protocol
+    assert logs["items"][0]["channel_id"] == "pc-1_auto"
+    assert logs["items"][0]["success"] is True
+
+
 def test_model_group_param_override_has_highest_priority(
     client,
     admin_headers,
@@ -507,12 +626,12 @@ def test_model_group_param_override_has_highest_priority(
     )
     assert settings.status_code == 200, settings.text
     site_payload = valid_site_payload(model_name="gpt-4o")
-    site_payload["protocols"][0]["param_override"] = [
+    site_payload["param_override"] = [
         {"path": "temperature", "action": "set", "value": 0.5},
         {"path": "metadata.channel", "action": "set", "value": True},
         {"path": "metadata.priority", "action": "set", "value": "channel"},
     ]
-    site_payload["protocols"][0]["headers"] = [
+    site_payload["headers"] = [
         {"name": "X-Priority", "action": "override", "value": "channel"},
         {"name": "X-Channel", "action": "override", "value": "yes"},
     ]
@@ -647,6 +766,73 @@ def test_image_proxy_logs_non_token_billing(
     assert log["total_cost_usd"] == 0.16
 
 
+@pytest.mark.parametrize("free", [False, True])
+def test_image_proxy_logs_separate_image_input_tokens(
+    client,
+    admin_headers,
+    app_state,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+    free,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+    import app.gateway.service.streaming.logging as stream_logging
+
+    async def fake_send_upstream(_client, upstream, *, stream, body_bytes):
+        assert not stream
+        return httpx.Response(
+            200,
+            json={
+                "data": [{"b64_json": "first"}],
+                "usage": {
+                    "input_tokens": 100,
+                    "input_tokens_details": {"image_tokens": 20, "text_tokens": 80},
+                    "output_tokens": 30,
+                    "total_tokens": 130,
+                },
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    monkeypatch.setattr(stream_logging, "app_state", app_state)
+    create_site(
+        valid_site_payload(protocols=["openai_image"], model_name="gpt-image-2.5")
+    )
+    create_model_group(
+        name="gpt-image-2.5",
+        items=[_protocol_group_item("openai_image", "gpt-image-2.5")],
+    )
+    price = client.put(
+        "/api/admin/model-prices/gpt-image-2.5",
+        headers=admin_headers,
+        json={
+            "model_key": "gpt-image-2.5",
+            "input_price_per_million": 0 if free else 5,
+            "image_input_price_per_million": 0 if free else 8,
+            "output_price_per_million": 0 if free else 30,
+        },
+    )
+    assert price.status_code == 200, price.text
+
+    response = client.post(
+        "/v1/images/generations",
+        headers=gateway_headers(create_gateway_key()),
+        json={"model": "gpt-image-2.5", "prompt": "test"},
+    )
+    assert response.status_code == 200, response.text
+    log = client.get("/api/admin/request-logs/page", headers=admin_headers).json()[
+        "items"
+    ][0]
+    assert log["input_tokens"] == 100
+    assert log["image_input_tokens"] == 20
+    assert log["input_cost_usd"] == (0 if free else 0.00056)
+    assert log["total_cost_usd"] == (0 if free else 0.00146)
+    assert log["billing_mode"] == ("free" if free else "tokens")
+
+
 @pytest.mark.parametrize(
     "upstream_protocol",
     [
@@ -775,10 +961,8 @@ def test_failover_orders_targets_and_tracks_active_credential(
             "id": "cred-b-alt",
             "name": "feng-backup",
             "api_key": "upstream-secret-alt",
-            "enabled": True,
         }
     )
-    second_site["protocols"][0]["credential_ids"].append("cred-b-alt")
     second_site["protocols"][0]["models"].append(
         {
             "credential_id": "cred-b-alt",

@@ -32,9 +32,6 @@ def valid_site_payload(
     protocol_config_id: str = "pc-1",
     protocols: list[str] | None = None,
     model_name: str = "gpt-4o",
-    credential_enabled: bool = True,
-    base_url_enabled: bool = True,
-    protocol_enabled: bool = True,
     model_enabled: bool = True,
     tags: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -47,9 +44,6 @@ def valid_site_payload(
             {
                 "id": base_id,
                 "url": "https://upstream.example/v1",
-                "name": "primary",
-                "enabled": base_url_enabled,
-                "supported_protocols": protocol_values,
             }
         ],
         "credentials": [
@@ -57,19 +51,12 @@ def valid_site_payload(
                 "id": credential_id,
                 "name": "primary-key",
                 "api_key": "upstream-secret",
-                "enabled": credential_enabled,
             }
         ],
         "protocols": [
             {
                 "id": protocol_config_id,
-                "name": "primary",
-                "protocols": protocol_values,
-                "enabled": protocol_enabled,
-                "headers": [],
-                "param_override": [],
                 "base_url_id": base_id,
-                "credential_ids": [credential_id],
                 "models": [
                     {
                         "credential_id": credential_id,
