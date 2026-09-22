@@ -1,13 +1,14 @@
-import { RefreshCcw, Search, Sparkles, X } from "lucide-react";
+import { RefreshCcw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
+import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import type { CandidateSearchMode, FormState } from "./groupTypes";
 
 interface ModelGroupCandidateToolbarProps {
@@ -44,45 +45,48 @@ export function ModelGroupCandidateToolbar({
 }: ModelGroupCandidateToolbarProps) {
   return (
     <>
-      <div className="flex flex-col gap-2 px-2 py-1 xl:flex-row xl:items-center">
-        <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[112px_minmax(0,1fr)] xl:grid-cols-[96px_minmax(0,1fr)]">
+      <div className="flex shrink-0 flex-col gap-2 border-b p-3">
+        <div className="grid min-w-0 gap-2 grid-cols-[88px_minmax(0,1fr)]">
           <Select
             value={candidateSearchMode}
             onValueChange={(value) =>
               changeCandidateSearchMode(value as CandidateSearchMode)
             }
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger
+              className="w-full"
+              aria-label={locale === "zh-CN" ? "筛选方式" : "Filter mode"}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="contains">
-                {locale === "zh-CN" ? "包含" : "Contains"}
-              </SelectItem>
-              <SelectItem value="regex">
-                {locale === "zh-CN" ? "正则" : "Regex"}
-              </SelectItem>
+              <SelectGroup>
+                <SelectItem value="contains">
+                  {locale === "zh-CN" ? "包含" : "Contains"}
+                </SelectItem>
+                <SelectItem value="regex">
+                  {locale === "zh-CN" ? "正则" : "Regex"}
+                </SelectItem>
+              </SelectGroup>
             </SelectContent>
           </Select>
-          <div className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3">
-            <Search size={14} className="text-muted-foreground" />
-            <Input
-              className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0"
-              value={candidateSearch}
-              onChange={(event) => changeCandidateSearch(event.target.value)}
-              placeholder={
-                candidateSearchMode === "regex"
-                  ? locale === "zh-CN"
-                    ? "输入正则表达式"
-                    : "Enter regular expression"
-                  : locale === "zh-CN"
-                    ? "输入包含条件"
-                    : "Enter contains filter"
-              }
-            />
-          </div>
+          <ToolbarSearchInput
+            className="max-w-none"
+            value={candidateSearch}
+            onChange={changeCandidateSearch}
+            onClear={() => changeCandidateSearch("")}
+            placeholder={
+              candidateSearchMode === "regex"
+                ? locale === "zh-CN"
+                  ? "输入正则表达式"
+                  : "Regular expression"
+                : locale === "zh-CN"
+                  ? "搜索模型名称"
+                  : "Search models"
+            }
+          />
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
           <Button
             type="button"
             variant="outline"
@@ -116,12 +120,12 @@ export function ModelGroupCandidateToolbar({
         </div>
       </div>
       {candidateRegexInvalid ? (
-        <div className="px-2 text-sm text-destructive">
+        <div className="px-3 py-2 text-xs text-destructive">
           {locale === "zh-CN" ? "正则表达式无效" : "Invalid regex"}
         </div>
       ) : null}
       {form.sync_filter_mode && form.sync_filter_query ? (
-        <div className="mx-2 mb-2 flex flex-col gap-2 rounded-md border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex shrink-0 flex-col gap-2 border-b bg-muted/35 px-3 py-2">
           <div className="min-w-0 text-sm text-muted-foreground">
             <span className="text-foreground">
               {locale === "zh-CN" ? "已保存筛选" : "Saved filter"}

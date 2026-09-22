@@ -87,10 +87,10 @@ export function ModelGroupCard({
 
   return (
     <Item
-      variant="outline"
+      variant="default"
       role="button"
       tabIndex={0}
-      className="cursor-pointer items-start gap-3 rounded-2xl border-border/80 bg-background px-4 py-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="cursor-pointer items-start gap-3 rounded-none border-0 border-b border-border/60 bg-transparent px-3 py-3 shadow-none last:border-b-0 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
       onClick={() => openEdit(group)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -101,7 +101,7 @@ export function ModelGroupCard({
     >
       <ItemMedia
         variant="icon"
-        className="mt-0.5 hidden size-11 self-start rounded-xl bg-muted/40 sm:flex"
+        className="mt-0.5 hidden size-11 self-start rounded-md bg-muted/35 sm:flex"
       >
         {createElement(getModelGroupAvatar(group.name), { size: 30 })}
       </ItemMedia>
