@@ -96,7 +96,7 @@ function RoundRobinMemberList({
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-0.5">
       {visibleFoldedMembers.map(({ member, index }) => (
         <SelectedMemberRow
           key={member.key}
@@ -151,12 +151,9 @@ function FailoverMemberList({
   } | null>(null);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col divide-y divide-border/60">
       {visibleChannelGroups.map((channelGroup, channelIndex) => (
-        <div
-          key={channelGroup.key}
-          className="overflow-hidden rounded-md border bg-background/40"
-        >
+        <div key={channelGroup.key} className="overflow-hidden py-1">
           <div
             onDragEnter={
               canReorder
@@ -176,7 +173,7 @@ function FailoverMemberList({
               canReorder ? (event) => event.preventDefault() : undefined
             }
             className={cn(
-              "flex min-h-10 min-w-0 items-center gap-2 bg-muted/40 px-3 py-2",
+              "flex min-h-9 min-w-0 items-center gap-2 rounded-md bg-secondary/50 px-2 py-1.5",
               draggingChannelIndex === channelIndex && "opacity-60",
             )}
           >
@@ -221,6 +218,7 @@ function FailoverMemberList({
               aria-label={`${locale === "zh-CN" ? "优先级" : "Priority"} ${channelGroup.priority}`}
               title={`${locale === "zh-CN" ? "优先级" : "Priority"} ${channelGroup.priority}`}
             >
+              {locale === "zh-CN" ? "优先级" : "Priority"}{" "}
               {channelGroup.priority}
             </Badge>
           </div>

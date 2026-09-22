@@ -45,7 +45,7 @@ export type FormState = {
   cache_read_price_per_million: string;
   cache_write_price_per_million: string;
   image_price_per_image: string;
-  pricing_mode: "tokens" | "non_tokens";
+  pricing_mode: "free" | "tokens" | "non_tokens";
   items: FormItem[];
 };
 
@@ -141,7 +141,7 @@ export const EMPTY_FORM: FormState = {
   cache_read_price_per_million: "0",
   cache_write_price_per_million: "0",
   image_price_per_image: "0",
-  pricing_mode: "tokens",
+  pricing_mode: "free",
   items: [],
 };
 

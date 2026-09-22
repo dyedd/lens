@@ -1,5 +1,4 @@
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/ui/Card";
 import { ItemGroup } from "@/components/ui/Item";
 import type { GroupsOverviewProps } from "./groupTypes";
 import { ModelGroupCard } from "./ModelGroupCard";
@@ -41,11 +40,11 @@ export function ModelGroupList(
   }
 
   return (
-    <Card className="min-w-0 overflow-hidden py-0 xl:min-h-[calc(100dvh-18rem)]">
-      <CardContent className="min-w-0 px-3 py-3 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-background xl:min-h-[calc(100dvh-18rem)]">
+      <div className="min-w-0 px-1 py-1 xl:max-h-[calc(100dvh-18rem)] xl:overflow-y-auto">
         {props.isLoading || props.groupsIsError ? null : props.visibleGroups
             .length ? (
-          <ItemGroup className="gap-3">
+          <ItemGroup className="gap-0">
             {props.visibleGroups.map((group) => (
               <ModelGroupCard
                 key={group.id}
@@ -56,13 +55,13 @@ export function ModelGroupList(
             ))}
           </ItemGroup>
         ) : (
-          <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
+          <div className="px-6 py-12 text-center text-sm text-muted-foreground">
             {props.locale === "zh-CN"
               ? "没有匹配的模型组。"
               : "No matching groups."}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

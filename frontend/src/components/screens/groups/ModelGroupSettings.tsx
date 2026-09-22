@@ -1,19 +1,18 @@
-import { Settings } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
-
-import { Button } from "@/components/ui/Button";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
-import { Separator } from "@/components/ui/Separator";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import type { ModelGroup } from "@/lib/api/groups";
 
 import type { FormState } from "./groupTypes";
-import {
-  EditablePriceRow,
-  PricingModeToggle,
-  StrategyToggle,
-} from "./ModelGroupEditorFields";
 
 interface ModelGroupSettingsProps {
   locale: "zh-CN" | "en-US";
@@ -21,7 +20,6 @@ interface ModelGroupSettingsProps {
   setForm: Dispatch<SetStateAction<FormState>>;
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
-  onOpenAdvanced: () => void;
 }
 
 export function ModelGroupSettings({
@@ -30,25 +28,18 @@ export function ModelGroupSettings({
   setForm,
   routeTargetOptions,
   changeRouteTarget,
-  onOpenAdvanced,
 }: ModelGroupSettingsProps) {
-  const canUseNonTokenPricing = form.items.some(
-    (item) => item.protocol === "openai_image",
-  );
-
   return (
-    <>
+    <div className="flex shrink-0 flex-col gap-5">
       <section className="grid gap-4">
-        <div className="text-base font-semibold text-foreground">
-          {locale === "zh-CN" ? "基本信息" : "Group settings"}
-        </div>
-        <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)_32px] xl:items-end">
-          <Field>
-            <FieldLabel htmlFor="group-name">
+        <FieldGroup className="grid gap-4 sm:grid-cols-2">
+          <Field className="sm:col-span-2">
+            <FieldLabel htmlFor="group-name" required>
               {locale === "zh-CN" ? "模型组名称" : "Group name"}
             </FieldLabel>
             <Input
               id="group-name"
+              required
               placeholder={
                 locale === "zh-CN" ? "输入模型组名称" : "Enter group name"
               }
@@ -82,116 +73,34 @@ export function ModelGroupSettings({
             </Combobox>
           </Field>
           <Field>
-            <FieldLabel>
+            <FieldLabel htmlFor="group-strategy">
               {locale === "zh-CN" ? "模型组策略" : "Group strategy"}
             </FieldLabel>
-            <StrategyToggle
+            <Select
               value={form.strategy}
-              locale={locale}
               disabled={Boolean(form.route_group_id)}
-              onChange={(value) =>
-                setForm((current) => ({ ...current, strategy: value }))
-              }
-            />
-          </Field>
-          <div className="flex h-10 items-center justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="text-muted-foreground"
-              aria-label={locale === "zh-CN" ? "模型组设置" : "Group settings"}
-              title={locale === "zh-CN" ? "模型组设置" : "Group settings"}
-              onClick={onOpenAdvanced}
+              onValueChange={(value) => {
+                if (value === "failover" || value === "round_robin")
+                  setForm((current) => ({ ...current, strategy: value }));
+              }}
             >
-              <Settings />
-            </Button>
-          </div>
+              <SelectTrigger id="group-strategy">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="failover">
+                    {locale === "zh-CN" ? "故障转移" : "Failover"}
+                  </SelectItem>
+                  <SelectItem value="round_robin">
+                    {locale === "zh-CN" ? "轮询" : "Round robin"}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
         </FieldGroup>
       </section>
-
-      {!form.route_group_id ? (
-        <>
-          <Separator />
-          <section className="grid gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-base font-semibold text-foreground">
-                {locale === "zh-CN" ? "价格" : "Pricing"}
-              </div>
-              {canUseNonTokenPricing ? (
-                <PricingModeToggle
-                  value={form.pricing_mode}
-                  locale={locale}
-                  onChange={(value) =>
-                    setForm((current) => ({ ...current, pricing_mode: value }))
-                  }
-                />
-              ) : null}
-            </div>
-            <div className="grid gap-3 xl:grid-cols-2">
-              {form.pricing_mode === "non_tokens" ? (
-                <Field>
-                  <FieldLabel>
-                    {locale === "zh-CN"
-                      ? "$image（每张）"
-                      : "$image (per image)"}
-                  </FieldLabel>
-                  <Input
-                    value={form.image_price_per_image}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        image_price_per_image: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-              ) : (
-                <>
-                  <EditablePriceRow
-                    locale={locale}
-                    primaryLabel="input"
-                    primaryValue={form.input_price_per_million}
-                    secondaryLabel="cache_read"
-                    secondaryValue={form.cache_read_price_per_million}
-                    onPrimaryChange={(value) =>
-                      setForm((current) => ({
-                        ...current,
-                        input_price_per_million: value,
-                      }))
-                    }
-                    onSecondaryChange={(value) =>
-                      setForm((current) => ({
-                        ...current,
-                        cache_read_price_per_million: value,
-                      }))
-                    }
-                  />
-                  <EditablePriceRow
-                    locale={locale}
-                    primaryLabel="output"
-                    primaryValue={form.output_price_per_million}
-                    secondaryLabel="cache_write"
-                    secondaryValue={form.cache_write_price_per_million}
-                    onPrimaryChange={(value) =>
-                      setForm((current) => ({
-                        ...current,
-                        output_price_per_million: value,
-                      }))
-                    }
-                    onSecondaryChange={(value) =>
-                      setForm((current) => ({
-                        ...current,
-                        cache_write_price_per_million: value,
-                      }))
-                    }
-                  />
-                </>
-              )}
-            </div>
-          </section>
-        </>
-      ) : null}
-    </>
+    </div>
   );
 }

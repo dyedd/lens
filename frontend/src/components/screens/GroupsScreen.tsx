@@ -1,12 +1,4 @@
-import { Plus, RefreshCcw } from "lucide-react";
 import { type Dispatch, type SetStateAction, useState } from "react";
-import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
-import { Button } from "@/components/ui/Button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
 import type { ModelGroup } from "@/lib/api/groups";
 import { useI18n } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
@@ -164,7 +156,6 @@ export function GroupsScreen() {
     form: editor.form,
     invalidateGroupData: queries.invalidateGroupData,
     locale,
-    queryClient: queries.queryClient,
     setDialogOpen: editor.setDialogOpen,
     setEditingId: editor.setEditingId,
     setForm: editor.setForm,
@@ -172,193 +163,113 @@ export function GroupsScreen() {
   const candidateListError = queries.candidateQuery.error;
 
   return (
-    <>
-      <GroupsHeaderActions
+    <section>
+      <GroupsOverview
         locale={locale}
-        openCreate={editor.openCreate}
-        syncingPrices={commands.syncingPrices}
-        syncPrices={commands.syncPrices}
+        visibleGroups={filters.visibleGroups}
+        isLoading={queries.isLoading}
+        search={filters.search}
+        strategyFilter={filters.strategyFilter}
+        sortBy={filters.sortBy}
+        activeFilterCount={filters.activeFilterCount}
+        protocolOptions={filters.protocolOptions}
+        protocolFilter={filters.effectiveProtocolFilter}
+        busyId={commands.busyId}
+        testingModel={modelTest.testingModel}
+        onSearchChange={filters.setSearch}
+        onStrategyChange={filters.setStrategyFilter}
+        onSortChange={filters.setSortBy}
+        onProtocolChange={filters.setProtocolFilter}
+        onReset={filters.resetFilters}
+        onRefresh={() =>
+          void queries.queryClient.invalidateQueries({ queryKey: ["groups"] })
+        }
+        onCreate={editor.openCreate}
+        onOpenEdit={editor.openEdit}
+        onToggleEnabled={commands.toggleGroupEnabled}
+        onDelete={commands.setDeleteTarget}
+        onTest={modelTest.openModelTest}
+        onBulkEnabled={commands.applyEnabled}
+        onBulkDelete={commands.removeGroups}
       />
 
-      <section className="flex flex-col gap-4">
-        <GroupsOverview
+      {editor.dialogOpen ? (
+        <GroupEditorDialog
+          dialogOpen={editor.dialogOpen}
+          setDialogOpen={editor.setDialogOpen}
+          editingId={editor.editingId}
           locale={locale}
-          hasModelPrefixOptions={filters.hasModelPrefixOptions}
-          modelPrefixOptions={filters.modelPrefixOptions}
-          effectiveSelectedModelPrefix={filters.effectiveSelectedModelPrefix}
-          setSelectedModelPrefix={filters.setSelectedModelPrefix}
-          isLoading={queries.isLoading}
-          groupsIsError={queries.groupsIsError}
-          visibleGroups={filters.visibleGroups}
-          busyId={commands.busyId}
-          cardDragging={commands.cardDragging}
-          setCardDragging={commands.setCardDragging}
-          search={filters.search}
-          strategyFilter={filters.strategyFilter}
-          sortBy={filters.sortBy}
-          activeFilterCount={filters.activeFilterCount}
-          setSearch={filters.setSearch}
-          setStrategyFilter={filters.setStrategyFilter}
-          setSortBy={filters.setSortBy}
-          resetFilters={filters.resetFilters}
-          openEdit={editor.openEdit}
-          changeStrategy={commands.changeStrategy}
-          reorderGroupMembers={commands.reorderGroupMembers}
-          reorderGroupChannels={commands.reorderGroupChannels}
-          removeGroupChannel={commands.removeGroupChannel}
-          removeGroupMember={commands.removeGroupMember}
-          toggleGroupEnabled={commands.toggleGroupEnabled}
-          setDeleteTarget={commands.setDeleteTarget}
-          testingModel={modelTest.testingModel}
-          openModelTest={modelTest.openModelTest}
+          submit={commands.submit}
+          form={editor.form}
+          setForm={editor.setForm}
+          routeTargetOptions={queries.routeTargetOptions}
+          changeRouteTarget={editor.changeRouteTarget}
+          candidateSearchMode={editor.candidateSearchMode}
+          changeCandidateSearchMode={editor.changeCandidateSearchMode}
+          candidateSearch={editor.candidateSearch}
+          changeCandidateSearch={editor.changeCandidateSearch}
+          addMatchedItems={candidates.addMatchedItems}
+          candidateRegexInvalid={candidates.candidateRegexInvalid}
+          filteredCandidates={candidates.filteredCandidates}
+          refetchCandidates={queries.candidateQuery.refetch}
+          isFetchingCandidates={queries.candidateQuery.isFetching}
+          applySavedFilter={candidates.applySavedFilter}
+          clearSavedFilter={candidates.clearSavedFilter}
+          groupedCandidates={candidates.groupedCandidates}
+          expandedChannels={candidates.expandedChannels}
+          toggleChannel={candidates.toggleChannel}
+          foldedMembers={members.foldedMembers}
+          addCandidate={candidates.addCandidate}
+          candidateIsError={queries.candidateQuery.isError}
+          candidateListError={candidateListError}
+          disabledItemCount={members.disabledItemCount}
+          invalidItemCount={members.invalidItemCount}
+          removeInvalidItems={members.removeInvalidItems}
+          removeDisabledMembers={members.removeDisabledMembers}
+          clearMembers={members.clearMembers}
+          setAllMembersEnabled={members.setAllMembersEnabled}
+          memberStatusFilter={editor.memberStatusFilter}
+          setMemberStatusFilter={editor.setMemberStatusFilter}
+          visibleFoldedMembers={members.visibleFoldedMembers}
+          visibleChannelGroups={members.visibleChannelGroups}
+          toggleChannelMembers={members.toggleChannelMembers}
+          toggleFoldedMember={members.toggleFoldedMember}
+          removeFoldedMember={members.removeFoldedMember}
+          moveChannelGroup={members.moveChannelGroup}
+          moveFoldedMember={members.moveFoldedMember}
+          moveFoldedMemberWithinChannel={members.moveFoldedMemberWithinChannel}
         />
+      ) : null}
 
-        {editor.dialogOpen ? (
-          <GroupEditorDialog
-            dialogOpen={editor.dialogOpen}
-            setDialogOpen={editor.setDialogOpen}
-            editingId={editor.editingId}
-            locale={locale}
-            submit={commands.submit}
-            form={editor.form}
-            setForm={editor.setForm}
-            routeTargetOptions={queries.routeTargetOptions}
-            changeRouteTarget={editor.changeRouteTarget}
-            candidateSearchMode={editor.candidateSearchMode}
-            changeCandidateSearchMode={editor.changeCandidateSearchMode}
-            candidateSearch={editor.candidateSearch}
-            changeCandidateSearch={editor.changeCandidateSearch}
-            addMatchedItems={candidates.addMatchedItems}
-            candidateRegexInvalid={candidates.candidateRegexInvalid}
-            filteredCandidates={candidates.filteredCandidates}
-            refetchCandidates={queries.candidateQuery.refetch}
-            isFetchingCandidates={queries.candidateQuery.isFetching}
-            applySavedFilter={candidates.applySavedFilter}
-            clearSavedFilter={candidates.clearSavedFilter}
-            groupedCandidates={candidates.groupedCandidates}
-            expandedChannels={candidates.expandedChannels}
-            toggleChannel={candidates.toggleChannel}
-            foldedMembers={members.foldedMembers}
-            addCandidate={candidates.addCandidate}
-            candidateIsError={queries.candidateQuery.isError}
-            candidateListError={candidateListError}
-            disabledItemCount={members.disabledItemCount}
-            invalidItemCount={members.invalidItemCount}
-            removeInvalidItems={members.removeInvalidItems}
-            removeDisabledMembers={members.removeDisabledMembers}
-            clearMembers={members.clearMembers}
-            setAllMembersEnabled={members.setAllMembersEnabled}
-            memberStatusFilter={editor.memberStatusFilter}
-            setMemberStatusFilter={editor.setMemberStatusFilter}
-            visibleFoldedMembers={members.visibleFoldedMembers}
-            visibleChannelGroups={members.visibleChannelGroups}
-            toggleChannelMembers={members.toggleChannelMembers}
-            toggleFoldedMember={members.toggleFoldedMember}
-            removeFoldedMember={members.removeFoldedMember}
-            moveChannelGroup={members.moveChannelGroup}
-            moveFoldedMember={members.moveFoldedMember}
-            moveFoldedMemberWithinChannel={
-              members.moveFoldedMemberWithinChannel
-            }
-          />
-        ) : null}
+      {modelTest.batchModelTestOpen ? (
+        <BatchModelTestDialog
+          open={modelTest.batchModelTestOpen}
+          locale={locale}
+          modelTestPrompts={modelTest.modelTestPrompts}
+          batchTestPromptMode={modelTest.batchTestPromptMode}
+          batchTestPrompt={modelTest.batchTestPrompt}
+          batchTestConcurrency={modelTest.batchTestConcurrency}
+          batchTestOptions={modelTest.batchTestOptions}
+          batchTestRows={modelTest.batchTestRows}
+          isBatchModelTestRunning={modelTest.isBatchModelTestRunning}
+          onOpenChange={modelTest.changeBatchModelTestOpen}
+          onPromptModeChange={modelTest.changeBatchTestPromptMode}
+          onPromptChange={modelTest.changeBatchTestPrompt}
+          onConcurrencyChange={modelTest.setBatchTestConcurrency}
+          onProtocolChange={modelTest.changeBatchTestProtocol}
+          onRun={() => void modelTest.runBatchModelTests()}
+        />
+      ) : null}
 
-        {modelTest.batchModelTestOpen ? (
-          <BatchModelTestDialog
-            open={modelTest.batchModelTestOpen}
-            locale={locale}
-            modelTestPrompts={modelTest.modelTestPrompts}
-            batchTestPromptMode={modelTest.batchTestPromptMode}
-            batchTestPrompt={modelTest.batchTestPrompt}
-            batchTestConcurrency={modelTest.batchTestConcurrency}
-            batchTestOptions={modelTest.batchTestOptions}
-            batchTestRows={modelTest.batchTestRows}
-            isBatchModelTestRunning={modelTest.isBatchModelTestRunning}
-            onOpenChange={modelTest.changeBatchModelTestOpen}
-            onPromptModeChange={modelTest.changeBatchTestPromptMode}
-            onPromptChange={modelTest.changeBatchTestPrompt}
-            onConcurrencyChange={modelTest.setBatchTestConcurrency}
-            onProtocolChange={modelTest.changeBatchTestProtocol}
-            onRun={() => void modelTest.runBatchModelTests()}
-          />
-        ) : null}
-
-        {commands.deleteTarget ? (
-          <DeleteGroupDialog
-            deleteTarget={commands.deleteTarget}
-            locale={locale}
-            busyId={commands.busyId}
-            setDeleteTarget={commands.setDeleteTarget}
-            remove={commands.remove}
-          />
-        ) : null}
-      </section>
-    </>
-  );
-}
-
-/** Render model group creation and price synchronization actions. */
-function GroupsHeaderActions({
-  locale,
-  openCreate,
-  syncingPrices,
-  syncPrices,
-}: {
-  locale: "zh-CN" | "en-US";
-  openCreate: () => void;
-  syncingPrices: boolean;
-  syncPrices: () => void;
-}) {
-  const syncPricesLabel = syncingPrices
-    ? locale === "zh-CN"
-      ? "同步中..."
-      : "Syncing..."
-    : locale === "zh-CN"
-      ? "同步价格"
-      : "Sync prices";
-  const createGroupLabel =
-    locale === "zh-CN" ? "新增模型组" : "New model group";
-
-  return (
-    <DashboardHeaderActions>
-      <div className="flex items-center justify-end gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={syncPricesLabel}
-              onClick={() => void syncPrices()}
-              disabled={syncingPrices}
-            >
-              <RefreshCcw
-                data-icon="inline-start"
-                className={syncingPrices ? "animate-spin" : ""}
-              />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {syncPricesLabel}
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon-sm"
-              type="button"
-              variant="ghost"
-              aria-label={createGroupLabel}
-              onClick={openCreate}
-            >
-              <Plus />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {createGroupLabel}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-    </DashboardHeaderActions>
+      {commands.deleteTarget ? (
+        <DeleteGroupDialog
+          deleteTarget={commands.deleteTarget}
+          locale={locale}
+          busyId={commands.busyId}
+          setDeleteTarget={commands.setDeleteTarget}
+          remove={commands.remove}
+        />
+      ) : null}
+    </section>
   );
 }

@@ -19,7 +19,7 @@ export function ModelSeriesSelector({
   setSelectedModelPrefix,
 }: ModelSeriesSelectorProps) {
   return (
-    <div className="rounded-2xl border bg-card px-4 py-3 sm:px-5 sm:py-4">
+    <div className="rounded-lg border border-border/60 bg-background px-3 py-3">
       <div className="flex items-center justify-between gap-3 sm:mb-3">
         <div className="text-base font-semibold text-foreground">
           {locale === "zh-CN" ? "选择模型系列" : "Choose model series"}

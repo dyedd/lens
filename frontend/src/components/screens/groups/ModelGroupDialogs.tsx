@@ -1,3 +1,4 @@
+import { ArrowLeft, SlidersHorizontal } from "lucide-react";
 import {
   type Dispatch,
   type FormEventHandler,
@@ -6,9 +7,22 @@ import {
 } from "react";
 import { HeaderRows } from "@/components/ruleEditors/HeaderRows";
 import { ParamRuleRows } from "@/components/ruleEditors/ParamRuleRows";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/Accordion";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import { Separator } from "@/components/ui/Separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/Sheet";
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
 import type {
   CandidateChannelGroup,
@@ -94,206 +108,245 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
     form,
     setForm,
   } = props;
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
+  const [isBinding, setIsBinding] = useState(false);
   const existingItemKeys = new Set(
     form.items.map((item) => modelGroupItemKey(item)),
   );
 
   return (
-    <>
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          if (!open) setAdvancedSettingsOpen(false);
-          setDialogOpen(open);
-        }}
-      >
-        <AppDialogContent
-          className="h-[92dvh] max-w-5xl sm:h-[88vh]"
-          title={
-            editingId
-              ? locale === "zh-CN"
-                ? "编辑模型组"
-                : "Edit group"
-              : locale === "zh-CN"
-                ? "新建模型组"
-                : "Create group"
-          }
-        >
-          <form className="flex flex-col gap-4 pr-1" onSubmit={submit}>
-            <div className="flex flex-col gap-4">
+    <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
+      <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
+        <SheetHeader className="shrink-0 px-4 py-4 pr-14">
+          <div className="flex items-center gap-3">
+            {isBinding ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={locale === "zh-CN" ? "返回模型组" : "Back to group"}
+                onClick={() => setIsBinding(false)}
+              >
+                <ArrowLeft />
+              </Button>
+            ) : null}
+            <div className="min-w-0">
+              <SheetTitle>
+                {isBinding
+                  ? locale === "zh-CN"
+                    ? "添加上游来源"
+                    : "Add upstream sources"
+                  : editingId
+                    ? locale === "zh-CN"
+                      ? "编辑模型组"
+                      : "Edit group"
+                    : locale === "zh-CN"
+                      ? "新建模型组"
+                      : "Create group"}
+              </SheetTitle>
+              <SheetDescription className="mt-1 truncate text-xs">
+                {isBinding
+                  ? locale === "zh-CN"
+                    ? "选择渠道中的模型，加入当前模型组。"
+                    : "Choose models from channels to add to this group."
+                  : locale === "zh-CN"
+                    ? "对外模型、上游来源与请求规则"
+                    : "Model name, upstream sources and request rules"}
+              </SheetDescription>
+            </div>
+          </div>
+        </SheetHeader>
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+          {isBinding ? (
+            <section
+              aria-label={locale === "zh-CN" ? "可选模型" : "Available models"}
+              className="mx-6 mb-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60"
+            >
+              <ModelGroupCandidateToolbar
+                locale={locale}
+                form={form}
+                candidateSearchMode={props.candidateSearchMode}
+                changeCandidateSearchMode={props.changeCandidateSearchMode}
+                candidateSearch={props.candidateSearch}
+                changeCandidateSearch={props.changeCandidateSearch}
+                addMatchedItems={props.addMatchedItems}
+                candidateRegexInvalid={props.candidateRegexInvalid}
+                filteredCandidateCount={props.filteredCandidates.length}
+                refetchCandidates={props.refetchCandidates}
+                isFetchingCandidates={props.isFetchingCandidates}
+                applySavedFilter={props.applySavedFilter}
+                clearSavedFilter={props.clearSavedFilter}
+              />
+              <ModelGroupCandidateList
+                locale={locale}
+                groupedCandidates={props.groupedCandidates}
+                expandedChannels={props.expandedChannels}
+                existingItemKeys={existingItemKeys}
+                toggleChannel={props.toggleChannel}
+                addCandidate={props.addCandidate}
+                candidateIsError={props.candidateIsError}
+                candidateListError={props.candidateListError}
+              />
+            </section>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pb-6">
               <ModelGroupSettings
                 locale={locale}
                 form={form}
                 setForm={setForm}
                 routeTargetOptions={props.routeTargetOptions}
                 changeRouteTarget={props.changeRouteTarget}
-                onOpenAdvanced={() => setAdvancedSettingsOpen(true)}
               />
-
               {!form.route_group_id ? (
-                <>
-                  <Separator />
-                  <div className="grid gap-3 xl:grid-cols-2">
-                    <section className="flex flex-col rounded-lg bg-muted/10">
-                      <ModelGroupCandidateToolbar
-                        locale={locale}
-                        form={form}
-                        candidateSearchMode={props.candidateSearchMode}
-                        changeCandidateSearchMode={
-                          props.changeCandidateSearchMode
-                        }
-                        candidateSearch={props.candidateSearch}
-                        changeCandidateSearch={props.changeCandidateSearch}
-                        addMatchedItems={props.addMatchedItems}
-                        candidateRegexInvalid={props.candidateRegexInvalid}
-                        filteredCandidateCount={props.filteredCandidates.length}
-                        refetchCandidates={props.refetchCandidates}
-                        isFetchingCandidates={props.isFetchingCandidates}
-                        applySavedFilter={props.applySavedFilter}
-                        clearSavedFilter={props.clearSavedFilter}
-                      />
-                      <ModelGroupCandidateList
-                        locale={locale}
-                        groupedCandidates={props.groupedCandidates}
-                        expandedChannels={props.expandedChannels}
-                        existingItemKeys={existingItemKeys}
-                        toggleChannel={props.toggleChannel}
-                        addCandidate={props.addCandidate}
-                        candidateIsError={props.candidateIsError}
-                        candidateListError={props.candidateListError}
-                      />
-                    </section>
-                    <ModelGroupSelectedMembers
+                <ModelGroupSelectedMembers
+                  onAddSources={() => setIsBinding(true)}
+                  locale={locale}
+                  strategy={form.strategy}
+                  foldedMembers={props.foldedMembers}
+                  disabledItemCount={props.disabledItemCount}
+                  invalidItemCount={props.invalidItemCount}
+                  removeInvalidItems={props.removeInvalidItems}
+                  removeDisabledMembers={props.removeDisabledMembers}
+                  clearMembers={props.clearMembers}
+                  setAllMembersEnabled={props.setAllMembersEnabled}
+                  memberStatusFilter={props.memberStatusFilter}
+                  setMemberStatusFilter={props.setMemberStatusFilter}
+                  visibleFoldedMembers={props.visibleFoldedMembers}
+                  visibleChannelGroups={props.visibleChannelGroups}
+                  toggleChannelMembers={props.toggleChannelMembers}
+                  toggleFoldedMember={props.toggleFoldedMember}
+                  removeFoldedMember={props.removeFoldedMember}
+                  moveChannelGroup={props.moveChannelGroup}
+                  moveFoldedMember={props.moveFoldedMember}
+                  moveFoldedMemberWithinChannel={
+                    props.moveFoldedMemberWithinChannel
+                  }
+                />
+              ) : null}
+              <Accordion
+                type="single"
+                collapsible
+                className="border-y border-border/60"
+              >
+                <AccordionItem value="advanced">
+                  <AccordionTrigger className="items-center py-3 text-xs font-normal text-muted-foreground hover:no-underline">
+                    <span className="flex items-center gap-2">
+                      <SlidersHorizontal className="size-3.5" />
+                      {locale === "zh-CN" ? "高级设置" : "Advanced settings"}
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent className="flex flex-col gap-5">
+                    <HeaderRows
+                      title={locale === "zh-CN" ? "请求头" : "Request headers"}
+                      headers={form.headers}
                       locale={locale}
-                      strategy={form.strategy}
-                      foldedMembers={props.foldedMembers}
-                      disabledItemCount={props.disabledItemCount}
-                      invalidItemCount={props.invalidItemCount}
-                      removeInvalidItems={props.removeInvalidItems}
-                      removeDisabledMembers={props.removeDisabledMembers}
-                      clearMembers={props.clearMembers}
-                      setAllMembersEnabled={props.setAllMembersEnabled}
-                      memberStatusFilter={props.memberStatusFilter}
-                      setMemberStatusFilter={props.setMemberStatusFilter}
-                      visibleFoldedMembers={props.visibleFoldedMembers}
-                      visibleChannelGroups={props.visibleChannelGroups}
-                      toggleChannelMembers={props.toggleChannelMembers}
-                      toggleFoldedMember={props.toggleFoldedMember}
-                      removeFoldedMember={props.removeFoldedMember}
-                      moveChannelGroup={props.moveChannelGroup}
-                      moveFoldedMember={props.moveFoldedMember}
-                      moveFoldedMemberWithinChannel={
-                        props.moveFoldedMemberWithinChannel
+                      onAdd={() =>
+                        setForm((current) => ({
+                          ...current,
+                          headers: [
+                            ...current.headers,
+                            { key: "", value: "", action: "override" },
+                          ],
+                        }))
+                      }
+                      onUpdate={(index, patch) =>
+                        setForm((current) => ({
+                          ...current,
+                          headers: current.headers.map(
+                            (header, currentIndex) =>
+                              currentIndex === index
+                                ? { ...header, ...patch }
+                                : header,
+                          ),
+                        }))
+                      }
+                      onRemove={(index) =>
+                        setForm((current) => ({
+                          ...current,
+                          headers:
+                            current.headers.length > 1
+                              ? current.headers.filter(
+                                  (_, currentIndex) => currentIndex !== index,
+                                )
+                              : current.headers,
+                        }))
                       }
                     />
-                  </div>
-                </>
-              ) : null}
+                    <ParamRuleRows
+                      title={
+                        locale === "zh-CN" ? "参数规则" : "Parameter rules"
+                      }
+                      locale={locale}
+                      rules={form.param_override}
+                      onChange={(rules) =>
+                        setForm((current) => ({
+                          ...current,
+                          param_override: rules,
+                        }))
+                      }
+                    />
+                    {!form.route_group_id ? (
+                      <MultimodalFallbackGroups
+                        locale={locale}
+                        options={props.routeTargetOptions}
+                        selectedIds={form.fallback_group_ids}
+                        onChange={(ids) =>
+                          setForm((current) => ({
+                            ...current,
+                            fallback_group_ids: ids,
+                          }))
+                        }
+                      />
+                    ) : null}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
-
-            <div className="sticky bottom-0 z-10 -mx-1 mt-4 shrink-0 border-t bg-background/95 px-1 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/85">
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+          )}
+          <SheetFooter className="shrink-0 flex-row items-center justify-between gap-3 px-4 py-4">
+            <span className="text-xs text-muted-foreground">
+              {form.route_group_id
+                ? locale === "zh-CN"
+                  ? "路由组"
+                  : "Routing group"
+                : locale === "zh-CN"
+                  ? `已选 ${props.foldedMembers.length} 个模型`
+                  : `${props.foldedMembers.length} selected models`}
+            </span>
+            <div className="flex items-center gap-2">
+              {isBinding ? (
                 <Button
-                  variant="outline"
                   type="button"
-                  onClick={() => setDialogOpen(false)}
+                  size="sm"
+                  onClick={() => setIsBinding(false)}
                 >
-                  {locale === "zh-CN" ? "取消" : "Cancel"}
+                  {locale === "zh-CN" ? "完成选择" : "Done"}
                 </Button>
-                <Button type="submit">
-                  {editingId
-                    ? locale === "zh-CN"
-                      ? "保存模型组"
-                      : "Save group"
-                    : locale === "zh-CN"
-                      ? "创建模型组"
-                      : "Create group"}
-                </Button>
-              </div>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => setDialogOpen(false)}
+                  >
+                    {locale === "zh-CN" ? "取消" : "Cancel"}
+                  </Button>
+                  <Button type="submit" size="sm">
+                    {editingId
+                      ? locale === "zh-CN"
+                        ? "保存"
+                        : "Save"
+                      : locale === "zh-CN"
+                        ? "创建"
+                        : "Create"}
+                  </Button>
+                </>
+              )}
             </div>
-          </form>
-        </AppDialogContent>
-      </Dialog>
-
-      <Dialog
-        open={advancedSettingsOpen}
-        onOpenChange={setAdvancedSettingsOpen}
-      >
-        <AppDialogContent
-          className="max-w-2xl"
-          title={locale === "zh-CN" ? "更多设置" : "More settings"}
-        >
-          <div className="grid max-h-[75dvh] gap-5 overflow-y-auto pr-1">
-            <HeaderRows
-              title={locale === "zh-CN" ? "请求头" : "Request headers"}
-              headers={form.headers}
-              locale={locale}
-              onAdd={() =>
-                setForm((current) => ({
-                  ...current,
-                  headers: [
-                    ...current.headers,
-                    { key: "", value: "", action: "override" },
-                  ],
-                }))
-              }
-              onUpdate={(index, patch) =>
-                setForm((current) => ({
-                  ...current,
-                  headers: current.headers.map((header, currentIndex) =>
-                    currentIndex === index ? { ...header, ...patch } : header,
-                  ),
-                }))
-              }
-              onRemove={(index) =>
-                setForm((current) => ({
-                  ...current,
-                  headers:
-                    current.headers.length > 1
-                      ? current.headers.filter(
-                          (_, currentIndex) => currentIndex !== index,
-                        )
-                      : current.headers,
-                }))
-              }
-            />
-            <ParamRuleRows
-              title={locale === "zh-CN" ? "参数规则" : "Parameter rules"}
-              locale={locale}
-              rules={form.param_override}
-              onChange={(rules) =>
-                setForm((current) => ({
-                  ...current,
-                  param_override: rules,
-                }))
-              }
-            />
-            {!form.route_group_id ? (
-              <MultimodalFallbackGroups
-                locale={locale}
-                options={props.routeTargetOptions}
-                selectedIds={form.fallback_group_ids}
-                onChange={(ids) =>
-                  setForm((current) => ({
-                    ...current,
-                    fallback_group_ids: ids,
-                  }))
-                }
-              />
-            ) : null}
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={() => setAdvancedSettingsOpen(false)}
-              >
-                {locale === "zh-CN" ? "完成" : "Done"}
-              </Button>
-            </div>
-          </div>
-        </AppDialogContent>
-      </Dialog>
-    </>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -314,20 +367,18 @@ export function DeleteGroupDialog({
     >
       <AppDialogContent
         className="max-w-lg"
+        showCloseButton={false}
         title={locale === "zh-CN" ? "确认删除模型组" : "Delete group"}
         description={
           locale === "zh-CN"
-            ? "删除后，该模型组名称将不再参与路由匹配。"
-            : "This group will no longer participate in routing."
+            ? `将删除模型组「${deleteTarget?.name ?? ""}」。删除后，该模型组名称将不再参与路由匹配。`
+            : `Delete group "${deleteTarget?.name ?? ""}". This group will no longer participate in routing.`
         }
-      >
-        <div className="grid gap-5 overflow-y-auto pr-1">
-          <div className="rounded-md border bg-muted/30 p-4">
-            <strong>{deleteTarget?.name}</strong>
-          </div>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+        footer={
+          <>
             <Button
-              variant="outline"
+              variant="ghost"
+              size="sm"
               type="button"
               onClick={() => setDeleteTarget(null)}
             >
@@ -335,6 +386,7 @@ export function DeleteGroupDialog({
             </Button>
             <Button
               variant="destructive"
+              size="sm"
               type="button"
               onClick={() => deleteTarget && void remove(deleteTarget)}
               disabled={busyId === deleteTarget?.id}
@@ -347,9 +399,9 @@ export function DeleteGroupDialog({
                   ? "确认删除"
                   : "Delete"}
             </Button>
-          </div>
-        </div>
-      </AppDialogContent>
+          </>
+        }
+      />
     </Dialog>
   );
 }

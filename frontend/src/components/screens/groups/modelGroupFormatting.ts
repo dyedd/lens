@@ -5,8 +5,17 @@ import type {
   ModelGroupItemState,
   RoutingStrategy,
 } from "@/lib/api/groups";
+import type { ProtocolKind } from "@/lib/api/protocols";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
-import type { FoldedMember, FormItem } from "./groupTypes";
+import { PROTOCOL_LIST, protocolLabel } from "@/lib/protocols";
+import type {
+  CandidateSearchMode,
+  FoldedMember,
+  FormItem,
+  GroupDisplayChannel,
+  GroupDisplayMember,
+  GroupRow,
+} from "./groupTypes";
 
 export const STRATEGY_OPTIONS: Array<{
   value: RoutingStrategy;
@@ -129,12 +138,18 @@ export function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
   return nextItems;
 }
 
-import { protocolLabel } from "@/lib/protocols";
-import type {
-  CandidateSearchMode,
-  GroupDisplayChannel,
-  GroupDisplayMember,
-} from "./groupTypes";
+export const GROUP_PROTOCOL_ORDER: ProtocolKind[] = ["auto", ...PROTOCOL_LIST];
+
+/** Unique member protocols, in display order. Route groups have none. */
+export function groupMemberProtocols(
+  group: Pick<GroupRow, "is_route_group" | "items">,
+): ProtocolKind[] {
+  if (group.is_route_group) return [];
+  const present = new Set(
+    group.items.flatMap((item) => (item.protocol ? [item.protocol] : [])),
+  );
+  return GROUP_PROTOCOL_ORDER.filter((protocol) => present.has(protocol));
+}
 
 function candidateSearchText(
   item: ModelGroupCandidateItem,
