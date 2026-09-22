@@ -1,7 +1,14 @@
 import type { ProtocolKind } from "@/lib/api/protocols";
+import type { Site } from "@/lib/api/sites";
+import { formatCredentialDisplayName } from "@/lib/credentialLabels";
+import { PROTOCOL_LIST } from "@/lib/protocols";
+import { protocolConfigSelectedCredentialIds } from "./channelForm";
+import { formBaseUrlsForPayload } from "./channelFormConversion";
 import type {
+  FormCredential,
   FormModel,
   FormProtocolConfig,
+  FormState,
   FormSyncTarget,
   PickerModelItem,
 } from "./channelTypes";
@@ -25,7 +32,7 @@ export function activeSelectedCredentialIds(
   );
   return protocolConfigSelectedCredentialIds(config).filter((id) => {
     const credential = credentials.get(id);
-    return Boolean(credential?.enabled && credential.api_key.trim());
+    return Boolean(credential?.api_key.trim());
   });
 }
 
@@ -146,128 +153,72 @@ export function groupPickerModels(models: PickerModelItem[]) {
   return Array.from(groups.values());
 }
 
-/** Groups picker rows by model name so one choice can cover every key. */
-export function groupPickerModelsByName(models: PickerModelItem[]) {
-  const groups = new Map<string, PickerModelItem[]>();
-  for (const model of groupPickerModels(models)) {
-    const items = groups.get(model.model_name);
-    if (items) {
-      items.push(model);
-      continue;
-    }
-    groups.set(model.model_name, [model]);
-  }
-  return Array.from(groups, ([model_name, items]) => ({
-    model_name,
-    items,
-  }));
-}
-
-/** Reports whether a picker model has an explicit protocol override. */
-export function hasPickerModelProtocolOverride(
-  overrides: Record<string, ProtocolKind[]>,
-  key: string,
-) {
-  return Object.hasOwn(overrides, key);
-}
-
-/** Resolves picker protocols from an override or the shared fallback. */
-export function resolvePickerModelProtocols(
-  key: string,
-  overrides: Record<string, ProtocolKind[]>,
-  fallback: ProtocolKind[],
-) {
-  return hasPickerModelProtocolOverride(overrides, key)
-    ? (overrides[key] ?? [])
-    : fallback;
-}
-
 /** Returns the unique protocols supported by a form model. */
 export function modelSupportedProtocols(
   model: Pick<FormModel, "protocols"> | null | undefined,
-) {
+): ProtocolKind[] {
   if (model?.protocols && model.protocols.length > 0) {
+    if (model.protocols.includes("auto")) return PROTOCOL_LIST;
     return Array.from(new Set(model.protocols));
   }
   return [];
 }
 
 export function protocolConfigEffectiveProtocols(
-  protocolConfig: Pick<
-    FormProtocolConfig,
-    "manual_protocols" | "models" | "sync_targets"
-  >,
-) {
+  protocolConfig: Pick<FormProtocolConfig, "models" | "sync_targets">,
+): ProtocolKind[] {
   return Array.from(
     new Set([
-      ...protocolConfig.manual_protocols,
       ...protocolConfig.models.flatMap((model) => model.protocols),
       ...protocolConfig.sync_targets.map((target) => target.protocol),
     ]),
   );
 }
 
-import type { Site, SiteProtocolConfig } from "@/lib/api/sites";
+/** Lists configured base URLs. */
+export function siteEndpointUrls(site: Site) {
+  return site.base_urls.map((item) => item.url.trim()).filter(Boolean);
+}
 
 /** Builds a compact summary of a site's configured base URLs. */
 export function siteEndpointSummary(site: Site, locale: string = "zh-CN") {
-  const enabled = site.base_urls.filter((item) => item.enabled);
-  const firstUrl = enabled[0]?.url || site.base_urls[0]?.url || "";
-  const extraCount =
-    enabled.length > 1
-      ? enabled.length - 1
-      : site.base_urls.length > 1
-        ? site.base_urls.length - 1
-        : 0;
-  if (extraCount > 0) {
-    const suffix =
-      locale === "zh-CN" ? ` + ${extraCount}个地址` : ` + ${extraCount} more`;
-    return firstUrl + suffix;
-  }
-  return firstUrl;
+  const urls = siteEndpointUrls(site);
+  if (urls.length <= 1) return urls[0] ?? "";
+  const extraCount = urls.length - 1;
+  const suffix =
+    locale === "zh-CN" ? ` + ${extraCount}个地址` : ` + ${extraCount} more`;
+  return urls[0] + suffix;
 }
 
-/** Counts enabled model entries across a site's protocol configurations. */
-export function siteModelCount(site: Site) {
-  return site.protocols.reduce(
-    (total, protocolConfig) =>
-      total + protocolConfig.models.filter((model) => model.enabled).length,
-    0,
+/** Counts enabled and total model entries for a site. */
+export function siteModelCounts(site: Site) {
+  let enabled = 0;
+  let total = 0;
+  for (const protocolConfig of site.protocols) {
+    for (const model of protocolConfig.models) {
+      total += 1;
+      if (model.enabled) enabled += 1;
+    }
+  }
+  return { enabled, total };
+}
+
+/** Lists enabled protocol kinds on a site, in canonical order. */
+export function siteEnabledProtocols(site: Site): ProtocolKind[] {
+  const kinds = new Set<ProtocolKind>();
+  for (const protocolConfig of site.protocols) {
+    for (const protocol of protocolConfig.protocols) {
+      kinds.add(protocol);
+    }
+  }
+  return (["auto", ...PROTOCOL_LIST] as ProtocolKind[]).filter((protocol) =>
+    kinds.has(protocol),
   );
 }
-
-/** Reports whether a protocol configuration is enabled at every owning level. */
-export function isSiteProtocolConfigEnabled(
-  site: Site,
-  protocolConfig: SiteProtocolConfig,
-) {
-  return site.enabled && protocolConfig.enabled;
-}
-
-/** Builds ordered favicon candidates for a valid site URL. */
-export function getSiteFaviconCandidates(url: string) {
-  try {
-    const parsed = new URL(url);
-    return [
-      `${parsed.origin}/favicon.ico`,
-      `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=64`,
-    ];
-  } catch {
-    return [];
-  }
-}
-
-import { formatCredentialDisplayName } from "@/lib/credentialLabels";
-import { safeText } from "./channelForm";
 
 /** Builds the fallback persisted name for a credential. */
 export function fallbackCredentialName(index: number) {
   return `Key ${index + 1}`;
-}
-
-/** Formats a positional credential label for the requested locale. */
-export function credentialIndexLabel(index: number, locale: string) {
-  return locale === "zh-CN" ? `密钥 ${index + 1}` : `Key ${index + 1}`;
 }
 
 /** Returns a credential name or its localized positional fallback. */
@@ -278,67 +229,6 @@ export function credentialLabel(
 ) {
   return formatCredentialDisplayName(item.name, index + 1, locale);
 }
-
-/** Formats a positional base URL label for the requested locale. */
-export function baseUrlIndexLabel(index: number, locale: string) {
-  return locale === "zh-CN" ? `地址 ${index + 1}` : `URL ${index + 1}`;
-}
-
-/** Returns a base URL name or its localized positional fallback. */
-export function baseUrlLabel(
-  item: { name: string },
-  index: number,
-  locale: string,
-) {
-  const name = item.name.trim();
-  if (name) return name;
-  return baseUrlIndexLabel(index, locale);
-}
-
-/** Builds a localized default name for a protocol configuration. */
-export function defaultProtocolConfigName(index: number, locale: string) {
-  return locale === "zh-CN"
-    ? `协议配置 ${index + 1}`
-    : `Protocol config ${index + 1}`;
-}
-
-/** Returns a protocol configuration name or its localized fallback. */
-export function protocolConfigDisplayName(
-  item: { name?: string | null },
-  index: number,
-  locale: string,
-) {
-  const name = safeText(item.name).trim();
-  return name || defaultProtocolConfigName(index, locale);
-}
-
-/** Finds the next unused localized protocol configuration name. */
-export function nextProtocolConfigName(
-  protocolConfigs: Array<{ name?: string | null }>,
-  locale: string,
-) {
-  const usedNames = new Set(
-    protocolConfigs
-      .map((item, index) =>
-        protocolConfigDisplayName(item, index, locale).toLowerCase(),
-      )
-      .filter(Boolean),
-  );
-  for (
-    let index = protocolConfigs.length;
-    index < protocolConfigs.length + 1000;
-    index += 1
-  ) {
-    const candidate = defaultProtocolConfigName(index, locale);
-    if (!usedNames.has(candidate.toLowerCase())) {
-      return candidate;
-    }
-  }
-  return defaultProtocolConfigName(protocolConfigs.length, locale);
-}
-
-import type { Locale } from "@/lib/I18nContext";
-import type { FormCredential, FormState } from "./channelTypes";
 
 /** Creates a client-side identifier for unsaved channel entities. */
 export function createLocalId(prefix: string) {
@@ -351,12 +241,11 @@ export function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export function emptyCredential(): FormCredential {
+export function emptyCredential(baseUrlId = ""): FormCredential {
   return {
     id: createLocalId("credential"),
     name: "",
     api_key: "",
-    enabled: true,
     rate_source: "none",
     rate_protocol_config_id: "",
     rate_group: "",
@@ -364,62 +253,95 @@ export function emptyCredential(): FormCredential {
     rate_observed_at: null,
     rate_last_synced_at: null,
     rate_last_error: "",
+    baseUrlId,
   };
+}
+
+/** Splits a bulk key textarea into unique API keys. */
+export function parseApiKeyLines(value: string) {
+  const keys: string[] = [];
+  for (const line of value.split(/\r?\n/)) {
+    const apiKey = line.trim();
+    if (apiKey && !keys.includes(apiKey)) keys.push(apiKey);
+  }
+  return keys;
+}
+
+/** Masks a stored API key for the existing-key list. */
+export function maskApiKey(value: string) {
+  const key = value.trim();
+  if (key.length <= 8) return "••••";
+  return `${key.slice(0, Math.min(4, key.length - 4))}****${key.slice(-4)}`;
+}
+
+export function isPendingCredentialId(id: string) {
+  return id.startsWith("pending-");
+}
+
+/** Replaces pending keys for one URL while keeping persisted keys. */
+export function replacePendingCredentials(
+  credentials: FormCredential[],
+  lines: string,
+  baseUrlId: string,
+) {
+  const kept = credentials.filter(
+    (item) => item.baseUrlId !== baseUrlId || !isPendingCredentialId(item.id),
+  );
+  const previousPending = new Map(
+    credentials
+      .filter(
+        (item) =>
+          item.baseUrlId === baseUrlId && isPendingCredentialId(item.id),
+      )
+      .map((item) => [item.api_key, item]),
+  );
+  const pending = parseApiKeyLines(lines).map((apiKey) => {
+    const existing = previousPending.get(apiKey);
+    if (existing) return existing;
+    return {
+      ...emptyCredential(baseUrlId),
+      id: `pending-${createLocalId("credential")}`,
+      api_key: apiKey,
+    };
+  });
+  return [...kept, ...pending];
 }
 
 /** Creates a new protocol configuration with editor defaults. */
 export const emptyProtocolConfig = (
   baseUrlId = "",
-  name = "",
-  credentialId = "",
+  credentialIds: string[] = [],
 ): FormProtocolConfig => ({
   id: createLocalId("protocol"),
-  name,
-  enabled: true,
-  headers: [{ key: "", value: "", action: "override" }],
-  proxy_mode: "inherit",
-  channel_proxy: "",
-  param_override: [],
-  model_filter: "",
-  sync_new_models: false,
-  manual_model_name: "",
-  manual_protocols: [],
   base_url_id: baseUrlId,
-  credential_ids: credentialId ? [credentialId] : [],
+  credential_ids: [...credentialIds],
   sync_targets: [],
   models: [],
-  expanded: true,
 });
 
-/** Creates a channel editor form with one URL, credential, and protocol config. */
-export const emptyForm = (locale: Locale = "zh-CN"): FormState => {
+/** Creates a channel editor form with one URL and protocol config. */
+export const emptyForm = (): FormState => {
   const baseUrlId = createLocalId("baseurl");
-  const credential = emptyCredential();
   return {
     name: "",
     tags: [],
+    newApiKeysLines: "",
     base_urls: [
       {
         id: baseUrlId,
         url: "",
-        name: "",
-        enabled: true,
-        supported_protocols: [],
+        shareKeys: true,
+        newApiKeysLines: "",
       },
     ],
-    credentials: [credential],
-    protocolConfigs: [
-      emptyProtocolConfig(
-        baseUrlId,
-        defaultProtocolConfigName(0, locale),
-        credential.id,
-      ),
-    ],
+    credentials: [],
+    protocolConfigs: [emptyProtocolConfig(baseUrlId)],
+    proxy_mode: "inherit",
+    channel_proxy: "",
+    headersJson: "",
+    paramsJson: "",
   };
 };
-
-import { protocolConfigSelectedCredentialIds } from "./channelForm";
-import { formBaseUrlsForPayload } from "./channelFormConversion";
 
 /** Builds uniqueness keys for a protocol configuration's credentials. */
 export function protocolConfigCredentialKeys(

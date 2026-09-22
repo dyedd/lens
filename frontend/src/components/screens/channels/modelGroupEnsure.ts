@@ -137,15 +137,6 @@ export function modelGroupEnsureStatusLabel(
   return locale === "zh-CN" ? "跳过" : "Skipped";
 }
 
-export function modelGroupEnsureStatusVariant(
-  status: ModelGroupEnsureStatus,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "create") return "default";
-  if (status === "update") return "secondary";
-  if (status === "skipped") return "destructive";
-  return "outline";
-}
-
 export function nextCreateModelGroupName(
   modelName: string,
   modelGroups: ModelGroup[],

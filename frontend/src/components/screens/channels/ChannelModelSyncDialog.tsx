@@ -40,12 +40,6 @@ function statusLabel(
   return locale === "zh-CN" ? zh : en;
 }
 
-function statusVariant(status: ChannelModelSyncResultItem["status"]) {
-  if (status === "failed") return "destructive" as const;
-  if (status === "updated") return "secondary" as const;
-  return "outline" as const;
-}
-
 /** Renders a channel model-sync preview and confirmation flow. */
 export function ChannelModelSyncDialog({
   open,
@@ -73,6 +67,36 @@ export function ChannelModelSyncDialog({
         <AppDialogContent
           className="max-w-2xl"
           title={locale === "zh-CN" ? "同步预览" : "Sync preview"}
+          footer={
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                disabled={syncing}
+              >
+                {locale === "zh-CN" ? "取消" : "Cancel"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={onConfirm}
+                disabled={
+                  syncing ||
+                  !result ||
+                  result.eligible_target_count === 0 ||
+                  !hasChanges
+                }
+              >
+                <RefreshCcw
+                  data-icon="inline-start"
+                  className={syncing ? "animate-spin" : undefined}
+                />
+                {locale === "zh-CN" ? "确认同步" : "Confirm sync"}
+              </Button>
+            </>
+          }
         >
           <div className="grid gap-4">
             {result ? (
@@ -93,7 +117,7 @@ export function ChannelModelSyncDialog({
                     : `${result.unchanged_target_count} unchanged`}
                 </Badge>
                 {result.failed_target_count ? (
-                  <Badge variant="destructive">
+                  <Badge variant="secondary">
                     {locale === "zh-CN"
                       ? `${result.failed_target_count} 个失败`
                       : `${result.failed_target_count} failed`}
@@ -118,8 +142,8 @@ export function ChannelModelSyncDialog({
                 </AlertTitle>
                 <AlertDescription>
                   {locale === "zh-CN"
-                    ? "请先在渠道协议配置中开启「同步」，或把模型来源改为同步，并确保地址、密钥和上游协议均已启用。"
-                    : "Click Sync in a channel protocol config or switch models to synced, and make sure the URL, key, and upstream protocol are enabled."}
+                    ? "请先在模型管理中把模型来源设为同步，并填写地址和密钥。"
+                    : "Set a model source to synced in model management, and fill in the URL and key."}
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -147,18 +171,18 @@ export function ChannelModelSyncDialog({
                         <TableCell className="align-top">
                           <div className="font-medium">{item.channel_name}</div>
                           <div className="text-xs text-muted-foreground">
-                            {`${item.protocol_config_name} · ${item.credential_name || item.credential_id} · ${item.protocol}`}
+                            {`${item.credential_name || item.credential_id} · ${item.protocol}`}
                           </div>
                         </TableCell>
                         <TableCell className="align-top">
-                          <Badge variant={statusVariant(item.status)}>
+                          <Badge variant="secondary">
                             {statusLabel(locale, item.status)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs">
                           <div className="flex flex-col gap-1">
                             {item.status === "failed" ? (
-                              <div className="text-destructive">
+                              <div className="text-muted-foreground">
                                 {(locale === "zh-CN" ? "失败：" : "Failed: ") +
                                   item.error}
                               </div>
@@ -175,7 +199,7 @@ export function ChannelModelSyncDialog({
                             {item.removed.map((name) => (
                               <div
                                 key={`r-${name}`}
-                                className="text-destructive"
+                                className="text-muted-foreground"
                               >
                                 {`- ${name}`}
                               </div>
@@ -205,33 +229,6 @@ export function ChannelModelSyncDialog({
                 </Table>
               </div>
             ) : null}
-
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={syncing}
-              >
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button
-                type="button"
-                onClick={onConfirm}
-                disabled={
-                  syncing ||
-                  !result ||
-                  result.eligible_target_count === 0 ||
-                  !hasChanges
-                }
-              >
-                <RefreshCcw
-                  data-icon="inline-start"
-                  className={syncing ? "animate-spin" : undefined}
-                />
-                {locale === "zh-CN" ? "确认同步" : "Confirm sync"}
-              </Button>
-            </div>
           </div>
         </AppDialogContent>
       ) : null}

@@ -183,9 +183,23 @@ export function ModelGroupEnsureDialog({
               ? "确认模型组处理"
               : "Confirm model-group changes"
           }
+          footer={
+            <Button
+              type="button"
+              size="sm"
+              onClick={confirmWithDrafts}
+              disabled={isConfirming || hasInvalidSelectedCreateName}
+            >
+              <RefreshCcw
+                data-icon="inline-start"
+                className={isConfirming ? "animate-spin" : undefined}
+              />
+              {locale === "zh-CN" ? "保存渠道" : "Save channel"}
+            </Button>
+          }
         >
           <div className="grid gap-4 pt-1">
-            <div className="flex flex-wrap gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            <div className="flex flex-wrap gap-2 rounded-md bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
               <span>{`${locale === "zh-CN" ? "新建" : "Create"} ${result.created_count}`}</span>
               <span>{`${locale === "zh-CN" ? "加入" : "Update"} ${result.updated_count}`}</span>
               <span>{`${locale === "zh-CN" ? "已存在" : "Unchanged"} ${result.unchanged_count}`}</span>
@@ -214,19 +228,6 @@ export function ModelGroupEnsureDialog({
               }}
               onCommitDraft={commitCreateGroupName}
             />
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                onClick={confirmWithDrafts}
-                disabled={isConfirming || hasInvalidSelectedCreateName}
-              >
-                <RefreshCcw
-                  data-icon="inline-start"
-                  className={isConfirming ? "animate-spin" : undefined}
-                />
-                {locale === "zh-CN" ? "保存渠道" : "Save channel"}
-              </Button>
-            </div>
           </div>
         </AppDialogContent>
       ) : null}

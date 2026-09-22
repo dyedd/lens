@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/Table";
 import { cn } from "@/lib/classNames";
-import { compactProtocolLabel, protocolBadgeClassName } from "@/lib/protocols";
+import { protocolLabel } from "@/lib/protocols";
 import type { Locale } from "./channelTypes";
 
 type Props = {
@@ -27,23 +27,14 @@ function statusLabel(status: BatchModelTestStatus, locale: Locale) {
   return locale === "zh-CN" ? "失败" : "Failed";
 }
 
-function statusVariant(
-  status: BatchModelTestStatus,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "success") return "default";
-  if (status === "failed") return "destructive";
-  if (status === "running") return "secondary";
-  return "outline";
-}
-
 /** Renders batch model test result rows. */
 export function BatchModelTestResults({ rows, locale }: Props) {
   if (!rows.length) return null;
   return (
-    <div className="overflow-hidden rounded-md border">
-      <div className="border-b px-3 py-2 text-sm font-medium">
+    <div className="space-y-2">
+      <h4 className="text-sm font-medium">
         {locale === "zh-CN" ? "测试结果" : "Test results"}
-      </div>
+      </h4>
       <div className="max-h-80 overflow-y-auto">
         <Table>
           <TableHeader>
@@ -80,17 +71,14 @@ export function BatchModelTestResults({ rows, locale }: Props) {
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant="outline"
-                      className={cn(
-                        "max-w-[120px] truncate text-xs",
-                        protocolBadgeClassName(row.protocol),
-                      )}
+                      variant="secondary"
+                      className="max-w-[160px] truncate text-xs font-normal text-muted-foreground"
                     >
-                      {compactProtocolLabel(row.protocol)}
+                      {protocolLabel(row.protocol, locale)}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(row.status)}>
+                    <Badge variant="secondary">
                       {statusLabel(row.status, locale)}
                     </Badge>
                   </TableCell>

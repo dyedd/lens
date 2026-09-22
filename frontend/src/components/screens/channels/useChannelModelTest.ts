@@ -13,6 +13,7 @@ import type {
   SiteModelTestResult,
 } from "@/lib/api/sites";
 import { paramOverrideDraftToRules } from "@/lib/upstreamRules";
+import { paramDraftsFromJson } from "./channelAdvancedJson";
 import { activeBaseUrlValue, formHeaders } from "./channelForm";
 import {
   credentialLabel,
@@ -48,7 +49,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       ),
     );
     for (const [configIndex, config] of form.protocolConfigs.entries()) {
-      if (!config.enabled || !activeBaseUrlValue(form, config).trim()) continue;
+      if (!activeBaseUrlValue(form, config).trim()) continue;
       for (const [modelIndex, model] of config.models.entries()) {
         const key = protocolConfigModelKey(config, model);
         if (options.has(key) || !model.model_name.trim()) continue;
@@ -127,10 +128,12 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     return {
       protocol: selectedProtocol,
       base_url: baseUrl,
-      headers: formHeaders(config),
-      proxy_mode: config.proxy_mode,
-      channel_proxy: config.channel_proxy.trim(),
-      param_override: paramOverrideDraftToRules(config.param_override),
+      headers: formHeaders(form),
+      proxy_mode: form.proxy_mode,
+      channel_proxy: form.channel_proxy.trim(),
+      param_override: paramOverrideDraftToRules(
+        paramDraftsFromJson(form.paramsJson) ?? [],
+      ),
       credential: {
         id: credential.id,
         name: credential.name.trim() || fallbackCredentialName(credentialIndex),
@@ -155,7 +158,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     }
     setModelTestTarget({ protocolConfigIndex: configIndex, modelIndex });
     setModelTestProtocol(protocols[0]);
-    setModelTestPromptMode("0");
+    setModelTestPromptMode(modelTestPrompts.length ? "0" : "custom");
     setModelTestPrompt(modelTestPrompts[0] || "");
     setModelTestResult(null);
   }

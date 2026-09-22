@@ -118,7 +118,7 @@ export function useModelGroupEnsure({
       queryClient.invalidateQueries({ queryKey: ["router-snapshot"] }),
       queryClient.invalidateQueries({ queryKey: ["group-candidates"] }),
     ]);
-    editor.applyPreparedForm(toForm(committed.site, locale));
+    editor.applyPreparedForm(toForm(committed.site));
     editor.setIsDialogOpen(false);
     editor.setEditingSiteId(null);
     setModelGroupEnsureOpen(false);

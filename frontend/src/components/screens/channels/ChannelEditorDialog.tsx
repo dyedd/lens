@@ -1,27 +1,16 @@
 import { RefreshCcw } from "lucide-react";
-import {
-  type Dispatch,
-  type FormEventHandler,
-  type SetStateAction,
-  useState,
-} from "react";
-import type { BatchModelTestOption } from "@/components/model-test/batchModelTestSession";
+import type { Dispatch, FormEventHandler, SetStateAction } from "react";
 import { Button } from "@/components/ui/Button";
-import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import { Separator } from "@/components/ui/Separator";
-import type { ProtocolKind } from "@/lib/api/protocols";
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/Sheet";
+import { ChannelAdvancedSection } from "./ChannelAdvancedSection";
 import { ChannelBasicInfoSection } from "./ChannelBasicInfoSection";
-import { ChannelModelOverviewSection } from "./ChannelModelOverviewSection";
-import { ChannelProtocolSection } from "./ChannelProtocolSection";
-import type {
-  FormBaseUrl,
-  FormCredential,
-  FormProtocolConfig,
-  FormState,
-  Locale,
-  TestableModelOption,
-} from "./channelTypes";
-import type { AggregatedModel } from "./useChannelQueries";
+import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
 
 type ChannelEditorDialogProps = {
   isDialogOpen: boolean;
@@ -30,49 +19,25 @@ type ChannelEditorDialogProps = {
   locale: Locale;
   availableTags: string[];
   form: FormState;
-  fetchingProtocolConfigIndex: number | null;
-  duplicatedProtocolConfigKeys: Set<string>;
-  batchTestOptions: BatchModelTestOption[];
-  isBatchModelTestRunning: boolean;
-  testingModel: boolean;
   savingChannel: boolean;
-  overviewModels: AggregatedModel[];
-  modelTestOptionByKey: Map<string, TestableModelOption>;
+  modelCounts: { enabled: number; total: number };
   setIsDialogOpen: Dispatch<SetStateAction<boolean>>;
   setEditingSiteId: Dispatch<SetStateAction<string | null>>;
   setForm: Dispatch<SetStateAction<FormState>>;
-  setAdvancedProtocolConfigIndex: Dispatch<SetStateAction<number | null>>;
   submit: FormEventHandler<HTMLFormElement>;
   addBaseUrl: () => void;
   updateBaseUrl: (index: number, patch: Partial<FormBaseUrl>) => void;
   removeBaseUrl: (index: number) => void;
-  updateCredential: (
-    credentialId: string,
-    patch: Partial<FormCredential>,
-  ) => void;
-  removeCredential: (index: number) => void;
-  addProtocolConfig: () => void;
-  updateProtocolConfig: (
-    index: number,
-    patch: Partial<FormProtocolConfig>,
-  ) => void;
-  addManualProtocolConfigModel: (protocolConfigIndex: number) => void;
-  fetchProtocolModels: (protocolConfigIndex: number) => void;
-  openBatchModelTestDialog: () => void;
-  updateModelProtocols: (
-    modelKey: string,
-    nextProtocols: ProtocolKind[],
-  ) => void;
-  updateModelSource: (
-    modelKey: string,
-    source: AggregatedModel["source"],
-  ) => void;
-  updateAllModelSources: (source: AggregatedModel["source"]) => void;
-  openAggregateModelTest: (modelKey: string) => void;
-  removeAggregateModel: (modelKey: string) => void;
-  clearModels: () => void;
   closeEditor: () => void;
+  onManageModels?: () => void;
 };
+
+function editorTitle(editingSiteId: string | null, locale: Locale) {
+  if (editingSiteId) {
+    return locale === "zh-CN" ? "编辑渠道" : "Edit channel";
+  }
+  return locale === "zh-CN" ? "新建渠道" : "Create channel";
+}
 
 /** Renders the channel editor and coordinates its form actions. */
 export function ChannelEditorDialog({
@@ -82,167 +47,116 @@ export function ChannelEditorDialog({
   locale,
   availableTags,
   form,
-  fetchingProtocolConfigIndex,
-  duplicatedProtocolConfigKeys,
-  batchTestOptions,
-  isBatchModelTestRunning,
-  testingModel,
   savingChannel,
-  overviewModels,
-  modelTestOptionByKey,
+  modelCounts,
   setIsDialogOpen,
   setEditingSiteId,
   setForm,
-  setAdvancedProtocolConfigIndex,
   submit,
   addBaseUrl,
   updateBaseUrl,
   removeBaseUrl,
-  updateCredential,
-  removeCredential,
-  addProtocolConfig,
-  updateProtocolConfig,
-  addManualProtocolConfigModel,
-  fetchProtocolModels,
-  openBatchModelTestDialog,
-  updateModelProtocols,
-  updateModelSource,
-  updateAllModelSources,
-  openAggregateModelTest,
-  removeAggregateModel,
-  clearModels,
   closeEditor,
+  onManageModels,
 }: ChannelEditorDialogProps) {
-  const [isRateSyncing, setIsRateSyncing] = useState(false);
+  const title = editorTitle(editingSiteId, locale);
+
+  function handleOpenChange(open: boolean) {
+    if (!open && savingChannel) return;
+    if (!open && hasUnsavedChanges) {
+      const confirmed = window.confirm(
+        locale === "zh-CN"
+          ? "当前有未保存修改，确定关闭吗？"
+          : "You have unsaved changes. Close anyway?",
+      );
+      if (!confirmed) return;
+    }
+    setIsDialogOpen(open);
+    if (!open) setEditingSiteId(null);
+  }
+
+  const submitLabel = savingChannel
+    ? locale === "zh-CN"
+      ? "正在保存..."
+      : "Saving..."
+    : editingSiteId
+      ? locale === "zh-CN"
+        ? "保存"
+        : "Save"
+      : locale === "zh-CN"
+        ? "创建"
+        : "Create";
 
   return (
-    <Dialog
-      open={isDialogOpen}
-      onOpenChange={(open) => {
-        if (!open && (savingChannel || isRateSyncing)) return;
-        if (!open && hasUnsavedChanges) {
-          const confirmed = window.confirm(
-            locale === "zh-CN"
-              ? "当前有未保存修改，确定关闭吗？"
-              : "You have unsaved changes. Close anyway?",
-          );
-          if (!confirmed) return;
-        }
-        setIsDialogOpen(open);
-        if (!open) setEditingSiteId(null);
-      }}
-    >
-      <AppDialogContent
-        className="max-w-4xl"
-        title={
-          editingSiteId
-            ? locale === "zh-CN"
-              ? "编辑渠道"
-              : "Edit channel"
-            : locale === "zh-CN"
-              ? "新建渠道"
-              : "Create channel"
-        }
-      >
-        <form
-          className="grid gap-5"
-          onSubmit={submit}
-          onKeyDown={(event) => {
-            // Toolbar search is live-filter; Enter must not save/close the channel dialog.
-            if (
-              event.key === "Enter" &&
-              !event.nativeEvent.isComposing &&
-              event.target instanceof HTMLElement &&
-              event.target.closest("[data-toolbar-search]")
-            ) {
-              event.preventDefault();
-            }
-          }}
-        >
-          <fieldset
-            className="grid min-w-0 gap-5 border-0 p-0"
-            disabled={isRateSyncing}
-          >
-            <div className="grid gap-4">
+    <Sheet open={isDialogOpen} onOpenChange={handleOpenChange}>
+      <SheetContent className="flex flex-col gap-0 sm:max-w-[460px]">
+        <SheetHeader className="px-4 pb-4">
+          <SheetTitle>{title}</SheetTitle>
+        </SheetHeader>
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+          <fieldset className="flex min-h-0 flex-1 flex-col border-0 p-0">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
               <ChannelBasicInfoSection
                 form={form}
                 locale={locale}
                 availableTags={availableTags}
                 siteId={editingSiteId}
-                canSyncRates={Boolean(editingSiteId) && !hasUnsavedChanges}
-                onRateSyncingChange={setIsRateSyncing}
                 setForm={setForm}
                 addBaseUrl={addBaseUrl}
                 updateBaseUrl={updateBaseUrl}
                 removeBaseUrl={removeBaseUrl}
-                updateCredential={updateCredential}
-                removeCredential={removeCredential}
               />
-              <Separator />
-              <section className="grid gap-4">
-                <ChannelProtocolSection
-                  form={form}
-                  locale={locale}
-                  fetchingProtocolConfigIndex={fetchingProtocolConfigIndex}
-                  duplicatedProtocolConfigKeys={duplicatedProtocolConfigKeys}
-                  setForm={setForm}
-                  setAdvancedProtocolConfigIndex={
-                    setAdvancedProtocolConfigIndex
-                  }
-                  addProtocolConfig={addProtocolConfig}
-                  updateProtocolConfig={updateProtocolConfig}
-                  addManualProtocolConfigModel={addManualProtocolConfigModel}
-                  fetchProtocolModels={fetchProtocolModels}
-                />
-                <ChannelModelOverviewSection
-                  locale={locale}
-                  overviewModels={overviewModels}
-                  modelTestOptionByKey={modelTestOptionByKey}
-                  batchTestOptions={batchTestOptions}
-                  isBatchModelTestRunning={isBatchModelTestRunning}
-                  testingModel={testingModel}
-                  onOpenBatchTest={openBatchModelTestDialog}
-                  onUpdateModelProtocols={updateModelProtocols}
-                  onUpdateModelSource={updateModelSource}
-                  onUpdateAllModelSources={updateAllModelSources}
-                  onOpenModelTest={openAggregateModelTest}
-                  onRemoveModel={removeAggregateModel}
-                  onClearModels={clearModels}
-                />
-              </section>
+              {editingSiteId && onManageModels ? (
+                <div className="min-w-0 space-y-1">
+                  <div className="text-xs font-normal text-muted-foreground">
+                    {locale === "zh-CN" ? "模型" : "Models"}
+                  </div>
+                  <div className="flex h-8 items-center justify-between rounded-md bg-muted/35 px-2.5 text-xs">
+                    <span className="text-muted-foreground">
+                      {locale === "zh-CN"
+                        ? `活跃 ${modelCounts.enabled} / 总数 ${modelCounts.total}`
+                        : `${modelCounts.enabled} active / ${modelCounts.total} total`}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={onManageModels}
+                    >
+                      {locale === "zh-CN" ? "管理模型" : "Manage models"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              <ChannelAdvancedSection
+                form={form}
+                locale={locale}
+                setForm={setForm}
+              />
             </div>
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+            <SheetFooter className="flex flex-row justify-end gap-2 px-4 py-3">
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 onClick={closeEditor}
                 disabled={savingChannel}
               >
                 {locale === "zh-CN" ? "取消" : "Cancel"}
               </Button>
-              <Button type="submit" disabled={savingChannel}>
+              <Button type="submit" size="sm" disabled={savingChannel}>
                 {savingChannel ? (
                   <RefreshCcw
                     data-icon="inline-start"
                     className="animate-spin"
                   />
                 ) : null}
-                {savingChannel
-                  ? locale === "zh-CN"
-                    ? "正在保存..."
-                    : "Saving..."
-                  : editingSiteId
-                    ? locale === "zh-CN"
-                      ? "保存渠道"
-                      : "Save channel"
-                    : locale === "zh-CN"
-                      ? "创建渠道"
-                      : "Create channel"}
+                {submitLabel}
               </Button>
-            </div>
+            </SheetFooter>
           </fieldset>
         </form>
-      </AppDialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

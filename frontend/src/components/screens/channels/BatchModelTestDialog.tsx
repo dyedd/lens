@@ -76,9 +76,18 @@ export function BatchModelTestDialog({
         <AppDialogContent
           className="max-w-4xl"
           title={locale === "zh-CN" ? "批量测试模型" : "Batch test models"}
+          footer={
+            <Button type="button" size="sm" onClick={onRun} disabled={!canRun}>
+              <RefreshCcw
+                data-icon="inline-start"
+                className={isBatchModelTestRunning ? "animate-spin" : undefined}
+              />
+              {locale === "zh-CN" ? "开始测试" : "Start test"}
+            </Button>
+          }
         >
           <div className="grid gap-4">
-            <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            <div className="rounded-md bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
               {locale === "zh-CN"
                 ? `将测试 ${testableCount} 个可用模型`
                 : `${testableCount} testable models`}
@@ -181,17 +190,6 @@ export function BatchModelTestDialog({
             ) : null}
 
             <BatchModelTestResults rows={batchTestRows} locale={locale} />
-            <div className="flex justify-end">
-              <Button type="button" onClick={onRun} disabled={!canRun}>
-                <RefreshCcw
-                  data-icon="inline-start"
-                  className={
-                    isBatchModelTestRunning ? "animate-spin" : undefined
-                  }
-                />
-                {locale === "zh-CN" ? "开始测试" : "Start test"}
-              </Button>
-            </div>
           </div>
         </AppDialogContent>
       ) : null}

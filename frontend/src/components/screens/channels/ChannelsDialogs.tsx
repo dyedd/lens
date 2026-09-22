@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useState } from "react";
 import { lazyComponent } from "@/lib/lazyComponent";
 import type { Locale } from "./channelTypes";
 import type {
@@ -20,11 +20,6 @@ const ChannelEditorDialog = lazyComponent(() =>
 const DeleteChannelDialog = lazyComponent(() =>
   import("./DeleteChannelDialog").then((module) => module.DeleteChannelDialog),
 );
-const AdvancedProtocolConfigDialog = lazyComponent(() =>
-  import("./AdvancedProtocolConfigDialog").then(
-    (module) => module.AdvancedProtocolConfigDialog,
-  ),
-);
 const BatchImportDialog = lazyComponent(() =>
   import("./BatchImportDialog").then((module) => module.BatchImportDialog),
 );
@@ -41,12 +36,17 @@ const ModelGroupEnsureDialog = lazyComponent(() =>
 const ModelTestDialog = lazyComponent(() =>
   import("./ModelTestDialog").then((module) => module.ModelTestDialog),
 );
-const ModelPickerDialog = lazyComponent(() =>
-  import("./ModelPickerDialog").then((module) => module.ModelPickerDialog),
-);
 const ChannelModelSyncDialog = lazyComponent(() =>
   import("./ChannelModelSyncDialog").then(
     (module) => module.ChannelModelSyncDialog,
+  ),
+);
+const ChannelModelsDialog = lazyComponent(() =>
+  import("./ChannelModelsDialog").then((module) => module.ChannelModelsDialog),
+);
+const ChannelRemoteModelsDialog = lazyComponent(() =>
+  import("./ChannelRemoteModelsDialog").then(
+    (module) => module.ChannelRemoteModelsDialog,
   ),
 );
 
@@ -61,8 +61,10 @@ type Props = {
   batchTest: ReturnType<typeof useBatchModelTest>;
   modelGroups: ReturnType<typeof useModelGroupEnsure>;
   overviewModels: ReturnType<typeof useAggregatedModels>;
-  advancedConfigIndex: number | null;
-  setAdvancedConfigIndex: Dispatch<SetStateAction<number | null>>;
+  editorMode: "channel" | "models";
+  syncOnOpen: boolean;
+  onSyncOnOpenHandled: () => void;
+  onManageModels?: () => void;
 };
 
 /** Renders channel dialogs while keeping the screen component declarative. */
@@ -77,12 +79,25 @@ export function ChannelsDialogs({
   batchTest,
   modelGroups,
   overviewModels,
-  advancedConfigIndex,
-  setAdvancedConfigIndex,
+  editorMode,
+  syncOnOpen,
+  onSyncOnOpenHandled,
+  onManageModels,
 }: Props) {
+  const isDialogOpen = editor.isDialogOpen;
+  const [remoteOpen, setRemoteOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isDialogOpen || editorMode !== "models" || !syncOnOpen) {
+      return;
+    }
+    setRemoteOpen(true);
+    onSyncOnOpenHandled();
+  }, [editorMode, isDialogOpen, onSyncOnOpenHandled, syncOnOpen]);
+
   return (
     <>
-      {editor.isDialogOpen ? (
+      {editor.isDialogOpen && editorMode === "channel" ? (
         <ChannelEditorDialog
           isDialogOpen={editor.isDialogOpen}
           hasUnsavedChanges={editor.hasUnsavedChanges}
@@ -90,37 +105,53 @@ export function ChannelsDialogs({
           locale={locale}
           availableTags={availableTags}
           form={editor.form}
-          fetchingProtocolConfigIndex={picker.fetchingProtocolConfigIndex}
-          duplicatedProtocolConfigKeys={editor.duplicatedProtocolConfigKeys}
-          batchTestOptions={batchTest.batchTestOptions}
-          isBatchModelTestRunning={batchTest.isBatchModelTestRunning}
-          testingModel={modelTest.testingModel}
           savingChannel={modelGroups.isEnsuringModelGroups}
-          overviewModels={overviewModels}
-          modelTestOptionByKey={modelTest.modelTestOptionByKey}
+          modelCounts={{
+            enabled: overviewModels.filter((item) => item.enabled).length,
+            total: overviewModels.length,
+          }}
           setIsDialogOpen={editor.setIsDialogOpen}
           setEditingSiteId={editor.setEditingSiteId}
           setForm={editor.setForm}
-          setAdvancedProtocolConfigIndex={setAdvancedConfigIndex}
           submit={modelGroups.submit}
           addBaseUrl={editor.addBaseUrl}
           updateBaseUrl={editor.updateBaseUrl}
           removeBaseUrl={editor.removeBaseUrl}
-          updateCredential={editor.updateCredential}
-          removeCredential={editor.removeCredential}
-          addProtocolConfig={editor.addProtocolConfig}
-          updateProtocolConfig={editor.updateProtocolConfig}
-          addManualProtocolConfigModel={picker.addManualProtocolConfigModel}
-          fetchProtocolModels={picker.fetchProtocolModels}
-          openBatchModelTestDialog={batchTest.openBatchModelTestDialog}
-          updateModelProtocols={editor.updateModelProtocols}
-          updateModelSource={editor.updateModelSource}
-          updateAllModelSources={editor.updateAllModelSources}
-          openAggregateModelTest={modelTest.openAggregateModelTest}
-          removeAggregateModel={editor.removeAggregateModel}
-          clearModels={editor.clearModels}
           closeEditor={editor.closeEditor}
+          onManageModels={onManageModels}
         />
+      ) : null}
+      {editor.isDialogOpen && editorMode === "models" ? (
+        <>
+          <ChannelModelsDialog
+            open
+            locale={locale}
+            channelName={editor.form.name}
+            models={overviewModels}
+            saving={modelGroups.isEnsuringModelGroups}
+            fetching={picker.fetching}
+            onOpenChange={(open) => {
+              if (!open) editor.closeEditor();
+            }}
+            onSave={modelGroups.submit}
+            onToggleEnabled={editor.toggleAggregateEnabled}
+            onUpdateProtocols={editor.updateModelProtocols}
+            onDelete={editor.removeAggregateModel}
+            onTest={modelTest.openAggregateModelTest}
+            testing={modelTest.testingModel}
+            onAddBinding={editor.addBinding}
+            onOpenRemote={() => setRemoteOpen(true)}
+          />
+          <ChannelRemoteModelsDialog
+            open={remoteOpen}
+            locale={locale}
+            channelName={editor.form.name}
+            loading={picker.fetching}
+            onOpenChange={setRemoteOpen}
+            onLoad={() => picker.discoverRemoteCatalog(0)}
+            onImport={(items) => picker.importRemoteModels(items)}
+          />
+        </>
       ) : null}
       {modelGroups.modelGroupEnsureOpen ? (
         <ModelGroupEnsureDialog
@@ -182,18 +213,6 @@ export function ChannelsDialogs({
           onRun={() => void batchTest.runBatchModelTests()}
         />
       ) : null}
-      {advancedConfigIndex !== null ? (
-        <AdvancedProtocolConfigDialog
-          open
-          protocolConfig={editor.form.protocolConfigs[advancedConfigIndex]}
-          protocolConfigIndex={advancedConfigIndex}
-          locale={locale}
-          onOpenChange={(open) => {
-            if (!open) setAdvancedConfigIndex(null);
-          }}
-          onUpdateProtocolConfig={editor.updateProtocolConfig}
-        />
-      ) : null}
       {persistence.deleteTarget ? (
         <DeleteChannelDialog
           deleteTarget={persistence.deleteTarget}
@@ -218,36 +237,6 @@ export function ChannelsDialogs({
           onPromptChange={modelTest.changeModelTestPrompt}
           onProtocolChange={modelTest.setModelTestProtocol}
           onRun={() => void modelTest.runModelTest()}
-        />
-      ) : null}
-      {picker.modelPickerProtocolConfigIndex !== null ? (
-        <ModelPickerDialog
-          open
-          availableModels={picker.availableModels}
-          pickerSelectedModelKeys={picker.pickerSelectedModelKeys}
-          pickerImportProtocols={picker.pickerImportProtocols}
-          pickerModelProtocols={picker.pickerModelProtocols}
-          locale={locale}
-          onOpenChange={(open) => {
-            if (!open) picker.closeModelPicker();
-          }}
-          onToggleModel={(key) => picker.togglePickerModelSelection(key)}
-          onImportProtocolsChange={picker.setPickerImportProtocols}
-          onFilteredModelProtocolsChange={(keys, protocols) =>
-            picker.setPickerModelProtocols((current) => {
-              const next = { ...current };
-              for (const key of keys) {
-                if (protocols.length) next[key] = protocols;
-                else delete next[key];
-              }
-              return next;
-            })
-          }
-          onConfirm={() =>
-            picker.applyModelSelection(picker.pickerSelectedModelKeys)
-          }
-          onConfirmAll={picker.applyModelSelection}
-          onCancel={picker.closeModelPicker}
         />
       ) : null}
     </>

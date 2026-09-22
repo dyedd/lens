@@ -20,6 +20,7 @@ export function DeleteChannelDialog({
   setDeleteTarget,
   removeSite,
 }: Props) {
+  const name = deleteTarget?.name ?? "";
   return (
     <Dialog
       open={Boolean(deleteTarget)}
@@ -29,21 +30,19 @@ export function DeleteChannelDialog({
     >
       <AppDialogContent
         className="max-w-lg"
+        showCloseButton={false}
         title={locale === "zh-CN" ? "确认删除渠道" : "Delete channel"}
         description={
           locale === "zh-CN"
-            ? "删除后该渠道下的协议配置、模型和模型组成员会一起移除。"
-            : "Protocol configs, models, and group members under this channel will be removed together."
+            ? `将删除渠道「${name}」。删除后该渠道下的协议配置、模型和模型组成员会一起移除。`
+            : `Delete channel "${name}". Protocol configs, models, and group members under this channel will be removed together.`
         }
-      >
-        <div className="grid gap-5">
-          <div className="rounded-md border bg-muted/30 p-4">
-            <strong className="text-foreground">{deleteTarget?.name}</strong>
-          </div>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+        footer={
+          <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
+              size="sm"
               onClick={() => setDeleteTarget(null)}
             >
               {locale === "zh-CN" ? "取消" : "Cancel"}
@@ -51,6 +50,7 @@ export function DeleteChannelDialog({
             <Button
               type="button"
               variant="destructive"
+              size="sm"
               onClick={() => deleteTarget && void removeSite(deleteTarget)}
               disabled={busyId === deleteTarget?.id}
             >
@@ -62,9 +62,9 @@ export function DeleteChannelDialog({
                   ? "确认删除"
                   : "Delete"}
             </Button>
-          </div>
-        </div>
-      </AppDialogContent>
+          </>
+        }
+      />
     </Dialog>
   );
 }
