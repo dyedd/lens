@@ -1,4 +1,3 @@
-import { FieldGroup } from "@/components/ui/Field";
 import { useI18n } from "@/lib/I18nContext";
 import type { UpstreamParamOverrideDraft } from "@/lib/upstreamRules";
 import { GatewayGeneralSettings } from "./gateway-settings/GatewayGeneralSettings";
@@ -8,6 +7,7 @@ import type {
 } from "./gateway-settings/gatewaySettingsTypes";
 import { ParamOverrideSettings } from "./gateway-settings/ParamOverrideSettings";
 import { UpstreamHeaderSettings } from "./gateway-settings/UpstreamHeaderSettings";
+import { SettingsSectionSeparator } from "./settingsLayout";
 
 interface GatewaySettingsProps {
   proxyUrl: string;
@@ -21,7 +21,6 @@ interface GatewaySettingsProps {
   streamIdleTimeoutSecondsError?: string;
   maxRequestBodyBytesError?: string;
   isRelayLogBodyEnabled: boolean;
-  isModelListCompatModeEnabled: boolean;
   upstreamHeadersConfig: UpstreamHeadersDraft;
   upstreamParamOverrideConfig: UpstreamParamOverrideDraft;
   onProxyUrlChange: (value: string) => void;
@@ -31,7 +30,6 @@ interface GatewaySettingsProps {
   onStreamIdleTimeoutSecondsChange: (value: string) => void;
   onMaxRequestBodyBytesChange: (value: string) => void;
   onRelayLogBodyEnabledChange: (checked: boolean) => void;
-  onModelListCompatModeEnabledChange: (checked: boolean) => void;
   onAddGlobalHeader: () => void;
   onUpdateGlobalHeader: (index: number, patch: Partial<HeaderItem>) => void;
   onRemoveGlobalHeader: (index: number) => void;
@@ -53,7 +51,6 @@ export function GatewaySettings({
   streamIdleTimeoutSecondsError,
   maxRequestBodyBytesError,
   isRelayLogBodyEnabled,
-  isModelListCompatModeEnabled,
   upstreamHeadersConfig,
   upstreamParamOverrideConfig,
   onProxyUrlChange,
@@ -63,7 +60,6 @@ export function GatewaySettings({
   onStreamIdleTimeoutSecondsChange,
   onMaxRequestBodyBytesChange,
   onRelayLogBodyEnabledChange,
-  onModelListCompatModeEnabledChange,
   onAddGlobalHeader,
   onUpdateGlobalHeader,
   onRemoveGlobalHeader,
@@ -72,7 +68,7 @@ export function GatewaySettings({
   const { locale } = useI18n();
 
   return (
-    <FieldGroup>
+    <div className="space-y-6">
       <GatewayGeneralSettings
         locale={locale}
         proxyUrl={proxyUrl}
@@ -86,7 +82,6 @@ export function GatewaySettings({
         streamIdleTimeoutSecondsError={streamIdleTimeoutSecondsError}
         maxRequestBodyBytesError={maxRequestBodyBytesError}
         isRelayLogBodyEnabled={isRelayLogBodyEnabled}
-        isModelListCompatModeEnabled={isModelListCompatModeEnabled}
         onProxyUrlChange={onProxyUrlChange}
         onCorsAllowOriginsChange={onCorsAllowOriginsChange}
         onAuthAccessTokenMinutesChange={onAuthAccessTokenMinutesChange}
@@ -94,8 +89,8 @@ export function GatewaySettings({
         onStreamIdleTimeoutSecondsChange={onStreamIdleTimeoutSecondsChange}
         onMaxRequestBodyBytesChange={onMaxRequestBodyBytesChange}
         onRelayLogBodyEnabledChange={onRelayLogBodyEnabledChange}
-        onModelListCompatModeEnabledChange={onModelListCompatModeEnabledChange}
       />
+      <SettingsSectionSeparator />
       <UpstreamHeaderSettings
         locale={locale}
         config={upstreamHeadersConfig}
@@ -103,11 +98,12 @@ export function GatewaySettings({
         onUpdateGlobalHeader={onUpdateGlobalHeader}
         onRemoveGlobalHeader={onRemoveGlobalHeader}
       />
+      <SettingsSectionSeparator />
       <ParamOverrideSettings
         locale={locale}
         config={upstreamParamOverrideConfig}
         onGlobalChange={onGlobalParamOverrideChange}
       />
-    </FieldGroup>
+    </div>
   );
 }

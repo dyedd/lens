@@ -1,9 +1,12 @@
-import { RotateCcw, Save } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useMemo } from "react";
 
+import { ApiKeysScreen } from "@/components/screens/ApiKeysScreen";
+import { BackupsScreen } from "@/components/screens/BackupsScreen";
+import { CronjobsScreen } from "@/components/screens/CronjobsScreen";
 import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
 import { Button } from "@/components/ui/Button";
-import { Tabs } from "@/components/ui/Tabs";
+import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -14,10 +17,8 @@ import { type Locale, titleForLocale, useI18n } from "@/lib/I18nContext";
 import { CircuitBreakerSettingsSection } from "./CircuitBreakerSettingsSection";
 import { GatewaySettingsSection } from "./GatewaySettingsSection";
 import {
-  AccountSettingsSection,
-  AppearanceSettingsSection,
+  GeneralSettingsSection,
   ModelTestSettingsSection,
-  TimeSettingsSection,
 } from "./ProfileSettingsSections";
 import { createSettingsTabs, SettingsNavigation } from "./SettingsNavigation";
 import { useAccountSettings } from "./useAccountSettings";
@@ -33,9 +34,6 @@ function SettingsHeaderActions({
   settings: SettingsDraftController;
 }) {
   const refreshLabel = titleForLocale(locale, "刷新", "Refresh");
-  const saveSettingsLabel = settings.isSaving
-    ? titleForLocale(locale, "保存中...", "Saving...")
-    : titleForLocale(locale, "保存设置", "Save settings");
 
   return (
     <DashboardHeaderActions>
@@ -56,23 +54,6 @@ function SettingsHeaderActions({
             {refreshLabel}
           </TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={saveSettingsLabel}
-              disabled={settings.isSaving || !settings.isSettingsReady}
-              onClick={() => void settings.submitSettings()}
-            >
-              <Save data-icon="inline-start" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {saveSettingsLabel}
-          </TooltipContent>
-        </Tooltip>
       </div>
     </DashboardHeaderActions>
   );
@@ -88,23 +69,37 @@ export function SettingsScreen() {
   return (
     <>
       <SettingsHeaderActions locale={locale} settings={settings} />
-      <section className="min-w-0">
+      <section className="mx-auto min-w-0 max-w-[1230px]">
+        <h1 className="mb-5 px-1 text-xl font-semibold tracking-normal text-foreground xl:text-2xl">
+          {titleForLocale(locale, "设置", "Settings")}
+        </h1>
         <Tabs
-          defaultValue="appearance"
+          defaultValue="general"
           orientation="vertical"
-          className="grid min-w-0 gap-6 lg:grid-cols-[220px_minmax(0,760px)] lg:items-start"
+          className="grid min-w-0 gap-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start"
         >
           <SettingsNavigation tabs={settingsTabs} />
           <div className="min-w-0">
-            <AppearanceSettingsSection locale={locale} settings={settings} />
-            <AccountSettingsSection locale={locale} account={account} />
-            <TimeSettingsSection locale={locale} settings={settings} />
+            <GeneralSettingsSection
+              locale={locale}
+              settings={settings}
+              account={account}
+            />
             <GatewaySettingsSection locale={locale} settings={settings} />
             <ModelTestSettingsSection locale={locale} settings={settings} />
             <CircuitBreakerSettingsSection
               locale={locale}
               settings={settings}
             />
+            <TabsContent value="api-keys" className="mt-0">
+              <ApiKeysScreen />
+            </TabsContent>
+            <TabsContent value="cronjobs" className="mt-0">
+              <CronjobsScreen />
+            </TabsContent>
+            <TabsContent value="backups" className="mt-0">
+              <BackupsScreen />
+            </TabsContent>
           </div>
         </Tabs>
       </section>

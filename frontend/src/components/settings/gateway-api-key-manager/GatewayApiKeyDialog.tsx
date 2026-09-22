@@ -3,14 +3,15 @@ import { toast } from "sonner";
 
 import { SettingsHint } from "@/components/settings/SettingsSectionCard";
 import { Button } from "@/components/ui/Button";
-import { AppDialogContent, Dialog, DialogFooter } from "@/components/ui/Dialog";
-import {
-  Field,
-  FieldContent,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/Field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/Sheet";
 import { Switch } from "@/components/ui/Switch";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { GatewayApiKey } from "@/lib/api/settings";
@@ -59,15 +60,10 @@ function GatewayApiKeyBasicFields({
         />
       </Field>
 
-      <Field
-        orientation="horizontal"
-        className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
-      >
-        <FieldContent>
-          <FieldLabel htmlFor="gateway-key-enabled" className="w-auto">
-            {titleForLocale(locale, "启用", "Enabled")}
-          </FieldLabel>
-        </FieldContent>
+      <Field orientation="horizontal" className="items-center justify-between">
+        <FieldLabel htmlFor="gateway-key-enabled" className="w-auto">
+          {titleForLocale(locale, "启用", "Enabled")}
+        </FieldLabel>
         <Switch
           id="gateway-key-enabled"
           checked={enabled}
@@ -214,7 +210,7 @@ export function GatewayApiKeyDialog({
   }
 
   return (
-    <Dialog
+    <Sheet
       open={open}
       onOpenChange={(next) => {
         if (!next) {
@@ -223,62 +219,68 @@ export function GatewayApiKeyDialog({
         }
       }}
     >
-      <AppDialogContent
-        className="sm:max-w-xl"
-        title={titleForLocale(
-          locale,
-          editingKeyId ? "编辑 API Key" : "创建 API Key",
-          editingKeyId ? "Edit API key" : "Create API key",
-        )}
-      >
-        <div className="flex flex-col gap-4">
-          <FieldGroup>
-            <GatewayApiKeyBasicFields
-              locale={locale}
-              remark={form.remark}
-              enabled={form.enabled}
-              maxCostUsd={form.maxCostUsd}
-              onRemarkChange={(value) => updateForm("remark", value)}
-              onEnabledChange={(value) => updateForm("enabled", value)}
-              onMaxCostUsdChange={(value) => updateForm("maxCostUsd", value)}
-            />
-            <GatewayApiKeyModelPermissions
-              locale={locale}
-              isRestrictionEnabled={form.isModelRestrictionEnabled}
-              allowedModels={form.allowedModels}
-              modelGroupOptions={modelGroupOptions}
-              pickerOpen={pickerOpen}
-              onPickerOpenChange={setPickerOpen}
-              onRestrictionEnabledChange={(enabled) => {
-                startTransition(() => {
-                  updateForm("isModelRestrictionEnabled", enabled);
-                });
-              }}
-              onToggleAllowedModel={toggleAllowedModel}
-            />
-            <GatewayApiKeyExpiryField
-              locale={locale}
-              expiresOn={form.expiresOn}
-              onChange={(value) => updateForm("expiresOn", value)}
-            />
-          </FieldGroup>
+      <SheetContent className="flex flex-col gap-0 sm:max-w-[460px]">
+        <SheetHeader className="px-4 pb-4">
+          <SheetTitle>
+            {titleForLocale(
+              locale,
+              editingKeyId ? "编辑 API Key" : "创建 API Key",
+              editingKeyId ? "Edit API key" : "Create API key",
+            )}
+          </SheetTitle>
+        </SheetHeader>
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+            <FieldGroup>
+              <GatewayApiKeyBasicFields
+                locale={locale}
+                remark={form.remark}
+                enabled={form.enabled}
+                maxCostUsd={form.maxCostUsd}
+                onRemarkChange={(value) => updateForm("remark", value)}
+                onEnabledChange={(value) => updateForm("enabled", value)}
+                onMaxCostUsdChange={(value) => updateForm("maxCostUsd", value)}
+              />
+              <GatewayApiKeyModelPermissions
+                locale={locale}
+                isRestrictionEnabled={form.isModelRestrictionEnabled}
+                allowedModels={form.allowedModels}
+                modelGroupOptions={modelGroupOptions}
+                pickerOpen={pickerOpen}
+                onPickerOpenChange={setPickerOpen}
+                onRestrictionEnabledChange={(enabled) => {
+                  startTransition(() => {
+                    updateForm("isModelRestrictionEnabled", enabled);
+                  });
+                }}
+                onToggleAllowedModel={toggleAllowedModel}
+              />
+              <GatewayApiKeyExpiryField
+                locale={locale}
+                expiresOn={form.expiresOn}
+                onChange={(value) => updateForm("expiresOn", value)}
+              />
+            </FieldGroup>
+          </div>
 
-          <DialogFooter className="mx-0 mb-0 rounded-none border-0 bg-transparent p-0 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>
+          <SheetFooter className="flex flex-row justify-end gap-2 px-4 py-3">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
               {titleForLocale(locale, "取消", "Cancel")}
             </Button>
-            <Button
-              type="button"
-              onClick={() => void submit()}
-              disabled={submitting}
-            >
+            <Button type="submit" size="sm" disabled={submitting}>
               {submitting
                 ? titleForLocale(locale, "保存中...", "Saving...")
                 : titleForLocale(locale, "保存", "Save")}
             </Button>
-          </DialogFooter>
-        </div>
-      </AppDialogContent>
-    </Dialog>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }

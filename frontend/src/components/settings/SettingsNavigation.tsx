@@ -13,12 +13,13 @@ import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 export interface SettingsTabDefinition {
   value:
-    | "appearance"
-    | "account"
-    | "time"
+    | "general"
     | "gateway"
     | "model-test"
-    | "circuit-breaker";
+    | "circuit-breaker"
+    | "api-keys"
+    | "cronjobs"
+    | "backups";
   label: string;
   icon: LucideIcon;
 }
@@ -29,19 +30,9 @@ export function createSettingsTabs(
 ): readonly SettingsTabDefinition[] {
   return [
     {
-      value: "appearance",
-      label: titleForLocale(locale, "站点外观", "Appearance"),
+      value: "general",
+      label: titleForLocale(locale, "通用", "General"),
       icon: Palette,
-    },
-    {
-      value: "account",
-      label: titleForLocale(locale, "账号", "Account"),
-      icon: UserRound,
-    },
-    {
-      value: "time",
-      label: titleForLocale(locale, "时间", "Time"),
-      icon: TimerReset,
     },
     {
       value: "gateway",
@@ -58,6 +49,21 @@ export function createSettingsTabs(
       label: titleForLocale(locale, "冷却与健康", "Cooldown and health"),
       icon: ShieldAlert,
     },
+    {
+      value: "api-keys",
+      label: titleForLocale(locale, "API 密钥", "API keys"),
+      icon: UserRound,
+    },
+    {
+      value: "cronjobs",
+      label: titleForLocale(locale, "定时任务", "Cron jobs"),
+      icon: TimerReset,
+    },
+    {
+      value: "backups",
+      label: titleForLocale(locale, "备份恢复", "Backups"),
+      icon: ServerCog,
+    },
   ];
 }
 
@@ -70,14 +76,12 @@ export function SettingsNavigation({
   return (
     <TabsList className="flex h-auto w-full flex-row justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 text-foreground lg:sticky lg:top-4 lg:flex-col lg:items-start lg:overflow-visible">
       {tabs.map((item) => {
-        const Icon = item.icon;
         return (
           <TabsTrigger
             key={item.value}
             value={item.value}
-            className="h-9 w-40 shrink-0 justify-start gap-2 rounded-md px-3 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:shadow-none"
+            className="h-9 w-40 shrink-0 justify-start rounded-md px-3.5 text-sm font-medium text-sidebar-foreground shadow-none lg:w-full data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground data-[state=active]:shadow-none"
           >
-            <Icon className="size-4" />
             <span>{item.label}</span>
           </TabsTrigger>
         );

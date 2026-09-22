@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -49,10 +49,6 @@ export function useAccountSettings(locale: Locale) {
     setAccountForm((current) => ({ ...current, username }));
   }, []);
 
-  const setCurrentPassword = useCallback((currentPassword: string) => {
-    setAccountForm((current) => ({ ...current, currentPassword }));
-  }, []);
-
   const setNewPassword = useCallback((newPassword: string) => {
     setAccountForm((current) => ({ ...current, newPassword }));
   }, []);
@@ -62,14 +58,10 @@ export function useAccountSettings(locale: Locale) {
   }, []);
 
   const submitAccount = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-
+    async (currentPassword: string) => {
       const nextUsername = accountForm.username.trim();
       const wantsPasswordUpdate = Boolean(
-        accountForm.currentPassword ||
-          accountForm.newPassword ||
-          accountForm.confirmPassword,
+        accountForm.newPassword || accountForm.confirmPassword,
       );
       const usernameChanged = nextUsername !== (profile?.username || "admin");
 
@@ -77,7 +69,7 @@ export function useAccountSettings(locale: Locale) {
         toast.error(
           titleForLocale(locale, "用户名不能为空", "Username is required"),
         );
-        return;
+        return false;
       }
       if (!usernameChanged && !wantsPasswordUpdate) {
         toast.success(
@@ -87,11 +79,11 @@ export function useAccountSettings(locale: Locale) {
             "No account changes to save",
           ),
         );
-        return;
+        return false;
       }
       if (
         wantsPasswordUpdate &&
-        (!accountForm.currentPassword || !accountForm.newPassword)
+        (!currentPassword || !accountForm.newPassword)
       ) {
         toast.error(
           titleForLocale(
@@ -100,7 +92,7 @@ export function useAccountSettings(locale: Locale) {
             "Please fill in both passwords",
           ),
         );
-        return;
+        return false;
       }
       if (accountForm.newPassword !== accountForm.confirmPassword) {
         toast.error(
@@ -110,7 +102,7 @@ export function useAccountSettings(locale: Locale) {
             "The new passwords do not match",
           ),
         );
-        return;
+        return false;
       }
       if (
         wantsPasswordUpdate &&
@@ -125,12 +117,12 @@ export function useAccountSettings(locale: Locale) {
             `The new password must contain at least ${ADMIN_PASSWORD_MIN_LENGTH} characters`,
           ),
         );
-        return;
+        return false;
       }
 
       const payload: AdminProfileUpdatePayload = {
         username: nextUsername,
-        current_password: accountForm.currentPassword,
+        current_password: currentPassword,
         new_password: accountForm.newPassword,
       };
       setIsUpdatingAccount(true);
@@ -153,12 +145,14 @@ export function useAccountSettings(locale: Locale) {
           newPassword: "",
           confirmPassword: "",
         });
+        return true;
       } catch (requestError) {
         const message = getApiErrorMessage(
           requestError,
           titleForLocale(locale, "更新账号失败", "Failed to update account"),
         );
         toast.error(message);
+        return false;
       } finally {
         setIsUpdatingAccount(false);
       }
@@ -170,7 +164,6 @@ export function useAccountSettings(locale: Locale) {
     accountForm,
     isUpdatingAccount,
     setUsername,
-    setCurrentPassword,
     setNewPassword,
     setConfirmPassword,
     submitAccount,

@@ -123,7 +123,8 @@ export function ConfigImportConfirmDialog({
         <DialogFooter>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
+            size="sm"
             onClick={() => onOpenChange(false)}
             disabled={isImporting}
           >
@@ -132,6 +133,7 @@ export function ConfigImportConfirmDialog({
           <Button
             type="button"
             variant="destructive"
+            size="sm"
             onClick={onConfirm}
             disabled={isImporting}
           >

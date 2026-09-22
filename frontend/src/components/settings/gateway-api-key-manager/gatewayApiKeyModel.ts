@@ -1,6 +1,6 @@
 import type { ModelGroup } from "@/lib/api/groups";
 import type { GatewayApiKey, GatewayApiKeyPayload } from "@/lib/api/settings";
-import { type Locale, titleForLocale } from "@/lib/I18nContext";
+import type { Locale } from "@/lib/I18nContext";
 import { formatExpiresAt, parseGatewayExpiresAt } from "./gatewayDateTime";
 
 export type GatewayApiKeyForm = {
@@ -37,11 +37,7 @@ export function maskGatewayKey(value: string) {
       value[0] + "*".repeat(Math.max(value.length - 2, 1)) + value.slice(-1)
     );
   }
-  return (
-    value.slice(0, 8) +
-    "*".repeat(Math.max(value.length - 16, 8)) +
-    value.slice(-8)
-  );
+  return `${value.slice(0, 8)}${"*".repeat(6)}${value.slice(-4)}`;
 }
 
 /** Converts a gateway API key into editable form state. */
@@ -90,7 +86,7 @@ export function formatGatewayLimit(locale: Locale, item: GatewayApiKey) {
   if (item.max_cost_usd > 0) {
     return `${formatGatewayAmount(locale, item.spent_cost_usd)} / ${formatGatewayAmount(locale, item.max_cost_usd)} USD`;
   }
-  return titleForLocale(locale, "不限额", "Unlimited");
+  return `${formatGatewayAmount(locale, item.spent_cost_usd)} / ∞ USD`;
 }
 
 /** Reports whether a gateway API key has expired. */

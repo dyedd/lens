@@ -2,10 +2,13 @@ import { Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { SettingsHint } from "@/components/settings/SettingsSectionCard";
+import {
+  SettingsFieldList,
+  SettingsFieldRow,
+  SettingsSection,
+} from "@/components/settings/settingsLayout";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
+import { Spinner } from "@/components/ui/Spinner";
 import { Switch } from "@/components/ui/Switch";
 import { downloadConfigBackup } from "@/lib/api/backups";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -43,83 +46,71 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
   }
 
   return (
-    <Card className="py-0">
-      <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
-          <Download className="size-4 text-muted-foreground" />
-          <span>{titleForLocale(locale, "导出备份", "Export backup")}</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
-        <p className="text-sm text-muted-foreground">
-          {titleForLocale(
-            locale,
-            "始终包含：系统设置、渠道与凭据、模型组、模型价格、定时任务和统计",
-            "Always included: settings, channels and credentials, model groups, prices, cron jobs, and stats",
-          )}
-        </p>
-        <FieldGroup>
-          <Field
-            orientation="horizontal"
-            className="flex-wrap items-center justify-between"
-          >
-            <div className="flex min-w-0 items-center gap-1">
-              <FieldLabel htmlFor="config-export-logs" className="w-auto">
-                {titleForLocale(locale, "包含请求日志", "Include request logs")}
-              </FieldLabel>
-              <SettingsHint
-                description={titleForLocale(
-                  locale,
-                  "导出所有请求日志明细，文件体积可能明显增大",
-                  "Export all request log details; this can increase file size significantly",
-                )}
-              />
-            </div>
-            <Switch
-              id="config-export-logs"
-              checked={shouldIncludeLogs}
-              onCheckedChange={setShouldIncludeLogs}
-            />
-          </Field>
-          <Field
-            orientation="horizontal"
-            className="flex-wrap items-center justify-between"
-          >
-            <div className="flex min-w-0 items-center gap-1">
-              <FieldLabel htmlFor="config-export-api-keys" className="w-auto">
-                {titleForLocale(
-                  locale,
-                  "包含网关 API Key",
-                  "Include gateway API keys",
-                )}
-              </FieldLabel>
-              <SettingsHint
-                description={titleForLocale(
-                  locale,
-                  "会把网关鉴权 Key 一并写入备份，导出后请妥善保管",
-                  "Gateway auth keys will be included in the backup; keep the file secure",
-                )}
-              />
-            </div>
-            <Switch
-              id="config-export-api-keys"
-              checked={shouldIncludeGatewayApiKeys}
-              onCheckedChange={setShouldIncludeGatewayApiKeys}
-            />
-          </Field>
-        </FieldGroup>
-
+    <SettingsSection
+      title={titleForLocale(locale, "导出备份", "Export backup")}
+      actions={
         <Button
           type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
           onClick={() => void handleExport()}
           disabled={isExporting}
         >
-          <Download data-icon="inline-start" />
+          {isExporting ? (
+            <Spinner className="size-3.5" />
+          ) : (
+            <Download className="size-3.5" />
+          )}
           {isExporting
             ? titleForLocale(locale, "导出中...", "Exporting...")
             : titleForLocale(locale, "导出 JSON", "Export JSON")}
         </Button>
-      </CardContent>
-    </Card>
+      }
+    >
+      <p className="text-xs leading-5 text-muted-foreground">
+        {titleForLocale(
+          locale,
+          "始终包含：系统设置、渠道与凭据、模型组、模型价格、定时任务和统计",
+          "Always included: settings, channels and credentials, model groups, prices, cron jobs, and stats",
+        )}
+      </p>
+      <SettingsFieldList>
+        <SettingsFieldRow
+          htmlFor="config-export-logs"
+          title={titleForLocale(locale, "包含请求日志", "Include request logs")}
+          description={titleForLocale(
+            locale,
+            "导出所有请求日志明细，文件体积可能明显增大",
+            "Export all request log details; this can increase file size significantly",
+          )}
+        >
+          <Switch
+            id="config-export-logs"
+            checked={shouldIncludeLogs}
+            onCheckedChange={setShouldIncludeLogs}
+          />
+        </SettingsFieldRow>
+        <SettingsFieldRow
+          htmlFor="config-export-api-keys"
+          title={titleForLocale(
+            locale,
+            "包含网关 API Key",
+            "Include gateway API keys",
+          )}
+          description={titleForLocale(
+            locale,
+            "会把网关鉴权 Key 一并写入备份，导出后请妥善保管",
+            "Gateway auth keys will be included in the backup; keep the file secure",
+          )}
+        >
+          <Switch
+            id="config-export-api-keys"
+            checked={shouldIncludeGatewayApiKeys}
+            onCheckedChange={setShouldIncludeGatewayApiKeys}
+          />
+        </SettingsFieldRow>
+      </SettingsFieldList>
+    </SettingsSection>
   );
 }

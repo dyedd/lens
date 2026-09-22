@@ -40,7 +40,6 @@ export function GatewaySettingsSection({
             settings.numericSettingErrors.maxRequestBodyBytes
           }
           isRelayLogBodyEnabled={draft.isRelayLogBodyEnabled}
-          isModelListCompatModeEnabled={draft.isModelListCompatModeEnabled}
           upstreamHeadersConfig={draft.upstreamHeadersConfig}
           onProxyUrlChange={(value) =>
             settings.setDraftValue("proxyUrl", value)
@@ -62,9 +61,6 @@ export function GatewaySettingsSection({
           }
           onRelayLogBodyEnabledChange={(isEnabled) =>
             settings.setDraftValue("isRelayLogBodyEnabled", isEnabled)
-          }
-          onModelListCompatModeEnabledChange={(isEnabled) =>
-            settings.setDraftValue("isModelListCompatModeEnabled", isEnabled)
           }
           onAddGlobalHeader={settings.addGlobalHeader}
           onUpdateGlobalHeader={settings.updateGlobalHeader}

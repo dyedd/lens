@@ -45,7 +45,6 @@ const HEALTH_WINDOW_SECONDS = "health_window_seconds";
 const HEALTH_PENALTY_WEIGHT = "health_penalty_weight";
 const HEALTH_MIN_SAMPLES = "health_min_samples";
 const RELAY_LOG_BODY_ENABLED = "relay_log_body_enabled";
-const MODEL_LIST_COMPAT_MODE_ENABLED = "model_list_compat_mode_enabled";
 const UPSTREAM_HEADERS_CONFIG = "upstream_headers_config";
 const UPSTREAM_PARAM_OVERRIDE_CONFIG = "upstream_param_override_config";
 const SITE_NAME = "site_name";
@@ -84,7 +83,6 @@ export interface SettingsDraft {
   healthPenaltyWeight: string;
   healthMinSamples: string;
   isRelayLogBodyEnabled: boolean;
-  isModelListCompatModeEnabled: boolean;
   siteName: string;
   siteLogoUrl: string;
   timeZone: string;
@@ -138,7 +136,6 @@ export function createEmptySettingsDraft(): SettingsDraft {
     healthPenaltyWeight: "0.5",
     healthMinSamples: "10",
     isRelayLogBodyEnabled: false,
-    isModelListCompatModeEnabled: false,
     siteName: "Lens",
     siteLogoUrl: "",
     timeZone: "Asia/Shanghai",
@@ -191,10 +188,6 @@ export function createSettingsDraft(
     isRelayLogBodyEnabled:
       (mapping.get(RELAY_LOG_BODY_ENABLED) ?? "false").trim().toLowerCase() ===
       "true",
-    isModelListCompatModeEnabled:
-      (mapping.get(MODEL_LIST_COMPAT_MODE_ENABLED) ?? "false")
-        .trim()
-        .toLowerCase() === "true",
     siteName: mapping.get(SITE_NAME) ?? "Lens",
     siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
     timeZone: mapping.get(TIME_ZONE) ?? "Asia/Shanghai",
@@ -301,10 +294,6 @@ export function createSettingItems(draft: SettingsDraft): SettingItem[] {
     {
       key: RELAY_LOG_BODY_ENABLED,
       value: draft.isRelayLogBodyEnabled ? "true" : "false",
-    },
-    {
-      key: MODEL_LIST_COMPAT_MODE_ENABLED,
-      value: draft.isModelListCompatModeEnabled ? "true" : "false",
     },
     { key: SITE_NAME, value: draft.siteName.trim() || "Lens" },
     { key: SITE_LOGO_URL, value: draft.siteLogoUrl.trim() },
