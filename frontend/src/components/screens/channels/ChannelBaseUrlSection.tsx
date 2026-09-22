@@ -1,98 +1,194 @@
-import { Plus, X } from "lucide-react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { type Dispatch, type SetStateAction, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
-import { Switch } from "@/components/ui/Switch";
-import { baseUrlIndexLabel } from "./channelModels";
-import type { FormBaseUrl, Locale } from "./channelTypes";
+import { Label } from "@/components/ui/Label";
+import { cn } from "@/lib/classNames";
+import { ChannelCredentialSection } from "./ChannelCredentialSection";
+import { replacePendingCredentials } from "./channelModels";
+import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
 
 type Props = {
-  baseUrls: FormBaseUrl[];
+  form: FormState;
   locale: Locale;
+  siteId: string | null;
+  setForm: Dispatch<SetStateAction<FormState>>;
   onAdd: () => void;
   onUpdate: (index: number, patch: Partial<FormBaseUrl>) => void;
   onRemove: (index: number) => void;
 };
 
-/** Renders editable channel base URLs. */
+/** Renders the primary channel URL and optional extra endpoints. */
 export function ChannelBaseUrlSection({
-  baseUrls,
+  form,
   locale,
+  siteId,
+  setForm,
   onAdd,
   onUpdate,
   onRemove,
 }: Props) {
+  const primary = form.base_urls[0];
+  const extraUrls = form.base_urls.slice(1);
+  const [extraOpen, setExtraOpen] = useState(extraUrls.length > 0);
+  if (!primary) return null;
+
   return (
-    <section className="grid gap-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-sm font-medium text-foreground">
-          {locale === "zh-CN" ? "请求地址" : "Base URLs"}
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={onAdd}>
-          <Plus data-icon="inline-start" />
-          {locale === "zh-CN" ? "添加" : "Add"}
-        </Button>
-      </div>
-      <FieldGroup className="gap-3">
-        {baseUrls.map((baseUrl, index) => (
-          <div
-            key={baseUrl.id}
-            className="grid min-w-0 gap-3 border-b pb-3 last:border-b-0 last:pb-0"
-          >
-            <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1.65fr)_minmax(0,0.85fr)_32px_32px] md:items-end">
-              <FieldGroup className="min-w-0 gap-3 md:contents">
-                <Field>
-                  <FieldLabel>{baseUrlIndexLabel(index, locale)}</FieldLabel>
-                  <Input
-                    className="w-full min-w-0"
-                    value={baseUrl.url}
-                    onChange={(event) =>
-                      onUpdate(index, { url: event.target.value })
-                    }
-                    placeholder="https://api.example.com"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>
-                    {locale === "zh-CN" ? "备注" : "Remark"}
-                  </FieldLabel>
-                  <Input
-                    className="w-full min-w-0"
-                    value={baseUrl.name}
-                    onChange={(event) =>
-                      onUpdate(index, { name: event.target.value })
-                    }
-                    placeholder={locale === "zh-CN" ? "备注" : "Remark"}
-                  />
-                </Field>
-                <div className="flex size-8 items-center justify-center">
-                  <Switch
-                    checked={baseUrl.enabled}
-                    onCheckedChange={(checked) =>
-                      onUpdate(index, { enabled: checked })
-                    }
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="icon"
-                  aria-label={
-                    locale === "zh-CN" ? "删除请求地址" : "Remove base URL"
-                  }
-                  title={
-                    locale === "zh-CN" ? "删除请求地址" : "Remove base URL"
-                  }
-                  onClick={() => onRemove(index)}
-                  disabled={baseUrls.length <= 1}
+    <div className="min-w-0 space-y-1">
+      <Label
+        htmlFor="channel-url"
+        required
+        className="text-xs font-normal text-muted-foreground"
+      >
+        {locale === "zh-CN" ? "地址" : "URL"}
+      </Label>
+      <Input
+        id="channel-url"
+        required
+        placeholder="https://api.example.com/v1"
+        value={primary.url}
+        onChange={(event) => onUpdate(0, { url: event.target.value })}
+      />
+      <div className="pt-1">
+        <button
+          type="button"
+          className="flex h-8 w-full items-center justify-between rounded-md text-left text-xs font-normal text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            if (!extraOpen && extraUrls.length === 0) onAdd();
+            setExtraOpen((open) => !open);
+          }}
+        >
+          <span>
+            {locale === "zh-CN" ? "更多地址" : "More URLs"}
+            {extraUrls.length
+              ? locale === "zh-CN"
+                ? `（${extraUrls.length}）`
+                : ` (${extraUrls.length})`
+              : ""}
+          </span>
+          <ChevronDown
+            className={cn(
+              "size-3.5 stroke-1 transition-transform",
+              extraOpen && "rotate-180",
+            )}
+          />
+        </button>
+        {extraOpen ? (
+          <div className="space-y-3 pt-1">
+            {extraUrls.map((baseUrl, extraIndex) => {
+              const index = extraIndex + 1;
+              const shareKeys = baseUrl.shareKeys !== false;
+              return (
+                <div
+                  key={baseUrl.id}
+                  className="space-y-2 rounded-md bg-muted/35 p-2.5"
                 >
-                  <X />
-                </Button>
-              </FieldGroup>
-            </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      className="min-w-0 flex-1"
+                      value={baseUrl.url}
+                      placeholder="https://api.example.com/v1"
+                      onChange={(event) =>
+                        onUpdate(index, { url: event.target.value })
+                      }
+                    />
+                    <label
+                      htmlFor={`share-keys-${baseUrl.id}`}
+                      className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground"
+                    >
+                      <Checkbox
+                        id={`share-keys-${baseUrl.id}`}
+                        checked={shareKeys}
+                        onCheckedChange={(checked) => {
+                          const nextShare = checked === true;
+                          setForm((current) => ({
+                            ...current,
+                            base_urls: current.base_urls.map(
+                              (item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      shareKeys: nextShare,
+                                      newApiKeysLines: nextShare
+                                        ? ""
+                                        : item.newApiKeysLines,
+                                    }
+                                  : item,
+                            ),
+                            credentials: nextShare
+                              ? current.credentials.filter(
+                                  (item) => item.baseUrlId !== baseUrl.id,
+                                )
+                              : current.credentials,
+                          }));
+                        }}
+                      />
+                      {locale === "zh-CN" ? "使用相同密钥" : "Same keys"}
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label={
+                        locale === "zh-CN" ? "删除地址" : "Remove URL"
+                      }
+                      onClick={() => onRemove(index)}
+                    >
+                      <Trash2 className="size-3.5 stroke-1" />
+                    </Button>
+                  </div>
+                  {shareKeys ? null : (
+                    <ChannelCredentialSection
+                      locale={locale}
+                      inputId={`channel-keys-${baseUrl.id}`}
+                      required={!siteId}
+                      newApiKeysLines={baseUrl.newApiKeysLines}
+                      credentials={form.credentials.filter(
+                        (item) => item.baseUrlId === baseUrl.id,
+                      )}
+                      onNewApiKeysChange={(value) => {
+                        setForm((current) => ({
+                          ...current,
+                          base_urls: current.base_urls.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? { ...item, newApiKeysLines: value }
+                              : item,
+                          ),
+                          credentials: replacePendingCredentials(
+                            current.credentials,
+                            value,
+                            baseUrl.id,
+                          ),
+                        }));
+                      }}
+                      onRemove={(credentialId) => {
+                        setForm((current) => ({
+                          ...current,
+                          credentials: current.credentials.filter(
+                            (item) => item.id !== credentialId,
+                          ),
+                        }));
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="h-7 px-2 text-xs font-normal text-muted-foreground"
+              onClick={onAdd}
+            >
+              <Plus className="size-3.5 stroke-1" />
+              {locale === "zh-CN" ? "添加地址" : "Add URL"}
+            </Button>
           </div>
-        ))}
-      </FieldGroup>
-    </section>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -18,11 +18,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { SiteModelTestResult } from "@/lib/api/sites";
 import { cn } from "@/lib/classNames";
-import {
-  compactProtocolLabel,
-  protocolBadgeClassName,
-  protocolLabel,
-} from "@/lib/protocols";
+import { protocolLabel } from "@/lib/protocols";
 import type { Locale } from "./channelTypes";
 
 type Props = {
@@ -77,9 +73,23 @@ export function ModelTestDialog({
         <AppDialogContent
           className="max-w-2xl"
           title={locale === "zh-CN" ? "测试模型" : "Test model"}
+          footer={
+            <Button
+              type="button"
+              size="sm"
+              onClick={onRun}
+              disabled={!canTest || testingModel}
+            >
+              <RefreshCcw
+                data-icon="inline-start"
+                className={testingModel ? "animate-spin" : ""}
+              />
+              {locale === "zh-CN" ? "发送测试" : "Send test"}
+            </Button>
+          }
         >
           <div className="grid gap-4">
-            <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            <div className="rounded-md bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="min-w-0 flex-1 truncate text-foreground">
                   {target.modelName || "-"}
@@ -87,13 +97,10 @@ export function ModelTestDialog({
                 {supportedProtocols.map((item) => (
                   <Badge
                     key={item}
-                    variant="outline"
-                    className={cn(
-                      "max-w-[140px] truncate text-xs",
-                      protocolBadgeClassName(item),
-                    )}
+                    variant="secondary"
+                    className="max-w-[160px] truncate text-xs font-normal text-muted-foreground"
                   >
-                    {compactProtocolLabel(item)}
+                    {protocolLabel(item, locale)}
                   </Badge>
                 ))}
               </div>
@@ -170,10 +177,10 @@ export function ModelTestDialog({
             {modelTestResult ? (
               <div
                 className={cn(
-                  "grid gap-2 rounded-md border px-3 py-2 text-sm",
+                  "grid gap-2 rounded-md px-3 py-2 text-sm",
                   modelTestResult.success
-                    ? "bg-muted/20"
-                    : "border-destructive/40 bg-destructive/5",
+                    ? "bg-muted/35"
+                    : "border border-destructive/40 bg-destructive/5",
                 )}
               >
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -214,20 +221,6 @@ export function ModelTestDialog({
                 </div>
               </div>
             ) : null}
-
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={onRun}
-                disabled={!canTest || testingModel}
-              >
-                <RefreshCcw
-                  data-icon="inline-start"
-                  className={testingModel ? "animate-spin" : ""}
-                />
-                {locale === "zh-CN" ? "发送测试" : "Send test"}
-              </Button>
-            </div>
           </div>
         </AppDialogContent>
       ) : null}

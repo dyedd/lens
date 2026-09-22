@@ -14,8 +14,6 @@ export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
         {
           ref: "main",
           url: "https://api.openai.com/v1",
-          name: "",
-          enabled: true,
         },
       ],
       credentials: [
@@ -23,20 +21,12 @@ export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
           ref: "key1",
           name: "Key 1",
           api_key: "sk-...",
-          enabled: true,
         },
       ],
       protocols: [
         {
-          name: "OpenAI Chat",
-          protocol: "openai_chat",
-          enabled: true,
           base_url_ref: "main",
           credential_refs: ["key1"],
-          headers: [],
-          proxy_mode: "inherit",
-          channel_proxy: "",
-          param_override: [],
           models: [
             {
               model_name: "gpt-4.1",
@@ -117,14 +107,4 @@ export function importStatusLabel(
   if (status === "skipped") return locale === "zh-CN" ? "已跳过" : "Skipped";
   if (status === "error") return locale === "zh-CN" ? "错误" : "Error";
   return locale === "zh-CN" ? "未提交" : "Not committed";
-}
-
-/** Maps a channel import status to its badge variant. */
-export function importStatusVariant(
-  status: SiteBatchImportItemResult["status"],
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "created") return "default";
-  if (status === "skipped") return "secondary";
-  if (status === "error") return "destructive";
-  return "outline";
 }
