@@ -30,8 +30,15 @@ export function CompactPriceSummary({
   cacheReadPrice: number;
   cacheWritePrice: number;
   imagePrice: number;
-  pricingMode: "tokens" | "non_tokens";
+  pricingMode: "free" | "tokens" | "non_tokens";
 }) {
+  if (pricingMode === "free") {
+    return (
+      <div className="mt-2 text-sm text-muted-foreground">
+        {locale === "zh-CN" ? "免费" : "Free"}
+      </div>
+    );
+  }
   if (pricingMode === "non_tokens") {
     return (
       <div className="mt-2 text-sm text-muted-foreground">
@@ -101,20 +108,26 @@ export function EditablePriceRow({
   onSecondaryChange: (value: string) => void;
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-4">
       <Field className="min-w-0">
-        <FieldLabel>${metricLabel(primaryLabel, locale)}</FieldLabel>
+        <FieldLabel htmlFor={`group-price-${primaryLabel}`}>
+          {metricLabel(primaryLabel, locale)}
+        </FieldLabel>
         <Input
-          className="mt-2"
+          id={`group-price-${primaryLabel}`}
+          inputMode="decimal"
           value={primaryValue}
           onChange={(event) => onPrimaryChange(event.target.value)}
         />
       </Field>
 
       <Field className="min-w-0">
-        <FieldLabel>${metricLabel(secondaryLabel, locale)}</FieldLabel>
+        <FieldLabel htmlFor={`group-price-${secondaryLabel}`}>
+          {metricLabel(secondaryLabel, locale)}
+        </FieldLabel>
         <Input
-          className="mt-2"
+          id={`group-price-${secondaryLabel}`}
+          inputMode="decimal"
           value={secondaryValue}
           onChange={(event) => onSecondaryChange(event.target.value)}
         />
@@ -123,22 +136,26 @@ export function EditablePriceRow({
   );
 }
 
-/** Render the token or per-image billing mode selector. */
+/** Render the free, token, or per-image billing mode selector. */
 export function PricingModeToggle({
   value,
   locale,
   onChange,
 }: {
-  value: "tokens" | "non_tokens";
+  value: "free" | "tokens" | "non_tokens";
   locale: "zh-CN" | "en-US";
-  onChange: (value: "tokens" | "non_tokens") => void;
+  onChange: (value: "free" | "tokens" | "non_tokens") => void;
 }) {
   return (
     <ToggleGroup
       type="single"
       value={value}
       onValueChange={(nextValue) => {
-        if (nextValue === "tokens" || nextValue === "non_tokens") {
+        if (
+          nextValue === "free" ||
+          nextValue === "tokens" ||
+          nextValue === "non_tokens"
+        ) {
           onChange(nextValue);
         }
       }}
@@ -147,6 +164,9 @@ export function PricingModeToggle({
       spacing={1}
       className="max-w-full flex-wrap"
     >
+      <ToggleGroupItem value="free">
+        {locale === "zh-CN" ? "免费" : "Free"}
+      </ToggleGroupItem>
       <ToggleGroupItem value="tokens">
         {locale === "zh-CN" ? "按 Token" : "Per token"}
       </ToggleGroupItem>

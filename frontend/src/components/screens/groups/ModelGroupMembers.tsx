@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/Tooltip";
 import type { ModelGroupCandidateItem } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
-import { protocolBadgeClassName, protocolLabel } from "@/lib/protocols";
+import { protocolLabel } from "@/lib/protocols";
 import type { FoldedMember, GroupCardDragging, GroupRow } from "./groupTypes";
 import {
   credentialDisplayLabel,
@@ -209,7 +209,7 @@ export function ModelGroupMembers({
         {invalidReasons.length ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Badge variant="destructive" className="mr-1" tabIndex={0}>
+              <Badge variant="secondary" className="mr-1" tabIndex={0}>
                 <AlertCircle data-icon="inline-start" />
                 {locale === "zh-CN" ? "配置错误" : "Invalid"}
               </Badge>
@@ -287,11 +287,8 @@ export function CandidateRow({
         {nativeProtocols.map((protocol) => (
           <Badge
             key={protocol}
-            variant="outline"
-            className={cn(
-              "px-1.5 py-0 text-[10px] font-normal",
-              protocolBadgeClassName(protocol),
-            )}
+            variant="secondary"
+            className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
           >
             {protocolLabel(protocol, locale)}
           </Badge>
@@ -373,14 +370,14 @@ export function FoldedMemberRow({
       onDragOver={canReorder ? (event) => event.preventDefault() : undefined}
       onDragEnd={canReorder ? onDragEnd : undefined}
       className={cn(
-        "flex min-w-0 items-center gap-2 border-b px-2.5 py-2 transition last:border-b-0",
+        "flex min-w-0 items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-muted/40",
         isDragging && "opacity-60 shadow-sm",
         !enabled && "opacity-55",
         (member.invalid_item_count > 0 || member.unavailable_item_count > 0) &&
           "border border-destructive bg-destructive/10",
       )}
     >
-      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
+      <span className="grid size-5 shrink-0 place-items-center text-xs tabular-nums text-muted-foreground">
         {index + 1}
       </span>
       {canReorder ? (
@@ -388,40 +385,84 @@ export function FoldedMemberRow({
           <GripVertical size={14} />
         </span>
       ) : null}
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">
-          {member.model_name}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="min-w-0 flex-1 basis-24">
+          <div className="truncate text-sm font-medium text-foreground">
+            {member.model_name}
+          </div>
+          <div className="truncate text-xs text-muted-foreground">
+            {sourceLabel}
+            {partiallyEnabled
+              ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
+              : !manuallyEnabled
+                ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
+                : ""}
+          </div>
         </div>
-        <div className="truncate text-xs text-muted-foreground">
-          {sourceLabel}
-          {partiallyEnabled
-            ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
-            : !manuallyEnabled
-              ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
-              : ""}
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          {member.rate_source !== "none" &&
+          typeof member.rate_multiplier === "number" ? (
+            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+              {locale === "zh-CN" ? "倍率" : "Rate"} {member.rate_multiplier}x
+            </Badge>
+          ) : null}
+          {member.protocols.map((protocol) => (
+            <Badge
+              key={protocol}
+              variant="secondary"
+              className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
+            >
+              {protocolLabel(protocol, locale)}
+            </Badge>
+          ))}
+          {member.pending_item_count > 0 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" tabIndex={0}>
+                  <Clock3 data-icon="inline-start" />
+                  {locale === "zh-CN" ? "检查中" : "Checking"}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {locale === "zh-CN"
+                  ? "等待后端返回最新状态"
+                  : "Waiting for the latest backend evaluation"}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          {member.invalid_item_count > 0 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="secondary" tabIndex={0}>
+                  <AlertCircle data-icon="inline-start" />
+                  {invalidLabel}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {invalidReasons
+                  .map((reason) => modelGroupItemReasonLabel(reason, locale))
+                  .join(locale === "zh-CN" ? "、" : ", ")}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          {member.unavailable_item_count > 0 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" tabIndex={0}>
+                  <Ban data-icon="inline-start" />
+                  {unavailableLabel}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {unavailableReasons
+                  .map((reason) => modelGroupItemReasonLabel(reason, locale))
+                  .join(locale === "zh-CN" ? "、" : ", ")}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-        {member.rate_source !== "none" &&
-        typeof member.rate_multiplier === "number" ? (
-          <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-            {locale === "zh-CN" ? "倍率" : "Rate"} {member.rate_multiplier}x
-          </Badge>
-        ) : null}
-        {member.protocols.map((protocol) => (
-          <Badge
-            key={protocol}
-            variant="outline"
-            className={cn(
-              "px-1.5 py-0 text-[10px] font-normal",
-              protocolBadgeClassName(protocol),
-            )}
-          >
-            {protocolLabel(protocol, locale)}
-          </Badge>
-        ))}
-      </div>
-      <div className="flex h-8 w-8 items-center justify-center">
+      <div className="flex size-7 shrink-0 items-center justify-center">
         <Switch
           checked={enabled}
           disabled={isBusy || automaticallyUnavailable}
@@ -431,55 +472,11 @@ export function FoldedMemberRow({
           }
         />
       </div>
-      {member.pending_item_count > 0 ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant="outline" tabIndex={0}>
-              <Clock3 data-icon="inline-start" />
-              {locale === "zh-CN" ? "检查中" : "Checking"}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>
-            {locale === "zh-CN"
-              ? "等待后端返回最新状态"
-              : "Waiting for the latest backend evaluation"}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-      {member.invalid_item_count > 0 ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant="destructive" tabIndex={0}>
-              <AlertCircle data-icon="inline-start" />
-              {invalidLabel}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>
-            {invalidReasons
-              .map((reason) => modelGroupItemReasonLabel(reason, locale))
-              .join(locale === "zh-CN" ? "、" : ", ")}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-      {member.unavailable_item_count > 0 ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant="outline" tabIndex={0}>
-              <Ban data-icon="inline-start" />
-              {unavailableLabel}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>
-            {unavailableReasons
-              .map((reason) => modelGroupItemReasonLabel(reason, locale))
-              .join(locale === "zh-CN" ? "、" : ", ")}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
       <Button
         type="button"
-        variant="destructive"
-        size="icon"
+        variant="ghost"
+        className="text-muted-foreground hover:text-destructive"
+        size="icon-xs"
         aria-label={locale === "zh-CN" ? "移除成员" : "Remove member"}
         title={locale === "zh-CN" ? "移除成员" : "Remove member"}
         onClick={onRemove}

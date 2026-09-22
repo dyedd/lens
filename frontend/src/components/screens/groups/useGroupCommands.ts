@@ -1,4 +1,3 @@
-import type { QueryClient } from "@tanstack/react-query";
 import {
   type Dispatch,
   type FormEvent,
@@ -23,7 +22,6 @@ type GroupCommandOptions = {
   form: FormState;
   invalidateGroupData: () => Promise<void>;
   locale: "zh-CN" | "en-US";
-  queryClient: QueryClient;
   setDialogOpen: Dispatch<SetStateAction<boolean>>;
   setEditingId: Dispatch<SetStateAction<string | null>>;
   setForm: Dispatch<SetStateAction<FormState>>;
@@ -35,7 +33,6 @@ export function useGroupCommands({
   form,
   invalidateGroupData,
   locale,
-  queryClient,
   setDialogOpen,
   setEditingId,
   setForm,
@@ -43,7 +40,6 @@ export function useGroupCommands({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null);
   const [cardDragging, setCardDragging] = useState<GroupCardDragging>(null);
-  const [syncingPrices, setSyncingPrices] = useState(false);
 
   async function saveGroup(payload: FormState, groupId: string | null) {
     const savedGroup = await apiRequest<ModelGroup>(
@@ -57,50 +53,10 @@ export function useGroupCommands({
     return savedGroup;
   }
 
-  async function saveGroupPrice(groupName: string, payload: FormState) {
-    const priceValues = [
-      payload.input_price_per_million,
-      payload.output_price_per_million,
-      payload.cache_read_price_per_million,
-      payload.cache_write_price_per_million,
-      payload.image_price_per_image,
-    ].map(Number);
-    if (priceValues.some((value) => !Number.isFinite(value) || value < 0)) {
-      throw new Error(
-        locale === "zh-CN"
-          ? "价格必须是大于等于 0 的数字"
-          : "Prices must be numbers greater than or equal to 0",
-      );
-    }
-    const [
-      inputPrice,
-      outputPrice,
-      cacheReadPrice,
-      cacheWritePrice,
-      imagePrice,
-    ] = priceValues;
-    await apiRequest(`/admin/model-prices/${encodeURIComponent(groupName)}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        model_key: groupName,
-        display_name: groupName,
-        input_price_per_million: inputPrice,
-        output_price_per_million: outputPrice,
-        cache_read_price_per_million: cacheReadPrice,
-        cache_write_price_per_million: cacheWritePrice,
-        image_price_per_image: imagePrice,
-        pricing_mode: payload.pricing_mode,
-      }),
-    });
-    await queryClient.invalidateQueries({ queryKey: ["groups"] });
-  }
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const savedGroup = await saveGroup(form, editingId);
-      if (!savedGroup.route_group_id)
-        await saveGroupPrice(savedGroup.name, form);
+      await saveGroup(form, editingId);
       toast.success(
         editingId
           ? locale === "zh-CN"
@@ -120,28 +76,6 @@ export function useGroupCommands({
           locale === "zh-CN" ? "保存模型组失败" : "Failed to save group",
         ),
       );
-    }
-  }
-
-  async function syncPrices() {
-    setSyncingPrices(true);
-    try {
-      await apiRequest("/admin/model-price-sync-jobs", { method: "POST" });
-      await queryClient.invalidateQueries({ queryKey: ["groups"] });
-      toast.success(
-        locale === "zh-CN" ? "模型价格已同步" : "Model prices synced",
-      );
-    } catch (error) {
-      toast.error(
-        modelGroupErrorMessage(
-          error,
-          locale === "zh-CN"
-            ? "同步模型价格失败"
-            : "Failed to sync model prices",
-        ),
-      );
-    } finally {
-      setSyncingPrices(false);
     }
   }
 
@@ -292,7 +226,74 @@ export function useGroupCommands({
     }
   }
 
+  async function applyEnabled(groups: GroupRow[], enabled: boolean) {
+    const targets = groups.filter(
+      (group) =>
+        !group.is_route_group &&
+        group.items.length > 0 &&
+        isGroupEnabled(group) !== enabled,
+    );
+    if (!targets.length) return;
+    setBusyId("bulk");
+    try {
+      for (const group of targets) {
+        const items = modelGroupToForm(group).items.map((item) => ({
+          ...item,
+          enabled,
+        }));
+        await saveGroup({ ...modelGroupToForm(group), items }, group.id);
+      }
+      toast.success(
+        enabled
+          ? locale === "zh-CN"
+            ? `已启动 ${targets.length} 个模型组`
+            : `Enabled ${targets.length} groups`
+          : locale === "zh-CN"
+            ? `已停止 ${targets.length} 个模型组`
+            : `Disabled ${targets.length} groups`,
+      );
+    } catch (error) {
+      toast.error(
+        modelGroupErrorMessage(
+          error,
+          locale === "zh-CN" ? "批量更新模型组失败" : "Failed to update groups",
+        ),
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removeGroups(groups: ModelGroup[]) {
+    if (!groups.length) return;
+    setBusyId("bulk");
+    try {
+      for (const group of groups) {
+        await apiRequest<void>(`/admin/model-groups/${group.id}`, {
+          method: "DELETE",
+        });
+      }
+      setDeleteTarget(null);
+      await invalidateGroupData();
+      toast.success(
+        locale === "zh-CN"
+          ? `已删除 ${groups.length} 个模型组`
+          : `Deleted ${groups.length} groups`,
+      );
+    } catch (error) {
+      toast.error(
+        modelGroupErrorMessage(
+          error,
+          locale === "zh-CN" ? "批量删除模型组失败" : "Failed to delete groups",
+        ),
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return {
+    applyEnabled,
     busyId,
     cardDragging,
     changeStrategy,
@@ -300,13 +301,12 @@ export function useGroupCommands({
     remove,
     removeGroupChannel,
     removeGroupMember,
+    removeGroups,
     reorderGroupChannels,
     reorderGroupMembers,
     setCardDragging,
     setDeleteTarget,
     submit,
-    syncPrices,
-    syncingPrices,
     toggleGroupEnabled,
   };
 }

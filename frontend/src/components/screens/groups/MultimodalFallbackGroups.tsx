@@ -108,7 +108,7 @@ export function MultimodalFallbackGroups({
         </PopoverContent>
       </Popover>
       {selectedGroups.length ? (
-        <div className="mt-2 max-h-64 divide-y overflow-y-auto rounded-md bg-muted/20 px-2">
+        <div className="mt-2 max-h-64 divide-y overflow-y-auto rounded-md bg-muted/35 px-2">
           {selectedGroups.map((group, index) => (
             <div
               key={group.id}

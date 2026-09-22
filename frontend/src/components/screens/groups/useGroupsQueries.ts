@@ -8,15 +8,15 @@ import type {
   ModelGroupCandidatesResponse,
   RoutingStrategy,
 } from "@/lib/api/groups";
-import { getModelFamilyKey } from "@/lib/ModelIcons";
-import {
-  buildModelPrefixOptions,
-  resolveEffectiveModelPrefix,
-  type SelectedModelPrefix,
-} from "@/lib/modelPrefix";
+import type { ProtocolKind } from "@/lib/api/protocols";
+import { protocolLabel } from "@/lib/protocols";
 import type { FormState, GroupRow, GroupSort } from "./groupTypes";
 import { buildGroupRows } from "./groupView";
-import { modelGroupItemKey } from "./modelGroupFormatting";
+import {
+  GROUP_PROTOCOL_ORDER,
+  groupMemberProtocols,
+  modelGroupItemKey,
+} from "./modelGroupFormatting";
 
 type GroupsQueryOptions = {
   dialogOpen: boolean;
@@ -123,31 +123,31 @@ export function useGroupFilters(
   groupRows: GroupRow[],
   locale: "zh-CN" | "en-US",
 ) {
-  const [selectedModelPrefix, setSelectedModelPrefix] =
-    useState<SelectedModelPrefix>("all");
+  const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
+    "all",
+  );
   const [search, setSearch] = useState("");
   const [strategyFilter, setStrategyFilter] = useState<"all" | RoutingStrategy>(
     "all",
   );
   const [sortBy, setSortBy] = useState<GroupSort>("members-desc");
-  const modelPrefixOptions = useMemo(
-    () =>
-      buildModelPrefixOptions(
-        groupRows.map((group) => group.name),
-        locale,
-      ),
-    [groupRows, locale],
-  );
-  const effectiveSelectedModelPrefix = resolveEffectiveModelPrefix(
-    modelPrefixOptions,
-    selectedModelPrefix,
-  );
+  const protocolOptions = useMemo(() => {
+    const present = new Set<ProtocolKind>();
+    for (const group of groupRows) {
+      for (const protocol of groupMemberProtocols(group)) present.add(protocol);
+    }
+    return GROUP_PROTOCOL_ORDER.filter((protocol) => present.has(protocol));
+  }, [groupRows]);
+  const effectiveProtocolFilter =
+    protocolFilter !== "all" && protocolOptions.includes(protocolFilter)
+      ? protocolFilter
+      : "all";
   const visibleGroups = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     const filtered = groupRows.filter((group) => {
       if (
-        effectiveSelectedModelPrefix !== "all" &&
-        getModelFamilyKey(group.name) !== effectiveSelectedModelPrefix
+        effectiveProtocolFilter !== "all" &&
+        !groupMemberProtocols(group).includes(effectiveProtocolFilter)
       ) {
         return false;
       }
@@ -184,7 +184,7 @@ export function useGroupFilters(
       );
     });
   }, [
-    effectiveSelectedModelPrefix,
+    effectiveProtocolFilter,
     groupRows,
     locale,
     search,
@@ -193,7 +193,7 @@ export function useGroupFilters(
   ]);
 
   function resetFilters() {
-    setSelectedModelPrefix("all");
+    setProtocolFilter("all");
     setSearch("");
     setStrategyFilter("all");
     setSortBy("members-desc");
@@ -201,17 +201,19 @@ export function useGroupFilters(
 
   return {
     activeFilterCount: [
-      effectiveSelectedModelPrefix !== "all",
+      effectiveProtocolFilter !== "all",
       Boolean(search.trim()),
       strategyFilter !== "all",
     ].filter(Boolean).length,
-    effectiveSelectedModelPrefix,
-    hasModelPrefixOptions: modelPrefixOptions.length > 0,
-    modelPrefixOptions,
+    effectiveProtocolFilter,
+    protocolOptions: protocolOptions.map((protocol) => ({
+      value: protocol,
+      label: protocolLabel(protocol, locale),
+    })),
     resetFilters,
     search,
+    setProtocolFilter,
     setSearch,
-    setSelectedModelPrefix,
     setSortBy,
     setStrategyFilter,
     sortBy,

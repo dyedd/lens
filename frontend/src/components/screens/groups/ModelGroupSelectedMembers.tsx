@@ -2,13 +2,13 @@ import {
   AlertCircle,
   ChevronDown,
   Eraser,
+  Plus,
   Power,
   PowerOff,
   Settings2,
   Trash2,
 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
   DropdownMenu,
@@ -18,7 +18,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/ToggleGroup";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import type { RoutingStrategy } from "@/lib/api/groups";
 import type {
   ChannelMemberGroup,
@@ -28,6 +35,7 @@ import type {
 import { ModelGroupSelectedMemberList } from "./ModelGroupSelectedMemberList";
 
 interface ModelGroupSelectedMembersProps {
+  onAddSources: () => void;
   locale: "zh-CN" | "en-US";
   strategy: RoutingStrategy;
   foldedMembers: FoldedMember[];
@@ -55,6 +63,7 @@ interface ModelGroupSelectedMembersProps {
 
 /** Render selected model controls and draggable member rows. */
 export function ModelGroupSelectedMembers({
+  onAddSources,
   locale,
   strategy,
   foldedMembers,
@@ -82,61 +91,71 @@ export function ModelGroupSelectedMembers({
   const enabledItemCount = itemCount - disabledItemCount;
 
   return (
-    <section className="flex flex-col rounded-lg bg-muted/10">
-      <div className="flex flex-wrap items-center gap-2 px-2 py-1">
-        <div className="text-sm font-medium text-foreground">
-          {locale === "zh-CN" ? "已选模型" : "Selected models"}
+    <section
+      className="flex shrink-0 flex-col gap-3"
+      aria-label={locale === "zh-CN" ? "上游来源" : "Upstream sources"}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium">
+            {locale === "zh-CN" ? "上游来源" : "Upstream sources"}
+          </h3>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {foldedMembers.length}
+          </span>
         </div>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          <ToggleGroup
-            type="single"
+        <Button type="button" size="sm" onClick={onAddSources}>
+          <Plus data-icon="inline-start" />
+          {locale === "zh-CN" ? "添加来源" : "Add sources"}
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {strategy === "failover"
+            ? locale === "zh-CN"
+              ? "按渠道顺序尝试，拖动调整优先级。"
+              : "Try channels in order. Drag to set priority."
+            : locale === "zh-CN"
+              ? "轮询分配请求，拖动调整成员顺序。"
+              : "Distribute requests in rotation. Drag to reorder."}
+        </p>
+        <div className="flex items-center gap-1">
+          <Select
             value={memberStatusFilter}
-            onValueChange={(value) => {
-              if (value) {
-                setMemberStatusFilter(value as MemberStatusFilter);
-              }
-            }}
-            variant="outline"
-            size="sm"
-            spacing={0}
-            aria-label={
-              locale === "zh-CN" ? "成员状态筛选" : "Member status filter"
+            onValueChange={(value) =>
+              setMemberStatusFilter(value as MemberStatusFilter)
             }
           >
-            <ToggleGroupItem
-              value="all"
-              aria-label={locale === "zh-CN" ? "显示全部" : "Show all"}
-            >
-              {locale === "zh-CN" ? "全部" : "All"}
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="enabled"
-              aria-label={locale === "zh-CN" ? "显示已启用" : "Show enabled"}
-            >
-              {locale === "zh-CN" ? "含启用" : "Has enabled"}
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="disabled"
-              aria-label={locale === "zh-CN" ? "显示已关闭" : "Show disabled"}
-            >
-              {locale === "zh-CN" ? "含关闭" : "Has disabled"}
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="problem"
+            <SelectTrigger
+              className="h-7 w-auto min-w-24"
               aria-label={
-                locale === "zh-CN"
-                  ? "显示需处理项"
-                  : "Show items needing attention"
+                locale === "zh-CN" ? "成员状态筛选" : "Member status filter"
               }
             >
-              {locale === "zh-CN" ? "需处理" : "Needs attention"}
-            </ToggleGroupItem>
-          </ToggleGroup>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">
+                  {locale === "zh-CN" ? "全部状态" : "All statuses"}
+                </SelectItem>
+                <SelectItem value="enabled">
+                  {locale === "zh-CN" ? "含启用" : "Has enabled"}
+                </SelectItem>
+                <SelectItem value="disabled">
+                  {locale === "zh-CN" ? "含关闭" : "Has disabled"}
+                </SelectItem>
+                <SelectItem value="problem">
+                  {locale === "zh-CN" ? "需处理" : "Needs attention"}
+                </SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 disabled={!foldedMembers.length}
               >
@@ -165,7 +184,6 @@ export function ModelGroupSelectedMembers({
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
-                  variant="destructive"
                   onSelect={removeDisabledMembers}
                   disabled={disabledItemCount === 0}
                 >
@@ -175,7 +193,6 @@ export function ModelGroupSelectedMembers({
                     : `Remove disabled (${disabledItemCount})`}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  variant="destructive"
                   onSelect={removeInvalidItems}
                   disabled={invalidItemCount === 0}
                 >
@@ -187,7 +204,7 @@ export function ModelGroupSelectedMembers({
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                <DropdownMenuItem variant="destructive" onSelect={clearMembers}>
+                <DropdownMenuItem onSelect={clearMembers}>
                   <Eraser />
                   {locale === "zh-CN"
                     ? `清空全部 (${foldedMembers.length})`
@@ -196,12 +213,9 @@ export function ModelGroupSelectedMembers({
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Badge variant="secondary">
-            {visibleFoldedMembers.length}/{foldedMembers.length}
-          </Badge>
         </div>
       </div>
-      <div className="px-2 pb-2 pt-1">
+      <div className="overflow-hidden rounded-lg border border-border/60 p-1">
         <ModelGroupSelectedMemberList
           locale={locale}
           strategy={strategy}
