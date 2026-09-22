@@ -230,7 +230,6 @@ def test_backup_round_trip_preserves_site_master_enabled(
     restored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert restored_site["enabled"] is False
     assert restored_site["tags"] == ["production", "primary"]
-    assert restored_site["protocols"][0]["enabled"] is True
 
 
 @pytest.mark.parametrize(

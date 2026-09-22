@@ -397,31 +397,21 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
     create_site,
 ) -> None:
     payload = valid_site_payload()
-    payload["protocols"][0]["models"].append(
-        {
-            "credential_id": "cred-1",
-            "model_name": "manually-disabled",
-            "enabled": True,
-            "protocol": "openai_chat",
-        }
-    )
-    payload["protocols"].append(
-        {
-            "id": "pc-disabled",
-            "name": "disabled",
-            "protocols": ["openai_embedding"],
-            "enabled": False,
-            "base_url_id": "base-1",
-            "credential_ids": ["cred-1"],
-            "models": [
-                {
-                    "credential_id": "cred-1",
-                    "model_name": "text-embedding-3-small",
-                    "enabled": False,
-                    "protocol": "openai_embedding",
-                }
-            ],
-        }
+    payload["protocols"][0]["models"].extend(
+        [
+            {
+                "credential_id": "cred-1",
+                "model_name": "manually-disabled",
+                "enabled": True,
+                "protocol": "openai_chat",
+            },
+            {
+                "credential_id": "cred-1",
+                "model_name": "text-embedding-3-small",
+                "enabled": False,
+                "protocol": "openai_embedding",
+            },
+        ]
     )
     site = create_site(payload)
     group_response = client.post(
@@ -456,8 +446,8 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
     assert disabled_response.status_code == 200
     disabled_site = disabled_response.json()
     assert disabled_site["enabled"] is False
-    assert [item["enabled"] for item in disabled_site["protocols"]] == [True, False]
-    assert [item["models"][0]["enabled"] for item in disabled_site["protocols"]] == [
+    assert [model["enabled"] for model in disabled_site["protocols"][0]["models"]] == [
+        True,
         True,
         False,
     ]
@@ -483,8 +473,8 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
     assert enabled_response.status_code == 200
     enabled_site = enabled_response.json()
     assert enabled_site["enabled"] is True
-    assert [item["enabled"] for item in enabled_site["protocols"]] == [True, False]
-    assert [item["models"][0]["enabled"] for item in enabled_site["protocols"]] == [
+    assert [model["enabled"] for model in enabled_site["protocols"][0]["models"]] == [
+        True,
         True,
         False,
     ]
@@ -519,11 +509,10 @@ def test_site_dependency_changes_update_members_but_keep_group_shells(
     routed_group = create_model_group(
         name="routed", route_group_id=execution_group["id"]
     )
-    disabled_payload = valid_site_payload(credential_enabled=False)
     disabled_response = client.put(
-        f"/api/admin/sites/{site['id']}",
+        f"/api/admin/sites/{site['id']}/enabled",
         headers=admin_headers,
-        json=disabled_payload,
+        json={"enabled": False},
     )
     assert disabled_response.status_code == 200, disabled_response.text
     disabled_item = client.get(
@@ -531,12 +520,12 @@ def test_site_dependency_changes_update_members_but_keep_group_shells(
     ).json()["items"][0]
     assert disabled_item["enabled"] is True
     assert disabled_item["state"] == "unavailable"
-    assert disabled_item["reasons"] == ["credential_disabled"]
+    assert disabled_item["reasons"] == ["channel_disabled"]
 
     enabled_response = client.put(
-        f"/api/admin/sites/{site['id']}",
+        f"/api/admin/sites/{site['id']}/enabled",
         headers=admin_headers,
-        json=valid_site_payload(),
+        json={"enabled": True},
     )
     assert enabled_response.status_code == 200, enabled_response.text
     enabled_item = client.get(
@@ -572,10 +561,8 @@ def test_removing_credential_cleans_group_members_but_keeps_group_shell(
             "id": "cred-2",
             "name": "secondary-key",
             "api_key": "secondary-secret",
-            "enabled": True,
         }
     )
-    payload["protocols"][0]["credential_ids"].append("cred-2")
     payload["protocols"][0]["models"].append(
         {
             "credential_id": "cred-2",
@@ -704,14 +691,7 @@ def test_create_site_rejects_duplicate_credential_name(client, admin_headers) ->
             "missing",
             "Base URL not found for protocol config",
         ),
-        (
-            "protocol",
-            "credential_ids",
-            ["missing"],
-            "Credential not found for protocol config",
-        ),
         ("model", "credential_id", "missing", "Model credential not found"),
-        ("model", "protocol", "gemini", "Model protocol is not enabled"),
     ],
 )
 def test_create_site_rejects_invalid_resource_refs(
