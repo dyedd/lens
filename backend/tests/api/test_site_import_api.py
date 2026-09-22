@@ -10,7 +10,6 @@ def valid_import_site(
     *,
     name: str = "Imported Site",
     enabled: bool = True,
-    protocol_name: str = "primary",
 ) -> dict:
     return {
         "name": name,
@@ -20,7 +19,6 @@ def valid_import_site(
             {
                 "ref": "base",
                 "url": "https://imported.example/v1",
-                "name": "base",
             }
         ],
         "credentials": [
@@ -32,7 +30,6 @@ def valid_import_site(
         ],
         "protocols": [
             {
-                "name": protocol_name,
                 "protocol": "openai_chat",
                 "base_url_ref": "base",
                 "credential_refs": ["cred"],
@@ -236,10 +233,7 @@ def test_import_sites_persists_master_state_and_protocol_name(
     client,
     admin_headers,
 ) -> None:
-    site = valid_import_site(
-        enabled=False,
-        protocol_name="  Chat primary  ",
-    )
+    site = valid_import_site(enabled=False)
     site["tags"] = [" imported ", "production", "imported"]
     response = client.post(
         "/api/admin/sites/import",
@@ -254,13 +248,11 @@ def test_import_sites_persists_master_state_and_protocol_name(
     created = payload["items"][0]["site"]
     assert created["enabled"] is False
     assert created["tags"] == ["imported", "production"]
-    assert created["protocols"][0]["name"] == "Chat primary"
     assert created["protocols"][0]["sync_targets"] == []
 
     stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert stored["enabled"] is False
     assert stored["tags"] == ["imported", "production"]
-    assert stored["protocols"][0]["name"] == "Chat primary"
     assert stored["protocols"][0]["sync_targets"] == []
 
 
@@ -274,7 +266,7 @@ def test_import_sites_rejects_invalid_param_override(
     param_override,
 ) -> None:
     site = valid_import_site()
-    site["protocols"][0]["param_override"] = param_override
+    site["param_override"] = param_override
 
     response = client.post(
         "/api/admin/sites/import",

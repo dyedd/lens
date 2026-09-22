@@ -6,13 +6,20 @@ from conftest import gateway_headers, valid_site_payload
 
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.protocols import ProtocolKind
-from app.persistence.settings_keys import SETTING_MODEL_LIST_COMPAT_MODE_ENABLED
 
 
-def _protocol_group_item(protocol: str, model_name: str) -> dict[str, Any]:
+def _protocol_group_item(
+    protocol: str,
+    model_name: str,
+    *,
+    protocol_config_id: str = "pc-1",
+    credential_id: str = "cred-1",
+) -> dict[str, Any]:
     return {
-        "channel_id": compose_runtime_channel_id("pc-1", ProtocolKind(protocol)),
-        "credential_id": "cred-1",
+        "channel_id": compose_runtime_channel_id(
+            protocol_config_id, ProtocolKind(protocol)
+        ),
+        "credential_id": credential_id,
         "model_name": model_name,
         "enabled": True,
     }
@@ -90,7 +97,7 @@ def test_openai_model_list_can_expose_route_group_name(
     assert [item["id"] for item in response.json()["data"]] == ["public-model"]
 
 
-def test_anthropic_model_list_uses_anthropic_shape(
+def test_anthropic_model_list_exposes_all_protocol_groups(
     client,
     create_site,
     create_model_group,
@@ -103,6 +110,27 @@ def test_anthropic_model_list_uses_anthropic_shape(
         name="claude-3-haiku",
         items=[_protocol_group_item("anthropic", "claude-3-haiku")],
     )
+    create_site(
+        valid_site_payload(
+            name="Gemini Site",
+            base_id="base-2",
+            credential_id="cred-2",
+            protocol_config_id="pc-2",
+            protocols=["gemini"],
+            model_name="gemini-pro",
+        )
+    )
+    create_model_group(
+        name="gemini-pro",
+        items=[
+            _protocol_group_item(
+                "gemini",
+                "gemini-pro",
+                protocol_config_id="pc-2",
+                credential_id="cred-2",
+            )
+        ],
+    )
     key = create_gateway_key()
 
     response = client.get(
@@ -111,10 +139,10 @@ def test_anthropic_model_list_uses_anthropic_shape(
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["data"][0]["id"] == "claude-3-haiku"
-    assert payload["first_id"] == "claude-3-haiku"
-    assert payload["has_more"] is False
+    assert {item["id"] for item in response.json()["data"]} == {
+        "claude-3-haiku",
+        "gemini-pro",
+    }
 
 
 def test_gemini_model_list_uses_gemini_shape(
@@ -136,9 +164,8 @@ def test_gemini_model_list_uses_gemini_shape(
     assert response.json()["models"][0]["name"] == "models/gemini-pro"
 
 
-def test_model_list_compat_mode_exposes_non_openai_groups(
+def test_openai_model_list_exposes_all_protocol_groups_by_default(
     client,
-    admin_headers,
     create_site,
     create_model_group,
     create_gateway_key,
@@ -150,17 +177,7 @@ def test_model_list_compat_mode_exposes_non_openai_groups(
     )
     key = create_gateway_key()
 
-    normal = client.get("/v1/models", headers=gateway_headers(key))
-    client.put(
-        "/api/admin/settings",
-        headers=admin_headers,
-        json={
-            "items": [{"key": SETTING_MODEL_LIST_COMPAT_MODE_ENABLED, "value": "true"}]
-        },
-    )
-    compatible = client.get("/v1/models", headers=gateway_headers(key))
+    response = client.get("/v1/models", headers=gateway_headers(key))
 
-    assert normal.status_code == 200
-    assert normal.json()["data"] == []
-    assert compatible.status_code == 200
-    assert compatible.json()["data"][0]["id"] == "gemini-pro"
+    assert response.status_code == 200
+    assert response.json()["data"][0]["id"] == "gemini-pro"

@@ -32,9 +32,11 @@ def _save_models_from_preview(payload: dict) -> list[dict]:
     ]
 
 
+@pytest.mark.parametrize("protocol", ["openai_chat", "auto"])
 def test_transactional_site_save_groups_manual_and_synced_models(
     client,
     admin_headers,
+    protocol,
 ) -> None:
     site_payload = valid_site_payload(model_name="gpt-manual")
     protocol_config = site_payload["protocols"][0]
@@ -54,6 +56,9 @@ def test_transactional_site_save_groups_manual_and_synced_models(
             "protocol": "openai_chat",
         }
     ]
+    if protocol == "auto":
+        for binding in [*protocol_config["models"], *protocol_config["sync_targets"]]:
+            binding.pop("protocol")
 
     preview = client.post(
         "/api/admin/sites/with-model-groups",
@@ -91,6 +96,10 @@ def test_transactional_site_save_groups_manual_and_synced_models(
     assert {model["model_name"]: model["source"] for model in stored_models} == {
         "gpt-manual": "manual",
         "gpt-synced": "synced",
+    }
+    assert {model["protocol"] for model in stored_models} == {protocol}
+    assert {item["protocol"] for group in groups for item in group["items"]} == {
+        protocol
     }
 
     repeated_preview = client.put(
@@ -377,8 +386,6 @@ def test_ensure_model_groups_from_site_skips_unusable_selections(
 @pytest.mark.parametrize(
     ("site_override", "expected_reason"),
     [
-        ({"protocol_enabled": False}, "channel_disabled"),
-        ({"credential_enabled": False}, "credential_disabled"),
         ({"model_enabled": False}, "model_not_available"),
     ],
 )

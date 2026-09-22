@@ -52,7 +52,6 @@ def test_fetch_site_models_uses_selected_credentials(
                     "id": "cred-a",
                     "name": "primary",
                     "api_key": "upstream-secret",
-                    "enabled": True,
                 }
             ],
             "credential_ids": ["cred-a"],
@@ -76,16 +75,7 @@ def test_fetch_site_models_reports_missing_credentials(client, admin_headers) ->
     assert_error(response, 400, "At least one credential is required")
 
 
-@pytest.mark.parametrize(
-    ("enabled", "credential_id", "message"),
-    [
-        (True, "missing", "Credential not found for model discovery"),
-        (False, "cred-a", "Credential is disabled for model discovery"),
-    ],
-)
-def test_fetch_site_models_rejects_unavailable_credentials(
-    client, admin_headers, enabled, credential_id, message
-) -> None:
+def test_fetch_site_models_rejects_missing_credentials(client, admin_headers) -> None:
     response = client.post(
         "/api/admin/site-model-discoveries",
         headers=admin_headers,
@@ -97,14 +87,13 @@ def test_fetch_site_models_rejects_unavailable_credentials(
                     "id": "cred-a",
                     "name": "primary",
                     "api_key": "upstream-secret",
-                    "enabled": enabled,
                 }
             ],
-            "credential_ids": [credential_id],
+            "credential_ids": ["missing"],
         },
     )
 
-    assert_error(response, 400, message)
+    assert_error(response, 400, "Credential not found for model discovery")
 
 
 def test_fetch_site_models_returns_bad_gateway_when_all_upstreams_fail(
@@ -130,7 +119,6 @@ def test_fetch_site_models_returns_bad_gateway_when_all_upstreams_fail(
                     "id": "cred-a",
                     "name": "primary",
                     "api_key": "upstream-secret",
-                    "enabled": True,
                 }
             ],
             "credential_ids": ["cred-a"],
@@ -339,9 +327,6 @@ def _auto_sync_site_payload(seed_synced: bool = False) -> dict[str, Any]:
             {
                 "id": "base-1",
                 "url": "https://upstream.example/v1",
-                "name": "primary",
-                "enabled": True,
-                "supported_protocols": ["openai_chat"],
             }
         ],
         "credentials": [
@@ -349,23 +334,17 @@ def _auto_sync_site_payload(seed_synced: bool = False) -> dict[str, Any]:
                 "id": "cred-a",
                 "name": "key-a",
                 "api_key": "secret-a",
-                "enabled": True,
             },
             {
                 "id": "cred-b",
                 "name": "key-b",
                 "api_key": "secret-b",
-                "enabled": True,
             },
         ],
         "protocols": [
             {
                 "id": "pc-1",
-                "name": "primary",
-                "protocols": ["openai_chat"],
-                "enabled": True,
                 "base_url_id": "base-1",
-                "credential_ids": ["cred-a", "cred-b"],
                 "sync_targets": [
                     _sync_target("gpt-cred-a"),
                     _sync_target("gpt-cred-b", "cred-b"),
@@ -388,7 +367,7 @@ def test_channel_model_sync_preserves_manual_models_and_syncs_each_credential(
     )
     assert create_response.status_code == 201, create_response.text
 
-    async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fake_fetch(channel: Any) -> list[str]:
         assert len(channel.keys) == 1
         return [f"gpt-{channel.keys[0].id}"]
 
@@ -448,7 +427,7 @@ def test_channel_model_sync_removes_only_stale_synced_models(
     )
     assert create_response.status_code == 201, create_response.text
 
-    async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fake_fetch(channel: Any) -> list[str]:
         return [f"gpt-{channel.keys[0].id}", "claude-3-opus"]
 
     import app.gateway.service.tasks.model_sync as model_sync
@@ -507,7 +486,7 @@ def test_channel_model_sync_isolates_target_failures(
     )
     assert create_response.status_code == 201, create_response.text
 
-    async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fake_fetch(channel: Any) -> list[str]:
         credential_id = channel.keys[0].id
         if credential_id == "cred-a":
             raise HTTPException(status_code=502, detail="credential failed")
@@ -564,7 +543,7 @@ def test_channel_model_sync_dry_run_does_not_write_models(
     )
     assert create_response.status_code == 201, create_response.text
 
-    async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fake_fetch(channel: Any) -> list[str]:
         return [f"gpt-new-{channel.keys[0].id}"]
 
     import app.gateway.service.tasks.model_sync as model_sync
@@ -610,7 +589,7 @@ def test_channel_model_sync_does_not_report_group_changes_that_failed(
     )
     assert group_response.status_code == 201, group_response.text
 
-    async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fake_fetch(channel: Any) -> list[str]:
         return [f"gpt-{channel.keys[0].id}"]
 
     async def fail_group_update(_payload: Any) -> None:
@@ -661,7 +640,7 @@ def test_channel_model_sync_reports_applied_group_changes(
     )
     assert group_response.status_code == 201, group_response.text
 
-    async def fake_fetch(channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fake_fetch(channel: Any) -> list[str]:
         return [f"gpt-{channel.keys[0].id}"]
 
     import app.gateway.service.tasks.model_sync as model_sync
@@ -687,36 +666,24 @@ def test_channel_model_sync_reports_applied_group_changes(
     }
 
 
-@pytest.mark.parametrize(
-    "disabled_resource", ["site", "base_url", "config", "credential"]
-)
-def test_channel_model_sync_skips_disabled_resources_without_fetching(
+def test_channel_model_sync_skips_disabled_site_without_fetching(
     client,
     admin_headers,
     monkeypatch,
-    disabled_resource: str,
 ) -> None:
     payload = _auto_sync_site_payload(seed_synced=True)
-    if disabled_resource == "base_url":
-        payload["base_urls"][0]["enabled"] = False
-    elif disabled_resource == "config":
-        payload["protocols"][0]["enabled"] = False
-    elif disabled_resource == "credential":
-        for credential in payload["credentials"]:
-            credential["enabled"] = False
     create_response = client.post(
         "/api/admin/sites", headers=admin_headers, json=payload
     )
     assert create_response.status_code == 201, create_response.text
-    if disabled_resource == "site":
-        disable_response = client.put(
-            f"/api/admin/sites/{create_response.json()['id']}/enabled",
-            headers=admin_headers,
-            json={"enabled": False},
-        )
-        assert disable_response.status_code == 200, disable_response.text
+    disable_response = client.put(
+        f"/api/admin/sites/{create_response.json()['id']}/enabled",
+        headers=admin_headers,
+        json={"enabled": False},
+    )
+    assert disable_response.status_code == 200, disable_response.text
 
-    async def fail_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fail_fetch(_channel: Any) -> list[str]:
         raise AssertionError("disabled resources must not trigger model discovery")
 
     import app.gateway.service.tasks.model_sync as model_sync
@@ -809,7 +776,7 @@ def test_channel_model_sync_skips_configs_without_synced_models(
     )
     assert create_response.status_code == 201, create_response.text
 
-    async def fail_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fail_fetch(_channel: Any) -> list[str]:
         raise AssertionError("upstream should not be queried without synced models")
 
     import app.gateway.service.tasks.model_sync as model_sync
@@ -831,7 +798,6 @@ def test_sync_target_is_retained_when_upstream_temporarily_drops_it(
     monkeypatch,
 ) -> None:
     payload = _auto_sync_site_payload()
-    payload["protocols"][0]["credential_ids"] = ["cred-a"]
     payload["protocols"][0]["sync_targets"] = []
     payload["protocols"][0]["models"] = [
         {
@@ -855,7 +821,7 @@ def test_sync_target_is_retained_when_upstream_temporarily_drops_it(
     )
     assert update_response.status_code == 200, update_response.text
 
-    async def fake_fetch(_channel: Any, *, apply_match_regex: bool = True) -> list[str]:
+    async def fake_fetch(_channel: Any) -> list[str]:
         return []
 
     import app.gateway.service.tasks.model_sync as model_sync

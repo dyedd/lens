@@ -30,6 +30,7 @@ def _member(
     }
 
 
+@pytest.mark.parametrize("protocol", [ProtocolKind.OPENAI_IMAGE, ProtocolKind.AUTO])
 def test_model_group_model_test_uses_persisted_image_credential(
     client,
     admin_headers,
@@ -37,15 +38,15 @@ def test_model_group_model_test_uses_persisted_image_credential(
     create_site,
     create_model_group,
     monkeypatch,
+    protocol,
 ) -> None:
-    protocol = ProtocolKind.OPENAI_IMAGE
     channel_id = compose_runtime_channel_id("pc-image", protocol)
     site_payload = valid_site_payload(
         protocol_config_id="pc-image",
         protocols=[protocol.value],
         model_name="gpt-image-1",
     )
-    site_payload["protocols"][0]["headers"] = [
+    site_payload["headers"] = [
         {
             "name": "X-Persisted-Header",
             "action": "override",
@@ -95,6 +96,8 @@ def test_model_group_model_test_uses_persisted_image_credential(
         "model_name": "gpt-image-1",
         "prompt": "draw a lens",
     }
+    if protocol == ProtocolKind.AUTO:
+        request_payload["protocol"] = "openai_image"
     injected_response = client.post(
         f"/api/admin/model-groups/{group['id']}/model-tests",
         headers=admin_headers,
@@ -372,8 +375,6 @@ def test_create_model_group_rejects_blank_name(client, admin_headers) -> None:
     [
         (None, {"channel_id": "missing_openai_chat"}, "Channels not found"),
         ({}, {"credential_id": "missing"}, "Credential not found in channel"),
-        ({"protocol_enabled": False}, {}, "is disabled"),
-        ({"credential_enabled": False}, {}, "Credential is disabled"),
         (
             {"model_name": "gpt-4o"},
             {"model_name": "missing-model"},
