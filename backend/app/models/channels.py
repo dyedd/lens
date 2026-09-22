@@ -18,7 +18,6 @@ class ChannelKeyItem(StrictBaseModel):
     key: str = Field(min_length=1)
     remark: str = ""
     number: int = Field(default=0, ge=0)
-    enabled: bool = True
     rate_source: Literal["none", "sub2api", "newapi"] = "none"
     rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
@@ -64,7 +63,6 @@ class ChannelModelSyncGroupChange(StrictBaseModel):
 class ChannelModelSyncResultItem(StrictBaseModel):
     site_id: str
     protocol_config_id: str
-    protocol_config_name: str
     channel_name: str
     credential_id: str
     credential_name: str

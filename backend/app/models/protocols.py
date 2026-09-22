@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class ProtocolKind(str, Enum):
+    AUTO = "auto"
     OPENAI_CHAT = "openai_chat"
     OPENAI_RESPONSES = "openai_responses"
     OPENAI_EMBEDDING = "openai_embedding"
