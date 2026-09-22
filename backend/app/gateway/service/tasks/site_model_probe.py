@@ -52,7 +52,6 @@ def _site_model_probe_channel(payload: SiteModelTestRequest) -> ChannelConfig:
                 "id": payload.credential.id,
                 "key": payload.credential.api_key,
                 "remark": payload.credential.name,
-                "enabled": True,
             }
         ],
         models=[],

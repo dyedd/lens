@@ -205,7 +205,7 @@ class RoutePlanner:
         ]
         native_available_by_key: dict[tuple[str, str | None, str | None], bool] = {}
         for target, key in target_keys:
-            if target.channel.protocol == protocol:
+            if target.channel.protocol in {protocol, ProtocolKind.AUTO}:
                 native_available_by_key[key] = True
             elif key not in native_available_by_key:
                 native_available_by_key[key] = False
@@ -213,7 +213,7 @@ class RoutePlanner:
         return [
             target
             for target, key in target_keys
-            if target.channel.protocol == protocol
+            if target.channel.protocol in {protocol, ProtocolKind.AUTO}
             or not native_available_by_key.get(key, False)
         ]
 

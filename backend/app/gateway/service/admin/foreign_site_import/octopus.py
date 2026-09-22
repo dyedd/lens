@@ -65,20 +65,19 @@ def parse_octopus_sites(payload: dict[str, Any]) -> ParsedForeignSites:
                 SiteImportItem(
                     name=name,
                     enabled=bool(channel.get("enabled", True)),
+                    headers=_parse_custom_headers(channel.get("custom_header")),
+                    param_override=_parse_param_override(channel.get("param_override")),
+                    proxy_mode=(
+                        ChannelProxyMode.CUSTOM
+                        if proxy_url
+                        else ChannelProxyMode.INHERIT
+                    ),
+                    channel_proxy=proxy_url,
                     base_urls=[SiteImportBaseUrlInput(ref="u0", url=base_url)],
                     credentials=credentials,
                     protocols=[
                         SiteImportProtocolInput(
-                            name=protocol.value,
                             protocol=protocol,
-                            headers=_parse_custom_headers(channel.get("custom_header")),
-                            param_override=_parse_param_override(
-                                channel.get("param_override")
-                            ),
-                            proxy_mode=ChannelProxyMode.CUSTOM
-                            if proxy_url
-                            else ChannelProxyMode.INHERIT,
-                            channel_proxy=proxy_url,
                             base_url_ref="u0",
                             credential_refs=[
                                 credential.ref for credential in credentials

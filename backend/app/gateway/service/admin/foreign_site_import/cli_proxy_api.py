@@ -74,6 +74,11 @@ def _append_provider_site(
             SiteImportItem(
                 name=name,
                 enabled=not row.get("disabled", False),
+                headers=headers,
+                proxy_mode=(
+                    ChannelProxyMode.CUSTOM if proxy_url else ChannelProxyMode.INHERIT
+                ),
+                channel_proxy=proxy_url,
                 base_urls=[SiteImportBaseUrlInput(ref="u0", url=base_url)],
                 credentials=[
                     SiteImportCredentialInput(
@@ -85,13 +90,7 @@ def _append_provider_site(
                 ],
                 protocols=[
                     SiteImportProtocolInput(
-                        name=protocol.value,
                         protocol=protocol,
-                        headers=headers,
-                        proxy_mode=ChannelProxyMode.CUSTOM
-                        if proxy_url
-                        else ChannelProxyMode.INHERIT,
-                        channel_proxy=proxy_url,
                         base_url_ref="u0",
                         credential_refs=[
                             f"c{key_index}" for key_index in range(key_count)

@@ -119,7 +119,6 @@ def _build_site(
     ]
     protocol_configs = [
         SiteImportProtocolInput(
-            name=protocol.value,
             protocol=protocol,
             base_url_ref=_first_url_ref_for(urls, protocol),
             credential_refs=[credential.ref for credential in credentials],

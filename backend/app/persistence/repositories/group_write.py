@@ -21,13 +21,11 @@ from app.models.protocols import ProtocolKind
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
-    SiteBaseUrlEntity,
     SiteCredentialEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
 )
-from app.persistence.protocol_serialization import parse_supported_protocols
 
 from ...core.model_group_status import (
     build_model_group_channel_lookups,
@@ -58,10 +56,11 @@ class _EnsureGroupOperation:
 
 @dataclass
 class _EnsureSiteLookups:
+    site_enabled: bool
     protocol_configs: dict[str, SiteProtocolConfigEntity]
-    base_url_enabled: dict[str, bool]
-    credential_enabled: dict[str, bool]
+    credential_ids: set[str]
     model_enabled: dict[tuple[str, str, str, ProtocolKind], bool]
+    model_protocols: dict[str, set[ProtocolKind]]
 
 
 class GroupEnsureMixin:
@@ -171,6 +170,7 @@ class GroupEnsureMixin:
     async def _load_ensure_site_lookups(
         self, session: AsyncSession, site_id: str
     ) -> _EnsureSiteLookups:
+        site = await session.get(SiteEntity, site_id)
         protocol_rows = (
             (
                 await session.execute(
@@ -182,21 +182,10 @@ class GroupEnsureMixin:
             .scalars()
             .all()
         )
-        base_url_rows = (
-            (
-                await session.execute(
-                    select(SiteBaseUrlEntity).where(
-                        SiteBaseUrlEntity.site_id == site_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
         credential_rows = (
             (
                 await session.execute(
-                    select(SiteCredentialEntity).where(
+                    select(SiteCredentialEntity.id).where(
                         SiteCredentialEntity.site_id == site_id
                     )
                 )
@@ -223,6 +212,7 @@ class GroupEnsureMixin:
             )
 
         model_enabled: dict[tuple[str, str, str, ProtocolKind], bool] = {}
+        model_protocols: dict[str, set[ProtocolKind]] = {}
         for row in model_rows:
             if not row.protocol:
                 continue
@@ -233,12 +223,14 @@ class GroupEnsureMixin:
             model_enabled[
                 (row.protocol_config_id, row.credential_id, row.model_name, protocol)
             ] = bool(row.enabled)
+            model_protocols.setdefault(row.protocol_config_id, set()).add(protocol)
 
         return _EnsureSiteLookups(
+            site_enabled=bool(site.enabled) if site is not None else False,
             protocol_configs={row.id: row for row in protocol_rows},
-            base_url_enabled={row.id: bool(row.enabled) for row in base_url_rows},
-            credential_enabled={row.id: bool(row.enabled) for row in credential_rows},
+            credential_ids=set(credential_rows),
             model_enabled=model_enabled,
+            model_protocols=model_protocols,
         )
 
     def _prepare_ensure_model_item(
@@ -269,25 +261,18 @@ class GroupEnsureMixin:
                 status="skipped",
                 skipped_reason="protocol_config_not_found",
             )
-        if not protocol_config.enabled or not lookups.base_url_enabled.get(
-            protocol_config.base_url_id, False
-        ):
+        if not lookups.site_enabled:
             return None, self._ensure_result_item(
                 prepared, status="skipped", skipped_reason="channel_disabled"
             )
 
-        credential_enabled = lookups.credential_enabled.get(item.credential_id)
-        if credential_enabled is None:
+        if item.credential_id not in lookups.credential_ids:
             return None, self._ensure_result_item(
                 prepared, status="skipped", skipped_reason="credential_not_found"
             )
-        if not credential_enabled:
-            return None, self._ensure_result_item(
-                prepared, status="skipped", skipped_reason="credential_disabled"
-            )
 
-        configured_protocols = set(
-            parse_supported_protocols(protocol_config.protocols_json)
+        configured_protocols = lookups.model_protocols.get(
+            item.protocol_config_id, set()
         )
         valid_protocols: list[ProtocolKind] = []
         members: list[ModelGroupItemInput] = []

@@ -62,22 +62,21 @@ def _find_credential(
 def _candidate_credentials(
     channel: ChannelConfig, model_name: str | None
 ) -> list[ChannelKeyItem]:
-    enabled_keys = [key for key in channel.keys if key.enabled]
     if not model_name or not channel.models:
-        return enabled_keys
+        return list(channel.keys)
 
     credential_ids = {
         item.credential_id
         for item in channel.models
         if item.enabled and _matches_pattern(item.model_name, model_name)
     }
-    return [key for key in enabled_keys if key.id in credential_ids]
+    return [key for key in channel.keys if key.id in credential_ids]
 
 
 def _expand_target_credentials(target: RouteTarget) -> list[RouteTarget]:
     if target.credential_id:
         key = _find_credential(target.channel, target.credential_id)
-        if key is None or not key.enabled:
+        if key is None:
             return []
         return [
             RouteTarget(
@@ -146,7 +145,10 @@ def build_route_targets(
 
     active: list[RouteTarget] = []
     for channel in sorted(channels, key=lambda item: item.name):
-        if channel.protocol != protocol or channel.status != ChannelStatus.ENABLED:
+        if (
+            channel.protocol not in {protocol, ProtocolKind.AUTO}
+            or channel.status != ChannelStatus.ENABLED
+        ):
             continue
         if allowed_channel_ids is not None and channel.id not in allowed_channel_ids:
             continue

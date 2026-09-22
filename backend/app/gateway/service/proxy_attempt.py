@@ -104,6 +104,7 @@ class _AttemptRun:
 
 @dataclass(slots=True)
 class _PreparedAttempt:
+    channel: ChannelConfig
     upstream_body: dict[str, Any]
     upstream: Any
     body_bytes: bytes
@@ -116,6 +117,8 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
     plan = run.plan
     target = run.target
     channel = target.channel
+    if channel.protocol == ProtocolKind.AUTO:
+        channel = channel.model_copy(update={"protocol": request.protocol})
 
     if request.protocol != channel.protocol:
         try:
@@ -222,6 +225,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
         )
 
     return _PreparedAttempt(
+        channel=channel,
         upstream_body=upstream_body,
         upstream=upstream,
         body_bytes=body_bytes,
@@ -236,7 +240,7 @@ async def _send_attempt(
     request = run.request
     plan = run.plan
     target = run.target
-    channel = target.channel
+    channel = prepared.channel
     run.attempt.reasoning_effort = prepared.reasoning_effort
     await run.log_ctx.record_connecting(
         is_stream=bool(prepared.upstream_body.get("stream")),
@@ -275,7 +279,7 @@ async def _send_attempt(
 async def _finish_attempt(
     run: _AttemptRun, prepared: _PreparedAttempt, result: UpstreamResult
 ) -> Response:
-    channel = run.target.channel
+    channel = prepared.channel
     target = run.target
     run.attempt.status_code = result.status_code
     run.attempt.success = True

@@ -222,11 +222,7 @@ class HealthTracker:
         self._credential_signatures = credential_signatures
         channel_ids = {channel.id for channel in channels}
         valid_credentials = {
-            channel.id: (
-                {key.id for key in channel.keys if key.enabled}
-                if channel.keys
-                else {""}
-            )
+            channel.id: ({key.id for key in channel.keys} if channel.keys else {""})
             for channel in channels
         }
         configured_models = {
@@ -293,7 +289,7 @@ def _channel_credential_signatures(
 ) -> tuple[tuple[str, str], ...]:
     if not channel.keys:
         return (("", channel.api_key),)
-    return tuple(sorted((key.id, key.key) for key in channel.keys if key.enabled))
+    return tuple(sorted((key.id, key.key) for key in channel.keys))
 
 
 def build_channel_health(
@@ -317,7 +313,6 @@ def build_channel_health(
     credential_health = [
         _build_credential_health(cooldowns, channel.id, key.id, now=now)
         for key in channel.keys
-        if key.enabled
     ]
     if not channel.keys:
         credential_health.append(
@@ -422,20 +417,17 @@ def _binding_available_at(
 
 
 def _configured_bindings(channel: ChannelConfig) -> set[tuple[str, str]]:
-    enabled_credentials = {key.id for key in channel.keys if key.enabled}
+    credential_ids = {key.id for key in channel.keys}
     bindings = {
         (model.credential_id, model.model_name)
         for model in channel.models
-        if model.enabled
-        and (not channel.keys or model.credential_id in enabled_credentials)
+        if model.enabled and (not channel.keys or model.credential_id in credential_ids)
     }
     if bindings:
         return bindings
     if channel.models:
         return set()
-    if channel.keys and not enabled_credentials:
-        return set()
-    credentials = enabled_credentials or {""}
+    credentials = credential_ids or {""}
     models = _configured_model_names(channel) or {""}
     return {
         (credential_id, model_name)

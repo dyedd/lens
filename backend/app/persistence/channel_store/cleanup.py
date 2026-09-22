@@ -10,7 +10,6 @@ from app.models.protocols import ProtocolKind
 from app.persistence.entities import (
     ModelGroupItemEntity,
     SiteDiscoveredModelEntity,
-    SiteProtocolConfigCredentialEntity,
     SiteProtocolConfigEntity,
     SiteProtocolConfigSyncTargetEntity,
 )
@@ -32,13 +31,6 @@ class SiteConfigurationCleanupMixin:
         await session.execute(
             delete(SiteProtocolConfigSyncTargetEntity).where(
                 SiteProtocolConfigSyncTargetEntity.protocol_config_id.in_(
-                    protocol_config_ids
-                )
-            )
-        )
-        await session.execute(
-            delete(SiteProtocolConfigCredentialEntity).where(
-                SiteProtocolConfigCredentialEntity.protocol_config_id.in_(
                     protocol_config_ids
                 )
             )
