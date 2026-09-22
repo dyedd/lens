@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
@@ -38,6 +38,7 @@ export function useSettingsDraft(locale: Locale) {
   });
   const [draft, setDraft] = useState(createEmptySettingsDraft);
   const [isSaving, setIsSaving] = useState(false);
+  const savedDraftRef = useRef<string | null>(null);
   const [isNumericValidationVisible, setIsNumericValidationVisible] =
     useState(false);
   const actions = useSettingsDraftActions(setDraft);
@@ -47,7 +48,9 @@ export function useSettingsDraft(locale: Locale) {
 
   useEffect(() => {
     if (settingsQuery.isSuccess) {
-      setDraft(createSettingsDraft(settingsQuery.data));
+      const nextDraft = createSettingsDraft(settingsQuery.data);
+      setDraft(nextDraft);
+      savedDraftRef.current = JSON.stringify(nextDraft);
       setIsNumericValidationVisible(false);
     }
   }, [settingsQuery.data, settingsQuery.isSuccess]);
@@ -113,6 +116,7 @@ export function useSettingsDraft(locale: Locale) {
         method: "PUT",
         body: JSON.stringify({ items: createSettingItems(draft) }),
       });
+      savedDraftRef.current = JSON.stringify(draft);
       toast.success(titleForLocale(locale, "设置已保存", "Settings saved"));
       await refresh();
     } catch (requestError) {
@@ -125,6 +129,13 @@ export function useSettingsDraft(locale: Locale) {
       setIsSaving(false);
     }
   }, [draft, locale, refresh, settingsQuery.isSuccess]);
+
+  useEffect(() => {
+    if (!settingsQuery.isSuccess || savedDraftRef.current === null) return;
+    if (JSON.stringify(draft) === savedDraftRef.current) return;
+    const timer = window.setTimeout(() => void submitSettings(), 500);
+    return () => window.clearTimeout(timer);
+  }, [draft, settingsQuery.isSuccess, submitSettings]);
 
   return {
     draft,

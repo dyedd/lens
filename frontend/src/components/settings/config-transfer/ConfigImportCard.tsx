@@ -1,12 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { CircleAlert, FileJson, Upload } from "lucide-react";
+import { FileJson, Upload } from "lucide-react";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/Alert";
+import { SettingsSection } from "@/components/settings/settingsLayout";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { Spinner } from "@/components/ui/Spinner";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import {
   type ConfigBackupDump,
@@ -164,38 +163,59 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
 
   return (
     <>
-      <Card className="py-0">
-        <CardHeader className="px-4 pt-4 pb-0 sm:px-5 sm:pt-5">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
-            <Upload className="size-4 text-muted-foreground" />
-            <span>{titleForLocale(locale, "恢复备份", "Restore backup")}</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
-          <FieldGroup>
-            <Field>
-              <FieldLabel>
-                {titleForLocale(locale, "备份文件", "Backup file")}
-              </FieldLabel>
-              <Input
-                ref={fileInputRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={(event) =>
-                  void handleFileChange(event.target.files?.[0] ?? null)
-                }
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <FileJson data-icon="inline-start" />
-                {titleForLocale(locale, "选择 JSON 文件", "Select JSON file")}
-              </Button>
-            </Field>
-          </FieldGroup>
+      <SettingsSection
+        title={titleForLocale(locale, "恢复备份", "Restore backup")}
+        actions={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+            disabled={!selectedFile || Boolean(previewError) || isImporting}
+            onClick={() => setConfirmImportOpen(true)}
+          >
+            {isImporting ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <Upload className="size-3.5" />
+            )}
+            {isImporting
+              ? titleForLocale(locale, "导入中...", "Importing...")
+              : titleForLocale(locale, "导入并覆盖", "Import and overwrite")}
+          </Button>
+        }
+      >
+        <p className="text-xs leading-5 text-muted-foreground">
+          {titleForLocale(
+            locale,
+            "导入会替换现有渠道、模型组、设置、模型价格、定时任务和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
+            "Import replaces existing channels, model groups, settings, model prices, cron jobs, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well.",
+          )}
+        </p>
+        <div className="space-y-3">
+          <Input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) =>
+              void handleFileChange(event.target.files?.[0] ?? null)
+            }
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-xs shadow-none"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {isPreviewPending ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <FileJson className="size-3.5" />
+            )}
+            {titleForLocale(locale, "选择 JSON 文件", "Select JSON file")}
+          </Button>
 
           <ConfigImportPreview
             selectedFile={selectedFile}
@@ -207,35 +227,9 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
             timeZone={timeZone}
           />
 
-          <Alert variant="destructive">
-            <CircleAlert />
-            <AlertTitle>
-              {titleForLocale(locale, "覆盖导入", "Overwrite import")}
-            </AlertTitle>
-            <AlertDescription>
-              {titleForLocale(
-                locale,
-                "导入会替换现有渠道、模型组、设置、模型价格、定时任务和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
-                "Import replaces existing channels, model groups, settings, model prices, cron jobs, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well.",
-              )}
-            </AlertDescription>
-          </Alert>
-
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={!selectedFile || Boolean(previewError) || isImporting}
-            onClick={() => setConfirmImportOpen(true)}
-          >
-            <Upload data-icon="inline-start" />
-            {isImporting
-              ? titleForLocale(locale, "导入中...", "Importing...")
-              : titleForLocale(locale, "导入并覆盖", "Import and overwrite")}
-          </Button>
-
           <ConfigImportResultSummary rows={rowsAffectedList} locale={locale} />
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsSection>
 
       <ConfigImportConfirmDialog
         open={confirmImportOpen}

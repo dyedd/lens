@@ -1,7 +1,6 @@
 import { ChevronsUpDown } from "lucide-react";
 
 import { SettingsHint } from "@/components/settings/SettingsSectionCard";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import {
@@ -14,7 +13,6 @@ import {
 } from "@/components/ui/Command";
 import {
   Field,
-  FieldContent,
   FieldLabel,
   FieldLegend,
   FieldSet,
@@ -63,31 +61,26 @@ export function GatewayApiKeyModelPermissions({
         {titleForLocale(locale, "允许模型组", "Allowed model groups")}
       </FieldLegend>
 
-      <Field
-        orientation="horizontal"
-        className="items-center justify-between rounded-lg border bg-muted/20 px-3 py-3"
-      >
-        <FieldContent>
-          <div className="flex items-center gap-1">
-            <FieldLabel
-              htmlFor="gateway-key-model-restriction"
-              className="w-auto"
-            >
-              {titleForLocale(
-                locale,
-                "仅允许选定模型组",
-                "Restrict to selected groups",
-              )}
-            </FieldLabel>
-            <SettingsHint
-              description={titleForLocale(
-                locale,
-                "关闭时可调用当前全部启用模型组；开启后必须至少选择一个模型组。",
-                "When disabled, the key can use every enabled model group. When enabled, select at least one group.",
-              )}
-            />
-          </div>
-        </FieldContent>
+      <Field orientation="horizontal" className="items-center justify-between">
+        <div className="flex min-w-0 items-center gap-1">
+          <FieldLabel
+            htmlFor="gateway-key-model-restriction"
+            className="w-auto"
+          >
+            {titleForLocale(
+              locale,
+              "仅允许选定模型组",
+              "Restrict to selected groups",
+            )}
+          </FieldLabel>
+          <SettingsHint
+            description={titleForLocale(
+              locale,
+              "关闭时可调用当前全部启用模型组；开启后必须至少选择一个模型组。",
+              "When disabled, the key can use every enabled model group. When enabled, select at least one group.",
+            )}
+          />
+        </div>
         <Switch
           id="gateway-key-model-restriction"
           checked={isRestrictionEnabled}
@@ -180,13 +173,9 @@ export function GatewayApiKeyModelPermissions({
           </PopoverContent>
         </Popover>
         {isRestrictionEnabled && allowedModels.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {allowedModels.map((modelName) => (
-              <Badge key={modelName} variant="outline">
-                {modelName}
-              </Badge>
-            ))}
-          </div>
+          <p className="truncate text-xs text-muted-foreground">
+            {allowedModels.join(", ")}
+          </p>
         ) : null}
       </Field>
     </FieldSet>

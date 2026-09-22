@@ -1,21 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Globe2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/Button";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
 import type { PublicBranding } from "@/lib/api/app";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import { setStoredToken } from "@/lib/auth";
-import { useI18n } from "@/lib/I18nContext";
+import { titleForLocale, useI18n } from "@/lib/I18nContext";
 
 type LoginResponse = {
   access_token: string;
@@ -26,7 +18,7 @@ type LoginResponse = {
 /** Render the administrator login screen. */
 export function LoginScreen() {
   const navigate = useNavigate();
-  const { locale, setLocale, t } = useI18n();
+  const { locale, t } = useI18n();
   const { data: branding } = useQuery({
     queryKey: ["public-branding"],
     queryFn: () => apiRequest<PublicBranding>("/public/branding"),
@@ -37,15 +29,8 @@ export function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   const siteName = branding?.site_name?.trim() || "Lens";
   const logoUrl = branding?.logo_url?.trim() || "/logo.svg";
-  const nextLocale = locale === "zh-CN" ? "en-US" : "zh-CN";
-  const languageActionLabel =
-    locale === "zh-CN" ? "切换到 English" : "Switch to 中文";
-  const loginTitle =
-    locale === "zh-CN" ? `欢迎登录 ${siteName}` : `Sign in to ${siteName}`;
-  const usernamePlaceholder =
-    locale === "zh-CN" ? "请输入用户名" : "Enter username";
-  const passwordPlaceholder =
-    locale === "zh-CN" ? "请输入密码" : "Enter password";
+  const loginInputClassName =
+    "h-9 rounded-md border-input/40 px-3 shadow-none transition-[color,box-shadow] focus-visible:border-primary/60 focus-visible:ring-[1px] focus-visible:ring-primary/40";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -66,105 +51,74 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="relative flex min-h-svh w-full items-center justify-center bg-background p-6 md:p-10">
-      <div className="absolute right-6 top-6 flex items-center gap-2">
-        <ThemeToggle />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={languageActionLabel}
-              onClick={() => setLocale(nextLocale)}
-            >
-              <Globe2 />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {languageActionLabel}
-          </TooltipContent>
-        </Tooltip>
-      </div>
+    <main className="relative flex min-h-svh items-center justify-center bg-background px-4 py-8 text-foreground">
+      <div className="w-full max-w-[360px]">
+        <img
+          src={logoUrl}
+          alt={siteName}
+          width={32}
+          height={32}
+          loading="eager"
+          className="mx-auto h-12 w-auto object-contain"
+        />
 
-      <main className="flex w-full max-w-sm flex-col items-center">
-        <header className="flex flex-col items-center gap-3 text-center">
-          <div className="relative size-10 overflow-hidden rounded-lg">
-            <img
-              src={logoUrl}
-              alt={siteName}
-              loading="eager"
-              className="absolute inset-0 size-full object-contain"
+        <form className="mt-7 space-y-4 px-2" onSubmit={submit}>
+          <div className="space-y-2">
+            <label
+              className="text-sm font-medium leading-none text-foreground"
+              htmlFor="login-username"
+            >
+              {titleForLocale(locale, "账号", "Account")} *
+            </label>
+            <Input
+              id="login-username"
+              name="username"
+              autoComplete="username"
+              className={loginInputClassName}
+              placeholder={t.username}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+              autoFocus
             />
           </div>
-          <h1 className="text-xl leading-tight font-semibold text-foreground">
-            {loginTitle}
-          </h1>
-        </header>
-
-        <form onSubmit={submit} className="mt-8 flex w-full flex-col gap-7">
-          <FieldGroup className="gap-6">
-            <Field className="gap-3">
-              <FieldLabel
-                htmlFor="login-username"
-                className="text-base leading-none font-normal text-foreground"
-              >
-                {t.username}
-              </FieldLabel>
-              <Input
-                id="login-username"
-                name="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder={usernamePlaceholder}
-                autoComplete="username"
-                required
-                autoFocus
-                className="rounded-lg border-border bg-background px-4 shadow-xs"
-              />
-            </Field>
-
-            <Field className="gap-3">
-              <FieldLabel
-                htmlFor="login-password"
-                className="text-base leading-none font-normal text-foreground"
-              >
-                {t.password}
-              </FieldLabel>
-              <Input
-                id="login-password"
-                name="password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder={passwordPlaceholder}
-                autoComplete="current-password"
-                required
-                className="rounded-lg border-border bg-background px-4 shadow-xs"
-              />
-            </Field>
-          </FieldGroup>
-
+          <div className="space-y-2">
+            <label
+              className="text-sm font-medium leading-none text-foreground"
+              htmlFor="login-password"
+            >
+              {t.password} *
+            </label>
+            <Input
+              id="login-password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              className={loginInputClassName}
+              placeholder={t.password}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </div>
           <Button
             type="submit"
-            className="w-full rounded-lg text-base font-normal shadow-xs hover:bg-primary/90 active:bg-primary/90"
+            className="mt-2 h-9 w-full rounded-md text-sm font-semibold shadow-none hover:bg-primary/90"
             disabled={submitting}
           >
             {submitting ? t.signingIn : t.signIn}
           </Button>
         </form>
+      </div>
 
-        <footer className="mt-6 text-center text-xs text-muted-foreground">
-          <a
-            href="https://github.com/dyedd/lens"
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium text-foreground hover:underline"
-          >
-            powered by lens
-          </a>
-        </footer>
-      </main>
-    </div>
+      <a
+        href="https://github.com/dyedd/lens"
+        target="_blank"
+        rel="noreferrer"
+        className="absolute bottom-4 text-center text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+      >
+        powered by lens
+      </a>
+    </main>
   );
 }

@@ -21,7 +21,6 @@ export type GatewayGeneralSettingsProps = {
   streamIdleTimeoutSecondsError?: string;
   maxRequestBodyBytesError?: string;
   isRelayLogBodyEnabled: boolean;
-  isModelListCompatModeEnabled: boolean;
   onProxyUrlChange: (value: string) => void;
   onCorsAllowOriginsChange: (value: string) => void;
   onAuthAccessTokenMinutesChange: (value: string) => void;
@@ -29,7 +28,6 @@ export type GatewayGeneralSettingsProps = {
   onStreamIdleTimeoutSecondsChange: (value: string) => void;
   onMaxRequestBodyBytesChange: (value: string) => void;
   onRelayLogBodyEnabledChange: (checked: boolean) => void;
-  onModelListCompatModeEnabledChange: (checked: boolean) => void;
 };
 
 export type UpstreamHeaderSettingsProps = {
