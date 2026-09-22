@@ -1,0 +1,40 @@
+.sidebar-nav-icon {
+  --sidebar-layer-duration: 300ms;
+  --sidebar-stroke-duration: 800ms;
+}
+
+.sidebar-nav-icon .sidebar-icon-layer-top,
+.sidebar-nav-icon .sidebar-icon-layer-bottom {
+  transition: transform var(--sidebar-layer-duration) ease-in-out;
+}
+
+[data-sidebar="menu-button"]:is(:hover, :focus-visible)
+  .sidebar-icon-layer-top {
+  transform: translateY(5px);
+}
+
+[data-sidebar="menu-button"]:is(:hover, :focus-visible)
+  .sidebar-icon-layer-bottom {
+  transform: translateY(-5px);
+}
+
+[data-sidebar="menu-button"]:is(:hover, :focus-visible) .sidebar-icon-stroke {
+  stroke-dasharray: 1;
+  animation: sidebar-icon-draw var(--sidebar-stroke-duration) ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-nav-icon {
+    --sidebar-layer-duration: 100ms;
+    --sidebar-stroke-duration: 200ms;
+  }
+}
+
+@keyframes sidebar-icon-draw {
+  from {
+    stroke-dashoffset: 0.95;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}

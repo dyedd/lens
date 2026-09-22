@@ -1,34 +1,34 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  Activity,
-  ArchiveRestore,
-  CalendarClock,
-  HeartPulse,
-  KeyRound,
-  Layers3,
-  LayoutDashboard,
-  Settings2,
-  Waypoints,
-} from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useLocation } from "react-router";
 import { DashboardHeader } from "@/components/shell/DashboardHeader";
-import { DashboardSidebar } from "@/components/shell/DashboardSidebar";
+import {
+  DashboardSidebar,
+  type DashboardSidebarNavItem,
+} from "@/components/shell/DashboardSidebar";
 import {
   DashboardHeaderActionsContext,
   useDashboardHeaderActionsState,
 } from "@/components/shell/dashboardHeaderActions";
 import {
   DASHBOARD_ROUTES,
-  type DashboardView,
   getDashboardViewFromPathname,
 } from "@/components/shell/dashboardRoutes";
 import { SidebarProvider } from "@/components/ui/SidebarContext";
 import { SidebarInset } from "@/components/ui/SidebarLayout";
-import type { AppInfo, VersionCheckResult } from "@/lib/api/app";
+import type { AdminProfile, AppInfo, VersionCheckResult } from "@/lib/api/app";
 import { apiRequest } from "@/lib/api/client";
 import { clearStoredToken } from "@/lib/auth";
 import { useI18n } from "@/lib/I18nContext";
+import {
+  BillingIcon,
+  ChannelsIcon,
+  GroupsIcon,
+  HealthIcon,
+  OverviewIcon,
+  RequestsIcon,
+  SettingsIcon,
+} from "./SidebarNavIcons";
 
 /** Renders the authenticated dashboard navigation and content shell. */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -38,6 +38,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     queryKey: ["app-info"],
     queryFn: () => apiRequest<AppInfo>("/admin/app-info"),
     staleTime: 5 * 60_000,
+  });
+  const { data: profile } = useQuery({
+    queryKey: ["auth-me"],
+    queryFn: () => apiRequest<AdminProfile>("/admin/session"),
+    staleTime: 60_000,
   });
   const { data: versionCheck } = useQuery({
     queryKey: ["version-check"],
@@ -52,17 +57,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     [pathname],
   );
   const currentVersion = appInfo?.system_version.trim();
-  const versionText = locale === "zh-CN" ? "版本号" : "Version";
-  const versionLabel = currentVersion
-    ? `${versionText} ${currentVersion}`
-    : appInfo
-      ? locale === "zh-CN"
-        ? "版本未获取"
-        : "Unavailable"
-      : locale === "zh-CN"
-        ? "加载中..."
-        : "Loading...";
-  const compactVersionLabel = currentVersion || (appInfo ? "-" : "...");
   const updateLabel = versionCheck?.latest_version
     ? `${locale === "zh-CN" ? "有新版本" : "Update"} ${versionCheck.latest_version}`
     : locale === "zh-CN"
@@ -77,90 +71,60 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { actions: headerActions, value: headerActionsContext } =
     useDashboardHeaderActionsState();
 
-  const navGroups = useMemo(
+  const navItems = useMemo<DashboardSidebarNavItem[]>(
     () => [
       {
-        label: locale === "zh-CN" ? "监控" : "Monitor",
-        items: [
-          {
-            key: "overview" as DashboardView,
-            href: DASHBOARD_ROUTES.overview,
-            label: t.dashboard,
-            icon: LayoutDashboard,
-          },
-          {
-            key: "modelHealth" as DashboardView,
-            href: DASHBOARD_ROUTES.modelHealth,
-            label: locale === "zh-CN" ? "模型组健康" : "Model Group Health",
-            icon: HeartPulse,
-          },
-          {
-            key: "requests" as DashboardView,
-            href: DASHBOARD_ROUTES.requests,
-            label: t.requests,
-            icon: Activity,
-          },
-        ],
+        key: "overview",
+        href: DASHBOARD_ROUTES.overview,
+        label: t.overview,
+        icon: OverviewIcon,
       },
       {
-        label: locale === "zh-CN" ? "管理" : "Manage",
-        items: [
-          {
-            key: "channels" as DashboardView,
-            href: DASHBOARD_ROUTES.channels,
-            label: t.channels,
-            icon: Waypoints,
-          },
-          {
-            key: "groups" as DashboardView,
-            href: DASHBOARD_ROUTES.groups,
-            label: t.groups,
-            icon: Layers3,
-          },
-        ],
+        key: "modelHealth",
+        href: DASHBOARD_ROUTES.modelHealth,
+        label: t.modelHealth,
+        icon: HealthIcon,
       },
       {
-        label: locale === "zh-CN" ? "系统" : "System",
-        items: [
-          {
-            key: "settings" as DashboardView,
-            href: DASHBOARD_ROUTES.settings,
-            label: t.settings,
-            icon: Settings2,
-          },
-          {
-            key: "apiKeys" as DashboardView,
-            href: DASHBOARD_ROUTES.apiKeys,
-            label: t.apiKeys,
-            icon: KeyRound,
-          },
-          {
-            key: "cronjobs" as DashboardView,
-            href: DASHBOARD_ROUTES.cronjobs,
-            label: t.cronjobs,
-            icon: CalendarClock,
-          },
-          {
-            key: "backups" as DashboardView,
-            href: DASHBOARD_ROUTES.backups,
-            label: t.backups,
-            icon: ArchiveRestore,
-          },
-        ],
+        key: "requests",
+        href: DASHBOARD_ROUTES.requests,
+        label: t.requests,
+        icon: RequestsIcon,
+      },
+      {
+        key: "channels",
+        href: DASHBOARD_ROUTES.channels,
+        label: t.channels,
+        icon: ChannelsIcon,
+      },
+      {
+        key: "groups",
+        href: DASHBOARD_ROUTES.groups,
+        label: t.groups,
+        icon: GroupsIcon,
+      },
+      {
+        key: "billing",
+        href: DASHBOARD_ROUTES.billing,
+        label: t.billing,
+        icon: BillingIcon,
+      },
+      {
+        key: "settings",
+        href: DASHBOARD_ROUTES.settings,
+        label: t.settings,
+        icon: SettingsIcon,
+        activeViews: ["settings", "apiKeys", "cronjobs", "backups"],
       },
     ],
-    [locale, t],
+    [t],
   );
 
-  const allItems = useMemo(
-    () => navGroups.flatMap((g) => g.items),
-    [navGroups],
-  );
   const activeLabel =
-    allItems.find((i) => i.key === activeView)?.label ?? t.dashboard;
-  const activeGroupLabel = navGroups.find((group) =>
-    group.items.some((item) => item.key === activeView),
-  )?.label;
+    navItems.find(
+      (item) =>
+        item.activeViews?.includes(activeView) || item.key === activeView,
+    )?.label ?? t.dashboard;
 
   useEffect(() => {
     document.title = `${activeLabel} - ${siteName}`;
@@ -173,39 +137,36 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <DashboardHeaderActionsContext.Provider value={headerActionsContext}>
-      <SidebarProvider className="h-dvh max-h-dvh overflow-hidden bg-muted">
+      <SidebarProvider className="h-dvh max-h-dvh overflow-hidden bg-background">
         <DashboardSidebar
-          navGroups={navGroups}
+          navItems={navItems}
           activeView={activeView}
           siteName={siteName}
           logoUrl={logoUrl}
           currentVersion={currentVersion}
-          versionLabel={versionLabel}
-          compactVersionLabel={compactVersionLabel}
           hasUpdate={Boolean(versionCheck?.has_update)}
-          updateLabel={updateLabel}
           updateTitle={updateTitle}
           updateReleaseUrl={versionCheck?.release_url}
           locale={locale}
+          username={profile?.username ?? ""}
+          onSignOut={handleSignOut}
         />
 
-        <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-muted">
+        <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
           <DashboardHeader
             locale={locale}
             labels={{ activeView: activeLabel }}
-            group={activeGroupLabel}
             headerActions={headerActions}
             language={{
               label: languageActionLabel,
               onClick: () => setLocale(nextLocale),
             }}
-            signOut={{ label: t.signOut, onClick: handleSignOut }}
           />
 
-          <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-muted p-3 pb-6 sm:p-4 sm:pb-7 lg:p-6 lg:pb-8">
+          <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-4 py-4 pb-10 sm:px-6 lg:px-8">
             <div
               key={pathname}
-              className="min-h-[calc(100vh-10rem)] min-w-0 animate-[fadeIn_.16s_ease-out]"
+              className="mx-auto min-h-[calc(100vh-10rem)] min-w-0 max-w-[1230px] animate-[fadeIn_.16s_ease-out]"
             >
               {children}
             </div>

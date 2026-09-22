@@ -112,7 +112,7 @@ export function useBatchModelTestSession<TTarget>({
   }
 
   function openBatchModelTestDialog() {
-    setBatchTestPromptMode("0");
+    setBatchTestPromptMode(prompts.length ? "0" : "custom");
     setBatchTestPrompt(prompts[0] || "");
     setProtocolByKey({});
     setBatchTestRows([]);

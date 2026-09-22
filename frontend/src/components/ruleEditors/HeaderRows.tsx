@@ -1,8 +1,14 @@
 import { Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
-import { Field, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import type { HeaderRuleDraft } from "@/lib/upstreamRules";
 
@@ -25,86 +31,87 @@ export function HeaderRows({
   onRemove,
 }: HeaderRowsProps) {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-medium text-foreground">{title}</div>
-        <Button type="button" variant="outline" size="sm" onClick={onAdd}>
-          <Plus data-icon="inline-start" />
+    <div className="space-y-2">
+      <div className="flex h-9 items-center justify-between gap-3">
+        <h4 className="text-xs font-medium text-foreground/88">{title}</h4>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+          onClick={onAdd}
+        >
+          <Plus className="size-3.5" />
           {titleForLocale(locale, "添加", "Add")}
         </Button>
       </div>
       {headers.length ? (
-        <div className="max-h-72 overflow-y-auto pr-1">
+        <div className="space-y-2">
           {headers.map((header, index) => (
-            <div
-              key={index}
-              className="grid gap-3 border-b py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
-            >
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "请求头名称", "Header key")}
-                </FieldLabel>
-                <Input
-                  value={header.key}
-                  onChange={(event) =>
-                    onUpdate(index, { key: event.target.value })
-                  }
-                  placeholder="X-Header-Name"
-                />
-              </Field>
-              <Field>
-                <FieldLabel>
-                  {titleForLocale(locale, "请求头值", "Header value")}
-                </FieldLabel>
-                <Input
-                  value={header.value}
-                  disabled={header.action === "remove"}
-                  onChange={(event) =>
-                    onUpdate(index, { value: event.target.value })
-                  }
-                  placeholder="value"
-                />
-              </Field>
-              <div className="flex items-end gap-2">
-                <select
+            <div key={index} className="flex items-center gap-2">
+              <Input
+                className="min-w-0 flex-1"
+                value={header.key}
+                onChange={(event) =>
+                  onUpdate(index, { key: event.target.value })
+                }
+                placeholder="X-Header-Name"
+                aria-label={titleForLocale(locale, "请求头名称", "Header key")}
+              />
+              <Input
+                className="min-w-0 flex-1"
+                value={header.value}
+                disabled={header.action === "remove"}
+                onChange={(event) =>
+                  onUpdate(index, { value: event.target.value })
+                }
+                placeholder="value"
+                aria-label={titleForLocale(locale, "请求头值", "Header value")}
+              />
+              <Select
+                value={header.action}
+                onValueChange={(value) =>
+                  onUpdate(index, {
+                    action: value as HeaderRuleDraft["action"],
+                  })
+                }
+              >
+                <SelectTrigger
+                  className="h-8 w-[5.5rem] shrink-0"
                   aria-label={titleForLocale(
                     locale,
                     "请求头动作",
                     "Header action",
                   )}
-                  className="h-9 min-w-28 rounded-md border bg-background px-2 text-sm"
-                  value={header.action}
-                  onChange={(event) =>
-                    onUpdate(index, {
-                      action: event.target.value as HeaderRuleDraft["action"],
-                    })
-                  }
                 >
-                  <option value="override">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="override">
                     {titleForLocale(locale, "覆盖", "Override")}
-                  </option>
-                  <option value="append">
+                  </SelectItem>
+                  <SelectItem value="append">
                     {titleForLocale(locale, "追加", "Append")}
-                  </option>
-                  <option value="remove">
+                  </SelectItem>
+                  <SelectItem value="remove">
                     {titleForLocale(locale, "删除", "Remove")}
-                  </option>
-                </select>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="icon"
-                  aria-label={titleForLocale(
-                    locale,
-                    "删除请求头",
-                    "Remove header",
-                  )}
-                  title={titleForLocale(locale, "删除请求头", "Remove header")}
-                  onClick={() => onRemove(index)}
-                >
-                  <Trash2 />
-                </Button>
-              </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0 text-muted-foreground shadow-none"
+                aria-label={titleForLocale(
+                  locale,
+                  "删除请求头",
+                  "Remove header",
+                )}
+                onClick={() => onRemove(index)}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
             </div>
           ))}
         </div>

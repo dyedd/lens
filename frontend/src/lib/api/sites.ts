@@ -10,24 +10,18 @@ export type ChannelProxyMode = "inherit" | "direct" | "custom";
 export type SiteBaseUrl = {
   id: string;
   url: string;
-  name: string;
-  enabled: boolean;
   sort_order: number;
-  supported_protocols: ProtocolKind[];
 };
 export type SiteBaseUrlInput = {
   id?: string | null;
   url: string;
-  name: string;
-  enabled: boolean;
-  supported_protocols: ProtocolKind[];
 };
 export type SiteCredential = {
   id: string;
   name: string;
   api_key: string;
-  enabled: boolean;
   sort_order: number;
+  base_url_id: string;
   rate_source: "none" | "sub2api" | "newapi";
   rate_protocol_config_id: string;
   rate_group: string;
@@ -40,7 +34,7 @@ export type SiteCredentialInput = {
   id?: string | null;
   name: string;
   api_key: string;
-  enabled: boolean;
+  base_url_id?: string;
   rate_source: "none" | "sub2api" | "newapi";
   rate_protocol_config_id: string;
   rate_group: string;
@@ -57,7 +51,7 @@ export type SiteModel = {
 };
 export type SiteModelInput = {
   id?: string | null;
-  protocol: ProtocolKind;
+  protocol?: ProtocolKind;
   credential_id: string;
   model_name: string;
   enabled: boolean;
@@ -70,29 +64,15 @@ export type SiteSyncTarget = {
 };
 export type SiteProtocolConfig = {
   id: string;
-  name: string;
-  protocols: ProtocolKind[];
-  enabled: boolean;
-  headers: HeaderRule[];
-  proxy_mode: ChannelProxyMode;
-  channel_proxy: string;
-  param_override: ParamOverrideRule[];
   base_url_id: string;
+  protocols: ProtocolKind[];
   credential_ids: string[];
   sync_targets: SiteSyncTarget[];
   models: SiteModel[];
 };
 export type SiteProtocolConfigInput = {
   id?: string | null;
-  name: string;
-  protocols: ProtocolKind[];
-  enabled: boolean;
-  headers: HeaderRule[];
-  proxy_mode: ChannelProxyMode;
-  channel_proxy: string;
-  param_override: ParamOverrideRule[];
   base_url_id: string;
-  credential_ids: string[];
   sync_targets: SiteSyncTarget[];
   models: SiteModelInput[];
 };
@@ -101,6 +81,11 @@ export type Site = {
   name: string;
   enabled: boolean;
   tags: string[];
+  updated_at?: string | null;
+  proxy_mode: ChannelProxyMode;
+  channel_proxy: string;
+  headers: HeaderRule[];
+  param_override: ParamOverrideRule[];
   base_urls: SiteBaseUrl[];
   credentials: SiteCredential[];
   protocols: SiteProtocolConfig[];
@@ -135,6 +120,10 @@ export type HealthSummary = {
 export type SitePayload = {
   name: string;
   tags: string[];
+  proxy_mode: ChannelProxyMode;
+  channel_proxy: string;
+  headers: HeaderRule[];
+  param_override: ParamOverrideRule[];
   base_urls: SiteBaseUrlInput[];
   credentials: SiteCredentialInput[];
   protocols: SiteProtocolConfigInput[];
@@ -151,14 +140,12 @@ export type SiteModelGroupSaveResponse = {
 export type SiteBatchImportBaseUrlInput = {
   ref: string;
   url: string;
-  name?: string;
-  enabled?: boolean;
 };
 export type SiteBatchImportCredentialInput = {
   ref: string;
   name?: string;
   api_key: string;
-  enabled?: boolean;
+  base_url_ref?: string;
 };
 export type SiteBatchImportModelInput = {
   model_name: string;
@@ -167,13 +154,7 @@ export type SiteBatchImportModelInput = {
   source?: "manual" | "synced";
 };
 export type SiteBatchImportProtocolInput = {
-  name: string;
-  protocol: ProtocolKind;
-  enabled?: boolean;
-  headers?: HeaderRule[];
-  proxy_mode?: ChannelProxyMode;
-  channel_proxy?: string;
-  param_override?: ParamOverrideRule[];
+  protocol?: ProtocolKind;
   base_url_ref: string;
   credential_refs: string[];
   models?: SiteBatchImportModelInput[];
@@ -182,6 +163,10 @@ export type SiteBatchImportItem = {
   name: string;
   enabled: boolean;
   tags: string[];
+  proxy_mode?: ChannelProxyMode;
+  channel_proxy?: string;
+  headers?: HeaderRule[];
+  param_override?: ParamOverrideRule[];
   base_urls: SiteBatchImportBaseUrlInput[];
   credentials: SiteBatchImportCredentialInput[];
   protocols: SiteBatchImportProtocolInput[];
@@ -232,7 +217,6 @@ export type SiteModelFetchPayload = {
     id?: string | null;
     name: string;
     api_key: string;
-    enabled: boolean;
   }[];
   credential_ids: string[];
 };
