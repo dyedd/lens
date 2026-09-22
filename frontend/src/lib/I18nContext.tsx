@@ -22,6 +22,8 @@ type Copy = {
   backups: string;
   signOut: string;
   overview: string;
+  modelHealth: string;
+  billing: string;
   language: string;
   refresh: string;
 };
@@ -36,12 +38,14 @@ const MESSAGES: Record<Locale, Copy> = {
     requests: "请求日志",
     channels: "渠道",
     groups: "模型组",
-    settings: "系统设置",
+    settings: "设置",
     apiKeys: "API 密钥",
     cronjobs: "定时任务",
     backups: "备份恢复",
     signOut: "退出登录",
     overview: "总览",
+    modelHealth: "模型健康",
+    billing: "计费",
     language: "语言",
     refresh: "刷新",
   },
@@ -53,13 +57,15 @@ const MESSAGES: Record<Locale, Copy> = {
     dashboard: "Overview",
     requests: "Requests",
     channels: "Channels",
-    groups: "Group Management",
+    groups: "Model groups",
     settings: "Settings",
     apiKeys: "API Keys",
     cronjobs: "Cron jobs",
     backups: "Backup & Restore",
     signOut: "Sign out",
     overview: "Overview",
+    modelHealth: "Model health",
+    billing: "Billing",
     language: "Language",
     refresh: "Refresh",
   },

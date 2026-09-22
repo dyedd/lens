@@ -19,14 +19,14 @@ function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        "flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[placeholder]:text-muted-foreground",
+        "flex h-8 w-full items-center justify-between gap-2 rounded-md border border-input/40 bg-transparent px-3 py-1 text-xs whitespace-nowrap shadow-none outline-none transition-[color,box-shadow] focus-visible:border-ring/60 focus-visible:ring-[1px] focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[placeholder]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="text-muted-foreground" />
+        <ChevronDownIcon className="size-3 opacity-50" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
@@ -56,7 +56,7 @@ function SelectContent({
         data-slot="select-content"
         position={position}
         className={cn(
-          "relative z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1",
+          "relative z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-md border-[0.5px] border-border bg-popover text-popover-foreground shadow-xs data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1",
           className,
         )}
         {...props}
@@ -84,7 +84,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex h-8 w-full cursor-default select-none items-center rounded-md py-1.5 pr-8 pl-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        "relative flex h-8 w-full cursor-default select-none items-center rounded-sm py-1.5 pr-8 pl-2 text-xs outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         className,
       )}
       {...props}
@@ -92,7 +92,7 @@ function SelectItem({
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
       <span className="absolute right-2 flex items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <CheckIcon />
+          <CheckIcon className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
     </SelectPrimitive.Item>

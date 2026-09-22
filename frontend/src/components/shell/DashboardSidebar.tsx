@@ -1,61 +1,53 @@
+import { LogOut, PanelLeft } from "lucide-react";
 import { Link } from "react-router";
 import {
   DASHBOARD_ROUTES,
   type DashboardView,
 } from "@/components/shell/dashboardRoutes";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { useSidebar } from "@/components/ui/SidebarContext";
-import { SidebarGroup, SidebarGroupLabel } from "@/components/ui/SidebarGroup";
+import { SidebarGroup } from "@/components/ui/SidebarGroup";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarSeparator,
+  SidebarTrigger,
 } from "@/components/ui/SidebarLayout";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/SidebarMenu";
-import { cn } from "@/lib/classNames";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { Locale } from "@/lib/I18nContext";
-
-const GITHUB_REPO_URL = "https://github.com/dyedd/lens";
 
 export interface DashboardSidebarNavItem {
   key: DashboardView;
   href: string;
   label: string;
-  icon: React.ComponentType;
-}
-
-export interface DashboardSidebarNavGroup {
-  label: string;
-  items: DashboardSidebarNavItem[];
+  icon: React.ComponentType<{ className?: string }>;
+  activeViews?: readonly DashboardView[];
 }
 
 interface DashboardSidebarProps {
-  navGroups: DashboardSidebarNavGroup[];
+  navItems: DashboardSidebarNavItem[];
   activeView: DashboardView;
   siteName: string;
   logoUrl: string;
   currentVersion?: string;
-  versionLabel: string;
-  compactVersionLabel: string;
   hasUpdate: boolean;
-  updateLabel: string;
   updateTitle: string;
   updateReleaseUrl?: string;
   locale: Locale;
-}
-
-function GitHubMark(props: React.ComponentProps<"svg">) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.1.82-.26.82-.58v-2.03c-3.34.73-4.04-1.42-4.04-1.42-.55-1.38-1.34-1.75-1.34-1.75-1.1-.74.08-.72.08-.72 1.2.09 1.84 1.22 1.84 1.22 1.08 1.8 2.82 1.28 3.5.98.1-.76.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.86 0-1.3.47-2.36 1.23-3.19-.12-.3-.53-1.5.12-3.13 0 0 1.01-.32 3.3 1.22a11.6 11.6 0 0 1 6 0c2.28-1.54 3.29-1.22 3.29-1.22.65 1.63.24 2.83.12 3.13.77.83 1.23 1.88 1.23 3.19 0 4.56-2.8 5.55-5.48 5.85.43.36.82 1.08.82 2.18v3.23c0 .32.22.69.83.58A12 12 0 0 0 12 .5Z" />
-    </svg>
-  );
+  username: string;
+  onSignOut: () => void;
 }
 
 function ShellNavItem({
@@ -67,10 +59,8 @@ function ShellNavItem({
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const Icon = item.icon;
-  const apiKeyParts =
-    item.key === "apiKeys" && item.label.includes("API")
-      ? item.label.split("API")
-      : null;
+  const active =
+    item.activeViews?.includes(activeView) ?? activeView === item.key;
 
   function handleNavigate() {
     if (isMobile) {
@@ -82,24 +72,13 @@ function ShellNavItem({
     <SidebarMenuItem>
       <SidebarMenuButton
         asChild
-        isActive={activeView === item.key}
+        isActive={active}
         tooltip={item.label}
-        className={cn(
-          "w-40 max-w-full data-active:!bg-transparent data-active:!text-sidebar-foreground data-active:hover:!bg-transparent data-active:active:!bg-transparent",
-          activeView === item.key && "font-medium",
-        )}
+        className="h-9 w-full max-w-full rounded-md px-3.5 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-none group-data-[collapsible=icon]:mx-auto"
       >
         <Link to={item.href} onClick={handleNavigate}>
-          <Icon />
-          {apiKeyParts ? (
-            <span>
-              {apiKeyParts[0]}
-              <span className="brand-times-italic">API</span>
-              {apiKeyParts.slice(1).join("API")}
-            </span>
-          ) : (
-            <span>{item.label}</span>
-          )}
+          <Icon className="sidebar-nav-icon" />
+          <span>{item.label}</span>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -108,31 +87,42 @@ function ShellNavItem({
 
 /** Renders the dashboard navigation sidebar. */
 export function DashboardSidebar({
-  navGroups,
+  navItems,
   activeView,
   siteName,
   logoUrl,
   currentVersion,
-  versionLabel,
-  compactVersionLabel,
   hasUpdate,
-  updateLabel,
   updateTitle,
   updateReleaseUrl,
   locale,
+  username,
+  onSignOut,
 }: DashboardSidebarProps) {
-  const versionText = locale === "zh-CN" ? "版本号" : "Version";
+  const accountName = username || siteName;
+  const signOutLabel = locale === "zh-CN" ? "退出登录" : "Sign out";
+  const versionText = currentVersion
+    ? `v${currentVersion.replace(/^v/i, "")}`
+    : null;
+  const versionTitle = currentVersion
+    ? `${locale === "zh-CN" ? "版本号" : "Version"} ${currentVersion}`
+    : undefined;
+  const updateBadge = locale === "zh-CN" ? "新" : "New";
+  const updateBadgeClassName = "shrink-0 group-data-[collapsible=icon]:hidden";
 
   return (
-    <Sidebar collapsible="icon" className="z-20 bg-sidebar">
-      <SidebarHeader>
-        <div className="flex w-full items-center gap-1.5 group-data-[collapsible=icon]:justify-center">
-          <SidebarMenu className="min-w-0 flex-1">
+    <Sidebar
+      collapsible="icon"
+      className="z-20 border-r border-sidebar-border/60 bg-sidebar"
+    >
+      <SidebarHeader className="px-3 py-4 group-data-[collapsible=icon]:px-2">
+        <div className="flex w-full items-center gap-2 group-data-[collapsible=icon]:justify-center">
+          <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
                 tooltip={siteName}
-                className="data-[slot=sidebar-menu-button]:!p-1.5"
+                className="h-10 rounded-lg px-2 hover:bg-transparent group-data-[collapsible=icon]:justify-center"
               >
                 <Link to={DASHBOARD_ROUTES.overview}>
                   <img
@@ -141,105 +131,89 @@ export function DashboardSidebar({
                     width={24}
                     height={24}
                     loading="eager"
-                    className="size-6 shrink-0 object-contain"
+                    className="size-7 shrink-0 rounded-md object-contain"
                   />
-                  <span className="brand-times-italic truncate text-base font-semibold">
+                  <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight">
                     {siteName}
                   </span>
+                  {versionText ? (
+                    <span
+                      className="shrink-0 text-xs font-normal text-muted-foreground"
+                      title={versionTitle}
+                    >
+                      {versionText}
+                    </span>
+                  ) : null}
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
-        </div>
-      </SidebarHeader>
-      <SidebarContent>
-        {navGroups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-            <SidebarMenu>
-              {group.items.map((item) => (
-                <ShellNavItem
-                  key={item.key}
-                  item={item}
-                  activeView={activeView}
-                />
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
-        ))}
-      </SidebarContent>
-      <SidebarFooter className="px-3 py-3 group-data-[collapsible=icon]:px-2">
-        <SidebarSeparator />
-        <div className="flex flex-col gap-2 px-2 pt-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
-          <div
-            className="whitespace-nowrap text-center text-sm font-medium text-sidebar-foreground/90 group-data-[collapsible=icon]:text-xs"
-            title={versionLabel}
-          >
-            {currentVersion ? (
-              <span className="group-data-[collapsible=icon]:hidden">
-                {versionText}{" "}
-                <span className="brand-times-italic">{currentVersion}</span>
-              </span>
-            ) : (
-              <span className="group-data-[collapsible=icon]:hidden">
-                {versionLabel}
-              </span>
-            )}
-            <span className="hidden group-data-[collapsible=icon]:inline">
-              {compactVersionLabel}
-            </span>
-          </div>
           {hasUpdate ? (
             updateReleaseUrl ? (
               <Badge
                 asChild
                 variant="destructive"
-                className="mx-auto max-w-full group-data-[collapsible=icon]:size-5 group-data-[collapsible=icon]:px-0"
+                className={updateBadgeClassName}
                 title={updateTitle}
               >
                 <a href={updateReleaseUrl} target="_blank" rel="noreferrer">
-                  <span className="group-data-[collapsible=icon]:hidden">
-                    {updateLabel}
-                  </span>
-                  <span className="hidden group-data-[collapsible=icon]:inline">
-                    !
-                  </span>
+                  {updateBadge}
                 </a>
               </Badge>
             ) : (
               <Badge
                 variant="destructive"
-                className="mx-auto max-w-full group-data-[collapsible=icon]:size-5 group-data-[collapsible=icon]:px-0"
+                className={updateBadgeClassName}
                 title={updateTitle}
               >
-                <span className="group-data-[collapsible=icon]:hidden">
-                  {updateLabel}
-                </span>
-                <span className="hidden group-data-[collapsible=icon]:inline">
-                  !
-                </span>
+                {updateBadge}
               </Badge>
             )
           ) : null}
+          <SidebarTrigger
+            aria-label="Toggle sidebar"
+            className="size-8 shrink-0 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto"
+          >
+            <PanelLeft />
+          </SidebarTrigger>
+        </div>
+      </SidebarHeader>
+      <SidebarContent className="gap-0 px-3 py-2 group-data-[collapsible=icon]:px-0">
+        <SidebarGroup className="px-0 py-2">
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                tooltip="GitHub"
-                className="justify-center group-data-[collapsible=icon]:justify-center"
-              >
-                <a
-                  href={GITHUB_REPO_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label="GitHub"
-                >
-                  <GitHubMark />
-                  <span className="brand-times-italic">GitHub</span>
-                </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {navItems.map((item) => (
+              <ShellNavItem
+                key={item.key}
+                item={item}
+                activeView={activeView}
+              />
+            ))}
           </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarFooter className="px-3 pb-3 pt-2 group-data-[collapsible=icon]:px-2">
+        <SidebarSeparator className="mb-3" />
+        <div className="flex h-9 items-center gap-1 px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <span className="min-w-0 flex-1 truncate px-2 text-sm font-medium text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+            {accountName}
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={signOutLabel}
+                onClick={onSignOut}
+                className="size-8 shrink-0 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <LogOut />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="end">
+              {signOutLabel}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </SidebarFooter>
     </Sidebar>

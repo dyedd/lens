@@ -65,6 +65,13 @@ const router = createBrowserRouter([
             ),
           },
           {
+            path: "billing",
+            lazy: lazyScreen(
+              () => import("@/components/screens/ModelPricesScreen"),
+              (module) => module.ModelPricesScreen,
+            ),
+          },
+          {
             path: "requests",
             lazy: lazyScreen(
               () => import("@/components/screens/RequestsScreen"),
