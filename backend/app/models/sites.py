@@ -6,7 +6,7 @@ from ..core.urls import canonicalize_base_url
 from .model_groups import ModelGroupEnsureFromSiteResponse, ModelGroupEnsureModelInput
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel, validate_regex_pattern
+from .validation import StrictBaseModel
 
 
 def require_non_empty_text(value: str) -> str:
@@ -46,16 +46,10 @@ SiteTags = Annotated[list[str], AfterValidator(_canonicalize_site_tags)]
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
 
 
-_validate_match_regex = field_validator("match_regex")(validate_regex_pattern)
-
-
 class SiteBaseUrl(StrictBaseModel):
     id: str
     url: HttpUrl
-    name: str = ""
-    enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
-    supported_protocols: list[ProtocolKind] = Field(default_factory=list)
 
     _canonicalize_url = field_validator("url", mode="before")(canonicalize_base_url)
 
@@ -63,9 +57,6 @@ class SiteBaseUrl(StrictBaseModel):
 class SiteBaseUrlInput(StrictBaseModel):
     id: str | None = None
     url: HttpUrl
-    name: str = ""
-    enabled: bool = True
-    supported_protocols: list[ProtocolKind] = Field(default_factory=list)
 
     _canonicalize_url = field_validator("url", mode="before")(canonicalize_base_url)
 
@@ -74,8 +65,8 @@ class SiteCredential(StrictBaseModel):
     id: str
     name: str
     api_key: str = Field(min_length=1)
-    enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
+    base_url_id: str = ""
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""
     rate_group: str = ""
@@ -89,13 +80,14 @@ class SiteCredentialInput(StrictBaseModel):
     id: str | None = None
     name: str
     api_key: str = Field(min_length=1)
-    enabled: bool = True
+    base_url_id: str = ""
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""
     rate_group: str = ""
 
     @model_validator(mode="after")
     def validate_rate_config(self) -> "SiteCredentialInput":
+        self.base_url_id = self.base_url_id.strip()
         self.rate_protocol_config_id = self.rate_protocol_config_id.strip()
         self.rate_group = self.rate_group.strip()
         if self.rate_source == "none":
@@ -127,48 +119,45 @@ class SiteModelInput(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     enabled: bool = True
-    protocol: ProtocolKind
+    protocol: ProtocolKind = ProtocolKind.AUTO
     source: ModelSource = ModelSource.MANUAL
 
 
 class SiteSyncTarget(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
-    protocol: ProtocolKind
+    protocol: ProtocolKind = ProtocolKind.AUTO
 
 
 class SiteProtocolConfig(StrictBaseModel):
     id: str
-    name: str = ""
-    protocols: list[ProtocolKind] = Field(default_factory=list)
-    enabled: bool = True
-    headers: list[HeaderRule] = Field(default_factory=list)
-    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
-    channel_proxy: str = ""
-    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     base_url_id: str = Field(min_length=1)
-    credential_ids: list[str] = Field(min_length=1)
+    protocols: list[ProtocolKind] = Field(default_factory=list)
+    credential_ids: list[str] = Field(default_factory=list)
     sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
     models: list[SiteModel] = Field(default_factory=list)
 
 
 class SiteProtocolConfigInput(StrictBaseModel):
     id: str | None = None
-    name: str = ""
-    protocols: list[ProtocolKind] = Field(default_factory=list)
-    enabled: bool = True
-    headers: list[HeaderRule] = Field(default_factory=list)
-    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
-    channel_proxy: str = ""
-    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     base_url_id: str = Field(min_length=1)
-    credential_ids: list[str] = Field(min_length=1)
     sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
 
-    _canonicalize_credential_ids = field_validator("credential_ids")(
-        canonicalize_text_list
-    )
+    @model_validator(mode="after")
+    def validate_model_protocols(self) -> "SiteProtocolConfigInput":
+        protocols_by_model: dict[tuple[str, str], set[ProtocolKind]] = {}
+        for item in [*self.models, *self.sync_targets]:
+            key = (item.credential_id, item.model_name.strip())
+            protocols_by_model.setdefault(key, set()).add(item.protocol)
+        if any(
+            ProtocolKind.AUTO in protocols and len(protocols) > 1
+            for protocols in protocols_by_model.values()
+        ):
+            raise ValueError(
+                "Automatic forwarding cannot be combined with fixed protocols for the same model and credential"
+            )
+        return self
 
 
 class SiteConfig(StrictBaseModel):
@@ -176,6 +165,11 @@ class SiteConfig(StrictBaseModel):
     name: str
     enabled: bool
     tags: SiteTags
+    updated_at: str | None = None
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
+    channel_proxy: str = ""
+    headers: list[HeaderRule] = Field(default_factory=list)
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -184,6 +178,10 @@ class SiteConfig(StrictBaseModel):
 class SiteCreate(StrictBaseModel):
     name: str
     tags: SiteTags = Field(default_factory=list)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
+    channel_proxy: str = ""
+    headers: list[HeaderRule] = Field(default_factory=list)
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -192,6 +190,10 @@ class SiteCreate(StrictBaseModel):
 class SiteUpdate(StrictBaseModel):
     name: str
     tags: SiteTags = Field(default_factory=list)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
+    channel_proxy: str = ""
+    headers: list[HeaderRule] = Field(default_factory=list)
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)

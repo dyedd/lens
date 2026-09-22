@@ -57,11 +57,13 @@ class ModelGroup(StrictBaseModel):
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
     input_price_per_million: float = 0.0
+    image_input_price_per_million: float = 0.0
     output_price_per_million: float = 0.0
     cache_read_price_per_million: float = 0.0
     cache_write_price_per_million: float = 0.0
     image_price_per_image: float = 0.0
-    pricing_mode: Literal["tokens", "non_tokens"] = "tokens"
+    pricing_mode: Literal["free", "tokens", "non_tokens"] = "free"
+    manual_override: bool = False
     items: list["ModelGroupItem"] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(
@@ -242,6 +244,7 @@ class ModelGroupModelTestRequest(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     prompt: str = Field(min_length=1, max_length=2000)
+    protocol: ProtocolKind | None = None
 
 
 class ModelGroupEnsureModelInput(StrictBaseModel):

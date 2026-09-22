@@ -46,6 +46,13 @@ class SiteModelTestRequest(StrictBaseModel):
     model_name: str = Field(min_length=1)
     prompt: str = Field(min_length=1, max_length=2000)
 
+    @field_validator("protocol")
+    @classmethod
+    def validate_test_protocol(cls, value: ProtocolKind) -> ProtocolKind:
+        if value == ProtocolKind.AUTO:
+            raise ValueError("Choose a client protocol for the model test")
+        return value
+
     _canonicalize_base_url = field_validator("base_url", mode="before")(
         canonicalize_base_url
     )

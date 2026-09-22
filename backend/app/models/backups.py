@@ -122,6 +122,7 @@ class ConfigBackupRequestLog(StrictBaseModel):
     first_token_latency_ms: int = 0
     latency_ms: int = 0
     input_tokens: int = 0
+    image_input_tokens: int = Field(default=0, ge=0)
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0
     output_tokens: int = 0
@@ -130,7 +131,7 @@ class ConfigBackupRequestLog(StrictBaseModel):
     output_cost_usd: float = 0.0
     total_cost_usd: float = 0.0
     rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    billing_mode: Literal["tokens", "non_tokens"] = "tokens"
+    billing_mode: Literal["free", "tokens", "non_tokens"] = "tokens"
     billing_units: int = Field(default=0, ge=0)
     error_message: str | None = None
     created_at: str
