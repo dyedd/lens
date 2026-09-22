@@ -23,6 +23,8 @@
 
 ## TypeScript / React
 
+前端视觉（颜色、密度、分页、弹窗、表格外壳、井）以仓库根目录 [DESIGN.md](DESIGN.md) 为准，不要另起一套圆角、阴影或 `bg-muted` 透明度。
+
 - React 组件文件使用 `PascalCase.tsx`；Hook 文件使用 `useXxx.ts`；工具文件使用 `camelCase.ts`。
 - 布尔状态和属性优先使用 `is`、`has`、`can`、`should`。
 - 事件处理函数使用 `handleXxx` 或更具体的动作名称。

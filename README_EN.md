@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
 </p>
 
-Self-hosted multi-protocol LLM gateway that organizes providers by site, Base URL, credential, and protocol config, then exposes one unified entry to clients.
+Self-hosted multi-protocol LLM gateway that organizes providers by site, Base URL, credential, and model, then exposes one unified entry to clients.
 
 ## Architecture
 
@@ -47,8 +47,8 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  Routing plan                                                        │
 │  - Model group item: runtime channel + credential + upstream model   │
 │  - Strategy: round robin / failover                                  │
-│  - Protocol conversion: Anthropic / Responses clients ↔ OpenAI       │
-│    Chat / Responses upstreams                                        │
+│  - Default Auto: forward the client protocol; convert only when an   │
+│    upstream protocol is pinned                                       │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
@@ -56,18 +56,20 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │ Admin configuration                                                  │
 │                                                                      │
 │  Site                                                                │
-│  ├─ Base URLs: each URL declares supported protocols                  │
+│  ├─ Base URLs: one site can keep multiple upstream URLs               │
 │  ├─ Credentials: one site can keep multiple API keys                  │
-│  └─ Protocol configs: Base URL + default credential + protocols       │
-│     plus headers, proxy, parameter overrides, and match rules         │
+│  └─ Models: Auto by default, forwarding the client protocol; pin an   │
+│     upstream protocol only when conversion is required                │
 │                                                                      │
-│  Discovered / manual models                                          │
-│  - Models belong to protocol configs and keep protocol, credential,    │
-│    and upstream model name                                            │
-│  - Model discovery prefers a single /v1/models request                │
+│  Synced / manual models                                              │
+│  - Models belong to a URL and keep protocol, credential, and          │
+│    upstream model name                                                │
+│  - Model sync uses the upstream /v1/models endpoint                   │
 │                                                                      │
 │  Model groups                                                        │
-│  - Declare entry protocols, strategy, and optional execution group   │
+│  - Declare strategy and an optional execution group                  │
+│  - Client protocols are inferred from members; Auto serves every     │
+│    entry                                                              │
 │  - Items bind to: runtime channel + credential + upstream model      │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
@@ -75,7 +77,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Candidate expansion and load balancing                               │
 │                                                                      │
-│  Runtime channel = protocol config + one protocol                     │
+│  Runtime channel = one protocol on a URL (Auto by default)            │
 │  Route candidate = runtime channel + credential + upstream model     │
 │                                                                      │
 │  Round robin: smooth rotation across candidates                      │
@@ -105,9 +107,9 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 ## Features
 
 - Unified entry: One Base URL and one gateway key for OpenAI Chat / Responses / Embeddings / Images, Anthropic, Gemini, and Rerank entry protocols
-- Site management: Configure multiple Base URLs, credentials, and protocol configs per site, with model discovery, manual models, batch import, and site tags
+- Site management: Configure multiple Base URLs and credentials per site, with model sync, manual models, batch import, and site tags
 - Model group routing: Build candidates from runtime channel + credential + upstream model, with round robin, failover, reusable execution groups, per-channel toggles, and multimodal fallback
-- Protocol conversion: Anthropic / OpenAI Responses clients can forward to OpenAI Chat or Responses upstreams; OpenAI Chat clients can forward to Responses upstreams
+- Protocols: Models default to Auto and forward the client request unchanged. After an upstream protocol is pinned, Anthropic / OpenAI Responses clients can reach OpenAI Chat or Responses upstreams, and OpenAI Chat clients can reach Responses upstreams
 - Model testing: Single-model and batch model tests with configurable test prompts
 - Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt; optional request/response body capture
 - Health and cooldown: Model health page graded by success rate, built-in circuit-breaker cooldown with exponential backoff, and custom cooldown detection rules
@@ -225,32 +227,31 @@ pnpm dev
 
 ### 1. Add Upstream Sites
 
-Open `/channels`, create a site, configure Base URLs, credentials, and protocol configs, then discover or manually add models.
+Open `/channels`, create a site, configure Base URLs and credentials, then sync or manually add models. Headers, proxy, and parameter overrides are set on the site.
 
-- **Base URLs**: One site can maintain multiple upstream URLs and declare supported protocols for each URL.
+- **Base URLs**: One site can maintain multiple upstream URLs.
 - **Credentials**: One site can maintain multiple API keys so routing can switch at credential granularity.
-- **Protocol configs**: Bind a Base URL, default credential, and protocol list, with headers, proxy, parameter overrides, and model match rules.
-- **Models**: Models belong to protocol configs and can bind to different credentials in the same site.
+- **Models**: Auto by default, forwarding the client protocol upstream. Pin an upstream protocol only when it differs from the client and conversion is required. Models can bind to different credentials in the same site.
 
 Common Base URLs:
 
-| Upstream type   | Base URL example                            | Protocol                                          |
-| --------------- | ------------------------------------------- | ------------------------------------------------- |
-| OpenAI          | `https://api.openai.com`                    | OpenAI Chat / Responses / Embeddings / Images      |
-| Anthropic       | `https://api.anthropic.com`                 | Anthropic                                          |
-| Gemini          | `https://generativelanguage.googleapis.com` | Gemini                                             |
-| NewAPI / Rerank | `https://newapi.example.com`                | Rerank (forwards to `POST /v1/rerank`)             |
+| Upstream type  | Base URL example                            | Protocol                                              |
+| -------------- | ------------------------------------------- | ----------------------------------------------------- |
+| OpenAI         | `https://api.openai.com`                    | Auto, or pin Chat / Responses for a specific API      |
+| Anthropic      | `https://api.anthropic.com`                 | Auto, or Anthropic                                    |
+| Gemini         | `https://generativelanguage.googleapis.com` | Auto, or Gemini                                       |
+| Compatible API | `https://newapi.example.com`                | Auto (Chat, Rerank, and other entries pass through)   |
 
 ### 2. Create Model Groups
 
-Open `/groups`, create a model group, select entry protocols, add upstream model candidates, and choose a routing strategy:
+Open `/groups`, create a model group, add upstream models, and choose a routing strategy. Client protocols come from the members: Auto members accept every entry; a member with a pinned upstream protocol accepts that protocol and the client protocols that can convert to it.
 
 - **Round robin**: Smoothly rotate across model group candidates
 - **Failover**: Prefer earlier members, then switch to the next credential or channel after failures
 - **Execution group reuse**: A visible group can point to another execution model group and reuse its candidates and strategy
 - **Multimodal fallback**: Configure ordered backup model groups for a model group; for multimodal requests, backup groups are tried once the primary group's candidates are exhausted
 
-**Protocol conversion**: OpenAI Chat or OpenAI Responses upstream models can join Anthropic and OpenAI Responses model groups, and OpenAI Responses upstream models can join OpenAI Chat model groups; conversion happens at runtime.
+**Protocol conversion**: Conversion runs only when a member's upstream protocol differs from the client protocol. Supported pairs are Anthropic → OpenAI Chat / Responses, OpenAI Responses → OpenAI Chat, and OpenAI Chat → OpenAI Responses.
 
 ### 3. Issue Gateway Keys
 
