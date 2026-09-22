@@ -44,11 +44,13 @@ async def load_model_prices(self, session: AsyncSession) -> list[ModelPriceItem]
             display_name=row.display_name,
             protocols=[],
             input_price_per_million=row.input_price_per_million,
+            image_input_price_per_million=row.image_input_price_per_million,
             output_price_per_million=row.output_price_per_million,
             cache_read_price_per_million=row.cache_read_price_per_million,
             cache_write_price_per_million=row.cache_write_price_per_million,
             image_price_per_image=row.image_price_per_image,
             pricing_mode=row.pricing_mode,
+            manual_override=bool(row.manual_override),
         )
         for row in rows
     ]
@@ -171,11 +173,21 @@ async def replace_model_prices(
                 model_key=model_key,
                 display_name=item.display_name or model_key,
                 input_price_per_million=item.input_price_per_million,
+                image_input_price_per_million=(
+                    item.image_input_price_per_million
+                    if "image_input_price_per_million" in item.model_fields_set
+                    else item.input_price_per_million
+                ),
                 output_price_per_million=item.output_price_per_million,
                 cache_read_price_per_million=item.cache_read_price_per_million,
                 cache_write_price_per_million=item.cache_write_price_per_million,
                 image_price_per_image=item.image_price_per_image,
                 pricing_mode=item.pricing_mode,
+                manual_override=(
+                    item.manual_override
+                    if "manual_override" in item.model_fields_set
+                    else True
+                ),
             )
         )
 

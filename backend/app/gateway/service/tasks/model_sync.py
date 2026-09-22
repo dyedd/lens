@@ -121,7 +121,6 @@ def _failed_item(
     return ChannelModelSyncResultItem(
         site_id=site.id,
         protocol_config_id=protocol_config.id,
-        protocol_config_name=protocol_config.name,
         channel_name=site.name,
         credential_id=credential_id,
         credential_name=credential_name,
@@ -135,7 +134,7 @@ def channel_for_credential(
     channel: ChannelConfig, credential_id: str
 ) -> ChannelConfig | None:
     key = next((item for item in channel.keys if item.id == credential_id), None)
-    if key is None or not key.enabled:
+    if key is None:
         return None
     return channel.model_copy(
         update={
@@ -169,17 +168,17 @@ async def sync_channel_models(
         ensure_inputs_by_site: list[ModelGroupEnsureModelInput] = []
         group_targets_by_key: dict[GroupTargetKey, ChannelModelSyncResultItem] = {}
         for protocol_config in site.protocols:
-            if not protocol_config.sync_targets or not protocol_config.enabled:
+            if not protocol_config.sync_targets:
                 continue
             base_url = base_urls_by_id.get(protocol_config.base_url_id)
-            if base_url is None or not base_url.enabled:
+            if base_url is None:
                 continue
 
             channels = channels_by_config.get(protocol_config.id, [])
             channels_by_protocol = {channel.protocol: channel for channel in channels}
             for credential_id in protocol_config.credential_ids:
                 credential = credentials_by_id.get(credential_id)
-                if credential is None or not credential.enabled:
+                if credential is None:
                     continue
                 for protocol in protocol_config.protocols:
                     target_names = {
@@ -262,7 +261,6 @@ async def sync_channel_models(
                     result_item = ChannelModelSyncResultItem(
                         site_id=site.id,
                         protocol_config_id=protocol_config.id,
-                        protocol_config_name=protocol_config.name,
                         channel_name=site.name,
                         credential_id=credential_id,
                         credential_name=credential.name,

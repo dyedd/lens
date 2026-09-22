@@ -33,7 +33,6 @@ from app.persistence.settings_keys import (
     SETTING_HEALTH_SCORING_ENABLED,
     SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_MAX_REQUEST_BODY_BYTES,
-    SETTING_MODEL_LIST_COMPAT_MODE_ENABLED,
     SETTING_PROXY_URL,
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_ENABLED,
@@ -198,10 +197,6 @@ class SettingsRepository:
             "health_window_seconds": int(mapping[SETTING_HEALTH_WINDOW_SECONDS]),
             "health_penalty_weight": float(mapping[SETTING_HEALTH_PENALTY_WEIGHT]),
             "health_min_samples": int(mapping[SETTING_HEALTH_MIN_SAMPLES]),
-            "model_list_compat_mode_enabled": mapping[
-                SETTING_MODEL_LIST_COMPAT_MODE_ENABLED
-            ]
-            == "true",
             "upstream_headers_config": _parse_upstream_config(
                 mapping.get(SETTING_UPSTREAM_HEADERS_CONFIG), UpstreamHeadersConfig
             ),

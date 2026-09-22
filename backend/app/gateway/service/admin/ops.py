@@ -187,6 +187,17 @@ async def update_model_price(
     )
 
 
+async def restore_model_price(
+    model_key: str, _: Any = Depends(get_current_admin)
+) -> ModelPriceListResponse:
+    """Restore a manual price from the latest source."""
+    try:
+        await sync_group_prices(app_state, restore_key=model_key)
+    except ModelPriceSyncError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await app_state.model_price_repo.list_model_prices()
+
+
 async def sync_model_prices(
     _: Any = Depends(get_current_admin),
 ) -> ModelPriceListResponse:

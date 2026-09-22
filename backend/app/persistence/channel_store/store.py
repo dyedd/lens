@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     delete,
@@ -27,16 +28,15 @@ from app.models.sites import (
     SiteEnabledUpdate,
     SiteUpdate,
 )
+from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,
     SiteCredentialRateEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
-    SiteProtocolConfigCredentialEntity,
     SiteProtocolConfigEntity,
 )
-from app.persistence.protocol_serialization import parse_supported_protocols
 
 from .import_sites import build_site_batch_import_result, prepare_site_batch
 from .mapping import SiteChannelProjectionMixin, SiteConfigLoadersMixin
@@ -83,8 +83,8 @@ class SiteOperationsMixin:
                 id=item.id or str(uuid.uuid4()),
                 name=item.name.strip(),
                 api_key=item.api_key,
-                enabled=item.enabled,
                 sort_order=index,
+                base_url_id=item.base_url_id,
             )
             for index, item in enumerate(payload.credentials)
             if item.name.strip() and item.api_key.strip()
@@ -100,10 +100,6 @@ class SiteOperationsMixin:
             if credential is None:
                 raise ValueError(
                     f"Credential not found for model discovery: {credential_id}"
-                )
-            if not credential.enabled:
-                raise ValueError(
-                    f"Credential is disabled for model discovery: {credential_id}"
                 )
             previews.append(
                 {
@@ -125,27 +121,27 @@ class SiteOperationsMixin:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
                 raise ResourceNotFoundError(protocol_config_id)
-            association = (
-                await session.execute(
-                    select(SiteProtocolConfigCredentialEntity.id).where(
-                        SiteProtocolConfigCredentialEntity.protocol_config_id
-                        == protocol_config_id,
-                        SiteProtocolConfigCredentialEntity.credential_id
-                        == credential_id,
+            credential_rows = (
+                (
+                    await session.execute(
+                        select(SiteCredentialEntity).where(
+                            SiteCredentialEntity.site_id == entity.site_id
+                        )
                     )
                 )
-            ).scalar_one_or_none()
-            if association is None:
+                .scalars()
+                .all()
+            )
+            bound_ids = set(
+                credential_ids_for_url(
+                    [(row.id, row.base_url_id) for row in credential_rows],
+                    entity.base_url_id,
+                )
+            )
+            if credential_id not in bound_ids:
                 raise ValueError(
                     "Credential is not bound to protocol config "
                     f"{protocol_config_id}: {credential_id}"
-                )
-
-            protocols = parse_supported_protocols(entity.protocols_json)
-            if protocol not in protocols:
-                raise ValueError(
-                    "Protocol is not enabled in protocol config "
-                    f"{protocol_config_id}: {protocol.value}"
                 )
 
             target_rows = (
@@ -287,16 +283,7 @@ class ChannelStore(
                 session, payload.name, exclude_site_id=site_id
             )
             enabled = bool(site.enabled)
-        await self._upsert_site_payload(
-            session,
-            site_id,
-            payload.name,
-            enabled,
-            payload.tags,
-            payload.base_urls,
-            payload.credentials,
-            payload.protocols,
-        )
+        await self._upsert_site_payload(session, site_id, payload, enabled=enabled)
 
     async def import_sites(
         self, payload: SiteBatchImportRequest
@@ -313,12 +300,8 @@ class ChannelStore(
                 await self._upsert_site_payload(
                     session,
                     site_id,
-                    site_payload.name,
-                    prepared_item.enabled,
-                    site_payload.tags,
-                    site_payload.base_urls,
-                    site_payload.credentials,
-                    site_payload.protocols,
+                    site_payload,
+                    enabled=prepared_item.enabled,
                 )
                 site_ids[index] = site_id
             if site_ids:
@@ -356,5 +339,6 @@ class ChannelStore(
             if site is None:
                 raise ResourceNotFoundError(site_id)
             site.enabled = int(payload.enabled)
+            site.updated_at = datetime.now(UTC).replace(tzinfo=None)
             await session.commit()
         return await self.get_site(site_id)

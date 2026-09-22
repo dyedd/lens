@@ -180,6 +180,7 @@ class RequestLogger:
         if result is not None:
             kwargs.update(
                 input_tokens=result.input_tokens,
+                image_input_tokens=result.image_input_tokens,
                 cache_read_input_tokens=result.cache_read_input_tokens,
                 cache_write_input_tokens=result.cache_write_input_tokens,
                 output_tokens=result.output_tokens,
@@ -235,6 +236,7 @@ async def update_request_log(
     latency_ms: int,
     rate_multiplier: float | None = None,
     input_tokens: int = 0,
+    image_input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
     cache_write_input_tokens: int = 0,
     output_tokens: int = 0,
@@ -266,6 +268,7 @@ async def update_request_log(
         first_token_latency_ms=first_token_latency_ms,
         latency_ms=latency_ms,
         input_tokens=input_tokens,
+        image_input_tokens=image_input_tokens,
         cache_read_input_tokens=cache_read_input_tokens,
         cache_write_input_tokens=cache_write_input_tokens,
         output_tokens=output_tokens,

@@ -4,9 +4,11 @@ from datetime import UTC, datetime
 
 import httpx
 
+from ....core.errors import LensError, ResourceNotFoundError
 from ....core.model_prices import (
     build_group_price_payloads,
     build_litellm_price_index,
+    canonical_model_price_key,
 )
 from ..app_state import AppState
 
@@ -52,8 +54,17 @@ async def _fetch_litellm_price_index(
         raise ModelPriceSyncError("Model price source returned invalid data") from exc
 
 
-async def sync_group_prices(state: AppState) -> None:
+async def sync_group_prices(state: AppState, *, restore_key: str | None = None) -> None:
     group_names = await state.group_repo.list_group_names(include_routed=True)
+    if restore_key is not None:
+        restore_key = canonical_model_price_key(restore_key)
+        group_names = [
+            name
+            for name in group_names
+            if canonical_model_price_key(name) == restore_key
+        ]
+        if not group_names:
+            raise ResourceNotFoundError(restore_key)
     if not group_names:
         await state.model_price_repo.replace_model_prices([])
         return
@@ -62,8 +73,15 @@ async def sync_group_prices(state: AppState) -> None:
     proxy_url = str(runtime["proxy_url"]).strip()
     price_index = await _fetch_litellm_price_index(proxy_url)
     payloads = build_group_price_payloads(group_names, price_index)
+    if restore_key is not None and not payloads:
+        raise LensError(
+            "No matching LiteLLM price; manual price remains locked",
+            status_code=409,
+            error_type="conflict",
+        )
     await state.model_price_repo.sync_model_prices(
         payloads,
         allowed_keys=group_names,
+        restore_key=restore_key,
         synced_at=datetime.now(UTC).isoformat(),
     )

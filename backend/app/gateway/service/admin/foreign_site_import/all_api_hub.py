@@ -53,7 +53,6 @@ def parse_all_api_hub_sites(payload: dict[str, Any]) -> ParsedForeignSites:
                     ],
                     protocols=[
                         SiteImportProtocolInput(
-                            name=protocol.value,
                             protocol=protocol,
                             base_url_ref="u0",
                             credential_refs=["c0"],

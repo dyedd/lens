@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import uuid
 from collections import defaultdict
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.channels import ChannelConfig, ChannelDiscoveredModel, ChannelKeyItem
-from app.models.protocols import ChannelStatus, ProtocolKind
+from app.models.protocols import ChannelProxyMode, ChannelStatus, ProtocolKind
 from app.models.sites import (
     SiteBaseUrl,
     SiteBaseUrlInput,
@@ -29,10 +30,46 @@ from app.persistence.entities import (
     SiteProtocolConfigEntity,
     SiteProtocolConfigSyncTargetEntity,
 )
-from app.persistence.protocol_serialization import parse_supported_protocols
 
 from ...core.runtime_channel_ids import compose_runtime_channel_id
 from ..site_loader import fetch_site_rows
+from .endpoint_credentials import credential_ids_for_url
+
+
+def format_site_updated_at(value: datetime | None) -> str | None:
+    """Format a site timestamp as UTC ISO-8601."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC).isoformat()
+    return value.astimezone(UTC).isoformat()
+
+
+def load_header_rules(raw: str | None) -> list[HeaderRule]:
+    return [HeaderRule.model_validate(item) for item in json.loads(raw or "[]")]
+
+
+def load_param_rules(raw: str | None) -> list[ParamOverrideRule]:
+    return [ParamOverrideRule.model_validate(item) for item in json.loads(raw or "[]")]
+
+
+def protocols_from_bindings(
+    models: list[SiteModel], sync_targets: list[SiteSyncTarget]
+) -> list[ProtocolKind]:
+    protocols: list[ProtocolKind] = []
+    for model in models:
+        if model.protocol is not None and model.protocol not in protocols:
+            protocols.append(model.protocol)
+    for target in sync_targets:
+        if target.protocol not in protocols:
+            protocols.append(target.protocol)
+    return protocols
+
+
+def credential_pairs(
+    credentials: list[SiteCredential],
+) -> list[tuple[str, str]]:
+    return [(item.id, item.base_url_id) for item in credentials]
 
 
 class ChannelRowMappingMixin:
@@ -42,16 +79,7 @@ class ChannelRowMappingMixin:
         result: dict[str, list[SiteBaseUrl]] = defaultdict(list)
         for row in rows:
             result[row.site_id].append(
-                SiteBaseUrl(
-                    id=row.id,
-                    url=row.url,
-                    name=row.name,
-                    enabled=bool(row.enabled),
-                    sort_order=row.sort_order,
-                    supported_protocols=parse_supported_protocols(
-                        row.supported_protocols_json
-                    ),
-                )
+                SiteBaseUrl(id=row.id, url=row.url, sort_order=row.sort_order)
             )
         return result
 
@@ -69,8 +97,8 @@ class ChannelRowMappingMixin:
                 id=row.id,
                 name=row.name,
                 api_key=row.api_key,
-                enabled=bool(row.enabled),
                 sort_order=row.sort_order,
+                base_url_id=row.base_url_id,
                 rate_source=rate.source if rate is not None else "none",
                 rate_protocol_config_id=(
                     rate.protocol_config_id if rate is not None else ""
@@ -134,30 +162,23 @@ class ChannelRowMappingMixin:
         rows: list[SiteProtocolConfigEntity],
         models_by_protocol_config: dict[str, list[SiteModel]],
         sync_targets_by_protocol_config: dict[str, list[SiteSyncTarget]],
-        credential_ids_by_protocol_config: dict[str, list[str]],
+        credentials_by_site: dict[str, list[SiteCredential]],
     ) -> dict[str, list[SiteProtocolConfig]]:
         result: dict[str, list[SiteProtocolConfig]] = defaultdict(list)
         for row in rows:
+            models = models_by_protocol_config.get(row.id, [])
+            sync_targets = sync_targets_by_protocol_config.get(row.id, [])
             result[row.site_id].append(
                 SiteProtocolConfig(
                     id=row.id,
-                    name=row.name,
-                    protocols=parse_supported_protocols(row.protocols_json),
-                    enabled=bool(row.enabled),
-                    headers=[
-                        HeaderRule.model_validate(item)
-                        for item in json.loads(row.headers_json)
-                    ],
-                    proxy_mode=row.proxy_mode,
-                    channel_proxy=row.channel_proxy,
-                    param_override=[
-                        ParamOverrideRule.model_validate(item)
-                        for item in json.loads(row.param_override)
-                    ],
                     base_url_id=row.base_url_id,
-                    credential_ids=credential_ids_by_protocol_config.get(row.id, []),
-                    sync_targets=sync_targets_by_protocol_config.get(row.id, []),
-                    models=models_by_protocol_config.get(row.id, []),
+                    protocols=protocols_from_bindings(models, sync_targets),
+                    credential_ids=credential_ids_for_url(
+                        credential_pairs(credentials_by_site.get(row.site_id, [])),
+                        row.base_url_id,
+                    ),
+                    sync_targets=sync_targets,
+                    models=models,
                 )
             )
         return result
@@ -181,7 +202,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
             keys = self._build_channel_keys(protocol_config, credentials_by_id)
             if not keys:
                 continue
-            active_key = next((k for k in keys if k.enabled), keys[0])
+            active_key = keys[0]
             models_by_protocol = self._models_by_protocol(protocol_config.models)
             for protocol in protocols:
                 protocol_models = models_by_protocol.get(protocol, [])
@@ -196,11 +217,9 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                         status=(
                             ChannelStatus.ENABLED
                             if site.enabled
-                            and protocol_config.enabled
-                            and bound_base_url.enabled
                             else ChannelStatus.DISABLED
                         ),
-                        headers=protocol_config.headers,
+                        headers=site.headers,
                         model_patterns=[
                             m.model_name for m in protocol_models if m.enabled
                         ],
@@ -208,9 +227,9 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                         models=self._build_channel_models(
                             protocol_models, credentials_by_id
                         ),
-                        proxy_mode=protocol_config.proxy_mode,
-                        channel_proxy=protocol_config.channel_proxy,
-                        param_override=protocol_config.param_override,
+                        proxy_mode=site.proxy_mode,
+                        channel_proxy=site.channel_proxy,
+                        param_override=site.param_override,
                     )
                 )
         return items
@@ -245,7 +264,6 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                 key=credential.api_key,
                 remark=credential.name,
                 number=credential_numbers[credential.id],
-                enabled=credential.enabled,
                 rate_source=credential.rate_source,
                 rate_multiplier=credential.rate_multiplier,
             )
@@ -277,7 +295,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
         return items
 
     def _build_credentials(
-        self, items: list[SiteCredentialInput]
+        self, items: list[SiteCredentialInput], base_url_ids: set[str]
     ) -> list[SiteCredential]:
         built_credentials: list[SiteCredential] = []
         seen_names: set[str] = set()
@@ -289,13 +307,16 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
             if name_key in seen_names:
                 raise ValueError(f"Duplicate credential name: {name}")
             seen_names.add(name_key)
+            base_url_id = item.base_url_id.strip()
+            if base_url_id and base_url_id not in base_url_ids:
+                raise ValueError(f"Credential base URL not found: {base_url_id}")
             built_credentials.append(
                 SiteCredential(
                     id=item.id or str(uuid.uuid4()),
                     name=name,
                     api_key=item.api_key,
-                    enabled=item.enabled,
                     sort_order=index,
+                    base_url_id=base_url_id,
                     rate_source=item.rate_source,
                     rate_protocol_config_id=item.rate_protocol_config_id,
                     rate_group=item.rate_group,
@@ -315,10 +336,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                 SiteBaseUrl(
                     id=item.id or str(uuid.uuid4()),
                     url=item.url,
-                    name=item.name.strip(),
-                    enabled=item.enabled,
                     sort_order=index,
-                    supported_protocols=list(dict.fromkeys(item.supported_protocols)),
                 )
             )
         return built_base_urls
@@ -381,16 +399,11 @@ class SiteConfigLoadersMixin:
             rows.discovered_models, credentials_by_id
         )
         sync_targets_by_protocol_config = self._group_sync_targets(rows.sync_targets)
-        credential_ids_by_protocol_config: dict[str, list[str]] = defaultdict(list)
-        for row in rows.protocol_credentials:
-            credential_ids_by_protocol_config[row.protocol_config_id].append(
-                row.credential_id
-            )
         protocols_by_site = self._group_protocols(
             rows.protocol_configs,
             models_by_protocol_config,
             sync_targets_by_protocol_config,
-            credential_ids_by_protocol_config,
+            credentials_by_site,
         )
 
         return [
@@ -399,6 +412,11 @@ class SiteConfigLoadersMixin:
                 name=row.name,
                 enabled=bool(row.enabled),
                 tags=json.loads(row.tags_json),
+                updated_at=format_site_updated_at(row.updated_at),
+                proxy_mode=ChannelProxyMode(row.proxy_mode),
+                channel_proxy=row.channel_proxy,
+                headers=load_header_rules(row.headers_json),
+                param_override=load_param_rules(row.param_override),
                 base_urls=base_urls_by_site.get(row.id, []),
                 credentials=credentials_by_site.get(row.id, []),
                 protocols=protocols_by_site.get(row.id, []),

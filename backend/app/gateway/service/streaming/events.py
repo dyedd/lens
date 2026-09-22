@@ -267,6 +267,7 @@ def _record_stream_event_payload(
         capture.resolved_model = str(parsed["resolved_model"])
     for key in (
         "input_tokens",
+        "image_input_tokens",
         "cache_read_input_tokens",
         "cache_write_input_tokens",
         "output_tokens",
@@ -389,6 +390,7 @@ def stream_capture_usage(capture: StreamCapture | None) -> dict[str, int | str |
     return {
         "resolved_model": capture.resolved_model,
         "input_tokens": capture.input_tokens,
+        "image_input_tokens": capture.image_input_tokens,
         "cache_read_input_tokens": capture.cache_read_input_tokens,
         "cache_write_input_tokens": capture.cache_write_input_tokens,
         "output_tokens": capture.output_tokens,

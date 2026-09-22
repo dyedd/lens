@@ -18,7 +18,9 @@ OPENAI_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
     }
 )
 
-ALL_MODEL_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(ProtocolKind)
+ALL_MODEL_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
+    protocol for protocol in ProtocolKind if protocol != ProtocolKind.AUTO
+)
 
 
 def build_openai_models_payload(
@@ -39,29 +41,6 @@ def build_openai_models_payload(
             }
             for name in names
         ],
-    }
-
-
-def build_anthropic_models_payload(
-    groups: list[ModelGroupView], gateway_key: GatewayApiKey
-) -> dict[str, Any]:
-    """Build an Anthropic-compatible model list from visible groups."""
-    names = _filtered_group_names(
-        groups, gateway_key, frozenset({ProtocolKind.ANTHROPIC})
-    )
-    return {
-        "data": [
-            {
-                "id": name,
-                "type": "model",
-                "display_name": name,
-                "created_at": "1970-01-01T00:00:00Z",
-            }
-            for name in names
-        ],
-        "first_id": names[0] if names else None,
-        "last_id": names[-1] if names else None,
-        "has_more": False,
     }
 
 

@@ -77,6 +77,13 @@ def parse_metapi_sites(payload: dict[str, Any]) -> ParsedForeignSites:
                     name=name,
                     enabled=site.get("status") != "disabled",
                     tags=[platform] if platform else [],
+                    headers=headers,
+                    proxy_mode=(
+                        ChannelProxyMode.CUSTOM
+                        if str(site.get("proxyUrl") or "").strip()
+                        else ChannelProxyMode.INHERIT
+                    ),
+                    channel_proxy=str(site.get("proxyUrl") or "").strip(),
                     base_urls=base_urls,
                     credentials=credentials,
                     protocols=[
@@ -87,7 +94,6 @@ def parse_metapi_sites(payload: dict[str, Any]) -> ParsedForeignSites:
                                 credential.ref for credential in credentials
                             ],
                             model_names=models_by_site.get(site_id, []),
-                            headers=headers,
                         )
                     ],
                 )
@@ -208,7 +214,6 @@ def _build_credentials(
                     ref=f"c-{token.get('id')}",
                     name=_unique_name(candidate_name),
                     api_key=token_value,
-                    enabled=is_account_active,
                 )
             )
     return credentials
@@ -236,16 +241,10 @@ def _build_protocol_config(
     base_url_ref: str,
     credential_refs: list[str],
     model_names: list[str],
-    headers: list[HeaderRule],
 ) -> SiteImportProtocolInput:
     protocol = _site_protocol(site)
-    proxy_url = str(site.get("proxyUrl") or "").strip()
     return SiteImportProtocolInput(
-        name=protocol.value,
         protocol=protocol,
-        headers=headers,
-        proxy_mode=ChannelProxyMode.CUSTOM if proxy_url else ChannelProxyMode.INHERIT,
-        channel_proxy=proxy_url,
         base_url_ref=base_url_ref,
         credential_refs=credential_refs,
         models=[

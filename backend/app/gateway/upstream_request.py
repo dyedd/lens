@@ -184,10 +184,10 @@ def _protocol_base_url(channel: ChannelConfig) -> str:
 def resolve_channel_api_key(
     channel: ChannelConfig, credential_id: str | None = None
 ) -> str:
-    """Resolve an enabled API key for a channel."""
+    """Resolve an API key for a channel."""
     if credential_id:
         for item in channel.keys:
-            if item.id == credential_id and item.enabled and item.key.strip():
+            if item.id == credential_id and item.key.strip():
                 return item.key.strip()
         raise HTTPException(
             status_code=503,
@@ -195,7 +195,7 @@ def resolve_channel_api_key(
         )
 
     for item in channel.keys:
-        if item.enabled and item.key.strip():
+        if item.key.strip():
             return item.key.strip()
     raise HTTPException(
         status_code=503,

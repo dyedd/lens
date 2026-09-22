@@ -115,16 +115,10 @@ def _build_model_group_inputs(
     grouped_model_keys: set[tuple[str, str, str, ProtocolKind]],
 ) -> list[ModelGroupEnsureModelInput]:
     group_names = [name.strip() for name in existing_group_names if name.strip()]
-    enabled_base_urls = {item.id for item in site.base_urls if item.enabled}
-    enabled_credentials = {item.id for item in site.credentials if item.enabled}
+    credential_ids = {item.id for item in site.credentials}
     inputs: list[ModelGroupEnsureModelInput] = []
 
     for protocol_config in site.protocols:
-        if (
-            not protocol_config.enabled
-            or protocol_config.base_url_id not in enabled_base_urls
-        ):
-            continue
         configured_protocols = set(protocol_config.protocols)
         for model in protocol_config.models:
             model_name = model.model_name.strip()
@@ -133,7 +127,7 @@ def _build_model_group_inputs(
                 or not model_name
                 or model.protocol is None
                 or model.protocol not in configured_protocols
-                or model.credential_id not in enabled_credentials
+                or model.credential_id not in credential_ids
             ):
                 continue
             key = (
@@ -265,7 +259,6 @@ async def fetch_site_models(
                     "id": preview["credential_id"],
                     "key": credential.api_key,
                     "remark": preview["credential_name"],
-                    "enabled": True,
                 }
             ],
             models=[],

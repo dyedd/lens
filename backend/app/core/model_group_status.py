@@ -93,7 +93,7 @@ def evaluate_model_group_item(
     credential = channel_lookup.credentials_by_id.get(item.credential_id)
     if credential is None:
         reasons.append(ModelGroupItemReason.CREDENTIAL_NOT_FOUND)
-    elif not credential.enabled or not credential.key.strip():
+    elif not credential.key.strip():
         reasons.append(ModelGroupItemReason.CREDENTIAL_DISABLED)
 
     model = channel_lookup.models_by_key.get((item.credential_id, item.model_name))

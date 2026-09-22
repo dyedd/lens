@@ -56,6 +56,19 @@ class SiteEntity(Base):
     tags_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
+    updated_at: Mapped[datetime] = auto_timestamp_column()
+    headers_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
+    proxy_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="inherit", server_default="inherit"
+    )
+    channel_proxy: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    param_override: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
 
 
 class SiteBaseUrlEntity(Base):
@@ -64,12 +77,7 @@ class SiteBaseUrlEntity(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
-    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
-    enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
-    supported_protocols_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
-    )
 
 
 class SiteCredentialEntity(Base):
@@ -79,8 +87,10 @@ class SiteCredentialEntity(Base):
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     api_key: Mapped[str] = mapped_column(Text, nullable=False)
-    enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
+    base_url_id: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="", server_default=""
+    )
 
 
 class SiteCredentialRateEntity(Base):
@@ -100,39 +110,13 @@ class SiteCredentialRateEntity(Base):
 
 class SiteProtocolConfigEntity(Base):
     __tablename__ = "site_protocol_configs"
+    __table_args__ = (
+        UniqueConstraint("base_url_id", name="uq_site_protocol_configs_base_url_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
-    enabled: Mapped[int] = enabled_column()
-    protocols_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
-    )
-    headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    proxy_mode: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="inherit"
-    )
-    channel_proxy: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    param_override: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     base_url_id: Mapped[str] = mapped_column(String(80), nullable=False)
-
-
-class SiteProtocolConfigCredentialEntity(Base):
-    __tablename__ = "site_protocol_config_credentials"
-    __table_args__ = (
-        UniqueConstraint(
-            "protocol_config_id",
-            "credential_id",
-            name="uq_site_protocol_config_credentials_target",
-        ),
-    )
-
-    id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    protocol_config_id: Mapped[str] = mapped_column(
-        String(80), nullable=False, index=True
-    )
-    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    sort_order: Mapped[int] = sort_order_column()
 
 
 class SiteDiscoveredModelEntity(Base):
@@ -293,6 +277,7 @@ class RequestLogEntity(Base):
     )
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    image_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cache_read_input_tokens: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
@@ -327,6 +312,9 @@ class ModelPriceEntity(Base):
     input_price_per_million: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0
     )
+    image_input_price_per_million: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
     output_price_per_million: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0
     )
@@ -340,8 +328,9 @@ class ModelPriceEntity(Base):
         Float, nullable=False, default=0.0
     )
     pricing_mode: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="tokens"
+        String(32), nullable=False, default="free"
     )
+    manual_override: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class CronjobEntity(Base):

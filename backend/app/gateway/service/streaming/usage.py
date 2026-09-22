@@ -47,6 +47,11 @@ def _openai_cache_tokens(usage: Mapping[str, Any], detail_key: str) -> tuple[int
     )
 
 
+def _image_input_tokens(usage: Mapping[str, Any], detail_key: str) -> int:
+    details = _usage_mapping(usage.get(detail_key), detail_key)
+    return _usage_int(details, "image_tokens")
+
+
 def _anthropic_usage(
     usage: Mapping[str, Any], *, model: str | None
 ) -> dict[str, int | str | None]:
@@ -70,6 +75,7 @@ def _anthropic_usage(
     return {
         "resolved_model": model,
         "input_tokens": input_tokens,
+        "image_input_tokens": 0,
         "cache_read_input_tokens": cache_read_input_tokens,
         "cache_write_input_tokens": cache_write_input_tokens,
         "output_tokens": output_tokens,
@@ -88,6 +94,7 @@ def _gemini_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
     return {
         "resolved_model": payload.get("modelVersion") or payload.get("model"),
         "input_tokens": input_tokens,
+        "image_input_tokens": 0,
         "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
         "cache_write_input_tokens": 0,
         "output_tokens": output_tokens,
@@ -104,6 +111,7 @@ def _openai_chat_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None
     return {
         "resolved_model": payload.get("model"),
         "input_tokens": input_tokens,
+        "image_input_tokens": _image_input_tokens(usage, "prompt_tokens_details"),
         "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
         "cache_write_input_tokens": min(cache_write_input_tokens, input_tokens),
         "output_tokens": _usage_int(usage, "completion_tokens"),
@@ -122,6 +130,7 @@ def _openai_responses_usage(
     return {
         "resolved_model": model,
         "input_tokens": input_tokens,
+        "image_input_tokens": _image_input_tokens(usage, "input_tokens_details"),
         "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
         "cache_write_input_tokens": min(cache_write_input_tokens, input_tokens),
         "output_tokens": _usage_int(usage, "output_tokens"),
@@ -133,15 +142,23 @@ def _openai_image_usage(
     payload: Mapping[str, Any], *, model: str | None
 ) -> dict[str, int | str | None]:
     usage = _usage_mapping(payload.get("usage"))
-    prompt_tokens = _usage_int(usage, "prompt_tokens")
-    total_tokens = _usage_int(usage, "total_tokens")
+    input_tokens = _usage_int(
+        usage, "input_tokens" if "input_tokens" in usage else "prompt_tokens"
+    )
+    output_tokens = (
+        _usage_int(usage, "output_tokens")
+        if "output_tokens" in usage
+        else max(_usage_int(usage, "total_tokens") - input_tokens, 0)
+    )
     return {
         "resolved_model": model,
-        "input_tokens": prompt_tokens,
+        "input_tokens": input_tokens,
+        "image_input_tokens": _image_input_tokens(usage, "input_tokens_details"),
         "cache_read_input_tokens": 0,
         "cache_write_input_tokens": 0,
-        "output_tokens": max(total_tokens - prompt_tokens, 0),
-        "total_tokens": total_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": _usage_int(usage, "total_tokens")
+        or input_tokens + output_tokens,
     }
 
 
@@ -150,6 +167,7 @@ def _openai_embedding_usage(payload: Mapping[str, Any]) -> dict[str, int | str |
     return {
         "resolved_model": payload.get("model"),
         "input_tokens": _usage_int(usage, "prompt_tokens"),
+        "image_input_tokens": 0,
         "cache_read_input_tokens": 0,
         "cache_write_input_tokens": 0,
         "output_tokens": 0,
@@ -160,6 +178,7 @@ def _openai_embedding_usage(payload: Mapping[str, Any]) -> dict[str, int | str |
 EMPTY_USAGE: dict[str, int | str | None] = {
     "resolved_model": None,
     "input_tokens": 0,
+    "image_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "cache_write_input_tokens": 0,
     "output_tokens": 0,
@@ -189,6 +208,7 @@ def extract_stream_usage(
     merged: dict[str, int | str | None] = dict(EMPTY_USAGE)
     int_keys = (
         "input_tokens",
+        "image_input_tokens",
         "cache_read_input_tokens",
         "cache_write_input_tokens",
         "output_tokens",
@@ -245,6 +265,8 @@ def extract_usage_from_payload(
                 model=response_payload.get("model") or payload.get("model"),
             )
         return _openai_responses_usage(payload, model=payload.get("model"))
+    if protocol == ProtocolKind.OPENAI_IMAGE:
+        return _openai_image_usage(payload, model=payload.get("model"))
     if protocol == ProtocolKind.OPENAI_EMBEDDING:
         return _openai_embedding_usage(payload)
     if protocol == ProtocolKind.ANTHROPIC:

@@ -11,7 +11,6 @@ from .app_state import app_state
 from .auth import get_current_gateway_key
 from .model_list_payloads import (
     ALL_MODEL_LIST_PROTOCOLS,
-    build_anthropic_models_payload,
     build_gemini_models_payload,
     build_openai_models_payload,
 )
@@ -195,19 +194,11 @@ async def proxy_openai_image_edits(
 
 
 async def list_gateway_models(
-    request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
     """List model groups visible to the gateway key in the requested API format."""
     groups = await app_state.group_repo.list_groups()
-    runtime = await app_state.settings_repo.get_runtime_settings()
-    if runtime["model_list_compat_mode_enabled"]:
-        return build_openai_models_payload(
-            groups, gateway_key, ALL_MODEL_LIST_PROTOCOLS
-        )
-    if request.headers.get("anthropic-version"):
-        return build_anthropic_models_payload(groups, gateway_key)
-    return build_openai_models_payload(groups, gateway_key)
+    return build_openai_models_payload(groups, gateway_key, ALL_MODEL_LIST_PROTOCOLS)
 
 
 async def list_gemini_models(

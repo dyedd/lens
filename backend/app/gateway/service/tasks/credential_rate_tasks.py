@@ -233,7 +233,7 @@ async def sync_all_site_credential_rates(state: AppState) -> None:
         if not site.enabled:
             continue
         for credential in site.credentials:
-            if not credential.enabled or credential.rate_source == "none":
+            if credential.rate_source == "none":
                 continue
             try:
                 await _sync_credential_rate_target(state, site, credential)

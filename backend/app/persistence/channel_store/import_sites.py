@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 
 from ...models.protocols import ProtocolKind
@@ -10,6 +11,7 @@ from ...models.site_import import (
     SiteBatchImportResult,
     SiteImportItem,
     SiteImportModelInput,
+    SiteImportProtocolInput,
 )
 from ...models.sites import (
     SiteBaseUrlInput,
@@ -17,6 +19,7 @@ from ...models.sites import (
     SiteCredentialInput,
     SiteModelInput,
     SiteProtocolConfigInput,
+    SiteSyncTarget,
 )
 
 
@@ -31,7 +34,7 @@ def prepare_site_import(
 ) -> tuple[PreparedSiteImport | None, list[SiteBatchImportFieldError]]:
     errors: list[SiteBatchImportFieldError] = []
     base_urls, base_url_refs = _import_base_urls(item, errors)
-    credentials, credential_refs = _import_credentials(item, errors)
+    credentials, credential_refs = _import_credentials(item, base_url_refs, errors)
     if not item.protocols:
         errors.append(
             SiteBatchImportFieldError(
@@ -50,6 +53,17 @@ def prepare_site_import(
     )
     if errors:
         return None, errors
+    configured_urls = {protocol.base_url_id for protocol in protocols}
+    for base_url in base_urls:
+        if base_url.id and base_url.id not in configured_urls:
+            protocols.append(
+                SiteProtocolConfigInput(
+                    id=str(uuid.uuid4()),
+                    base_url_id=base_url.id,
+                    models=[],
+                    sync_targets=[],
+                )
+            )
 
     return (
         PreparedSiteImport(
@@ -57,6 +71,10 @@ def prepare_site_import(
             payload=SiteCreate(
                 name=item.name.strip(),
                 tags=item.tags,
+                proxy_mode=item.proxy_mode,
+                channel_proxy=item.channel_proxy.strip(),
+                headers=item.headers,
+                param_override=item.param_override,
                 base_urls=base_urls,
                 credentials=credentials,
                 protocols=protocols,
@@ -93,19 +111,13 @@ def _import_base_urls(
             continue
         base_url_id = str(uuid.uuid4())
         refs[ref] = base_url_id
-        base_urls.append(
-            SiteBaseUrlInput(
-                id=base_url_id,
-                url=base_url.url,
-                name=base_url.name.strip(),
-                enabled=base_url.enabled,
-            )
-        )
+        base_urls.append(SiteBaseUrlInput(id=base_url_id, url=base_url.url))
     return base_urls, refs
 
 
 def _import_credentials(
     item: SiteImportItem,
+    base_url_refs: dict[str, str],
     errors: list[SiteBatchImportFieldError],
 ) -> tuple[list[SiteCredentialInput], dict[str, str]]:
     credentials: list[SiteCredentialInput] = []
@@ -153,6 +165,20 @@ def _import_credentials(
             continue
         names.add(name_key)
 
+        base_url_id = ""
+        base_url_ref = credential.base_url_ref.strip()
+        if base_url_ref:
+            resolved = _resolve_import_ref(
+                f"credentials.{credential_index}.base_url_ref",
+                base_url_ref,
+                base_url_refs,
+                "Base URL",
+                errors,
+            )
+            if resolved is None:
+                continue
+            base_url_id = resolved
+
         credential_id = str(uuid.uuid4())
         refs[ref] = credential_id
         credentials.append(
@@ -160,7 +186,7 @@ def _import_credentials(
                 id=credential_id,
                 name=name,
                 api_key=api_key,
-                enabled=credential.enabled,
+                base_url_id=base_url_id,
             )
         )
     return credentials, refs
@@ -172,8 +198,7 @@ def _import_protocols(
     credential_refs: dict[str, str],
     errors: list[SiteBatchImportFieldError],
 ) -> list[SiteProtocolConfigInput]:
-    protocols: list[SiteProtocolConfigInput] = []
-    protocol_keys: set[tuple[str, str, str]] = set()
+    grouped: dict[str, list[tuple[int, SiteImportProtocolInput]]] = defaultdict(list)
     for protocol_index, protocol in enumerate(item.protocols):
         base_url_id = _resolve_import_ref(
             f"protocols.{protocol_index}.base_url_ref",
@@ -182,71 +207,54 @@ def _import_protocols(
             "Base URL",
             errors,
         )
-        credential_ids = [
-            credential_id
-            for credential_ref_index, credential_ref in enumerate(
-                protocol.credential_refs
-            )
-            if (
-                credential_id := _resolve_import_ref(
-                    "protocols."
-                    f"{protocol_index}.credential_refs.{credential_ref_index}",
-                    credential_ref,
+        if base_url_id is None:
+            continue
+        grouped[base_url_id].append((protocol_index, protocol))
+
+    protocols: list[SiteProtocolConfigInput] = []
+    for base_url_id, rows in grouped.items():
+        models: list[SiteModelInput] = []
+        for protocol_index, protocol in rows:
+            credential_ids = [
+                credential_id
+                for credential_ref_index, credential_ref in enumerate(
+                    protocol.credential_refs
+                )
+                if (
+                    credential_id := _resolve_import_ref(
+                        "protocols."
+                        f"{protocol_index}.credential_refs.{credential_ref_index}",
+                        credential_ref,
+                        credential_refs,
+                        "Credential",
+                        errors,
+                    )
+                )
+                is not None
+            ]
+            if len(credential_ids) != len(protocol.credential_refs):
+                continue
+            models.extend(
+                _import_protocol_models(
+                    protocol_index,
+                    protocol.models,
+                    protocol.protocol,
+                    set(credential_ids),
                     credential_refs,
-                    "Credential",
                     errors,
                 )
             )
-            is not None
-        ]
-        if base_url_id is None or len(credential_ids) != len(protocol.credential_refs):
-            continue
-
-        has_duplicate = False
-        for credential_id in credential_ids:
-            protocol_key = (protocol.protocol.value, base_url_id, credential_id)
-            if protocol_key in protocol_keys:
-                errors.append(
-                    SiteBatchImportFieldError(
-                        field=f"protocols.{protocol_index}",
-                        message=(
-                            "Duplicate protocol config for protocol="
-                            f"{protocol.protocol.value}"
-                        ),
-                    )
-                )
-                has_duplicate = True
-            protocol_keys.add(protocol_key)
-        if has_duplicate:
-            continue
-
-        models = _import_protocol_models(
-            protocol_index,
-            protocol.models,
-            protocol.protocol,
-            set(credential_ids),
-            credential_refs,
-            errors,
-        )
         protocols.append(
             SiteProtocolConfigInput(
                 id=str(uuid.uuid4()),
-                name=protocol.name,
-                protocols=[protocol.protocol],
-                enabled=protocol.enabled,
-                headers=protocol.headers,
-                proxy_mode=protocol.proxy_mode,
-                channel_proxy=protocol.channel_proxy.strip(),
-                param_override=protocol.param_override,
                 base_url_id=base_url_id,
-                credential_ids=credential_ids,
                 models=models,
                 sync_targets=[
-                    {
-                        "credential_id": model.credential_id,
-                        "model_name": model.model_name,
-                        "protocol": model.protocol,
-                    }
+                    SiteSyncTarget(
+                        credential_id=model.credential_id,
+                        model_name=model.model_name,
+                        protocol=model.protocol,
+                    )
                     for model in models
                     if model.source.value == "synced"
                 ],
@@ -264,7 +272,7 @@ def _import_protocol_models(
     errors: list[SiteBatchImportFieldError],
 ) -> list[SiteModelInput]:
     model_inputs: list[SiteModelInput] = []
-    seen_models: set[tuple[str, str]] = set()
+    seen_models: set[tuple[str, str, ProtocolKind]] = set()
     for model_index, model in enumerate(models):
         model_name = model.model_name.strip()
         if not model_name:
@@ -295,7 +303,8 @@ def _import_protocol_models(
             )
             continue
 
-        model_key = (credential_id, model_name)
+        model_protocol = model.protocol or protocol
+        model_key = (credential_id, model_name, model_protocol)
         if model_key in seen_models:
             errors.append(
                 SiteBatchImportFieldError(
@@ -311,7 +320,7 @@ def _import_protocol_models(
                 credential_id=credential_id,
                 model_name=model_name,
                 enabled=model.enabled,
-                protocol=protocol,
+                protocol=model_protocol,
                 source=model.source,
             )
         )

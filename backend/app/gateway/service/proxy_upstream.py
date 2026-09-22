@@ -190,6 +190,7 @@ async def _build_anthropic_sse_to_json_result(
         parsed["output_tokens"],
         parsed["cache_read_input_tokens"],
         parsed["cache_write_input_tokens"],
+        image_input_tokens=parsed["image_input_tokens"],
         rate_multiplier=rate_multiplier,
     )
     return UpstreamResult(
@@ -203,6 +204,7 @@ async def _build_anthropic_sse_to_json_result(
         is_stream=False,
         upstream_model_name=parsed["resolved_model"],
         input_tokens=parsed["input_tokens"],
+        image_input_tokens=parsed["image_input_tokens"],
         cache_read_input_tokens=parsed["cache_read_input_tokens"],
         cache_write_input_tokens=parsed["cache_write_input_tokens"],
         output_tokens=parsed["output_tokens"],
@@ -373,6 +375,7 @@ async def _build_json_result(
         parsed["output_tokens"],
         parsed["cache_read_input_tokens"],
         parsed["cache_write_input_tokens"],
+        image_input_tokens=parsed["image_input_tokens"],
         image_count=(
             _image_count(body, payload)
             if channel.protocol == ProtocolKind.OPENAI_IMAGE
@@ -391,6 +394,7 @@ async def _build_json_result(
         is_stream=False,
         upstream_model_name=parsed["resolved_model"],
         input_tokens=parsed["input_tokens"],
+        image_input_tokens=parsed["image_input_tokens"],
         cache_read_input_tokens=parsed["cache_read_input_tokens"],
         cache_write_input_tokens=parsed["cache_write_input_tokens"],
         output_tokens=parsed["output_tokens"],

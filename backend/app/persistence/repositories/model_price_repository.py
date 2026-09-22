@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.model_prices import canonical_model_price_key
+from app.core.errors import ResourceNotFoundError
+from app.core.model_prices import PRICE_PAYLOAD_FIELDS, canonical_model_price_key
 from app.models.model_prices import (
     ModelPriceItem,
     ModelPriceListResponse,
@@ -43,6 +44,12 @@ def _model_price_entity(
         model_key=key,
         display_name=str(item.get("display_name") or key),
         input_price_per_million=float(item.get("input_price_per_million") or 0.0),
+        image_input_price_per_million=float(
+            item.get(
+                "image_input_price_per_million", item.get("input_price_per_million")
+            )
+            or 0.0
+        ),
         output_price_per_million=float(item.get("output_price_per_million") or 0.0),
         cache_read_price_per_million=float(
             item.get("cache_read_price_per_million") or 0.0
@@ -52,6 +59,7 @@ def _model_price_entity(
         ),
         image_price_per_image=float(item.get("image_price_per_image") or 0.0),
         pricing_mode=str(item.get("pricing_mode") or "tokens"),
+        manual_override=bool(item.get("manual_override", False)),
     )
 
 
@@ -60,7 +68,9 @@ async def _replace_model_prices(
     model_prices: list[dict[str, int | float | str]],
 ) -> None:
     async with session_factory() as session:
-        await session.execute(delete(ModelPriceEntity))
+        await session.execute(
+            delete(ModelPriceEntity).where(ModelPriceEntity.manual_override == 0)
+        )
         for item in model_prices:
             entity = _model_price_entity(item)
             if entity is not None:
@@ -74,6 +84,7 @@ async def _sync_model_prices(
     *,
     synced_at: str,
     allowed_keys: list[str],
+    restore_key: str | None = None,
 ) -> None:
     async with session_factory() as session:
         existing_rows = (
@@ -81,35 +92,36 @@ async def _sync_model_prices(
         )
         entities_by_key = {item.model_key: item for item in existing_rows}
 
+        if restore_key is not None and restore_key not in entities_by_key:
+            raise ResourceNotFoundError(restore_key)
         for item in model_prices:
             key = canonical_model_price_key(str(item.get("model_key") or ""))
             if not key:
                 continue
             entity = entities_by_key.get(key)
             if entity is None:
-                new_entity = _model_price_entity(item)
-                if new_entity is not None:
-                    session.add(new_entity)
+                session.add(_model_price_entity(item))
                 continue
-            entity.display_name = str(
-                item.get("display_name") or entity.display_name or key
+            statement = update(ModelPriceEntity).where(
+                ModelPriceEntity.model_key == key
             )
-            entity.input_price_per_million = float(
-                item.get("input_price_per_million") or 0.0
+            if restore_key is None:
+                statement = statement.where(ModelPriceEntity.manual_override == 0)
+            await session.execute(
+                statement.values(
+                    **{field: item.get(field) for field in PRICE_PAYLOAD_FIELDS},
+                    display_name=str(
+                        item.get("display_name") or entity.display_name or key
+                    ),
+                    pricing_mode=str(item.get("pricing_mode") or "tokens"),
+                    manual_override=0,
+                )
             )
-            entity.output_price_per_million = float(
-                item.get("output_price_per_million") or 0.0
-            )
-            entity.cache_read_price_per_million = float(
-                item.get("cache_read_price_per_million") or 0.0
-            )
-            entity.cache_write_price_per_million = float(
-                item.get("cache_write_price_per_million") or 0.0
-            )
-            entity.image_price_per_image = float(
-                item.get("image_price_per_image") or 0.0
-            )
-            entity.pricing_mode = str(item.get("pricing_mode") or "tokens")
+
+        if restore_key is not None:
+            await _set_model_price_sync_time(session, synced_at)
+            await session.commit()
+            return
 
         canonical_allowed_keys = {
             canonical_model_price_key(item)
@@ -119,11 +131,14 @@ async def _sync_model_prices(
         if canonical_allowed_keys:
             await session.execute(
                 delete(ModelPriceEntity).where(
-                    ModelPriceEntity.model_key.not_in(canonical_allowed_keys)
+                    ModelPriceEntity.model_key.not_in(canonical_allowed_keys),
+                    ModelPriceEntity.manual_override == 0,
                 )
             )
         else:
-            await session.execute(delete(ModelPriceEntity))
+            await session.execute(
+                delete(ModelPriceEntity).where(ModelPriceEntity.manual_override == 0)
+            )
 
         await _set_model_price_sync_time(session, synced_at)
         await session.commit()
@@ -150,6 +165,7 @@ class ModelPriceRepository:
         cache_write_input_tokens: int = 0,
         image_count: int = 0,
         rate_multiplier: float | None = None,
+        image_input_tokens: int = 0,
     ) -> ModelCostEstimate:
         """Estimate input, output, and total cost for a priced model."""
         if not model_name:
@@ -161,6 +177,9 @@ class ModelPriceRepository:
             )
             if entity is None:
                 return ModelCostEstimate()
+
+        if entity.pricing_mode == "free":
+            return ModelCostEstimate(billing_mode="free")
 
         multiplier = 1.0 if rate_multiplier is None else float(rate_multiplier)
 
@@ -180,12 +199,20 @@ class ModelPriceRepository:
         total_input_tokens = max(input_tokens, 0)
         cache_read_tokens = max(cache_read_input_tokens, 0)
         cache_write_tokens = max(cache_write_input_tokens, 0)
+        image_tokens = min(
+            max(image_input_tokens, 0),
+            max(total_input_tokens - cache_read_tokens - cache_write_tokens, 0),
+        )
         regular_input_tokens = max(
-            total_input_tokens - cache_read_tokens - cache_write_tokens, 0
+            total_input_tokens - cache_read_tokens - cache_write_tokens - image_tokens,
+            0,
         )
 
         input_cost = (regular_input_tokens / 1_000_000) * float(
             entity.input_price_per_million
+        )
+        input_cost += (image_tokens / 1_000_000) * float(
+            entity.image_input_price_per_million
         )
         input_cost += (cache_read_tokens / 1_000_000) * float(
             entity.cache_read_price_per_million
@@ -203,6 +230,7 @@ class ModelPriceRepository:
             input_cost_usd=round(input_cost, 8),
             output_cost_usd=round(output_cost, 8),
             total_cost_usd=round(total_cost, 8),
+            billing_mode="tokens",
         )
 
     async def list_model_prices(self) -> ModelPriceListResponse:
@@ -293,8 +321,16 @@ class ModelPriceRepository:
                     pricing_mode=(
                         price_entity.pricing_mode
                         if price_entity is not None
-                        else "tokens"
+                        else "free"
                     ),
+                    image_input_price_per_million=(
+                        float(price_entity.image_input_price_per_million)
+                        if price_entity is not None
+                        else 0.0
+                    ),
+                    manual_override=bool(price_entity.manual_override)
+                    if price_entity is not None
+                    else False,
                 )
             )
 
@@ -347,38 +383,62 @@ class ModelPriceRepository:
 
             entity = await session.get(ModelPriceEntity, model_key)
             pricing_mode = payload.pricing_mode or (
-                entity.pricing_mode if entity is not None else "tokens"
+                "non_tokens" if payload.image_price_per_image > 0 else "tokens"
             )
             input_price = float(payload.input_price_per_million)
+            image_input_price = (
+                float(payload.image_input_price_per_million)
+                if payload.image_input_price_per_million is not None
+                else input_price
+            )
             output_price = float(payload.output_price_per_million)
             cache_read_price = float(payload.cache_read_price_per_million)
             cache_write_price = float(payload.cache_write_price_per_million)
             unit_price = float(payload.image_price_per_image)
-            if pricing_mode == "non_tokens":
+            if pricing_mode == "free":
+                input_price = image_input_price = output_price = 0.0
+                cache_read_price = cache_write_price = unit_price = 0.0
+            elif pricing_mode == "non_tokens":
                 input_price = output_price = cache_read_price = cache_write_price = 0.0
+                image_input_price = 0.0
             else:
                 unit_price = 0.0
+            if not any(
+                (
+                    input_price,
+                    image_input_price,
+                    output_price,
+                    cache_read_price,
+                    cache_write_price,
+                    unit_price,
+                )
+            ):
+                pricing_mode = "free"
             display_name = payload.display_name.strip() or matched_groups[0][0]
             if entity is None:
                 entity = ModelPriceEntity(
                     model_key=model_key,
                     display_name=display_name,
                     input_price_per_million=input_price,
+                    image_input_price_per_million=image_input_price,
                     output_price_per_million=output_price,
                     cache_read_price_per_million=cache_read_price,
                     cache_write_price_per_million=cache_write_price,
                     image_price_per_image=unit_price,
                     pricing_mode=pricing_mode,
+                    manual_override=True,
                 )
                 session.add(entity)
             else:
                 entity.display_name = display_name
                 entity.input_price_per_million = input_price
+                entity.image_input_price_per_million = image_input_price
                 entity.output_price_per_million = output_price
                 entity.cache_read_price_per_million = cache_read_price
                 entity.cache_write_price_per_million = cache_write_price
                 entity.image_price_per_image = unit_price
                 entity.pricing_mode = pricing_mode
+                entity.manual_override = 1
 
             await session.commit()
 
@@ -398,11 +458,13 @@ class ModelPriceRepository:
             display_name=display_name,
             protocols=protocols,
             input_price_per_million=input_price,
+            image_input_price_per_million=image_input_price,
             output_price_per_million=output_price,
             cache_read_price_per_million=cache_read_price,
             cache_write_price_per_million=cache_write_price,
             image_price_per_image=unit_price,
             pricing_mode=pricing_mode,
+            manual_override=True,
         )
 
     async def replace_model_prices(
@@ -417,6 +479,7 @@ class ModelPriceRepository:
         *,
         synced_at: str,
         allowed_keys: list[str],
+        restore_key: str | None = None,
     ) -> None:
         """Synchronize model prices and the source timestamp atomically."""
         await _sync_model_prices(
@@ -424,4 +487,5 @@ class ModelPriceRepository:
             model_prices,
             synced_at=synced_at,
             allowed_keys=allowed_keys,
+            restore_key=restore_key,
         )

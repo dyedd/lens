@@ -43,9 +43,25 @@ def parse_fallback_group_ids(raw: str) -> list[str]:
 
 def group_price_kwargs(price: ModelPriceEntity | None) -> dict[str, Any]:
     """Price columns defaulted the same way everywhere a group is materialized."""
+    pricing_mode = price.pricing_mode if price is not None else "free"
+    if price is not None and not any(
+        float(getattr(price, field) or 0.0) > 0
+        for field in (
+            "input_price_per_million",
+            "image_input_price_per_million",
+            "output_price_per_million",
+            "cache_read_price_per_million",
+            "cache_write_price_per_million",
+            "image_price_per_image",
+        )
+    ):
+        pricing_mode = "free"
     return {
         "input_price_per_million": (
             float(price.input_price_per_million) if price is not None else 0.0
+        ),
+        "image_input_price_per_million": (
+            float(price.image_input_price_per_million) if price is not None else 0.0
         ),
         "output_price_per_million": (
             float(price.output_price_per_million) if price is not None else 0.0
@@ -59,5 +75,6 @@ def group_price_kwargs(price: ModelPriceEntity | None) -> dict[str, Any]:
         "image_price_per_image": (
             float(price.image_price_per_image) if price is not None else 0.0
         ),
-        "pricing_mode": (price.pricing_mode if price is not None else "tokens"),
+        "pricing_mode": pricing_mode,
+        "manual_override": bool(price.manual_override) if price is not None else False,
     }
