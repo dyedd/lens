@@ -17,16 +17,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "sites",
-        sa.Column(
-            "updated_at",
-            sa.DateTime(),
-            nullable=False,
-            server_default=sa.text("(CURRENT_TIMESTAMP)"),
-        ),
-    )
+    with op.batch_alter_table("sites") as batch:
+        batch.add_column(
+            sa.Column(
+                "updated_at",
+                sa.DateTime(),
+                nullable=False,
+                server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            )
+        )
 
 
 def downgrade() -> None:
-    op.drop_column("sites", "updated_at")
+    with op.batch_alter_table("sites") as batch:
+        batch.drop_column("updated_at")
