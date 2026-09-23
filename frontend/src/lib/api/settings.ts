@@ -13,6 +13,7 @@ export type GatewayApiKey = {
 };
 export type GatewayApiKeyPayload = {
   remark: string;
+  api_key?: string;
   enabled: boolean;
   allowed_models: string[];
   max_cost_usd: number;

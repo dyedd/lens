@@ -5,6 +5,7 @@ import { formatExpiresAt, parseGatewayExpiresAt } from "./gatewayDateTime";
 
 export type GatewayApiKeyForm = {
   remark: string;
+  apiKey: string;
   enabled: boolean;
   isModelRestrictionEnabled: boolean;
   allowedModels: string[];
@@ -20,6 +21,7 @@ export type GatewayModelGroupOption = {
 
 export const EMPTY_FORM: GatewayApiKeyForm = {
   remark: "",
+  apiKey: "",
   enabled: true,
   isModelRestrictionEnabled: false,
   allowedModels: [],
@@ -51,6 +53,7 @@ export function toGatewayApiKeyForm(
   const expires = parseGatewayExpiresAt(item.expires_at, timeZone);
   return {
     remark: item.remark,
+    apiKey: "",
     enabled: item.enabled,
     isModelRestrictionEnabled: item.allowed_models.length > 0,
     allowedModels: [...item.allowed_models],
@@ -64,13 +67,16 @@ export function toGatewayApiKeyPayload(
   form: GatewayApiKeyForm,
   timeZone: string,
 ): GatewayApiKeyPayload {
-  return {
+  const payload: GatewayApiKeyPayload = {
     remark: form.remark.trim(),
     enabled: form.enabled,
     allowed_models: form.isModelRestrictionEnabled ? form.allowedModels : [],
     max_cost_usd: Math.max(Number(form.maxCostUsd || "0") || 0, 0),
     expires_at: formatExpiresAt(form.expiresOn, timeZone),
   };
+  const apiKey = form.apiKey.trim();
+  if (apiKey) payload.api_key = apiKey;
+  return payload;
 }
 
 /** Formats a gateway monetary amount for the selected locale. */

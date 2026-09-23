@@ -70,7 +70,11 @@ class GatewayApiKeyRepository:
         """Create and persist a gateway API key."""
         now = datetime.now(UTC).replace(tzinfo=None)
         async with self._session_factory() as session:
-            secret = await self._generate_unique_gateway_api_key(session)
+            secret = payload.api_key or await self._generate_unique_gateway_api_key(
+                session
+            )
+            if payload.api_key and await self._gateway_api_key_exists(session, secret):
+                raise ValueError("Gateway API key already exists")
             entity = GatewayApiKeyEntity(
                 id=uuid.uuid4().hex,
                 remark=payload.remark.strip(),
@@ -152,16 +156,20 @@ class GatewayApiKeyRepository:
     async def _generate_unique_gateway_api_key(cls, session: AsyncSession) -> str:
         for _ in range(10):
             secret = cls._generate_gateway_api_key()
-            existing_key_id = (
-                await session.execute(
-                    select(GatewayApiKeyEntity.id)
-                    .where(GatewayApiKeyEntity.api_key == secret)
-                    .limit(1)
-                )
-            ).scalar_one_or_none()
-            if existing_key_id is None:
+            if not await cls._gateway_api_key_exists(session, secret):
                 return secret
         raise RuntimeError("Unable to generate unique gateway API key")
+
+    @staticmethod
+    async def _gateway_api_key_exists(session: AsyncSession, secret: str) -> bool:
+        existing_key_id = (
+            await session.execute(
+                select(GatewayApiKeyEntity.id)
+                .where(GatewayApiKeyEntity.api_key == secret)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return existing_key_id is not None
 
     @staticmethod
     def _generate_gateway_api_key() -> str:

@@ -29,9 +29,12 @@ import {
 type GatewayApiKeyBasicFieldsProps = {
   locale: Locale;
   remark: string;
+  apiKey: string;
+  showApiKey: boolean;
   enabled: boolean;
   maxCostUsd: string;
   onRemarkChange: (value: string) => void;
+  onApiKeyChange: (value: string) => void;
   onEnabledChange: (value: boolean) => void;
   onMaxCostUsdChange: (value: string) => void;
 };
@@ -40,9 +43,12 @@ type GatewayApiKeyBasicFieldsProps = {
 function GatewayApiKeyBasicFields({
   locale,
   remark,
+  apiKey,
+  showApiKey,
   enabled,
   maxCostUsd,
   onRemarkChange,
+  onApiKeyChange,
   onEnabledChange,
   onMaxCostUsdChange,
 }: GatewayApiKeyBasicFieldsProps) {
@@ -59,6 +65,31 @@ function GatewayApiKeyBasicFields({
           placeholder={titleForLocale(locale, "可留空", "Optional")}
         />
       </Field>
+
+      {showApiKey ? (
+        <Field>
+          <div className="flex items-center gap-1">
+            <FieldLabel htmlFor="gateway-key-secret">
+              {titleForLocale(locale, "密钥", "Key")}
+            </FieldLabel>
+            <SettingsHint
+              description={titleForLocale(
+                locale,
+                "留空则自动生成，至少 8 位",
+                "Leave empty to generate one. At least 8 characters",
+              )}
+            />
+          </div>
+          <Input
+            id="gateway-key-secret"
+            value={apiKey}
+            onChange={(event) => onApiKeyChange(event.target.value)}
+            placeholder={titleForLocale(locale, "自动生成", "Generated")}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </Field>
+      ) : null}
 
       <Field orientation="horizontal" className="items-center justify-between">
         <FieldLabel htmlFor="gateway-key-enabled" className="w-auto">
@@ -241,9 +272,12 @@ export function GatewayApiKeyDialog({
               <GatewayApiKeyBasicFields
                 locale={locale}
                 remark={form.remark}
+                apiKey={form.apiKey}
+                showApiKey={!editingKeyId}
                 enabled={form.enabled}
                 maxCostUsd={form.maxCostUsd}
                 onRemarkChange={(value) => updateForm("remark", value)}
+                onApiKeyChange={(value) => updateForm("apiKey", value)}
                 onEnabledChange={(value) => updateForm("enabled", value)}
                 onMaxCostUsdChange={(value) => updateForm("maxCostUsd", value)}
               />

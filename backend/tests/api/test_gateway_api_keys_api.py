@@ -61,6 +61,30 @@ def test_gateway_api_key_update_and_delete_missing_key_return_not_found(
     assert_error(delete, 404, "missing")
 
 
+def test_gateway_api_key_uses_custom_secret_and_rejects_duplicates(
+    client,
+    admin_headers,
+    create_gateway_key,
+) -> None:
+    key = create_gateway_key(api_key="  my-custom-key  ")
+
+    assert key["api_key"] == "my-custom-key"
+
+    duplicate = client.post(
+        "/api/admin/gateway-api-keys",
+        headers=admin_headers,
+        json={"api_key": "my-custom-key"},
+    )
+    short = client.post(
+        "/api/admin/gateway-api-keys",
+        headers=admin_headers,
+        json={"api_key": "short"},
+    )
+
+    assert_error(duplicate, 400, "Gateway API key already exists")
+    assert_error(short, 422)
+
+
 def test_gateway_api_key_rejects_invalid_expiration(client, admin_headers) -> None:
     response = client.post(
         "/api/admin/gateway-api-keys",
