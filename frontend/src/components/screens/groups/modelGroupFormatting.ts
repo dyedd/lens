@@ -7,7 +7,7 @@ import type {
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
-import { PROTOCOL_LIST, protocolLabel } from "@/lib/protocols";
+import { PROTOCOL_LIST } from "@/lib/protocols";
 import type {
   CandidateSearchMode,
   FoldedMember,
@@ -151,23 +151,6 @@ export function groupMemberProtocols(
   return GROUP_PROTOCOL_ORDER.filter((protocol) => present.has(protocol));
 }
 
-function candidateSearchText(
-  item: ModelGroupCandidateItem,
-  locale: "zh-CN" | "en-US",
-) {
-  const credentialLabel = credentialDisplayLabel(
-    {
-      credential_name: item.credential_name,
-      credential_number: item.credential_number,
-    },
-    locale,
-  );
-  const protocols = item.protocols
-    .map((protocol) => protocolLabel(protocol, locale))
-    .join(" ");
-  return `${item.model_name} ${item.channel_name} ${protocols} ${credentialLabel} ${item.credential_name} ${item.base_url}`;
-}
-
 /** Compile a case-insensitive candidate search pattern when valid. */
 export function compileCandidateRegex(value: string) {
   const trimmedValue = value.trim();
@@ -199,9 +182,14 @@ export function matchesCandidateSearch(
     }
     return regex.test(item.model_name);
   }
-  return candidateSearchText(item, locale)
-    .toLowerCase()
-    .includes(trimmedQuery.toLowerCase());
+  if (mode === "exact") {
+    return (
+      item.model_name.localeCompare(trimmedQuery, locale, {
+        sensitivity: "accent",
+      }) === 0
+    );
+  }
+  return item.model_name.toLowerCase().includes(trimmedQuery.toLowerCase());
 }
 
 /** Build the stable identity key for a model group member. */

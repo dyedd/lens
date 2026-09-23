@@ -172,7 +172,7 @@ class ModelGroupEntity(Base):
     __tablename__ = "model_groups"
     __table_args__ = (
         CheckConstraint(
-            "sync_filter_mode IN ('', 'contains', 'regex')",
+            "sync_filter_mode IN ('', 'contains', 'exact', 'regex')",
             name="ck_model_groups_sync_filter_mode",
         ),
     )
