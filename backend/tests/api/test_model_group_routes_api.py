@@ -103,9 +103,22 @@ def test_model_group_sync_filter_is_canonicalized_and_validated(
         },
     )
 
+    exact = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={
+            "name": "exact-filter",
+            "sync_filter_mode": "exact",
+            "sync_filter_query": "  gpt-4o  ",
+        },
+    )
+
     assert created.status_code == 201
     assert created.json()["sync_filter_mode"] == "contains"
     assert created.json()["sync_filter_query"] == "gpt"
+    assert exact.status_code == 201
+    assert exact.json()["sync_filter_mode"] == "exact"
+    assert exact.json()["sync_filter_query"] == "gpt-4o"
     assert_error(invalid, 422, "Request validation failed")
 
 

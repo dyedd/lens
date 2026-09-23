@@ -64,6 +64,7 @@ class RoutingStrategy(str, Enum):
 class ModelGroupSyncFilterMode(str, Enum):
     NONE = ""
     CONTAINS = "contains"
+    EXACT = "exact"
     REGEX = "regex"
 
 
