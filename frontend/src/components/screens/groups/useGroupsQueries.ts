@@ -138,7 +138,7 @@ export function useGroupFilters(
     }
     return GROUP_PROTOCOL_ORDER.filter((protocol) => present.has(protocol));
   }, [groupRows]);
-  const effectiveProtocolFilter =
+  const effectiveProtocolFilter: "all" | ProtocolKind =
     protocolFilter !== "all" && protocolOptions.includes(protocolFilter)
       ? protocolFilter
       : "all";
