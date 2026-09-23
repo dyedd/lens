@@ -25,7 +25,19 @@ class GatewayApiKeyBase(StrictBaseModel):
 
 
 class GatewayApiKeyCreate(GatewayApiKeyBase):
-    pass
+    api_key: str = ""
+
+    @field_validator("api_key")
+    @classmethod
+    def canonicalize_api_key(cls, value: str) -> str:
+        secret = value.strip()
+        if not secret:
+            return ""
+        if any(char.isspace() for char in secret) or len(secret) < 8:
+            raise ValueError("Gateway API key must be at least 8 characters")
+        if len(secret) > 256:
+            raise ValueError("Gateway API key must be at most 256 characters")
+        return secret
 
 
 class GatewayApiKeyUpdate(GatewayApiKeyBase):
