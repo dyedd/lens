@@ -17,7 +17,7 @@ export type ParamOverrideRule = {
 };
 
 export type RoutingStrategy = "round_robin" | "failover";
-export type ModelGroupSyncFilterMode = "" | "contains" | "regex";
+export type ModelGroupSyncFilterMode = "" | "contains" | "exact" | "regex";
 export type ModelGroupItemState =
   | "ready"
   | "disabled"
