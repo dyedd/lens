@@ -99,6 +99,17 @@ function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
       ...base,
       base_url_id: url.id,
       credential_ids: credentialIds,
+      protocols: protocols.length
+        ? protocols
+        : (existing?.protocols ?? source?.protocols ?? []),
+      auto_sync_supported_models:
+        existing?.auto_sync_supported_models ??
+        source?.auto_sync_supported_models ??
+        false,
+      auto_sync_model_pattern:
+        existing?.auto_sync_model_pattern ??
+        source?.auto_sync_model_pattern ??
+        "",
       models: coalesceFormModels(models),
       sync_targets: (
         existing?.sync_targets ??
@@ -170,6 +181,9 @@ export function toForm(site: Site): FormState {
       id: protocolConfig.id,
       base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
       credential_ids: credentialIds,
+      protocols: protocolConfig.protocols,
+      auto_sync_supported_models: protocolConfig.auto_sync_supported_models,
+      auto_sync_model_pattern: protocolConfig.auto_sync_model_pattern,
       sync_targets: protocolConfig.sync_targets,
       models,
     };
@@ -239,8 +253,11 @@ export function toPayload(form: FormState): SitePayload {
       );
       if (!selectedCredentialIds.length) return [];
       const derivedProtocols = protocolConfigEffectiveProtocols(protocolConfig);
-      const protocolConfigProtocols = derivedProtocols.length
+      const configuredProtocols = derivedProtocols.length
         ? derivedProtocols
+        : protocolConfig.protocols;
+      const protocolConfigProtocols = configuredProtocols.length
+        ? configuredProtocols
         : (["auto"] as ProtocolKind[]);
       const models = protocolConfig.models
         .flatMap((model) => {
@@ -275,6 +292,9 @@ export function toPayload(form: FormState): SitePayload {
         {
           id: protocolConfig.id,
           base_url_id: protocolConfig.base_url_id,
+          protocols: protocolConfigProtocols,
+          auto_sync_supported_models: protocolConfig.auto_sync_supported_models,
+          auto_sync_model_pattern: protocolConfig.auto_sync_model_pattern,
           sync_targets: syncTargets,
           models,
         },

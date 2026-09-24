@@ -243,21 +243,18 @@ export function GroupsScreen() {
 
       {modelTest.batchModelTestOpen ? (
         <BatchModelTestDialog
-          open={modelTest.batchModelTestOpen}
           locale={locale}
-          modelTestPrompts={modelTest.modelTestPrompts}
-          batchTestPromptMode={modelTest.batchTestPromptMode}
-          batchTestPrompt={modelTest.batchTestPrompt}
-          batchTestConcurrency={modelTest.batchTestConcurrency}
-          batchTestOptions={modelTest.batchTestOptions}
-          batchTestRows={modelTest.batchTestRows}
-          isBatchModelTestRunning={modelTest.isBatchModelTestRunning}
-          onOpenChange={modelTest.changeBatchModelTestOpen}
+          targetName={modelTest.targetName}
+          rows={modelTest.batchTestRows}
+          testing={modelTest.isBatchModelTestRunning}
+          prompts={modelTest.prompts}
+          promptMode={modelTest.batchTestPromptMode}
+          prompt={modelTest.batchTestPrompt}
           onPromptModeChange={modelTest.changeBatchTestPromptMode}
           onPromptChange={modelTest.changeBatchTestPrompt}
-          onConcurrencyChange={modelTest.setBatchTestConcurrency}
           onProtocolChange={modelTest.changeBatchTestProtocol}
           onRun={() => void modelTest.runBatchModelTests()}
+          onClose={() => modelTest.changeBatchModelTestOpen(false)}
         />
       ) : null}
 

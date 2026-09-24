@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Input";
+import { Switch } from "@/components/ui/Switch";
 import {
   Table,
   TableBody,
@@ -28,6 +30,9 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onLoad: () => Promise<Catalog | null>;
   onImport: (items: PickerModelItem[]) => number;
+  autoSyncEnabled: boolean;
+  autoSyncPattern: string;
+  onAutoSyncChange: (enabled: boolean, pattern?: string) => void;
 };
 
 /** Renders the remote catalog preview for one channel. */
@@ -39,6 +44,9 @@ export function ChannelRemoteModelsDialog({
   onOpenChange,
   onLoad,
   onImport,
+  autoSyncEnabled,
+  autoSyncPattern,
+  onAutoSyncChange,
 }: Props) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [query, setQuery] = useState("");
@@ -151,6 +159,46 @@ export function ChannelRemoteModelsDialog({
         }
       >
         <div className="grid gap-3">
+          <div className="rounded-md bg-muted/35 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs font-medium">
+                  {locale === "zh-CN"
+                    ? "自动同步上游模型"
+                    : "Auto-sync upstream models"}
+                </div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">
+                  {locale === "zh-CN"
+                    ? "定时任务会按上游目录更新同步模型"
+                    : "Scheduled sync updates models from the upstream catalog"}
+                </div>
+              </div>
+              <Switch
+                size="sm"
+                checked={autoSyncEnabled}
+                onCheckedChange={(checked) => onAutoSyncChange(checked)}
+              />
+            </div>
+            {autoSyncEnabled ? (
+              <div className="mt-3">
+                <Input
+                  value={autoSyncPattern}
+                  onChange={(event) =>
+                    onAutoSyncChange(true, event.target.value)
+                  }
+                  placeholder={
+                    locale === "zh-CN"
+                      ? "模型筛选正则，可留空同步全部"
+                      : "Optional model filter regex"
+                  }
+                  className="h-8 text-xs"
+                  aria-label={
+                    locale === "zh-CN" ? "模型筛选正则" : "Model filter regex"
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
           <div className="flex items-center gap-2">
             <ToolbarSearchInput
               value={query}

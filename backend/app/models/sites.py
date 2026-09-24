@@ -1,3 +1,4 @@
+import re
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
@@ -134,6 +135,8 @@ class SiteProtocolConfig(StrictBaseModel):
     base_url_id: str = Field(min_length=1)
     protocols: list[ProtocolKind] = Field(default_factory=list)
     credential_ids: list[str] = Field(default_factory=list)
+    auto_sync_supported_models: bool = False
+    auto_sync_model_pattern: str = ""
     sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
     models: list[SiteModel] = Field(default_factory=list)
 
@@ -141,8 +144,19 @@ class SiteProtocolConfig(StrictBaseModel):
 class SiteProtocolConfigInput(StrictBaseModel):
     id: str | None = None
     base_url_id: str = Field(min_length=1)
+    protocols: list[ProtocolKind] = Field(default_factory=list)
+    auto_sync_supported_models: bool = False
+    auto_sync_model_pattern: str = ""
     sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
+
+    @field_validator("auto_sync_model_pattern")
+    @classmethod
+    def validate_auto_sync_model_pattern(cls, value: str) -> str:
+        pattern = value.strip()
+        if pattern:
+            re.compile(pattern)
+        return pattern
 
     @model_validator(mode="after")
     def validate_model_protocols(self) -> "SiteProtocolConfigInput":

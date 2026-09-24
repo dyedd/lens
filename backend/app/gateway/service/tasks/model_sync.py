@@ -170,7 +170,10 @@ async def sync_channel_models(
         ensure_inputs_by_site: list[ModelGroupEnsureModelInput] = []
         group_targets_by_key: dict[GroupTargetKey, ChannelModelSyncResultItem] = {}
         for protocol_config in site.protocols:
-            if not protocol_config.sync_targets:
+            if not (
+                protocol_config.auto_sync_supported_models
+                or protocol_config.sync_targets
+            ):
                 continue
             base_url = base_urls_by_id.get(protocol_config.base_url_id)
             if base_url is None:
@@ -189,7 +192,10 @@ async def sync_channel_models(
                         if target.credential_id == credential_id
                         and target.protocol == protocol
                     }
-                    if not target_names:
+                    if (
+                        not target_names
+                        and not protocol_config.auto_sync_supported_models
+                    ):
                         continue
                     channel = channels_by_protocol.get(protocol)
                     target_channel = (
@@ -224,6 +230,17 @@ async def sync_channel_models(
                             )
                         )
                         continue
+
+                    if protocol_config.auto_sync_supported_models:
+                        regex = _compile_sync_filter_regex(
+                            protocol_config.auto_sync_model_pattern
+                        )
+                        all_upstream = [
+                            model
+                            for model in all_upstream
+                            if regex is None or regex.search(model)
+                        ]
+                        target_names = set(all_upstream)
 
                     target_models = [
                         model

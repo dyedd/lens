@@ -1,6 +1,14 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import CheckConstraint, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Float,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
@@ -117,6 +125,15 @@ class SiteProtocolConfigEntity(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     base_url_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    protocols_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
+    auto_sync_supported_models: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    auto_sync_model_pattern: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=text("''")
+    )
 
 
 class SiteDiscoveredModelEntity(Base):

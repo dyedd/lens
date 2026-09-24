@@ -72,31 +72,22 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     }
     return options;
   }, [form, locale]);
-  const modelTestDialogTarget = modelTestTarget
-    ? describeModelTestTarget(modelTestTarget)
+  const testConfig = modelTestTarget
+    ? form.protocolConfigs[modelTestTarget.protocolConfigIndex]
+    : undefined;
+  const testModel = modelTestTarget
+    ? testConfig?.models[modelTestTarget.modelIndex]
+    : undefined;
+  const modelTestDialogTarget = testModel
+    ? { modelName: testModel.model_name, upstreamName: form.name || "-" }
     : null;
+  const modelTestDeleteKey =
+    testConfig && testModel
+      ? protocolConfigModelKey(testConfig, testModel)
+      : null;
+  const modelTestProtocols = modelSupportedProtocols(testModel);
 
   useEffect(() => () => abortController.current?.abort(), []);
-
-  function describeModelTestTarget(target: ModelTestTarget) {
-    const config = form.protocolConfigs[target.protocolConfigIndex];
-    const model = config?.models[target.modelIndex];
-    if (!config || !model) return null;
-    const credentialIndex = form.credentials.findIndex(
-      (item) => item.id === model.credential_id,
-    );
-    const credential = form.credentials[credentialIndex];
-    return {
-      modelName: model.model_name,
-      source: [
-        credential ? credentialLabel(credential, credentialIndex, locale) : "",
-        activeBaseUrlValue(form, config).trim(),
-      ]
-        .filter(Boolean)
-        .join(" · "),
-      protocols: modelSupportedProtocols(model),
-    };
-  }
 
   function buildModelTestPayload(
     target: ModelTestTarget,
@@ -157,7 +148,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       return;
     }
     setModelTestTarget({ protocolConfigIndex: configIndex, modelIndex });
-    setModelTestProtocol(protocols[0]);
+    setModelTestProtocol(selectedModelTestProtocol(protocols, null));
     setModelTestPromptMode(modelTestPrompts.length ? "0" : "custom");
     setModelTestPrompt(modelTestPrompts[0] || "");
     setModelTestResult(null);
@@ -185,16 +176,22 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     setModelTestResult(null);
   }
 
+  function changeModelTestProtocol(protocol: ProtocolKind) {
+    setModelTestProtocol(protocol);
+    setModelTestResult(null);
+  }
+
   function changeModelTestPromptMode(value: string) {
     setModelTestPromptMode(value);
-    if (value !== "custom" && modelTestPrompts[Number(value)]) {
-      setModelTestPrompt(modelTestPrompts[Number(value)]);
-    }
+    if (value !== "custom")
+      setModelTestPrompt(modelTestPrompts[Number(value)] || "");
+    setModelTestResult(null);
   }
 
   function changeModelTestPrompt(value: string) {
     setModelTestPrompt(value);
-    if (modelTestPromptMode !== "custom") setModelTestPromptMode("custom");
+    setModelTestPromptMode("custom");
+    setModelTestResult(null);
   }
 
   async function runModelTest() {
@@ -227,16 +224,8 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
           signal: controller.signal,
         },
       );
+      if (controller.signal.aborted) return;
       setModelTestResult(result);
-      toast[result.success ? "success" : "error"](
-        result.success
-          ? locale === "zh-CN"
-            ? "模型测试成功"
-            : "Model test succeeded"
-          : locale === "zh-CN"
-            ? "模型测试失败"
-            : "Model test failed",
-      );
     } catch (error) {
       if (controller.signal.aborted) return;
       setModelTestResult({
@@ -262,18 +251,20 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
   return {
     changeModelTestPrompt,
     changeModelTestPromptMode,
+    changeModelTestProtocol,
     closeModelTest,
     modelTestOptionByKey,
     buildModelTestPayload,
     modelTestDialogTarget,
+    modelTestDeleteKey,
     modelTestPrompt,
     modelTestPromptMode,
     modelTestPrompts,
     modelTestProtocol,
+    modelTestProtocols,
     modelTestResult,
     openAggregateModelTest,
     runModelTest,
-    setModelTestProtocol,
     testingModel,
   };
 }

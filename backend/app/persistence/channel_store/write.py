@@ -90,6 +90,23 @@ class SiteProtocolConfigUpsertsMixin:
                 session.add(entity)
             entity.site_id = site_id
             entity.base_url_id = protocol_config.base_url_id
+            configured_protocols = list(
+                dict.fromkeys(
+                    [
+                        *protocol_config.protocols,
+                        *(model.protocol for model in protocol_config.models),
+                        *(target.protocol for target in protocol_config.sync_targets),
+                    ]
+                )
+            )
+            entity.protocols_json = json.dumps(
+                [protocol.value for protocol in configured_protocols],
+                ensure_ascii=True,
+            )
+            entity.auto_sync_supported_models = int(
+                protocol_config.auto_sync_supported_models
+            )
+            entity.auto_sync_model_pattern = protocol_config.auto_sync_model_pattern
 
             await self._upsert_protocol_config_models(
                 session,
@@ -216,7 +233,9 @@ class SiteProtocolConfigUpsertsMixin:
             for model in protocol_config.models
             if model.source.value == "synced"
         }
-        if missing_targets := synced_model_keys - seen_targets:
+        if not protocol_config.auto_sync_supported_models and (
+            missing_targets := synced_model_keys - seen_targets
+        ):
             _, model_name, _ = next(iter(missing_targets))
             raise ValueError(
                 "Synced model is missing its sync target in protocol config "

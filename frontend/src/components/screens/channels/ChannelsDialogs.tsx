@@ -150,6 +150,16 @@ export function ChannelsDialogs({
             onOpenChange={setRemoteOpen}
             onLoad={() => picker.discoverRemoteCatalog(0)}
             onImport={(items) => picker.importRemoteModels(items)}
+            autoSyncEnabled={
+              editor.form.protocolConfigs.length > 0 &&
+              editor.form.protocolConfigs.every(
+                (config) => config.auto_sync_supported_models,
+              )
+            }
+            autoSyncPattern={
+              editor.form.protocolConfigs[0]?.auto_sync_model_pattern ?? ""
+            }
+            onAutoSyncChange={editor.updateAutoSync}
           />
         </>
       ) : null}
@@ -196,21 +206,18 @@ export function ChannelsDialogs({
       ) : null}
       {batchTest.batchModelTestOpen ? (
         <BatchModelTestDialog
-          open
           locale={locale}
-          modelTestPrompts={modelTest.modelTestPrompts}
-          batchTestPromptMode={batchTest.batchTestPromptMode}
-          batchTestPrompt={batchTest.batchTestPrompt}
-          batchTestConcurrency={batchTest.batchTestConcurrency}
-          batchTestOptions={batchTest.batchTestOptions}
-          batchTestRows={batchTest.batchTestRows}
-          isBatchModelTestRunning={batchTest.isBatchModelTestRunning}
-          onOpenChange={batchTest.changeBatchModelTestOpen}
+          targetName={editor.form.name}
+          rows={batchTest.batchTestRows}
+          testing={batchTest.isBatchModelTestRunning}
+          prompts={batchTest.prompts}
+          promptMode={batchTest.batchTestPromptMode}
+          prompt={batchTest.batchTestPrompt}
           onPromptModeChange={batchTest.changeBatchTestPromptMode}
           onPromptChange={batchTest.changeBatchTestPrompt}
-          onConcurrencyChange={batchTest.setBatchTestConcurrency}
           onProtocolChange={batchTest.changeBatchTestProtocol}
           onRun={() => void batchTest.runBatchModelTests()}
+          onClose={() => batchTest.changeBatchModelTestOpen(false)}
         />
       ) : null}
       {persistence.deleteTarget ? (
@@ -224,19 +231,30 @@ export function ChannelsDialogs({
       ) : null}
       {modelTest.modelTestDialogTarget ? (
         <ModelTestDialog
-          target={modelTest.modelTestDialogTarget}
           locale={locale}
-          modelTestPrompts={modelTest.modelTestPrompts}
-          modelTestPromptMode={modelTest.modelTestPromptMode}
-          modelTestPrompt={modelTest.modelTestPrompt}
-          modelTestProtocol={modelTest.modelTestProtocol}
-          modelTestResult={modelTest.modelTestResult}
-          testingModel={modelTest.testingModel}
-          onClose={modelTest.closeModelTest}
+          prompts={modelTest.modelTestPrompts}
+          promptMode={modelTest.modelTestPromptMode}
+          prompt={modelTest.modelTestPrompt}
           onPromptModeChange={modelTest.changeModelTestPromptMode}
           onPromptChange={modelTest.changeModelTestPrompt}
-          onProtocolChange={modelTest.setModelTestProtocol}
           onRun={() => void modelTest.runModelTest()}
+          items={[
+            {
+              target: modelTest.modelTestDialogTarget,
+              result: modelTest.modelTestResult,
+              protocol: modelTest.modelTestProtocol,
+              protocols: modelTest.modelTestProtocols,
+              onProtocolChange: modelTest.changeModelTestProtocol,
+              onDelete: modelTest.modelTestDeleteKey
+                ? () => {
+                    if (modelTest.modelTestDeleteKey)
+                      editor.removeAggregateModel(modelTest.modelTestDeleteKey);
+                  }
+                : undefined,
+            },
+          ]}
+          testing={modelTest.testingModel}
+          onClose={modelTest.closeModelTest}
         />
       ) : null}
     </>

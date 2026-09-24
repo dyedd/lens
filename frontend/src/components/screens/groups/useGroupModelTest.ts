@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   type BatchModelTestSource,
   useBatchModelTestSession,
@@ -25,32 +25,9 @@ type TestTarget = {
 export function useGroupModelTest(locale: "zh-CN" | "en-US") {
   const [targetGroup, setTargetGroup] = useState<GroupRow | null>(null);
   const prompts = useModelTestPrompts();
-  const optionByKey = useMemo(() => {
-    const options = new Map<string, BatchModelTestSource<TestTarget>>();
-    if (!targetGroup) return options;
-    for (const item of targetGroup.items) {
-      if (!item.enabled || item.state !== "ready" || !item.protocol) continue;
-      const credentialName = [
-        item.channel_name || item.channel_id,
-        credentialDisplayLabel(item, locale),
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      const key = modelGroupItemKey(item);
-      options.set(key, {
-        key,
-        target: { groupId: targetGroup.id, item, credentialName },
-        modelName: item.model_name,
-        credentialName,
-        protocols: item.protocol === "auto" ? PROTOCOL_LIST : [item.protocol],
-      });
-    }
-    return options;
-  }, [locale, targetGroup]);
-  const modelTest = useBatchModelTestSession({
+  const modelTest = useBatchModelTestSession<TestTarget>({
     locale,
     prompts,
-    optionByKey,
     prepareRequest: (target, protocol, prompt) => {
       const { item } = target;
       if (item.protocol !== "auto" && item.protocol !== protocol) return null;
@@ -72,8 +49,25 @@ export function useGroupModelTest(locale: "zh-CN" | "en-US") {
   });
 
   function openModelTest(group: GroupRow) {
+    const sources: BatchModelTestSource<TestTarget>[] = [];
+    for (const item of group.items) {
+      if (!item.enabled || item.state !== "ready" || !item.protocol) continue;
+      const credentialName = [
+        item.channel_name || item.channel_id,
+        credentialDisplayLabel(item, locale),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      sources.push({
+        key: modelGroupItemKey(item),
+        target: { groupId: group.id, item, credentialName },
+        modelName: item.model_name,
+        credentialName,
+        protocols: item.protocol === "auto" ? PROTOCOL_LIST : [item.protocol],
+      });
+    }
     setTargetGroup(group);
-    modelTest.openBatchModelTestDialog();
+    modelTest.openBatchModelTestDialog(sources);
   }
 
   function changeModelTestOpen(open: boolean) {
@@ -84,7 +78,7 @@ export function useGroupModelTest(locale: "zh-CN" | "en-US") {
   return {
     ...modelTest,
     changeBatchModelTestOpen: changeModelTestOpen,
-    modelTestPrompts: prompts,
+    targetName: targetGroup?.name || "",
     openModelTest,
     testingModel: modelTest.isBatchModelTestRunning,
   };

@@ -69,3 +69,4 @@ class SiteModelTestResult(StrictBaseModel):
     credential_id: str
     output_text: str = ""
     error_message: str = ""
+    debug: dict[str, dict[str, object]] | None = None

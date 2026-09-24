@@ -67,12 +67,17 @@ export type SiteProtocolConfig = {
   base_url_id: string;
   protocols: ProtocolKind[];
   credential_ids: string[];
+  auto_sync_supported_models: boolean;
+  auto_sync_model_pattern: string;
   sync_targets: SiteSyncTarget[];
   models: SiteModel[];
 };
 export type SiteProtocolConfigInput = {
   id?: string | null;
   base_url_id: string;
+  protocols: ProtocolKind[];
+  auto_sync_supported_models: boolean;
+  auto_sync_model_pattern: string;
   sync_targets: SiteSyncTarget[];
   models: SiteModelInput[];
 };
@@ -244,4 +249,16 @@ export type SiteModelTestResult = {
   credential_id: string;
   output_text: string;
   error_message: string;
+  debug?: {
+    request: {
+      method: string;
+      path: string;
+      headers: Record<string, string>;
+      body: unknown;
+    };
+    response: {
+      headers: Record<string, string>;
+      body: string;
+    };
+  } | null;
 };

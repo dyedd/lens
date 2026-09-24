@@ -263,8 +263,8 @@ export function ChannelModelsDialog({
               </DialogTitle>
               <DialogDescription>
                 {locale === "zh-CN"
-                  ? "默认按客户端协议透传，也可指定上游协议进行转换。要从上游目录补模型，请用同步。"
-                  : "Forward the client protocol by default, or select an upstream protocol for conversion. Add models from the upstream catalog with Sync."}
+                  ? "默认按客户端协议透传，也可指定上游协议进行转换。"
+                  : "Forward the client protocol by default, or select an upstream protocol for conversion."}
               </DialogDescription>
             </DialogHeader>
             <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
