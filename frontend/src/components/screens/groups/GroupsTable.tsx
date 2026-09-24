@@ -1,4 +1,4 @@
-import { MoreHorizontal, Pencil, TestTube2, Trash2, Zap } from "lucide-react";
+import { MoreHorizontal, Settings2, TestTube2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -248,7 +248,7 @@ export function GroupsTable({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onSelect={() => onEdit(group)}>
-                        <Pencil className="size-3.5 stroke-1" />
+                        <Settings2 className="size-3.5 stroke-1" />
                         {locale === "zh-CN" ? "编辑模型组" : "Edit group"}
                       </DropdownMenuItem>
                       <DropdownMenuItem
@@ -258,22 +258,6 @@ export function GroupsTable({
                         <TestTube2 className="size-3.5 stroke-1" />
                         {locale === "zh-CN" ? "测试模型" : "Test models"}
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      {group.is_route_group ? null : (
-                        <DropdownMenuItem
-                          disabled={busy || !canToggle}
-                          onSelect={() => void onToggleEnabled(group, !enabled)}
-                        >
-                          <Zap className="size-3.5 stroke-1" />
-                          {enabled
-                            ? locale === "zh-CN"
-                              ? "停用模型组"
-                              : "Disable group"
-                            : locale === "zh-CN"
-                              ? "启用模型组"
-                              : "Enable group"}
-                        </DropdownMenuItem>
-                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => onDelete(group)}>
                         <Trash2 className="size-3.5 stroke-1" />
