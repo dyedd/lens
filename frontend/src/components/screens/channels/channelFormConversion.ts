@@ -20,6 +20,7 @@ import {
   createLocalId,
   emptyProtocolConfig,
   fallbackCredentialName,
+  isPendingCredentialId,
   protocolConfigEffectiveProtocols,
 } from "./channelModels";
 import type {
@@ -142,13 +143,22 @@ export function toForm(site: Site): FormState {
         },
       ];
   const primaryId = baseUrls[0]?.id ?? "";
+  const credentialIdMap = new Map(
+    site.credentials.map((item) => [
+      item.id,
+      isPendingCredentialId(item.id)
+        ? item.id.slice("pending-".length)
+        : item.id,
+    ]),
+  );
+  const persistedCredentialId = (id: string) => credentialIdMap.get(id) ?? id;
   for (const url of baseUrls.slice(1)) {
     url.shareKeys = !site.credentials.some(
       (item) => item.base_url_id === url.id,
     );
   }
   const credentials: FormCredential[] = site.credentials.map((item) => ({
-    id: item.id,
+    id: persistedCredentialId(item.id),
     name: isGeneratedCredentialName(item.name) ? "" : item.name,
     api_key: item.api_key,
     rate_source: item.rate_source,
@@ -168,14 +178,14 @@ export function toForm(site: Site): FormState {
       protocolConfig.models.map((model) => ({
         protocols: model.protocol ? [model.protocol] : [],
         protocolIds: model.protocol ? { [model.protocol]: model.id } : {},
-        credential_id: model.credential_id,
+        credential_id: persistedCredentialId(model.credential_id),
         model_name: model.model_name,
         enabled: model.enabled,
         source: model.source,
       })),
     );
     const credentialIds = canonicalizeCredentialIds(
-      protocolConfig.credential_ids,
+      protocolConfig.credential_ids.map(persistedCredentialId),
     );
     return {
       id: protocolConfig.id,
@@ -184,7 +194,10 @@ export function toForm(site: Site): FormState {
       protocols: protocolConfig.protocols,
       auto_sync_supported_models: protocolConfig.auto_sync_supported_models,
       auto_sync_model_pattern: protocolConfig.auto_sync_model_pattern,
-      sync_targets: protocolConfig.sync_targets,
+      sync_targets: protocolConfig.sync_targets.map((target) => ({
+        ...target,
+        credential_id: persistedCredentialId(target.credential_id),
+      })),
       models,
     };
   });
