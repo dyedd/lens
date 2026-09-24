@@ -54,9 +54,11 @@ def load_param_rules(raw: str | None) -> list[ParamOverrideRule]:
 
 
 def protocols_from_bindings(
-    models: list[SiteModel], sync_targets: list[SiteSyncTarget]
+    models: list[SiteModel],
+    sync_targets: list[SiteSyncTarget],
+    configured_protocols: list[ProtocolKind] | None = None,
 ) -> list[ProtocolKind]:
-    protocols: list[ProtocolKind] = []
+    protocols: list[ProtocolKind] = list(configured_protocols or [])
     for model in models:
         if model.protocol is not None and model.protocol not in protocols:
             protocols.append(model.protocol)
@@ -168,11 +170,21 @@ class ChannelRowMappingMixin:
         for row in rows:
             models = models_by_protocol_config.get(row.id, [])
             sync_targets = sync_targets_by_protocol_config.get(row.id, [])
+            try:
+                configured_protocols = [
+                    ProtocolKind(value) for value in json.loads(row.protocols_json)
+                ]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                configured_protocols = []
             result[row.site_id].append(
                 SiteProtocolConfig(
                     id=row.id,
                     base_url_id=row.base_url_id,
-                    protocols=protocols_from_bindings(models, sync_targets),
+                    auto_sync_supported_models=bool(row.auto_sync_supported_models),
+                    auto_sync_model_pattern=row.auto_sync_model_pattern,
+                    protocols=protocols_from_bindings(
+                        models, sync_targets, configured_protocols
+                    ),
                     credential_ids=credential_ids_for_url(
                         credential_pairs(credentials_by_site.get(row.site_id, [])),
                         row.base_url_id,

@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from time import perf_counter
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import HTTPException, Request
@@ -22,7 +23,7 @@ from ...upstream_request import (
     resolve_upstream_proxy_url,
 )
 from ..app_state import app_state
-from ..payload_serialization import decode_content_bytes
+from ..payload_serialization import decode_content_bytes, decode_log_content_bytes
 from ..routing_plan import elapsed_ms, gateway_timeout_scope
 from ..runtime_types import GatewayTimeoutError, RequestDeadline
 from ..upstream_support import (
@@ -36,6 +37,40 @@ from .site_model_output import (
     extract_site_model_output,
     extract_site_model_stream_output,
 )
+
+
+def _probe_debug(
+    upstream: UpstreamRequest, response: httpx.Response | None = None
+) -> dict[str, dict[str, object]]:
+    path = urlsplit(upstream.url).path
+    request_headers = {
+        key: value
+        for key, value in upstream.headers.items()
+        if key.lower() in {"content-type", "accept", "anthropic-version"}
+    }
+    response_headers = (
+        {
+            key: value
+            for key, value in response.headers.items()
+            if key.lower() in {"content-type", "request-id", "x-request-id"}
+        }
+        if response is not None
+        else {}
+    )
+    return {
+        "request": {
+            "method": upstream.method,
+            "path": path,
+            "headers": request_headers,
+            "body": upstream.json_body,
+        },
+        "response": {
+            "headers": response_headers,
+            "body": (decode_log_content_bytes(response.content) or "")[:32768]
+            if response is not None
+            else "",
+        },
+    }
 
 
 def _site_model_probe_channel(payload: SiteModelTestRequest) -> ChannelConfig:
@@ -187,6 +222,7 @@ async def _call_site_model_probe_channel(
             model_name=model_name,
             credential_id=credential_id,
             error_message=str(exc),
+            debug=_probe_debug(upstream),
         )
 
 
@@ -218,6 +254,7 @@ async def _run_site_model_probe_request(
                 model_name=model_name,
                 credential_id=credential_id,
                 error_message=format_http_response_error(exc.response),
+                debug=_probe_debug(upstream, exc.response),
             )
         content_type = (response.headers.get("content-type") or "").lower()
         if "text/event-stream" in content_type:
@@ -237,6 +274,7 @@ async def _run_site_model_probe_request(
             model_name=model_name,
             credential_id=credential_id,
             output_text=output_text,
+            debug=_probe_debug(upstream, response),
         )
     except httpx.HTTPError as exc:
         return SiteModelTestResult(
@@ -246,6 +284,7 @@ async def _run_site_model_probe_request(
             model_name=model_name,
             credential_id=credential_id,
             error_message=format_transport_error(exc, upstream.url),
+            debug=_probe_debug(upstream),
         )
     except ValueError as exc:
         return SiteModelTestResult(
@@ -255,6 +294,7 @@ async def _run_site_model_probe_request(
             model_name=model_name,
             credential_id=credential_id,
             error_message=f"Invalid upstream response: {exc}",
+            debug=_probe_debug(upstream, response),
         )
 
 

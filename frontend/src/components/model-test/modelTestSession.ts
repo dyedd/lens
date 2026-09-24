@@ -10,18 +10,18 @@ import {
 
 export type ModelTestDialogTarget = {
   modelName: string;
-  source: string;
-  protocols: ProtocolKind[];
+  upstreamName: string;
 };
 
-/** Selects a valid test protocol with a deterministic fallback. */
 export function selectedModelTestProtocol(
   protocols: ProtocolKind[],
   selectedProtocol: ProtocolKind | null,
 ) {
   return selectedProtocol && protocols.includes(selectedProtocol)
     ? selectedProtocol
-    : (protocols[0] ?? null);
+    : protocols.length === 1
+      ? protocols[0]
+      : null;
 }
 
 /** Loads the configured model-test prompts with defaults applied. */
@@ -32,9 +32,8 @@ export function useModelTestPrompts() {
     staleTime: 5 * 60_000,
   });
   return useMemo(() => {
-    const mapping = new Map(
-      (settings ?? []).map((item) => [item.key, item.value]),
-    );
+    if (!settings) return [];
+    const mapping = new Map(settings.map((item) => [item.key, item.value]));
     return parseModelTestPrompts(mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY));
   }, [settings]);
 }

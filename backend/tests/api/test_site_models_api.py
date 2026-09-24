@@ -157,6 +157,75 @@ def test_test_site_model_returns_probe_result(
     assert response.json()["output_text"] == "pong"
 
 
+def test_test_site_model_returns_sanitized_probe_debug(
+    client, admin_headers, app_state, monkeypatch
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer upstream-secret"
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json", "x-request-id": "probe-1"},
+            json={"choices": [{"message": {"content": "pong"}}]},
+            request=request,
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    import app.gateway.service.tasks.site_model_probe as probe
+
+    monkeypatch.setattr(probe, "app_state", app_state)
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream_client)
+    try:
+        response = client.post(
+            "/api/admin/site-model-tests",
+            headers=admin_headers,
+            json=_model_test_payload(ProtocolKind.OPENAI_CHAT),
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["success"] is True
+    assert result["debug"]["request"]["path"] == "/v1/chat/completions"
+    assert result["debug"]["request"]["body"]["messages"] == [
+        {"role": "user", "content": "ping"}
+    ]
+    assert result["debug"]["response"]["headers"]["x-request-id"] == "probe-1"
+    assert "upstream-secret" not in response.text
+
+
+def test_test_gemini_probe_debug_hides_query_key(
+    client, admin_headers, app_state, monkeypatch
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["key"] == "upstream-secret"
+        return httpx.Response(
+            200,
+            json={"candidates": [{"content": {"parts": [{"text": "OK"}]}}]},
+            request=request,
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    import app.gateway.service.tasks.site_model_probe as probe
+
+    monkeypatch.setattr(probe, "app_state", app_state)
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream_client)
+    try:
+        response = client.post(
+            "/api/admin/site-model-tests",
+            headers=admin_headers,
+            json=_model_test_payload(ProtocolKind.GEMINI),
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert response.status_code == 200
+    assert response.json()["debug"]["request"]["path"] == (
+        "/v1beta/models/test-model:generateContent"
+    )
+    assert "upstream-secret" not in response.text
+
+
 def test_test_site_model_returns_timeout_result(
     client,
     admin_headers,
@@ -191,6 +260,7 @@ def test_test_site_model_returns_timeout_result(
     assert response.json()["success"] is False
     assert response.json()["status_code"] == 504
     assert "timed out after 0.01s" in response.json()["error_message"]
+    assert response.json()["debug"]["request"]["path"] == "/v1/chat/completions"
 
 
 @pytest.mark.parametrize(
@@ -392,6 +462,117 @@ def test_channel_model_sync_preserves_manual_models_and_syncs_each_credential(
         ("cred-a", "manual-only", "manual"),
         ("cred-a", "gpt-cred-a", "synced"),
         ("cred-b", "gpt-cred-b", "synced"),
+    }
+
+
+def test_auto_channel_model_sync_replaces_catalog_and_updates_matching_groups(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    payload = _auto_sync_site_payload(seed_synced=True)
+    payload["protocols"][0]["auto_sync_supported_models"] = True
+    payload["protocols"][0]["auto_sync_model_pattern"] = "^gpt-"
+    payload["protocols"][0]["sync_targets"] = []
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-b",
+            "model_name": "gpt-cred-b",
+            "enabled": True,
+            "protocol": "openai_chat",
+            "source": "synced",
+        }
+    )
+    create_response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=payload,
+    )
+    assert create_response.status_code == 201, create_response.text
+    group_response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={
+            "name": "automatic gpt models",
+            "sync_filter_mode": "contains",
+            "sync_filter_query": "gpt-",
+        },
+    )
+    assert group_response.status_code == 201, group_response.text
+
+    async def fake_fetch(_channel: Any) -> list[str]:
+        return ["gpt-new", "claude-3-opus"]
+
+    import app.gateway.service.tasks.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]["models"]
+    assert {
+        (model["credential_id"], model["model_name"], model["source"])
+        for model in stored_models
+    } == {
+        ("cred-a", "manual-only", "manual"),
+        ("cred-a", "gpt-new", "synced"),
+        ("cred-b", "gpt-new", "synced"),
+    }
+    group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
+    assert {(item["credential_id"], item["model_name"]) for item in group["items"]} == {
+        ("cred-a", "gpt-new"),
+        ("cred-b", "gpt-new"),
+    }
+
+
+def test_auto_channel_model_sync_repopulates_empty_model_list(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    payload = _auto_sync_site_payload()
+    payload["protocols"][0].update(
+        {
+            "protocols": ["openai_chat"],
+            "auto_sync_supported_models": True,
+            "sync_targets": [],
+            "models": [],
+        }
+    )
+    create_response = client.post(
+        "/api/admin/sites",
+        headers=admin_headers,
+        json=payload,
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    async def fake_fetch(_channel: Any) -> list[str]:
+        return ["gpt-4o"]
+
+    import app.gateway.service.tasks.model_sync as model_sync
+
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fake_fetch)
+    response = client.post(
+        "/api/admin/channel-model-sync",
+        headers=admin_headers,
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200, response.text
+    stored_models = client.get("/api/admin/sites", headers=admin_headers).json()[0][
+        "protocols"
+    ][0]["models"]
+    assert {
+        (model["credential_id"], model["model_name"]) for model in stored_models
+    } == {
+        ("cred-a", "gpt-4o"),
+        ("cred-b", "gpt-4o"),
     }
 
 
