@@ -1,6 +1,6 @@
 # Lens 代码风格
 
-适用于后端、前端和脚本。按修改范围读取对应语言章节；通用、命名与模块边界适用于所有代码。格式和自动检查以 `backend/pyproject.toml`、`frontend/biome.json` 为准，执行命令见 [项目协作指南](CLAUDE.md)。
+适用于后端、前端和脚本。按修改范围读取对应语言章节；通用、命名与模块边界适用于所有代码。格式和自动检查以 `backend/pyproject.toml`、`frontend/biome.json` 为准，执行命令见 [项目协作指南](AGENTS.md)。
 
 ## 通用
 
