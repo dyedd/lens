@@ -94,11 +94,22 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
     for row in rows.protocol_configs:
         models = models_by_protocol_config.get(row.id, [])
         sync_targets = sync_targets_by_protocol_config.get(row.id, [])
+        try:
+            configured_protocols = [
+                value
+                for value in json.loads(row.protocols_json)
+                if value in valid_protocol_values
+            ]
+        except (TypeError, ValueError, json.JSONDecodeError):
+            configured_protocols = []
         protocol_configs_by_site.setdefault(row.site_id, []).append(
             {
                 "id": row.id,
                 "base_url_id": row.base_url_id,
-                "protocols": [
+                "auto_sync_supported_models": bool(row.auto_sync_supported_models),
+                "auto_sync_model_pattern": row.auto_sync_model_pattern,
+                "protocols": configured_protocols
+                or [
                     model["protocol"]
                     for model in models
                     if model["protocol"] in valid_protocol_values
@@ -267,6 +278,14 @@ async def replace_sites(
                     id=protocol_config.id,
                     site_id=site.id,
                     base_url_id=protocol_config.base_url_id,
+                    protocols_json=json.dumps(
+                        [protocol.value for protocol in protocol_config.protocols],
+                        ensure_ascii=True,
+                    ),
+                    auto_sync_supported_models=int(
+                        protocol_config.auto_sync_supported_models
+                    ),
+                    auto_sync_model_pattern=protocol_config.auto_sync_model_pattern,
                 )
             )
 
@@ -321,7 +340,9 @@ async def replace_sites(
                     model.model_name,
                     model.protocol,
                 )
-                if (model.source == ModelSource.SYNCED) != (target_key in target_keys):
+                if not protocol_config.auto_sync_supported_models and (
+                    model.source == ModelSource.SYNCED
+                ) != (target_key in target_keys):
                     raise ValueError(
                         "Model source does not match sync targets in backup "
                         f"protocol config {protocol_config.id}: {model.model_name}"

@@ -361,6 +361,35 @@ export function useChannelForm(locale: Locale) {
       })),
     }));
   }
+
+  function updateAutoSync(enabled: boolean, pattern?: string) {
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map((config) => {
+        if (enabled) {
+          return {
+            ...config,
+            auto_sync_supported_models: true,
+            auto_sync_model_pattern: pattern ?? config.auto_sync_model_pattern,
+          };
+        }
+        const targets = new Map(
+          config.sync_targets.map((target) => [syncTargetKey(target), target]),
+        );
+        for (const model of config.models) {
+          if (model.source !== "synced") continue;
+          for (const target of syncTargetsForModel(model)) {
+            targets.set(syncTargetKey(target), target);
+          }
+        }
+        return {
+          ...config,
+          auto_sync_supported_models: false,
+          sync_targets: [...targets.values()],
+        };
+      }),
+    }));
+  }
   function addBinding(modelName: string, protocols: ProtocolKind[]) {
     const name = modelName.trim();
     if (!name || !protocols.length) return false;
@@ -406,6 +435,7 @@ export function useChannelForm(locale: Locale) {
     updateModelProtocols,
     removeAggregateModel,
     toggleAggregateEnabled,
+    updateAutoSync,
     addBinding,
     addBaseUrl,
     updateBaseUrl,

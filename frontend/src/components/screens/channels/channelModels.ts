@@ -315,6 +315,9 @@ export const emptyProtocolConfig = (
   id: createLocalId("protocol"),
   base_url_id: baseUrlId,
   credential_ids: [...credentialIds],
+  protocols: [],
+  auto_sync_supported_models: false,
+  auto_sync_model_pattern: "",
   sync_targets: [],
   models: [],
 });
