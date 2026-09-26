@@ -36,6 +36,7 @@ from ....persistence.editable_settings import canonicalize_editable_settings
 from ....persistence.settings_keys import SETTING_TIME_ZONE
 from ..app_state import app_state, read_system_version
 from ..auth import get_current_admin
+from ..tasks.model_group_placement import run_model_group_placement
 from ..tasks.model_price_tasks import ModelPriceSyncError, sync_group_prices
 
 # --- backups ---
@@ -89,6 +90,7 @@ async def import_settings_bundle(
     result = await app_state.backup_store.import_dump(dump)
 
     app_state.settings_repo.invalidate_settings_cache()
+    await run_model_group_placement(app_state)
     return result
 
 

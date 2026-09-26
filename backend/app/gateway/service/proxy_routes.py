@@ -197,7 +197,7 @@ async def list_gateway_models(
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
     """List model groups visible to the gateway key in the requested API format."""
-    groups = await app_state.group_repo.list_routable_groups()
+    groups = await app_state.group_repo.list_groups()
     return build_openai_models_payload(groups, gateway_key, ALL_MODEL_LIST_PROTOCOLS)
 
 
@@ -205,7 +205,7 @@ async def list_gemini_models(
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> dict[str, Any]:
     """List Gemini-compatible model groups visible to the gateway key."""
-    groups = await app_state.group_repo.list_routable_groups()
+    groups = await app_state.group_repo.list_groups()
     return build_gemini_models_payload(groups, gateway_key)
 
 

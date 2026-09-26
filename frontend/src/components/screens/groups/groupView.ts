@@ -5,7 +5,25 @@ import {
   paramOverrideDraftToRules,
   paramOverrideRulesToDraft,
 } from "@/lib/upstreamRules";
-import type { FormItem, FormState } from "./groupTypes";
+import type {
+  CandidateChannelGroup,
+  ChannelMemberGroup,
+  EvaluatedFormItem,
+  FoldedMember,
+  FormItem,
+  FormState,
+  GroupRow,
+  SimilarGroupView,
+} from "./groupTypes";
+import {
+  buildGroupDisplayMembers,
+  buildModelMatchKey,
+  compileMatchRegex,
+  matchesGroupRules,
+  modelFoldKey,
+  modelGroupChannelKey,
+  modelGroupItemKey,
+} from "./modelGroupFormatting";
 
 /** Convert candidate payload items into editable model group members. */
 export function candidatePayloadToFormItems(
@@ -21,14 +39,55 @@ export function candidatePayloadToFormItems(
     credential_id: payloadItem.credential_id,
     credential_name: candidate.credential_name,
     credential_number: candidate.credential_number,
+    credential_mask: candidate.credential_mask,
+    base_url: candidate.base_url,
     rate_multiplier: candidate.rate_multiplier,
     rate_source: candidate.rate_source,
     model_name: payloadItem.model_name,
     enabled: true,
     matched_by_rule: matchedByRule,
-    state: null,
+    // Candidates are READY by construction; rule members skip evaluation.
+    state: matchedByRule ? "ready" : null,
     reasons: [],
   }));
+}
+
+/**
+ * Replace enabled rule members with the candidates the match rules select.
+ *
+ * Saved members and excluded (disabled) rule members stay in place. Returns
+ * the same form when the rule member set is unchanged.
+ */
+export function applyMatchRulesToForm(
+  form: FormState,
+  candidates: ModelGroupCandidateItem[],
+): FormState {
+  const savedItems = form.items.filter(
+    (item) => !item.matched_by_rule || !item.enabled,
+  );
+  const savedKeys = new Set(savedItems.map((item) => modelGroupItemKey(item)));
+  const regex = compileMatchRegex(form.match_regex);
+  const ruleItems = form.route_group_id
+    ? []
+    : candidates
+        .filter((candidate) =>
+          matchesGroupRules(candidate.model_name, form.match_models, regex),
+        )
+        .flatMap((candidate) => candidatePayloadToFormItems(candidate, true))
+        .filter((item) => !savedKeys.has(modelGroupItemKey(item)));
+  const currentRuleKeys = form.items
+    .filter((item) => item.matched_by_rule && item.enabled)
+    .map((item) => modelGroupItemKey(item));
+  const nextRuleKeys = new Set(
+    ruleItems.map((item) => modelGroupItemKey(item)),
+  );
+  if (
+    currentRuleKeys.length === nextRuleKeys.size &&
+    currentRuleKeys.every((key) => nextRuleKeys.has(key))
+  ) {
+    return form;
+  }
+  return { ...form, items: [...savedItems, ...ruleItems] };
 }
 
 /** Convert a persisted model group into editor form state. */
@@ -37,17 +96,11 @@ export function modelGroupToForm(group: ModelGroup): FormState {
     name: group.name,
     strategy: group.strategy,
     route_group_id: group.route_group_id ?? "",
-    sync_filter_mode: group.sync_filter_mode,
-    sync_filter_query: group.sync_filter_query,
+    match_models: group.match_models,
+    match_regex: group.match_regex,
     param_override: paramOverrideRulesToDraft(group.param_override),
     headers: headerRulesToDraft(group.headers),
     fallback_group_ids: group.fallback_group_ids ?? [],
-    input_price_per_million: String(group.input_price_per_million),
-    output_price_per_million: String(group.output_price_per_million),
-    cache_read_price_per_million: String(group.cache_read_price_per_million),
-    cache_write_price_per_million: String(group.cache_write_price_per_million),
-    image_price_per_image: String(group.image_price_per_image),
-    pricing_mode: group.pricing_mode,
     items: group.items
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -60,6 +113,8 @@ export function modelGroupToForm(group: ModelGroup): FormState {
         credential_id: item.credential_id,
         credential_name: item.credential_name,
         credential_number: item.credential_number,
+        credential_mask: item.credential_mask,
+        base_url: item.base_url,
         rate_multiplier: item.rate_multiplier,
         rate_source: item.rate_source,
         model_name: item.model_name,
@@ -71,56 +126,81 @@ export function modelGroupToForm(group: ModelGroup): FormState {
   };
 }
 
+/** Return the form items the backend persists; live rule members are derived. */
+export function listSavedFormItems(items: FormItem[]) {
+  // Enabled rule members follow the live rules; a disabled one is saved so
+  // the rules stop routing to it.
+  return items.filter((item) => !item.matched_by_rule || !item.enabled);
+}
+
 /** Convert editor form state into a model-group API payload. */
 export function formToModelGroupPayload(form: FormState) {
+  const routeGroupId = form.route_group_id.trim();
   return {
     name: form.name.trim(),
     strategy: form.strategy,
-    route_group_id: form.route_group_id.trim(),
-    sync_filter_mode:
-      form.route_group_id.trim() || !form.sync_filter_query.trim()
-        ? ""
-        : form.sync_filter_mode,
-    sync_filter_query: form.route_group_id.trim()
-      ? ""
-      : form.sync_filter_query.trim(),
+    route_group_id: routeGroupId,
+    match_models: routeGroupId
+      ? []
+      : [
+          ...new Set(
+            form.match_models.map((name) => name.trim()).filter(Boolean),
+          ),
+        ],
+    match_regex: routeGroupId ? "" : form.match_regex.trim(),
     param_override: paramOverrideDraftToRules(form.param_override),
     headers: headerDraftToRules(form.headers),
     fallback_group_ids: form.fallback_group_ids,
-    // Enabled rule members follow the live rule; a disabled one is saved so
-    // the rule stops routing to it.
-    items: form.items
-      .filter((item) => !item.matched_by_rule || !item.enabled)
-      .map((item) => ({
-        channel_id: item.channel_id,
-        credential_id: item.credential_id,
-        model_name: item.model_name,
-        enabled: item.enabled,
-      })),
+    items: listSavedFormItems(form.items).map((item) => ({
+      channel_id: item.channel_id,
+      credential_id: item.credential_id,
+      model_name: item.model_name,
+      enabled: item.enabled,
+    })),
   };
 }
 
-import type {
-  CandidateChannelGroup,
-  ChannelMemberGroup,
-  EvaluatedFormItem,
-  FoldedMember,
-  GroupRow,
-} from "./groupTypes";
-import {
-  buildGroupDisplayChannels,
-  buildGroupDisplayMembers,
-  modelFoldKey,
-  modelGroupChannelKey,
-  modelGroupItemKey,
-} from "./modelGroupFormatting";
+function buildSimilarGroupsById(groups: ModelGroup[]) {
+  const groupIdsByKey = new Map<string, Set<string>>();
+  const keysByGroupId = new Map<string, Set<string>>();
+  for (const group of groups) {
+    if (group.route_group_id?.trim()) continue;
+    const keys = new Set(
+      [group.name, ...group.match_models].map(buildModelMatchKey),
+    );
+    keys.delete("");
+    keysByGroupId.set(group.id, keys);
+    for (const key of keys) {
+      const ids = groupIdsByKey.get(key) ?? new Set<string>();
+      ids.add(group.id);
+      groupIdsByKey.set(key, ids);
+    }
+  }
+  const namesById = new Map(groups.map((group) => [group.id, group.name]));
+  const similarById = new Map<string, SimilarGroupView[]>();
+  for (const [groupId, keys] of keysByGroupId) {
+    const similarIds = new Set<string>();
+    for (const key of keys) {
+      for (const id of groupIdsByKey.get(key) ?? []) {
+        if (id !== groupId) similarIds.add(id);
+      }
+    }
+    similarById.set(
+      groupId,
+      [...similarIds].map((id) => ({ id, name: namesById.get(id) ?? id })),
+    );
+  }
+  return similarById;
+}
 
-function buildExecutionRow(group: ModelGroup): GroupRow {
+function buildExecutionRow(
+  group: ModelGroup,
+  similarGroups: SimilarGroupView[],
+): GroupRow {
   const items = group.items
     .slice()
     .sort((left, right) => left.sort_order - right.sort_order);
   const displayMembers = buildGroupDisplayMembers(items);
-  const displayChannels = buildGroupDisplayChannels(displayMembers);
   const channelNames = [
     ...new Set(
       items.map((item) => item.channel_name || item.channel_id).filter(Boolean),
@@ -137,21 +217,27 @@ function buildExecutionRow(group: ModelGroup): GroupRow {
       (member) =>
         member.invalid_item_count > 0 || member.unavailable_item_count > 0,
     ).length,
-    channel_summary: channelNames.slice(0, 2).join(" · "),
+    site_count: new Set(
+      items.map((item) => modelGroupChannelKey(item.site_id, item.channel_id)),
+    ).size,
+    credential_count: new Set(items.map((item) => item.credential_id)).size,
     channel_names: channelNames,
     display_members: displayMembers,
-    display_channels: displayChannels,
+    similar_groups: similarGroups,
     is_route_group: false,
   };
 }
 
 /** Derive display rows for execution groups and route groups. */
-export function buildGroupRows(groups: ModelGroup[]) {
+export function buildGroupRows(groups: ModelGroup[]): GroupRow[] {
+  const similarById = buildSimilarGroupsById(groups);
   const executionRowsById = new Map<string, GroupRow>();
   for (const group of groups) {
     if (!group.route_group_id?.trim()) {
-      const row = buildExecutionRow(group);
-      executionRowsById.set(group.id, row);
+      executionRowsById.set(
+        group.id,
+        buildExecutionRow(group, similarById.get(group.id) ?? []),
+      );
     }
   }
   return groups.map((group) => {
@@ -161,17 +247,17 @@ export function buildGroupRows(groups: ModelGroup[]) {
       .slice()
       .sort((left, right) => left.sort_order - right.sort_order);
     const targetRow = executionRowsById.get(routeGroupId);
-    const channelNames = [group.route_group_name || routeGroupId || ""];
     return {
       ...group,
       items,
       member_count: 1,
       enabled_member_count: targetRow?.enabled_member_count ?? 0,
       problem_member_count: targetRow?.problem_member_count ?? 1,
-      channel_summary: channelNames.slice(0, 2).join(" · "),
-      channel_names: channelNames,
+      site_count: 0,
+      credential_count: 0,
+      channel_names: [group.route_group_name || routeGroupId],
       display_members: [],
-      display_channels: [],
+      similar_groups: [],
       is_route_group: true,
     };
   });
@@ -215,36 +301,31 @@ export function foldGroupMembers(
   for (const item of formItems) {
     const evaluation = evaluatedItemsByKey.get(modelGroupItemKey(item));
     const evaluationMatchesForm = evaluation?.enabled === item.enabled;
-    const evaluatedItem: EvaluatedFormItem = {
-      ...item,
-      site_id: evaluation ? evaluation.site_id : item.site_id,
-      protocol_config_id: evaluation
-        ? evaluation.protocol_config_id
-        : item.protocol_config_id,
-      channel_name: evaluation ? evaluation.channel_name : item.channel_name,
-      protocol: evaluation ? evaluation.protocol : item.protocol,
-      credential_name: evaluation
-        ? evaluation.credential_name
-        : item.credential_name,
-      credential_number: evaluation
-        ? evaluation.credential_number
-        : item.credential_number,
-      rate_multiplier: evaluation
-        ? evaluation.rate_multiplier
-        : item.rate_multiplier,
-      rate_source: evaluation ? evaluation.rate_source : item.rate_source,
-      state:
-        evaluation && evaluationMatchesForm ? evaluation.state : item.state,
-      reasons:
-        evaluation && evaluationMatchesForm ? evaluation.reasons : item.reasons,
-    };
+    const evaluatedItem: EvaluatedFormItem = evaluation
+      ? {
+          ...item,
+          site_id: evaluation.site_id,
+          protocol_config_id: evaluation.protocol_config_id,
+          channel_name: evaluation.channel_name,
+          protocol: evaluation.protocol,
+          credential_name: evaluation.credential_name,
+          credential_number: evaluation.credential_number,
+          credential_mask: evaluation.credential_mask,
+          base_url: evaluation.base_url,
+          rate_multiplier: evaluation.rate_multiplier,
+          rate_source: evaluation.rate_source,
+          state: evaluationMatchesForm ? evaluation.state : item.state,
+          reasons: evaluationMatchesForm ? evaluation.reasons : item.reasons,
+        }
+      : item;
     const key = modelFoldKey(
       evaluatedItem.protocol_config_id,
       evaluatedItem.credential_id,
       evaluatedItem.model_name,
     );
-    if (!membersByKey.has(key)) {
-      membersByKey.set(key, {
+    let member = membersByKey.get(key);
+    if (!member) {
+      member = {
         key,
         protocolConfigId: evaluatedItem.protocol_config_id,
         siteId: evaluatedItem.site_id,
@@ -254,6 +335,8 @@ export function foldGroupMembers(
         credential_id: evaluatedItem.credential_id,
         credential_name: evaluatedItem.credential_name,
         credential_number: evaluatedItem.credential_number,
+        credential_mask: evaluatedItem.credential_mask,
+        base_url: evaluatedItem.base_url,
         rate_multiplier: evaluatedItem.rate_multiplier,
         rate_source: evaluatedItem.rate_source,
         protocols: [],
@@ -265,18 +348,16 @@ export function foldGroupMembers(
         invalid_item_count: 0,
         unavailable_item_count: 0,
         pending_item_count: 0,
-      });
+      };
+      membersByKey.set(key, member);
     }
-    const member = membersByKey.get(key)!;
     member.subItems.push(evaluatedItem);
     member.is_rule_member &&= evaluatedItem.matched_by_rule;
     if (evaluatedItem.enabled) member.enabled_item_count += 1;
     else member.disabled_item_count += 1;
     if (evaluatedItem.state === null) member.pending_item_count += 1;
     if (evaluatedItem.state === "ready") member.ready_item_count += 1;
-    if (evaluatedItem.state === "invalid") {
-      member.invalid_item_count += 1;
-    }
+    if (evaluatedItem.state === "invalid") member.invalid_item_count += 1;
     if (evaluatedItem.state === "unavailable") {
       member.unavailable_item_count += 1;
     }
@@ -313,8 +394,7 @@ export function groupFoldedMembersByChannel(
     group.members.push(entry);
   }
 
-  const groups = Array.from(groupsByKey.values());
-  return groups.map((group, index) => ({
+  return Array.from(groupsByKey.values()).map((group, index) => ({
     ...group,
     priority: index + 1,
   }));

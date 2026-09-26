@@ -3,7 +3,6 @@ import type {
   ModelGroupCandidateItem,
   ModelGroupItemReason,
   ModelGroupItemState,
-  ModelGroupSyncFilterMode,
   RoutingStrategy,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
@@ -21,11 +20,13 @@ export type FormItem = {
   credential_id: string;
   credential_name: string;
   credential_number: number;
+  credential_mask: string;
+  base_url: string;
   rate_multiplier: number | null;
   rate_source: "none" | "sub2api" | "newapi";
   model_name: string;
   enabled: boolean;
-  /** Joined through the group's live rule rather than saved explicitly. */
+  /** Joined through the group's live match rules rather than saved explicitly. */
   matched_by_rule: boolean;
   state: ModelGroupItemState | null;
   reasons: ModelGroupItemReason[];
@@ -37,17 +38,11 @@ export type FormState = {
   name: string;
   strategy: RoutingStrategy;
   route_group_id: string;
-  sync_filter_mode: ModelGroupSyncFilterMode;
-  sync_filter_query: string;
+  match_models: string[];
+  match_regex: string;
   param_override: ParamOverrideRuleDraft[];
   headers: HeaderRuleDraft[];
   fallback_group_ids: string[];
-  input_price_per_million: string;
-  output_price_per_million: string;
-  cache_read_price_per_million: string;
-  cache_write_price_per_million: string;
-  image_price_per_image: string;
-  pricing_mode: "free" | "tokens" | "non_tokens";
   items: FormItem[];
 };
 
@@ -68,6 +63,8 @@ export type FoldedMember = {
   credential_id: string;
   credential_name: string;
   credential_number: number;
+  credential_mask: string;
+  base_url: string;
   rate_multiplier: number | null;
   rate_source: "none" | "sub2api" | "newapi";
   protocols: ProtocolKind[];
@@ -89,19 +86,15 @@ export type ChannelMemberGroup = {
   members: Array<{ member: FoldedMember; index: number }>;
 };
 
-export type GroupDisplayChannel = {
-  key: string;
-  channel_id: string;
-  channel_name: string;
-  members: GroupDisplayMember[];
-};
-
 export type GroupDisplayMember = {
   key: string;
   model_name: string;
+  channel_name: string;
   credential_name: string;
   credential_number: number;
-  channel_names: string[];
+  credential_mask: string;
+  base_url: string;
+  matched_by_rule: boolean;
   protocols: ProtocolKind[];
   items: ModelGroup["items"];
   enabled_item_count: number;
@@ -116,17 +109,20 @@ export type GroupSort =
   | "enabled-desc"
   | "name-asc"
   | "name-desc";
-export type CandidateSearchMode = Exclude<ModelGroupSyncFilterMode, "">;
 export type MemberStatusFilter = "all" | "enabled" | "disabled" | "problem";
+
+export type SimilarGroupView = { id: string; name: string };
 
 export type GroupRow = ModelGroup & {
   member_count: number;
   enabled_member_count: number;
   problem_member_count: number;
-  channel_summary: string;
+  site_count: number;
+  credential_count: number;
   channel_names: string[];
   display_members: GroupDisplayMember[];
-  display_channels: GroupDisplayChannel[];
+  /** Other execution groups whose name or match models share a match key. */
+  similar_groups: SimilarGroupView[];
   is_route_group: boolean;
 };
 
@@ -134,64 +130,10 @@ export const EMPTY_FORM: FormState = {
   name: "",
   strategy: "failover",
   route_group_id: "",
-  sync_filter_mode: "",
-  sync_filter_query: "",
+  match_models: [],
+  match_regex: "",
   param_override: [{ path: "", action: "set", value: "" }],
   headers: [{ key: "", value: "", action: "override" }],
   fallback_group_ids: [],
-  input_price_per_million: "0",
-  output_price_per_million: "0",
-  cache_read_price_per_million: "0",
-  cache_write_price_per_million: "0",
-  image_price_per_image: "0",
-  pricing_mode: "free",
   items: [],
 };
-
-export type GroupCardDragging = {
-  groupId: string;
-  kind: "channel" | "member";
-  index: number;
-} | null;
-export interface GroupsOverviewProps {
-  locale: "zh-CN" | "en-US";
-  hasModelPrefixOptions: boolean;
-  modelPrefixOptions: ModelPrefixOption[];
-  effectiveSelectedModelPrefix: SelectedModelPrefix;
-  setSelectedModelPrefix: Dispatch<SetStateAction<SelectedModelPrefix>>;
-  isLoading: boolean;
-  groupsIsError: boolean;
-  visibleGroups: GroupRow[];
-  busyId: string | null;
-  cardDragging: GroupCardDragging;
-  setCardDragging: Dispatch<SetStateAction<GroupCardDragging>>;
-  search: string;
-  strategyFilter: "all" | RoutingStrategy;
-  sortBy: GroupSort;
-  activeFilterCount: number;
-  setSearch: Dispatch<SetStateAction<string>>;
-  setStrategyFilter: Dispatch<SetStateAction<"all" | RoutingStrategy>>;
-  setSortBy: Dispatch<SetStateAction<GroupSort>>;
-  resetFilters: () => void;
-  openEdit: (item: ModelGroup) => void;
-  changeStrategy: (group: GroupRow, strategy: RoutingStrategy) => void;
-  reorderGroupMembers: (
-    group: GroupRow,
-    fromIndex: number,
-    toIndex: number,
-  ) => void;
-  reorderGroupChannels: (
-    group: GroupRow,
-    fromIndex: number,
-    toIndex: number,
-  ) => void;
-  removeGroupChannel: (group: GroupRow, channelKey: string) => void;
-  removeGroupMember: (group: GroupRow, memberKey: string) => void;
-  toggleGroupEnabled: (group: GroupRow, enabled: boolean) => void;
-  setDeleteTarget: Dispatch<SetStateAction<ModelGroup | null>>;
-  testingModel: boolean;
-  openModelTest: (group: GroupRow) => void;
-}
-
-import type { Dispatch, SetStateAction } from "react";
-import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";

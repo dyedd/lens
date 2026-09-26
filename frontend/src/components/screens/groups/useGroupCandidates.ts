@@ -1,52 +1,110 @@
-import { type Dispatch, type SetStateAction, useMemo } from "react";
+import { type Dispatch, type SetStateAction, useEffect, useMemo } from "react";
 import type {
   ModelGroupCandidateItem,
   ModelGroupCandidatesResponse,
 } from "@/lib/api/groups";
-import type { CandidateSearchMode, FormState } from "./groupTypes";
-import { candidatePayloadToFormItems, groupModelCandidates } from "./groupView";
+import type { FormState } from "./groupTypes";
 import {
-  compileCandidateRegex,
-  matchesCandidateSearch,
+  applyMatchRulesToForm,
+  candidatePayloadToFormItems,
+  groupModelCandidates,
+} from "./groupView";
+import {
+  compileMatchRegex,
+  matchesGroupRules,
   modelGroupItemKey,
 } from "./modelGroupFormatting";
 
 type GroupCandidateOptions = {
   candidateResponse?: ModelGroupCandidatesResponse;
   candidateSearch: string;
-  candidateSearchMode: CandidateSearchMode;
   expandedChannels: string[];
+  form: FormState;
+  isCreating: boolean;
   locale: "zh-CN" | "en-US";
   setExpandedChannels: Dispatch<SetStateAction<string[]>>;
   setForm: Dispatch<SetStateAction<FormState>>;
 };
 
-/** Derive candidate groups and manage candidate selection actions. */
+/** Derive candidate groups, keep live rule members current, and add sources. */
 export function useGroupCandidates({
   candidateResponse,
   candidateSearch,
-  candidateSearchMode,
   expandedChannels,
+  form,
+  isCreating,
   locale,
   setExpandedChannels,
   setForm,
 }: GroupCandidateOptions) {
-  const candidateRegexInvalid =
-    candidateSearchMode === "regex" &&
-    Boolean(candidateSearch.trim()) &&
-    !compileCandidateRegex(candidateSearch);
-  const filteredCandidates = useMemo(
-    () =>
-      (candidateResponse?.candidates ?? []).filter((candidate) =>
-        matchesCandidateSearch(
-          candidate,
-          candidateSearchMode,
-          candidateSearch,
-          locale,
-        ),
-      ),
-    [candidateResponse, candidateSearch, candidateSearchMode, locale],
-  );
+  const candidates = candidateResponse?.candidates;
+  const matchRegexInvalid =
+    Boolean(form.match_regex.trim()) && !compileMatchRegex(form.match_regex);
+  const ruleMatches = useMemo(() => {
+    const regex = compileMatchRegex(form.match_regex);
+    return (candidates ?? []).filter((candidate) =>
+      matchesGroupRules(candidate.model_name, form.match_models, regex),
+    );
+  }, [candidates, form.match_models, form.match_regex]);
+
+  // Refreshed candidates may add or drop rule members.
+  useEffect(() => {
+    if (!candidates) return;
+    setForm((current) => applyMatchRulesToForm(current, candidates));
+  }, [candidates, setForm]);
+
+  /** Update the form and immediately re-resolve live rule members. */
+  function updateRuleForm(update: (current: FormState) => FormState) {
+    setForm((current) => {
+      const next = update(current);
+      return candidates ? applyMatchRulesToForm(next, candidates) : next;
+    });
+  }
+
+  function changeMatchRules(
+    rules: Partial<Pick<FormState, "match_models" | "match_regex">>,
+  ) {
+    updateRuleForm((current) => ({ ...current, ...rules }));
+  }
+
+  /** While creating, the default match rule follows the group name. */
+  function changeName(name: string) {
+    updateRuleForm((current) => {
+      const currentName = current.name.trim();
+      const followsName =
+        isCreating &&
+        !current.route_group_id &&
+        current.match_models.join("\n") === currentName;
+      const nextName = name.trim();
+      return {
+        ...current,
+        name,
+        match_models: followsName
+          ? nextName
+            ? [nextName]
+            : []
+          : current.match_models,
+      };
+    });
+  }
+
+  function changeRouteTarget(routeGroupId: string) {
+    updateRuleForm((current) => ({
+      ...current,
+      route_group_id: routeGroupId,
+      match_models: routeGroupId ? [] : current.match_models,
+      match_regex: routeGroupId ? "" : current.match_regex,
+      fallback_group_ids: routeGroupId ? [] : current.fallback_group_ids,
+    }));
+    setExpandedChannels([]);
+  }
+
+  const filteredCandidates = useMemo(() => {
+    const keyword = candidateSearch.trim().toLowerCase();
+    return (candidates ?? []).filter((candidate) =>
+      candidate.model_name.toLowerCase().includes(keyword),
+    );
+  }, [candidates, candidateSearch]);
   const groupedCandidates = useMemo(
     () => groupModelCandidates(filteredCandidates, locale),
     [filteredCandidates, locale],
@@ -103,52 +161,18 @@ export function useGroupCandidates({
     });
   }
 
-  /** Saves the search as a live rule, or adds every candidate without one. */
-  function addMatchedItems() {
-    if (!filteredCandidates.length && !candidateSearch.trim()) return;
-    const query = candidateSearch.trim();
-    setForm((current) => {
-      const existingKeys = new Set(
-        current.items.map((item) => modelGroupItemKey(item)),
-      );
-      const additions = filteredCandidates.flatMap((candidate) =>
-        candidatePayloadToFormItems(candidate, Boolean(query)).filter(
-          (item) => !existingKeys.has(modelGroupItemKey(item)),
-        ),
-      );
-      return {
-        ...current,
-        sync_filter_mode: query ? candidateSearchMode : "",
-        sync_filter_query: query,
-        items: [
-          ...current.items.filter(
-            (item) => !query || !item.matched_by_rule || !item.enabled,
-          ),
-          ...additions,
-        ],
-      };
-    });
-  }
-
-  function clearSavedFilter() {
-    setForm((current) => ({
-      ...current,
-      sync_filter_mode: "",
-      sync_filter_query: "",
-      items: current.items.filter(
-        (item) => !item.matched_by_rule || !item.enabled,
-      ),
-    }));
-  }
-
   return {
     addCandidate,
-    addMatchedItems,
-    candidateRegexInvalid,
-    clearSavedFilter,
-    filteredCandidates,
-    groupedCandidates,
+    changeMatchRules,
+    changeName,
+    changeRouteTarget,
     expandedChannels: visibleExpandedChannels,
+    groupedCandidates,
+    matchRegexInvalid,
+    ruleMatchModelCount: new Set(
+      ruleMatches.map((candidate) => candidate.model_name),
+    ).size,
+    ruleMatchSourceCount: ruleMatches.length,
     toggleChannel,
   };
 }

@@ -80,7 +80,7 @@ def test_anthropic_route_prefers_native_channel_over_earlier_chat_member(
     assert attempted_urls[0].endswith("/v1/messages")
 
 
-def test_model_group_sync_filter_is_canonicalized_and_validated(
+def test_model_group_match_rules_are_canonicalized_and_validated(
     client,
     admin_headers,
 ) -> None:
@@ -88,37 +88,20 @@ def test_model_group_sync_filter_is_canonicalized_and_validated(
         "/api/admin/model-groups",
         headers=admin_headers,
         json={
-            "name": "filtered",
-            "sync_filter_mode": "contains",
-            "sync_filter_query": "  gpt  ",
+            "name": "matched",
+            "match_models": ["  gpt-4o  ", "", "GPT-4O", "gpt-4o-mini"],
+            "match_regex": "  (?i)^gpt  ",
         },
     )
     invalid = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={
-            "name": "invalid-filter",
-            "sync_filter_mode": "regex",
-            "sync_filter_query": "[",
-        },
+        json={"name": "invalid-regex", "match_regex": "["},
     )
 
-    exact = client.post(
-        "/api/admin/model-groups",
-        headers=admin_headers,
-        json={
-            "name": "exact-filter",
-            "sync_filter_mode": "exact",
-            "sync_filter_query": "  gpt-4o  ",
-        },
-    )
-
-    assert created.status_code == 201
-    assert created.json()["sync_filter_mode"] == "contains"
-    assert created.json()["sync_filter_query"] == "gpt"
-    assert exact.status_code == 201
-    assert exact.json()["sync_filter_mode"] == "exact"
-    assert exact.json()["sync_filter_query"] == "gpt-4o"
+    assert created.status_code == 201, created.text
+    assert created.json()["match_models"] == ["gpt-4o", "gpt-4o-mini"]
+    assert created.json()["match_regex"] == "^gpt"
     assert_error(invalid, 422, "Request validation failed")
 
 
@@ -195,7 +178,7 @@ def test_referenced_execution_group_cannot_become_a_route_group(
     assert_error(response, 400, "cannot become route groups")
 
 
-def test_update_route_group_clears_sync_filter(
+def test_update_route_group_clears_match_rules(
     client,
     admin_headers,
     create_model_group,
@@ -204,11 +187,7 @@ def test_update_route_group_clears_sync_filter(
     source = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={
-            "name": "source",
-            "sync_filter_mode": "contains",
-            "sync_filter_query": "gpt",
-        },
+        json={"name": "source", "match_models": ["gpt"], "match_regex": "gpt"},
     ).json()
 
     response = client.put(
@@ -219,8 +198,8 @@ def test_update_route_group_clears_sync_filter(
 
     assert response.status_code == 200
     assert response.json()["route_group_id"] == target["id"]
-    assert response.json()["sync_filter_mode"] == ""
-    assert response.json()["sync_filter_query"] == ""
+    assert response.json()["match_models"] == []
+    assert response.json()["match_regex"] == ""
 
 
 def test_delete_model_group_rejects_referenced_execution_group(

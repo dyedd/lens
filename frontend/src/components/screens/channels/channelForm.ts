@@ -20,7 +20,7 @@ export function resolveBaseUrlId(
 
 /** Resolves the active base URL value for a protocol configuration. */
 export function activeBaseUrlValue(
-  form: FormState,
+  form: Pick<FormState, "base_urls">,
   protocolConfig: Pick<FormProtocolConfig, "base_url_id">,
 ) {
   const boundBaseUrl = protocolConfig.base_url_id

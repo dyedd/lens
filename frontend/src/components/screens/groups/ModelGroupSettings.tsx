@@ -18,6 +18,7 @@ interface ModelGroupSettingsProps {
   locale: "zh-CN" | "en-US";
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
+  changeName: (name: string) => void;
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
 }
@@ -26,6 +27,7 @@ export function ModelGroupSettings({
   locale,
   form,
   setForm,
+  changeName,
   routeTargetOptions,
   changeRouteTarget,
 }: ModelGroupSettingsProps) {
@@ -40,16 +42,12 @@ export function ModelGroupSettings({
             <Input
               id="group-name"
               required
+              className="font-mono"
               placeholder={
-                locale === "zh-CN" ? "输入模型组名称" : "Enter group name"
+                locale === "zh-CN" ? "输入对外模型名" : "Public model name"
               }
               value={form.name}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  name: event.target.value,
-                }))
-              }
+              onChange={(event) => changeName(event.target.value)}
             />
           </Field>
           <Field>

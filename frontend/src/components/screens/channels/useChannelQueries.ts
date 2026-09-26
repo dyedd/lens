@@ -4,8 +4,13 @@ import { apiRequest } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Site, SiteModelInput } from "@/lib/api/sites";
 import {
+  activeBaseUrlValue,
+  protocolConfigSelectedCredentialIds,
+} from "./channelForm";
+import {
   aggregateModelGroupKey,
   credentialLabel,
+  formatCredentialTitle,
   protocolConfigModelKey,
   siteEndpointSummary,
   siteModelCounts,
@@ -13,8 +18,7 @@ import {
 import type {
   ChannelSort,
   ChannelStatusFilter,
-  FormCredential,
-  FormProtocolConfig,
+  FormState,
   Locale,
   SiteRow,
 } from "./channelTypes";
@@ -134,7 +138,10 @@ export function useChannelQueries(locale: Locale) {
 export type AggregatedModelMember = {
   /** Per-credential key matching protocolConfigModelKey semantics. */
   key: string;
+  credentialId: string;
   credentialName: string;
+  /** Key label plus masked value. */
+  credentialTitle: string;
   source: SiteModelInput["source"];
 };
 
@@ -142,6 +149,10 @@ export type AggregatedModel = {
   /** Group key shared by every same-name model inside one protocol config. */
   key: string;
   modelName: string;
+  /** Base URL of the protocol config that owns this row. */
+  baseUrl: string;
+  /** Number of keys bound to the owning protocol config. */
+  credentialCount: number;
   protocols: ProtocolKind[];
   source: SiteModelInput["source"];
   enabled: boolean;
@@ -167,21 +178,32 @@ type ModelGroupSeed = {
  * within one protocol configuration so multi-key duplicates stay one row.
  */
 export function useAggregatedModels(
-  protocolConfigs: FormProtocolConfig[],
-  credentials: FormCredential[],
+  form: Pick<FormState, "base_urls" | "credentials" | "protocolConfigs">,
   locale: Locale,
 ): AggregatedModel[] {
+  const { base_urls: baseUrls, credentials, protocolConfigs } = form;
   return useMemo(() => {
-    const credentialNameById = new Map(
+    const credentialById = new Map(
       credentials.map(
-        (credential, index) =>
-          [credential.id, credentialLabel(credential, index, locale)] as const,
+        (credential, index) => [credential.id, { credential, index }] as const,
       ),
     );
-    const credentialName = (credentialId: string) =>
-      credentialNameById.get(credentialId) ||
-      (locale === "zh-CN" ? "未知密钥" : "Unknown key");
+    const unknownKey = locale === "zh-CN" ? "未知密钥" : "Unknown key";
+    const credentialNames = (credentialId: string) => {
+      const entry = credentialById.get(credentialId);
+      if (!entry) return { name: unknownKey, title: unknownKey };
+      return {
+        name: credentialLabel(entry.credential, entry.index, locale),
+        title: formatCredentialTitle(entry.credential, entry.index, locale),
+      };
+    };
     return protocolConfigs.flatMap((protocolConfig) => {
+      const baseUrl = activeBaseUrlValue(
+        { base_urls: baseUrls },
+        protocolConfig,
+      ).trim();
+      const credentialCount =
+        protocolConfigSelectedCredentialIds(protocolConfig).length;
       const groups = new Map<string, ModelGroupSeed>();
       const groupOf = (modelName: string) => {
         const existing = groups.get(modelName);
@@ -209,9 +231,12 @@ export function useAggregatedModels(
         group.upstreamMissing = group.upstreamMissing || model.upstream_missing;
         const memberKey = protocolConfigModelKey(protocolConfig, model);
         if (group.members.some((member) => member.key === memberKey)) continue;
+        const names = credentialNames(model.credential_id);
         group.members.push({
           key: memberKey,
-          credentialName: credentialName(model.credential_id),
+          credentialId: model.credential_id,
+          credentialName: names.name,
+          credentialTitle: names.title,
           source: model.source,
         });
         group.testKey ??= memberKey;
@@ -220,6 +245,8 @@ export function useAggregatedModels(
       return Array.from(groups.values()).map((group) => ({
         key: aggregateModelGroupKey(protocolConfig, group.modelName),
         modelName: group.modelName,
+        baseUrl,
+        credentialCount,
         protocols: Array.from(group.protocols),
         source: group.sources.has("manual") ? "manual" : "synced",
         enabled: group.enabled,
@@ -228,5 +255,5 @@ export function useAggregatedModels(
         testKey: group.testKey,
       }));
     });
-  }, [credentials, protocolConfigs, locale]);
+  }, [baseUrls, credentials, protocolConfigs, locale]);
 }

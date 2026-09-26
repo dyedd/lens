@@ -43,7 +43,7 @@ function formatSyncSummary(
   const restored = countSyncedNames(result, "restored");
   if (locale !== "zh-CN") {
     const parts = [
-      added && `${added} new models ready to call`,
+      added && `${added} new models placed into model groups`,
       missing && `${missing} missing upstream to review`,
       restored && `${restored} back upstream`,
     ].filter(Boolean);
@@ -52,7 +52,7 @@ function formatSyncSummary(
       : "Models are up to date";
   }
   const parts = [
-    added && `新增 ${added} 个模型，可直接调用`,
+    added && `新增 ${added} 个模型，已放入模型组`,
     missing && `${missing} 个上游缺失待确认`,
     restored && `${restored} 个已恢复`,
   ].filter(Boolean);

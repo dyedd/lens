@@ -45,6 +45,10 @@ type Props = {
   onPromptChange: (value: string) => void;
   onRun: () => void;
   targetName?: string;
+  /** Keys that can run a single test; a selector shows when there are several. */
+  credentialOptions?: Array<{ value: string; label: string }>;
+  credentialValue?: string;
+  onCredentialChange?: (value: string) => void;
 };
 
 function Detail({ label, value }: { label: string; value: string }) {
@@ -90,6 +94,9 @@ export function ModelTestDialog({
   onPromptChange,
   onRun,
   targetName,
+  credentialOptions = [],
+  credentialValue,
+  onCredentialChange,
 }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -132,6 +139,32 @@ export function ModelTestDialog({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
             <div className="grid gap-3 border-b border-border/60 pb-4">
+              {items.length === 1 && credentialOptions.length > 1 ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {isChinese ? "测试密钥" : "Test key"}
+                  </span>
+                  <Select
+                    value={credentialValue ?? ""}
+                    onValueChange={(value) => onCredentialChange?.(value)}
+                    disabled={testing}
+                  >
+                    <SelectTrigger
+                      className="h-8 min-w-44 max-w-72"
+                      aria-label={isChinese ? "测试密钥" : "Test key"}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {credentialOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
               {items.length > 1 ? (
                 <div className="max-h-36 overflow-y-auto rounded-md bg-muted/35 p-1">
                   {items.map((item, index) => (

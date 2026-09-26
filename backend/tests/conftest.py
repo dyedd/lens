@@ -289,10 +289,31 @@ def create_model_group(
             "name": name,
             "strategy": "round_robin",
             "route_group_id": route_group_id,
+            "match_models": [],
+            "match_regex": "",
             "headers": [],
             "param_override": [],
             "items": items or [],
         }
+        # Site saves auto-place a same-named group; configure that one instead.
+        existing = next(
+            (
+                group
+                for group in client.get(
+                    "/api/admin/model-groups", headers=admin_headers
+                ).json()
+                if group["name"] == name
+            ),
+            None,
+        )
+        if existing is not None:
+            response = client.put(
+                f"/api/admin/model-groups/{existing['id']}",
+                headers=admin_headers,
+                json=payload,
+            )
+            assert response.status_code == 200, response.text
+            return response.json()
         response = client.post(
             "/api/admin/model-groups", headers=admin_headers, json=payload
         )

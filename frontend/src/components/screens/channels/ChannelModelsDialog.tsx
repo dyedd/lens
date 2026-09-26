@@ -64,6 +64,8 @@ import {
 } from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { protocolLabel, protocolOptions } from "@/lib/protocols";
+import { CredentialBadges } from "./CredentialBadges";
+import { formatBaseUrlLabel } from "./channelModels";
 import type { Locale } from "./channelTypes";
 import { ProtocolDropdown } from "./ProtocolDropdown";
 import type { AggregatedModel } from "./useChannelQueries";
@@ -150,6 +152,11 @@ export function ChannelModelsDialog({
     setBulkDeleteOpen(false);
   }, [open]);
 
+  const hasMultipleBaseUrls = useMemo(
+    () => new Set(models.map((model) => model.baseUrl)).size > 1,
+    [models],
+  );
+
   const visibleModels = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     const filtered = models.filter((model) => {
@@ -165,6 +172,8 @@ export function ChannelModelsDialog({
       if (!keyword) return true;
       return (
         model.modelName.toLowerCase().includes(keyword) ||
+        (hasMultipleBaseUrls &&
+          model.baseUrl.toLowerCase().includes(keyword)) ||
         model.protocols.some((protocol) =>
           protocolLabel(protocol, locale).toLowerCase().includes(keyword),
         )
@@ -194,7 +203,15 @@ export function ChannelModelsDialog({
       }
       return left.modelName.localeCompare(right.modelName, locale);
     });
-  }, [locale, models, protocolFilter, query, sortBy, statusFilter]);
+  }, [
+    hasMultipleBaseUrls,
+    locale,
+    models,
+    protocolFilter,
+    query,
+    sortBy,
+    statusFilter,
+  ]);
 
   const modelKeys = useMemo(
     () => new Set(visibleModels.map((model) => model.key)),
@@ -275,7 +292,7 @@ export function ChannelModelsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
           <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSave}>
             <DialogHeader className="shrink-0 px-4 py-4">
               <DialogTitle>
@@ -299,9 +316,13 @@ export function ChannelModelsDialog({
                 onChange={setQuery}
                 onClear={() => setQuery("")}
                 placeholder={
-                  locale === "zh-CN"
-                    ? "搜索模型名或协议"
-                    : "Search model name or protocol"
+                  hasMultipleBaseUrls
+                    ? locale === "zh-CN"
+                      ? "搜索模型名、地址或协议"
+                      : "Search model name, URL or protocol"
+                    : locale === "zh-CN"
+                      ? "搜索模型名或协议"
+                      : "Search model name or protocol"
                 }
                 className="max-w-none min-w-40 flex-1"
               />
@@ -587,6 +608,9 @@ export function ChannelModelsDialog({
                     <TableHead>
                       {locale === "zh-CN" ? "上游模型名" : "Upstream model"}
                     </TableHead>
+                    <TableHead className="w-[150px]">
+                      {locale === "zh-CN" ? "密钥" : "Keys"}
+                    </TableHead>
                     <TableHead className="w-[64px]">
                       {locale === "zh-CN" ? "来源" : "Source"}
                     </TableHead>
@@ -600,7 +624,7 @@ export function ChannelModelsDialog({
                   {visibleModels.length === 0 ? (
                     <TableRow className="hover:bg-transparent">
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className="h-28 text-center text-muted-foreground"
                       >
                         {models.length === 0
@@ -647,7 +671,7 @@ export function ChannelModelsDialog({
                           </div>
                         </TableCell>
                         <TableCell className="max-w-[220px] py-1.5 font-mono text-xs text-muted-foreground">
-                          <div className="flex h-7 min-w-0 items-center gap-1.5">
+                          <div className="flex min-h-7 min-w-0 items-center gap-1.5">
                             <span className="truncate" title={model.modelName}>
                               {model.modelName}
                             </span>
@@ -665,6 +689,21 @@ export function ChannelModelsDialog({
                               </Badge>
                             ) : null}
                           </div>
+                          {hasMultipleBaseUrls ? (
+                            <p
+                              className="truncate text-[11px] leading-4"
+                              title={model.baseUrl}
+                            >
+                              {formatBaseUrlLabel(model.baseUrl)}
+                            </p>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="w-[150px] py-1.5">
+                          <ModelKeyBadges
+                            model={model}
+                            showBaseUrl={hasMultipleBaseUrls}
+                            locale={locale}
+                          />
                         </TableCell>
                         <TableCell className="w-[64px] py-1.5 text-xs text-muted-foreground">
                           {model.source === "synced"
@@ -868,5 +907,49 @@ export function ChannelModelsDialog({
         />
       </Dialog>
     </>
+  );
+}
+
+/** Shows which keys provide one aggregated model row. */
+function ModelKeyBadges({
+  model,
+  showBaseUrl,
+  locale,
+}: {
+  model: AggregatedModel;
+  showBaseUrl: boolean;
+  locale: Locale;
+}) {
+  const keys = [
+    ...new Map(
+      model.members.map((member) => [
+        member.credentialId,
+        { id: member.credentialId, label: member.credentialName },
+      ]),
+    ).values(),
+  ];
+  const sourceLabel = (source: AggregatedModel["source"]) =>
+    source === "synced"
+      ? locale === "zh-CN"
+        ? "同步"
+        : "Synced"
+      : locale === "zh-CN"
+        ? "手动"
+        : "Manual";
+  return (
+    <CredentialBadges
+      keys={keys}
+      totalCount={model.credentialCount}
+      details={model.members.map((member) =>
+        [
+          member.credentialTitle,
+          showBaseUrl ? formatBaseUrlLabel(model.baseUrl) : "",
+          sourceLabel(member.source),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      )}
+      locale={locale}
+    />
   );
 }

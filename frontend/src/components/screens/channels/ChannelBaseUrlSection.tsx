@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { cn } from "@/lib/classNames";
 import { ChannelCredentialSection } from "./ChannelCredentialSection";
-import { replacePendingCredentials } from "./channelModels";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
 
 type Props = {
   form: FormState;
   locale: Locale;
   siteId: string | null;
+  canSyncRates: boolean;
   setForm: Dispatch<SetStateAction<FormState>>;
   onAdd: () => void;
   onUpdate: (index: number, patch: Partial<FormBaseUrl>) => void;
@@ -24,6 +24,7 @@ export function ChannelBaseUrlSection({
   form,
   locale,
   siteId,
+  canSyncRates,
   setForm,
   onAdd,
   onUpdate,
@@ -144,33 +145,11 @@ export function ChannelBaseUrlSection({
                       locale={locale}
                       inputId={`channel-keys-${baseUrl.id}`}
                       required={!siteId}
-                      newApiKeysLines={baseUrl.newApiKeysLines}
-                      credentials={form.credentials.filter(
-                        (item) => item.baseUrlId === baseUrl.id,
-                      )}
-                      onNewApiKeysChange={(value) => {
-                        setForm((current) => ({
-                          ...current,
-                          base_urls: current.base_urls.map((item, itemIndex) =>
-                            itemIndex === index
-                              ? { ...item, newApiKeysLines: value }
-                              : item,
-                          ),
-                          credentials: replacePendingCredentials(
-                            current.credentials,
-                            value,
-                            baseUrl.id,
-                          ),
-                        }));
-                      }}
-                      onRemove={(credentialId) => {
-                        setForm((current) => ({
-                          ...current,
-                          credentials: current.credentials.filter(
-                            (item) => item.id !== credentialId,
-                          ),
-                        }));
-                      }}
+                      baseUrlId={baseUrl.id}
+                      form={form}
+                      setForm={setForm}
+                      siteId={siteId}
+                      canSyncRates={canSyncRates}
                     />
                   )}
                 </div>

@@ -17,7 +17,6 @@ export type ParamOverrideRule = {
 };
 
 export type RoutingStrategy = "round_robin" | "failover";
-export type ModelGroupSyncFilterMode = "" | "contains" | "exact" | "regex";
 export type ModelGroupItemState =
   | "ready"
   | "disabled"
@@ -45,6 +44,8 @@ export type ModelGroupItem = ModelGroupItemPayload & {
   protocol?: ProtocolKind | null;
   credential_name: string;
   credential_number: number;
+  credential_mask: string;
+  base_url: string;
   rate_multiplier: number | null;
   rate_source: "none" | "sub2api" | "newapi";
   state: ModelGroupItemState;
@@ -59,8 +60,10 @@ export type ModelGroup = {
   strategy: RoutingStrategy;
   route_group_id?: string;
   route_group_name?: string;
-  sync_filter_mode: ModelGroupSyncFilterMode;
-  sync_filter_query: string;
+  /** Channel model names that join live by case-insensitive exact match. */
+  match_models: string[];
+  /** Case-insensitive search pattern whose matching models join live. */
+  match_regex: string;
   param_override: ParamOverrideRule[];
   headers: HeaderRule[];
   fallback_group_ids?: string[];
@@ -84,6 +87,7 @@ export type ModelGroupCandidateItem = {
   credential_id: string;
   credential_name: string;
   credential_number: number;
+  credential_mask: string;
   rate_multiplier: number | null;
   rate_source: "none" | "sub2api" | "newapi";
   base_url: string;
@@ -104,3 +108,29 @@ export type ModelGroupModelTestPayload = {
   prompt: string;
   protocol?: ProtocolKind;
 };
+export type UnplacedModelProvider = {
+  site_id: string;
+  channel_name: string;
+  credential_id: string;
+  credential_name: string;
+  credential_number: number;
+  credential_mask: string;
+  base_url: string;
+  protocols: ProtocolKind[];
+};
+/** A channel model name held back because its match key collides. */
+export type UnplacedModel = {
+  model_name: string;
+  match_key: string;
+  similar_group_ids: string[];
+  similar_group_names: string[];
+  similar_model_names: string[];
+  providers: UnplacedModelProvider[];
+};
+export type UnplacedModelsResponse = { items: UnplacedModel[] };
+export type ModelGroupPlacementRequest = { model_names: string[] | null };
+export type ModelGroupPlacementResponse = {
+  created: ModelGroup[];
+  unplaced: UnplacedModel[];
+};
+export type ModelGroupMergeRequest = { target_group_id: string };
