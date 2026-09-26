@@ -18,7 +18,6 @@ from app.models.sites import (
     SiteCredentialInput,
     SiteModel,
     SiteProtocolConfig,
-    SiteSyncTarget,
 )
 from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import (
@@ -28,7 +27,6 @@ from app.persistence.entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolConfigSyncTargetEntity,
 )
 
 from ...core.runtime_channel_ids import compose_runtime_channel_id
@@ -55,16 +53,12 @@ def load_param_rules(raw: str | None) -> list[ParamOverrideRule]:
 
 def protocols_from_bindings(
     models: list[SiteModel],
-    sync_targets: list[SiteSyncTarget],
     configured_protocols: list[ProtocolKind] | None = None,
 ) -> list[ProtocolKind]:
     protocols: list[ProtocolKind] = list(configured_protocols or [])
     for model in models:
         if model.protocol is not None and model.protocol not in protocols:
             protocols.append(model.protocol)
-    for target in sync_targets:
-        if target.protocol not in protocols:
-            protocols.append(target.protocol)
     return protocols
 
 
@@ -138,23 +132,7 @@ class ChannelRowMappingMixin:
                         else None
                     ),
                     source=row.source,
-                )
-            )
-        return result
-
-    def _group_sync_targets(
-        self, rows: list[SiteProtocolConfigSyncTargetEntity]
-    ) -> dict[str, list[SiteSyncTarget]]:
-        result: dict[str, list[SiteSyncTarget]] = defaultdict(list)
-        valid_protocol_values = {protocol_kind.value for protocol_kind in ProtocolKind}
-        for row in rows:
-            if row.protocol not in valid_protocol_values:
-                continue
-            result[row.protocol_config_id].append(
-                SiteSyncTarget(
-                    credential_id=row.credential_id,
-                    model_name=row.model_name,
-                    protocol=ProtocolKind(row.protocol),
+                    upstream_missing=bool(row.upstream_missing),
                 )
             )
         return result
@@ -163,13 +141,11 @@ class ChannelRowMappingMixin:
         self,
         rows: list[SiteProtocolConfigEntity],
         models_by_protocol_config: dict[str, list[SiteModel]],
-        sync_targets_by_protocol_config: dict[str, list[SiteSyncTarget]],
         credentials_by_site: dict[str, list[SiteCredential]],
     ) -> dict[str, list[SiteProtocolConfig]]:
         result: dict[str, list[SiteProtocolConfig]] = defaultdict(list)
         for row in rows:
             models = models_by_protocol_config.get(row.id, [])
-            sync_targets = sync_targets_by_protocol_config.get(row.id, [])
             try:
                 configured_protocols = [
                     ProtocolKind(value) for value in json.loads(row.protocols_json)
@@ -180,16 +156,11 @@ class ChannelRowMappingMixin:
                 SiteProtocolConfig(
                     id=row.id,
                     base_url_id=row.base_url_id,
-                    auto_sync_supported_models=bool(row.auto_sync_supported_models),
-                    auto_sync_model_pattern=row.auto_sync_model_pattern,
-                    protocols=protocols_from_bindings(
-                        models, sync_targets, configured_protocols
-                    ),
+                    protocols=protocols_from_bindings(models, configured_protocols),
                     credential_ids=credential_ids_for_url(
                         credential_pairs(credentials_by_site.get(row.site_id, [])),
                         row.base_url_id,
                     ),
-                    sync_targets=sync_targets,
                     models=models,
                 )
             )
@@ -233,7 +204,9 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                         ),
                         headers=site.headers,
                         model_patterns=[
-                            m.model_name for m in protocol_models if m.enabled
+                            m.model_name
+                            for m in protocol_models
+                            if m.enabled and not m.upstream_missing
                         ],
                         keys=keys,
                         models=self._build_channel_models(
@@ -301,6 +274,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                     ),
                     model_name=model.model_name,
                     enabled=model.enabled,
+                    upstream_missing=model.upstream_missing,
                     sort_order=model.sort_order,
                 )
             )
@@ -410,11 +384,9 @@ class SiteConfigLoadersMixin:
         models_by_protocol_config = self._group_models(
             rows.discovered_models, credentials_by_id
         )
-        sync_targets_by_protocol_config = self._group_sync_targets(rows.sync_targets)
         protocols_by_site = self._group_protocols(
             rows.protocol_configs,
             models_by_protocol_config,
-            sync_targets_by_protocol_config,
             credentials_by_site,
         )
 
@@ -429,6 +401,9 @@ class SiteConfigLoadersMixin:
                 channel_proxy=row.channel_proxy,
                 headers=load_header_rules(row.headers_json),
                 param_override=load_param_rules(row.param_override),
+                model_sync_enabled=bool(row.model_sync_enabled),
+                model_sync_include=row.model_sync_include,
+                model_sync_exclude=row.model_sync_exclude,
                 base_urls=base_urls_by_site.get(row.id, []),
                 credentials=credentials_by_site.get(row.id, []),
                 protocols=protocols_by_site.get(row.id, []),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import (
@@ -41,6 +42,13 @@ from app.persistence.entities import (
 from .import_sites import build_site_batch_import_result, prepare_site_batch
 from .mapping import SiteChannelProjectionMixin, SiteConfigLoadersMixin
 from .write import SiteConfigUpsertsMixin
+
+
+@dataclass(frozen=True, slots=True)
+class UpstreamModelChanges:
+    added: list[str]
+    missing: list[str]
+    restored: list[str]
 
 
 class SiteOperationsMixin:
@@ -109,14 +117,16 @@ class SiteOperationsMixin:
             )
         return previews
 
-    async def replace_protocol_config_synced_models(
+    async def sync_upstream_models(
         self,
         protocol_config_id: str,
         credential_id: str,
-        protocol: ProtocolKind,
-        model_names: list[str],
-    ) -> None:
-        """Replace one credential/protocol target's synchronized models."""
+        protocols: list[ProtocolKind],
+        *,
+        upstream_names: set[str],
+        wanted_names: set[str],
+    ) -> UpstreamModelChanges:
+        """Add wanted upstream models and flag synced models missing upstream."""
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
@@ -144,44 +154,7 @@ class SiteOperationsMixin:
                     f"{protocol_config_id}: {credential_id}"
                 )
 
-            target_rows = (
-                (
-                    await session.execute(
-                        select(SiteDiscoveredModelEntity).where(
-                            SiteDiscoveredModelEntity.protocol_config_id
-                            == protocol_config_id,
-                            SiteDiscoveredModelEntity.credential_id == credential_id,
-                            SiteDiscoveredModelEntity.protocol == protocol.value,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            manual_names = {
-                row.model_name
-                for row in target_rows
-                if row.source == ModelSource.MANUAL.value
-            }
-            synced_by_name = {
-                row.model_name: row
-                for row in target_rows
-                if row.source == ModelSource.SYNCED.value
-            }
-            desired_names = set(model_names) - manual_names
-            stale_ids = [
-                row.id
-                for name, row in synced_by_name.items()
-                if name not in desired_names
-            ]
-            if stale_ids:
-                await session.execute(
-                    delete(SiteDiscoveredModelEntity).where(
-                        SiteDiscoveredModelEntity.id.in_(stale_ids)
-                    )
-                )
-
-            all_rows = (
+            config_rows = (
                 (
                     await session.execute(
                         select(SiteDiscoveredModelEntity).where(
@@ -193,24 +166,50 @@ class SiteOperationsMixin:
                 .scalars()
                 .all()
             )
-            next_sort_order = max((row.sort_order for row in all_rows), default=-1) + 1
-            for model_name in sorted(desired_names - set(synced_by_name)):
-                session.add(
-                    SiteDiscoveredModelEntity(
-                        id=str(uuid.uuid4()),
-                        protocol_config_id=protocol_config_id,
-                        credential_id=credential_id,
-                        model_name=model_name,
-                        enabled=1,
-                        sort_order=next_sort_order,
-                        protocol=protocol.value,
-                        source=ModelSource.SYNCED.value,
+            credential_models = [
+                row for row in config_rows if row.credential_id == credential_id
+            ]
+            bound_names = {row.model_name for row in credential_models}
+            # Automatic forwarding cannot share a model with fixed protocols.
+            added_protocols = (
+                [ProtocolKind.AUTO] if ProtocolKind.AUTO in protocols else protocols
+            )
+            next_sort_order = (
+                max((row.sort_order for row in config_rows), default=-1) + 1
+            )
+            added = sorted(wanted_names - bound_names)
+            for model_name in added:
+                for protocol in added_protocols:
+                    session.add(
+                        SiteDiscoveredModelEntity(
+                            id=str(uuid.uuid4()),
+                            protocol_config_id=protocol_config_id,
+                            credential_id=credential_id,
+                            model_name=model_name,
+                            enabled=1,
+                            sort_order=next_sort_order,
+                            protocol=protocol.value,
+                            source=ModelSource.SYNCED.value,
+                        )
                     )
-                )
-                next_sort_order += 1
+                    next_sort_order += 1
 
-            await self._cleanup_invalid_group_items(session, {protocol_config_id})
-            await session.commit()
+            missing: set[str] = set()
+            restored: set[str] = set()
+            for row in credential_models:
+                if row.source != ModelSource.SYNCED.value:
+                    continue
+                is_missing = row.model_name not in upstream_names
+                if is_missing == bool(row.upstream_missing):
+                    continue
+                row.upstream_missing = int(is_missing)
+                (missing if is_missing else restored).add(row.model_name)
+
+            if added or missing or restored:
+                await session.commit()
+            return UpstreamModelChanges(
+                added=added, missing=sorted(missing), restored=sorted(restored)
+            )
 
 
 class ChannelStore(

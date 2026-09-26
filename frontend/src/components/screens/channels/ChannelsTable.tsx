@@ -2,6 +2,7 @@ import {
   CloudDownload,
   MoreHorizontal,
   Pencil,
+  RefreshCw,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -56,6 +57,9 @@ type Props = {
   onSelectOne: (id: string, checked: boolean) => void;
   onEdit: (site: Site) => void;
   onManageModels: (site: Site) => void;
+  onReviewPendingModels: (site: Site) => void;
+  onFetchModels: (site: Site) => void;
+  syncingSiteId: string | null;
   onSyncModels: (site: Site) => void;
   onToggleEnabled: (site: Site, enabled: boolean) => void;
   onDelete: (site: Site) => void;
@@ -72,6 +76,9 @@ export function ChannelsTable({
   onSelectOne,
   onEdit,
   onManageModels,
+  onReviewPendingModels,
+  onFetchModels,
+  syncingSiteId,
   onSyncModels,
   onToggleEnabled,
   onDelete,
@@ -213,10 +220,30 @@ export function ChannelsTable({
                 </div>
               </TableCell>
               <TableCell>
-                <div className="text-xs text-muted-foreground">
-                  {locale === "zh-CN"
-                    ? `活 ${models.enabled} / 总 ${models.total}`
-                    : `${models.enabled} / ${models.total}`}
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="tabular-nums">
+                    {locale === "zh-CN"
+                      ? `活 ${models.enabled} / 总 ${models.total}`
+                      : `${models.enabled} / ${models.total}`}
+                  </span>
+                  {models.pending ? (
+                    <Badge variant="destructive" asChild>
+                      <button
+                        type="button"
+                        className="cursor-pointer"
+                        onClick={() => onReviewPendingModels(site)}
+                        title={
+                          locale === "zh-CN"
+                            ? "上游已不再提供这些模型，点击确认保留或删除"
+                            : "No longer listed upstream; review to keep or delete"
+                        }
+                      >
+                        {locale === "zh-CN"
+                          ? `${models.pending} 待确认`
+                          : `${models.pending} to review`}
+                      </button>
+                    </Badge>
+                  ) : null}
                 </div>
               </TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">
@@ -247,12 +274,19 @@ export function ChannelsTable({
                         <Settings2 className="size-3.5 stroke-1" />
                         {locale === "zh-CN" ? "管理模型" : "Manage models"}
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => onSyncModels(site)}>
+                      <DropdownMenuItem onSelect={() => onFetchModels(site)}>
                         <CloudDownload className="size-3.5 stroke-1" />
-                        {locale === "zh-CN"
-                          ? "同步远端模型"
-                          : "Sync remote models"}
+                        {locale === "zh-CN" ? "获取模型" : "Fetch models"}
                       </DropdownMenuItem>
+                      {site.model_sync_enabled ? (
+                        <DropdownMenuItem
+                          disabled={!site.enabled || syncingSiteId === site.id}
+                          onSelect={() => onSyncModels(site)}
+                        >
+                          <RefreshCw className="size-3.5 stroke-1" />
+                          {locale === "zh-CN" ? "立即同步" : "Sync now"}
+                        </DropdownMenuItem>
+                      ) : null}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => onDelete(site)}>
                         <Trash2 className="size-3.5 stroke-1" />

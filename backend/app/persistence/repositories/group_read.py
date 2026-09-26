@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import re
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Literal
 
 from sqlalchemy import select
@@ -18,7 +21,11 @@ from app.models.model_groups import (
     ModelGroupItemView,
     ModelGroupView,
 )
-from app.models.protocols import ProtocolKind
+from app.models.protocols import (
+    ModelGroupSyncFilterMode,
+    ProtocolKind,
+    RoutingStrategy,
+)
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
@@ -55,6 +62,110 @@ class _CandidateAggregate:
     model_name: str = ""
     credential_id: str = ""
     protocol_config_id: str = ""
+
+
+@lru_cache(maxsize=256)
+def _compile_group_rule_regex(query: str) -> re.Pattern[str] | None:
+    pattern = query[4:] if query.startswith("(?i)") else query
+    try:
+        return re.compile(pattern, re.IGNORECASE)
+    except re.error:
+        return None
+
+
+def _model_matches_group_rule(
+    model_name: str, mode: ModelGroupSyncFilterMode, query: str
+) -> bool:
+    trimmed_query = query.strip()
+    if not trimmed_query:
+        return False
+    if mode == ModelGroupSyncFilterMode.REGEX:
+        regex = _compile_group_rule_regex(trimmed_query)
+        return regex is not None and bool(regex.search(model_name))
+    if mode == ModelGroupSyncFilterMode.CONTAINS:
+        return trimmed_query.lower() in model_name.lower()
+    if mode == ModelGroupSyncFilterMode.EXACT:
+        return model_name.casefold() == trimmed_query.casefold()
+    return False
+
+
+def _build_item_view(
+    item: ModelGroupItemInput,
+    sort_order: int,
+    channels_by_id: Mapping[str, ModelGroupChannelLookup],
+) -> ModelGroupItemView:
+    evaluation = evaluate_model_group_item(item, channels_by_id)
+    channel_lookup = channels_by_id.get(item.channel_id)
+    channel = channel_lookup.channel if channel_lookup is not None else None
+    credential = (
+        channel_lookup.credentials_by_id.get(item.credential_id)
+        if channel_lookup is not None
+        else None
+    )
+    return ModelGroupItemView(
+        channel_id=item.channel_id,
+        site_id=channel.site_id if channel is not None else None,
+        channel_name=channel.name if channel is not None else "",
+        protocol=evaluation.protocol,
+        protocol_config_id=evaluation.protocol_config_id,
+        credential_id=item.credential_id,
+        credential_name=credential.remark if credential is not None else "",
+        credential_number=credential.number if credential is not None else 0,
+        rate_source=credential.rate_source if credential is not None else "none",
+        rate_multiplier=credential.rate_multiplier if credential is not None else None,
+        model_name=item.model_name,
+        enabled=item.enabled,
+        sort_order=sort_order,
+        state=evaluation.state,
+        reasons=list(evaluation.reasons),
+    )
+
+
+def _list_ready_channel_items(
+    channels: list[ChannelConfig], model_names: set[str] | None = None
+) -> list[ModelGroupItemView]:
+    """Return READY channel model members in channel order."""
+    channels_by_id = build_model_group_channel_lookups(channels)
+    items: list[ModelGroupItemView] = []
+    for channel in channels:
+        for model in channel.models:
+            if model_names is not None and model.model_name not in model_names:
+                continue
+            item_view = _build_item_view(
+                ModelGroupItemInput(
+                    channel_id=channel.id,
+                    credential_id=model.credential_id,
+                    model_name=model.model_name,
+                ),
+                0,
+                channels_by_id,
+            )
+            if item_view.state == ModelGroupItemState.READY:
+                items.append(item_view)
+    return items
+
+
+def build_direct_groups(
+    channels: list[ChannelConfig], model_name: str | None = None
+) -> list[ModelGroupView]:
+    """Expose channel models as failover groups named after the upstream model."""
+    items_by_name: dict[str, list[ModelGroupItemView]] = defaultdict(list)
+    for item in _list_ready_channel_items(
+        channels, {model_name} if model_name is not None else None
+    ):
+        items = items_by_name[item.model_name]
+        item.sort_order = len(items)
+        items.append(item)
+    return [
+        ModelGroupView(
+            id=f"direct:{name}",
+            name=name,
+            strategy=RoutingStrategy.FAILOVER,
+            client_protocols=infer_client_protocols(item.protocol for item in items),
+            items=items,
+        )
+        for name, items in items_by_name.items()
+    ]
 
 
 class GroupCandidatesMixin:
@@ -153,11 +264,7 @@ class GroupCandidatesMixin:
             key=lambda candidate: (candidate.channel_name, candidate.model_name)
         )
         evaluated_items = [
-            self._candidate_item_view(
-                item,
-                index,
-                channels_by_id,
-            )
+            _build_item_view(item, index, channels_by_id)
             for index, item in enumerate(payload.items)
         ]
         return ModelGroupCandidatesResponse(
@@ -180,43 +287,6 @@ class GroupCandidatesMixin:
                 aggregate.protocol_channels.items(), key=lambda item: item[0].value
             )
         ]
-
-    @staticmethod
-    def _candidate_item_view(
-        item: ModelGroupItemInput,
-        index: int,
-        channels_by_id: Mapping[str, ModelGroupChannelLookup],
-    ) -> ModelGroupItemView:
-        evaluation = evaluate_model_group_item(
-            item,
-            channels_by_id,
-        )
-        channel_lookup = channels_by_id.get(item.channel_id)
-        channel = channel_lookup.channel if channel_lookup is not None else None
-        credential = (
-            channel_lookup.credentials_by_id.get(item.credential_id)
-            if channel_lookup is not None
-            else None
-        )
-        return ModelGroupItemView(
-            channel_id=item.channel_id,
-            site_id=channel.site_id if channel is not None else None,
-            channel_name=channel.name if channel is not None else "",
-            protocol=evaluation.protocol,
-            protocol_config_id=evaluation.protocol_config_id,
-            credential_id=item.credential_id,
-            credential_name=credential.remark if credential is not None else "",
-            credential_number=credential.number if credential is not None else 0,
-            rate_source=credential.rate_source if credential is not None else "none",
-            rate_multiplier=(
-                credential.rate_multiplier if credential is not None else None
-            ),
-            model_name=item.model_name,
-            enabled=item.enabled,
-            sort_order=index,
-            state=evaluation.state,
-            reasons=list(evaluation.reasons),
-        )
 
 
 class GroupMappingMixin:
@@ -251,6 +321,7 @@ class GroupMappingMixin:
             [item.id for item in entities],
             channels,
         )
+        self._append_rule_items(entities, items_by_group, channels)
         route_name_by_id = {item.id: item.name for item in entities}
         prices_by_key = await self._load_model_prices_by_keys(
             session, [canonical_model_price_key(item.name) for item in entities]
@@ -272,6 +343,55 @@ class GroupMappingMixin:
             for item in entities
             if item.id in requested_ids
         ]
+
+    @staticmethod
+    def _append_rule_items(
+        entities: list[ModelGroupEntity],
+        items_by_group: dict[str, list[ModelGroupItemView]],
+        channels: list[ChannelConfig],
+    ) -> None:
+        """Add READY channel models matched by each execution group's rule.
+
+        Saved members come first and win on the same key, so disabling a saved
+        member also keeps the rule from re-adding it.
+        """
+        rules = [
+            (entity, ModelGroupSyncFilterMode(entity.sync_filter_mode))
+            for entity in entities
+            if not entity.route_group_id.strip()
+            and entity.sync_filter_mode != ModelGroupSyncFilterMode.NONE.value
+        ]
+        if not rules:
+            return
+        # ponytail: matches every channel model name per hydration; index names if slow
+        model_names = {
+            model.model_name for channel in channels for model in channel.models
+        }
+        names_by_group = {
+            entity.id: {
+                name
+                for name in model_names
+                if _model_matches_group_rule(name, mode, entity.sync_filter_query)
+            }
+            for entity, mode in rules
+        }
+        ready_items = _list_ready_channel_items(
+            channels, set().union(*names_by_group.values())
+        )
+        for entity, _mode in rules:
+            items = items_by_group.setdefault(entity.id, [])
+            saved_keys = {model_group_item_key(item) for item in items}
+            for ready_item in ready_items:
+                if (
+                    ready_item.model_name not in names_by_group[entity.id]
+                    or model_group_item_key(ready_item) in saved_keys
+                ):
+                    continue
+                items.append(
+                    ready_item.model_copy(
+                        update={"sort_order": len(items), "matched_by_rule": True}
+                    )
+                )
 
     async def _load_model_prices_by_keys(
         self, session: AsyncSession, keys: list[str]
@@ -329,41 +449,8 @@ class GroupMappingMixin:
                 model_name=row.model_name,
                 enabled=bool(row.enabled),
             )
-            evaluation = evaluate_model_group_item(
-                item,
-                channels_by_id,
-            )
-            channel_lookup = channels_by_id.get(row.channel_id)
-            channel = channel_lookup.channel if channel_lookup is not None else None
-            credential = (
-                channel_lookup.credentials_by_id.get(row.credential_id)
-                if channel_lookup is not None
-                else None
-            )
             items_by_group.setdefault(row.group_id, []).append(
-                ModelGroupItemView(
-                    channel_id=row.channel_id,
-                    site_id=channel.site_id if channel is not None else None,
-                    channel_name=channel.name if channel is not None else "",
-                    protocol=evaluation.protocol,
-                    protocol_config_id=evaluation.protocol_config_id,
-                    credential_id=row.credential_id,
-                    credential_name=credential.remark if credential is not None else "",
-                    credential_number=(
-                        credential.number if credential is not None else 0
-                    ),
-                    rate_source=(
-                        credential.rate_source if credential is not None else "none"
-                    ),
-                    rate_multiplier=(
-                        credential.rate_multiplier if credential is not None else None
-                    ),
-                    model_name=row.model_name,
-                    enabled=bool(row.enabled),
-                    sort_order=row.sort_order,
-                    state=evaluation.state,
-                    reasons=list(evaluation.reasons),
-                )
+                _build_item_view(item, row.sort_order, channels_by_id)
             )
         return items_by_group
 

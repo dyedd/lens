@@ -9,7 +9,6 @@ import type {
   FormModel,
   FormProtocolConfig,
   FormState,
-  FormSyncTarget,
   PickerModelItem,
 } from "./channelTypes";
 
@@ -36,12 +35,6 @@ export function activeSelectedCredentialIds(
   });
 }
 
-export function existingPickerModelKeys(config: FormProtocolConfig) {
-  return new Set(
-    [...config.models, ...config.sync_targets].map(genericModelKey),
-  );
-}
-
 export function buildModels(
   config: FormProtocolConfig,
   credentialIds: string[],
@@ -61,15 +54,8 @@ export function buildModels(
       model_name: modelName,
       enabled: true,
       source,
+      upstream_missing: false,
     }));
-}
-
-export function syncTargetKey(target: FormSyncTarget) {
-  return JSON.stringify([
-    target.credential_id,
-    target.model_name,
-    target.protocol,
-  ]);
 }
 
 /** Builds a model key scoped by credential and model name. */
@@ -132,23 +118,8 @@ export function coalesceFormModels(models: FormModel[]) {
       ...model.protocolIds,
     };
     existing.enabled = existing.enabled || model.enabled;
-  }
-  return Array.from(groups.values());
-}
-
-/** Deduplicates picker models by credential and model name. */
-export function groupPickerModels(models: PickerModelItem[]) {
-  const groups = new Map<string, PickerModelItem>();
-  for (const model of models) {
-    const key = genericModelKey(model);
-    if (groups.has(key)) {
-      continue;
-    }
-    groups.set(key, {
-      credential_id: model.credential_id,
-      credential_name: model.credential_name,
-      model_name: model.model_name,
-    });
+    existing.upstream_missing =
+      existing.upstream_missing || model.upstream_missing;
   }
   return Array.from(groups.values());
 }
@@ -165,13 +136,10 @@ export function modelSupportedProtocols(
 }
 
 export function protocolConfigEffectiveProtocols(
-  protocolConfig: Pick<FormProtocolConfig, "models" | "sync_targets">,
+  protocolConfig: Pick<FormProtocolConfig, "models">,
 ): ProtocolKind[] {
   return Array.from(
-    new Set([
-      ...protocolConfig.models.flatMap((model) => model.protocols),
-      ...protocolConfig.sync_targets.map((target) => target.protocol),
-    ]),
+    new Set(protocolConfig.models.flatMap((model) => model.protocols)),
   );
 }
 
@@ -190,17 +158,21 @@ export function siteEndpointSummary(site: Site, locale: string = "zh-CN") {
   return urls[0] + suffix;
 }
 
-/** Counts enabled and total model entries for a site. */
+/** Counts enabled and total model entries, plus models missing upstream. */
 export function siteModelCounts(site: Site) {
   let enabled = 0;
   let total = 0;
+  const pendingNames = new Set<string>();
   for (const protocolConfig of site.protocols) {
     for (const model of protocolConfig.models) {
       total += 1;
       if (model.enabled) enabled += 1;
+      if (model.upstream_missing) {
+        pendingNames.add(`${protocolConfig.id}:${model.model_name}`);
+      }
     }
   }
-  return { enabled, total };
+  return { enabled, total, pending: pendingNames.size };
 }
 
 /** Lists enabled protocol kinds on a site, in canonical order. */
@@ -316,9 +288,6 @@ export const emptyProtocolConfig = (
   base_url_id: baseUrlId,
   credential_ids: [...credentialIds],
   protocols: [],
-  auto_sync_supported_models: false,
-  auto_sync_model_pattern: "",
-  sync_targets: [],
   models: [],
 });
 
@@ -343,6 +312,9 @@ export const emptyForm = (): FormState => {
     channel_proxy: "",
     headersJson: "",
     paramsJson: "",
+    model_sync_enabled: true,
+    model_sync_include: "",
+    model_sync_exclude: "",
   };
 };
 

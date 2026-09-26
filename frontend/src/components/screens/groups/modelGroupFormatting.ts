@@ -54,6 +54,10 @@ export function modelGroupItemReasonLabel(
     credential_disabled: { zh: "密钥不可用", en: "Key unavailable" },
     model_not_found: { zh: "模型不存在", en: "Model not found" },
     model_disabled: { zh: "模型已停用", en: "Model disabled" },
+    model_upstream_missing: {
+      zh: "上游已下线，待确认",
+      en: "Missing upstream, review needed",
+    },
   };
   return labels[reason][locale === "zh-CN" ? "zh" : "en"];
 }

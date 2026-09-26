@@ -77,6 +77,15 @@ class SiteEntity(Base):
     param_override: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
+    model_sync_enabled: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    model_sync_include: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=text("''")
+    )
+    model_sync_exclude: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=text("''")
+    )
 
 
 class SiteBaseUrlEntity(Base):
@@ -128,12 +137,6 @@ class SiteProtocolConfigEntity(Base):
     protocols_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    auto_sync_supported_models: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
-    auto_sync_model_pattern: Mapped[str] = mapped_column(
-        Text, nullable=False, default="", server_default=text("''")
-    )
 
 
 class SiteDiscoveredModelEntity(Base):
@@ -162,27 +165,9 @@ class SiteDiscoveredModelEntity(Base):
     sort_order: Mapped[int] = sort_order_column()
     protocol: Mapped[str | None] = mapped_column(String(40), nullable=True)
     source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
-
-
-class SiteProtocolConfigSyncTargetEntity(Base):
-    __tablename__ = "site_protocol_config_sync_targets"
-    __table_args__ = (
-        UniqueConstraint(
-            "protocol_config_id",
-            "credential_id",
-            "protocol",
-            "model_name",
-            name="uq_site_protocol_config_sync_targets_target",
-        ),
+    upstream_missing: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )
-
-    id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    protocol_config_id: Mapped[str] = mapped_column(
-        String(80), nullable=False, index=True
-    )
-    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    protocol: Mapped[str] = mapped_column(String(40), nullable=False)
-    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
 class ModelGroupEntity(Base):

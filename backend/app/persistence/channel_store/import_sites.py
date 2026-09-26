@@ -19,7 +19,6 @@ from ...models.sites import (
     SiteCredentialInput,
     SiteModelInput,
     SiteProtocolConfigInput,
-    SiteSyncTarget,
 )
 
 
@@ -61,7 +60,6 @@ def prepare_site_import(
                     id=str(uuid.uuid4()),
                     base_url_id=base_url.id,
                     models=[],
-                    sync_targets=[],
                 )
             )
 
@@ -249,15 +247,6 @@ def _import_protocols(
                 id=str(uuid.uuid4()),
                 base_url_id=base_url_id,
                 models=models,
-                sync_targets=[
-                    SiteSyncTarget(
-                        credential_id=model.credential_id,
-                        model_name=model.model_name,
-                        protocol=model.protocol,
-                    )
-                    for model in models
-                    if model.source.value == "synced"
-                ],
             )
         )
     return protocols

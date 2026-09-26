@@ -181,3 +181,31 @@ def test_openai_model_list_exposes_all_protocol_groups_by_default(
 
     assert response.status_code == 200
     assert response.json()["data"][0]["id"] == "gemini-pro"
+
+
+def test_openai_model_list_includes_ungrouped_channel_models(
+    client,
+    create_site,
+    create_site_group_and_key,
+    create_gateway_key,
+) -> None:
+    _site, _group, unrestricted_key = create_site_group_and_key()
+    create_site(
+        valid_site_payload(
+            name="Direct Site",
+            base_id="direct-base",
+            credential_id="direct-cred",
+            protocol_config_id="direct-pc",
+            model_name="direct-model",
+        )
+    )
+    restricted_key = create_gateway_key(allowed_models=["direct-model"])
+
+    unrestricted = client.get("/v1/models", headers=gateway_headers(unrestricted_key))
+    restricted = client.get("/v1/models", headers=gateway_headers(restricted_key))
+
+    assert sorted(item["id"] for item in unrestricted.json()["data"]) == [
+        "direct-model",
+        "gpt-4o",
+    ]
+    assert [item["id"] for item in restricted.json()["data"]] == ["direct-model"]
