@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -21,11 +20,7 @@ from app.models.model_groups import (
     ModelGroupItemView,
     ModelGroupView,
 )
-from app.models.protocols import (
-    ModelGroupSyncFilterMode,
-    ProtocolKind,
-    RoutingStrategy,
-)
+from app.models.protocols import ProtocolKind
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
@@ -35,6 +30,7 @@ from app.persistence.group_rule_codec import (
     group_price_kwargs,
     parse_fallback_group_ids,
     parse_headers,
+    parse_match_models,
     parse_param_override,
 )
 
@@ -56,6 +52,7 @@ class _CandidateAggregate:
     channel_name: str = ""
     credential_name: str = ""
     credential_number: int = 0
+    credential_mask: str = ""
     rate_source: Literal["none", "sub2api", "newapi"] = "none"
     rate_multiplier: float | None = None
     base_url: str = ""
@@ -65,8 +62,7 @@ class _CandidateAggregate:
 
 
 @lru_cache(maxsize=256)
-def _compile_group_rule_regex(query: str) -> re.Pattern[str] | None:
-    pattern = query[4:] if query.startswith("(?i)") else query
+def _compile_group_rule_regex(pattern: str) -> re.Pattern[str] | None:
     try:
         return re.compile(pattern, re.IGNORECASE)
     except re.error:
@@ -74,19 +70,21 @@ def _compile_group_rule_regex(query: str) -> re.Pattern[str] | None:
 
 
 def _model_matches_group_rule(
-    model_name: str, mode: ModelGroupSyncFilterMode, query: str
+    model_name: str, match_models: list[str], match_regex: str
 ) -> bool:
-    trimmed_query = query.strip()
-    if not trimmed_query:
-        return False
-    if mode == ModelGroupSyncFilterMode.REGEX:
-        regex = _compile_group_rule_regex(trimmed_query)
-        return regex is not None and bool(regex.search(model_name))
-    if mode == ModelGroupSyncFilterMode.CONTAINS:
-        return trimmed_query.lower() in model_name.lower()
-    if mode == ModelGroupSyncFilterMode.EXACT:
-        return model_name.casefold() == trimmed_query.casefold()
-    return False
+    """Return whether a model name joins a group by its match models or regex."""
+    folded_name = model_name.casefold()
+    if any(folded_name == item.casefold() for item in match_models):
+        return True
+    regex = _compile_group_rule_regex(match_regex) if match_regex else None
+    return regex is not None and regex.search(model_name) is not None
+
+
+def format_credential_mask(api_key: str) -> str:
+    """Return a masked API key that never reveals the full secret."""
+    if len(api_key) <= 8:
+        return f"…{api_key[-2:]}" if len(api_key) > 2 else "…"
+    return f"{api_key[:3]}…{api_key[-4:]}"
 
 
 def _build_item_view(
@@ -111,6 +109,10 @@ def _build_item_view(
         credential_id=item.credential_id,
         credential_name=credential.remark if credential is not None else "",
         credential_number=credential.number if credential is not None else 0,
+        credential_mask=(
+            format_credential_mask(credential.key) if credential is not None else ""
+        ),
+        base_url=str(channel.base_url) if channel is not None else "",
         rate_source=credential.rate_source if credential is not None else "none",
         rate_multiplier=credential.rate_multiplier if credential is not None else None,
         model_name=item.model_name,
@@ -121,7 +123,7 @@ def _build_item_view(
     )
 
 
-def _list_ready_channel_items(
+def list_ready_channel_items(
     channels: list[ChannelConfig], model_names: set[str] | None = None
 ) -> list[ModelGroupItemView]:
     """Return READY channel model members in channel order."""
@@ -143,29 +145,6 @@ def _list_ready_channel_items(
             if item_view.state == ModelGroupItemState.READY:
                 items.append(item_view)
     return items
-
-
-def build_direct_groups(
-    channels: list[ChannelConfig], model_name: str | None = None
-) -> list[ModelGroupView]:
-    """Expose channel models as failover groups named after the upstream model."""
-    items_by_name: dict[str, list[ModelGroupItemView]] = defaultdict(list)
-    for item in _list_ready_channel_items(
-        channels, {model_name} if model_name is not None else None
-    ):
-        items = items_by_name[item.model_name]
-        item.sort_order = len(items)
-        items.append(item)
-    return [
-        ModelGroupView(
-            id=f"direct:{name}",
-            name=name,
-            strategy=RoutingStrategy.FAILOVER,
-            client_protocols=infer_client_protocols(item.protocol for item in items),
-            items=items,
-        )
-        for name, items in items_by_name.items()
-    ]
 
 
 class GroupCandidatesMixin:
@@ -205,8 +184,9 @@ class GroupCandidatesMixin:
                         protocol_config_id=evaluation.protocol_config_id,
                         site_id=channel.site_id,
                         credential_id=model.credential_id,
-                        credential_name=model.credential_name,
+                        credential_name=credential.remark,
                         credential_number=credential.number,
+                        credential_mask=format_credential_mask(credential.key),
                         rate_source=credential.rate_source,
                         rate_multiplier=credential.rate_multiplier,
                         model_name=model.model_name,
@@ -238,6 +218,7 @@ class GroupCandidatesMixin:
                     credential_id=aggregate.credential_id,
                     credential_name=aggregate.credential_name,
                     credential_number=aggregate.credential_number,
+                    credential_mask=aggregate.credential_mask,
                     rate_source=aggregate.rate_source,
                     rate_multiplier=aggregate.rate_multiplier,
                     base_url=aggregate.base_url,
@@ -356,10 +337,13 @@ class GroupMappingMixin:
         member also keeps the rule from re-adding it.
         """
         rules = [
-            (entity, ModelGroupSyncFilterMode(entity.sync_filter_mode))
+            (entity.id, match_models, entity.match_regex)
             for entity in entities
             if not entity.route_group_id.strip()
-            and entity.sync_filter_mode != ModelGroupSyncFilterMode.NONE.value
+            and (
+                (match_models := parse_match_models(entity.match_models_json))
+                or entity.match_regex
+            )
         ]
         if not rules:
             return
@@ -368,22 +352,22 @@ class GroupMappingMixin:
             model.model_name for channel in channels for model in channel.models
         }
         names_by_group = {
-            entity.id: {
+            group_id: {
                 name
                 for name in model_names
-                if _model_matches_group_rule(name, mode, entity.sync_filter_query)
+                if _model_matches_group_rule(name, match_models, match_regex)
             }
-            for entity, mode in rules
+            for group_id, match_models, match_regex in rules
         }
-        ready_items = _list_ready_channel_items(
+        ready_items = list_ready_channel_items(
             channels, set().union(*names_by_group.values())
         )
-        for entity, _mode in rules:
-            items = items_by_group.setdefault(entity.id, [])
+        for group_id, _match_models, _match_regex in rules:
+            items = items_by_group.setdefault(group_id, [])
             saved_keys = {model_group_item_key(item) for item in items}
             for ready_item in ready_items:
                 if (
-                    ready_item.model_name not in names_by_group[entity.id]
+                    ready_item.model_name not in names_by_group[group_id]
                     or model_group_item_key(ready_item) in saved_keys
                 ):
                     continue
@@ -487,8 +471,8 @@ class GroupMappingMixin:
             strategy=entity.strategy,
             route_group_id=entity.route_group_id,
             route_group_name=route_group_name,
-            sync_filter_mode=entity.sync_filter_mode,
-            sync_filter_query=entity.sync_filter_query,
+            match_models=parse_match_models(entity.match_models_json),
+            match_regex=entity.match_regex,
             param_override=parse_param_override(entity.param_override),
             headers=parse_headers(entity.headers_json),
             fallback_group_ids=parse_fallback_group_ids(entity.fallback_group_ids_json),

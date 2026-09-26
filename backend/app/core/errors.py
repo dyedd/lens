@@ -37,3 +37,10 @@ class RoutingError(LensError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, status_code=503, error_type="routing_error")
+
+
+class ResourceConflictError(LensError):
+    """A requested change conflicts with the current state of a resource."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, status_code=409, error_type="conflict")

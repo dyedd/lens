@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/Popover";
 import { ChannelBaseUrlSection } from "./ChannelBaseUrlSection";
 import { ChannelCredentialSection } from "./ChannelCredentialSection";
-import { replacePendingCredentials } from "./channelModels";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
 
 type Props = {
@@ -27,6 +26,7 @@ type Props = {
   locale: Locale;
   availableTags: string[];
   siteId: string | null;
+  canSyncRates: boolean;
   setForm: Dispatch<SetStateAction<FormState>>;
   addBaseUrl: () => void;
   updateBaseUrl: (index: number, patch: Partial<FormBaseUrl>) => void;
@@ -39,6 +39,7 @@ export function ChannelBasicInfoSection({
   locale,
   availableTags,
   siteId,
+  canSyncRates,
   setForm,
   addBaseUrl,
   updateBaseUrl,
@@ -219,6 +220,7 @@ export function ChannelBasicInfoSection({
         form={form}
         locale={locale}
         siteId={siteId}
+        canSyncRates={canSyncRates}
         setForm={setForm}
         onAdd={addBaseUrl}
         onUpdate={updateBaseUrl}
@@ -228,27 +230,11 @@ export function ChannelBasicInfoSection({
         locale={locale}
         inputId="channel-keys"
         required={!siteId}
-        newApiKeysLines={form.newApiKeysLines}
-        credentials={form.credentials.filter((item) => !item.baseUrlId)}
-        onNewApiKeysChange={(value) => {
-          setForm((current) => ({
-            ...current,
-            newApiKeysLines: value,
-            credentials: replacePendingCredentials(
-              current.credentials,
-              value,
-              "",
-            ),
-          }));
-        }}
-        onRemove={(credentialId) => {
-          setForm((current) => ({
-            ...current,
-            credentials: current.credentials.filter(
-              (item) => item.id !== credentialId,
-            ),
-          }));
-        }}
+        baseUrlId=""
+        form={form}
+        setForm={setForm}
+        siteId={siteId}
+        canSyncRates={canSyncRates}
       />
     </section>
   );

@@ -20,10 +20,12 @@ from app.persistence.entities import (
 )
 from app.persistence.group_rule_codec import (
     dump_fallback_group_ids,
+    dump_match_models,
     dump_rules,
     group_price_kwargs,
     parse_fallback_group_ids,
     parse_headers,
+    parse_match_models,
     parse_param_override,
 )
 
@@ -116,8 +118,8 @@ async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                     "strategy": row.strategy,
                     "route_group_id": row.route_group_id,
                     "route_group_name": route_group_names.get(row.route_group_id, ""),
-                    "sync_filter_mode": row.sync_filter_mode,
-                    "sync_filter_query": row.sync_filter_query,
+                    "match_models": parse_match_models(row.match_models_json),
+                    "match_regex": row.match_regex,
                     "param_override": parse_param_override(row.param_override),
                     "headers": parse_headers(row.headers_json),
                     "fallback_group_ids": parse_fallback_group_ids(
@@ -148,7 +150,7 @@ async def replace_groups(
 
     groups_by_id = {group.id: group for group in groups}
     for group in groups:
-        is_synced_group = bool(group.sync_filter_mode.value)
+        has_match_rules = bool(group.match_models or group.match_regex)
         if group.id in seen_group_ids:
             raise ValueError(f"Duplicate group id in backup: {group.id}")
         seen_group_ids.add(group.id)
@@ -183,7 +185,7 @@ async def replace_groups(
         for item in group.items:
             parsed_channel_id = split_runtime_channel_id(item.channel_id)
             if parsed_channel_id is None or (
-                is_synced_group
+                has_match_rules
                 and parsed_channel_id[0] not in available_protocol_config_ids
             ):
                 raise ValueError(
@@ -197,7 +199,7 @@ async def replace_groups(
                     f"credential={item.credential_id} model={item.model_name}"
                 )
             resolved_item_keys.add(target)
-            if is_synced_group and target not in model_keys:
+            if has_match_rules and target not in model_keys:
                 raise ValueError(
                     f"Model group model not found in backup channel {item.channel_id} credential={item.credential_id}: {item.model_name}"
                 )
@@ -208,8 +210,8 @@ async def replace_groups(
                 name=group.name,
                 strategy=group.strategy.value,
                 route_group_id=group.route_group_id,
-                sync_filter_mode=group.sync_filter_mode.value,
-                sync_filter_query=group.sync_filter_query,
+                match_models_json=dump_match_models(group.match_models),
+                match_regex=group.match_regex,
                 param_override=dump_rules(group.param_override),
                 headers_json=dump_rules(group.headers),
                 fallback_group_ids_json=dump_fallback_group_ids(

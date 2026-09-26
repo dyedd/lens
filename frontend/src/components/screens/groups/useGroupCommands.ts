@@ -6,20 +6,30 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api/client";
-import type { ModelGroup, RoutingStrategy } from "@/lib/api/groups";
-import type { GroupCardDragging } from "./groupTypes";
-import { EMPTY_FORM, type FormState, type GroupRow } from "./groupTypes";
+import type {
+  ModelGroup,
+  ModelGroupMergeRequest,
+  ModelGroupPlacementRequest,
+  ModelGroupPlacementResponse,
+  RoutingStrategy,
+} from "@/lib/api/groups";
+import {
+  EMPTY_FORM,
+  type FormState,
+  type GroupRow,
+  type SimilarGroupView,
+} from "./groupTypes";
 import { formToModelGroupPayload, modelGroupToForm } from "./groupView";
 import {
   isGroupEnabled,
   modelGroupErrorMessage,
-  modelGroupItemKey,
-  moveItems,
+  strategyLabel,
 } from "./modelGroupFormatting";
 
 type GroupCommandOptions = {
   editingId: string | null;
   form: FormState;
+  groups: ModelGroup[];
   invalidateGroupData: () => Promise<void>;
   locale: "zh-CN" | "en-US";
   setDialogOpen: Dispatch<SetStateAction<boolean>>;
@@ -27,10 +37,11 @@ type GroupCommandOptions = {
   setForm: Dispatch<SetStateAction<FormState>>;
 };
 
-/** Manage persistence commands for model groups and prices. */
+/** Manage persistence commands for model groups and model placement. */
 export function useGroupCommands({
   editingId,
   form,
+  groups,
   invalidateGroupData,
   locale,
   setDialogOpen,
@@ -39,7 +50,6 @@ export function useGroupCommands({
 }: GroupCommandOptions) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null);
-  const [cardDragging, setCardDragging] = useState<GroupCardDragging>(null);
 
   async function saveGroup(payload: FormState, groupId: string | null) {
     const savedGroup = await apiRequest<ModelGroup>(
@@ -51,6 +61,24 @@ export function useGroupCommands({
     );
     await invalidateGroupData();
     return savedGroup;
+  }
+
+  /** Run one persistence action under a busy marker, toasting failures. */
+  async function runCommand(
+    marker: string,
+    failureMessage: string,
+    action: () => Promise<void>,
+  ) {
+    setBusyId(marker);
+    try {
+      await action();
+      return true;
+    } catch (error) {
+      toast.error(modelGroupErrorMessage(error, failureMessage));
+      return false;
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -80,77 +108,30 @@ export function useGroupCommands({
   }
 
   async function remove(group: ModelGroup) {
-    setBusyId(group.id);
-    try {
-      await apiRequest<void>(`/admin/model-groups/${group.id}`, {
-        method: "DELETE",
-      });
-      setDeleteTarget(null);
-      await invalidateGroupData();
+    const removed = await runCommand(
+      group.id,
+      locale === "zh-CN" ? "删除模型组失败" : "Failed to delete group",
+      async () => {
+        await apiRequest<void>(`/admin/model-groups/${group.id}`, {
+          method: "DELETE",
+        });
+        setDeleteTarget(null);
+        await invalidateGroupData();
+      },
+    );
+    if (removed) {
       toast.success(locale === "zh-CN" ? "模型组已删除" : "Group deleted");
-    } catch (error) {
-      toast.error(
-        modelGroupErrorMessage(
-          error,
-          locale === "zh-CN" ? "删除模型组失败" : "Failed to delete group",
-        ),
-      );
-    } finally {
-      setBusyId(null);
     }
   }
 
-  async function updateGroupPartial(
-    group: ModelGroup,
-    updates: Partial<FormState>,
-  ) {
-    setBusyId(group.id);
-    try {
-      await saveGroup({ ...modelGroupToForm(group), ...updates }, group.id);
-      return true;
-    } catch (error) {
-      toast.error(
-        modelGroupErrorMessage(
-          error,
-          locale === "zh-CN" ? "更新模型组失败" : "Failed to update group",
-        ),
-      );
-      return false;
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function reorderGroupMembers(
-    group: GroupRow,
-    fromIndex: number,
-    toIndex: number,
-  ) {
-    if (group.is_route_group || fromIndex === toIndex || busyId === group.id) {
-      return;
-    }
-    const nextMembers = moveItems(group.display_members, fromIndex, toIndex);
-    if (nextMembers === group.display_members) return;
-    await updateGroupPartial(group, {
-      items: nextMembers.flatMap((member) => member.items),
-    });
-  }
-
-  async function reorderGroupChannels(
-    group: GroupRow,
-    fromIndex: number,
-    toIndex: number,
-  ) {
-    if (group.is_route_group || fromIndex === toIndex || busyId === group.id) {
-      return;
-    }
-    const nextChannels = moveItems(group.display_channels, fromIndex, toIndex);
-    if (nextChannels === group.display_channels) return;
-    await updateGroupPartial(group, {
-      items: nextChannels.flatMap((channel) =>
-        channel.members.flatMap((member) => member.items),
-      ),
-    });
+  function updateGroupPartial(group: ModelGroup, updates: Partial<FormState>) {
+    return runCommand(
+      group.id,
+      locale === "zh-CN" ? "更新模型组失败" : "Failed to update group",
+      async () => {
+        await saveGroup({ ...modelGroupToForm(group), ...updates }, group.id);
+      },
+    );
   }
 
   async function changeStrategy(group: GroupRow, strategy: RoutingStrategy) {
@@ -192,99 +173,161 @@ export function useGroupCommands({
     }
   }
 
-  async function removeGroupMember(group: GroupRow, memberKey: string) {
-    if (group.is_route_group || busyId === group.id) return;
-    const member = group.display_members.find((item) => item.key === memberKey);
-    if (!member) return;
-    const removedKeys = new Set(
-      member.items.map((item) => modelGroupItemKey(item)),
-    );
-    const items = modelGroupToForm(group).items.filter(
-      (item) => !removedKeys.has(modelGroupItemKey(item)),
-    );
-    if (await updateGroupPartial(group, { items })) {
-      toast.success(locale === "zh-CN" ? "成员已删除" : "Member removed");
-    }
-  }
-
-  async function removeGroupChannel(group: GroupRow, channelKey: string) {
-    if (group.is_route_group || busyId === group.id) return;
-    const channel = group.display_channels.find(
-      (item) => item.key === channelKey,
-    );
-    if (!channel) return;
-    const removedKeys = new Set(
-      channel.members.flatMap((member) =>
-        member.items.map((item) => modelGroupItemKey(item)),
-      ),
-    );
-    const items = modelGroupToForm(group).items.filter(
-      (item) => !removedKeys.has(modelGroupItemKey(item)),
-    );
-    if (await updateGroupPartial(group, { items })) {
-      toast.success(locale === "zh-CN" ? "渠道已移除" : "Channel removed");
-    }
-  }
-
-  async function applyEnabled(groups: GroupRow[], enabled: boolean) {
-    const targets = groups.filter(
+  async function applyEnabled(targetGroups: GroupRow[], enabled: boolean) {
+    const targets = targetGroups.filter(
       (group) =>
         !group.is_route_group &&
         group.items.length > 0 &&
         isGroupEnabled(group) !== enabled,
     );
     if (!targets.length) return;
-    setBusyId("bulk");
-    try {
-      for (const group of targets) {
-        const items = modelGroupToForm(group).items.map((item) => ({
-          ...item,
-          enabled,
-        }));
-        await saveGroup({ ...modelGroupToForm(group), items }, group.id);
-      }
+    const updated = await runCommand(
+      "bulk",
+      locale === "zh-CN" ? "批量更新模型组失败" : "Failed to update groups",
+      async () => {
+        for (const group of targets) {
+          const groupForm = modelGroupToForm(group);
+          const items = groupForm.items.map((item) => ({ ...item, enabled }));
+          await saveGroup({ ...groupForm, items }, group.id);
+        }
+      },
+    );
+    if (!updated) return;
+    toast.success(
+      enabled
+        ? locale === "zh-CN"
+          ? `已启动 ${targets.length} 个模型组`
+          : `Enabled ${targets.length} groups`
+        : locale === "zh-CN"
+          ? `已停止 ${targets.length} 个模型组`
+          : `Disabled ${targets.length} groups`,
+    );
+  }
+
+  async function applyStrategy(
+    targetGroups: GroupRow[],
+    strategy: RoutingStrategy,
+  ) {
+    const targets = targetGroups.filter(
+      (group) => !group.is_route_group && group.strategy !== strategy,
+    );
+    if (!targets.length) return;
+    const updated = await runCommand(
+      "bulk",
+      locale === "zh-CN" ? "批量更新模型组失败" : "Failed to update groups",
+      async () => {
+        for (const group of targets) {
+          await saveGroup({ ...modelGroupToForm(group), strategy }, group.id);
+        }
+      },
+    );
+    if (!updated) return;
+    toast.success(
+      locale === "zh-CN"
+        ? `已将 ${targets.length} 个模型组设为${strategyLabel(strategy, locale)}`
+        : `Set ${targets.length} groups to ${strategyLabel(strategy, locale)}`,
+    );
+  }
+
+  async function removeGroups(targetGroups: ModelGroup[]) {
+    if (!targetGroups.length) return;
+    const removed = await runCommand(
+      "bulk",
+      locale === "zh-CN" ? "批量删除模型组失败" : "Failed to delete groups",
+      async () => {
+        for (const group of targetGroups) {
+          await apiRequest<void>(`/admin/model-groups/${group.id}`, {
+            method: "DELETE",
+          });
+        }
+        setDeleteTarget(null);
+        await invalidateGroupData();
+      },
+    );
+    if (!removed) return;
+    toast.success(
+      locale === "zh-CN"
+        ? `已删除 ${targetGroups.length} 个模型组`
+        : `Deleted ${targetGroups.length} groups`,
+    );
+  }
+
+  /** Merge a group into another; the backend repoints references. */
+  async function mergeGroup(source: ModelGroup, target: SimilarGroupView) {
+    const payload: ModelGroupMergeRequest = { target_group_id: target.id };
+    const merged = await runCommand(
+      source.id,
+      locale === "zh-CN" ? "合并模型组失败" : "Failed to merge groups",
+      async () => {
+        await apiRequest<ModelGroup>(`/admin/model-groups/${source.id}/merge`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        await invalidateGroupData();
+      },
+    );
+    if (!merged) return;
+    toast.success(
+      locale === "zh-CN"
+        ? `已将「${source.name}」合并到「${target.name}」`
+        : `Merged "${source.name}" into "${target.name}"`,
+    );
+  }
+
+  /** Add unplaced model names to an existing group's match rules. */
+  async function addModelsToGroup(groupId: string, modelNames: string[]) {
+    const group = groups.find((item) => item.id === groupId);
+    if (!group) return;
+    const matchModels = [...new Set([...group.match_models, ...modelNames])];
+    if (await updateGroupPartial(group, { match_models: matchModels })) {
       toast.success(
-        enabled
-          ? locale === "zh-CN"
-            ? `已启动 ${targets.length} 个模型组`
-            : `Enabled ${targets.length} groups`
-          : locale === "zh-CN"
-            ? `已停止 ${targets.length} 个模型组`
-            : `Disabled ${targets.length} groups`,
+        locale === "zh-CN"
+          ? `已加入「${group.name}」`
+          : `Added to "${group.name}"`,
       );
-    } catch (error) {
-      toast.error(
-        modelGroupErrorMessage(
-          error,
-          locale === "zh-CN" ? "批量更新模型组失败" : "Failed to update groups",
-        ),
-      );
-    } finally {
-      setBusyId(null);
     }
   }
 
-  async function removeGroups(groups: ModelGroup[]) {
-    if (!groups.length) return;
-    setBusyId("bulk");
+  /** Create one group whose match rules cover the given model names. */
+  async function createGroupForModels(name: string, modelNames: string[]) {
+    const created = await runCommand(
+      `place:${name}`,
+      locale === "zh-CN" ? "创建模型组失败" : "Failed to create group",
+      async () => {
+        await saveGroup(
+          { ...EMPTY_FORM, name, match_models: modelNames },
+          null,
+        );
+      },
+    );
+    if (created) {
+      toast.success(
+        locale === "zh-CN" ? `已创建「${name}」` : `Created "${name}"`,
+      );
+    }
+  }
+
+  /** Let the backend place every unplaced name that no longer collides. */
+  async function autoPlaceModels() {
+    const payload: ModelGroupPlacementRequest = { model_names: null };
+    setBusyId("placement");
     try {
-      for (const group of groups) {
-        await apiRequest<void>(`/admin/model-groups/${group.id}`, {
-          method: "DELETE",
-        });
-      }
-      setDeleteTarget(null);
+      const { created, unplaced } =
+        await apiRequest<ModelGroupPlacementResponse>(
+          "/admin/model-group-placements",
+          { method: "POST", body: JSON.stringify(payload) },
+        );
       await invalidateGroupData();
       toast.success(
         locale === "zh-CN"
-          ? `已删除 ${groups.length} 个模型组`
-          : `Deleted ${groups.length} groups`,
+          ? `已创建 ${created.length} 个模型组，剩余 ${unplaced.length} 个待放置`
+          : `Created ${created.length} groups, ${unplaced.length} still unplaced`,
       );
     } catch (error) {
       toast.error(
         modelGroupErrorMessage(
           error,
-          locale === "zh-CN" ? "批量删除模型组失败" : "Failed to delete groups",
+          locale === "zh-CN" ? "自动放置失败" : "Auto placement failed",
         ),
       );
     } finally {
@@ -293,18 +336,17 @@ export function useGroupCommands({
   }
 
   return {
+    addModelsToGroup,
     applyEnabled,
+    applyStrategy,
+    autoPlaceModels,
     busyId,
-    cardDragging,
     changeStrategy,
+    createGroupForModels,
     deleteTarget,
+    mergeGroup,
     remove,
-    removeGroupChannel,
-    removeGroupMember,
     removeGroups,
-    reorderGroupChannels,
-    reorderGroupMembers,
-    setCardDragging,
     setDeleteTarget,
     submit,
     toggleGroupEnabled,

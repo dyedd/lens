@@ -73,8 +73,8 @@ function ChannelModelSection({
             </div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
               {isZh
-                ? "新模型自动加入并可按原名直接调用，上游下线的模型标记为待确认"
-                : "New models join and are callable by name; models gone upstream wait for review"}
+                ? "新模型自动加入并放入模型组，上游下线的模型标记为待确认"
+                : "New models join and are placed into model groups; models gone upstream wait for review"}
             </div>
           </div>
           <Switch
@@ -221,6 +221,7 @@ export function ChannelEditorDialog({
                 locale={locale}
                 availableTags={availableTags}
                 siteId={editingSiteId}
+                canSyncRates={Boolean(editingSiteId) && !hasUnsavedChanges}
                 setForm={setForm}
                 addBaseUrl={addBaseUrl}
                 updateBaseUrl={updateBaseUrl}

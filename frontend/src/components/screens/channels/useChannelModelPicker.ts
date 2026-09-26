@@ -12,13 +12,25 @@ import { rebuildProtocolConfigs } from "./channelFormConversion";
 import {
   activeSelectedCredentialIds,
   buildModels,
+  credentialLabel,
   fallbackCredentialName,
+  formatCredentialTitle,
 } from "./channelModels";
 import type { FormState, Locale, PickerModelItem } from "./channelTypes";
 
+export type RemoteModelItem = PickerModelItem & {
+  credentialName: string;
+  /** Key label plus masked value. */
+  credentialTitle: string;
+  baseUrl: string;
+};
+
 export type RemoteModelCatalog = {
-  items: PickerModelItem[];
+  items: RemoteModelItem[];
   boundNames: Set<string>;
+  /** Distinct keys queried across every URL. */
+  credentialCount: number;
+  hasMultipleBaseUrls: boolean;
 };
 
 /** Owns upstream catalog discovery and import into the channel form. */
@@ -58,7 +70,7 @@ export function useChannelModelPicker({
           .filter((item) => item.api_key && credentialIds.has(item.id)),
         credential_ids: [...credentialIds],
       };
-      return [{ protocolConfigId: config.id, payload }];
+      return [{ protocolConfigId: config.id, baseUrl, payload }];
     });
     if (!targets.length) {
       toast.error(
@@ -78,13 +90,28 @@ export function useChannelModelPicker({
           }),
         ),
       );
+      const credentialIndexById = new Map(
+        form.credentials.map((item, index) => [item.id, index] as const),
+      );
       const items = results.flatMap((result, index) =>
         result.status === "fulfilled"
-          ? result.value.map((item) => ({
-              protocol_config_id: targets[index].protocolConfigId,
-              credential_id: item.credential_id,
-              model_name: item.model_name,
-            }))
+          ? result.value.map((item) => {
+              const credentialIndex =
+                credentialIndexById.get(item.credential_id) ?? -1;
+              const credential = form.credentials[credentialIndex];
+              return {
+                protocol_config_id: targets[index].protocolConfigId,
+                credential_id: item.credential_id,
+                model_name: item.model_name,
+                credentialName: credential
+                  ? credentialLabel(credential, credentialIndex, locale)
+                  : item.credential_name,
+                credentialTitle: credential
+                  ? formatCredentialTitle(credential, credentialIndex, locale)
+                  : item.credential_name,
+                baseUrl: targets[index].baseUrl,
+              };
+            })
           : [],
       );
       const failure = results.find((result) => result.status === "rejected");
@@ -111,6 +138,10 @@ export function useChannelModelPicker({
             config.models.map((model) => model.model_name),
           ),
         ),
+        credentialCount: new Set(
+          targets.flatMap((target) => target.payload.credential_ids),
+        ).size,
+        hasMultipleBaseUrls: targets.length > 1,
       };
     } finally {
       setFetching(false);

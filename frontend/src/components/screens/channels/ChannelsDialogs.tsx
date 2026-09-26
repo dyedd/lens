@@ -8,10 +8,7 @@ import type {
 } from "./useChannelCommands";
 import type { useChannelForm } from "./useChannelForm";
 import type { useChannelModelPicker } from "./useChannelModelPicker";
-import type {
-  useBatchModelTest,
-  useChannelModelTest,
-} from "./useChannelModelTest";
+import type { useChannelModelTest } from "./useChannelModelTest";
 import type { useAggregatedModels } from "./useChannelQueries";
 import type { useChannelSave } from "./useChannelSave";
 
@@ -23,11 +20,6 @@ const DeleteChannelDialog = lazyComponent(() =>
 );
 const BatchImportDialog = lazyComponent(() =>
   import("./BatchImportDialog").then((module) => module.BatchImportDialog),
-);
-const BatchModelTestDialog = lazyComponent(() =>
-  import("./BatchModelTestDialog").then(
-    (module) => module.BatchModelTestDialog,
-  ),
 );
 const ModelTestDialog = lazyComponent(() =>
   import("./ModelTestDialog").then((module) => module.ModelTestDialog),
@@ -49,7 +41,6 @@ type Props = {
   transfer: ReturnType<typeof useChannelTransfer>;
   picker: ReturnType<typeof useChannelModelPicker>;
   modelTest: ReturnType<typeof useChannelModelTest>;
-  batchTest: ReturnType<typeof useBatchModelTest>;
   save: ReturnType<typeof useChannelSave>;
   overviewModels: ReturnType<typeof useAggregatedModels>;
   editorMode: "channel" | "models";
@@ -70,7 +61,6 @@ export function ChannelsDialogs({
   transfer,
   picker,
   modelTest,
-  batchTest,
   save,
   overviewModels,
   editorMode,
@@ -172,22 +162,6 @@ export function ChannelsDialogs({
           onImport={() => void transfer.importBatchSites()}
         />
       ) : null}
-      {batchTest.batchModelTestOpen ? (
-        <BatchModelTestDialog
-          locale={locale}
-          targetName={editor.form.name}
-          rows={batchTest.batchTestRows}
-          testing={batchTest.isBatchModelTestRunning}
-          prompts={batchTest.prompts}
-          promptMode={batchTest.batchTestPromptMode}
-          prompt={batchTest.batchTestPrompt}
-          onPromptModeChange={batchTest.changeBatchTestPromptMode}
-          onPromptChange={batchTest.changeBatchTestPrompt}
-          onProtocolChange={batchTest.changeBatchTestProtocol}
-          onRun={() => void batchTest.runBatchModelTests()}
-          onClose={() => batchTest.changeBatchModelTestOpen(false)}
-        />
-      ) : null}
       {persistence.deleteTarget ? (
         <DeleteChannelDialog
           deleteTarget={persistence.deleteTarget}
@@ -206,6 +180,9 @@ export function ChannelsDialogs({
           onPromptModeChange={modelTest.changeModelTestPromptMode}
           onPromptChange={modelTest.changeModelTestPrompt}
           onRun={() => void modelTest.runModelTest()}
+          credentialOptions={modelTest.modelTestCredentialOptions}
+          credentialValue={modelTest.modelTestDeleteKey ?? undefined}
+          onCredentialChange={modelTest.changeModelTestCredential}
           items={[
             {
               target: modelTest.modelTestDialogTarget,
