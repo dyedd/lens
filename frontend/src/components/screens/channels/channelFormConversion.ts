@@ -71,7 +71,8 @@ function remapModelsToCredentials(
   );
 }
 
-function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
+/** Rebuilds one protocol config per base URL with the keys it can use. */
+export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
   const urls = form.base_urls.filter((item) => item.url.trim());
   const existingByUrl = new Map(
     form.protocolConfigs.map((config) => [config.base_url_id, config] as const),
@@ -83,7 +84,6 @@ function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
     const source = existing ?? primaryConfig;
     const protocols = protocolConfigEffectiveProtocols({
       models: existing?.models ?? source?.models ?? [],
-      sync_targets: existing?.sync_targets ?? source?.sync_targets ?? [],
     });
     const models = existing?.models.length
       ? existing.models.filter((model) =>
@@ -103,24 +103,7 @@ function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
       protocols: protocols.length
         ? protocols
         : (existing?.protocols ?? source?.protocols ?? []),
-      auto_sync_supported_models:
-        existing?.auto_sync_supported_models ??
-        source?.auto_sync_supported_models ??
-        false,
-      auto_sync_model_pattern:
-        existing?.auto_sync_model_pattern ??
-        source?.auto_sync_model_pattern ??
-        "",
       models: coalesceFormModels(models),
-      sync_targets: (
-        existing?.sync_targets ??
-        source?.sync_targets ??
-        []
-      ).filter(
-        (target) =>
-          credentialIds.includes(target.credential_id) &&
-          protocols.includes(target.protocol),
-      ),
     };
   });
 }
@@ -182,6 +165,7 @@ export function toForm(site: Site): FormState {
         model_name: model.model_name,
         enabled: model.enabled,
         source: model.source,
+        upstream_missing: model.upstream_missing,
       })),
     );
     const credentialIds = canonicalizeCredentialIds(
@@ -192,12 +176,6 @@ export function toForm(site: Site): FormState {
       base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
       credential_ids: credentialIds,
       protocols: protocolConfig.protocols,
-      auto_sync_supported_models: protocolConfig.auto_sync_supported_models,
-      auto_sync_model_pattern: protocolConfig.auto_sync_model_pattern,
-      sync_targets: protocolConfig.sync_targets.map((target) => ({
-        ...target,
-        credential_id: persistedCredentialId(target.credential_id),
-      })),
       models,
     };
   });
@@ -214,6 +192,9 @@ export function toForm(site: Site): FormState {
     paramsJson: paramDraftsToJson(
       paramOverrideRulesToDraft(site.param_override),
     ),
+    model_sync_enabled: site.model_sync_enabled,
+    model_sync_include: site.model_sync_include,
+    model_sync_exclude: site.model_sync_exclude,
   };
   return {
     ...draft,
@@ -250,6 +231,9 @@ export function toPayload(form: FormState): SitePayload {
     param_override: paramOverrideDraftToRules(
       paramDraftsFromJson(rebuilt.paramsJson) ?? [],
     ),
+    model_sync_enabled: rebuilt.model_sync_enabled,
+    model_sync_include: rebuilt.model_sync_include.trim(),
+    model_sync_exclude: rebuilt.model_sync_exclude.trim(),
     base_urls: baseUrls,
     credentials: credentials.map((item, index) => ({
       id: item.id,
@@ -287,28 +271,15 @@ export function toPayload(form: FormState): SitePayload {
             model_name: model.model_name.trim(),
             enabled: model.enabled,
             source: model.source,
+            upstream_missing: model.upstream_missing,
           }));
         })
         .filter((model) => model.credential_id && model.model_name);
-      const syncTargets = protocolConfig.sync_targets
-        .filter(
-          (target) =>
-            selectedCredentialIds.includes(target.credential_id) &&
-            protocolConfigProtocols.includes(target.protocol) &&
-            target.model_name.trim(),
-        )
-        .map((target) => ({
-          ...target,
-          model_name: target.model_name.trim(),
-        }));
       return [
         {
           id: protocolConfig.id,
           base_url_id: protocolConfig.base_url_id,
           protocols: protocolConfigProtocols,
-          auto_sync_supported_models: protocolConfig.auto_sync_supported_models,
-          auto_sync_model_pattern: protocolConfig.auto_sync_model_pattern,
-          sync_targets: syncTargets,
           models,
         },
       ];

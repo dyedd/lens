@@ -400,6 +400,20 @@ export function FoldedMemberRow({
           </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
+          {member.is_rule_member ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" tabIndex={0}>
+                  {locale === "zh-CN" ? "规则" : "Rule"}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {locale === "zh-CN"
+                  ? "由自动包含规则实时加入；关闭或移除后规则不再选中它，拖动排序会将成员固定"
+                  : "Joined by the live rule. Disabling or removing it excludes it; reordering pins members"}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           {member.rate_source !== "none" &&
           typeof member.rate_multiplier === "number" ? (
             <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">

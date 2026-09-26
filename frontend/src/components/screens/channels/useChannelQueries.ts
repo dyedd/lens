@@ -9,7 +9,6 @@ import {
   protocolConfigModelKey,
   siteEndpointSummary,
   siteModelCounts,
-  syncTargetKey,
 } from "./channelModels";
 import type {
   ChannelSort,
@@ -137,7 +136,6 @@ export type AggregatedModelMember = {
   key: string;
   credentialName: string;
   source: SiteModelInput["source"];
-  isTargetOnly: boolean;
 };
 
 export type AggregatedModel = {
@@ -147,6 +145,7 @@ export type AggregatedModel = {
   protocols: ProtocolKind[];
   source: SiteModelInput["source"];
   enabled: boolean;
+  upstreamMissing: boolean;
   /** Per-credential rows for expanding the collapsed overview row. */
   members: AggregatedModelMember[];
   /** Per-credential key used to open the single-model test dialog. */
@@ -158,6 +157,7 @@ type ModelGroupSeed = {
   protocols: Set<ProtocolKind>;
   sources: Set<SiteModelInput["source"]>;
   enabled: boolean;
+  upstreamMissing: boolean;
   members: AggregatedModelMember[];
   testKey: string | null;
 };
@@ -191,33 +191,12 @@ export function useAggregatedModels(
           protocols: new Set(),
           sources: new Set(),
           enabled: false,
+          upstreamMissing: false,
           members: [],
           testKey: null,
         };
         groups.set(modelName, created);
         return created;
-      };
-      const addMember = (
-        group: ModelGroupSeed,
-        memberKey: string,
-        credentialId: string,
-        source: SiteModelInput["source"],
-        isTargetOnly: boolean,
-      ) => {
-        const existing = group.members.find(
-          (member) => member.key === memberKey,
-        );
-        if (existing) {
-          existing.isTargetOnly = existing.isTargetOnly && isTargetOnly;
-          return;
-        }
-        group.members.push({
-          key: memberKey,
-          credentialName: credentialName(credentialId),
-          source,
-          isTargetOnly,
-        });
-        if (!group.testKey && !isTargetOnly) group.testKey = memberKey;
       };
 
       for (const model of protocolConfig.models) {
@@ -227,43 +206,15 @@ export function useAggregatedModels(
         }
         group.sources.add(model.source);
         group.enabled = group.enabled || model.enabled;
-        addMember(
-          group,
-          protocolConfigModelKey(protocolConfig, model),
-          model.credential_id,
-          model.source,
-          false,
-        );
-      }
-
-      const syncedProtocolKeys = new Set(
-        protocolConfig.models
-          .filter((model) => model.source === "synced")
-          .flatMap((model) =>
-            model.protocols.map((protocol) =>
-              syncTargetKey({
-                credential_id: model.credential_id,
-                model_name: model.model_name,
-                protocol,
-              }),
-            ),
-          ),
-      );
-      for (const target of protocolConfig.sync_targets) {
-        if (syncedProtocolKeys.has(syncTargetKey(target))) continue;
-        const group = groupOf(target.model_name);
-        group.protocols.add(target.protocol);
-        group.sources.add("synced");
-        addMember(
-          group,
-          protocolConfigModelKey(protocolConfig, {
-            ...target,
-            source: "synced",
-          }),
-          target.credential_id,
-          "synced",
-          true,
-        );
+        group.upstreamMissing = group.upstreamMissing || model.upstream_missing;
+        const memberKey = protocolConfigModelKey(protocolConfig, model);
+        if (group.members.some((member) => member.key === memberKey)) continue;
+        group.members.push({
+          key: memberKey,
+          credentialName: credentialName(model.credential_id),
+          source: model.source,
+        });
+        group.testKey ??= memberKey;
       }
 
       return Array.from(groups.values()).map((group) => ({
@@ -272,6 +223,7 @@ export function useAggregatedModels(
         protocols: Array.from(group.protocols),
         source: group.sources.has("manual") ? "manual" : "synced",
         enabled: group.enabled,
+        upstreamMissing: group.upstreamMissing,
         members: group.members,
         testKey: group.testKey,
       }));

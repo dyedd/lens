@@ -30,7 +30,8 @@ export type ModelGroupItemReason =
   | "credential_not_found"
   | "credential_disabled"
   | "model_not_found"
-  | "model_disabled";
+  | "model_disabled"
+  | "model_upstream_missing";
 export type ModelGroupItemPayload = {
   channel_id: string;
   credential_id: string;
@@ -49,6 +50,7 @@ export type ModelGroupItem = ModelGroupItemPayload & {
   state: ModelGroupItemState;
   reasons: ModelGroupItemReason[];
   sort_order: number;
+  matched_by_rule: boolean;
 };
 export type ModelGroup = {
   id: string;
@@ -101,62 +103,4 @@ export type ModelGroupModelTestPayload = {
   model_name: string;
   prompt: string;
   protocol?: ProtocolKind;
-};
-export type ModelGroupEnsureStatus =
-  | "create"
-  | "update"
-  | "unchanged"
-  | "skipped";
-export type ModelGroupEnsureModelInput = {
-  protocol_config_id: string;
-  credential_id: string;
-  model_name: string;
-  group_name?: string;
-  protocols: ProtocolKind[];
-};
-export type ModelGroupEnsureResultItem = {
-  group_id: string;
-  group_name: string;
-  protocol_config_id: string;
-  credential_id: string;
-  model_name: string;
-  protocols: ProtocolKind[];
-  status: ModelGroupEnsureStatus;
-  added_count: number;
-  existing_count: number;
-  skipped_reason: string;
-};
-export type ModelGroupEnsureFromSiteResponse = {
-  dry_run: boolean;
-  created_count: number;
-  updated_count: number;
-  unchanged_count: number;
-  skipped_count: number;
-  items: ModelGroupEnsureResultItem[];
-};
-export type ChannelModelSyncGroupChange = {
-  group_name: string;
-  model_name: string;
-};
-export type ChannelModelSyncResultItem = {
-  site_id: string;
-  protocol_config_id: string;
-  channel_name: string;
-  credential_id: string;
-  credential_name: string;
-  protocol: ProtocolKind;
-  status: "updated" | "unchanged" | "failed";
-  error: string;
-  warning: string;
-  added: string[];
-  removed: string[];
-  group_added: ChannelModelSyncGroupChange[];
-};
-export type ChannelModelSyncResponse = {
-  dry_run: boolean;
-  eligible_target_count: number;
-  updated_target_count: number;
-  unchanged_target_count: number;
-  failed_target_count: number;
-  items: ChannelModelSyncResultItem[];
 };

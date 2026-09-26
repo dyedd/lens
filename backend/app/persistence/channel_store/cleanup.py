@@ -11,7 +11,6 @@ from app.persistence.entities import (
     ModelGroupItemEntity,
     SiteDiscoveredModelEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolConfigSyncTargetEntity,
 )
 
 from ...core.runtime_channel_ids import compose_runtime_channel_id
@@ -26,13 +25,6 @@ class SiteConfigurationCleanupMixin:
         await session.execute(
             delete(SiteDiscoveredModelEntity).where(
                 SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_config_ids)
-            )
-        )
-        await session.execute(
-            delete(SiteProtocolConfigSyncTargetEntity).where(
-                SiteProtocolConfigSyncTargetEntity.protocol_config_id.in_(
-                    protocol_config_ids
-                )
             )
         )
         await session.execute(
@@ -72,17 +64,4 @@ class SiteConfigurationCleanupMixin:
         invalid_item_filter = (
             ModelGroupItemEntity.channel_id.in_(runtime_channel_ids) & ~matching_model
         )
-        group_ids = set(
-            (
-                await session.execute(
-                    select(ModelGroupItemEntity.group_id)
-                    .where(invalid_item_filter)
-                    .distinct()
-                )
-            )
-            .scalars()
-            .all()
-        )
         await session.execute(delete(ModelGroupItemEntity).where(invalid_item_filter))
-        if not group_ids:
-            return

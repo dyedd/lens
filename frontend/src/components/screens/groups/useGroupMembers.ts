@@ -21,6 +21,13 @@ function formItemChannelKey(item: FormItem) {
   return modelGroupChannelKey(item.site_id, item.channel_id);
 }
 
+/** Saves every member explicitly so a manual order survives the rule. */
+function pinFormItems(items: FormItem[]) {
+  return items.map((item) =>
+    item.matched_by_rule ? { ...item, matched_by_rule: false } : item,
+  );
+}
+
 type FormItemMember = {
   key: string;
   channelKey: string;
@@ -127,12 +134,16 @@ export function useGroupMembers(
     });
   }
 
+  /** Removes saved members; rule members are disabled so the rule skips them. */
   function removeFoldedMember(foldKey: string) {
     setForm((current) => ({
       ...current,
-      items: current.items.filter(
-        (item) => formItemMemberKey(item) !== foldKey,
-      ),
+      items: current.items.flatMap((item) => {
+        if (formItemMemberKey(item) !== foldKey) return [item];
+        return item.matched_by_rule
+          ? [{ ...item, enabled: false, state: null, reasons: [] }]
+          : [];
+      }),
     }));
   }
 
@@ -151,7 +162,7 @@ export function useGroupMembers(
       if (nextMembers === members) return current;
       return {
         ...current,
-        items: nextMembers.flatMap((member) => member.items),
+        items: pinFormItems(nextMembers.flatMap((member) => member.items)),
       };
     });
   }
@@ -163,8 +174,10 @@ export function useGroupMembers(
       if (nextChannels === channels) return current;
       return {
         ...current,
-        items: nextChannels.flatMap((channel) =>
-          channel.members.flatMap((member) => member.items),
+        items: pinFormItems(
+          nextChannels.flatMap((channel) =>
+            channel.members.flatMap((member) => member.items),
+          ),
         ),
       };
     });
@@ -188,8 +201,10 @@ export function useGroupMembers(
       nextChannels[channelIndex] = { ...channel, members: nextMembers };
       return {
         ...current,
-        items: nextChannels.flatMap((item) =>
-          item.members.flatMap((member) => member.items),
+        items: pinFormItems(
+          nextChannels.flatMap((item) =>
+            item.members.flatMap((member) => member.items),
+          ),
         ),
       };
     });

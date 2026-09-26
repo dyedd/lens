@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
-
 import pytest
 from conftest import valid_site_payload
 
@@ -248,12 +246,10 @@ def test_import_sites_persists_master_state_and_protocol_name(
     created = payload["items"][0]["site"]
     assert created["enabled"] is False
     assert created["tags"] == ["imported", "production"]
-    assert created["protocols"][0]["sync_targets"] == []
 
     stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     assert stored["enabled"] is False
     assert stored["tags"] == ["imported", "production"]
-    assert stored["protocols"][0]["sync_targets"] == []
 
 
 @pytest.mark.parametrize(
@@ -276,31 +272,3 @@ def test_import_sites_rejects_invalid_param_override(
 
     assert response.status_code == 422
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
-
-
-def test_import_sites_derives_sync_targets_from_synced_models(
-    client,
-    admin_headers,
-) -> None:
-    site = deepcopy(valid_import_site())
-    site["protocols"][0]["models"][0]["source"] = "synced"
-
-    response = client.post(
-        "/api/admin/sites/import",
-        headers=admin_headers,
-        json={"sites": [site]},
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["committed"] is True
-    assert payload["items"][0]["status"] == "created"
-    created_protocol = payload["items"][0]["site"]["protocols"][0]
-    assert created_protocol["sync_targets"] == [
-        {
-            "credential_id": created_protocol["models"][0]["credential_id"],
-            "model_name": "gpt-4o-mini",
-            "protocol": "openai_chat",
-        }
-    ]
-    assert created_protocol["models"][0]["source"] == "synced"

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import delete
@@ -19,7 +18,6 @@ from app.persistence.entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolConfigSyncTargetEntity,
 )
 
 from ..site_loader import fetch_site_rows
@@ -75,25 +73,13 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                     row.protocol if row.protocol in valid_protocol_values else None
                 ),
                 "source": row.source,
-            }
-        )
-
-    sync_targets_by_protocol_config: dict[str, list[dict[str, object]]] = {}
-    for row in rows.sync_targets:
-        if row.protocol not in valid_protocol_values:
-            continue
-        sync_targets_by_protocol_config.setdefault(row.protocol_config_id, []).append(
-            {
-                "credential_id": row.credential_id,
-                "model_name": row.model_name,
-                "protocol": row.protocol,
+                "upstream_missing": bool(row.upstream_missing),
             }
         )
 
     protocol_configs_by_site: dict[str, list[dict[str, object]]] = {}
     for row in rows.protocol_configs:
         models = models_by_protocol_config.get(row.id, [])
-        sync_targets = sync_targets_by_protocol_config.get(row.id, [])
         try:
             configured_protocols = [
                 value
@@ -106,8 +92,6 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
             {
                 "id": row.id,
                 "base_url_id": row.base_url_id,
-                "auto_sync_supported_models": bool(row.auto_sync_supported_models),
-                "auto_sync_model_pattern": row.auto_sync_model_pattern,
                 "protocols": configured_protocols
                 or [
                     model["protocol"]
@@ -121,7 +105,6 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                     ],
                     row.base_url_id,
                 ),
-                "sync_targets": sync_targets,
                 "models": models,
             }
         )
@@ -138,6 +121,9 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "channel_proxy": row.channel_proxy,
                 "headers": load_header_rules(row.headers_json),
                 "param_override": load_param_rules(row.param_override),
+                "model_sync_enabled": bool(row.model_sync_enabled),
+                "model_sync_include": row.model_sync_include,
+                "model_sync_exclude": row.model_sync_exclude,
                 "base_urls": base_urls_by_site.get(row.id, []),
                 "credentials": credentials_by_site.get(row.id, []),
                 "protocols": protocol_configs_by_site.get(row.id, []),
@@ -152,7 +138,6 @@ async def replace_sites(
 ) -> tuple[set[str], set[tuple[str, str, str]]]:
     await session.execute(delete(SiteCredentialRateEntity))
     await session.execute(delete(SiteDiscoveredModelEntity))
-    await session.execute(delete(SiteProtocolConfigSyncTargetEntity))
     await session.execute(delete(SiteProtocolConfigEntity))
     await session.execute(delete(SiteCredentialEntity))
     await session.execute(delete(SiteBaseUrlEntity))
@@ -192,6 +177,9 @@ async def replace_sites(
                     [rule.model_dump(mode="json") for rule in site.param_override],
                     ensure_ascii=True,
                 ),
+                model_sync_enabled=int(site.model_sync_enabled),
+                model_sync_include=site.model_sync_include,
+                model_sync_exclude=site.model_sync_exclude,
             )
         )
         site_base_url_ids: set[str] = set()
@@ -282,39 +270,8 @@ async def replace_sites(
                         [protocol.value for protocol in protocol_config.protocols],
                         ensure_ascii=True,
                     ),
-                    auto_sync_supported_models=int(
-                        protocol_config.auto_sync_supported_models
-                    ),
-                    auto_sync_model_pattern=protocol_config.auto_sync_model_pattern,
                 )
             )
-
-            target_keys: set[tuple[str, str, ProtocolKind]] = set()
-            for target in protocol_config.sync_targets:
-                target_key = (
-                    target.credential_id,
-                    target.model_name,
-                    target.protocol,
-                )
-                if (
-                    target.credential_id not in bound_credential_ids
-                    or not target.model_name
-                    or target_key in target_keys
-                ):
-                    raise ValueError(
-                        "Invalid sync target in backup protocol config "
-                        f"{protocol_config.id}: {target.model_name}"
-                    )
-                target_keys.add(target_key)
-                session.add(
-                    SiteProtocolConfigSyncTargetEntity(
-                        id=str(uuid.uuid4()),
-                        protocol_config_id=protocol_config.id,
-                        credential_id=target.credential_id,
-                        protocol=target.protocol.value,
-                        model_name=target.model_name,
-                    )
-                )
 
             for model in protocol_config.models:
                 if model.id in model_ids:
@@ -335,18 +292,6 @@ async def replace_sites(
                         "Discovered model protocol not found in backup site "
                         f"{site.name}: {model.model_name}"
                     )
-                target_key = (
-                    model.credential_id,
-                    model.model_name,
-                    model.protocol,
-                )
-                if not protocol_config.auto_sync_supported_models and (
-                    model.source == ModelSource.SYNCED
-                ) != (target_key in target_keys):
-                    raise ValueError(
-                        "Model source does not match sync targets in backup "
-                        f"protocol config {protocol_config.id}: {model.model_name}"
-                    )
                 model_keys.add(
                     (
                         compose_runtime_channel_id(protocol_config.id, model.protocol),
@@ -364,6 +309,10 @@ async def replace_sites(
                         sort_order=model.sort_order,
                         protocol=model.protocol.value,
                         source=model.source.value,
+                        upstream_missing=int(
+                            model.upstream_missing
+                            and model.source == ModelSource.SYNCED
+                        ),
                     )
                 )
 

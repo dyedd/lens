@@ -6,11 +6,14 @@ import {
   CloudDownload,
   Funnel,
   ListChecks,
+  Pin,
   Plus,
+  RefreshCw,
   ToggleLeft,
   Trash2,
 } from "lucide-react";
 import { type FormEventHandler, useEffect, useMemo, useState } from "react";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import {
@@ -29,7 +32,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
 import { Field, FieldLabel } from "@/components/ui/Field";
-import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import {
   Popover,
@@ -52,6 +54,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import { Textarea } from "@/components/ui/Textarea";
 import { ToolbarButton } from "@/components/ui/ToolbarButton";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import {
@@ -65,7 +68,7 @@ import type { Locale } from "./channelTypes";
 import { ProtocolDropdown } from "./ProtocolDropdown";
 import type { AggregatedModel } from "./useChannelQueries";
 
-type StatusFilter = "all" | "enabled" | "disabled";
+export type ModelStatusFilter = "all" | "enabled" | "disabled" | "missing";
 type ProtocolFilter = "all" | ProtocolKind;
 type ModelSort = "name-asc" | "name-desc" | "status-desc" | "protocol-asc";
 
@@ -83,8 +86,14 @@ type Props = {
   onDelete: (key: string) => void;
   onTest: (key: string) => void;
   testing: boolean;
-  onAddBinding: (name: string, protocols: ProtocolKind[]) => boolean;
+  onAddBinding: (names: string, protocols: ProtocolKind[]) => boolean;
   onOpenRemote: () => void;
+  onKeep: (keys: string[]) => void;
+  syncEnabled: boolean;
+  syncing: boolean;
+  onSyncNow: () => void;
+  initialStatusFilter?: ModelStatusFilter;
+  isNested?: boolean;
 };
 
 /** Renders the model binding table for one channel. */
@@ -104,9 +113,16 @@ export function ChannelModelsDialog({
   testing,
   onAddBinding,
   onOpenRemote,
+  onKeep,
+  syncEnabled,
+  syncing,
+  onSyncNow,
+  initialStatusFilter = "all",
+  isNested = false,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] =
+    useState<ModelStatusFilter>(initialStatusFilter);
   const [protocolFilter, setProtocolFilter] = useState<ProtocolFilter>("all");
   const [sortBy, setSortBy] = useState<ModelSort>("name-asc");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -139,6 +155,7 @@ export function ChannelModelsDialog({
     const filtered = models.filter((model) => {
       if (statusFilter === "enabled" && !model.enabled) return false;
       if (statusFilter === "disabled" && model.enabled) return false;
+      if (statusFilter === "missing" && !model.upstreamMissing) return false;
       if (
         protocolFilter !== "all" &&
         !model.protocols.includes(protocolFilter)
@@ -250,6 +267,11 @@ export function ChannelModelsDialog({
     setBulkDeleteOpen(false);
   }
 
+  function keepSelected() {
+    onKeep(selectedKeys);
+    setSelected(new Set());
+  }
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -262,9 +284,13 @@ export function ChannelModelsDialog({
                   : `Manage models - ${channelName}`}
               </DialogTitle>
               <DialogDescription>
-                {locale === "zh-CN"
-                  ? "默认按客户端协议透传，也可指定上游协议进行转换。"
-                  : "Forward the client protocol by default, or select an upstream protocol for conversion."}
+                {syncEnabled
+                  ? locale === "zh-CN"
+                    ? "已开启自动同步：删除的同步模型会在下次同步时重新加入，停用即可排除；待确认的模型已暂停调用，可保留或删除。"
+                    : "Auto-sync is on: deleted synced models return on the next sync, so disable them instead. Models to review are paused; keep or delete them."
+                  : locale === "zh-CN"
+                    ? "默认按客户端协议透传，也可指定上游协议进行转换。"
+                    : "Forward the client protocol by default, or select an upstream protocol for conversion."}
               </DialogDescription>
             </DialogHeader>
             <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -304,7 +330,7 @@ export function ChannelModelsDialog({
                       <Select
                         value={statusFilter}
                         onValueChange={(value) =>
-                          setStatusFilter(value as StatusFilter)
+                          setStatusFilter(value as ModelStatusFilter)
                         }
                       >
                         <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
@@ -319,6 +345,9 @@ export function ChannelModelsDialog({
                           </SelectItem>
                           <SelectItem value="disabled">
                             {locale === "zh-CN" ? "停用" : "Disabled"}
+                          </SelectItem>
+                          <SelectItem value="missing">
+                            {locale === "zh-CN" ? "待确认" : "To review"}
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -471,6 +500,15 @@ export function ChannelModelsDialog({
                   <button
                     type="button"
                     disabled={selectedCount === 0}
+                    onClick={keepSelected}
+                    className="mt-1 flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
+                  >
+                    <Pin className="size-3.5" />
+                    {locale === "zh-CN" ? "保留为手动模型" : "Keep as manual"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedCount === 0}
                     onClick={() => setBulkDeleteOpen(true)}
                     className="mt-1 flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
                   >
@@ -480,15 +518,31 @@ export function ChannelModelsDialog({
                 </PopoverContent>
               </Popover>
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                {syncEnabled ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    disabled={syncing || saving}
+                    onClick={onSyncNow}
+                  >
+                    <RefreshCw
+                      className={syncing ? "size-3.5 animate-spin" : "size-3.5"}
+                    />
+                    {locale === "zh-CN" ? "立即同步" : "Sync now"}
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   size="sm"
+                  variant="outline"
                   className="h-8"
                   disabled={fetching}
                   onClick={onOpenRemote}
                 >
                   <CloudDownload className="size-3.5" />
-                  {locale === "zh-CN" ? "同步" : "Sync"}
+                  {locale === "zh-CN" ? "获取模型" : "Fetch models"}
                 </Button>
                 <Button
                   type="button"
@@ -498,7 +552,7 @@ export function ChannelModelsDialog({
                   onClick={() => setNewOpen(true)}
                 >
                   <Plus className="size-3.5" />
-                  {locale === "zh-CN" ? "创建" : "Create"}
+                  {locale === "zh-CN" ? "手动添加" : "Add manually"}
                 </Button>
               </div>
             </div>
@@ -533,6 +587,9 @@ export function ChannelModelsDialog({
                     <TableHead>
                       {locale === "zh-CN" ? "上游模型名" : "Upstream model"}
                     </TableHead>
+                    <TableHead className="w-[64px]">
+                      {locale === "zh-CN" ? "来源" : "Source"}
+                    </TableHead>
                     <TableHead className="w-[180px]">
                       {locale === "zh-CN" ? "转发方式" : "Forwarding"}
                     </TableHead>
@@ -543,16 +600,16 @@ export function ChannelModelsDialog({
                   {visibleModels.length === 0 ? (
                     <TableRow className="hover:bg-transparent">
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="h-28 text-center text-muted-foreground"
                       >
                         {models.length === 0
                           ? locale === "zh-CN"
-                            ? "还没有绑定模型。用同步从上游拉取，或手动创建。"
-                            : "No models bound yet. Sync from upstream, or create one."
+                            ? "还没有模型。获取上游模型，或手动添加。"
+                            : "No models yet. Fetch upstream models, or add them manually."
                           : locale === "zh-CN"
-                            ? "没有匹配的模型绑定。"
-                            : "No matching model bindings."}
+                            ? "没有匹配的模型。"
+                            : "No matching models."}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -590,12 +647,33 @@ export function ChannelModelsDialog({
                           </div>
                         </TableCell>
                         <TableCell className="max-w-[220px] py-1.5 font-mono text-xs text-muted-foreground">
-                          <span
-                            className="flex h-7 items-center truncate"
-                            title={model.modelName}
-                          >
-                            {model.modelName}
-                          </span>
+                          <div className="flex h-7 min-w-0 items-center gap-1.5">
+                            <span className="truncate" title={model.modelName}>
+                              {model.modelName}
+                            </span>
+                            {model.upstreamMissing ? (
+                              <Badge
+                                variant="destructive"
+                                className="shrink-0 font-sans"
+                                title={
+                                  locale === "zh-CN"
+                                    ? "上游已不再提供，暂停调用"
+                                    : "No longer listed upstream; paused"
+                                }
+                              >
+                                {locale === "zh-CN" ? "待确认" : "Review"}
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[64px] py-1.5 text-xs text-muted-foreground">
+                          {model.source === "synced"
+                            ? locale === "zh-CN"
+                              ? "同步"
+                              : "Synced"
+                            : locale === "zh-CN"
+                              ? "手动"
+                              : "Manual"}
                         </TableCell>
                         <TableCell className="w-[180px] py-1.5">
                           <ProtocolDropdown
@@ -671,7 +749,13 @@ export function ChannelModelsDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={saving}
               >
-                {locale === "zh-CN" ? "关闭" : "Close"}
+                {isNested
+                  ? locale === "zh-CN"
+                    ? "返回"
+                    : "Back"
+                  : locale === "zh-CN"
+                    ? "关闭"
+                    : "Close"}
               </Button>
               <Button type="submit" size="sm" disabled={saving}>
                 {saving
@@ -689,11 +773,11 @@ export function ChannelModelsDialog({
       <Dialog open={newOpen} onOpenChange={setNewOpen}>
         <AppDialogContent
           className="max-w-md"
-          title={locale === "zh-CN" ? "创建模型绑定" : "Create model binding"}
+          title={locale === "zh-CN" ? "手动添加模型" : "Add models manually"}
           description={
             locale === "zh-CN"
-              ? "默认按客户端协议透传，需要转换时再指定上游协议。"
-              : "Forward the client protocol by default. Set an upstream protocol when conversion is needed."
+              ? "每行或用逗号分隔一个模型名，会加到所有密钥下。手动模型不受自动同步影响。"
+              : "One model name per line or comma-separated, added for every key. Manual models are never changed by auto-sync."
           }
           footer={
             <>
@@ -728,12 +812,13 @@ export function ChannelModelsDialog({
                 required
                 className="text-xs font-normal text-muted-foreground"
               >
-                {locale === "zh-CN" ? "上游模型名" : "Upstream model name"}
+                {locale === "zh-CN" ? "上游模型名" : "Upstream model names"}
               </Label>
-              <Input
+              <Textarea
                 value={newName}
                 onChange={(event) => setNewName(event.target.value)}
-                placeholder="gpt-4o"
+                placeholder={"gpt-4o\ngpt-4o-mini"}
+                className="max-h-48 font-mono"
               />
             </div>
             <Field>
@@ -753,11 +838,11 @@ export function ChannelModelsDialog({
         <AppDialogContent
           className="max-w-lg"
           showCloseButton={false}
-          title={locale === "zh-CN" ? "确认批量删除" : "Delete bindings"}
+          title={locale === "zh-CN" ? "确认批量删除" : "Delete models"}
           description={
             locale === "zh-CN"
-              ? `将删除选中的 ${selectedCount} 个模型绑定。保存后才会写回渠道。`
-              : `${selectedCount} selected model bindings will be removed. Save the channel to persist this.`
+              ? `将删除选中的 ${selectedCount} 个模型，保存后生效。${syncEnabled ? "上游仍提供的同步模型会在下次同步时重新加入。" : ""}`
+              : `${selectedCount} selected models will be removed after you save.${syncEnabled ? " Synced models still listed upstream return on the next sync." : ""}`
           }
           footer={
             <>
