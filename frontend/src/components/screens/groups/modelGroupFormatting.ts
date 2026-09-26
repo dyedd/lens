@@ -1,6 +1,5 @@
 import type {
   ModelGroup,
-  ModelGroupCandidateItem,
   ModelGroupItemReason,
   ModelGroupItemState,
   RoutingStrategy,
@@ -8,14 +7,7 @@ import type {
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
 import { PROTOCOL_LIST } from "@/lib/protocols";
-import type {
-  CandidateSearchMode,
-  FoldedMember,
-  FormItem,
-  GroupDisplayChannel,
-  GroupDisplayMember,
-  GroupRow,
-} from "./groupTypes";
+import type { FormItem, GroupDisplayMember, GroupRow } from "./groupTypes";
 
 export const STRATEGY_OPTIONS: Array<{
   value: RoutingStrategy;
@@ -25,6 +17,15 @@ export const STRATEGY_OPTIONS: Array<{
   { value: "failover", zh: "故障转移", en: "Failover" },
   { value: "round_robin", zh: "轮询", en: "Round Robin" },
 ];
+
+/** Return the localized label for a routing strategy. */
+export function strategyLabel(
+  strategy: RoutingStrategy,
+  locale: "zh-CN" | "en-US",
+) {
+  const option = STRATEGY_OPTIONS.find((item) => item.value === strategy);
+  return option ? (locale === "zh-CN" ? option.zh : option.en) : strategy;
+}
 
 export function modelGroupReasonsForState(
   items: Array<{
@@ -62,11 +63,16 @@ export function modelGroupItemReasonLabel(
   return labels[reason][locale === "zh-CN" ? "zh" : "en"];
 }
 
+type CredentialIdentity = {
+  channel_name: string;
+  credential_name: string;
+  credential_number: number;
+  credential_mask: string;
+  base_url: string;
+};
+
 export function credentialDisplayLabel(
-  item: Pick<
-    FormItem | ModelGroupCandidateItem,
-    "credential_name" | "credential_number"
-  >,
+  item: Pick<CredentialIdentity, "credential_name" | "credential_number">,
   locale: "zh-CN" | "en-US",
 ) {
   return formatCredentialDisplayName(
@@ -76,16 +82,29 @@ export function credentialDisplayLabel(
   );
 }
 
-/** Format the source channel label for a folded member. */
-export function foldedMemberSourceLabel(
-  member: FoldedMember,
+/** Return the host of an upstream URL, or the raw value when unparsable. */
+function formatUrlHost(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/** Format the full key identity: site · key remark · mask · URL host. */
+export function formatCredentialIdentity(
+  item: CredentialIdentity,
   locale: "zh-CN" | "en-US",
+  { includeSite = true }: { includeSite?: boolean } = {},
 ) {
-  const channelNames = Array.from(
-    new Set(member.subItems.map((item) => item.channel_name).filter(Boolean)),
-  );
-  const credentialLabel = credentialDisplayLabel(member, locale);
-  return [...channelNames, credentialLabel].join(" · ");
+  return [
+    includeSite ? item.channel_name : "",
+    credentialDisplayLabel(item, locale),
+    item.credential_mask,
+    item.base_url ? formatUrlHost(item.base_url) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** Format a model price for compact display. */
@@ -95,24 +114,6 @@ export function formatMoney(value: number) {
     minimumFractionDigits: value >= 1 ? 2 : 0,
     maximumFractionDigits: 4,
   }).format(value);
-}
-
-/** Return the localized label for a token price metric. */
-export function metricLabel(
-  key: "input" | "output" | "cache_read" | "cache_write",
-  locale: "zh-CN" | "en-US",
-) {
-  const labels: Record<
-    "input" | "output" | "cache_read" | "cache_write",
-    { zh: string; en: string }
-  > = {
-    input: { zh: "输入", en: "Input" },
-    output: { zh: "输出", en: "Output" },
-    cache_read: { zh: "缓存读取", en: "Cache Read" },
-    cache_write: { zh: "缓存写入", en: "Cache Write" },
-  };
-
-  return labels[key][locale === "zh-CN" ? "zh" : "en"];
 }
 
 /** Return an error message with a caller-provided fallback. */
@@ -155,12 +156,18 @@ export function groupMemberProtocols(
   return GROUP_PROTOCOL_ORDER.filter((protocol) => present.has(protocol));
 }
 
-/** Compile a case-insensitive candidate search pattern when valid. */
-export function compileCandidateRegex(value: string) {
+/** Build the backend's collision key: lowercase letters and digits only. */
+export function buildModelMatchKey(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Compile a case-insensitive match regex, or null when empty or invalid. */
+export function compileMatchRegex(value: string) {
   const trimmedValue = value.trim();
   const pattern = trimmedValue.startsWith("(?i)")
     ? trimmedValue.slice(4)
     : trimmedValue;
+  if (!pattern) return null;
   try {
     return new RegExp(pattern, "i");
   } catch {
@@ -168,32 +175,17 @@ export function compileCandidateRegex(value: string) {
   }
 }
 
-/** Return whether a candidate matches the selected search mode and query. */
-export function matchesCandidateSearch(
-  item: ModelGroupCandidateItem,
-  mode: CandidateSearchMode,
-  query: string,
-  locale: "zh-CN" | "en-US",
+/** Return whether a model name joins a group through its live match rules. */
+export function matchesGroupRules(
+  modelName: string,
+  matchModels: string[],
+  matchRegex: RegExp | null,
 ) {
-  const trimmedQuery = query.trim();
-  if (!trimmedQuery) {
-    return true;
-  }
-  if (mode === "regex") {
-    const regex = compileCandidateRegex(trimmedQuery);
-    if (!regex) {
-      return false;
-    }
-    return regex.test(item.model_name);
-  }
-  if (mode === "exact") {
-    return (
-      item.model_name.localeCompare(trimmedQuery, locale, {
-        sensitivity: "accent",
-      }) === 0
-    );
-  }
-  return item.model_name.toLowerCase().includes(trimmedQuery.toLowerCase());
+  const lowerName = modelName.toLowerCase();
+  return (
+    matchModels.some((name) => name.toLowerCase() === lowerName) ||
+    Boolean(matchRegex?.test(modelName))
+  );
 }
 
 /** Build the stable identity key for a model group member. */
@@ -232,15 +224,17 @@ export function buildGroupDisplayMembers(
       item.credential_id,
       item.model_name,
     );
-    const channelName = item.channel_name || item.channel_id;
-
-    if (!memberMap.has(key)) {
-      memberMap.set(key, {
+    let member = memberMap.get(key);
+    if (!member) {
+      member = {
         key,
         model_name: item.model_name,
+        channel_name: item.channel_name || item.channel_id,
         credential_name: item.credential_name,
         credential_number: item.credential_number,
-        channel_names: [],
+        credential_mask: item.credential_mask,
+        base_url: item.base_url,
+        matched_by_rule: true,
         protocols: [],
         items: [],
         enabled_item_count: 0,
@@ -248,47 +242,21 @@ export function buildGroupDisplayMembers(
         ready_item_count: 0,
         invalid_item_count: 0,
         unavailable_item_count: 0,
-      });
+      };
+      memberMap.set(key, member);
     }
 
-    const member = memberMap.get(key)!;
     member.items.push(item);
+    member.matched_by_rule &&= item.matched_by_rule;
     if (item.enabled) member.enabled_item_count += 1;
     else member.disabled_item_count += 1;
     if (item.state === "ready") member.ready_item_count += 1;
     if (item.state === "invalid") member.invalid_item_count += 1;
     if (item.state === "unavailable") member.unavailable_item_count += 1;
-    if (channelName && !member.channel_names.includes(channelName)) {
-      member.channel_names.push(channelName);
-    }
     if (item.protocol && !member.protocols.includes(item.protocol)) {
       member.protocols.push(item.protocol);
     }
   }
 
   return Array.from(memberMap.values());
-}
-
-/** Group display members by their channel while preserving first appearance. */
-export function buildGroupDisplayChannels(
-  members: GroupDisplayMember[],
-): GroupDisplayChannel[] {
-  const channels = new Map<string, GroupDisplayChannel>();
-  for (const member of members) {
-    const firstItem = member.items[0];
-    if (!firstItem) continue;
-    const key = modelGroupChannelKey(firstItem.site_id, firstItem.channel_id);
-    let channel = channels.get(key);
-    if (!channel) {
-      channel = {
-        key,
-        channel_id: firstItem.channel_id,
-        channel_name: firstItem.channel_name,
-        members: [],
-      };
-      channels.set(key, channel);
-    }
-    channel.members.push(member);
-  }
-  return Array.from(channels.values());
 }

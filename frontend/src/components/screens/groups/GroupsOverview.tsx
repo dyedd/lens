@@ -6,6 +6,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Shuffle,
   ToggleLeft,
   Trash2,
 } from "lucide-react";
@@ -33,17 +34,27 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import { ToolbarButton } from "@/components/ui/ToolbarButton";
-import type { ModelGroup, RoutingStrategy } from "@/lib/api/groups";
+import type {
+  ModelGroup,
+  RoutingStrategy,
+  UnplacedModel,
+} from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
 import { GroupsTable } from "./GroupsTable";
-import type { GroupRow, GroupSort } from "./groupTypes";
+import type { GroupRow, GroupSort, SimilarGroupView } from "./groupTypes";
+import { STRATEGY_OPTIONS } from "./modelGroupFormatting";
+import { UnplacedModelsPanel } from "./UnplacedModelsPanel";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+
+type MergeRequest = { source: GroupRow; target: SimilarGroupView };
 
 type Props = {
   locale: "zh-CN" | "en-US";
   visibleGroups: GroupRow[];
+  unplacedModels: UnplacedModel[];
+  joinableGroupIds: Set<string>;
   isLoading: boolean;
   search: string;
   strategyFilter: "all" | RoutingStrategy;
@@ -62,16 +73,24 @@ type Props = {
   onCreate: () => void;
   onOpenEdit: (group: ModelGroup) => void;
   onToggleEnabled: (group: GroupRow, enabled: boolean) => void;
+  onChangeStrategy: (group: GroupRow, strategy: RoutingStrategy) => void;
+  onMerge: (source: ModelGroup, target: SimilarGroupView) => Promise<void>;
   onDelete: (group: ModelGroup) => void;
   onTest: (group: GroupRow) => void;
   onBulkEnabled: (groups: GroupRow[], enabled: boolean) => void;
+  onBulkStrategy: (groups: GroupRow[], strategy: RoutingStrategy) => void;
   onBulkDelete: (groups: ModelGroup[]) => void;
+  onAddModelsToGroup: (groupId: string, modelNames: string[]) => void;
+  onCreateGroupForModels: (name: string, modelNames: string[]) => void;
+  onAutoPlace: () => void;
 };
 
-/** Renders the model group list as a toolbar and table. */
+/** Renders unplaced models and the model group list as a toolbar and table. */
 export function GroupsOverview({
   locale,
   visibleGroups,
+  unplacedModels,
+  joinableGroupIds,
   isLoading,
   search,
   strategyFilter,
@@ -90,10 +109,16 @@ export function GroupsOverview({
   onCreate,
   onOpenEdit,
   onToggleEnabled,
+  onChangeStrategy,
+  onMerge,
   onDelete,
   onTest,
   onBulkEnabled,
+  onBulkStrategy,
   onBulkDelete,
+  onAddModelsToGroup,
+  onCreateGroupForModels,
+  onAutoPlace,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
@@ -102,6 +127,7 @@ export function GroupsOverview({
     "",
   );
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null);
   const pageCount = Math.max(1, Math.ceil(visibleGroups.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const pagedGroups = useMemo(
@@ -157,17 +183,22 @@ export function GroupsOverview({
   return (
     <div className="space-y-3 pb-10">
       <div className="flex min-h-10 items-center justify-between gap-3 px-1">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">
-            {locale === "zh-CN" ? "模型组管理" : "Model groups"}
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            {locale === "zh-CN"
-              ? "渠道里的模型已可按原名直接调用；模型组用于起别名、合并多个模型名或自定义顺序，同名时模型组优先。"
-              : "Channel models are callable by their own names. Use groups to alias, merge names, or set a custom order; a group wins over a same-named model."}
-          </p>
-        </div>
+        <h3 className="min-w-0 text-sm font-semibold">
+          {locale === "zh-CN" ? "模型组管理" : "Model groups"}
+        </h3>
       </div>
+
+      {unplacedModels.length ? (
+        <UnplacedModelsPanel
+          locale={locale}
+          unplacedModels={unplacedModels}
+          busyId={busyId}
+          joinableGroupIds={joinableGroupIds}
+          onAddModelsToGroup={onAddModelsToGroup}
+          onCreateGroupForModels={onCreateGroupForModels}
+          onAutoPlace={onAutoPlace}
+        />
+      ) : null}
 
       <section className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain py-1 [scrollbar-width:none] md:gap-3 [&::-webkit-scrollbar]:hidden">
         <div className="flex min-w-max flex-nowrap items-center gap-1.5 md:min-w-0 md:flex-1">
@@ -362,6 +393,23 @@ export function GroupsOverview({
                   </SelectContent>
                 </Select>
               </div>
+              {STRATEGY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={Boolean(busyId)}
+                  onClick={() => {
+                    void onBulkStrategy(selectedGroups, option.value);
+                    setSelected(new Set());
+                  }}
+                  className="mt-1 flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
+                >
+                  <Shuffle className="size-3.5" />
+                  {locale === "zh-CN"
+                    ? `设为${option.zh}`
+                    : `Set to ${option.en}`}
+                </button>
+              ))}
               <button
                 type="button"
                 disabled={Boolean(busyId)}
@@ -409,6 +457,8 @@ export function GroupsOverview({
         onSelectOne={handleSelectOne}
         onEdit={onOpenEdit}
         onToggleEnabled={onToggleEnabled}
+        onChangeStrategy={onChangeStrategy}
+        onRequestMerge={(source, target) => setMergeRequest({ source, target })}
         onDelete={onDelete}
         onTest={onTest}
       />
@@ -423,6 +473,48 @@ export function GroupsOverview({
         onPageChange={setPage}
         onPageSizeChange={handlePageSizeChange}
       />
+
+      <Dialog
+        open={Boolean(mergeRequest)}
+        onOpenChange={(open) => {
+          if (!open) setMergeRequest(null);
+        }}
+      >
+        <AppDialogContent
+          className="max-w-lg"
+          showCloseButton={false}
+          title={locale === "zh-CN" ? "确认合并模型组" : "Merge groups"}
+          description={
+            locale === "zh-CN"
+              ? `将「${mergeRequest?.source.name ?? ""}」的名称、匹配规则和成员并入「${mergeRequest?.target.name ?? ""}」，引用改指向目标组，然后删除「${mergeRequest?.source.name ?? ""}」。`
+              : `Move the name, match rules and members of "${mergeRequest?.source.name ?? ""}" into "${mergeRequest?.target.name ?? ""}", repoint references, then delete "${mergeRequest?.source.name ?? ""}".`
+          }
+          footer={
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setMergeRequest(null)}
+              >
+                {locale === "zh-CN" ? "取消" : "Cancel"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={Boolean(busyId)}
+                onClick={() => {
+                  if (!mergeRequest) return;
+                  void onMerge(mergeRequest.source, mergeRequest.target);
+                  setMergeRequest(null);
+                }}
+              >
+                {locale === "zh-CN" ? "确认合并" : "Merge"}
+              </Button>
+            </>
+          }
+        />
+      </Dialog>
 
       <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
         <AppDialogContent

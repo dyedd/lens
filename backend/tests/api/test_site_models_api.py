@@ -444,6 +444,35 @@ def test_channel_model_sync_adds_filtered_upstream_models_for_each_credential(
     }
 
 
+def test_channel_model_sync_places_new_models_into_failover_groups(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    _create_sync_site(client, admin_headers, _sync_site_payload())
+
+    async def fake_fetch(_channel: Any) -> list[str]:
+        return ["gpt-4o"]
+
+    _patch_upstream_models(monkeypatch, fake_fetch)
+
+    _run_model_sync(client, admin_headers)
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+
+    assert {
+        (
+            group["name"],
+            group["strategy"],
+            tuple(group["match_models"]),
+            tuple(sorted(item["credential_id"] for item in group["items"])),
+        )
+        for group in groups
+    } == {
+        ("manual-only", "failover", ("manual-only",), ("cred-a",)),
+        ("gpt-4o", "failover", ("gpt-4o",), ("cred-a", "cred-b")),
+    }
+
+
 def test_channel_model_sync_flags_vanished_models_instead_of_deleting_them(
     client,
     admin_headers,

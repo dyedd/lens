@@ -418,7 +418,7 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
         "/api/admin/model-groups",
         headers=admin_headers,
         json={
-            "name": "gpt-4o",
+            "name": "custom-group",
             "items": [
                 {
                     "channel_id": openai_chat_channel_id(),
@@ -436,6 +436,7 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
         },
     )
     assert group_response.status_code == 201
+    group_url = f"/api/admin/model-groups/{group_response.json()['id']}"
 
     disabled_response = client.put(
         f"/api/admin/sites/{site['id']}/enabled",
@@ -451,9 +452,7 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
         True,
         False,
     ]
-    disabled_group = client.get(
-        "/api/admin/model-groups", headers=admin_headers
-    ).json()[0]
+    disabled_group = client.get(group_url, headers=admin_headers).json()
     assert [item["enabled"] for item in disabled_group["items"]] == [True, False]
     assert [item["state"] for item in disabled_group["items"]] == [
         "unavailable",
@@ -478,9 +477,7 @@ def test_toggle_site_preserves_configured_states_and_restores_group_member(
         True,
         False,
     ]
-    enabled_group = client.get("/api/admin/model-groups", headers=admin_headers).json()[
-        0
-    ]
+    enabled_group = client.get(group_url, headers=admin_headers).json()
     assert [item["enabled"] for item in enabled_group["items"]] == [True, False]
     assert [item["state"] for item in enabled_group["items"]] == [
         "ready",

@@ -29,6 +29,14 @@ def dump_fallback_group_ids(fallback_group_ids: list[str]) -> str:
     return json.dumps(fallback_group_ids, ensure_ascii=True)
 
 
+def dump_match_models(match_models: list[str]) -> str:
+    return json.dumps(match_models, ensure_ascii=True)
+
+
+def parse_match_models(raw: str) -> list[str]:
+    return json.loads(raw)
+
+
 def parse_param_override(raw: str) -> list[ParamOverrideRule]:
     return [ParamOverrideRule.model_validate(item) for item in json.loads(raw)]
 

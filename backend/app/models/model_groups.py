@@ -3,11 +3,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from .protocols import (
-    ModelGroupSyncFilterMode,
-    ProtocolKind,
-    RoutingStrategy,
-)
+from .protocols import ProtocolKind, RoutingStrategy
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import StrictBaseModel, validate_regex_pattern
 
@@ -26,6 +22,40 @@ def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | Non
         seen.add(group_id)
         result.append(group_id)
     return result
+
+
+MAX_MATCH_MODELS = 200
+MAX_MATCH_MODEL_NAME_LENGTH = 200
+
+
+def canonicalize_match_models(value: list[str] | None) -> list[str] | None:
+    """Trim, drop empty entries, and dedupe names case-insensitively in order."""
+    if value is None:
+        return None
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        name = item.strip()
+        if not name or name.casefold() in seen:
+            continue
+        if len(name) > MAX_MATCH_MODEL_NAME_LENGTH:
+            raise ValueError(
+                f"Match model names must be at most {MAX_MATCH_MODEL_NAME_LENGTH} "
+                "characters"
+            )
+        seen.add(name.casefold())
+        result.append(name)
+    if len(result) > MAX_MATCH_MODELS:
+        raise ValueError(f"At most {MAX_MATCH_MODELS} match models are allowed")
+    return result
+
+
+def canonicalize_match_regex(value: str | None) -> str | None:
+    """Trim the pattern; matching is always case-insensitive, so drop ``(?i)``."""
+    if value is None:
+        return None
+    pattern = value.strip().removeprefix("(?i)").strip()
+    return validate_regex_pattern(pattern, error_label="model group match regex")
 
 
 class ModelGroupItemState(str, Enum):
@@ -52,8 +82,8 @@ class ModelGroup(StrictBaseModel):
     strategy: RoutingStrategy
     route_group_id: str = ""
     route_group_name: str = ""
-    sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
-    sync_filter_query: str = ""
+    match_models: list[str] = Field(default_factory=list)
+    match_regex: str = ""
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
@@ -77,15 +107,15 @@ class ModelGroup(StrictBaseModel):
         lambda value: _canonicalize_fallback_group_ids(value)
     )
 
+    _canonicalize_match_models = field_validator("match_models")(
+        canonicalize_match_models
+    )
+    _canonicalize_match_regex = field_validator("match_regex")(canonicalize_match_regex)
+
     @model_validator(mode="after")
-    def validate_sync_filter(self) -> "ModelGroup":
-        self.sync_filter_mode, self.sync_filter_query = (
-            canonicalize_model_group_sync_filter(
-                self.sync_filter_mode,
-                self.sync_filter_query,
-                route_group_id=self.route_group_id,
-            )
-        )
+    def clear_route_group_match_rules(self) -> "ModelGroup":
+        if self.route_group_id.strip():
+            self.match_models, self.match_regex = [], ""
         return self
 
 
@@ -109,6 +139,8 @@ class ModelGroupItemView(ModelGroupItem):
     state: ModelGroupItemState
     reasons: list[ModelGroupItemReason] = Field(default_factory=list)
     matched_by_rule: bool = False
+    credential_mask: str = ""
+    base_url: str = ""
 
 
 class ModelGroupView(ModelGroup):
@@ -127,8 +159,8 @@ class ModelGroupCreate(StrictBaseModel):
     name: str
     strategy: RoutingStrategy = RoutingStrategy.FAILOVER
     route_group_id: str = ""
-    sync_filter_mode: ModelGroupSyncFilterMode = ModelGroupSyncFilterMode.NONE
-    sync_filter_query: str = ""
+    match_models: list[str] = Field(default_factory=list)
+    match_regex: str = ""
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
@@ -144,15 +176,15 @@ class ModelGroupCreate(StrictBaseModel):
         lambda value: _canonicalize_fallback_group_ids(value)
     )
 
+    _canonicalize_match_models = field_validator("match_models")(
+        canonicalize_match_models
+    )
+    _canonicalize_match_regex = field_validator("match_regex")(canonicalize_match_regex)
+
     @model_validator(mode="after")
-    def validate_sync_filter(self) -> "ModelGroupCreate":
-        self.sync_filter_mode, self.sync_filter_query = (
-            canonicalize_model_group_sync_filter(
-                self.sync_filter_mode,
-                self.sync_filter_query,
-                route_group_id=self.route_group_id,
-            )
-        )
+    def clear_route_group_match_rules(self) -> "ModelGroupCreate":
+        if self.route_group_id.strip():
+            self.match_models, self.match_regex = [], ""
         return self
 
 
@@ -160,8 +192,8 @@ class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
     strategy: RoutingStrategy | None = None
     route_group_id: str | None = None
-    sync_filter_mode: ModelGroupSyncFilterMode | None = None
-    sync_filter_query: str | None = None
+    match_models: list[str] | None = None
+    match_regex: str | None = None
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None
     fallback_group_ids: list[str] | None = Field(default=None, max_length=20)
@@ -175,41 +207,10 @@ class ModelGroupUpdate(StrictBaseModel):
         )
     )
 
-    @model_validator(mode="after")
-    def validate_sync_filter(self) -> "ModelGroupUpdate":
-        if self.sync_filter_mode is None and self.sync_filter_query is None:
-            return self
-        mode = (
-            self.sync_filter_mode
-            if self.sync_filter_mode is not None
-            else ModelGroupSyncFilterMode.NONE
-        )
-        query = self.sync_filter_query if self.sync_filter_query is not None else ""
-        self.sync_filter_mode, self.sync_filter_query = (
-            canonicalize_model_group_sync_filter(
-                mode,
-                query,
-                route_group_id=self.route_group_id or "",
-            )
-        )
-        return self
-
-
-def canonicalize_model_group_sync_filter(
-    mode: ModelGroupSyncFilterMode,
-    query: str,
-    *,
-    route_group_id: str = "",
-) -> tuple[ModelGroupSyncFilterMode, str]:
-    """Canonicalize model group sync filtering for persisted configuration."""
-    trimmed_query = query.strip()
-    if route_group_id.strip() or not trimmed_query:
-        return ModelGroupSyncFilterMode.NONE, ""
-    if mode == ModelGroupSyncFilterMode.NONE:
-        return ModelGroupSyncFilterMode.NONE, ""
-    if mode == ModelGroupSyncFilterMode.REGEX:
-        validate_regex_pattern(trimmed_query, error_label="model group sync regex")
-    return mode, trimmed_query
+    _canonicalize_match_models = field_validator("match_models")(
+        canonicalize_match_models
+    )
+    _canonicalize_match_regex = field_validator("match_regex")(canonicalize_match_regex)
 
 
 class ModelGroupCandidateSubitem(ModelGroupItemInput):
@@ -223,6 +224,7 @@ class ModelGroupCandidateItem(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     credential_name: str = ""
     credential_number: int = Field(default=0, ge=0)
+    credential_mask: str = ""
     rate_source: Literal["none", "sub2api", "newapi"] = "none"
     rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     base_url: str
@@ -247,3 +249,40 @@ class ModelGroupModelTestRequest(StrictBaseModel):
     model_name: str = Field(min_length=1)
     prompt: str = Field(min_length=1, max_length=2000)
     protocol: ProtocolKind | None = None
+
+
+class UnplacedModelProvider(StrictBaseModel):
+    site_id: str
+    channel_name: str
+    credential_id: str
+    credential_name: str = ""
+    credential_number: int = Field(default=0, ge=0)
+    credential_mask: str = ""
+    base_url: str
+    protocols: list[ProtocolKind] = Field(default_factory=list)
+
+
+class UnplacedModelView(StrictBaseModel):
+    model_name: str
+    match_key: str
+    similar_group_ids: list[str] = Field(default_factory=list)
+    similar_group_names: list[str] = Field(default_factory=list)
+    similar_model_names: list[str] = Field(default_factory=list)
+    providers: list[UnplacedModelProvider] = Field(default_factory=list)
+
+
+class UnplacedModelsResponse(StrictBaseModel):
+    items: list[UnplacedModelView] = Field(default_factory=list)
+
+
+class ModelGroupPlacementRequest(StrictBaseModel):
+    model_names: list[str] | None = None
+
+
+class ModelGroupPlacementResponse(StrictBaseModel):
+    created: list[ModelGroupView] = Field(default_factory=list)
+    unplaced: list[UnplacedModelView] = Field(default_factory=list)
+
+
+class ModelGroupMergeRequest(StrictBaseModel):
+    target_group_id: str = Field(min_length=1)

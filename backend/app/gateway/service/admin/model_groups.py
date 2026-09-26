@@ -9,9 +9,13 @@ from ....models.model_groups import (
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
     ModelGroupItemState,
+    ModelGroupMergeRequest,
     ModelGroupModelTestRequest,
+    ModelGroupPlacementRequest,
+    ModelGroupPlacementResponse,
     ModelGroupUpdate,
     ModelGroupView,
+    UnplacedModelsResponse,
 )
 from ....models.protocols import ProtocolKind
 from ....models.site_model_test import SiteModelTestRequest, SiteModelTestResult
@@ -117,3 +121,26 @@ async def delete_model_group(
     """Delete a model group."""
     await app_state.group_repo.delete_group(group_id)
     return Response(status_code=204)
+
+
+async def merge_model_group(
+    group_id: str, payload: ModelGroupMergeRequest, _: Any = Depends(get_current_admin)
+) -> ModelGroupView:
+    """Merge a model group into another execution group."""
+    return await app_state.group_repo.merge_group(group_id, payload.target_group_id)
+
+
+async def list_unplaced_models(
+    _: Any = Depends(get_current_admin),
+) -> UnplacedModelsResponse:
+    """List channel models that no execution group covers."""
+    return UnplacedModelsResponse(
+        items=await app_state.group_repo.list_unplaced_models()
+    )
+
+
+async def place_models(
+    payload: ModelGroupPlacementRequest, _: Any = Depends(get_current_admin)
+) -> ModelGroupPlacementResponse:
+    """Create failover groups for unplaced models without near-name conflicts."""
+    return await app_state.group_repo.place_models(payload.model_names)

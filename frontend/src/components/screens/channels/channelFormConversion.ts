@@ -20,7 +20,7 @@ import {
   createLocalId,
   emptyProtocolConfig,
   fallbackCredentialName,
-  isPendingCredentialId,
+  persistedCredentialId,
   protocolConfigEffectiveProtocols,
 } from "./channelModels";
 import type {
@@ -126,15 +126,6 @@ export function toForm(site: Site): FormState {
         },
       ];
   const primaryId = baseUrls[0]?.id ?? "";
-  const credentialIdMap = new Map(
-    site.credentials.map((item) => [
-      item.id,
-      isPendingCredentialId(item.id)
-        ? item.id.slice("pending-".length)
-        : item.id,
-    ]),
-  );
-  const persistedCredentialId = (id: string) => credentialIdMap.get(id) ?? id;
   for (const url of baseUrls.slice(1)) {
     url.shareKeys = !site.credentials.some(
       (item) => item.base_url_id === url.id,
@@ -202,6 +193,20 @@ export function toForm(site: Site): FormState {
   };
 }
 
+/** Keeps a key's rate config when it still serves the key, else the first that does. */
+function resolveRateProtocolConfigId(
+  credential: FormCredential,
+  protocolConfigs: FormProtocolConfig[],
+) {
+  if (credential.rate_source === "none") return "";
+  const configIds = protocolConfigs
+    .filter((config) => config.credential_ids.includes(credential.id))
+    .map((config) => config.id);
+  return configIds.includes(credential.rate_protocol_config_id)
+    ? credential.rate_protocol_config_id
+    : (configIds[0] ?? "");
+}
+
 /** Prepare base URLs for the site payload. */
 export function formBaseUrlsForPayload(form: FormState) {
   return form.base_urls
@@ -236,12 +241,15 @@ export function toPayload(form: FormState): SitePayload {
     model_sync_exclude: rebuilt.model_sync_exclude.trim(),
     base_urls: baseUrls,
     credentials: credentials.map((item, index) => ({
-      id: item.id,
+      id: persistedCredentialId(item.id),
       name: item.name.trim() || fallbackCredentialName(index),
       api_key: item.api_key.trim(),
       base_url_id: item.baseUrlId,
       rate_source: item.rate_source,
-      rate_protocol_config_id: item.rate_protocol_config_id,
+      rate_protocol_config_id: resolveRateProtocolConfigId(
+        item,
+        rebuilt.protocolConfigs,
+      ),
       rate_group: item.rate_group.trim(),
     })),
     protocols: rebuilt.protocolConfigs.flatMap((protocolConfig) => {
@@ -267,7 +275,7 @@ export function toPayload(form: FormState): SitePayload {
           return effectiveProtocols.map((protocol) => ({
             id: model.protocolIds[protocol] ?? null,
             protocol,
-            credential_id: model.credential_id,
+            credential_id: persistedCredentialId(model.credential_id),
             model_name: model.model_name.trim(),
             enabled: model.enabled,
             source: model.source,

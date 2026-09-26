@@ -28,6 +28,7 @@ from ....models.sites import (
 from ..app_state import app_state
 from ..auth import get_current_admin
 from ..tasks.model_discovery import fetch_upstream_models, filter_model_names
+from ..tasks.model_group_placement import run_model_group_placement
 from ..tasks.site_model_probe import run_site_model_probe
 from ..upstream_support import format_channel_error
 
@@ -63,21 +64,27 @@ async def create_site(
     payload: SiteCreate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
     """Create an upstream site."""
-    return await app_state.channel_store.create_site(payload)
+    site = await app_state.channel_store.create_site(payload)
+    await run_model_group_placement(app_state)
+    return site
 
 
 async def import_sites(
     payload: SiteBatchImportRequest, _: Any = Depends(get_current_admin)
 ) -> SiteBatchImportResult:
     """Import upstream sites from a validated batch payload."""
-    return await app_state.channel_store.import_sites(payload)
+    result = await app_state.channel_store.import_sites(payload)
+    await run_model_group_placement(app_state)
+    return result
 
 
 async def update_site(
     site_id: str, payload: SiteUpdate, _: Any = Depends(get_current_admin)
 ) -> SiteConfig:
     """Update an upstream site."""
-    return await app_state.channel_store.update_site(site_id, payload)
+    site = await app_state.channel_store.update_site(site_id, payload)
+    await run_model_group_placement(app_state)
+    return site
 
 
 async def update_site_enabled(
@@ -86,7 +93,9 @@ async def update_site_enabled(
     _: Any = Depends(get_current_admin),
 ) -> SiteConfig:
     """Update an upstream site's master enabled state."""
-    return await app_state.channel_store.update_site_enabled(site_id, payload)
+    site = await app_state.channel_store.update_site_enabled(site_id, payload)
+    await run_model_group_placement(app_state)
+    return site
 
 
 async def delete_site(site_id: str, _: Any = Depends(get_current_admin)) -> Response:

@@ -172,12 +172,6 @@ class SiteDiscoveredModelEntity(Base):
 
 class ModelGroupEntity(Base):
     __tablename__ = "model_groups"
-    __table_args__ = (
-        CheckConstraint(
-            "sync_filter_mode IN ('', 'contains', 'exact', 'regex')",
-            name="ck_model_groups_sync_filter_mode",
-        ),
-    )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     name: Mapped[str] = mapped_column(
@@ -189,10 +183,12 @@ class ModelGroupEntity(Base):
     route_group_id: Mapped[str] = mapped_column(
         String(80), nullable=False, default="", index=True
     )
-    sync_filter_mode: Mapped[str] = mapped_column(
-        String(20), nullable=False, default=""
+    match_models_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
     )
-    sync_filter_query: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    match_regex: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=text("''")
+    )
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     fallback_group_ids_json: Mapped[str] = mapped_column(

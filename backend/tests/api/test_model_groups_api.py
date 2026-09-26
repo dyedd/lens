@@ -345,7 +345,7 @@ def test_create_model_group_with_site_member_hydrates_member_metadata(
         "/api/admin/model-groups",
         headers=admin_headers,
         json={
-            "name": "gpt-4o",
+            "name": "custom-group",
             "items": [_member()],
         },
     )
@@ -358,6 +358,8 @@ def test_create_model_group_with_site_member_hydrates_member_metadata(
     assert item["protocol"] == "openai_chat"
     assert item["credential_id"] == "cred-1"
     assert item["credential_name"] == "primary-key"
+    assert item["credential_mask"] == "ups…cret"
+    assert item["base_url"] == "https://upstream.example/"
 
 
 def test_create_model_group_rejects_blank_name(client, admin_headers) -> None:
@@ -397,7 +399,7 @@ def test_create_model_group_rejects_invalid_members(
         "/api/admin/model-groups",
         headers=admin_headers,
         json={
-            "name": "gpt-4o",
+            "name": "custom-group",
             "items": [_member(**member_overrides)],
         },
     )
@@ -422,3 +424,141 @@ def test_model_group_missing_resources_return_not_found(
     assert_error(get_response, 404, "missing")
     assert_error(update_response, 404, "missing")
     assert_error(delete_response, 404, "missing")
+
+
+def test_near_named_channel_model_stays_unplaced_and_is_listed(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    existing = create_model_group(name="claude-opus-4.5")
+    create_site(valid_site_payload(model_name="claude-opus-4-5"))
+
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    response = client.get("/api/admin/unplaced-models", headers=admin_headers)
+
+    assert [group["name"] for group in groups] == ["claude-opus-4.5"]
+    assert response.status_code == 200, response.text
+    [item] = response.json()["items"]
+    assert item["model_name"] == "claude-opus-4-5"
+    assert item["match_key"] == "claudeopus45"
+    assert item["similar_group_ids"] == [existing["id"]]
+    assert item["similar_group_names"] == ["claude-opus-4.5"]
+    assert item["similar_model_names"] == []
+    assert item["providers"] == [
+        {
+            "site_id": item["providers"][0]["site_id"],
+            "channel_name": "OpenAI Site",
+            "credential_id": "cred-1",
+            "credential_name": "primary-key",
+            "credential_number": 1,
+            "credential_mask": "ups…cret",
+            "base_url": "https://upstream.example/",
+            "protocols": ["openai_chat"],
+        }
+    ]
+
+
+def _create_group(client, admin_headers, **payload: object) -> dict[str, object]:
+    response = client.post(
+        "/api/admin/model-groups", headers=admin_headers, json=payload
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_merge_model_group_folds_source_into_target(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(valid_site_payload())
+    target = next(
+        group
+        for group in client.get("/api/admin/model-groups", headers=admin_headers).json()
+        if group["name"] == "gpt-4o"
+    )
+    client.put(
+        f"/api/admin/model-groups/{target['id']}",
+        headers=admin_headers,
+        json={"match_regex": "-mini$"},
+    )
+    source = _create_group(
+        client,
+        admin_headers,
+        name="gpt-4o-latest",
+        match_models=["gpt-4o-2026", "GPT-4O"],
+        match_regex="^gpt-4o-2",
+        items=[_member()],
+    )
+    alias = _create_group(
+        client, admin_headers, name="alias", route_group_id=source["id"]
+    )
+    vision = _create_group(
+        client, admin_headers, name="vision", fallback_group_ids=[source["id"]]
+    )
+
+    response = client.post(
+        f"/api/admin/model-groups/{source['id']}/merge",
+        headers=admin_headers,
+        json={"target_group_id": target["id"]},
+    )
+
+    assert response.status_code == 200, response.text
+    merged = response.json()
+    assert merged["match_models"] == ["gpt-4o", "gpt-4o-latest", "gpt-4o-2026"]
+    assert merged["match_regex"] == "(?:-mini$)|(?:^gpt-4o-2)"
+    assert [
+        (item["model_name"], item["matched_by_rule"]) for item in merged["items"]
+    ] == [("gpt-4o", False)]
+    assert_error(
+        client.get(f"/api/admin/model-groups/{source['id']}", headers=admin_headers),
+        404,
+    )
+    assert (
+        (
+            client.get(
+                f"/api/admin/model-groups/{alias['id']}", headers=admin_headers
+            ).json()["route_group_id"]
+        )
+        == target["id"]
+    )
+    assert (
+        client.get(
+            f"/api/admin/model-groups/{vision['id']}", headers=admin_headers
+        ).json()["fallback_group_ids"]
+    ) == [target["id"]]
+
+
+@pytest.mark.parametrize(
+    ("target_name", "status_code"),
+    [
+        pytest.param("source", 409, id="itself"),
+        pytest.param("route", 409, id="route-group"),
+        pytest.param(None, 404, id="missing"),
+    ],
+)
+def test_merge_model_group_rejects_invalid_targets(
+    client,
+    admin_headers,
+    target_name,
+    status_code,
+) -> None:
+    source = _create_group(client, admin_headers, name="source")
+    execution = _create_group(client, admin_headers, name="execution")
+    groups = {
+        "source": source,
+        "route": _create_group(
+            client, admin_headers, name="route", route_group_id=execution["id"]
+        ),
+    }
+    target_id = groups[target_name]["id"] if target_name else "missing"
+
+    response = client.post(
+        f"/api/admin/model-groups/{source['id']}/merge",
+        headers=admin_headers,
+        json={"target_group_id": target_id},
+    )
+
+    assert_error(response, status_code)

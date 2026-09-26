@@ -12,10 +12,7 @@ import {
 } from "./channels/useChannelCommands";
 import { useChannelForm } from "./channels/useChannelForm";
 import { useChannelModelPicker } from "./channels/useChannelModelPicker";
-import {
-  useBatchModelTest,
-  useChannelModelTest,
-} from "./channels/useChannelModelTest";
+import { useChannelModelTest } from "./channels/useChannelModelTest";
 import {
   useAggregatedModels,
   useChannelQueries,
@@ -55,17 +52,7 @@ export function ChannelsScreen() {
     locale,
   });
   const modelTest = useChannelModelTest(editor.form, locale);
-  const batchTest = useBatchModelTest({
-    locale,
-    prompts: modelTest.modelTestPrompts,
-    optionByKey: modelTest.modelTestOptionByKey,
-    buildPayload: modelTest.buildModelTestPayload,
-  });
-  const overviewModels = useAggregatedModels(
-    editor.form.protocolConfigs,
-    editor.form.credentials,
-    locale,
-  );
+  const overviewModels = useAggregatedModels(editor.form, locale);
 
   useEffect(() => {
     if (!queries.sitesIsError) return;
@@ -89,7 +76,6 @@ export function ChannelsScreen() {
     options: { statusFilter?: ModelStatusFilter; fetch?: boolean } = {},
   ) {
     if (!editor.confirmDiscardChanges()) return;
-    batchTest.clearBatchModelTestResults();
     setEditorMode(mode);
     setIsModelsNested(false);
     setModelsStatusFilter(options.statusFilter ?? "all");
@@ -143,7 +129,6 @@ export function ChannelsScreen() {
           transfer={transfer}
           picker={picker}
           modelTest={modelTest}
-          batchTest={batchTest}
           save={save}
           overviewModels={overviewModels}
           editorMode={editorMode}

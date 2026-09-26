@@ -4,7 +4,6 @@ import { useI18n } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
 import { GroupsOverview } from "./groups/GroupsOverview";
 import {
-  type CandidateSearchMode,
   EMPTY_FORM,
   type FormState,
   type MemberStatusFilter,
@@ -36,24 +35,14 @@ function useGroupEditorState() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpenState] = useState(false);
-  const [candidateSearchMode, setCandidateSearchMode] =
-    useState<CandidateSearchMode>("contains");
-  const [candidateSearchValue, setCandidateSearchValue] = useState("");
-  const [candidateSearchUsesGroupName, setCandidateSearchUsesGroupName] =
-    useState(true);
+  const [candidateSearch, setCandidateSearch] = useState("");
   const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
   const [memberStatusFilter, setMemberStatusFilter] =
     useState<MemberStatusFilter>("all");
-  const candidateSearch =
-    candidateSearchMode === "contains" && candidateSearchUsesGroupName
-      ? form.name
-      : candidateSearchValue;
   const setDialogOpen: Dispatch<SetStateAction<boolean>> = (value) => {
     const isOpen = typeof value === "function" ? value(dialogOpen) : value;
     if (!isOpen) {
-      setCandidateSearchValue("");
-      setCandidateSearchMode("contains");
-      setCandidateSearchUsesGroupName(true);
+      setCandidateSearch("");
       setExpandedChannels([]);
     }
     setDialogOpenState(isOpen);
@@ -61,53 +50,15 @@ function useGroupEditorState() {
   function openCreate() {
     setEditingId(null);
     setForm(EMPTY_FORM);
-    setCandidateSearchValue("");
-    setCandidateSearchMode("contains");
-    setCandidateSearchUsesGroupName(true);
     setDialogOpen(true);
   }
   function openEdit(group: ModelGroup) {
-    const saved = Boolean(
-      group.sync_filter_mode && group.sync_filter_query.trim(),
-    );
     setEditingId(group.id);
     setForm(modelGroupToForm(group));
-    setCandidateSearchValue(saved ? group.sync_filter_query : group.name);
-    setCandidateSearchMode(
-      group.sync_filter_mode === "regex" ? "regex" : "contains",
-    );
-    setCandidateSearchUsesGroupName(
-      !saved && group.sync_filter_mode !== "regex",
-    );
     setDialogOpen(true);
-  }
-  function changeCandidateSearchMode(mode: CandidateSearchMode) {
-    setCandidateSearchMode(mode);
-    if (mode === "contains") {
-      setCandidateSearchValue(form.name);
-      setCandidateSearchUsesGroupName(true);
-    } else setCandidateSearchUsesGroupName(false);
-  }
-  function changeCandidateSearch(value: string) {
-    setCandidateSearchValue(value);
-    setCandidateSearchUsesGroupName(false);
-  }
-  function changeRouteTarget(routeGroupId: string) {
-    setForm((current) => ({
-      ...current,
-      route_group_id: routeGroupId,
-      sync_filter_mode: routeGroupId ? "" : current.sync_filter_mode,
-      sync_filter_query: routeGroupId ? "" : current.sync_filter_query,
-      fallback_group_ids: routeGroupId ? [] : current.fallback_group_ids,
-    }));
-    setExpandedChannels([]);
   }
   return {
     candidateSearch,
-    candidateSearchMode,
-    changeCandidateSearch,
-    changeCandidateSearchMode,
-    changeRouteTarget,
     dialogOpen,
     editingId,
     expandedChannels,
@@ -115,6 +66,7 @@ function useGroupEditorState() {
     memberStatusFilter,
     openCreate,
     openEdit,
+    setCandidateSearch,
     setDialogOpen,
     setEditingId,
     setExpandedChannels,
@@ -144,8 +96,9 @@ export function GroupsScreen() {
   const candidates = useGroupCandidates({
     candidateResponse: queries.candidateQuery.data,
     candidateSearch: editor.candidateSearch,
-    candidateSearchMode: editor.candidateSearchMode,
     expandedChannels: editor.expandedChannels,
+    form: editor.form,
+    isCreating: !editor.editingId,
     locale,
     setExpandedChannels: editor.setExpandedChannels,
     setForm: editor.setForm,
@@ -153,19 +106,27 @@ export function GroupsScreen() {
   const commands = useGroupCommands({
     editingId: editor.editingId,
     form: editor.form,
+    groups: queries.groups ?? [],
     invalidateGroupData: queries.invalidateGroupData,
     locale,
     setDialogOpen: editor.setDialogOpen,
     setEditingId: editor.setEditingId,
     setForm: editor.setForm,
   });
-  const candidateListError = queries.candidateQuery.error;
 
   return (
     <section>
       <GroupsOverview
         locale={locale}
         visibleGroups={filters.visibleGroups}
+        unplacedModels={queries.unplacedModels}
+        joinableGroupIds={
+          new Set(
+            queries.groupRows
+              .filter((group) => !group.is_route_group)
+              .map((group) => group.id),
+          )
+        }
         isLoading={queries.isLoading}
         search={filters.search}
         strategyFilter={filters.strategyFilter}
@@ -186,10 +147,16 @@ export function GroupsScreen() {
         onCreate={editor.openCreate}
         onOpenEdit={editor.openEdit}
         onToggleEnabled={commands.toggleGroupEnabled}
+        onChangeStrategy={commands.changeStrategy}
+        onMerge={commands.mergeGroup}
         onDelete={commands.setDeleteTarget}
         onTest={modelTest.openModelTest}
         onBulkEnabled={commands.applyEnabled}
+        onBulkStrategy={commands.applyStrategy}
         onBulkDelete={commands.removeGroups}
+        onAddModelsToGroup={commands.addModelsToGroup}
+        onCreateGroupForModels={commands.createGroupForModels}
+        onAutoPlace={commands.autoPlaceModels}
       />
 
       {editor.dialogOpen ? (
@@ -201,25 +168,24 @@ export function GroupsScreen() {
           submit={commands.submit}
           form={editor.form}
           setForm={editor.setForm}
+          changeName={candidates.changeName}
           routeTargetOptions={queries.routeTargetOptions}
-          changeRouteTarget={editor.changeRouteTarget}
-          candidateSearchMode={editor.candidateSearchMode}
-          changeCandidateSearchMode={editor.changeCandidateSearchMode}
+          changeRouteTarget={candidates.changeRouteTarget}
+          changeMatchRules={candidates.changeMatchRules}
+          matchRegexInvalid={candidates.matchRegexInvalid}
+          ruleMatchModelCount={candidates.ruleMatchModelCount}
+          ruleMatchSourceCount={candidates.ruleMatchSourceCount}
           candidateSearch={editor.candidateSearch}
-          changeCandidateSearch={editor.changeCandidateSearch}
-          addMatchedItems={candidates.addMatchedItems}
-          candidateRegexInvalid={candidates.candidateRegexInvalid}
-          filteredCandidates={candidates.filteredCandidates}
+          changeCandidateSearch={editor.setCandidateSearch}
           refetchCandidates={queries.candidateQuery.refetch}
           isFetchingCandidates={queries.candidateQuery.isFetching}
-          clearSavedFilter={candidates.clearSavedFilter}
           groupedCandidates={candidates.groupedCandidates}
           expandedChannels={candidates.expandedChannels}
           toggleChannel={candidates.toggleChannel}
           foldedMembers={members.foldedMembers}
           addCandidate={candidates.addCandidate}
           candidateIsError={queries.candidateQuery.isError}
-          candidateListError={candidateListError}
+          candidateListError={queries.candidateQuery.error}
           disabledItemCount={members.disabledItemCount}
           invalidItemCount={members.invalidItemCount}
           removeInvalidItems={members.removeInvalidItems}

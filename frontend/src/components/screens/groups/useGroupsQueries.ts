@@ -7,11 +7,12 @@ import type {
   ModelGroupCandidatesPayload,
   ModelGroupCandidatesResponse,
   RoutingStrategy,
+  UnplacedModelsResponse,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { protocolLabel } from "@/lib/protocols";
 import type { FormState, GroupRow, GroupSort } from "./groupTypes";
-import { buildGroupRows } from "./groupView";
+import { buildGroupRows, listSavedFormItems } from "./groupView";
 import {
   GROUP_PROTOCOL_ORDER,
   groupMemberProtocols,
@@ -38,9 +39,17 @@ export function useGroupsQueries({
     queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
     staleTime: 2 * 60_000,
   });
+  // Nested under "groups" so every groups invalidation refreshes it too.
+  const unplacedQuery = useQuery({
+    queryKey: ["groups", "unplaced-models"],
+    queryFn: () => apiRequest<UnplacedModelsResponse>("/admin/unplaced-models"),
+    staleTime: 2 * 60_000,
+  });
+  // Live rule members are left out so the candidate list still offers them
+  // to the client-side rule preview.
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(
     () => ({
-      items: form.items
+      items: listSavedFormItems(form.items)
         .map((item) => ({
           channel_id: item.channel_id,
           credential_id: item.credential_id,
@@ -110,7 +119,7 @@ export function useGroupsQueries({
     evaluatedItems: candidateQuery.data?.evaluated_items ?? [],
     groupRows,
     groups: groupsQuery.data,
-    groupsIsError: groupsQuery.isError,
+    unplacedModels: unplacedQuery.data?.items ?? [],
     invalidateGroupData,
     isLoading: groupsQuery.isLoading,
     queryClient,
@@ -157,8 +166,8 @@ export function useGroupFilters(
       if (!keyword) return true;
       return [
         group.name,
-        group.channel_summary,
         ...group.channel_names,
+        ...group.match_models,
         ...group.items.map((item) => item.model_name),
       ]
         .join(" ")

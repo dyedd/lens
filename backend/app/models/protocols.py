@@ -61,13 +61,6 @@ class RoutingStrategy(str, Enum):
     FAILOVER = "failover"
 
 
-class ModelGroupSyncFilterMode(str, Enum):
-    NONE = ""
-    CONTAINS = "contains"
-    EXACT = "exact"
-    REGEX = "regex"
-
-
 class CronjobStatus(str, Enum):
     IDLE = "idle"
     RUNNING = "running"

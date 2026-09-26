@@ -17,6 +17,7 @@ from ....models.protocols import ChannelModelSyncStatus
 from ....models.sites import SiteConfig, SiteProtocolConfig
 from ..app_state import logger
 from .model_discovery import fetch_upstream_models
+from .model_group_placement import run_model_group_placement
 
 if TYPE_CHECKING:
     from ..app_state import AppState
@@ -64,6 +65,7 @@ async def sync_channel_models(
         sum(item.status == ChannelModelSyncStatus.UPDATED for item in items),
         sum(item.status == ChannelModelSyncStatus.FAILED for item in items),
     )
+    await run_model_group_placement(state)
     return ChannelModelSyncResponse(items=items)
 
 

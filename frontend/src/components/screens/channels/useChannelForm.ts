@@ -23,12 +23,7 @@ import {
   isAggregateModelGroupKey,
   protocolConfigModelKey,
 } from "./channelModels";
-import type {
-  FormBaseUrl,
-  FormCredential,
-  FormState,
-  Locale,
-} from "./channelTypes";
+import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
 
 /** Splits pasted model names on commas and line breaks. */
 function parseModelNames(value: string) {
@@ -211,37 +206,6 @@ export function useChannelForm(locale: Locale) {
   function validateSiteForm() {
     return validateChannelForm(form, duplicatedProtocolConfigKeys.size, locale);
   }
-  function updateCredential(
-    credentialId: string,
-    patch: Partial<FormCredential>,
-  ) {
-    setForm((current) => ({
-      ...current,
-      credentials: current.credentials.map((item) =>
-        item.id === credentialId ? { ...item, ...patch } : item,
-      ),
-    }));
-  }
-  function removeCredential(index: number) {
-    setForm((current) => {
-      const target = current.credentials[index];
-      if (!target) return current;
-      const credentials = current.credentials.filter((_, i) => i !== index);
-      return {
-        ...current,
-        credentials,
-        protocolConfigs: current.protocolConfigs.map((config) => {
-          return {
-            ...config,
-            credential_ids: credentials.map((item) => item.id),
-            models: config.models.filter(
-              (model) => model.credential_id !== target.id,
-            ),
-          };
-        }),
-      };
-    });
-  }
   function updateModelProtocols(key: string, protocols: ProtocolKind[]) {
     if (!protocols.length) {
       toast.error(
@@ -390,8 +354,6 @@ export function useChannelForm(locale: Locale) {
     closeEditor,
     validateSiteForm,
     hasUnsavedChanges,
-    updateCredential,
-    removeCredential,
     updateModelProtocols,
     removeAggregateModel,
     toggleAggregateEnabled,

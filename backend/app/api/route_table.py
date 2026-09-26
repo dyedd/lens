@@ -9,6 +9,9 @@ from ..gateway.service.admin.model_groups import (
     get_model_group,
     list_model_group_candidates,
     list_model_groups,
+    list_unplaced_models,
+    merge_model_group,
+    place_models,
     test_model_group_model,
     update_model_group,
 )
@@ -86,7 +89,9 @@ from ..models.gateway_keys import GatewayApiKey
 from ..models.health import HealthSummary
 from ..models.model_groups import (
     ModelGroupCandidatesResponse,
+    ModelGroupPlacementResponse,
     ModelGroupView,
+    UnplacedModelsResponse,
 )
 from ..models.model_prices import ModelPriceItem, ModelPriceListResponse
 from ..models.overview import (
@@ -286,6 +291,24 @@ def register_model_groups(app: FastAPI) -> None:
         methods=["POST"],
         response_model=ModelGroupView,
         status_code=201,
+    )
+    app.add_api_route(
+        "/api/admin/unplaced-models",
+        list_unplaced_models,
+        methods=["GET"],
+        response_model=UnplacedModelsResponse,
+    )
+    app.add_api_route(
+        "/api/admin/model-group-placements",
+        place_models,
+        methods=["POST"],
+        response_model=ModelGroupPlacementResponse,
+    )
+    app.add_api_route(
+        "/api/admin/model-groups/{group_id}/merge",
+        merge_model_group,
+        methods=["POST"],
+        response_model=ModelGroupView,
     )
     app.add_api_route(
         "/api/admin/model-groups/{group_id}/model-tests",

@@ -8,7 +8,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.errors import ResourceNotFoundError
+from app.core.errors import ResourceConflictError, ResourceNotFoundError
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
     ModelGroupCandidatesRequest,
@@ -17,6 +17,8 @@ from app.models.model_groups import (
     ModelGroupItemInput,
     ModelGroupUpdate,
     ModelGroupView,
+    canonicalize_match_models,
+    canonicalize_match_regex,
 )
 from app.persistence.entities import (
     ModelGroupEntity,
@@ -24,16 +26,20 @@ from app.persistence.entities import (
 )
 from app.persistence.group_rule_codec import (
     dump_fallback_group_ids,
+    dump_match_models,
     dump_rules,
     parse_fallback_group_ids,
+    parse_match_models,
 )
 
 from ..channel_store import ChannelStore
-from .group_read import GroupCandidatesMixin, GroupMappingMixin, build_direct_groups
+from .group_placement import GroupPlacementMixin
+from .group_read import GroupCandidatesMixin, GroupMappingMixin
 from .group_write import GroupValidationMixin
 
 
 class ModelGroupRepository(
+    GroupPlacementMixin,
     GroupCandidatesMixin,
     GroupValidationMixin,
     GroupMappingMixin,
@@ -86,11 +92,7 @@ class ModelGroupRepository(
         *,
         channels: list[ChannelConfig] | None = None,
     ) -> ModelGroupView | None:
-        """Return the group serving a requested model name for one protocol.
-
-        A model group shadows channel models of the same name; without one,
-        the channel models themselves form a direct failover group.
-        """
+        """Return the model group named exactly as requested for one protocol."""
         trimmed_name = (name or "").strip()
         if not trimmed_name:
             return None
@@ -108,16 +110,9 @@ class ModelGroupRepository(
             )
             entity = result.scalar_one_or_none()
             if entity is None:
-                group = next(
-                    iter(build_direct_groups(effective_channels, trimmed_name)), None
-                )
-            else:
-                hydrated = await self._hydrate_groups(
-                    session, [entity], effective_channels
-                )
-                group = hydrated[0]
-        if group is None:
-            return None
+                return None
+            hydrated = await self._hydrate_groups(session, [entity], effective_channels)
+            group = hydrated[0]
         return (
             group
             if protocol in {item.value for item in group.client_protocols}
@@ -129,20 +124,6 @@ class ModelGroupRepository(
     ) -> ModelGroupCandidatesResponse:
         """Return enabled model candidates and evaluate selected members."""
         return await self._list_group_candidates(payload)
-
-    async def list_routable_groups(self) -> list[ModelGroupView]:
-        """Return model groups plus channel models no group name shadows."""
-        channels = await self._channel_store.list_channels()
-        groups = await self.list_groups(channels=channels)
-        group_names = {group.name for group in groups}
-        return [
-            *groups,
-            *(
-                group
-                for group in build_direct_groups(channels)
-                if group.name not in group_names
-            ),
-        ]
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroupView:
         """Create and return a validated model group."""
@@ -161,8 +142,8 @@ class ModelGroupRepository(
                 name=payload.name.strip(),
                 strategy=payload.strategy.value,
                 route_group_id=route_group.id if route_group is not None else "",
-                sync_filter_mode=payload.sync_filter_mode.value,
-                sync_filter_query=payload.sync_filter_query,
+                match_models_json=dump_match_models(payload.match_models),
+                match_regex=payload.match_regex,
                 param_override=dump_rules(payload.param_override),
                 headers_json=dump_rules(payload.headers),
                 fallback_group_ids_json=dump_fallback_group_ids(
@@ -246,8 +227,10 @@ class ModelGroupRepository(
             for key, value in changes.items():
                 if key == "strategy" and value is not None:
                     entity.strategy = value.value
-                elif key == "sync_filter_mode" and value is not None:
-                    entity.sync_filter_mode = value.value
+                elif key == "match_models":
+                    entity.match_models_json = dump_match_models(value or [])
+                elif key == "match_regex":
+                    entity.match_regex = value or ""
                 elif key == "items":
                     continue
                 elif key == "fallback_group_ids":
@@ -260,16 +243,12 @@ class ModelGroupRepository(
                     entity.route_group_id = (
                         route_group.id if route_group is not None else ""
                     )
-                    if not entity.route_group_id:
-                        continue
-                    entity.sync_filter_mode = ""
-                    entity.sync_filter_query = ""
                 else:
                     setattr(entity, key, value)
 
             if entity.route_group_id:
-                entity.sync_filter_mode = ""
-                entity.sync_filter_query = ""
+                entity.match_models_json = dump_match_models([])
+                entity.match_regex = ""
 
             if payload.items is not None:
                 await session.execute(
@@ -305,6 +284,102 @@ class ModelGroupRepository(
             )
             await session.delete(entity)
             await session.commit()
+
+    async def merge_group(self, group_id: str, target_group_id: str) -> ModelGroupView:
+        """Fold a group's name, rules, and members into another execution group."""
+        channels = await self._channel_store.list_channels()
+        async with self._session_factory() as session:
+            source = await session.get(ModelGroupEntity, group_id)
+            if source is None:
+                raise ResourceNotFoundError(group_id)
+            target = await session.get(ModelGroupEntity, target_group_id)
+            if target is None:
+                raise ResourceNotFoundError(target_group_id)
+            if source.id == target.id:
+                raise ResourceConflictError("Model group cannot merge into itself")
+            if target.route_group_id.strip():
+                raise ResourceConflictError("Merge target must be an execution group")
+
+            target.match_models_json = dump_match_models(
+                canonicalize_match_models(
+                    [
+                        *parse_match_models(target.match_models_json),
+                        source.name,
+                        *parse_match_models(source.match_models_json),
+                    ]
+                )
+                or []
+            )
+            patterns = [
+                item for item in (target.match_regex, source.match_regex) if item
+            ]
+            target.match_regex = (
+                canonicalize_match_regex(
+                    "|".join(f"(?:{item})" for item in patterns)
+                    if len(patterns) > 1
+                    else "".join(patterns)
+                )
+                or ""
+            )
+
+            item_rows = (
+                (
+                    await session.execute(
+                        select(ModelGroupItemEntity)
+                        .where(
+                            ModelGroupItemEntity.group_id.in_([target.id, source.id])
+                        )
+                        .order_by(
+                            ModelGroupItemEntity.sort_order.asc(),
+                            ModelGroupItemEntity.id.asc(),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            target_rows = [row for row in item_rows if row.group_id == target.id]
+            member_keys = {
+                (row.channel_id, row.credential_id, row.model_name)
+                for row in target_rows
+            }
+            next_sort_order = len(target_rows)
+            for row in item_rows:
+                if row.group_id != source.id:
+                    continue
+                row_key = (row.channel_id, row.credential_id, row.model_name)
+                if row_key in member_keys:
+                    await session.delete(row)
+                    continue
+                member_keys.add(row_key)
+                row.group_id = target.id
+                row.sort_order = next_sort_order
+                next_sort_order += 1
+
+            for entity in (await session.execute(select(ModelGroupEntity))).scalars():
+                if entity.id == source.id:
+                    continue
+                if entity.route_group_id == source.id:
+                    entity.route_group_id = target.id
+                fallback_group_ids = parse_fallback_group_ids(
+                    entity.fallback_group_ids_json
+                )
+                if source.id in fallback_group_ids:
+                    entity.fallback_group_ids_json = dump_fallback_group_ids(
+                        [
+                            fallback_id
+                            for fallback_id in dict.fromkeys(
+                                target.id if item == source.id else item
+                                for item in fallback_group_ids
+                            )
+                            if fallback_id != entity.id
+                        ]
+                    )
+
+            await session.delete(source)
+            await session.commit()
+            hydrated = await self._hydrate_groups(session, [target], channels)
+            return hydrated[0]
 
     async def list_group_names(self, *, include_routed: bool = False) -> list[str]:
         """Return model group names, optionally including routed groups."""

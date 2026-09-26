@@ -9,18 +9,7 @@ import type {
   FormModel,
   FormProtocolConfig,
   FormState,
-  PickerModelItem,
 } from "./channelTypes";
-
-export function canRunModelAction(
-  lastRunAt: Record<string, number>,
-  key: string,
-) {
-  const now = Date.now();
-  if (now - (lastRunAt[key] ?? 0) < 800) return false;
-  lastRunAt[key] = now;
-  return true;
-}
 
 export function activeSelectedCredentialIds(
   form: FormState,
@@ -56,13 +45,6 @@ export function buildModels(
       source,
       upstream_missing: false,
     }));
-}
-
-/** Builds a model key scoped by credential and model name. */
-export function genericModelKey(
-  model: Pick<PickerModelItem, "credential_id" | "model_name">,
-) {
-  return `${model.credential_id}:${model.model_name}`;
 }
 
 /** Builds a stable model key scoped to a protocol configuration. */
@@ -148,6 +130,11 @@ export function siteEndpointUrls(site: Site) {
   return site.base_urls.map((item) => item.url.trim()).filter(Boolean);
 }
 
+/** Shortens a base URL for dense table cells. */
+export function formatBaseUrlLabel(url: string) {
+  return url.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+}
+
 /** Builds a compact summary of a site's configured base URLs. */
 export function siteEndpointSummary(site: Site, locale: string = "zh-CN") {
   const urls = siteEndpointUrls(site);
@@ -175,19 +162,6 @@ export function siteModelCounts(site: Site) {
   return { enabled, total, pending: pendingNames.size };
 }
 
-/** Lists enabled protocol kinds on a site, in canonical order. */
-export function siteEnabledProtocols(site: Site): ProtocolKind[] {
-  const kinds = new Set<ProtocolKind>();
-  for (const protocolConfig of site.protocols) {
-    for (const protocol of protocolConfig.protocols) {
-      kinds.add(protocol);
-    }
-  }
-  return (["auto", ...PROTOCOL_LIST] as ProtocolKind[]).filter((protocol) =>
-    kinds.has(protocol),
-  );
-}
-
 /** Builds the fallback persisted name for a credential. */
 export function fallbackCredentialName(index: number) {
   return `Key ${index + 1}`;
@@ -202,6 +176,15 @@ export function credentialLabel(
   return formatCredentialDisplayName(item.name, index + 1, locale);
 }
 
+/** Formats a key as its label plus masked value for selectors and tooltips. */
+export function formatCredentialTitle(
+  item: { name: string; api_key: string },
+  index: number,
+  locale: string,
+) {
+  return `${credentialLabel(item, index, locale)} · ${maskApiKey(item.api_key)}`;
+}
+
 /** Creates a client-side identifier for unsaved channel entities. */
 export function createLocalId(prefix: string) {
   if (
@@ -213,7 +196,7 @@ export function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export function emptyCredential(baseUrlId = ""): FormCredential {
+function emptyCredential(baseUrlId = ""): FormCredential {
   return {
     id: createLocalId("credential"),
     name: "",
@@ -230,7 +213,7 @@ export function emptyCredential(baseUrlId = ""): FormCredential {
 }
 
 /** Splits a bulk key textarea into unique API keys. */
-export function parseApiKeyLines(value: string) {
+function parseApiKeyLines(value: string) {
   const keys: string[] = [];
   for (const line of value.split(/\r?\n/)) {
     const apiKey = line.trim();
@@ -248,6 +231,11 @@ export function maskApiKey(value: string) {
 
 export function isPendingCredentialId(id: string) {
   return id.startsWith("pending-");
+}
+
+/** Drops the editor-only pending marker so saved keys keep a plain ID. */
+export function persistedCredentialId(id: string) {
+  return isPendingCredentialId(id) ? id.slice("pending-".length) : id;
 }
 
 /** Replaces pending keys for one URL while keeping persisted keys. */
@@ -319,7 +307,7 @@ export const emptyForm = (): FormState => {
 };
 
 /** Builds uniqueness keys for a protocol configuration's credentials. */
-export function protocolConfigCredentialKeys(
+function protocolConfigCredentialKeys(
   protocolConfig: FormProtocolConfig,
   baseUrlIds: Set<string>,
 ) {

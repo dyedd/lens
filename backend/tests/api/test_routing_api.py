@@ -5,7 +5,12 @@ from typing import Any
 
 import httpx
 import pytest
-from conftest import gateway_headers, openai_chat_channel_id, valid_site_payload
+from conftest import (
+    assert_error,
+    gateway_headers,
+    openai_chat_channel_id,
+    valid_site_payload,
+)
 
 from app.persistence.settings_keys import SETTING_CORS_ALLOW_ORIGINS
 
@@ -120,47 +125,27 @@ def _chat(client, key: dict[str, Any]) -> Any:
     )
 
 
-def test_ungrouped_channel_model_is_routed_directly(
+def _group_named(client, admin_headers, name: str) -> dict[str, Any]:
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    return next(group for group in groups if group["name"] == name)
+
+
+def test_site_save_places_channel_model_into_routable_failover_group(
     client,
+    admin_headers,
     monkeypatch,
     create_site,
     create_gateway_key,
 ) -> None:
-    create_site(_site_with_key("Direct", "direct"))
+    create_site(_site_with_key("Placed", "placed"))
     used_keys = _capture_upstream_keys(monkeypatch)
 
     response = _chat(client, create_gateway_key())
+    group = _group_named(client, admin_headers, "gpt-4o")
 
     assert response.status_code == 200, response.text
-    assert used_keys == ["Bearer direct-secret"]
-
-
-def test_model_group_takes_precedence_over_same_named_channel_models(
-    client,
-    monkeypatch,
-    create_site,
-    create_model_group,
-    create_gateway_key,
-) -> None:
-    create_site(_site_with_key("Direct", "direct"))
-    create_site(_site_with_key("Grouped", "grouped"))
-    create_model_group(
-        name="gpt-4o",
-        items=[
-            {
-                "channel_id": openai_chat_channel_id("grouped-pc"),
-                "credential_id": "grouped-cred",
-                "model_name": "gpt-4o",
-                "enabled": True,
-            }
-        ],
-    )
-    used_keys = _capture_upstream_keys(monkeypatch)
-
-    response = _chat(client, create_gateway_key())
-
-    assert response.status_code == 200, response.text
-    assert used_keys == ["Bearer grouped-secret"]
+    assert used_keys == ["Bearer placed-secret"]
+    assert (group["strategy"], group["match_models"]) == ("failover", ["gpt-4o"])
 
 
 @pytest.mark.parametrize(
@@ -170,37 +155,41 @@ def test_model_group_takes_precedence_over_same_named_channel_models(
         pytest.param({"source": "synced", "upstream_missing": True}, id="missing"),
     ],
 )
-def test_direct_routing_skips_unavailable_channel_models(
+def test_model_without_group_is_not_routed(
     client,
     monkeypatch,
     create_site,
     create_gateway_key,
     model_fields: dict[str, Any],
 ) -> None:
-    create_site(_site_with_key("Direct", "direct", **model_fields))
+    create_site(_site_with_key("Unavailable", "unavailable", **model_fields))
     used_keys = _capture_upstream_keys(monkeypatch)
 
     response = _chat(client, create_gateway_key())
 
-    assert response.status_code == 503, response.text
+    assert_error(response, 503)
     assert used_keys == []
 
 
+@pytest.mark.parametrize(
+    "match_rules",
+    [
+        pytest.param({"match_models": ["GPT-4O"]}, id="match-models"),
+        pytest.param({"match_regex": "^GPT-4"}, id="match-regex"),
+    ],
+)
 def test_model_group_rule_routes_to_live_matching_channel_models(
     client,
     admin_headers,
     monkeypatch,
     create_site,
     create_gateway_key,
+    match_rules: dict[str, Any],
 ) -> None:
     group_response = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={
-            "name": "gpt-4o",
-            "sync_filter_mode": "contains",
-            "sync_filter_query": "gpt-4o",
-        },
+        json={"name": "gpt-4o", **match_rules},
     )
     assert group_response.status_code == 201, group_response.text
     create_site(_site_with_key("Added Later", "later"))
@@ -227,13 +216,11 @@ def test_disabled_saved_member_keeps_rule_from_routing_to_it(
     create_gateway_key,
 ) -> None:
     create_site(_site_with_key("Excluded", "excluded"))
-    group_response = client.post(
-        "/api/admin/model-groups",
+    group = _group_named(client, admin_headers, "gpt-4o")
+    update_response = client.put(
+        f"/api/admin/model-groups/{group['id']}",
         headers=admin_headers,
         json={
-            "name": "gpt-4o",
-            "sync_filter_mode": "exact",
-            "sync_filter_query": "gpt-4o",
             "items": [
                 {
                     "channel_id": openai_chat_channel_id("excluded-pc"),
@@ -244,7 +231,7 @@ def test_disabled_saved_member_keeps_rule_from_routing_to_it(
             ],
         },
     )
-    assert group_response.status_code == 201, group_response.text
+    assert update_response.status_code == 200, update_response.text
     used_keys = _capture_upstream_keys(monkeypatch)
 
     response = _chat(client, create_gateway_key())

@@ -7,10 +7,8 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { ItemDescription } from "@/components/ui/Item";
 import { Switch } from "@/components/ui/Switch";
 import {
   Tooltip,
@@ -20,238 +18,12 @@ import {
 import type { ModelGroupCandidateItem } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
 import { protocolLabel } from "@/lib/protocols";
-import type { FoldedMember, GroupCardDragging, GroupRow } from "./groupTypes";
+import type { FoldedMember } from "./groupTypes";
 import {
-  credentialDisplayLabel,
-  foldedMemberSourceLabel,
+  formatCredentialIdentity,
   modelGroupItemReasonLabel,
   modelGroupReasonsForState,
 } from "./modelGroupFormatting";
-
-interface ModelGroupMembersProps {
-  group: GroupRow;
-  locale: "zh-CN" | "en-US";
-  busyId: string | null;
-  cardDragging: GroupCardDragging;
-  setCardDragging: Dispatch<SetStateAction<GroupCardDragging>>;
-  reorderGroupMembers: (
-    group: GroupRow,
-    fromIndex: number,
-    toIndex: number,
-  ) => void;
-  reorderGroupChannels: (
-    group: GroupRow,
-    fromIndex: number,
-    toIndex: number,
-  ) => void;
-  removeGroupChannel: (group: GroupRow, channelKey: string) => void;
-  removeGroupMember: (group: GroupRow, memberKey: string) => void;
-}
-
-/** Render route targets or draggable members for a model group card. */
-export function ModelGroupMembers({
-  group,
-  locale,
-  busyId,
-  cardDragging,
-  setCardDragging,
-  reorderGroupMembers,
-  reorderGroupChannels,
-  removeGroupChannel,
-  removeGroupMember,
-}: ModelGroupMembersProps) {
-  if (group.is_route_group) {
-    return (
-      <Badge variant="outline" className="px-3 py-1.5">
-        {group.route_group_name || group.route_group_id || "n/a"}
-      </Badge>
-    );
-  }
-
-  if (!group.display_members.length) {
-    return (
-      <ItemDescription className="text-sm">
-        {locale === "zh-CN" ? "暂无成员" : "No members"}
-      </ItemDescription>
-    );
-  }
-
-  if (group.strategy === "failover") {
-    return group.display_channels.map((channel, index) => {
-      const hasEnabledMember = channel.members.some(
-        (member) => member.ready_item_count > 0,
-      );
-      const hasProblem = channel.members.some(
-        (member) =>
-          member.invalid_item_count > 0 || member.unavailable_item_count > 0,
-      );
-      const modelNames = channel.members
-        .map((member) => member.model_name)
-        .join(" · ");
-      return (
-        <div
-          key={channel.key}
-          className={cn(
-            "flex min-w-0 max-w-full items-center rounded-full border bg-background",
-            !hasEnabledMember && !hasProblem && "opacity-55",
-            hasProblem && "border-destructive/30 bg-destructive/5",
-            cardDragging?.groupId === group.id &&
-              cardDragging.kind === "channel" &&
-              cardDragging.index === index &&
-              "opacity-60",
-          )}
-          title={`${channel.channel_name || channel.channel_id} · ${modelNames}`}
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            draggable={busyId !== group.id}
-            className="h-auto min-w-0 max-w-full cursor-grab rounded-full rounded-r-none border-0 px-3 py-1.5 active:cursor-grabbing"
-            onDragStart={() =>
-              setCardDragging({ groupId: group.id, kind: "channel", index })
-            }
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={() => {
-              if (
-                !cardDragging ||
-                cardDragging.groupId !== group.id ||
-                cardDragging.kind !== "channel"
-              ) {
-                return;
-              }
-              void reorderGroupChannels(group, cardDragging.index, index);
-            }}
-            onDragEnd={() => setCardDragging(null)}
-          >
-            <GripVertical data-icon="inline-start" />
-            <span className="min-w-0 truncate">
-              {channel.channel_name || channel.channel_id || "n/a"}
-            </span>
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="icon-xs"
-            className="mr-1 shrink-0 rounded-full"
-            disabled={busyId === group.id}
-            aria-label={
-              locale === "zh-CN" ? "移除整个渠道" : "Remove entire channel"
-            }
-            title={
-              locale === "zh-CN" ? "移除整个渠道" : "Remove entire channel"
-            }
-            onClick={() => void removeGroupChannel(group, channel.key)}
-          >
-            <X />
-          </Button>
-        </div>
-      );
-    });
-  }
-
-  return group.display_members.map((member, index) => {
-    const channelName = member.channel_names.slice(0, 2).join(" · ") || "n/a";
-    const sourceLabel = `${channelName} · ${credentialDisplayLabel(member, locale)}`;
-    const enabled = member.ready_item_count > 0;
-    const invalidReasons = modelGroupReasonsForState(member.items, "invalid");
-    const unavailableReasons = modelGroupReasonsForState(
-      member.items,
-      "unavailable",
-    );
-    const problemLabels = [...invalidReasons, ...unavailableReasons].map(
-      (reason) => modelGroupItemReasonLabel(reason, locale),
-    );
-    return (
-      <div
-        key={`${member.key}::${index}`}
-        className={cn(
-          "flex min-w-0 max-w-full items-center rounded-full border bg-background",
-          !enabled && !problemLabels.length && "opacity-55",
-          problemLabels.length > 0 && "border-destructive/30 bg-destructive/5",
-          cardDragging?.groupId === group.id &&
-            cardDragging.kind === "member" &&
-            cardDragging.index === index &&
-            "opacity-60",
-        )}
-        title={`${sourceLabel} · ${member.model_name}${
-          problemLabels.length ? ` · ${problemLabels.join(" · ")}` : ""
-        }`}
-      >
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          draggable={busyId !== group.id}
-          className="h-auto min-w-0 max-w-full cursor-grab rounded-full rounded-r-none border-0 px-3 py-1.5 active:cursor-grabbing"
-          onDragStart={() =>
-            setCardDragging({ groupId: group.id, kind: "member", index })
-          }
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={() => {
-            if (
-              !cardDragging ||
-              cardDragging.groupId !== group.id ||
-              cardDragging.kind !== "member"
-            ) {
-              return;
-            }
-            void reorderGroupMembers(group, cardDragging.index, index);
-          }}
-          onDragEnd={() => setCardDragging(null)}
-        >
-          <GripVertical data-icon="inline-start" />
-          <span className="min-w-0 truncate">{member.model_name}</span>
-          <span className="min-w-0 truncate text-muted-foreground">
-            · {sourceLabel}
-          </span>
-        </Button>
-        {invalidReasons.length ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge variant="secondary" className="mr-1" tabIndex={0}>
-                <AlertCircle data-icon="inline-start" />
-                {locale === "zh-CN" ? "配置错误" : "Invalid"}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {invalidReasons
-                .map((reason) => modelGroupItemReasonLabel(reason, locale))
-                .join(locale === "zh-CN" ? "、" : ", ")}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-        {unavailableReasons.length ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge variant="outline" className="mr-1" tabIndex={0}>
-                <Ban data-icon="inline-start" />
-                {locale === "zh-CN" ? "依赖不可用" : "Dependency unavailable"}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {unavailableReasons
-                .map((reason) => modelGroupItemReasonLabel(reason, locale))
-                .join(locale === "zh-CN" ? "、" : ", ")}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-        <Button
-          type="button"
-          variant="destructive"
-          size="icon-xs"
-          className="mr-1 shrink-0 rounded-full"
-          aria-label={locale === "zh-CN" ? "移除成员" : "Remove member"}
-          title={locale === "zh-CN" ? "移除成员" : "Remove member"}
-          disabled={busyId === group.id}
-          onClick={() => void removeGroupMember(group, member.key)}
-        >
-          <X />
-        </Button>
-      </div>
-    );
-  });
-}
 
 /** Render a selectable model group candidate. */
 export function CandidateRow({
@@ -279,8 +51,11 @@ export function CandidateRow({
       disabled={active}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">
+        <div className="truncate font-mono text-xs font-medium text-foreground">
           {candidate.model_name}
+        </div>
+        <div className="truncate text-xs font-normal text-muted-foreground">
+          {formatCredentialIdentity(candidate, locale, { includeSite: false })}
         </div>
       </div>
       <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5">
@@ -333,9 +108,9 @@ export function FoldedMemberRow({
   showChannelName?: boolean;
   locale: "zh-CN" | "en-US";
 }) {
-  const sourceLabel = showChannelName
-    ? foldedMemberSourceLabel(member, locale)
-    : credentialDisplayLabel(member, locale);
+  const sourceLabel = formatCredentialIdentity(member, locale, {
+    includeSite: showChannelName,
+  });
   const enabled = member.ready_item_count > 0;
   const manuallyEnabled = member.enabled_item_count > 0;
   const partiallyEnabled = manuallyEnabled && member.disabled_item_count > 0;
@@ -387,10 +162,13 @@ export function FoldedMemberRow({
       ) : null}
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
         <div className="min-w-0 flex-1 basis-24">
-          <div className="truncate text-sm font-medium text-foreground">
+          <div className="truncate font-mono text-xs font-medium text-foreground">
             {member.model_name}
           </div>
-          <div className="truncate text-xs text-muted-foreground">
+          <div
+            className="truncate text-xs text-muted-foreground"
+            title={sourceLabel}
+          >
             {sourceLabel}
             {partiallyEnabled
               ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
@@ -409,8 +187,8 @@ export function FoldedMemberRow({
               </TooltipTrigger>
               <TooltipContent>
                 {locale === "zh-CN"
-                  ? "由自动包含规则实时加入；关闭或移除后规则不再选中它，拖动排序会将成员固定"
-                  : "Joined by the live rule. Disabling or removing it excludes it; reordering pins members"}
+                  ? "由自动匹配规则实时加入；关闭或移除即排除，拖动排序会固定成员"
+                  : "Joined by the live match rules. Disabling or removing excludes it; reordering pins members"}
               </TooltipContent>
             </Tooltip>
           ) : null}

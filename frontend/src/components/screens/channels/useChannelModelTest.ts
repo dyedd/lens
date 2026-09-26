@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useBatchModelTestSession } from "@/components/model-test/batchModelTestSession";
 import {
   selectedModelTestProtocol,
   useModelTestPrompts,
@@ -16,8 +15,8 @@ import { paramOverrideDraftToRules } from "@/lib/upstreamRules";
 import { paramDraftsFromJson } from "./channelAdvancedJson";
 import { activeBaseUrlValue, formHeaders } from "./channelForm";
 import {
-  credentialLabel,
   fallbackCredentialName,
+  formatCredentialTitle,
   modelSupportedProtocols,
   protocolConfigModelKey,
 } from "./channelModels";
@@ -61,7 +60,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
           key,
           target: { protocolConfigIndex: configIndex, modelIndex },
           modelName: model.model_name.trim(),
-          credentialName: credentialLabel(
+          credentialName: formatCredentialTitle(
             entry.credential,
             entry.index,
             locale,
@@ -86,6 +85,17 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       ? protocolConfigModelKey(testConfig, testModel)
       : null;
   const modelTestProtocols = modelSupportedProtocols(testModel);
+  /** Other keys of the same URL serving the tested model name. */
+  const modelTestCredentialOptions = testModel
+    ? Array.from(modelTestOptionByKey.values())
+        .filter(
+          (option) =>
+            option.target.protocolConfigIndex ===
+              modelTestTarget?.protocolConfigIndex &&
+            option.modelName === testModel.model_name.trim(),
+        )
+        .map((option) => ({ value: option.key, label: option.credentialName }))
+    : [];
 
   useEffect(() => () => abortController.current?.abort(), []);
 
@@ -181,6 +191,16 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     setModelTestResult(null);
   }
 
+  function changeModelTestCredential(key: string) {
+    const option = modelTestOptionByKey.get(key);
+    if (!option) return;
+    setModelTestTarget(option.target);
+    setModelTestProtocol(
+      selectedModelTestProtocol(option.protocols, modelTestProtocol),
+    );
+    setModelTestResult(null);
+  }
+
   function changeModelTestPromptMode(value: string) {
     setModelTestPromptMode(value);
     if (value !== "custom")
@@ -253,8 +273,8 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     changeModelTestPromptMode,
     changeModelTestProtocol,
     closeModelTest,
-    modelTestOptionByKey,
-    buildModelTestPayload,
+    changeModelTestCredential,
+    modelTestCredentialOptions,
     modelTestDialogTarget,
     modelTestDeleteKey,
     modelTestPrompt,
@@ -267,40 +287,4 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     runModelTest,
     testingModel,
   };
-}
-
-type PayloadBuilder = (
-  target: ModelTestTarget,
-  protocol: ProtocolKind | null,
-  prompt: string,
-) => SiteModelTestPayload | null;
-
-/** Adapts editable channel models to the shared batch-test session. */
-export function useBatchModelTest({
-  locale,
-  prompts,
-  optionByKey,
-  buildPayload,
-}: {
-  locale: Locale;
-  prompts: string[];
-  optionByKey: Map<string, TestableModelOption>;
-  buildPayload: PayloadBuilder;
-}) {
-  return useBatchModelTestSession({
-    locale,
-    prompts,
-    optionByKey,
-    prepareRequest: (target, protocol, prompt) => {
-      const payload = buildPayload(target, protocol, prompt);
-      if (!payload) return null;
-      return {
-        path: "/admin/site-model-tests",
-        payload,
-        modelName: payload.model_name,
-        credentialName: payload.credential.name,
-        protocol: payload.protocol,
-      };
-    },
-  });
 }

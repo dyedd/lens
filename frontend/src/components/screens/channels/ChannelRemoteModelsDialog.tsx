@@ -14,11 +14,20 @@ import {
   TableRow,
 } from "@/components/ui/Table";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
+import { CredentialBadges } from "./CredentialBadges";
+import { formatBaseUrlLabel } from "./channelModels";
 import type { Locale, PickerModelItem } from "./channelTypes";
-import type { RemoteModelCatalog } from "./useChannelModelPicker";
+import type {
+  RemoteModelCatalog,
+  RemoteModelItem,
+} from "./useChannelModelPicker";
 
 type CatalogFilter = "new" | "bound" | "absent" | "all";
-type CatalogRow = { name: string; status: Exclude<CatalogFilter, "all"> };
+type CatalogRow = {
+  name: string;
+  status: Exclude<CatalogFilter, "all">;
+  sources: RemoteModelItem[];
+};
 
 type Props = {
   open: boolean;
@@ -68,15 +77,16 @@ export function ChannelRemoteModelsDialog({
 
   const rows = useMemo<CatalogRow[]>(() => {
     if (!catalog) return [];
-    const upstreamNames = new Set(catalog.items.map((item) => item.model_name));
+    const sourcesByName = Map.groupBy(catalog.items, (item) => item.model_name);
     return [
-      ...Array.from(upstreamNames, (name) => ({
+      ...Array.from(sourcesByName, ([name, sources]) => ({
         name,
         status: catalog.boundNames.has(name) ? "bound" : "new",
+        sources,
       })),
       ...Array.from(catalog.boundNames)
-        .filter((name) => !upstreamNames.has(name))
-        .map((name) => ({ name, status: "absent" })),
+        .filter((name) => !sourcesByName.has(name))
+        .map((name) => ({ name, status: "absent", sources: [] })),
     ] as CatalogRow[];
   }, [catalog]);
   const counts = useMemo(() => {
@@ -247,6 +257,9 @@ export function ChannelRemoteModelsDialog({
                   <TableHead>
                     {locale === "zh-CN" ? "上游模型名" : "Upstream model"}
                   </TableHead>
+                  <TableHead className="w-[150px]">
+                    {locale === "zh-CN" ? "密钥" : "Keys"}
+                  </TableHead>
                   <TableHead className="w-[96px]">
                     {locale === "zh-CN" ? "状态" : "Status"}
                   </TableHead>
@@ -256,7 +269,7 @@ export function ChannelRemoteModelsDialog({
                 {visibleRows.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
                     <TableCell
-                      colSpan={3}
+                      colSpan={4}
                       className="h-24 text-center text-muted-foreground"
                     >
                       {loading
@@ -283,6 +296,28 @@ export function ChannelRemoteModelsDialog({
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {row.name}
+                      </TableCell>
+                      <TableCell className="w-[150px] py-1.5">
+                        <CredentialBadges
+                          keys={[
+                            ...new Map(
+                              row.sources.map((source) => [
+                                source.credential_id,
+                                {
+                                  id: source.credential_id,
+                                  label: source.credentialName,
+                                },
+                              ]),
+                            ).values(),
+                          ]}
+                          totalCount={catalog?.credentialCount ?? 0}
+                          details={row.sources.map((source) =>
+                            catalog?.hasMultipleBaseUrls
+                              ? `${source.credentialTitle} · ${formatBaseUrlLabel(source.baseUrl)}`
+                              : source.credentialTitle,
+                          )}
+                          locale={locale}
+                        />
                       </TableCell>
                       <TableCell
                         className={

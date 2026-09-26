@@ -26,7 +26,6 @@ import {
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
 import type {
   CandidateChannelGroup,
-  CandidateSearchMode,
   ChannelMemberGroup,
   FoldedMember,
   FormState,
@@ -34,6 +33,7 @@ import type {
 } from "./groupTypes";
 import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
 import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
+import { ModelGroupMatchRules } from "./ModelGroupMatchRules";
 import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
 import { ModelGroupSettings } from "./ModelGroupSettings";
 import { MultimodalFallbackGroups } from "./MultimodalFallbackGroups";
@@ -47,18 +47,19 @@ interface GroupEditorDialogProps {
   submit: FormEventHandler<HTMLFormElement>;
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
+  changeName: (name: string) => void;
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
-  candidateSearchMode: CandidateSearchMode;
-  changeCandidateSearchMode: (mode: CandidateSearchMode) => void;
+  changeMatchRules: (
+    rules: Partial<Pick<FormState, "match_models" | "match_regex">>,
+  ) => void;
+  matchRegexInvalid: boolean;
+  ruleMatchModelCount: number;
+  ruleMatchSourceCount: number;
   candidateSearch: string;
   changeCandidateSearch: (value: string) => void;
-  addMatchedItems: () => void;
-  candidateRegexInvalid: boolean;
-  filteredCandidates: ModelGroupCandidateItem[];
   refetchCandidates: () => unknown;
   isFetchingCandidates: boolean;
-  clearSavedFilter: () => void;
   groupedCandidates: CandidateChannelGroup[];
   expandedChannels: string[];
   toggleChannel: (channelId: string) => void;
@@ -145,8 +146,8 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               <SheetDescription className="mt-1 truncate text-xs">
                 {isBinding
                   ? locale === "zh-CN"
-                    ? "选择渠道中的模型，加入当前模型组。"
-                    : "Choose models from channels to add to this group."
+                    ? "手动加入额外来源；规则匹配的模型已自动加入。"
+                    : "Add extra sources by hand; rule matches are already in."
                   : locale === "zh-CN"
                     ? "对外模型、上游来源与请求规则"
                     : "Model name, upstream sources and request rules"}
@@ -162,17 +163,10 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
             >
               <ModelGroupCandidateToolbar
                 locale={locale}
-                form={form}
-                candidateSearchMode={props.candidateSearchMode}
-                changeCandidateSearchMode={props.changeCandidateSearchMode}
                 candidateSearch={props.candidateSearch}
                 changeCandidateSearch={props.changeCandidateSearch}
-                addMatchedItems={props.addMatchedItems}
-                candidateRegexInvalid={props.candidateRegexInvalid}
-                filteredCandidateCount={props.filteredCandidates.length}
                 refetchCandidates={props.refetchCandidates}
                 isFetchingCandidates={props.isFetchingCandidates}
-                clearSavedFilter={props.clearSavedFilter}
               />
               <ModelGroupCandidateList
                 locale={locale}
@@ -191,9 +185,26 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 locale={locale}
                 form={form}
                 setForm={setForm}
+                changeName={props.changeName}
                 routeTargetOptions={props.routeTargetOptions}
                 changeRouteTarget={props.changeRouteTarget}
               />
+              {!form.route_group_id ? (
+                <ModelGroupMatchRules
+                  locale={locale}
+                  matchModels={form.match_models}
+                  matchRegex={form.match_regex}
+                  matchRegexInvalid={props.matchRegexInvalid}
+                  ruleMatchModelCount={props.ruleMatchModelCount}
+                  ruleMatchSourceCount={props.ruleMatchSourceCount}
+                  onMatchModelsChange={(matchModels) =>
+                    props.changeMatchRules({ match_models: matchModels })
+                  }
+                  onMatchRegexChange={(matchRegex) =>
+                    props.changeMatchRules({ match_regex: matchRegex })
+                  }
+                />
+              ) : null}
               {!form.route_group_id ? (
                 <ModelGroupSelectedMembers
                   onAddSources={() => setIsBinding(true)}
@@ -329,7 +340,11 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                   >
                     {locale === "zh-CN" ? "取消" : "Cancel"}
                   </Button>
-                  <Button type="submit" size="sm">
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={props.matchRegexInvalid}
+                  >
                     {editingId
                       ? locale === "zh-CN"
                         ? "保存"
@@ -369,8 +384,8 @@ export function DeleteGroupDialog({
         title={locale === "zh-CN" ? "确认删除模型组" : "Delete group"}
         description={
           locale === "zh-CN"
-            ? `将删除模型组「${deleteTarget?.name ?? ""}」。删除后，该模型组名称将不再参与路由匹配。`
-            : `Delete group "${deleteTarget?.name ?? ""}". This group will no longer participate in routing.`
+            ? `将删除模型组「${deleteTarget?.name ?? ""}」。如果渠道仍提供它的模型且没有其他模型组覆盖，下次同步时会被重新自动放置；要停止路由某个模型，请在渠道中停用该模型，或将此组合并到其他组。`
+            : `Delete group "${deleteTarget?.name ?? ""}". If channels still provide its models and no other group covers them, they are auto-placed again on the next sync. To stop routing a model, disable it in the channel or merge this group instead.`
         }
         footer={
           <>
