@@ -1,13 +1,11 @@
-import re
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
 
 from ..core.urls import canonicalize_base_url
-from .model_groups import ModelGroupEnsureFromSiteResponse, ModelGroupEnsureModelInput
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel
+from .validation import StrictBaseModel, validate_regex_pattern
 
 
 def require_non_empty_text(value: str) -> str:
@@ -44,6 +42,14 @@ def _canonicalize_site_tags(values: list[str]) -> list[str]:
 
 
 SiteTags = Annotated[list[str], AfterValidator(_canonicalize_site_tags)]
+ModelSyncPattern = Annotated[
+    str,
+    AfterValidator(
+        lambda value: validate_regex_pattern(
+            value.strip(), error_label="model sync pattern"
+        )
+    ),
+]
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
 
 
@@ -113,6 +119,7 @@ class SiteModel(StrictBaseModel):
     sort_order: int = Field(default=0, ge=0)
     protocol: ProtocolKind | None = None
     source: ModelSource = ModelSource.MANUAL
+    upstream_missing: bool = False
 
 
 class SiteModelInput(StrictBaseModel):
@@ -122,12 +129,7 @@ class SiteModelInput(StrictBaseModel):
     enabled: bool = True
     protocol: ProtocolKind = ProtocolKind.AUTO
     source: ModelSource = ModelSource.MANUAL
-
-
-class SiteSyncTarget(StrictBaseModel):
-    credential_id: str = Field(min_length=1)
-    model_name: str = Field(min_length=1)
-    protocol: ProtocolKind = ProtocolKind.AUTO
+    upstream_missing: bool = False
 
 
 class SiteProtocolConfig(StrictBaseModel):
@@ -135,9 +137,6 @@ class SiteProtocolConfig(StrictBaseModel):
     base_url_id: str = Field(min_length=1)
     protocols: list[ProtocolKind] = Field(default_factory=list)
     credential_ids: list[str] = Field(default_factory=list)
-    auto_sync_supported_models: bool = False
-    auto_sync_model_pattern: str = ""
-    sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
     models: list[SiteModel] = Field(default_factory=list)
 
 
@@ -145,23 +144,12 @@ class SiteProtocolConfigInput(StrictBaseModel):
     id: str | None = None
     base_url_id: str = Field(min_length=1)
     protocols: list[ProtocolKind] = Field(default_factory=list)
-    auto_sync_supported_models: bool = False
-    auto_sync_model_pattern: str = ""
-    sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
-
-    @field_validator("auto_sync_model_pattern")
-    @classmethod
-    def validate_auto_sync_model_pattern(cls, value: str) -> str:
-        pattern = value.strip()
-        if pattern:
-            re.compile(pattern)
-        return pattern
 
     @model_validator(mode="after")
     def validate_model_protocols(self) -> "SiteProtocolConfigInput":
         protocols_by_model: dict[tuple[str, str], set[ProtocolKind]] = {}
-        for item in [*self.models, *self.sync_targets]:
+        for item in self.models:
             key = (item.credential_id, item.model_name.strip())
             protocols_by_model.setdefault(key, set()).add(item.protocol)
         if any(
@@ -184,9 +172,42 @@ class SiteConfig(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    model_sync_enabled: bool = False
+    model_sync_include: ModelSyncPattern = ""
+    model_sync_exclude: ModelSyncPattern = ""
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def convert_protocol_model_sync(cls, data: Any) -> Any:
+        """Accept backups written while model sync lived on protocol configs."""
+        if not isinstance(data, dict) or "model_sync_enabled" in data:
+            return data
+        protocols = data.get("protocols")
+        if not isinstance(protocols, list):
+            return data
+        is_sync_enabled = False
+        include_pattern = ""
+        converted_protocols: list[Any] = []
+        for protocol in protocols:
+            if not isinstance(protocol, dict):
+                converted_protocols.append(protocol)
+                continue
+            converted = dict(protocol)
+            converted.pop("sync_targets", None)
+            pattern = str(converted.pop("auto_sync_model_pattern", "") or "").strip()
+            if converted.pop("auto_sync_supported_models", False):
+                is_sync_enabled = True
+                include_pattern = include_pattern or pattern
+            converted_protocols.append(converted)
+        return {
+            **data,
+            "protocols": converted_protocols,
+            "model_sync_enabled": is_sync_enabled,
+            "model_sync_include": include_pattern,
+        }
 
 
 class SiteCreate(StrictBaseModel):
@@ -196,6 +217,9 @@ class SiteCreate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    model_sync_enabled: bool = False
+    model_sync_include: ModelSyncPattern = ""
+    model_sync_exclude: ModelSyncPattern = ""
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -208,22 +232,12 @@ class SiteUpdate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    model_sync_enabled: bool = False
+    model_sync_include: ModelSyncPattern = ""
+    model_sync_exclude: ModelSyncPattern = ""
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
-
-
-class SiteModelGroupSaveRequest(SiteCreate):
-    """Site payload plus transactional model-group save options."""
-
-    site_id: str | None = None
-    dry_run: bool = True
-    models: list[ModelGroupEnsureModelInput] | None = None
-
-
-class SiteModelGroupSaveResponse(StrictBaseModel):
-    site: SiteConfig
-    model_groups: ModelGroupEnsureFromSiteResponse
 
 
 class SiteEnabledUpdate(StrictBaseModel):

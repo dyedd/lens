@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import type { Site } from "@/lib/api/sites";
 import { useI18n } from "@/lib/I18nContext";
+import type { ModelStatusFilter } from "./channels/ChannelModelsDialog";
 import { ChannelsDialogs } from "./channels/ChannelsDialogs";
 import { ChannelsOverview } from "./channels/ChannelsOverview";
 import {
@@ -19,18 +20,22 @@ import {
   useAggregatedModels,
   useChannelQueries,
 } from "./channels/useChannelQueries";
-import { useModelGroupEnsure } from "./channels/useModelGroupEnsure";
+import { useChannelSave } from "./channels/useChannelSave";
 
 /** Coordinates channel management data, dialogs, and user actions. */
 export function ChannelsScreen() {
   const { locale } = useI18n();
   const [editorMode, setEditorMode] = useState<"channel" | "models">("channel");
-  const [syncOnOpen, setSyncOnOpen] = useState(false);
+  const [isModelsNested, setIsModelsNested] = useState(false);
+  const [modelsStatusFilter, setModelsStatusFilter] =
+    useState<ModelStatusFilter>("all");
+  const [fetchOnOpen, setFetchOnOpen] = useState(false);
   const queries = useChannelQueries(locale);
   const editor = useChannelForm(locale);
-  const modelGroups = useModelGroupEnsure({
+  const save = useChannelSave({
     locale,
     queryClient: queries.queryClient,
+    invalidateChannelData: queries.invalidateChannelData,
     editor,
   });
   const persistence = useChannelPersistence({
@@ -78,33 +83,19 @@ export function ChannelsScreen() {
     );
   }, [locale, queries.sitesError, queries.sitesIsError]);
 
-  function openCreate() {
+  function openEditor(
+    site: Site | null,
+    mode: "channel" | "models",
+    options: { statusFilter?: ModelStatusFilter; fetch?: boolean } = {},
+  ) {
     if (!editor.confirmDiscardChanges()) return;
     batchTest.clearBatchModelTestResults();
-    setEditorMode("channel");
-    setSyncOnOpen(false);
-    editor.openCreate();
-  }
-  function openEdit(site: Site) {
-    if (!editor.confirmDiscardChanges()) return;
-    batchTest.clearBatchModelTestResults();
-    setEditorMode("channel");
-    setSyncOnOpen(false);
-    editor.openEdit(site);
-  }
-  function openManageModels(site: Site) {
-    if (!editor.confirmDiscardChanges()) return;
-    batchTest.clearBatchModelTestResults();
-    setEditorMode("models");
-    setSyncOnOpen(false);
-    editor.openEdit(site);
-  }
-  function openSyncRemoteModels(site: Site) {
-    if (!editor.confirmDiscardChanges()) return;
-    batchTest.clearBatchModelTestResults();
-    setEditorMode("models");
-    setSyncOnOpen(true);
-    editor.openEdit(site);
+    setEditorMode(mode);
+    setIsModelsNested(false);
+    setModelsStatusFilter(options.statusFilter ?? "all");
+    setFetchOnOpen(options.fetch ?? false);
+    if (site) editor.openEdit(site);
+    else editor.openCreate();
   }
 
   return (
@@ -129,11 +120,16 @@ export function ChannelsScreen() {
           onRefresh={() =>
             void queries.queryClient.invalidateQueries({ queryKey: ["sites"] })
           }
-          onCreate={openCreate}
+          onCreate={() => openEditor(null, "channel")}
           onImport={transfer.openBatchImport}
-          onOpenEdit={openEdit}
-          onManageModels={openManageModels}
-          onSyncRemoteModels={openSyncRemoteModels}
+          onOpenEdit={(site) => openEditor(site, "channel")}
+          onManageModels={(site) => openEditor(site, "models")}
+          onReviewPendingModels={(site) =>
+            openEditor(site, "models", { statusFilter: "missing" })
+          }
+          onFetchModels={(site) => openEditor(site, "models", { fetch: true })}
+          syncingSiteId={save.syncingSiteId}
+          onSyncModels={(site) => void save.syncSiteModels(site.id)}
           onToggleSiteEnabled={persistence.toggleSiteEnabled}
           onDelete={persistence.setDeleteTarget}
           onBulkEnabled={persistence.applyEnabled}
@@ -148,16 +144,21 @@ export function ChannelsScreen() {
           picker={picker}
           modelTest={modelTest}
           batchTest={batchTest}
-          modelGroups={modelGroups}
+          save={save}
           overviewModels={overviewModels}
           editorMode={editorMode}
-          syncOnOpen={syncOnOpen}
-          onSyncOnOpenHandled={() => setSyncOnOpen(false)}
+          isModelsNested={isModelsNested}
+          modelsStatusFilter={modelsStatusFilter}
+          fetchOnOpen={fetchOnOpen}
+          onFetchOnOpenHandled={() => setFetchOnOpen(false)}
           onManageModels={() => {
-            const site = queries.visibleSites.find(
-              (item) => item.id === editor.editingSiteId,
-            );
-            if (site) openManageModels(site);
+            setIsModelsNested(true);
+            setModelsStatusFilter("all");
+            setEditorMode("models");
+          }}
+          onCloseModels={() => {
+            if (isModelsNested) setEditorMode("channel");
+            else editor.closeEditor();
           }}
         />
       </section>

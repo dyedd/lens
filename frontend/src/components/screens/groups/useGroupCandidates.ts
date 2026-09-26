@@ -1,17 +1,13 @@
 import { type Dispatch, type SetStateAction, useMemo } from "react";
-import { toast } from "sonner";
-import { apiRequest } from "@/lib/api/client";
 import type {
   ModelGroupCandidateItem,
-  ModelGroupCandidatesPayload,
   ModelGroupCandidatesResponse,
 } from "@/lib/api/groups";
-import type { CandidateSearchMode, FormItem, FormState } from "./groupTypes";
+import type { CandidateSearchMode, FormState } from "./groupTypes";
 import { candidatePayloadToFormItems, groupModelCandidates } from "./groupView";
 import {
   compileCandidateRegex,
   matchesCandidateSearch,
-  modelGroupErrorMessage,
   modelGroupItemKey,
 } from "./modelGroupFormatting";
 
@@ -20,7 +16,6 @@ type GroupCandidateOptions = {
   candidateSearch: string;
   candidateSearchMode: CandidateSearchMode;
   expandedChannels: string[];
-  form: FormState;
   locale: "zh-CN" | "en-US";
   setExpandedChannels: Dispatch<SetStateAction<string[]>>;
   setForm: Dispatch<SetStateAction<FormState>>;
@@ -32,7 +27,6 @@ export function useGroupCandidates({
   candidateSearch,
   candidateSearchMode,
   expandedChannels,
-  form,
   locale,
   setExpandedChannels,
   setForm,
@@ -109,102 +103,31 @@ export function useGroupCandidates({
     });
   }
 
+  /** Saves the search as a live rule, or adds every candidate without one. */
   function addMatchedItems() {
     if (!filteredCandidates.length && !candidateSearch.trim()) return;
+    const query = candidateSearch.trim();
     setForm((current) => {
       const existingKeys = new Set(
         current.items.map((item) => modelGroupItemKey(item)),
       );
       const additions = filteredCandidates.flatMap((candidate) =>
-        candidatePayloadToFormItems(candidate).filter(
+        candidatePayloadToFormItems(candidate, Boolean(query)).filter(
           (item) => !existingKeys.has(modelGroupItemKey(item)),
         ),
       );
       return {
         ...current,
-        sync_filter_mode: candidateSearch.trim() ? candidateSearchMode : "",
-        sync_filter_query: candidateSearch.trim(),
-        items: additions.length
-          ? [...current.items, ...additions]
-          : current.items,
+        sync_filter_mode: query ? candidateSearchMode : "",
+        sync_filter_query: query,
+        items: [
+          ...current.items.filter(
+            (item) => !query || !item.matched_by_rule || !item.enabled,
+          ),
+          ...additions,
+        ],
       };
     });
-  }
-
-  async function applySavedFilter() {
-    if (!form.sync_filter_mode || !form.sync_filter_query.trim()) return;
-    if (
-      form.sync_filter_mode === "regex" &&
-      !compileCandidateRegex(form.sync_filter_query)
-    ) {
-      toast.error(
-        locale === "zh-CN" ? "保存的正则表达式无效" : "Saved regex is invalid",
-      );
-      return;
-    }
-    try {
-      const response = await apiRequest<ModelGroupCandidatesResponse>(
-        "/admin/model-group-candidates",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            items: [],
-          } satisfies ModelGroupCandidatesPayload),
-        },
-      );
-      const previousItems = new Map(
-        form.items.map((item) => [modelGroupItemKey(item), item]),
-      );
-      const matchedItems: FormItem[] = [];
-      const matchedKeys = new Set<string>();
-      for (const candidate of response.candidates) {
-        if (
-          !matchesCandidateSearch(
-            candidate,
-            form.sync_filter_mode as CandidateSearchMode,
-            form.sync_filter_query,
-            locale,
-          )
-        ) {
-          continue;
-        }
-        for (const item of candidatePayloadToFormItems(candidate)) {
-          const key = modelGroupItemKey(item);
-          if (matchedKeys.has(key)) continue;
-          matchedKeys.add(key);
-          const previousItem = previousItems.get(key);
-          matchedItems.push(
-            previousItem ? { ...item, enabled: previousItem.enabled } : item,
-          );
-        }
-      }
-      const existingKeys = new Set(
-        form.items
-          .map((item) => modelGroupItemKey(item))
-          .filter((key) => matchedKeys.has(key)),
-      );
-      const nextItems = [
-        ...matchedItems.filter((item) =>
-          existingKeys.has(modelGroupItemKey(item)),
-        ),
-        ...matchedItems.filter(
-          (item) => !existingKeys.has(modelGroupItemKey(item)),
-        ),
-      ];
-      setForm((current) => ({ ...current, items: nextItems }));
-      toast.success(
-        locale === "zh-CN"
-          ? `已按规则更新 ${nextItems.length} 个模型，保存后生效`
-          : `Updated ${nextItems.length} models by rule. Save to apply`,
-      );
-    } catch (error) {
-      toast.error(
-        modelGroupErrorMessage(
-          error,
-          locale === "zh-CN" ? "按规则更新失败" : "Failed to update by rule",
-        ),
-      );
-    }
   }
 
   function clearSavedFilter() {
@@ -212,13 +135,15 @@ export function useGroupCandidates({
       ...current,
       sync_filter_mode: "",
       sync_filter_query: "",
+      items: current.items.filter(
+        (item) => !item.matched_by_rule || !item.enabled,
+      ),
     }));
   }
 
   return {
     addCandidate,
     addMatchedItems,
-    applySavedFilter,
     candidateRegexInvalid,
     clearSavedFilter,
     filteredCandidates,

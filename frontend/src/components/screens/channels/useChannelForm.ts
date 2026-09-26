@@ -22,36 +22,24 @@ import {
   invalidProtocolBaseUrlCount,
   isAggregateModelGroupKey,
   protocolConfigModelKey,
-  syncTargetKey,
 } from "./channelModels";
 import type {
   FormBaseUrl,
   FormCredential,
-  FormModel,
-  FormProtocolConfig,
   FormState,
   Locale,
 } from "./channelTypes";
 
-function syncTargetsForModel(model: FormModel) {
-  return model.protocols.map((protocol) => ({
-    credential_id: model.credential_id,
-    model_name: model.model_name,
-    protocol,
-  }));
-}
-
-function replaceSyncTargets(
-  config: FormProtocolConfig,
-  models: FormModel[],
-  source: FormModel["source"],
-) {
-  const nextTargets = models.flatMap(syncTargetsForModel);
-  const targetKeys = new Set(nextTargets.map(syncTargetKey));
-  const targets = config.sync_targets.filter(
-    (target) => !targetKeys.has(syncTargetKey(target)),
+/** Splits pasted model names on commas and line breaks. */
+function parseModelNames(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,，]+/)
+        .map((name) => name.trim())
+        .filter(Boolean),
+    ),
   );
-  return source === "synced" ? [...targets, ...nextTargets] : targets;
 }
 
 function validateChannelForm(
@@ -106,6 +94,19 @@ function validateChannelForm(
       locale === "zh-CN" ? "参数 JSON 格式无效" : "Parameter JSON is invalid",
     );
     return false;
+  }
+  for (const pattern of [form.model_sync_include, form.model_sync_exclude]) {
+    if (!pattern.trim()) continue;
+    try {
+      new RegExp(pattern.trim());
+    } catch {
+      toast.error(
+        locale === "zh-CN"
+          ? `同步筛选正则无效：${pattern.trim()}`
+          : `Invalid sync filter regex: ${pattern.trim()}`,
+      );
+      return false;
+    }
   }
   if (invalidProtocolBaseUrlCount(form)) {
     toast.error(
@@ -236,9 +237,6 @@ export function useChannelForm(locale: Locale) {
             models: config.models.filter(
               (model) => model.credential_id !== target.id,
             ),
-            sync_targets: config.sync_targets.filter(
-              (syncTarget) => syncTarget.credential_id !== target.id,
-            ),
           };
         }),
       };
@@ -256,29 +254,16 @@ export function useChannelForm(locale: Locale) {
     const nextProtocols = Array.from(new Set(protocols));
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => {
-        // A collapsed overview row is keyed by model name, so protocol
-        // changes cover every credential carrying that model.
-        const selected = config.models.filter(
-          (model) => aggregateModelGroupKey(config, model.model_name) === key,
-        );
-        if (!selected.length) return config;
-        return {
-          ...config,
-          models: config.models.map((model) =>
-            aggregateModelGroupKey(config, model.model_name) === key
-              ? { ...model, protocols: nextProtocols }
-              : model,
-          ),
-          sync_targets: selected.some((model) => model.source === "synced")
-            ? replaceSyncTargets(config, selected, "manual").concat(
-                selected.flatMap((model) =>
-                  syncTargetsForModel({ ...model, protocols: nextProtocols }),
-                ),
-              )
-            : config.sync_targets,
-        };
-      }),
+      // A collapsed overview row is keyed by model name, so protocol changes
+      // cover every credential carrying that model.
+      protocolConfigs: current.protocolConfigs.map((config) => ({
+        ...config,
+        models: config.models.map((model) =>
+          aggregateModelGroupKey(config, model.model_name) === key
+            ? { ...model, protocols: nextProtocols }
+            : model,
+        ),
+      })),
     }));
   }
   function removeAggregateModel(key: string) {
@@ -294,14 +279,6 @@ export function useChannelForm(locale: Locale) {
             isGroupKey
               ? aggregateModelGroupKey(config, model.model_name) !== key
               : protocolConfigModelKey(config, model) !== key,
-          ),
-          sync_targets: config.sync_targets.filter((target) =>
-            isGroupKey
-              ? aggregateModelGroupKey(config, target.model_name) !== key
-              : protocolConfigModelKey(config, {
-                  ...target,
-                  source: "synced",
-                }) !== key,
           ),
         };
       }),
@@ -362,49 +339,32 @@ export function useChannelForm(locale: Locale) {
     }));
   }
 
-  function updateAutoSync(enabled: boolean, pattern?: string) {
+  /** Keeps models an upstream stopped listing by handing them to the admin. */
+  function keepAggregateModels(keys: string[]) {
+    const selected = new Set(keys);
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => {
-        if (enabled) {
-          return {
-            ...config,
-            auto_sync_supported_models: true,
-            auto_sync_model_pattern: pattern ?? config.auto_sync_model_pattern,
-          };
-        }
-        const targets = new Map(
-          config.sync_targets.map((target) => [syncTargetKey(target), target]),
-        );
-        for (const model of config.models) {
-          if (model.source !== "synced") continue;
-          for (const target of syncTargetsForModel(model)) {
-            targets.set(syncTargetKey(target), target);
-          }
-        }
-        return {
-          ...config,
-          auto_sync_supported_models: false,
-          sync_targets: [...targets.values()],
-        };
-      }),
+      protocolConfigs: current.protocolConfigs.map((config) => ({
+        ...config,
+        models: config.models.map((model) =>
+          selected.has(aggregateModelGroupKey(config, model.model_name))
+            ? { ...model, source: "manual", upstream_missing: false }
+            : model,
+        ),
+      })),
     }));
   }
-  function addBinding(modelName: string, protocols: ProtocolKind[]) {
-    const name = modelName.trim();
-    if (!name || !protocols.length) return false;
+  function addBinding(modelNames: string, protocols: ProtocolKind[]) {
+    const names = parseModelNames(modelNames);
+    if (!names.length || !protocols.length) return false;
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => {
         const credentialIds = config.credential_ids.length
           ? config.credential_ids
           : current.credentials.map((item) => item.id);
-        const newModels = buildModels(
-          config,
-          credentialIds,
-          name,
-          protocols,
-          "manual",
+        const newModels = names.flatMap((name) =>
+          buildModels(config, credentialIds, name, protocols, "manual"),
         );
         if (!newModels.length) return config;
         return {
@@ -435,7 +395,7 @@ export function useChannelForm(locale: Locale) {
     updateModelProtocols,
     removeAggregateModel,
     toggleAggregateEnabled,
-    updateAutoSync,
+    keepAggregateModels,
     addBinding,
     addBaseUrl,
     updateBaseUrl,

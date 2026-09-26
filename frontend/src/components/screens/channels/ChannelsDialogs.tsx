@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { lazyComponent } from "@/lib/lazyComponent";
+import type { ModelStatusFilter } from "./ChannelModelsDialog";
 import type { Locale } from "./channelTypes";
 import type {
   useChannelPersistence,
@@ -12,7 +13,7 @@ import type {
   useChannelModelTest,
 } from "./useChannelModelTest";
 import type { useAggregatedModels } from "./useChannelQueries";
-import type { useModelGroupEnsure } from "./useModelGroupEnsure";
+import type { useChannelSave } from "./useChannelSave";
 
 const ChannelEditorDialog = lazyComponent(() =>
   import("./ChannelEditorDialog").then((module) => module.ChannelEditorDialog),
@@ -28,18 +29,8 @@ const BatchModelTestDialog = lazyComponent(() =>
     (module) => module.BatchModelTestDialog,
   ),
 );
-const ModelGroupEnsureDialog = lazyComponent(() =>
-  import("./ModelGroupEnsureDialog").then(
-    (module) => module.ModelGroupEnsureDialog,
-  ),
-);
 const ModelTestDialog = lazyComponent(() =>
   import("./ModelTestDialog").then((module) => module.ModelTestDialog),
-);
-const ChannelModelSyncDialog = lazyComponent(() =>
-  import("./ChannelModelSyncDialog").then(
-    (module) => module.ChannelModelSyncDialog,
-  ),
 );
 const ChannelModelsDialog = lazyComponent(() =>
   import("./ChannelModelsDialog").then((module) => module.ChannelModelsDialog),
@@ -59,12 +50,15 @@ type Props = {
   picker: ReturnType<typeof useChannelModelPicker>;
   modelTest: ReturnType<typeof useChannelModelTest>;
   batchTest: ReturnType<typeof useBatchModelTest>;
-  modelGroups: ReturnType<typeof useModelGroupEnsure>;
+  save: ReturnType<typeof useChannelSave>;
   overviewModels: ReturnType<typeof useAggregatedModels>;
   editorMode: "channel" | "models";
-  syncOnOpen: boolean;
-  onSyncOnOpenHandled: () => void;
-  onManageModels?: () => void;
+  isModelsNested: boolean;
+  modelsStatusFilter: ModelStatusFilter;
+  fetchOnOpen: boolean;
+  onFetchOnOpenHandled: () => void;
+  onManageModels: () => void;
+  onCloseModels: () => void;
 };
 
 /** Renders channel dialogs while keeping the screen component declarative. */
@@ -77,23 +71,24 @@ export function ChannelsDialogs({
   picker,
   modelTest,
   batchTest,
-  modelGroups,
+  save,
   overviewModels,
   editorMode,
-  syncOnOpen,
-  onSyncOnOpenHandled,
+  isModelsNested,
+  modelsStatusFilter,
+  fetchOnOpen,
+  onFetchOnOpenHandled,
   onManageModels,
+  onCloseModels,
 }: Props) {
   const isDialogOpen = editor.isDialogOpen;
   const [remoteOpen, setRemoteOpen] = useState(false);
 
   useEffect(() => {
-    if (!isDialogOpen || editorMode !== "models" || !syncOnOpen) {
-      return;
-    }
+    if (!isDialogOpen || !fetchOnOpen) return;
     setRemoteOpen(true);
-    onSyncOnOpenHandled();
-  }, [editorMode, isDialogOpen, onSyncOnOpenHandled, syncOnOpen]);
+    onFetchOnOpenHandled();
+  }, [fetchOnOpen, isDialogOpen, onFetchOnOpenHandled]);
 
   return (
     <>
@@ -105,78 +100,61 @@ export function ChannelsDialogs({
           locale={locale}
           availableTags={availableTags}
           form={editor.form}
-          savingChannel={modelGroups.isEnsuringModelGroups}
+          savingChannel={save.isSaving}
           modelCounts={{
             enabled: overviewModels.filter((item) => item.enabled).length,
             total: overviewModels.length,
+            pending: overviewModels.filter((item) => item.upstreamMissing)
+              .length,
           }}
           setIsDialogOpen={editor.setIsDialogOpen}
           setEditingSiteId={editor.setEditingSiteId}
           setForm={editor.setForm}
-          submit={modelGroups.submit}
+          submit={save.submit}
           addBaseUrl={editor.addBaseUrl}
           updateBaseUrl={editor.updateBaseUrl}
           removeBaseUrl={editor.removeBaseUrl}
           closeEditor={editor.closeEditor}
+          onFetchModels={() => setRemoteOpen(true)}
           onManageModels={onManageModels}
         />
       ) : null}
       {editor.isDialogOpen && editorMode === "models" ? (
-        <>
-          <ChannelModelsDialog
-            open
-            locale={locale}
-            channelName={editor.form.name}
-            models={overviewModels}
-            saving={modelGroups.isEnsuringModelGroups}
-            fetching={picker.fetching}
-            onOpenChange={(open) => {
-              if (!open) editor.closeEditor();
-            }}
-            onSave={modelGroups.submit}
-            onToggleEnabled={editor.toggleAggregateEnabled}
-            onUpdateProtocols={editor.updateModelProtocols}
-            onDelete={editor.removeAggregateModel}
-            onTest={modelTest.openAggregateModelTest}
-            testing={modelTest.testingModel}
-            onAddBinding={editor.addBinding}
-            onOpenRemote={() => setRemoteOpen(true)}
-          />
-          <ChannelRemoteModelsDialog
-            open={remoteOpen}
-            locale={locale}
-            channelName={editor.form.name}
-            loading={picker.fetching}
-            onOpenChange={setRemoteOpen}
-            onLoad={() => picker.discoverRemoteCatalog(0)}
-            onImport={(items) => picker.importRemoteModels(items)}
-            autoSyncEnabled={
-              editor.form.protocolConfigs.length > 0 &&
-              editor.form.protocolConfigs.every(
-                (config) => config.auto_sync_supported_models,
-              )
-            }
-            autoSyncPattern={
-              editor.form.protocolConfigs[0]?.auto_sync_model_pattern ?? ""
-            }
-            onAutoSyncChange={editor.updateAutoSync}
-          />
-        </>
-      ) : null}
-      {modelGroups.modelGroupEnsureOpen ? (
-        <ModelGroupEnsureDialog
+        <ChannelModelsDialog
           open
           locale={locale}
-          result={modelGroups.result}
-          modelGroups={modelGroups.groups}
-          selectedItemKeys={modelGroups.selectedKeys}
-          isConfirming={modelGroups.isEnsuringModelGroups}
-          onOpenChange={modelGroups.setModelGroupEnsureOpen}
-          onToggleItem={modelGroups.toggleItem}
-          onTargetGroupChange={(item, name) =>
-            void modelGroups.updateTarget(item, name)
-          }
-          onConfirm={(overrides) => void modelGroups.confirm(overrides)}
+          channelName={editor.form.name}
+          models={overviewModels}
+          saving={save.isSaving}
+          fetching={picker.fetching}
+          onOpenChange={(open) => {
+            if (!open) onCloseModels();
+          }}
+          onSave={save.submit}
+          onToggleEnabled={editor.toggleAggregateEnabled}
+          onUpdateProtocols={editor.updateModelProtocols}
+          onDelete={editor.removeAggregateModel}
+          onTest={modelTest.openAggregateModelTest}
+          testing={modelTest.testingModel}
+          onAddBinding={editor.addBinding}
+          onOpenRemote={() => setRemoteOpen(true)}
+          onKeep={editor.keepAggregateModels}
+          syncEnabled={editor.form.model_sync_enabled}
+          syncing={save.syncingSiteId !== null}
+          onSyncNow={() => void save.syncEditorModels()}
+          initialStatusFilter={modelsStatusFilter}
+          isNested={isModelsNested}
+        />
+      ) : null}
+      {editor.isDialogOpen ? (
+        <ChannelRemoteModelsDialog
+          open={remoteOpen}
+          locale={locale}
+          channelName={editor.form.name}
+          loading={picker.fetching}
+          onOpenChange={setRemoteOpen}
+          onLoad={picker.discoverRemoteCatalog}
+          onImport={picker.importRemoteModels}
         />
       ) : null}
       {transfer.batchImportOpen ? (
@@ -192,16 +170,6 @@ export function ChannelsDialogs({
           onFileChange={(event) => void transfer.handleBatchImportFile(event)}
           onDownloadTemplate={transfer.downloadBatchImportTemplate}
           onImport={() => void transfer.importBatchSites()}
-        />
-      ) : null}
-      {transfer.channelSyncOpen ? (
-        <ChannelModelSyncDialog
-          open
-          onOpenChange={transfer.setChannelSyncOpen}
-          locale={locale}
-          result={transfer.channelSyncResult}
-          syncing={transfer.channelSyncing}
-          onConfirm={() => void transfer.confirmChannelModelSync()}
         />
       ) : null}
       {batchTest.batchModelTestOpen ? (

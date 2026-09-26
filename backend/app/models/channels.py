@@ -28,6 +28,7 @@ class ChannelDiscoveredModel(StrictBaseModel):
     credential_name: str = ""
     model_name: str
     enabled: bool = True
+    upstream_missing: bool = False
     sort_order: int = Field(default=0, ge=0)
 
 
@@ -52,33 +53,21 @@ class ChannelConfig(StrictBaseModel):
 
 
 class ChannelModelSyncRequest(StrictBaseModel):
-    dry_run: bool = True
-
-
-class ChannelModelSyncGroupChange(StrictBaseModel):
-    group_name: str
-    model_name: str
+    site_ids: list[str] | None = None
 
 
 class ChannelModelSyncResultItem(StrictBaseModel):
     site_id: str
+    site_name: str
     protocol_config_id: str
-    channel_name: str
     credential_id: str
     credential_name: str
-    protocol: ProtocolKind
     status: ChannelModelSyncStatus
     error: str = ""
-    warning: str = ""
     added: list[str] = Field(default_factory=list)
-    removed: list[str] = Field(default_factory=list)
-    group_added: list[ChannelModelSyncGroupChange] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    restored: list[str] = Field(default_factory=list)
 
 
 class ChannelModelSyncResponse(StrictBaseModel):
-    dry_run: bool
-    eligible_target_count: int = Field(default=0, ge=0)
-    updated_target_count: int = Field(default=0, ge=0)
-    unchanged_target_count: int = Field(default=0, ge=0)
-    failed_target_count: int = Field(default=0, ge=0)
     items: list[ChannelModelSyncResultItem] = Field(default_factory=list)

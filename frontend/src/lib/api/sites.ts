@@ -1,9 +1,4 @@
-import type {
-  HeaderRule,
-  ModelGroupEnsureFromSiteResponse,
-  ModelGroupEnsureModelInput,
-  ParamOverrideRule,
-} from "./groups";
+import type { HeaderRule, ParamOverrideRule } from "./groups";
 import type { ProtocolKind } from "./protocols";
 
 export type ChannelProxyMode = "inherit" | "direct" | "custom";
@@ -48,6 +43,7 @@ export type SiteModel = {
   enabled: boolean;
   sort_order: number;
   source: "manual" | "synced";
+  upstream_missing: boolean;
 };
 export type SiteModelInput = {
   id?: string | null;
@@ -56,32 +52,27 @@ export type SiteModelInput = {
   model_name: string;
   enabled: boolean;
   source: "manual" | "synced";
-};
-export type SiteSyncTarget = {
-  credential_id: string;
-  model_name: string;
-  protocol: ProtocolKind;
+  upstream_missing: boolean;
 };
 export type SiteProtocolConfig = {
   id: string;
   base_url_id: string;
   protocols: ProtocolKind[];
   credential_ids: string[];
-  auto_sync_supported_models: boolean;
-  auto_sync_model_pattern: string;
-  sync_targets: SiteSyncTarget[];
   models: SiteModel[];
 };
 export type SiteProtocolConfigInput = {
   id?: string | null;
   base_url_id: string;
   protocols: ProtocolKind[];
-  auto_sync_supported_models: boolean;
-  auto_sync_model_pattern: string;
-  sync_targets: SiteSyncTarget[];
   models: SiteModelInput[];
 };
-export type Site = {
+export type SiteModelSyncSettings = {
+  model_sync_enabled: boolean;
+  model_sync_include: string;
+  model_sync_exclude: string;
+};
+export type Site = SiteModelSyncSettings & {
   id: string;
   name: string;
   enabled: boolean;
@@ -122,7 +113,7 @@ export type HealthSummary = {
   items: HealthItem[];
   next_offset: number | null;
 };
-export type SitePayload = {
+export type SitePayload = SiteModelSyncSettings & {
   name: string;
   tags: string[];
   proxy_mode: ChannelProxyMode;
@@ -133,14 +124,20 @@ export type SitePayload = {
   credentials: SiteCredentialInput[];
   protocols: SiteProtocolConfigInput[];
 };
-export type SiteModelGroupSavePayload = SitePayload & {
-  site_id?: string | null;
-  dry_run: boolean;
-  models: ModelGroupEnsureModelInput[] | null;
+export type ChannelModelSyncResultItem = {
+  site_id: string;
+  site_name: string;
+  protocol_config_id: string;
+  credential_id: string;
+  credential_name: string;
+  status: "updated" | "unchanged" | "failed";
+  error: string;
+  added: string[];
+  missing: string[];
+  restored: string[];
 };
-export type SiteModelGroupSaveResponse = {
-  site: Site;
-  model_groups: ModelGroupEnsureFromSiteResponse;
+export type ChannelModelSyncResponse = {
+  items: ChannelModelSyncResultItem[];
 };
 export type SiteBatchImportBaseUrlInput = {
   ref: string;

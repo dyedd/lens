@@ -6,7 +6,6 @@ from ..gateway.service.admin.foreign_imports import preview_foreign_site_import
 from ..gateway.service.admin.model_groups import (
     create_model_group,
     delete_model_group,
-    ensure_model_groups_from_site,
     get_model_group,
     list_model_group_candidates,
     list_model_groups,
@@ -38,7 +37,6 @@ from ..gateway.service.admin.ops import (
 )
 from ..gateway.service.admin.sites import (
     create_site,
-    create_site_with_model_groups,
     delete_site,
     fetch_site_models,
     import_sites,
@@ -49,7 +47,6 @@ from ..gateway.service.admin.sites import (
     test_site_model,
     update_site,
     update_site_enabled,
-    update_site_with_model_groups,
 )
 from ..gateway.service.auth import (
     change_password,
@@ -89,7 +86,6 @@ from ..models.gateway_keys import GatewayApiKey
 from ..models.health import HealthSummary
 from ..models.model_groups import (
     ModelGroupCandidatesResponse,
-    ModelGroupEnsureFromSiteResponse,
     ModelGroupView,
 )
 from ..models.model_prices import ModelPriceItem, ModelPriceListResponse
@@ -102,7 +98,7 @@ from ..models.request_logs import RequestLogDetail, RequestLogPage
 from ..models.settings import SettingItem
 from ..models.site_import import SiteBatchImportResult
 from ..models.site_model_test import SiteModelFetchItem, SiteModelTestResult
-from ..models.sites import SiteCredential, SiteModelGroupSaveResponse
+from ..models.sites import SiteCredential
 from . import ui_static
 
 
@@ -163,13 +159,6 @@ def register_sites(app: FastAPI) -> None:
         status_code=201,
     )
     app.add_api_route(
-        "/api/admin/sites/with-model-groups",
-        create_site_with_model_groups,
-        methods=["POST"],
-        response_model=SiteModelGroupSaveResponse,
-        status_code=201,
-    )
-    app.add_api_route(
         "/api/admin/sites/import",
         import_sites,
         methods=["POST"],
@@ -182,12 +171,6 @@ def register_sites(app: FastAPI) -> None:
         response_model=ForeignSiteImportPreview,
     )
     app.add_api_route("/api/admin/sites/{site_id}", update_site, methods=["PUT"])
-    app.add_api_route(
-        "/api/admin/sites/{site_id}/with-model-groups",
-        update_site_with_model_groups,
-        methods=["PUT"],
-        response_model=SiteModelGroupSaveResponse,
-    )
     app.add_api_route(
         "/api/admin/sites/{site_id}/enabled",
         update_site_enabled,
@@ -303,12 +286,6 @@ def register_model_groups(app: FastAPI) -> None:
         methods=["POST"],
         response_model=ModelGroupView,
         status_code=201,
-    )
-    app.add_api_route(
-        "/api/admin/model-groups/ensure-from-site",
-        ensure_model_groups_from_site,
-        methods=["POST"],
-        response_model=ModelGroupEnsureFromSiteResponse,
     )
     app.add_api_route(
         "/api/admin/model-groups/{group_id}/model-tests",

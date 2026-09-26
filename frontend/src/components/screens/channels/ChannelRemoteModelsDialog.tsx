@@ -4,8 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import { Input } from "@/components/ui/Input";
-import { Switch } from "@/components/ui/Switch";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   Table,
   TableBody,
@@ -16,11 +15,10 @@ import {
 } from "@/components/ui/Table";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import type { Locale, PickerModelItem } from "./channelTypes";
+import type { RemoteModelCatalog } from "./useChannelModelPicker";
 
-type Catalog = {
-  items: PickerModelItem[];
-  boundNames: Set<string>;
-};
+type CatalogFilter = "new" | "bound" | "absent" | "all";
+type CatalogRow = { name: string; status: Exclude<CatalogFilter, "all"> };
 
 type Props = {
   open: boolean;
@@ -28,14 +26,17 @@ type Props = {
   channelName: string;
   loading: boolean;
   onOpenChange: (open: boolean) => void;
-  onLoad: () => Promise<Catalog | null>;
+  onLoad: () => Promise<RemoteModelCatalog | null>;
   onImport: (items: PickerModelItem[]) => number;
-  autoSyncEnabled: boolean;
-  autoSyncPattern: string;
-  onAutoSyncChange: (enabled: boolean, pattern?: string) => void;
 };
 
-/** Renders the remote catalog preview for one channel. */
+function statusLabel(status: CatalogRow["status"], locale: Locale) {
+  if (status === "bound") return locale === "zh-CN" ? "已添加" : "Added";
+  if (status === "absent") return locale === "zh-CN" ? "上游缺失" : "Missing";
+  return locale === "zh-CN" ? "未添加" : "New";
+}
+
+/** Lets the admin pick upstream models across every URL and key. */
 export function ChannelRemoteModelsDialog({
   open,
   locale,
@@ -44,14 +45,11 @@ export function ChannelRemoteModelsDialog({
   onOpenChange,
   onLoad,
   onImport,
-  autoSyncEnabled,
-  autoSyncPattern,
-  onAutoSyncChange,
 }: Props) {
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [catalog, setCatalog] = useState<RemoteModelCatalog | null>(null);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<CatalogFilter>("new");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [importing, setImporting] = useState(false);
   const onLoadRef = useRef(onLoad);
   onLoadRef.current = onLoad;
 
@@ -59,54 +57,75 @@ export function ChannelRemoteModelsDialog({
     if (!open) {
       setCatalog(null);
       setQuery("");
+      setFilter("new");
       setSelected(new Set());
       return;
     }
     void onLoadRef.current().then((result) => {
-      if (!result) return;
-      setCatalog(result);
-      setSelected(
-        new Set(
-          result.items
-            .filter((item) => !result.boundNames.has(item.model_name))
-            .map((item) => item.model_name),
-        ),
-      );
+      if (result) setCatalog(result);
     });
   }, [open]);
 
-  const uniqueItems = useMemo(() => {
-    const byName = new Map<string, PickerModelItem>();
-    for (const item of catalog?.items ?? []) {
-      if (!byName.has(item.model_name)) byName.set(item.model_name, item);
-    }
-    return Array.from(byName.values());
+  const rows = useMemo<CatalogRow[]>(() => {
+    if (!catalog) return [];
+    const upstreamNames = new Set(catalog.items.map((item) => item.model_name));
+    return [
+      ...Array.from(upstreamNames, (name) => ({
+        name,
+        status: catalog.boundNames.has(name) ? "bound" : "new",
+      })),
+      ...Array.from(catalog.boundNames)
+        .filter((name) => !upstreamNames.has(name))
+        .map((name) => ({ name, status: "absent" })),
+    ] as CatalogRow[];
   }, [catalog]);
-  const filtered = useMemo(() => {
+  const counts = useMemo(() => {
+    const result = { new: 0, bound: 0, absent: 0, all: rows.length };
+    for (const row of rows) result[row.status] += 1;
+    return result;
+  }, [rows]);
+  const visibleRows = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    if (!keyword) return uniqueItems;
-    return uniqueItems.filter((item) =>
-      item.model_name.toLowerCase().includes(keyword),
-    );
-  }, [query, uniqueItems]);
-  const unbound = filtered.filter(
-    (item) => !catalog?.boundNames.has(item.model_name),
-  );
+    return rows
+      .filter(
+        (row) =>
+          (filter === "all" || row.status === filter) &&
+          (!keyword || row.name.toLowerCase().includes(keyword)),
+      )
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [filter, query, rows]);
+  const selectableNames = visibleRows
+    .filter((row) => row.status === "new")
+    .map((row) => row.name);
   const allSelected =
-    unbound.length > 0 &&
-    unbound.every((item) => selected.has(item.model_name));
-  const someSelected = unbound.some((item) => selected.has(item.model_name));
+    selectableNames.length > 0 &&
+    selectableNames.every((name) => selected.has(name));
+  const someSelected = selectableNames.some((name) => selected.has(name));
 
-  function toggleAll(checked: boolean) {
+  function toggleName(name: string, checked: boolean) {
     setSelected((current) => {
       const next = new Set(current);
-      for (const item of unbound) {
-        if (checked) next.add(item.model_name);
-        else next.delete(item.model_name);
-      }
+      if (checked) next.add(name);
+      else next.delete(name);
       return next;
     });
   }
+
+  function importSelected() {
+    const items = (catalog?.items ?? []).filter((item) =>
+      selected.has(item.model_name),
+    );
+    onImport(items);
+    toast.success(
+      locale === "zh-CN"
+        ? `已添加 ${selected.size} 个模型，保存渠道后生效`
+        : `Added ${selected.size} models. Save the channel to apply`,
+    );
+    onOpenChange(false);
+  }
+
+  const filterLabel = (zh: string, en: string, count: number) =>
+    `${locale === "zh-CN" ? zh : en} ${count}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -114,13 +133,13 @@ export function ChannelRemoteModelsDialog({
         className="max-w-2xl"
         title={
           locale === "zh-CN"
-            ? `同步上游模型 - ${channelName}`
-            : `Sync upstream models - ${channelName}`
+            ? `获取上游模型 - ${channelName}`
+            : `Fetch upstream models - ${channelName}`
         }
         description={
           locale === "zh-CN"
-            ? "拉取该渠道上游目录，勾选后把还没绑定的模型加进来。"
-            : "Fetch this channel's upstream catalog, then add unbound models."
+            ? "已汇总所有地址和密钥的模型列表。勾选的模型作为手动模型加入，不受自动同步影响。"
+            : "Models from every URL and key. Picked models are added as manual models and never changed by auto-sync."
         }
         footer={
           <>
@@ -129,87 +148,52 @@ export function ChannelRemoteModelsDialog({
               variant="ghost"
               size="sm"
               onClick={() => onOpenChange(false)}
-              disabled={importing}
             >
               {locale === "zh-CN" ? "取消" : "Cancel"}
             </Button>
             <Button
               type="button"
               size="sm"
-              disabled={importing || loading || selected.size === 0}
-              onClick={() => {
-                const items = uniqueItems.filter((item) =>
-                  selected.has(item.model_name),
-                );
-                setImporting(true);
-                const count = onImport(items);
-                toast.success(
-                  locale === "zh-CN"
-                    ? `已绑定 ${count || items.length} 个模型`
-                    : `Bound ${count || items.length} models`,
-                );
-                setImporting(false);
-                onOpenChange(false);
-              }}
+              disabled={loading || selected.size === 0}
+              onClick={importSelected}
             >
               <CloudDownload className="size-3.5" />
-              {locale === "zh-CN" ? "应用同步" : "Apply sync"}
+              {locale === "zh-CN"
+                ? `添加所选 ${selected.size}`
+                : `Add selected ${selected.size}`}
             </Button>
           </>
         }
       >
         <div className="grid gap-3">
-          <div className="rounded-md bg-muted/35 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-xs font-medium">
-                  {locale === "zh-CN"
-                    ? "自动同步上游模型"
-                    : "Auto-sync upstream models"}
-                </div>
-                <div className="mt-0.5 text-[11px] text-muted-foreground">
-                  {locale === "zh-CN"
-                    ? "定时任务会按上游目录更新同步模型"
-                    : "Scheduled sync updates models from the upstream catalog"}
-                </div>
-              </div>
-              <Switch
-                size="sm"
-                checked={autoSyncEnabled}
-                onCheckedChange={(checked) => onAutoSyncChange(checked)}
-              />
-            </div>
-            {autoSyncEnabled ? (
-              <div className="mt-3">
-                <Input
-                  value={autoSyncPattern}
-                  onChange={(event) =>
-                    onAutoSyncChange(true, event.target.value)
-                  }
-                  placeholder={
-                    locale === "zh-CN"
-                      ? "模型筛选正则，可留空同步全部"
-                      : "Optional model filter regex"
-                  }
-                  className="h-8 text-xs"
-                  aria-label={
-                    locale === "zh-CN" ? "模型筛选正则" : "Model filter regex"
-                  }
-                />
-              </div>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              value={filter}
+              onValueChange={setFilter}
+              options={[
+                {
+                  value: "new",
+                  label: filterLabel("未添加", "New", counts.new),
+                },
+                {
+                  value: "bound",
+                  label: filterLabel("已添加", "Added", counts.bound),
+                },
+                {
+                  value: "absent",
+                  label: filterLabel("上游缺失", "Missing", counts.absent),
+                },
+                { value: "all", label: filterLabel("全部", "All", counts.all) },
+              ]}
+            />
             <ToolbarSearchInput
               value={query}
               onChange={setQuery}
               onClear={() => setQuery("")}
               placeholder={
-                locale === "zh-CN"
-                  ? "搜索上游模型名"
-                  : "Search upstream model names"
+                locale === "zh-CN" ? "搜索模型名" : "Search model names"
               }
-              className="max-w-none flex-1"
+              className="max-w-none min-w-40 flex-1"
             />
             <Button
               type="button"
@@ -226,92 +210,95 @@ export function ChannelRemoteModelsDialog({
               <RefreshCw
                 className={loading ? "size-3.5 animate-spin" : "size-3.5"}
               />
-              {locale === "zh-CN" ? "重新拉取" : "Reload"}
+              {locale === "zh-CN" ? "重新获取" : "Reload"}
             </Button>
           </div>
-          <div className="text-xs text-muted-foreground">
-            {loading
-              ? locale === "zh-CN"
-                ? "正在获取远端模型"
-                : "Loading remote models"
-              : locale === "zh-CN"
-                ? `远端目录 ${uniqueItems.length} 个模型`
-                : `${uniqueItems.length} models in the remote catalog`}
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[44px]">
-                  <Checkbox
-                    checked={
-                      allSelected
-                        ? true
-                        : someSelected
-                          ? "indeterminate"
-                          : false
-                    }
-                    onCheckedChange={(checked) => toggleAll(checked === true)}
-                  />
-                </TableHead>
-                <TableHead>
-                  {locale === "zh-CN" ? "上游模型名" : "Upstream model"}
-                </TableHead>
-                <TableHead>{locale === "zh-CN" ? "状态" : "Status"}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
+          <div className="max-h-[min(52vh,480px)] overflow-y-auto">
+            <Table>
+              <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableCell
-                    colSpan={3}
-                    className="h-24 text-center text-muted-foreground"
-                  >
-                    {loading
-                      ? locale === "zh-CN"
-                        ? "加载中..."
-                        : "Loading..."
-                      : locale === "zh-CN"
-                        ? "暂无对应模型"
-                        : "No models"}
-                  </TableCell>
+                  <TableHead className="w-[44px]">
+                    <Checkbox
+                      checked={
+                        allSelected
+                          ? true
+                          : someSelected
+                            ? "indeterminate"
+                            : false
+                      }
+                      disabled={!selectableNames.length}
+                      onCheckedChange={(checked) =>
+                        setSelected((current) => {
+                          const next = new Set(current);
+                          for (const name of selectableNames) {
+                            if (checked === true) next.add(name);
+                            else next.delete(name);
+                          }
+                          return next;
+                        })
+                      }
+                      aria-label={
+                        locale === "zh-CN"
+                          ? "全选筛选结果"
+                          : "Select filtered models"
+                      }
+                    />
+                  </TableHead>
+                  <TableHead>
+                    {locale === "zh-CN" ? "上游模型名" : "Upstream model"}
+                  </TableHead>
+                  <TableHead className="w-[96px]">
+                    {locale === "zh-CN" ? "状态" : "Status"}
+                  </TableHead>
                 </TableRow>
-              ) : (
-                filtered.map((item) => {
-                  const bound = catalog?.boundNames.has(item.model_name);
-                  return (
-                    <TableRow key={item.model_name}>
+              </TableHeader>
+              <TableBody>
+                {visibleRows.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell
+                      colSpan={3}
+                      className="h-24 text-center text-muted-foreground"
+                    >
+                      {loading
+                        ? locale === "zh-CN"
+                          ? "正在获取上游模型..."
+                          : "Fetching upstream models..."
+                        : locale === "zh-CN"
+                          ? "没有匹配的模型"
+                          : "No matching models"}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  visibleRows.map((row) => (
+                    <TableRow key={row.name}>
                       <TableCell>
                         <Checkbox
-                          checked={selected.has(item.model_name)}
-                          disabled={bound}
-                          onCheckedChange={(checked) => {
-                            setSelected((current) => {
-                              const next = new Set(current);
-                              if (checked === true) next.add(item.model_name);
-                              else next.delete(item.model_name);
-                              return next;
-                            });
-                          }}
+                          checked={selected.has(row.name)}
+                          disabled={row.status !== "new"}
+                          onCheckedChange={(checked) =>
+                            toggleName(row.name, checked === true)
+                          }
+                          aria-label={row.name}
                         />
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        {item.model_name}
+                        {row.name}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {bound
-                          ? locale === "zh-CN"
-                            ? "已绑定"
-                            : "Bound"
-                          : locale === "zh-CN"
-                            ? "未绑定"
-                            : "Unbound"}
+                      <TableCell
+                        className={
+                          row.status === "absent"
+                            ? "text-xs text-destructive"
+                            : "text-xs text-muted-foreground"
+                        }
+                      >
+                        {statusLabel(row.status, locale)}
                       </TableCell>
                     </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </AppDialogContent>
     </Dialog>

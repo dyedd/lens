@@ -146,7 +146,6 @@ export function GroupsScreen() {
     candidateSearch: editor.candidateSearch,
     candidateSearchMode: editor.candidateSearchMode,
     expandedChannels: editor.expandedChannels,
-    form: editor.form,
     locale,
     setExpandedChannels: editor.setExpandedChannels,
     setForm: editor.setForm,
@@ -213,7 +212,6 @@ export function GroupsScreen() {
           filteredCandidates={candidates.filteredCandidates}
           refetchCandidates={queries.candidateQuery.refetch}
           isFetchingCandidates={queries.candidateQuery.isFetching}
-          applySavedFilter={candidates.applySavedFilter}
           clearSavedFilter={candidates.clearSavedFilter}
           groupedCandidates={candidates.groupedCandidates}
           expandedChannels={candidates.expandedChannels}

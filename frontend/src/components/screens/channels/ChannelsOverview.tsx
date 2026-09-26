@@ -67,7 +67,10 @@ type Props = {
   onImport: () => void;
   onOpenEdit: (site: Site) => void;
   onManageModels: (site: Site) => void;
-  onSyncRemoteModels: (site: Site) => void;
+  onReviewPendingModels: (site: Site) => void;
+  onFetchModels: (site: Site) => void;
+  syncingSiteId: string | null;
+  onSyncModels: (site: Site) => void;
   onToggleSiteEnabled: (site: Site, enabled: boolean) => void;
   onDelete: (site: Site) => void;
   onBulkEnabled: (sites: Site[], enabled: boolean) => void;
@@ -96,7 +99,10 @@ export function ChannelsOverview({
   onImport,
   onOpenEdit,
   onManageModels,
-  onSyncRemoteModels,
+  onReviewPendingModels,
+  onFetchModels,
+  syncingSiteId,
+  onSyncModels,
   onToggleSiteEnabled,
   onDelete,
   onBulkEnabled,
@@ -408,7 +414,10 @@ export function ChannelsOverview({
         onSelectOne={handleSelectOne}
         onEdit={onOpenEdit}
         onManageModels={onManageModels}
-        onSyncModels={onSyncRemoteModels}
+        onReviewPendingModels={onReviewPendingModels}
+        onFetchModels={onFetchModels}
+        syncingSiteId={syncingSiteId}
+        onSyncModels={onSyncModels}
         onToggleEnabled={onToggleSiteEnabled}
         onDelete={onDelete}
       />

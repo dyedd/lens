@@ -10,6 +10,7 @@ import type { FormItem, FormState } from "./groupTypes";
 /** Convert candidate payload items into editable model group members. */
 export function candidatePayloadToFormItems(
   candidate: ModelGroupCandidateItem,
+  matchedByRule = false,
 ): FormItem[] {
   return candidate.items.map((payloadItem) => ({
     channel_id: payloadItem.channel_id,
@@ -24,6 +25,7 @@ export function candidatePayloadToFormItems(
     rate_source: candidate.rate_source,
     model_name: payloadItem.model_name,
     enabled: true,
+    matched_by_rule: matchedByRule,
     state: null,
     reasons: [],
   }));
@@ -62,6 +64,7 @@ export function modelGroupToForm(group: ModelGroup): FormState {
         rate_source: item.rate_source,
         model_name: item.model_name,
         enabled: item.enabled,
+        matched_by_rule: item.matched_by_rule,
         state: item.state,
         reasons: item.reasons,
       })),
@@ -84,12 +87,16 @@ export function formToModelGroupPayload(form: FormState) {
     param_override: paramOverrideDraftToRules(form.param_override),
     headers: headerDraftToRules(form.headers),
     fallback_group_ids: form.fallback_group_ids,
-    items: form.items.map((item) => ({
-      channel_id: item.channel_id,
-      credential_id: item.credential_id,
-      model_name: item.model_name,
-      enabled: item.enabled,
-    })),
+    // Enabled rule members follow the live rule; a disabled one is saved so
+    // the rule stops routing to it.
+    items: form.items
+      .filter((item) => !item.matched_by_rule || !item.enabled)
+      .map((item) => ({
+        channel_id: item.channel_id,
+        credential_id: item.credential_id,
+        model_name: item.model_name,
+        enabled: item.enabled,
+      })),
   };
 }
 
@@ -251,6 +258,7 @@ export function foldGroupMembers(
         rate_source: evaluatedItem.rate_source,
         protocols: [],
         subItems: [],
+        is_rule_member: true,
         enabled_item_count: 0,
         disabled_item_count: 0,
         ready_item_count: 0,
@@ -261,6 +269,7 @@ export function foldGroupMembers(
     }
     const member = membersByKey.get(key)!;
     member.subItems.push(evaluatedItem);
+    member.is_rule_member &&= evaluatedItem.matched_by_rule;
     if (evaluatedItem.enabled) member.enabled_item_count += 1;
     else member.disabled_item_count += 1;
     if (evaluatedItem.state === null) member.pending_item_count += 1;

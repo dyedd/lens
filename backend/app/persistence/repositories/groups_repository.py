@@ -9,19 +9,15 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceNotFoundError
-from app.core.runtime_channel_ids import split_runtime_channel_id
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
-    ModelGroupEnsureFromSiteRequest,
-    ModelGroupEnsureFromSiteResponse,
     ModelGroupItemInput,
     ModelGroupUpdate,
     ModelGroupView,
 )
-from app.models.protocols import ProtocolKind
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
@@ -33,13 +29,12 @@ from app.persistence.group_rule_codec import (
 )
 
 from ..channel_store import ChannelStore
-from .group_read import GroupCandidatesMixin, GroupMappingMixin
-from .group_write import GroupEnsureMixin, GroupValidationMixin
+from .group_read import GroupCandidatesMixin, GroupMappingMixin, build_direct_groups
+from .group_write import GroupValidationMixin
 
 
 class ModelGroupRepository(
     GroupCandidatesMixin,
-    GroupEnsureMixin,
     GroupValidationMixin,
     GroupMappingMixin,
 ):
@@ -91,7 +86,11 @@ class ModelGroupRepository(
         *,
         channels: list[ChannelConfig] | None = None,
     ) -> ModelGroupView | None:
-        """Return a named model group when it supports the requested protocol."""
+        """Return the group serving a requested model name for one protocol.
+
+        A model group shadows channel models of the same name; without one,
+        the channel models themselves form a direct failover group.
+        """
         trimmed_name = (name or "").strip()
         if not trimmed_name:
             return None
@@ -109,14 +108,21 @@ class ModelGroupRepository(
             )
             entity = result.scalar_one_or_none()
             if entity is None:
-                return None
-            hydrated = await self._hydrate_groups(session, [entity], effective_channels)
-            group = hydrated[0]
-            return (
-                group
-                if protocol in {item.value for item in group.client_protocols}
-                else None
-            )
+                group = next(
+                    iter(build_direct_groups(effective_channels, trimmed_name)), None
+                )
+            else:
+                hydrated = await self._hydrate_groups(
+                    session, [entity], effective_channels
+                )
+                group = hydrated[0]
+        if group is None:
+            return None
+        return (
+            group
+            if protocol in {item.value for item in group.client_protocols}
+            else None
+        )
 
     async def list_group_candidates(
         self, payload: ModelGroupCandidatesRequest
@@ -124,46 +130,19 @@ class ModelGroupRepository(
         """Return enabled model candidates and evaluate selected members."""
         return await self._list_group_candidates(payload)
 
-    async def ensure_groups_from_site(
-        self, payload: ModelGroupEnsureFromSiteRequest
-    ) -> ModelGroupEnsureFromSiteResponse:
-        """Plan or apply model group changes from selected site models."""
-        return await self._ensure_groups_from_site(payload)
-
-    async def ensure_groups_from_site_in_session(
-        self,
-        session: AsyncSession,
-        payload: ModelGroupEnsureFromSiteRequest,
-    ) -> ModelGroupEnsureFromSiteResponse:
-        """Plan or apply model group changes in a caller-owned transaction."""
-        return await self._ensure_groups_from_site_in_session(session, payload)
-
-    async def list_execution_group_names_in_session(
-        self, session: AsyncSession
-    ) -> list[str]:
-        """Return names of execution groups visible in a caller-owned transaction."""
-        rows = await session.execute(
-            select(ModelGroupEntity.name).where(ModelGroupEntity.route_group_id == "")
-        )
-        return [name for name in rows.scalars().all() if name.strip()]
-
-    async def list_grouped_model_keys_in_session(
-        self, session: AsyncSession
-    ) -> set[tuple[str, str, str, ProtocolKind]]:
-        """Return protocol-specific model keys already in a group."""
-        rows = await session.execute(
-            select(
-                ModelGroupItemEntity.channel_id,
-                ModelGroupItemEntity.credential_id,
-                ModelGroupItemEntity.model_name,
-            )
-        )
-        keys: set[tuple[str, str, str, ProtocolKind]] = set()
-        for channel_id, credential_id, model_name in rows.all():
-            parsed = split_runtime_channel_id(channel_id)
-            if parsed is not None:
-                keys.add((parsed[0], credential_id, model_name, parsed[1]))
-        return keys
+    async def list_routable_groups(self) -> list[ModelGroupView]:
+        """Return model groups plus channel models no group name shadows."""
+        channels = await self._channel_store.list_channels()
+        groups = await self.list_groups(channels=channels)
+        group_names = {group.name for group in groups}
+        return [
+            *groups,
+            *(
+                group
+                for group in build_direct_groups(channels)
+                if group.name not in group_names
+            ),
+        ]
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroupView:
         """Create and return a validated model group."""

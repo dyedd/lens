@@ -43,6 +43,7 @@ class ModelGroupItemReason(str, Enum):
     CREDENTIAL_DISABLED = "credential_disabled"
     MODEL_NOT_FOUND = "model_not_found"
     MODEL_DISABLED = "model_disabled"
+    MODEL_UPSTREAM_MISSING = "model_upstream_missing"
 
 
 class ModelGroup(StrictBaseModel):
@@ -107,6 +108,7 @@ class ModelGroupItemView(ModelGroupItem):
     rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     state: ModelGroupItemState
     reasons: list[ModelGroupItemReason] = Field(default_factory=list)
+    matched_by_rule: bool = False
 
 
 class ModelGroupView(ModelGroup):
@@ -245,39 +247,3 @@ class ModelGroupModelTestRequest(StrictBaseModel):
     model_name: str = Field(min_length=1)
     prompt: str = Field(min_length=1, max_length=2000)
     protocol: ProtocolKind | None = None
-
-
-class ModelGroupEnsureModelInput(StrictBaseModel):
-    protocol_config_id: str = Field(min_length=1)
-    credential_id: str = Field(min_length=1)
-    model_name: str = Field(min_length=1)
-    group_name: str = ""
-    protocols: list[ProtocolKind] = Field(min_length=1)
-
-
-class ModelGroupEnsureFromSiteRequest(StrictBaseModel):
-    site_id: str = Field(min_length=1)
-    dry_run: bool = True
-    models: list[ModelGroupEnsureModelInput] = Field(default_factory=list)
-
-
-class ModelGroupEnsureResultItem(StrictBaseModel):
-    group_id: str = ""
-    group_name: str
-    protocol_config_id: str
-    credential_id: str
-    model_name: str
-    protocols: list[ProtocolKind] = Field(default_factory=list)
-    status: Literal["create", "update", "unchanged", "skipped"]
-    added_count: int = Field(default=0, ge=0)
-    existing_count: int = Field(default=0, ge=0)
-    skipped_reason: str = ""
-
-
-class ModelGroupEnsureFromSiteResponse(StrictBaseModel):
-    dry_run: bool
-    created_count: int = Field(default=0, ge=0)
-    updated_count: int = Field(default=0, ge=0)
-    unchanged_count: int = Field(default=0, ge=0)
-    skipped_count: int = Field(default=0, ge=0)
-    items: list[ModelGroupEnsureResultItem] = Field(default_factory=list)

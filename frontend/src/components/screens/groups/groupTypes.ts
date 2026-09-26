@@ -25,6 +25,8 @@ export type FormItem = {
   rate_source: "none" | "sub2api" | "newapi";
   model_name: string;
   enabled: boolean;
+  /** Joined through the group's live rule rather than saved explicitly. */
+  matched_by_rule: boolean;
   state: ModelGroupItemState | null;
   reasons: ModelGroupItemReason[];
 };
@@ -70,6 +72,7 @@ export type FoldedMember = {
   rate_source: "none" | "sub2api" | "newapi";
   protocols: ProtocolKind[];
   subItems: EvaluatedFormItem[];
+  is_rule_member: boolean;
   enabled_item_count: number;
   disabled_item_count: number;
   ready_item_count: number;

@@ -23,7 +23,6 @@ interface ModelGroupCandidateToolbarProps {
   filteredCandidateCount: number;
   refetchCandidates: () => unknown;
   isFetchingCandidates: boolean;
-  applySavedFilter: () => void;
   clearSavedFilter: () => void;
 }
 
@@ -40,7 +39,6 @@ export function ModelGroupCandidateToolbar({
   filteredCandidateCount,
   refetchCandidates,
   isFetchingCandidates,
-  applySavedFilter,
   clearSavedFilter,
 }: ModelGroupCandidateToolbarProps) {
   return (
@@ -107,8 +105,8 @@ export function ModelGroupCandidateToolbar({
             <Sparkles data-icon="inline-start" />
             {candidateSearch.trim()
               ? locale === "zh-CN"
-                ? `加入并保存筛选 ${filteredCandidateCount}`
-                : `Add and save filter ${filteredCandidateCount}`
+                ? `设为自动包含规则 ${filteredCandidateCount}`
+                : `Use as live rule ${filteredCandidateCount}`
               : locale === "zh-CN"
                 ? `加入全部 ${filteredCandidateCount}`
                 : `Add all ${filteredCandidateCount}`}
@@ -135,7 +133,7 @@ export function ModelGroupCandidateToolbar({
         <div className="flex shrink-0 flex-col gap-2 border-b bg-muted/35 px-3 py-2">
           <div className="min-w-0 text-sm text-muted-foreground">
             <span className="text-foreground">
-              {locale === "zh-CN" ? "已保存筛选" : "Saved filter"}
+              {locale === "zh-CN" ? "自动包含（实时）" : "Live rule"}
             </span>
             <span className="mx-2">·</span>
             <span>
@@ -153,17 +151,13 @@ export function ModelGroupCandidateToolbar({
             </span>
             <span className="mx-2">·</span>
             <span className="break-all">{form.sync_filter_query}</span>
+            <div className="mt-0.5 text-xs">
+              {locale === "zh-CN"
+                ? "所有渠道中名称匹配的可用模型会自动成为成员，新渠道或新同步的模型也会立即加入。"
+                : "Every available channel model whose name matches joins automatically, including models from new channels and syncs."}
+            </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void applySavedFilter()}
-            >
-              <RefreshCcw data-icon="inline-start" />
-              {locale === "zh-CN" ? "按规则更新" : "Update by rule"}
-            </Button>
             <Button
               type="button"
               variant="destructive"

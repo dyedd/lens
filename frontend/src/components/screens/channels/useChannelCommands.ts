@@ -2,7 +2,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type { ChannelModelSyncResponse } from "@/lib/api/groups";
 import type {
   Site,
   SiteBatchImportPayload,
@@ -184,7 +183,7 @@ export function useChannelPersistence({
   };
 }
 
-/** Owns batch import and channel-model synchronization workflows. */
+/** Owns the batch channel import workflow. */
 export function useChannelTransfer({
   locale,
   queryClient,
@@ -200,10 +199,6 @@ export function useChannelTransfer({
   const [batchImportResult, setBatchImportResult] =
     useState<SiteBatchImportResult | null>(null);
   const [batchImporting, setBatchImporting] = useState(false);
-  const [channelSyncOpen, setChannelSyncOpen] = useState(false);
-  const [channelSyncResult, setChannelSyncResult] =
-    useState<ChannelModelSyncResponse | null>(null);
-  const [channelSyncing, setChannelSyncing] = useState(false);
 
   function openBatchImport() {
     setBatchImportText("");
@@ -311,71 +306,6 @@ export function useChannelTransfer({
       setBatchImporting(false);
     }
   }
-  async function openChannelModelSync() {
-    setChannelSyncResult(null);
-    setChannelSyncOpen(true);
-    setChannelSyncing(true);
-    try {
-      setChannelSyncResult(
-        await apiRequest<ChannelModelSyncResponse>(
-          "/admin/channel-model-sync",
-          { method: "POST", body: JSON.stringify({ dry_run: true }) },
-        ),
-      );
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          locale === "zh-CN" ? "生成同步预览失败" : "Failed to preview sync",
-        ),
-      );
-      setChannelSyncOpen(false);
-    } finally {
-      setChannelSyncing(false);
-    }
-  }
-  async function confirmChannelModelSync() {
-    setChannelSyncing(true);
-    try {
-      const result = await apiRequest<ChannelModelSyncResponse>(
-        "/admin/channel-model-sync",
-        { method: "POST", body: JSON.stringify({ dry_run: false }) },
-      );
-      await invalidateChannelData();
-      const added = result.items.reduce(
-        (sum, item) => sum + item.added.length,
-        0,
-      );
-      const removed = result.items.reduce(
-        (sum, item) => sum + item.removed.length,
-        0,
-      );
-      const message =
-        locale === "zh-CN"
-          ? `已处理 ${result.eligible_target_count} 个同步目标，更新 ${result.updated_target_count} 个，新增 ${added} 个，移除 ${removed} 个`
-          : `Processed ${result.eligible_target_count} sync targets, updated ${result.updated_target_count}, +${added} / -${removed}`;
-      if (result.failed_target_count) {
-        toast.warning(message, {
-          description:
-            locale === "zh-CN"
-              ? `${result.failed_target_count} 个目标同步失败`
-              : `${result.failed_target_count} targets failed`,
-        });
-      } else {
-        toast.success(message);
-      }
-      setChannelSyncOpen(false);
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          locale === "zh-CN" ? "同步失败" : "Sync failed",
-        ),
-      );
-    } finally {
-      setChannelSyncing(false);
-    }
-  }
   return {
     batchImportOpen,
     setBatchImportOpen,
@@ -388,11 +318,5 @@ export function useChannelTransfer({
     handleBatchImportFile,
     downloadBatchImportTemplate,
     importBatchSites,
-    channelSyncOpen,
-    setChannelSyncOpen,
-    channelSyncResult,
-    channelSyncing,
-    openChannelModelSync,
-    confirmChannelModelSync,
   };
 }

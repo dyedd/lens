@@ -276,7 +276,7 @@ def test_import_backup_rejects_payloads_the_strict_schema_forbids(
     assert_error(response, 400, "Invalid backup file")
 
 
-def test_import_backup_preserves_sync_targets(
+def test_import_backup_converts_protocol_level_model_sync(
     client,
     admin_headers,
     create_site,
@@ -285,29 +285,26 @@ def test_import_backup_preserves_sync_targets(
     exported = client.get("/api/admin/backups/export", headers=admin_headers)
     assert exported.status_code == 200
     payload = exported.json()
-    protocol_config = payload["sites"][0]["protocols"][0]
-    protocol_config["models"][0]["source"] = "synced"
-
-    invalid_response = client.post(
-        "/api/admin/backups/import",
-        headers=admin_headers,
-        files={
-            "file": (
-                "backup.json",
-                json.dumps(payload).encode(),
-                "application/json",
-            )
-        },
-    )
-    assert_error(invalid_response, 400, "Model source does not match sync targets")
-
-    protocol_config["sync_targets"] = [
+    site = payload["sites"][0]
+    for field in ("model_sync_enabled", "model_sync_include", "model_sync_exclude"):
+        site.pop(field)
+    protocol_config = site["protocols"][0]
+    model = protocol_config["models"][0]
+    model.pop("upstream_missing")
+    model["source"] = "synced"
+    protocol_config.update(
         {
-            "credential_id": protocol_config["models"][0]["credential_id"],
-            "model_name": protocol_config["models"][0]["model_name"],
-            "protocol": protocol_config["models"][0]["protocol"],
+            "auto_sync_supported_models": True,
+            "auto_sync_model_pattern": "^gpt-",
+            "sync_targets": [
+                {
+                    "credential_id": model["credential_id"],
+                    "model_name": model["model_name"],
+                    "protocol": model["protocol"],
+                }
+            ],
         }
-    ]
+    )
 
     response = client.post(
         "/api/admin/backups/import",
@@ -323,5 +320,8 @@ def test_import_backup_preserves_sync_targets(
 
     assert response.status_code == 200, response.text
     stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
-    assert stored["protocols"][0]["sync_targets"] == protocol_config["sync_targets"]
+    assert (stored["model_sync_enabled"], stored["model_sync_include"]) == (
+        True,
+        "^gpt-",
+    )
     assert stored["protocols"][0]["models"][0]["source"] == "synced"

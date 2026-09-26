@@ -8,8 +8,6 @@ from ....models.model_groups import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
-    ModelGroupEnsureFromSiteRequest,
-    ModelGroupEnsureFromSiteResponse,
     ModelGroupItemState,
     ModelGroupModelTestRequest,
     ModelGroupUpdate,
@@ -41,13 +39,6 @@ async def list_model_group_candidates(
 ) -> ModelGroupCandidatesResponse:
     """List site models eligible for a model group."""
     return await app_state.group_repo.list_group_candidates(payload)
-
-
-async def ensure_model_groups_from_site(
-    payload: ModelGroupEnsureFromSiteRequest, _: Any = Depends(get_current_admin)
-) -> ModelGroupEnsureFromSiteResponse:
-    """Create or extend model groups from selected site models."""
-    return await app_state.group_repo.ensure_groups_from_site(payload)
 
 
 async def test_model_group_model(

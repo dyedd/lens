@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any, Literal
-from uuid import uuid4
 
 from fastapi import Depends, HTTPException, Query, Request, Response
 
@@ -12,10 +10,6 @@ from ....models.channels import (
     ChannelModelSyncResponse,
 )
 from ....models.health import HealthSummary
-from ....models.model_groups import (
-    ModelGroupEnsureFromSiteRequest,
-    ModelGroupEnsureModelInput,
-)
 from ....models.protocols import ProtocolKind
 from ....models.site_import import SiteBatchImportRequest, SiteBatchImportResult
 from ....models.site_model_test import (
@@ -29,8 +23,6 @@ from ....models.sites import (
     SiteCreate,
     SiteCredential,
     SiteEnabledUpdate,
-    SiteModelGroupSaveRequest,
-    SiteModelGroupSaveResponse,
     SiteUpdate,
 )
 from ..app_state import app_state
@@ -86,128 +78,6 @@ async def update_site(
 ) -> SiteConfig:
     """Update an upstream site."""
     return await app_state.channel_store.update_site(site_id, payload)
-
-
-def _suggest_model_group_name(model_name: str, existing_names: Iterable[str]) -> str:
-    trimmed_model_name = model_name.strip()
-    if not trimmed_model_name:
-        return ""
-
-    comparable_model_name = trimmed_model_name.casefold()
-    best_match = ""
-    for name in existing_names:
-        trimmed_group_name = name.strip()
-        if len(trimmed_group_name) <= len(best_match):
-            continue
-        comparable_group_name = trimmed_group_name.casefold()
-        if (
-            comparable_group_name not in comparable_model_name
-            and comparable_model_name not in comparable_group_name
-        ):
-            continue
-        best_match = trimmed_group_name
-    return best_match or trimmed_model_name
-
-
-def _build_model_group_inputs(
-    site: SiteConfig,
-    existing_group_names: Iterable[str],
-    grouped_model_keys: set[tuple[str, str, str, ProtocolKind]],
-) -> list[ModelGroupEnsureModelInput]:
-    group_names = [name.strip() for name in existing_group_names if name.strip()]
-    credential_ids = {item.id for item in site.credentials}
-    inputs: list[ModelGroupEnsureModelInput] = []
-
-    for protocol_config in site.protocols:
-        configured_protocols = set(protocol_config.protocols)
-        for model in protocol_config.models:
-            model_name = model.model_name.strip()
-            if (
-                not model.enabled
-                or not model_name
-                or model.protocol is None
-                or model.protocol not in configured_protocols
-                or model.credential_id not in credential_ids
-            ):
-                continue
-            key = (
-                protocol_config.id,
-                model.credential_id,
-                model_name,
-                model.protocol,
-            )
-            if key in grouped_model_keys:
-                continue
-            inputs.append(
-                ModelGroupEnsureModelInput(
-                    protocol_config_id=protocol_config.id,
-                    credential_id=model.credential_id,
-                    model_name=model_name,
-                    group_name=_suggest_model_group_name(model_name, group_names),
-                    protocols=[model.protocol],
-                )
-            )
-    return inputs
-
-
-async def _save_site_with_model_groups(
-    site_id: str | None,
-    payload: SiteModelGroupSaveRequest,
-    *,
-    creating: bool,
-) -> SiteModelGroupSaveResponse:
-    next_site_id = site_id or str(uuid4())
-    async with app_state.session_factory() as session:
-        await app_state.channel_store.save_site_in_session(
-            session,
-            next_site_id,
-            payload,
-            creating=creating,
-        )
-        await session.flush()
-        saved_site = await app_state.channel_store.get_site_in_session(
-            session, next_site_id
-        )
-        group_names = await app_state.group_repo.list_execution_group_names_in_session(
-            session
-        )
-        grouped_model_keys = (
-            await app_state.group_repo.list_grouped_model_keys_in_session(session)
-        )
-        models = payload.models
-        if models is None:
-            models = _build_model_group_inputs(
-                saved_site, group_names, grouped_model_keys
-            )
-        group_result = await app_state.group_repo.ensure_groups_from_site_in_session(
-            session,
-            ModelGroupEnsureFromSiteRequest(
-                site_id=next_site_id,
-                dry_run=payload.dry_run,
-                models=models,
-            ),
-        )
-        if payload.dry_run:
-            await session.rollback()
-        else:
-            await session.commit()
-    return SiteModelGroupSaveResponse(site=saved_site, model_groups=group_result)
-
-
-async def create_site_with_model_groups(
-    payload: SiteModelGroupSaveRequest, _: Any = Depends(get_current_admin)
-) -> SiteModelGroupSaveResponse:
-    """Preview or atomically create a site and its automatic model groups."""
-    return await _save_site_with_model_groups(payload.site_id, payload, creating=True)
-
-
-async def update_site_with_model_groups(
-    site_id: str,
-    payload: SiteModelGroupSaveRequest,
-    _: Any = Depends(get_current_admin),
-) -> SiteModelGroupSaveResponse:
-    """Preview or atomically update a site and its automatic model groups."""
-    return await _save_site_with_model_groups(site_id, payload, creating=False)
 
 
 async def update_site_enabled(
@@ -306,10 +176,10 @@ async def test_site_model(
 async def sync_channel_models(
     payload: ChannelModelSyncRequest, _: Any = Depends(get_current_admin)
 ) -> ChannelModelSyncResponse:
-    """Synchronize stored channel models with their upstream sites."""
+    """Add new upstream models to sync-enabled sites and flag vanished ones."""
     from ..tasks.model_sync import sync_channel_models as run_channel_model_sync
 
-    return await run_channel_model_sync(app_state, dry_run=payload.dry_run)
+    return await run_channel_model_sync(app_state, site_ids=payload.site_ids)
 
 
 async def sync_site_credential_rate(

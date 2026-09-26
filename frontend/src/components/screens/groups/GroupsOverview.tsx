@@ -156,10 +156,17 @@ export function GroupsOverview({
 
   return (
     <div className="space-y-3 pb-10">
-      <div className="flex h-10 items-center justify-between gap-3 px-1">
-        <h3 className="text-sm font-semibold">
-          {locale === "zh-CN" ? "模型组管理" : "Model groups"}
-        </h3>
+      <div className="flex min-h-10 items-center justify-between gap-3 px-1">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">
+            {locale === "zh-CN" ? "模型组管理" : "Model groups"}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {locale === "zh-CN"
+              ? "渠道里的模型已可按原名直接调用；模型组用于起别名、合并多个模型名或自定义顺序，同名时模型组优先。"
+              : "Channel models are callable by their own names. Use groups to alias, merge names, or set a custom order; a group wins over a same-named model."}
+          </p>
+        </div>
       </div>
 
       <section className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain py-1 [scrollbar-width:none] md:gap-3 [&::-webkit-scrollbar]:hidden">

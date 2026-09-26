@@ -67,9 +67,8 @@ CRONJOB_SPECS = (
     CronjobSpec(
         id=TASK_CHANNEL_MODEL_SYNC,
         name="渠道模型同步",
-        description="按周期拉取上游模型并同步模型组成员",
+        description="为开启自动同步的渠道拉取上游模型，新增模型直接可用，下线模型待确认",
         default_interval_hours=24,
-        default_enabled=False,
     ),
     CronjobSpec(
         id=TASK_CREDENTIAL_RATE_SYNC,
@@ -173,7 +172,7 @@ class AppState:
     async def _sync_channel_models(self) -> None:
         from .tasks.model_sync import sync_channel_models
 
-        await sync_channel_models(self, dry_run=False)
+        await sync_channel_models(self)
 
     async def _sync_credential_rates(self) -> None:
         from .tasks.credential_rate_tasks import sync_all_site_credential_rates

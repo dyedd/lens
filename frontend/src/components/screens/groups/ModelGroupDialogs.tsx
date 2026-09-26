@@ -58,7 +58,6 @@ interface GroupEditorDialogProps {
   filteredCandidates: ModelGroupCandidateItem[];
   refetchCandidates: () => unknown;
   isFetchingCandidates: boolean;
-  applySavedFilter: () => void;
   clearSavedFilter: () => void;
   groupedCandidates: CandidateChannelGroup[];
   expandedChannels: string[];
@@ -173,7 +172,6 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 filteredCandidateCount={props.filteredCandidates.length}
                 refetchCandidates={props.refetchCandidates}
                 isFetchingCandidates={props.isFetchingCandidates}
-                applySavedFilter={props.applySavedFilter}
                 clearSavedFilter={props.clearSavedFilter}
               />
               <ModelGroupCandidateList

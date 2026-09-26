@@ -5,6 +5,7 @@ import type {
   Site,
   SiteCredential,
   SiteModelInput,
+  SiteModelSyncSettings,
 } from "@/lib/api/sites";
 import type { Locale } from "@/lib/I18nContext";
 
@@ -32,19 +33,10 @@ export type FormProtocolConfig = {
   base_url_id: string;
   credential_ids: string[];
   protocols: ProtocolKind[];
-  auto_sync_supported_models: boolean;
-  auto_sync_model_pattern: string;
-  sync_targets: FormSyncTarget[];
   models: FormModel[];
 };
 
-export type FormSyncTarget = {
-  credential_id: string;
-  model_name: string;
-  protocol: ProtocolKind;
-};
-
-export type FormState = {
+export type FormState = SiteModelSyncSettings & {
   name: string;
   tags: string[];
   newApiKeysLines: string;
@@ -58,8 +50,8 @@ export type FormState = {
 };
 
 export type PickerModelItem = {
+  protocol_config_id: string;
   credential_id: string;
-  credential_name?: string;
   model_name: string;
 };
 

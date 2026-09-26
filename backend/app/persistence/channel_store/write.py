@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.protocols import ProtocolKind
+from app.models.protocols import ModelSource
 from app.models.sites import (
     SiteBaseUrl,
     SiteCreate,
@@ -26,7 +26,6 @@ from app.persistence.entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolConfigSyncTargetEntity,
 )
 
 from .cleanup import SiteConfigurationCleanupMixin
@@ -95,7 +94,6 @@ class SiteProtocolConfigUpsertsMixin:
                     [
                         *protocol_config.protocols,
                         *(model.protocol for model in protocol_config.models),
-                        *(target.protocol for target in protocol_config.sync_targets),
                     ]
                 )
             )
@@ -103,18 +101,8 @@ class SiteProtocolConfigUpsertsMixin:
                 [protocol.value for protocol in configured_protocols],
                 ensure_ascii=True,
             )
-            entity.auto_sync_supported_models = int(
-                protocol_config.auto_sync_supported_models
-            )
-            entity.auto_sync_model_pattern = protocol_config.auto_sync_model_pattern
 
             await self._upsert_protocol_config_models(
-                session,
-                protocol_config_id,
-                protocol_config,
-                selected_credential_ids,
-            )
-            await self._replace_protocol_config_sync_targets(
                 session,
                 protocol_config_id,
                 protocol_config,
@@ -178,68 +166,10 @@ class SiteProtocolConfigUpsertsMixin:
                     sort_order=model_index,
                     protocol=protocol_value,
                     source=model.source.value,
+                    upstream_missing=int(
+                        model.upstream_missing and model.source == ModelSource.SYNCED
+                    ),
                 )
-            )
-
-    async def _replace_protocol_config_sync_targets(
-        self,
-        session: AsyncSession,
-        protocol_config_id: str,
-        protocol_config: SiteProtocolConfigInput,
-        credential_ids: set[str],
-    ) -> None:
-        await session.execute(
-            delete(SiteProtocolConfigSyncTargetEntity).where(
-                SiteProtocolConfigSyncTargetEntity.protocol_config_id
-                == protocol_config_id
-            )
-        )
-        seen_targets: set[tuple[str, str, ProtocolKind]] = set()
-        manual_model_keys = {
-            (model.credential_id, model.model_name.strip(), model.protocol)
-            for model in protocol_config.models
-            if model.source.value == "manual"
-        }
-        for target in protocol_config.sync_targets:
-            if target.credential_id not in credential_ids:
-                raise ValueError(
-                    "Sync target credential not found in protocol config "
-                    f"{protocol_config_id}: {target.credential_id}"
-                )
-            model_name = target.model_name.strip()
-            target_key = (target.credential_id, model_name, target.protocol)
-            if not model_name or target_key in seen_targets:
-                raise ValueError(
-                    f"Duplicate sync target in protocol config {protocol_config_id}: "
-                    f"{model_name}"
-                )
-            seen_targets.add(target_key)
-            if target_key in manual_model_keys:
-                raise ValueError(
-                    "Sync target conflicts with manual model in protocol config "
-                    f"{protocol_config_id}: {model_name}"
-                )
-            session.add(
-                SiteProtocolConfigSyncTargetEntity(
-                    id=str(uuid.uuid4()),
-                    protocol_config_id=protocol_config_id,
-                    credential_id=target.credential_id,
-                    protocol=target.protocol.value,
-                    model_name=model_name,
-                )
-            )
-        synced_model_keys = {
-            (model.credential_id, model.model_name.strip(), model.protocol)
-            for model in protocol_config.models
-            if model.source.value == "synced"
-        }
-        if not protocol_config.auto_sync_supported_models and (
-            missing_targets := synced_model_keys - seen_targets
-        ):
-            _, model_name, _ = next(iter(missing_targets))
-            raise ValueError(
-                "Synced model is missing its sync target in protocol config "
-                f"{protocol_config_id}: {model_name}"
             )
 
 
@@ -278,6 +208,9 @@ class SiteConfigUpsertsMixin(
                     proxy_mode=payload.proxy_mode.value,
                     channel_proxy=payload.channel_proxy.strip(),
                     param_override=_dump_rules(payload.param_override),
+                    model_sync_enabled=int(payload.model_sync_enabled),
+                    model_sync_include=payload.model_sync_include,
+                    model_sync_exclude=payload.model_sync_exclude,
                 )
             )
         else:
@@ -289,6 +222,9 @@ class SiteConfigUpsertsMixin(
             site.proxy_mode = payload.proxy_mode.value
             site.channel_proxy = payload.channel_proxy.strip()
             site.param_override = _dump_rules(payload.param_override)
+            site.model_sync_enabled = int(payload.model_sync_enabled)
+            site.model_sync_include = payload.model_sync_include
+            site.model_sync_exclude = payload.model_sync_exclude
 
         await self._upsert_base_urls(session, site_id, built_base_urls)
         current_protocol_config_ids = set(
