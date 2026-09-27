@@ -290,6 +290,7 @@ async def _finish_attempt(
             channel.id,
             credential_id=target.credential_id,
             model_name=target.model_name,
+            fault_protocol=target.fault_protocol,
             started_revision=run.route_started_revision,
         )
 
@@ -317,6 +318,7 @@ async def _finish_attempt(
             _finalize_stream_request,
             log_ctx=run.log_ctx,
             channel=channel,
+            fault_protocol=target.fault_protocol,
             result=result,
             attempts=attempt_logs_to_dicts(run.log_ctx.attempts),
         )
@@ -385,6 +387,7 @@ async def _finalize_stream_request(
     *,
     log_ctx: RequestLogger,
     channel: ChannelConfig,
+    fault_protocol: str,
     result: UpstreamResult,
     attempts: list[dict[str, Any]],
 ) -> None:
@@ -392,6 +395,7 @@ async def _finalize_stream_request(
     outcome = stream_log_outcome(result, result.stream_capture)
     await _record_stream_route_health(
         channel=channel,
+        fault_protocol=fault_protocol,
         capture=result.stream_capture,
         capture_issue=outcome.capture_issue,
         lifecycle_status=outcome.lifecycle_status,
@@ -409,6 +413,7 @@ async def _finalize_stream_request(
 async def _record_stream_route_health(
     *,
     channel: ChannelConfig,
+    fault_protocol: str,
     capture: StreamCapture | None,
     capture_issue: str | None,
     lifecycle_status: RequestLogLifecycleStatus,
@@ -422,6 +427,7 @@ async def _record_stream_route_health(
             channel.id,
             credential_id=credential_id,
             model_name=model_name,
+            fault_protocol=fault_protocol,
             started_revision=(
                 capture.route_started_revision
                 if capture is not None and capture.route_started_revision >= 0
@@ -448,6 +454,7 @@ async def _record_stream_route_health(
         cooldown_seconds=cooldown_seconds,
         credential_id=credential_id,
         model_name=model_name,
+        fault_protocol=fault_protocol,
     )
 
 
@@ -493,6 +500,7 @@ async def _record_target_failure(
             scope=scope,
             credential_id=run.target.credential_id,
             model_name=run.target.model_name,
+            fault_protocol=run.target.fault_protocol,
             cooldown_seconds=exc.router_cooldown_seconds,
         )
     run.failures.record(message, exc.status_code)

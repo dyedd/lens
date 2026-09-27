@@ -80,11 +80,11 @@ class SiteEntity(Base):
     model_sync_enabled: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
-    model_sync_include: Mapped[str] = mapped_column(
-        Text, nullable=False, default="", server_default=text("''")
+    model_sync_include_rule_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
     )
-    model_sync_exclude: Mapped[str] = mapped_column(
-        Text, nullable=False, default="", server_default=text("''")
+    model_sync_exclude_rule_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
     )
 
 
@@ -186,8 +186,8 @@ class ModelGroupEntity(Base):
     match_models_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    match_regex: Mapped[str] = mapped_column(
-        Text, nullable=False, default="", server_default=text("''")
+    match_rule_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
     )
     param_override: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     headers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
@@ -219,6 +219,19 @@ class ModelGroupItemEntity(Base):
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
+
+
+class RegexRuleEntity(Base):
+    __tablename__ = "regex_rules"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(
+        String(60), nullable=False, unique=True, index=True
+    )
+    pattern: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=text("''")
+    )
 
 
 class SettingEntity(Base):

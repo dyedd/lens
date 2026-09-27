@@ -1,4 +1,5 @@
 import {
+  BookMarked,
   type LucideIcon,
   Palette,
   ServerCog,
@@ -17,6 +18,7 @@ export interface SettingsTabDefinition {
     | "gateway"
     | "model-test"
     | "circuit-breaker"
+    | "regex-rules"
     | "api-keys"
     | "cronjobs"
     | "backups";
@@ -48,6 +50,11 @@ export function createSettingsTabs(
       value: "circuit-breaker",
       label: titleForLocale(locale, "冷却与健康", "Cooldown and health"),
       icon: ShieldAlert,
+    },
+    {
+      value: "regex-rules",
+      label: titleForLocale(locale, "正则规则库", "Regex library"),
+      icon: BookMarked,
     },
     {
       value: "api-keys",

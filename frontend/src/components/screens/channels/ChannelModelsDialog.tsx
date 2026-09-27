@@ -301,13 +301,16 @@ export function ChannelModelsDialog({
                   : `Manage models - ${channelName}`}
               </DialogTitle>
               <DialogDescription>
-                {syncEnabled
-                  ? locale === "zh-CN"
-                    ? "已开启自动同步：删除的同步模型会在下次同步时重新加入，停用即可排除；待确认的模型已暂停调用，可保留或删除。"
-                    : "Auto-sync is on: deleted synced models return on the next sync, so disable them instead. Models to review are paused; keep or delete them."
-                  : locale === "zh-CN"
-                    ? "默认按客户端协议透传，也可指定上游协议进行转换。"
-                    : "Forward the client protocol by default, or select an upstream protocol for conversion."}
+                {locale === "zh-CN"
+                  ? "auto 按客户端协议透传；指定 OpenAI Chat/Responses 时可为其他客户端转换。"
+                  : "Auto passes the client protocol through; OpenAI Chat/Responses can convert for other clients."}
+                {syncEnabled ? (
+                  <span className="block">
+                    {locale === "zh-CN"
+                      ? "已开启自动同步：删除的同步模型会在下次同步时重新加入，停用即可排除；待确认的模型已暂停调用，可保留或删除。"
+                      : "Auto-sync is on: deleted synced models return on the next sync, so disable them instead. Models to review are paused; keep or delete them."}
+                  </span>
+                ) : null}
               </DialogDescription>
             </DialogHeader>
             <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -672,30 +675,46 @@ export function ChannelModelsDialog({
                         </TableCell>
                         <TableCell className="max-w-[220px] py-1.5 font-mono text-xs text-muted-foreground">
                           <div className="flex min-h-7 min-w-0 items-center gap-1.5">
-                            <span className="truncate" title={model.modelName}>
-                              {model.modelName}
-                            </span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="truncate">
+                                  {model.modelName}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-sm break-all">
+                                {model.modelName}
+                              </TooltipContent>
+                            </Tooltip>
                             {model.upstreamMissing ? (
-                              <Badge
-                                variant="destructive"
-                                className="shrink-0 font-sans"
-                                title={
-                                  locale === "zh-CN"
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge
+                                    variant="destructive"
+                                    className="shrink-0 font-sans"
+                                    tabIndex={0}
+                                  >
+                                    {locale === "zh-CN" ? "待确认" : "Review"}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {locale === "zh-CN"
                                     ? "上游已不再提供，暂停调用"
-                                    : "No longer listed upstream; paused"
-                                }
-                              >
-                                {locale === "zh-CN" ? "待确认" : "Review"}
-                              </Badge>
+                                    : "No longer listed upstream; paused"}
+                                </TooltipContent>
+                              </Tooltip>
                             ) : null}
                           </div>
                           {hasMultipleBaseUrls ? (
-                            <p
-                              className="truncate text-[11px] leading-4"
-                              title={model.baseUrl}
-                            >
-                              {formatBaseUrlLabel(model.baseUrl)}
-                            </p>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <p className="truncate text-[11px] leading-4">
+                                  {formatBaseUrlLabel(model.baseUrl)}
+                                </p>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-sm break-all">
+                                {model.baseUrl}
+                              </TooltipContent>
+                            </Tooltip>
                           ) : null}
                         </TableCell>
                         <TableCell className="w-[150px] py-1.5">

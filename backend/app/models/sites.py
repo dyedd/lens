@@ -1,11 +1,12 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
 
 from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
+from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel, validate_regex_pattern
+from .validation import StrictBaseModel
 
 
 def require_non_empty_text(value: str) -> str:
@@ -42,14 +43,6 @@ def _canonicalize_site_tags(values: list[str]) -> list[str]:
 
 
 SiteTags = Annotated[list[str], AfterValidator(_canonicalize_site_tags)]
-ModelSyncPattern = Annotated[
-    str,
-    AfterValidator(
-        lambda value: validate_regex_pattern(
-            value.strip(), error_label="model sync pattern"
-        )
-    ),
-]
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
 
 
@@ -173,41 +166,11 @@ class SiteConfig(StrictBaseModel):
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     model_sync_enabled: bool = False
-    model_sync_include: ModelSyncPattern = ""
-    model_sync_exclude: ModelSyncPattern = ""
+    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
+    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
-
-    @model_validator(mode="before")
-    @classmethod
-    def convert_protocol_model_sync(cls, data: Any) -> Any:
-        """Accept backups written while model sync lived on protocol configs."""
-        if not isinstance(data, dict) or "model_sync_enabled" in data:
-            return data
-        protocols = data.get("protocols")
-        if not isinstance(protocols, list):
-            return data
-        is_sync_enabled = False
-        include_pattern = ""
-        converted_protocols: list[Any] = []
-        for protocol in protocols:
-            if not isinstance(protocol, dict):
-                converted_protocols.append(protocol)
-                continue
-            converted = dict(protocol)
-            converted.pop("sync_targets", None)
-            pattern = str(converted.pop("auto_sync_model_pattern", "") or "").strip()
-            if converted.pop("auto_sync_supported_models", False):
-                is_sync_enabled = True
-                include_pattern = include_pattern or pattern
-            converted_protocols.append(converted)
-        return {
-            **data,
-            "protocols": converted_protocols,
-            "model_sync_enabled": is_sync_enabled,
-            "model_sync_include": include_pattern,
-        }
 
 
 class SiteCreate(StrictBaseModel):
@@ -218,8 +181,8 @@ class SiteCreate(StrictBaseModel):
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     model_sync_enabled: bool = False
-    model_sync_include: ModelSyncPattern = ""
-    model_sync_exclude: ModelSyncPattern = ""
+    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
+    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -233,8 +196,8 @@ class SiteUpdate(StrictBaseModel):
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     model_sync_enabled: bool = False
-    model_sync_include: ModelSyncPattern = ""
-    model_sync_exclude: ModelSyncPattern = ""
+    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
+    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)

@@ -17,6 +17,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/Popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import { ChannelBaseUrlSection } from "./ChannelBaseUrlSection";
 import { ChannelCredentialSection } from "./ChannelCredentialSection";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
@@ -193,24 +198,32 @@ export function ChannelBasicInfoSection({
             {form.tags.map((tag) => (
               <Badge key={tag} variant="secondary" className="pr-1">
                 {tag}
-                <button
-                  type="button"
-                  className="inline-flex size-4 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={
-                    locale === "zh-CN" ? `移除标签 ${tag}` : `Remove tag ${tag}`
-                  }
-                  title={
-                    locale === "zh-CN" ? `移除标签 ${tag}` : `Remove tag ${tag}`
-                  }
-                  onClick={() =>
-                    setForm((current) => ({
-                      ...current,
-                      tags: current.tags.filter((item) => item !== tag),
-                    }))
-                  }
-                >
-                  <X size={12} />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex size-4 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={
+                        locale === "zh-CN"
+                          ? `移除标签 ${tag}`
+                          : `Remove tag ${tag}`
+                      }
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          tags: current.tags.filter((item) => item !== tag),
+                        }))
+                      }
+                    >
+                      <X size={12} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {locale === "zh-CN"
+                      ? `移除标签 ${tag}`
+                      : `Remove tag ${tag}`}
+                  </TooltipContent>
+                </Tooltip>
               </Badge>
             ))}
           </div>

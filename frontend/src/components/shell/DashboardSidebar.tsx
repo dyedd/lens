@@ -137,38 +137,46 @@ export function DashboardSidebar({
                     {siteName}
                   </span>
                   {versionText ? (
-                    <span
-                      className="shrink-0 text-xs font-normal text-muted-foreground"
-                      title={versionTitle}
-                    >
-                      {versionText}
-                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                          {versionText}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        {versionTitle}
+                      </TooltipContent>
+                    </Tooltip>
                   ) : null}
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
           {hasUpdate ? (
-            updateReleaseUrl ? (
-              <Badge
-                asChild
-                variant="destructive"
-                className={updateBadgeClassName}
-                title={updateTitle}
-              >
-                <a href={updateReleaseUrl} target="_blank" rel="noreferrer">
-                  {updateBadge}
-                </a>
-              </Badge>
-            ) : (
-              <Badge
-                variant="destructive"
-                className={updateBadgeClassName}
-                title={updateTitle}
-              >
-                {updateBadge}
-              </Badge>
-            )
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {updateReleaseUrl ? (
+                  <Badge
+                    asChild
+                    variant="destructive"
+                    className={updateBadgeClassName}
+                  >
+                    <a href={updateReleaseUrl} target="_blank" rel="noreferrer">
+                      {updateBadge}
+                    </a>
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="destructive"
+                    className={updateBadgeClassName}
+                    tabIndex={0}
+                  >
+                    {updateBadge}
+                  </Badge>
+                )}
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{updateTitle}</TooltipContent>
+            </Tooltip>
           ) : null}
           <SidebarTrigger
             aria-label="Toggle sidebar"

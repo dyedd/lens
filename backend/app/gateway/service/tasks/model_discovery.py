@@ -12,6 +12,7 @@ from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
 from ...upstream_request import (
+    build_upstream_auth_headers,
     build_upstream_headers,
     resolve_channel_api_key,
     resolve_channel_model_list_url,
@@ -54,21 +55,17 @@ def _model_list_request(
     channel: ChannelConfig, upstream_headers_config: Mapping[str, Any] | None = None
 ) -> dict[str, Any]:
     api_key = resolve_channel_api_key(channel)
-    headers = list(channel.headers)
+    url = resolve_channel_model_list_url(channel, api_key)
 
     return {
         "method": "GET",
-        "url": resolve_channel_model_list_url(channel),
+        "url": url,
         "headers": build_upstream_headers(
-            {"authorization": f"Bearer {api_key}"},
-            headers,
+            build_upstream_auth_headers(channel, api_key),
+            list(channel.headers),
             user_agent=default_lens_user_agent(),
             upstream_headers_config=upstream_headers_config,
-            context=request_rule_context(
-                resolve_channel_model_list_url(channel),
-                model_name="",
-                protocol=channel.protocol,
-            ),
+            context=request_rule_context(url, model_name="", protocol=channel.protocol),
         ),
     }
 
@@ -106,7 +103,8 @@ def _parse_model_list(payload: dict[str, Any]) -> list[str]:
             continue
         value = str(item.get("id") or "").strip()
         if not value:
-            value = str(item.get("name") or "").strip()
+            # Gemini lists resource names such as "models/gemini-2.5-pro".
+            value = str(item.get("name") or "").strip().removeprefix("models/")
         if not value:
             continue
         if value not in seen:

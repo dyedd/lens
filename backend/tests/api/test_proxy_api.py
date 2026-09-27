@@ -548,6 +548,57 @@ def test_auto_channel_uses_client_protocol_for_upstream_request(
     assert logs["items"][0]["success"] is True
 
 
+def test_auto_channel_failure_does_not_cool_down_other_client_protocols(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        if httpx.URL(upstream.url).path == "/v1/messages":
+            return httpx.Response(
+                404,
+                json={"error": {"message": "not found"}},
+                request=httpx.Request("POST", upstream.url),
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "hi"}}]},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(valid_site_payload(protocols=["auto"], model_name="auto-model"))
+    create_model_group(
+        name="auto-model",
+        items=[_protocol_group_item("auto", "auto-model")],
+    )
+    key = create_gateway_key()
+    anthropic = client.post(
+        "/v1/messages",
+        headers=gateway_headers(key),
+        json={"model": "auto-model", "messages": [], "max_tokens": 10},
+    )
+    assert anthropic.status_code == 502, anthropic.text
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "auto-model", "messages": []},
+    )
+
+    assert response.status_code == 200, response.text
+
+
 def test_model_group_param_override_has_highest_priority(
     client,
     admin_headers,

@@ -9,6 +9,7 @@ from .validation import StrictBaseModel, validate_regex_pattern
 
 class SiteModelFetchRequest(StrictBaseModel):
     base_url: HttpUrl
+    protocol: ProtocolKind = ProtocolKind.OPENAI_CHAT
     headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""

@@ -10,7 +10,6 @@ from ....models.channels import (
     ChannelModelSyncResponse,
 )
 from ....models.health import HealthSummary
-from ....models.protocols import ProtocolKind
 from ....models.site_import import SiteBatchImportRequest, SiteBatchImportResult
 from ....models.site_model_test import (
     SiteModelFetchItem,
@@ -128,7 +127,7 @@ async def fetch_site_models(
         channel = ChannelConfig(
             id="preview",
             name=preview["credential_name"] or "preview",
-            protocol=ProtocolKind.OPENAI_CHAT,
+            protocol=payload.protocol,
             base_url=payload.base_url,
             api_key=credential.api_key,
             headers=payload.headers,

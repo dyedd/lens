@@ -19,6 +19,11 @@ import {
 import { Spinner } from "@/components/ui/Spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Textarea } from "@/components/ui/Textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { SiteModelTestResult } from "@/lib/api/sites";
 import { protocolLabel } from "@/lib/protocols";
@@ -44,6 +49,8 @@ type Props = {
   onPromptModeChange: (value: string) => void;
   onPromptChange: (value: string) => void;
   onRun: () => void;
+  /** Batch only: applies a protocol to every row that offers it. */
+  onProtocolChangeAll?: (protocol: ProtocolKind) => void;
   targetName?: string;
   /** Keys that can run a single test; a selector shows when there are several. */
   credentialOptions?: Array<{ value: string; label: string }>;
@@ -55,9 +62,16 @@ function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-3 text-xs leading-5">
       <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate" title={value}>
-        {value || "-"}
-      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="min-w-0 truncate">{value || "-"}</span>
+        </TooltipTrigger>
+        {value ? (
+          <TooltipContent className="max-w-sm break-all">
+            {value}
+          </TooltipContent>
+        ) : null}
+      </Tooltip>
     </div>
   );
 }
@@ -93,6 +107,7 @@ export function ModelTestDialog({
   onPromptModeChange,
   onPromptChange,
   onRun,
+  onProtocolChangeAll,
   targetName,
   credentialOptions = [],
   credentialValue,
@@ -104,6 +119,13 @@ export function ModelTestDialog({
   const { target, result, protocol, protocols, onProtocolChange, onDelete } =
     activeItem ?? {};
   const isChinese = locale === "zh-CN";
+  const allProtocols = Array.from(
+    new Set(
+      items.flatMap((item) =>
+        item.protocols.length > 1 ? item.protocols : [],
+      ),
+    ),
+  );
   const canRun =
     Boolean(prompt.trim()) &&
     items.length > 0 &&
@@ -165,6 +187,42 @@ export function ModelTestDialog({
                   </Select>
                 </div>
               ) : null}
+              {items.length > 1 &&
+              onProtocolChangeAll &&
+              allProtocols.length ? (
+                <div className="flex items-center justify-end gap-2 px-3">
+                  <span className="text-xs text-muted-foreground">
+                    {isChinese ? "全部设为" : "Set all"}
+                  </span>
+                  <Select
+                    value=""
+                    onValueChange={(value) =>
+                      onProtocolChangeAll(value as ProtocolKind)
+                    }
+                    disabled={testing}
+                  >
+                    <SelectTrigger
+                      className="h-7 w-36"
+                      aria-label={
+                        isChinese
+                          ? "全部设为测试协议"
+                          : "Set all test protocols"
+                      }
+                    >
+                      <SelectValue
+                        placeholder={isChinese ? "选择协议" : "Choose protocol"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allProtocols.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {protocolLabel(value, locale)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
               {items.length > 1 ? (
                 <div className="max-h-36 overflow-y-auto rounded-md bg-muted/35 p-1">
                   {items.map((item, index) => (
@@ -172,14 +230,20 @@ export function ModelTestDialog({
                       key={`${item.target.modelName}-${index}`}
                       className="flex min-w-0 items-center gap-2 px-2 py-1 text-xs"
                     >
-                      <button
-                        type="button"
-                        className={`min-w-0 flex-1 truncate text-left ${index === activeIndex ? "font-medium text-foreground" : "text-muted-foreground"}`}
-                        onClick={() => setActiveIndex(index)}
-                        title={`${item.target.modelName} · ${item.target.upstreamName}`}
-                      >
-                        {item.target.modelName} · {item.target.upstreamName}
-                      </button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className={`min-w-0 flex-1 truncate text-left ${index === activeIndex ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                            onClick={() => setActiveIndex(index)}
+                          >
+                            {item.target.modelName} · {item.target.upstreamName}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-sm break-all">
+                          {item.target.modelName} · {item.target.upstreamName}
+                        </TooltipContent>
+                      </Tooltip>
                       <span
                         className={
                           item.result?.success
@@ -204,12 +268,16 @@ export function ModelTestDialog({
                             : "-"}
                       </span>
                       {item.protocols.length === 1 && item.protocol ? (
-                        <span
-                          className="w-28 shrink-0 truncate text-right text-muted-foreground"
-                          title={protocolLabel(item.protocol, locale)}
-                        >
-                          {protocolLabel(item.protocol, locale)}
-                        </span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="w-28 shrink-0 truncate text-right text-muted-foreground">
+                              {protocolLabel(item.protocol, locale)}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {protocolLabel(item.protocol, locale)}
+                          </TooltipContent>
+                        </Tooltip>
                       ) : (
                         <Select
                           value={item.protocol ?? ""}

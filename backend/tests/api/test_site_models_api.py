@@ -65,6 +65,76 @@ def test_fetch_site_models_uses_selected_credentials(
     ]
 
 
+@pytest.mark.parametrize(
+    ("protocol", "path", "expected_params", "expected_headers", "upstream_body"),
+    [
+        pytest.param(
+            "anthropic",
+            "/v1/models",
+            {"limit": "1000"},
+            {"x-api-key": "upstream-secret", "anthropic-version": "2023-06-01"},
+            {"data": [{"id": "model-a"}, {"id": "model-b"}]},
+            id="anthropic",
+        ),
+        pytest.param(
+            "gemini",
+            "/v1beta/models",
+            {"key": "upstream-secret", "pageSize": "1000"},
+            {},
+            {"models": [{"name": "models/model-a"}, {"name": "models/model-b"}]},
+            id="gemini",
+        ),
+    ],
+)
+def test_fetch_site_models_uses_protocol_native_model_list(
+    client,
+    admin_headers,
+    monkeypatch,
+    protocol,
+    path,
+    expected_params,
+    expected_headers,
+    upstream_body,
+) -> None:
+    import app.gateway.service.tasks.model_discovery as model_discovery
+
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json=upstream_body)
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        model_discovery, "resolve_http_client", lambda _proxy: upstream_client
+    )
+
+    response = client.post(
+        "/api/admin/site-model-discoveries",
+        headers=admin_headers,
+        json={
+            "base_url": "https://upstream.example",
+            "protocol": protocol,
+            "credentials": [
+                {"id": "cred-a", "name": "primary", "api_key": "upstream-secret"}
+            ],
+            "credential_ids": ["cred-a"],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert sorted(item["model_name"] for item in response.json()) == [
+        "model-a",
+        "model-b",
+    ]
+    request = captured[0]
+    assert request.url.path == path
+    assert dict(request.url.params) == expected_params
+    assert "authorization" not in request.headers
+    for name, value in expected_headers.items():
+        assert request.headers[name] == value
+
+
 def test_fetch_site_models_reports_missing_credentials(client, admin_headers) -> None:
     response = client.post(
         "/api/admin/site-model-discoveries",
@@ -415,32 +485,43 @@ def test_channel_model_sync_adds_filtered_upstream_models_for_each_credential(
     client,
     admin_headers,
     monkeypatch,
+    create_regex_rule,
 ) -> None:
+    include_ids = [
+        create_regex_rule("GPT", "^gpt-")["id"],
+        create_regex_rule("o1", "^o1-")["id"],
+    ]
+    exclude_ids = [create_regex_rule("Preview", "-preview$")["id"]]
     _create_sync_site(
         client,
         admin_headers,
-        _sync_site_payload(model_sync_include="^gpt-", model_sync_exclude="-preview$"),
+        _sync_site_payload(
+            model_sync_include_rule_ids=include_ids,
+            model_sync_exclude_rule_ids=exclude_ids,
+        ),
     )
 
     async def fake_fetch(channel: Any) -> list[str]:
         assert len(channel.keys) == 1
-        return ["gpt-4o", "gpt-4o-preview", "claude-3-opus"]
+        return ["gpt-4o", "GPT-4o-preview", "O1-mini", "claude-3-opus"]
 
     _patch_upstream_models(monkeypatch, fake_fetch)
 
     result = _run_model_sync(client, admin_headers)
 
     assert {
-        (item["credential_id"], item["status"], tuple(item["added"]))
+        (item["credential_id"], item["status"], tuple(sorted(item["added"])))
         for item in result["items"]
     } == {
-        ("cred-a", "updated", ("gpt-4o",)),
-        ("cred-b", "updated", ("gpt-4o",)),
+        ("cred-a", "updated", ("O1-mini", "gpt-4o")),
+        ("cred-b", "updated", ("O1-mini", "gpt-4o")),
     }
     assert _stored_models(client, admin_headers) == {
         ("cred-a", "manual-only", "manual", False),
         ("cred-a", "gpt-4o", "synced", False),
+        ("cred-a", "O1-mini", "synced", False),
         ("cred-b", "gpt-4o", "synced", False),
+        ("cred-b", "O1-mini", "synced", False),
     }
 
 

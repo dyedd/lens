@@ -1,6 +1,7 @@
 import { type Dispatch, type SetStateAction, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
+import type { ProtocolKind } from "@/lib/api/protocols";
 import type {
   SiteModelFetchItem,
   SiteModelFetchPayload,
@@ -33,6 +34,21 @@ export type RemoteModelCatalog = {
   hasMultipleBaseUrls: boolean;
 };
 
+/** Lists a native Anthropic or Gemini URL in its own protocol; everything else, auto included, as OpenAI Chat. */
+function discoveryProtocol(protocols: ProtocolKind[]): ProtocolKind {
+  if (
+    protocols.includes("openai_chat") ||
+    protocols.includes("openai_responses")
+  ) {
+    return "openai_chat";
+  }
+  return (
+    protocols.find(
+      (protocol) => protocol === "anthropic" || protocol === "gemini",
+    ) ?? "openai_chat"
+  );
+}
+
 /** Owns upstream catalog discovery and import into the channel form. */
 export function useChannelModelPicker({
   form,
@@ -57,10 +73,10 @@ export function useChannelModelPicker({
       if (!credentialIds.size || !baseUrl) return [];
       const payload: SiteModelFetchPayload = {
         base_url: baseUrl,
+        protocol: discoveryProtocol(config.protocols),
         headers,
         proxy_mode: form.proxy_mode,
         channel_proxy: form.channel_proxy.trim(),
-        match_regex: "",
         credentials: form.credentials
           .map((item, index) => ({
             id: item.id,

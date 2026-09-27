@@ -1,7 +1,7 @@
 import { CloudDownload, RefreshCcw, Settings2 } from "lucide-react";
 import type { Dispatch, FormEventHandler, SetStateAction } from "react";
+import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import {
   Sheet,
   SheetContent,
@@ -90,33 +90,47 @@ function ChannelModelSection({
           />
         </div>
         {form.model_sync_enabled ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Input
-              value={form.model_sync_include}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  model_sync_include: event.target.value,
-                }))
-              }
-              placeholder={
-                isZh ? "只同步匹配（正则，可留空）" : "Include regex"
-              }
-              aria-label={isZh ? "只同步匹配的模型" : "Include regex"}
-              className="h-8 font-mono text-xs"
-            />
-            <Input
-              value={form.model_sync_exclude}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  model_sync_exclude: event.target.value,
-                }))
-              }
-              placeholder={isZh ? "排除匹配（正则，可留空）" : "Exclude regex"}
-              aria-label={isZh ? "排除匹配的模型" : "Exclude regex"}
-              className="h-8 font-mono text-xs"
-            />
+          <div className="space-y-1">
+            <div className="flex items-start gap-2">
+              <span className="w-14 shrink-0 text-xs leading-6 text-muted-foreground">
+                {isZh ? "只同步" : "Include"}
+              </span>
+              <RegexRulePicker
+                locale={locale}
+                label={
+                  isZh
+                    ? "只同步匹配这些规则的模型"
+                    : "Only sync models matching these rules"
+                }
+                value={form.model_sync_include_rule_ids}
+                onChange={(ruleIds) =>
+                  setForm((current) => ({
+                    ...current,
+                    model_sync_include_rule_ids: ruleIds,
+                  }))
+                }
+              />
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="w-14 shrink-0 text-xs leading-6 text-muted-foreground">
+                {isZh ? "排除" : "Exclude"}
+              </span>
+              <RegexRulePicker
+                locale={locale}
+                label={
+                  isZh
+                    ? "不同步匹配这些规则的模型"
+                    : "Skip models matching these rules"
+                }
+                value={form.model_sync_exclude_rule_ids}
+                onChange={(ruleIds) =>
+                  setForm((current) => ({
+                    ...current,
+                    model_sync_exclude_rule_ids: ruleIds,
+                  }))
+                }
+              />
+            </div>
           </div>
         ) : null}
         <div className="flex h-7 items-center justify-between gap-2">

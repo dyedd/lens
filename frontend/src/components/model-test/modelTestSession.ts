@@ -13,15 +13,16 @@ export type ModelTestDialogTarget = {
   upstreamName: string;
 };
 
+/** Keeps a valid choice, else the only protocol, else OpenAI Chat as model discovery assumes. */
 export function selectedModelTestProtocol(
   protocols: ProtocolKind[],
   selectedProtocol: ProtocolKind | null,
-) {
-  return selectedProtocol && protocols.includes(selectedProtocol)
-    ? selectedProtocol
-    : protocols.length === 1
-      ? protocols[0]
-      : null;
+): ProtocolKind | null {
+  if (selectedProtocol && protocols.includes(selectedProtocol)) {
+    return selectedProtocol;
+  }
+  if (protocols.length === 1) return protocols[0];
+  return protocols.includes("openai_chat") ? "openai_chat" : null;
 }
 
 /** Loads the configured model-test prompts with defaults applied. */

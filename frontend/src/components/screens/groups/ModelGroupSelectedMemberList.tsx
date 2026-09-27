@@ -216,7 +216,6 @@ function FailoverMemberList({
             <Badge
               variant="secondary"
               aria-label={`${locale === "zh-CN" ? "优先级" : "Priority"} ${channelGroup.priority}`}
-              title={`${locale === "zh-CN" ? "优先级" : "Priority"} ${channelGroup.priority}`}
             >
               {locale === "zh-CN" ? "优先级" : "Priority"}{" "}
               {channelGroup.priority}

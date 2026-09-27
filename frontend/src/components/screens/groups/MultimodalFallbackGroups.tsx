@@ -15,6 +15,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/Popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { ModelGroup } from "@/lib/api/groups";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
@@ -137,18 +142,24 @@ export function MultimodalFallbackGroups({
               >
                 <ChevronDown />
               </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="icon"
-                aria-label={titleForLocale(locale, "删除", "Remove")}
-                title={titleForLocale(locale, "删除", "Remove")}
-                onClick={() =>
-                  onChange(selectedIds.filter((id) => id !== group.id))
-                }
-              >
-                <Trash2 />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    aria-label={titleForLocale(locale, "删除", "Remove")}
+                    onClick={() =>
+                      onChange(selectedIds.filter((id) => id !== group.id))
+                    }
+                  >
+                    <Trash2 />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {titleForLocale(locale, "删除", "Remove")}
+                </TooltipContent>
+              </Tooltip>
             </div>
           ))}
         </div>
