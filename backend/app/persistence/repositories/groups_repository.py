@@ -18,8 +18,8 @@ from app.models.model_groups import (
     ModelGroupUpdate,
     ModelGroupView,
     canonicalize_match_models,
-    canonicalize_match_regex,
 )
+from app.models.regex_rules import canonicalize_regex_rule_ids
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
@@ -30,6 +30,11 @@ from app.persistence.group_rule_codec import (
     dump_rules,
     parse_fallback_group_ids,
     parse_match_models,
+)
+from app.persistence.regex_rule_references import (
+    dump_rule_ids,
+    parse_rule_ids,
+    validate_rule_ids,
 )
 
 from ..channel_store import ChannelStore
@@ -137,13 +142,14 @@ class ModelGroupRepository(
                 fallback_group_ids=payload.fallback_group_ids,
                 channels=channels,
             )
+            await validate_rule_ids(session, payload.match_rule_ids)
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
                 strategy=payload.strategy.value,
                 route_group_id=route_group.id if route_group is not None else "",
                 match_models_json=dump_match_models(payload.match_models),
-                match_regex=payload.match_regex,
+                match_rule_ids_json=dump_rule_ids(payload.match_rule_ids),
                 param_override=dump_rules(payload.param_override),
                 headers_json=dump_rules(payload.headers),
                 fallback_group_ids_json=dump_fallback_group_ids(
@@ -222,6 +228,8 @@ class ModelGroupRepository(
                 channels=channels,
                 existing_items=current_item_views,
             )
+            if payload.match_rule_ids is not None:
+                await validate_rule_ids(session, payload.match_rule_ids)
 
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
@@ -229,8 +237,9 @@ class ModelGroupRepository(
                     entity.strategy = value.value
                 elif key == "match_models":
                     entity.match_models_json = dump_match_models(value or [])
-                elif key == "match_regex":
-                    entity.match_regex = value or ""
+                elif key == "match_rule_ids":
+                    if value is not None:
+                        entity.match_rule_ids_json = dump_rule_ids(value)
                 elif key == "items":
                     continue
                 elif key == "fallback_group_ids":
@@ -248,7 +257,7 @@ class ModelGroupRepository(
 
             if entity.route_group_id:
                 entity.match_models_json = dump_match_models([])
-                entity.match_regex = ""
+                entity.match_rule_ids_json = dump_rule_ids([])
 
             if payload.items is not None:
                 await session.execute(
@@ -310,16 +319,13 @@ class ModelGroupRepository(
                 )
                 or []
             )
-            patterns = [
-                item for item in (target.match_regex, source.match_regex) if item
-            ]
-            target.match_regex = (
-                canonicalize_match_regex(
-                    "|".join(f"(?:{item})" for item in patterns)
-                    if len(patterns) > 1
-                    else "".join(patterns)
+            target.match_rule_ids_json = dump_rule_ids(
+                canonicalize_regex_rule_ids(
+                    [
+                        *parse_rule_ids(target.match_rule_ids_json),
+                        *parse_rule_ids(source.match_rule_ids_json),
+                    ]
                 )
-                or ""
             )
 
             item_rows = (

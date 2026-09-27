@@ -32,7 +32,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
+import { useRegexRules } from "@/hooks/useRegexRules";
 import type { ModelGroup, RoutingStrategy } from "@/lib/api/groups";
+import type { RegexRule } from "@/lib/api/regexRules";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
 import { protocolLabel } from "@/lib/protocols";
 import type {
@@ -168,31 +175,63 @@ function GroupMembersPopover({
   );
 }
 
-function GroupMatchRules({ group }: { group: GroupRow }) {
-  if (!group.match_models.length && !group.match_regex) {
+function GroupMatchRules({
+  group,
+  rulesById,
+}: {
+  group: GroupRow;
+  rulesById: Map<string, RegexRule>;
+}) {
+  const matchRules = group.match_rule_ids.flatMap(
+    (id) => rulesById.get(id) ?? [],
+  );
+  if (!group.match_models.length && !matchRules.length) {
     return <span className="text-xs text-muted-foreground">—</span>;
   }
   const hiddenCount = group.match_models.length - MATCH_MODEL_PREVIEW_LIMIT;
   return (
-    <div
-      className="flex flex-wrap gap-1"
-      title={[...group.match_models, group.match_regex]
-        .filter(Boolean)
-        .join("\n")}
-    >
-      {group.match_models.slice(0, MATCH_MODEL_PREVIEW_LIMIT).map((name) => (
-        <Badge key={name} variant="outline" className="font-mono font-normal">
-          {name}
-        </Badge>
+    <div className="flex flex-wrap gap-1">
+      {group.match_models.length ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex flex-wrap gap-1">
+              {group.match_models
+                .slice(0, MATCH_MODEL_PREVIEW_LIMIT)
+                .map((name) => (
+                  <Badge
+                    key={name}
+                    variant="outline"
+                    className="font-mono font-normal"
+                  >
+                    {name}
+                  </Badge>
+                ))}
+              {hiddenCount > 0 ? (
+                <Badge variant="secondary">+{hiddenCount}</Badge>
+              ) : null}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap">
+            {group.match_models.join("\n")}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
+      {matchRules.map((rule) => (
+        <Tooltip key={rule.id}>
+          <TooltipTrigger asChild>
+            <Badge variant="secondary" className="max-w-40 font-normal">
+              <span className="truncate">{rule.name}</span>
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent
+            side="top"
+            className="max-w-sm flex-col items-start gap-0.5"
+          >
+            <span className="font-medium">{rule.name}</span>
+            <span className="break-all font-mono">{rule.pattern}</span>
+          </TooltipContent>
+        </Tooltip>
       ))}
-      {hiddenCount > 0 ? (
-        <Badge variant="secondary">+{hiddenCount}</Badge>
-      ) : null}
-      {group.match_regex ? (
-        <Badge variant="secondary" className="font-mono font-normal">
-          /{group.match_regex}/
-        </Badge>
-      ) : null}
     </div>
   );
 }
@@ -214,6 +253,8 @@ export function GroupsTable({
   onDelete,
   onTest,
 }: Props) {
+  const regexRules = useRegexRules();
+  const rulesById = new Map(regexRules.rules.map((rule) => [rule.id, rule]));
   const allSelected =
     items.length > 0 && items.every((item) => selected.has(item.id));
   const someSelected = items.some((item) => selected.has(item.id));
@@ -381,7 +422,7 @@ export function GroupsTable({
                 <GroupMembersPopover group={group} locale={locale} />
               </TableCell>
               <TableCell className="py-1.5">
-                <GroupMatchRules group={group} />
+                <GroupMatchRules group={group} rulesById={rulesById} />
               </TableCell>
               <TableCell className="py-1.5">
                 {protocols.length ? (

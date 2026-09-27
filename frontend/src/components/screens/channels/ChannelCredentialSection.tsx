@@ -14,6 +14,11 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { SiteCredential } from "@/lib/api/sites";
 import {
@@ -206,14 +211,20 @@ export function ChannelCredentialSection({
                         updateKey(credential.id, { name: event.target.value })
                       }
                     />
-                    <button
-                      type="button"
-                      className="w-[88px] shrink-0 truncate text-left font-mono text-[11px] text-muted-foreground hover:text-foreground"
-                      title={isZh ? "复制完整 Key" : "Copy full key"}
-                      onClick={() => void copyKey(credential.api_key)}
-                    >
-                      {maskApiKey(credential.api_key)}
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="w-[88px] shrink-0 truncate text-left font-mono text-[11px] text-muted-foreground hover:text-foreground"
+                          onClick={() => void copyKey(credential.api_key)}
+                        >
+                          {maskApiKey(credential.api_key)}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isZh ? "复制完整 Key" : "Copy full key"}
+                      </TooltipContent>
+                    </Tooltip>
                     <Select
                       value={credential.rate_source}
                       onValueChange={(value) =>
@@ -239,17 +250,23 @@ export function ChannelCredentialSection({
                         <SelectItem value="newapi">NewAPI</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-                      aria-label={isZh ? "删除 API Key" : "Delete API key"}
-                      title={isZh ? "删除" : "Delete"}
-                      onClick={() => removeKey(credential.id)}
-                    >
-                      <Trash2 className="size-3.5 stroke-1" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+                          aria-label={isZh ? "删除 API Key" : "Delete API key"}
+                          onClick={() => removeKey(credential.id)}
+                        >
+                          <Trash2 className="size-3.5 stroke-1" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isZh ? "删除" : "Delete"}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                   {credential.rate_source !== "none" ? (
                     <div className="flex h-7 items-center gap-2 pl-14">
@@ -269,27 +286,35 @@ export function ChannelCredentialSection({
                       ) : null}
                       <div className="flex min-w-0 flex-1 items-center gap-1.5">
                         {credential.rate_multiplier !== null ? (
-                          <Badge
-                            variant="secondary"
-                            className="shrink-0 tabular-nums"
-                            title={
-                              credential.rate_last_synced_at
-                                ? new Date(
-                                    credential.rate_last_synced_at,
-                                  ).toLocaleString(locale)
-                                : undefined
-                            }
-                          >
-                            {credential.rate_multiplier}x
-                          </Badge>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="secondary"
+                                className="shrink-0 tabular-nums"
+                              >
+                                {credential.rate_multiplier}x
+                              </Badge>
+                            </TooltipTrigger>
+                            {credential.rate_last_synced_at ? (
+                              <TooltipContent>
+                                {new Date(
+                                  credential.rate_last_synced_at,
+                                ).toLocaleString(locale)}
+                              </TooltipContent>
+                            ) : null}
+                          </Tooltip>
                         ) : null}
                         {credential.rate_last_error ? (
-                          <span
-                            className="min-w-0 truncate text-[11px] text-destructive"
-                            title={credential.rate_last_error}
-                          >
-                            {credential.rate_last_error}
-                          </span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="min-w-0 truncate text-[11px] text-destructive">
+                                {credential.rate_last_error}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-sm">
+                              {credential.rate_last_error}
+                            </TooltipContent>
+                          </Tooltip>
                         ) : credential.rate_multiplier === null ? (
                           <span className="truncate text-[11px] text-muted-foreground">
                             {canSyncRates
@@ -302,26 +327,33 @@ export function ChannelCredentialSection({
                           </span>
                         ) : null}
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        className="shrink-0"
-                        disabled={!canSyncRates || needsGroup || isSyncing}
-                        title={
-                          canSyncRates
-                            ? undefined
-                            : isZh
-                              ? "先保存渠道"
-                              : "Save the channel first"
-                        }
-                        onClick={() => void syncRate(credential.id)}
-                      >
-                        <RefreshCcw
-                          className={isSyncing ? "animate-spin" : undefined}
-                        />
-                        {isZh ? "同步倍率" : "Sync rate"}
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="xs"
+                              disabled={
+                                !canSyncRates || needsGroup || isSyncing
+                              }
+                              onClick={() => void syncRate(credential.id)}
+                            >
+                              <RefreshCcw
+                                className={
+                                  isSyncing ? "animate-spin" : undefined
+                                }
+                              />
+                              {isZh ? "同步倍率" : "Sync rate"}
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        {canSyncRates ? null : (
+                          <TooltipContent>
+                            {isZh ? "先保存渠道" : "Save the channel first"}
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
                     </div>
                   ) : null}
                 </div>

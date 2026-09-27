@@ -47,6 +47,7 @@ class BackupExportImportMixin:
                 .scalars()
                 .all()
             )
+            regex_rules = await self.load_regex_rules(session)
             sites = await self.load_sites(session)
             groups = await self.load_groups(session)
             model_prices = await self.load_model_prices(session)
@@ -69,6 +70,7 @@ class BackupExportImportMixin:
             settings=effective_editable_setting_items(
                 [SettingItem(key=item.key, value=item.value) for item in settings_rows]
             ),
+            regex_rules=regex_rules,
             sites=sites,
             groups=groups,
             model_prices=model_prices,
@@ -83,8 +85,11 @@ class BackupExportImportMixin:
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
 
+            rule_ids = await self.replace_regex_rules(session, dump.regex_rules)
+            rows_affected["regex_rules"] = len(dump.regex_rules)
+
             protocol_config_ids, model_keys = await self.replace_sites(
-                session, dump.sites
+                session, dump.sites, rule_ids=rule_ids
             )
             rows_affected["sites"] = len(dump.sites)
             rows_affected["site_base_urls"] = sum(
@@ -107,6 +112,7 @@ class BackupExportImportMixin:
                 dump.groups,
                 available_protocol_config_ids=protocol_config_ids,
                 model_keys=model_keys,
+                rule_ids=rule_ids,
             )
             rows_affected["model_groups"] = len(dump.groups)
             rows_affected["model_group_items"] = sum(

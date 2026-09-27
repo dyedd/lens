@@ -101,6 +101,7 @@ class GatewayRouter:
         *,
         credential_id: str | None = None,
         model_name: str | None = None,
+        fault_protocol: str = "",
         started_revision: int | None = None,
     ) -> None:
         """Record success for exactly one executed route target."""
@@ -109,6 +110,7 @@ class GatewayRouter:
                 channel_id,
                 credential_id=credential_id,
                 model_name=model_name,
+                fault_protocol=fault_protocol,
                 started_revision=started_revision,
             )
 
@@ -131,6 +133,7 @@ class GatewayRouter:
         category: ErrorCategory,
         credential_id: str | None = None,
         model_name: str | None = None,
+        fault_protocol: str = "",
         scope: str = "model",
         cooldown_seconds: float | None = None,
     ) -> None:
@@ -142,6 +145,7 @@ class GatewayRouter:
                 category=category,
                 credential_id=credential_id,
                 model_name=model_name,
+                fault_protocol=fault_protocol,
                 scope=scope,
                 cooldown_seconds=cooldown_seconds,
             )

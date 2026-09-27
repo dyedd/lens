@@ -30,6 +30,7 @@ from app.persistence.entities import (
 )
 
 from ...core.runtime_channel_ids import compose_runtime_channel_id
+from ..regex_rule_references import parse_rule_ids
 from ..site_loader import fetch_site_rows
 from .endpoint_credentials import credential_ids_for_url
 
@@ -402,8 +403,12 @@ class SiteConfigLoadersMixin:
                 headers=load_header_rules(row.headers_json),
                 param_override=load_param_rules(row.param_override),
                 model_sync_enabled=bool(row.model_sync_enabled),
-                model_sync_include=row.model_sync_include,
-                model_sync_exclude=row.model_sync_exclude,
+                model_sync_include_rule_ids=parse_rule_ids(
+                    row.model_sync_include_rule_ids_json
+                ),
+                model_sync_exclude_rule_ids=parse_rule_ids(
+                    row.model_sync_exclude_rule_ids_json
+                ),
                 base_urls=base_urls_by_site.get(row.id, []),
                 credentials=credentials_by_site.get(row.id, []),
                 protocols=protocols_by_site.get(row.id, []),

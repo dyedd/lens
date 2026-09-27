@@ -21,10 +21,12 @@ from .prices_stats import (
     replace_model_prices,
     replace_stats,
 )
+from .regex_rules import load_regex_rules, replace_regex_rules
 from .sites import load_sites, replace_sites
 
 
 class BackupStore(BackupExportImportMixin):
+    load_regex_rules = load_regex_rules
     load_sites = load_sites
     load_groups = load_groups
     load_model_prices = load_model_prices
@@ -32,6 +34,7 @@ class BackupStore(BackupExportImportMixin):
     load_gateway_api_keys = load_gateway_api_keys
     load_cronjobs = load_cronjobs
     load_request_logs = load_request_logs
+    replace_regex_rules = replace_regex_rules
     replace_sites = replace_sites
     replace_groups = replace_groups
     replace_model_prices = replace_model_prices

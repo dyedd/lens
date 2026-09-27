@@ -5,8 +5,10 @@ import type {
   RoutingStrategy,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import type { RegexRule } from "@/lib/api/regexRules";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
 import { PROTOCOL_LIST } from "@/lib/protocols";
+import { compileRegexRulePattern } from "@/lib/regexRules";
 import type { FormItem, GroupDisplayMember, GroupRow } from "./groupTypes";
 
 export const STRATEGY_OPTIONS: Array<{
@@ -161,30 +163,23 @@ export function buildModelMatchKey(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** Compile a case-insensitive match regex, or null when empty or invalid. */
-export function compileMatchRegex(value: string) {
-  const trimmedValue = value.trim();
-  const pattern = trimmedValue.startsWith("(?i)")
-    ? trimmedValue.slice(4)
-    : trimmedValue;
-  if (!pattern) return null;
-  try {
-    return new RegExp(pattern, "i");
-  } catch {
-    return null;
-  }
+/** Compile the selected library rules; unknown ids and invalid patterns match nothing. */
+export function compileMatchRules(ruleIds: string[], rules: RegexRule[]) {
+  return rules
+    .filter((rule) => ruleIds.includes(rule.id))
+    .flatMap((rule) => compileRegexRulePattern(rule.pattern) ?? []);
 }
 
 /** Return whether a model name joins a group through its live match rules. */
 export function matchesGroupRules(
   modelName: string,
   matchModels: string[],
-  matchRegex: RegExp | null,
+  matchRules: RegExp[],
 ) {
   const lowerName = modelName.toLowerCase();
   return (
     matchModels.some((name) => name.toLowerCase() === lowerName) ||
-    Boolean(matchRegex?.test(modelName))
+    matchRules.some((rule) => rule.test(modelName))
   );
 }
 

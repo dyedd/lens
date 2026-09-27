@@ -183,6 +183,7 @@ async def _create_schema(state: Any) -> None:
 def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
     import app.gateway.service.admin.model_groups as model_groups_mod
     import app.gateway.service.admin.ops as ops_mod
+    import app.gateway.service.admin.regex_rules as regex_rules_mod
     import app.gateway.service.admin.sites as sites_mod
     import app.gateway.service.app_state as state_mod
     import app.gateway.service.auth as auth_mod
@@ -198,6 +199,7 @@ def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
     for module in (
         model_groups_mod,
         ops_mod,
+        regex_rules_mod,
         sites_mod,
         auth_mod,
         handlers_mod,
@@ -290,7 +292,7 @@ def create_model_group(
             "strategy": "round_robin",
             "route_group_id": route_group_id,
             "match_models": [],
-            "match_regex": "",
+            "match_rule_ids": [],
             "headers": [],
             "param_override": [],
             "items": items or [],
@@ -321,6 +323,20 @@ def create_model_group(
         return response.json()
 
     return _create_model_group
+
+
+@pytest.fixture
+def create_regex_rule(client: TestClient, admin_headers: dict[str, str]) -> Any:
+    def _create_regex_rule(name: str, pattern: str) -> dict[str, Any]:
+        response = client.post(
+            "/api/admin/regex-rules",
+            headers=admin_headers,
+            json={"name": name, "pattern": pattern},
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    return _create_regex_rule
 
 
 @pytest.fixture

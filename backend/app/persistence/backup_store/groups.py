@@ -28,6 +28,9 @@ from app.persistence.group_rule_codec import (
     parse_match_models,
     parse_param_override,
 )
+from app.persistence.regex_rule_references import dump_rule_ids, parse_rule_ids
+
+from .regex_rules import validate_backup_rule_ids
 
 
 async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
@@ -119,7 +122,7 @@ async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                     "route_group_id": row.route_group_id,
                     "route_group_name": route_group_names.get(row.route_group_id, ""),
                     "match_models": parse_match_models(row.match_models_json),
-                    "match_regex": row.match_regex,
+                    "match_rule_ids": parse_rule_ids(row.match_rule_ids_json),
                     "param_override": parse_param_override(row.param_override),
                     "headers": parse_headers(row.headers_json),
                     "fallback_group_ids": parse_fallback_group_ids(
@@ -140,6 +143,7 @@ async def replace_groups(
     *,
     available_protocol_config_ids: set[str],
     model_keys: set[tuple[str, str, str]],
+    rule_ids: set[str],
 ) -> None:
     await session.execute(delete(ModelGroupItemEntity))
     await session.execute(delete(ModelGroupEntity))
@@ -150,7 +154,7 @@ async def replace_groups(
 
     groups_by_id = {group.id: group for group in groups}
     for group in groups:
-        has_match_rules = bool(group.match_models or group.match_regex)
+        has_match_rules = bool(group.match_models or group.match_rule_ids)
         if group.id in seen_group_ids:
             raise ValueError(f"Duplicate group id in backup: {group.id}")
         seen_group_ids.add(group.id)
@@ -158,6 +162,7 @@ async def replace_groups(
         if group.name in seen_group_names:
             raise ValueError(f"Duplicate model group name in backup: {group.name}")
         seen_group_names.add(group.name)
+        validate_backup_rule_ids(group.match_rule_ids, rule_ids)
 
         if group.route_group_id and group.route_group_id not in group_ids:
             raise ValueError(
@@ -211,7 +216,7 @@ async def replace_groups(
                 strategy=group.strategy.value,
                 route_group_id=group.route_group_id,
                 match_models_json=dump_match_models(group.match_models),
-                match_regex=group.match_regex,
+                match_rule_ids_json=dump_rule_ids(group.match_rule_ids),
                 param_override=dump_rules(group.param_override),
                 headers_json=dump_rules(group.headers),
                 fallback_group_ids_json=dump_fallback_group_ids(

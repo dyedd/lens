@@ -80,29 +80,26 @@ def test_anthropic_route_prefers_native_channel_over_earlier_chat_member(
     assert attempted_urls[0].endswith("/v1/messages")
 
 
-def test_model_group_match_rules_are_canonicalized_and_validated(
+def test_model_group_match_rules_are_canonicalized(
     client,
     admin_headers,
+    create_regex_rule,
 ) -> None:
+    rule = create_regex_rule("GPT", "^gpt")
+
     created = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
         json={
             "name": "matched",
             "match_models": ["  gpt-4o  ", "", "GPT-4O", "gpt-4o-mini"],
-            "match_regex": "  (?i)^gpt  ",
+            "match_rule_ids": [f"  {rule['id']}  ", "", rule["id"]],
         },
-    )
-    invalid = client.post(
-        "/api/admin/model-groups",
-        headers=admin_headers,
-        json={"name": "invalid-regex", "match_regex": "["},
     )
 
     assert created.status_code == 201, created.text
     assert created.json()["match_models"] == ["gpt-4o", "gpt-4o-mini"]
-    assert created.json()["match_regex"] == "^gpt"
-    assert_error(invalid, 422, "Request validation failed")
+    assert created.json()["match_rule_ids"] == [rule["id"]]
 
 
 def test_create_route_group_rejects_invalid_route_targets(
@@ -182,12 +179,18 @@ def test_update_route_group_clears_match_rules(
     client,
     admin_headers,
     create_model_group,
+    create_regex_rule,
 ) -> None:
     target = create_model_group(name="target")
+    rule = create_regex_rule("GPT", "gpt")
     source = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={"name": "source", "match_models": ["gpt"], "match_regex": "gpt"},
+        json={
+            "name": "source",
+            "match_models": ["gpt"],
+            "match_rule_ids": [rule["id"]],
+        },
     ).json()
 
     response = client.put(
@@ -199,7 +202,7 @@ def test_update_route_group_clears_match_rules(
     assert response.status_code == 200
     assert response.json()["route_group_id"] == target["id"]
     assert response.json()["match_models"] == []
-    assert response.json()["match_regex"] == ""
+    assert response.json()["match_rule_ids"] == []
 
 
 def test_delete_model_group_rejects_referenced_execution_group(

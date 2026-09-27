@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
@@ -23,8 +24,28 @@ if TYPE_CHECKING:
     from ..app_state import AppState
 
 
-def _compile_model_sync_pattern(pattern: str) -> re.Pattern[str] | None:
-    return re.compile(pattern, re.IGNORECASE) if pattern.strip() else None
+def _build_model_sync_filter(
+    site: SiteConfig, rule_patterns: dict[str, re.Pattern[str]]
+) -> Callable[[str], bool]:
+    """Build a predicate for models matching any include rule and no exclude rule."""
+    include = [
+        rule_patterns[rule_id]
+        for rule_id in site.model_sync_include_rule_ids
+        if rule_id in rule_patterns
+    ]
+    exclude = [
+        rule_patterns[rule_id]
+        for rule_id in site.model_sync_exclude_rule_ids
+        if rule_id in rule_patterns
+    ]
+
+    def is_wanted(model_name: str) -> bool:
+        return (
+            not site.model_sync_include_rule_ids
+            or any(pattern.search(model_name) for pattern in include)
+        ) and not any(pattern.search(model_name) for pattern in exclude)
+
+    return is_wanted
 
 
 def channel_for_credential(
@@ -51,13 +72,28 @@ async def sync_channel_models(
 ) -> ChannelModelSyncResponse:
     """Add new upstream models to sync-enabled sites and flag vanished ones."""
     requested_site_ids = set(site_ids) if site_ids is not None else None
+    sites = [
+        site
+        for site in await state.channel_store.list_sites()
+        if site.enabled
+        and site.model_sync_enabled
+        and (requested_site_ids is None or site.id in requested_site_ids)
+    ]
+    rule_patterns = await state.regex_rule_repo.load_patterns(
+        rule_id
+        for site in sites
+        for rule_id in (
+            *site.model_sync_include_rule_ids,
+            *site.model_sync_exclude_rule_ids,
+        )
+    )
     items: list[ChannelModelSyncResultItem] = []
-    for site in await state.channel_store.list_sites():
-        if not (site.enabled and site.model_sync_enabled):
-            continue
-        if requested_site_ids is not None and site.id not in requested_site_ids:
-            continue
-        items.extend(await _sync_site_models(state, site))
+    for site in sites:
+        items.extend(
+            await _sync_site_models(
+                state, site, _build_model_sync_filter(site, rule_patterns)
+            )
+        )
 
     logger.info(
         "Channel model sync: targets=%s updated=%s failed=%s",
@@ -70,10 +106,8 @@ async def sync_channel_models(
 
 
 async def _sync_site_models(
-    state: AppState, site: SiteConfig
+    state: AppState, site: SiteConfig, is_wanted: Callable[[str], bool]
 ) -> list[ChannelModelSyncResultItem]:
-    include = _compile_model_sync_pattern(site.model_sync_include)
-    exclude = _compile_model_sync_pattern(site.model_sync_exclude)
     credential_names = {
         credential.id: credential.name for credential in site.credentials
     }
@@ -98,7 +132,7 @@ async def _sync_site_models(
             items.append(item)
             try:
                 await _sync_credential_models(
-                    state, protocol_config, channels, item, include, exclude
+                    state, protocol_config, channels, item, is_wanted
                 )
             except (HTTPException, ResourceNotFoundError, ValueError) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
@@ -113,8 +147,7 @@ async def _sync_credential_models(
     protocol_config: SiteProtocolConfig,
     channels: list[ChannelConfig],
     item: ChannelModelSyncResultItem,
-    include: re.Pattern[str] | None,
-    exclude: re.Pattern[str] | None,
+    is_wanted: Callable[[str], bool],
 ) -> None:
     # Protocols of one config share a base URL, so one catalog fetch serves all.
     fetch_channel = next(
@@ -140,12 +173,7 @@ async def _sync_credential_models(
         item.credential_id,
         [channel.protocol for channel in channels],
         upstream_names=upstream_names,
-        wanted_names={
-            name
-            for name in upstream_names
-            if (include is None or include.search(name))
-            and (exclude is None or not exclude.search(name))
-        },
+        wanted_names={name for name in upstream_names if is_wanted(name)},
     )
     item.added = changes.added
     item.missing = changes.missing

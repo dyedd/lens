@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 
 from ...core.model_group_status import (
@@ -23,6 +23,9 @@ class RouteTarget:
     credential_id: str | None = None
     credential_name: str | None = None
     rate_multiplier: float | None = None
+    # Auto channels speak each client protocol natively, so each client
+    # protocol is its own fault domain; empty for fixed-protocol channels.
+    fault_protocol: str = ""
 
 
 @lru_cache(maxsize=2048)
@@ -141,13 +144,12 @@ def build_route_targets(
             ):
                 continue
             active.extend(_expand_target_credentials(target))
-        return active
+        return _scope_fault_protocol(active, protocol)
 
     active: list[RouteTarget] = []
     for channel in sorted(channels, key=lambda item: item.name):
-        if (
-            channel.protocol not in {protocol, ProtocolKind.AUTO}
-            or channel.status != ChannelStatus.ENABLED
+        if channel.status != ChannelStatus.ENABLED or not can_reach_protocol(
+            channel.protocol, protocol
         ):
             continue
         if allowed_channel_ids is not None and channel.id not in allowed_channel_ids:
@@ -159,4 +161,15 @@ def build_route_targets(
                 RouteTarget(channel=channel, model_name=requested_model)
             )
         )
-    return active
+    return _scope_fault_protocol(active, protocol)
+
+
+def _scope_fault_protocol(
+    targets: list[RouteTarget], protocol: ProtocolKind
+) -> list[RouteTarget]:
+    return [
+        replace(target, fault_protocol=protocol.value)
+        if target.channel.protocol == ProtocolKind.AUTO
+        else target
+        for target in targets
+    ]

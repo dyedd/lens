@@ -69,8 +69,10 @@ export type SiteProtocolConfigInput = {
 };
 export type SiteModelSyncSettings = {
   model_sync_enabled: boolean;
-  model_sync_include: string;
-  model_sync_exclude: string;
+  /** Library regex rule ids; when set, only models matching any of them sync. */
+  model_sync_include_rule_ids: string[];
+  /** Library regex rule ids; models matching any of them never sync. */
+  model_sync_exclude_rule_ids: string[];
 };
 export type Site = SiteModelSyncSettings & {
   id: string;
@@ -211,10 +213,11 @@ export type SiteBatchImportResult = {
 };
 export type SiteModelFetchPayload = {
   base_url: string;
+  /** Picks the list endpoint and auth headers. */
+  protocol: ProtocolKind;
   headers: HeaderRule[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
-  match_regex: string;
   credentials: {
     id?: string | null;
     name: string;

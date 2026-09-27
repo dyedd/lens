@@ -205,8 +205,8 @@ def calculate_exponential_cooldown(
     return min(max(next_cooldown, 0.0), float(max_cooldown))
 
 
-ModelKey = tuple[str, str]
-CredentialKey = tuple[str, str]
+ModelKey = tuple[str, str, str]
+CredentialKey = tuple[str, str, str]
 
 
 @dataclass(slots=True)
@@ -220,14 +220,21 @@ class CooldownState:
     failure_revision: int = 0
 
 
-def model_key(channel_id: str, model_name: str | None) -> ModelKey:
-    """Model fault-domain key; the empty model name is the channel-wide domain."""
-    return channel_id, model_name or ""
+def model_key(
+    channel_id: str, model_name: str | None, fault_protocol: str = ""
+) -> ModelKey:
+    """Model fault-domain key; the empty model name is the channel-wide domain.
+
+    ``fault_protocol`` splits an auto channel's domains by client protocol.
+    """
+    return channel_id, model_name or "", fault_protocol
 
 
-def credential_key(channel_id: str, credential_id: str | None) -> CredentialKey:
+def credential_key(
+    channel_id: str, credential_id: str | None, fault_protocol: str = ""
+) -> CredentialKey:
     """Credential fault-domain key; the empty credential id means the channel key."""
-    return channel_id, credential_id or ""
+    return channel_id, credential_id or "", fault_protocol
 
 
 def remaining_seconds(until: float, *, now: float) -> int:
@@ -267,8 +274,7 @@ class CooldownLedger:
 
     def record_model_failure(
         self,
-        channel_id: str,
-        model_name: str | None,
+        key: ModelKey,
         *,
         error: str,
         category: ErrorCategory,
@@ -276,17 +282,14 @@ class CooldownLedger:
     ) -> None:
         now = monotonic()
         self._failure_revision += 1
-        state = self._model_states.setdefault(
-            model_key(channel_id, model_name), CooldownState()
-        )
+        state = self._model_states.setdefault(key, CooldownState())
         self._record_failure(
             state, error, category, cooldown_seconds=cooldown_seconds, now=now
         )
 
     def record_credential_failure(
         self,
-        channel_id: str,
-        credential_id: str | None,
+        key: CredentialKey,
         *,
         error: str,
         category: ErrorCategory,
@@ -294,44 +297,35 @@ class CooldownLedger:
     ) -> None:
         now = monotonic()
         self._failure_revision += 1
-        state = self._credential_states.setdefault(
-            credential_key(channel_id, credential_id), CooldownState()
-        )
+        state = self._credential_states.setdefault(key, CooldownState())
         self._record_failure(
             state, error, category, cooldown_seconds=cooldown_seconds, now=now
         )
 
     def record_success(
         self,
-        channel_id: str,
+        model: ModelKey,
+        credential: CredentialKey,
         *,
-        credential_id: str | None,
-        model_name: str | None,
         started_revision: int | None,
     ) -> None:
-        model_state = self._model_states.get(model_key(channel_id, model_name))
+        model_state = self._model_states.get(model)
         if model_state is not None and (
             started_revision is None or model_state.failure_revision <= started_revision
         ):
-            self._model_states.pop(model_key(channel_id, model_name), None)
-        credential_state = self._credential_states.get(
-            credential_key(channel_id, credential_id)
-        )
+            self._model_states.pop(model, None)
+        credential_state = self._credential_states.get(credential)
         if credential_state is not None and (
             started_revision is None
             or credential_state.failure_revision <= started_revision
         ):
-            self._credential_states.pop(credential_key(channel_id, credential_id), None)
+            self._credential_states.pop(credential, None)
 
-    def model_state(
-        self, channel_id: str, model_name: str | None
-    ) -> CooldownState | None:
-        return self._model_states.get(model_key(channel_id, model_name))
+    def model_state(self, key: ModelKey) -> CooldownState | None:
+        return self._model_states.get(key)
 
-    def credential_state(
-        self, channel_id: str, credential_id: str | None
-    ) -> CooldownState | None:
-        return self._credential_states.get(credential_key(channel_id, credential_id))
+    def credential_state(self, key: CredentialKey) -> CooldownState | None:
+        return self._credential_states.get(key)
 
     def model_keys(self) -> set[ModelKey]:
         return set(self._model_states)
@@ -353,32 +347,15 @@ class CooldownLedger:
             self._model_states.pop(key, None)  # type: ignore[arg-type]
             self._credential_states.pop(key, None)  # type: ignore[arg-type]
 
-    def model_cooled_until(
-        self, channel_id: str, model_name: str | None, *, now: float
-    ) -> float:
-        state = self._model_states.get(model_key(channel_id, model_name))
-        return state.cooled_until if state else 0.0
-
-    def credential_cooled_until(
-        self, channel_id: str, credential_id: str | None, *, now: float
-    ) -> float:
-        state = self._credential_states.get(credential_key(channel_id, credential_id))
-        return state.cooled_until if state else 0.0
-
     def cooldown_reason(
-        self,
-        channel_id: str,
-        model_name: str | None,
-        credential_id: str | None,
-        *,
-        now: float,
+        self, model: ModelKey, credential: CredentialKey, *, now: float
     ) -> str:
         """Name the fault domain and remaining cooldown of an unavailable target."""
         states = [
             state
             for state in (
-                self._model_states.get(model_key(channel_id, model_name)),
-                self._credential_states.get(credential_key(channel_id, credential_id)),
+                self._model_states.get(model),
+                self._credential_states.get(credential),
             )
             if state is not None and state.cooled_until > now
         ]

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Literal
 
 from sqlalchemy import select
@@ -33,6 +32,7 @@ from app.persistence.group_rule_codec import (
     parse_match_models,
     parse_param_override,
 )
+from app.persistence.regex_rule_references import load_rule_patterns, parse_rule_ids
 
 from ...core.model_group_status import (
     ModelGroupChannelLookup,
@@ -61,23 +61,14 @@ class _CandidateAggregate:
     protocol_config_id: str = ""
 
 
-@lru_cache(maxsize=256)
-def _compile_group_rule_regex(pattern: str) -> re.Pattern[str] | None:
-    try:
-        return re.compile(pattern, re.IGNORECASE)
-    except re.error:
-        return None
-
-
 def _model_matches_group_rule(
-    model_name: str, match_models: list[str], match_regex: str
+    model_name: str, match_models: list[str], patterns: list[re.Pattern[str]]
 ) -> bool:
-    """Return whether a model name joins a group by its match models or regex."""
+    """Return whether a model name joins a group by its match models or rules."""
     folded_name = model_name.casefold()
-    if any(folded_name == item.casefold() for item in match_models):
-        return True
-    regex = _compile_group_rule_regex(match_regex) if match_regex else None
-    return regex is not None and regex.search(model_name) is not None
+    return any(folded_name == item.casefold() for item in match_models) or any(
+        pattern.search(model_name) for pattern in patterns
+    )
 
 
 def format_credential_mask(api_key: str) -> str:
@@ -302,7 +293,16 @@ class GroupMappingMixin:
             [item.id for item in entities],
             channels,
         )
-        self._append_rule_items(entities, items_by_group, channels)
+        rule_patterns = await load_rule_patterns(
+            session,
+            (
+                rule_id
+                for item in entities
+                if not item.route_group_id.strip()
+                for rule_id in parse_rule_ids(item.match_rule_ids_json)
+            ),
+        )
+        self._append_rule_items(entities, items_by_group, channels, rule_patterns)
         route_name_by_id = {item.id: item.name for item in entities}
         prices_by_key = await self._load_model_prices_by_keys(
             session, [canonical_model_price_key(item.name) for item in entities]
@@ -330,21 +330,25 @@ class GroupMappingMixin:
         entities: list[ModelGroupEntity],
         items_by_group: dict[str, list[ModelGroupItemView]],
         channels: list[ChannelConfig],
+        rule_patterns: Mapping[str, re.Pattern[str]],
     ) -> None:
-        """Add READY channel models matched by each execution group's rule.
+        """Add READY channel models matched by each execution group's rules.
 
         Saved members come first and win on the same key, so disabling a saved
-        member also keeps the rule from re-adding it.
+        member also keeps the rules from re-adding it.
         """
-        rules = [
-            (entity.id, match_models, entity.match_regex)
-            for entity in entities
-            if not entity.route_group_id.strip()
-            and (
-                (match_models := parse_match_models(entity.match_models_json))
-                or entity.match_regex
-            )
-        ]
+        rules: list[tuple[str, list[str], list[re.Pattern[str]]]] = []
+        for entity in entities:
+            if entity.route_group_id.strip():
+                continue
+            match_models = parse_match_models(entity.match_models_json)
+            patterns = [
+                rule_patterns[rule_id]
+                for rule_id in parse_rule_ids(entity.match_rule_ids_json)
+                if rule_id in rule_patterns
+            ]
+            if match_models or patterns:
+                rules.append((entity.id, match_models, patterns))
         if not rules:
             return
         # ponytail: matches every channel model name per hydration; index names if slow
@@ -355,14 +359,14 @@ class GroupMappingMixin:
             group_id: {
                 name
                 for name in model_names
-                if _model_matches_group_rule(name, match_models, match_regex)
+                if _model_matches_group_rule(name, match_models, patterns)
             }
-            for group_id, match_models, match_regex in rules
+            for group_id, match_models, patterns in rules
         }
         ready_items = list_ready_channel_items(
             channels, set().union(*names_by_group.values())
         )
-        for group_id, _match_models, _match_regex in rules:
+        for group_id, _match_models, _patterns in rules:
             items = items_by_group.setdefault(group_id, [])
             saved_keys = {model_group_item_key(item) for item in items}
             for ready_item in ready_items:
@@ -472,7 +476,7 @@ class GroupMappingMixin:
             route_group_id=entity.route_group_id,
             route_group_name=route_group_name,
             match_models=parse_match_models(entity.match_models_json),
-            match_regex=entity.match_regex,
+            match_rule_ids=parse_rule_ids(entity.match_rule_ids_json),
             param_override=parse_param_override(entity.param_override),
             headers=parse_headers(entity.headers_json),
             fallback_group_ids=parse_fallback_group_ids(entity.fallback_group_ids_json),

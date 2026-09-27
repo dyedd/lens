@@ -30,6 +30,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import { apiRequest } from "@/lib/api/client";
 import type { ModelGroup } from "@/lib/api/groups";
 import { type Locale, useI18n } from "@/lib/I18nContext";
@@ -340,21 +345,27 @@ export function ModelPricesScreen() {
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center">
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            disabled={groups.isFetching || syncing}
-            onClick={() => void syncPrices()}
-            aria-label={isChinese ? "同步价格" : "Sync prices"}
-            title={isChinese ? "同步价格" : "Sync prices"}
-          >
-            <RefreshCw
-              className={
-                groups.isFetching || syncing ? "animate-spin" : undefined
-              }
-            />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                disabled={groups.isFetching || syncing}
+                onClick={() => void syncPrices()}
+                aria-label={isChinese ? "同步价格" : "Sync prices"}
+              >
+                <RefreshCw
+                  className={
+                    groups.isFetching || syncing ? "animate-spin" : undefined
+                  }
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isChinese ? "同步价格" : "Sync prices"}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
       {(["free", "tokens", "non_tokens"] as const).map((mode) => {

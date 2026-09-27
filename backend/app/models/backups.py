@@ -7,6 +7,7 @@ from .gateway_keys import GatewayApiKeyBase
 from .model_groups import ModelGroup
 from .model_prices import ModelPriceItem
 from .protocols import CronjobScheduleType, ProtocolKind, RequestLogLifecycleStatus
+from .regex_rules import MAX_REGEX_RULES, RegexRule
 from .settings import SettingItem
 from .sites import SiteConfig
 from .validation import StrictBaseModel
@@ -157,6 +158,9 @@ class ConfigBackupDump(StrictBaseModel):
     include_request_logs: bool = False
     include_gateway_api_keys: bool = False
     settings: list[SettingItem] = Field(default_factory=list)
+    regex_rules: list[RegexRule] = Field(
+        default_factory=list, max_length=MAX_REGEX_RULES
+    )
     sites: list[SiteConfig] = Field(default_factory=list)
     groups: list[ModelGroup] = Field(default_factory=list)
     model_prices: list[ModelPriceItem] = Field(default_factory=list)
