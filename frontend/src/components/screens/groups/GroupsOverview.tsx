@@ -46,6 +46,7 @@ import type {
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
+import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";
 import { GroupsTable } from "./GroupsTable";
 import type { GroupRow, GroupSort, SimilarGroupView } from "./groupTypes";
 import { STRATEGY_OPTIONS } from "./modelGroupFormatting";
@@ -65,6 +66,8 @@ type Props = {
   strategyFilter: "all" | RoutingStrategy;
   sortBy: GroupSort;
   activeFilterCount: number;
+  familyOptions: ModelPrefixOption[];
+  familyFilter: SelectedModelPrefix;
   protocolOptions: Array<{ value: ProtocolKind; label: string }>;
   protocolFilter: "all" | ProtocolKind;
   busyId: string | null;
@@ -72,6 +75,7 @@ type Props = {
   onSearchChange: (value: string) => void;
   onStrategyChange: (value: "all" | RoutingStrategy) => void;
   onSortChange: (value: GroupSort) => void;
+  onFamilyChange: (value: SelectedModelPrefix) => void;
   onProtocolChange: (value: "all" | ProtocolKind) => void;
   onReset: () => void;
   onRefresh: () => void;
@@ -101,6 +105,8 @@ export function GroupsOverview({
   strategyFilter,
   sortBy,
   activeFilterCount,
+  familyOptions,
+  familyFilter,
   protocolOptions,
   protocolFilter,
   busyId,
@@ -108,6 +114,7 @@ export function GroupsOverview({
   onSearchChange,
   onStrategyChange,
   onSortChange,
+  onFamilyChange,
   onProtocolChange,
   onReset,
   onRefresh,
@@ -269,6 +276,34 @@ export function GroupsOverview({
                     </SelectContent>
                   </Select>
                 </div>
+                {familyOptions.length ? (
+                  <div className="space-y-1">
+                    <p className="px-1 text-[10px] text-muted-foreground">
+                      {locale === "zh-CN" ? "厂商" : "Family"}
+                    </p>
+                    <Select
+                      value={familyFilter}
+                      onValueChange={(value) => {
+                        onFamilyChange(value);
+                        setPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {locale === "zh-CN" ? "全部厂商" : "All families"}
+                        </SelectItem>
+                        {familyOptions.map((option) => (
+                          <SelectItem key={option.key} value={option.key}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
                 {protocolOptions.length ? (
                   <div className="space-y-1">
                     <p className="px-1 text-[10px] text-muted-foreground">

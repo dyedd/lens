@@ -132,6 +132,8 @@ export function GroupsScreen() {
         strategyFilter={filters.strategyFilter}
         sortBy={filters.sortBy}
         activeFilterCount={filters.activeFilterCount}
+        familyOptions={filters.familyOptions}
+        familyFilter={filters.effectiveFamilyFilter}
         protocolOptions={filters.protocolOptions}
         protocolFilter={filters.effectiveProtocolFilter}
         busyId={commands.busyId}
@@ -139,6 +141,7 @@ export function GroupsScreen() {
         onSearchChange={filters.setSearch}
         onStrategyChange={filters.setStrategyFilter}
         onSortChange={filters.setSortBy}
+        onFamilyChange={filters.setFamilyFilter}
         onProtocolChange={filters.setProtocolFilter}
         onReset={filters.resetFilters}
         onRefresh={() =>
