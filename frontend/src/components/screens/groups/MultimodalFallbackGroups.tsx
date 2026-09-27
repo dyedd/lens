@@ -146,7 +146,7 @@ export function MultimodalFallbackGroups({
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="destructive"
+                    variant="ghost"
                     size="icon"
                     aria-label={titleForLocale(locale, "删除", "Remove")}
                     onClick={() =>

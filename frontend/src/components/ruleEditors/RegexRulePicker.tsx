@@ -87,7 +87,7 @@ function RegexRuleChip({
           {titleForLocale(locale, "移出此处", "Remove from here")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+        <DropdownMenuItem onSelect={onDelete}>
           <Trash2 className="size-3.5 stroke-1" />
           {titleForLocale(locale, "从规则库删除", "Delete from library")}
         </DropdownMenuItem>

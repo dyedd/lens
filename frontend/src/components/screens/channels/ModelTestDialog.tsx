@@ -491,7 +491,7 @@ export function ModelTestDialog({
               <Button
                 type="button"
                 variant="ghost"
-                className="mr-auto text-destructive hover:text-destructive"
+                className="mr-auto text-muted-foreground shadow-none"
                 onClick={() => setConfirmDeleteOpen(true)}
               >
                 {isChinese ? "删除此模型" : "Delete model"}

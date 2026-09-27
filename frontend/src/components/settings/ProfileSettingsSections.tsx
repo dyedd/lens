@@ -339,7 +339,7 @@ export function ModelTestSettingsSection({
                             type="button"
                             variant="ghost"
                             size="icon-xs"
-                            className="text-muted-foreground shadow-none hover:text-destructive"
+                            className="text-muted-foreground shadow-none"
                             aria-label={titleForLocale(
                               locale,
                               "删除问题",

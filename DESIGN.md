@@ -102,9 +102,9 @@ Transparent, `hover:bg-muted hover:text-foreground`, `shadow-none`. Pagination c
 `border-input/40`, transparent fill, hover muted. Prefer ghost in compact footers.
 
 ### Destructive Button
-**Role:** Delete / overwrite confirm
+**Role:** The button that commits a delete or overwrite
 
-`bg-destructive/10 text-destructive`, not a solid red slab. Pair with ghost Cancel in a right-aligned footer.
+`bg-destructive/10 text-destructive`, not a solid red slab. Pair with ghost Cancel in a right-aligned footer. This is the only delete control that uses alarm. The control that opens the confirm, and delete actions in tables, menus, toolbars, and editors, use the same ghost or menu color as the actions beside them.
 
 ### Compact Table Pagination
 **Role:** Every paged list (channels, groups, requests, health, prices)
@@ -187,6 +187,7 @@ Always `Tooltip` from `@/components/ui/Tooltip` (`TooltipTrigger asChild` + `Too
 - Don't add drop shadows to wells, tables, or settings sections. Shadows belong on dialogs (`shadow-xl`) and sheets (`shadow-2xl`) only.
 - Don't introduce a second accent (orange, yellow, mint) or a marketing display size.
 - Don't use the native `title` attribute for hover hints or truncated text; use `Tooltip`.
+- Don't color a delete control red unless it is the confirm button that commits the deletion. Row actions, menus, bulk menus, and editor remove icons stay with their siblings — no `variant="destructive"`, `text-destructive`, or `hover:text-destructive`.
 - Don't use solid destructive fills or green “success cards”; failure wells may add `border-destructive/40`, success wells stay `bg-muted/35`.
 
 ## Elevation
@@ -207,7 +208,7 @@ If a block needs to read as “a thing”, use a well or a table shell. Do not r
 - **Frosted panel** (`bg-background/96` + `backdrop-blur`) — Dialogs and sheets
 - **Opaque popover** (`--popover`) — Dropdowns and selects
 - **Indigo fill** (`--primary`) — Primary buttons only
-- **Alarm tint** (`bg-destructive/10`) — Danger actions and failed result wells
+- **Alarm tint** (`bg-destructive/10`) — Confirm-delete buttons and failed result wells
 
 ## Imagery
 
