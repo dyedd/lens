@@ -10,6 +10,12 @@ import type {
   UnplacedModelsResponse,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import { getModelFamilyKey } from "@/lib/ModelIcons";
+import {
+  buildModelPrefixOptions,
+  resolveEffectiveModelPrefix,
+  type SelectedModelPrefix,
+} from "@/lib/modelPrefix";
 import { protocolLabel } from "@/lib/protocols";
 import type { FormState, GroupRow, GroupSort } from "./groupTypes";
 import { buildGroupRows, listSavedFormItems } from "./groupView";
@@ -132,6 +138,7 @@ export function useGroupFilters(
   groupRows: GroupRow[],
   locale: "zh-CN" | "en-US",
 ) {
+  const [familyFilter, setFamilyFilter] = useState<SelectedModelPrefix>("all");
   const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
     "all",
   );
@@ -140,6 +147,18 @@ export function useGroupFilters(
     "all",
   );
   const [sortBy, setSortBy] = useState<GroupSort>("members-desc");
+  const familyOptions = useMemo(
+    () =>
+      buildModelPrefixOptions(
+        groupRows.map((group) => group.name),
+        locale,
+      ).filter((option) => option.key !== "all"),
+    [groupRows, locale],
+  );
+  const effectiveFamilyFilter = resolveEffectiveModelPrefix(
+    familyOptions,
+    familyFilter,
+  );
   const protocolOptions = useMemo(() => {
     const present = new Set<ProtocolKind>();
     for (const group of groupRows) {
@@ -154,6 +173,12 @@ export function useGroupFilters(
   const visibleGroups = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     const filtered = groupRows.filter((group) => {
+      if (
+        effectiveFamilyFilter !== "all" &&
+        getModelFamilyKey(group.name) !== effectiveFamilyFilter
+      ) {
+        return false;
+      }
       if (
         effectiveProtocolFilter !== "all" &&
         !groupMemberProtocols(group).includes(effectiveProtocolFilter)
@@ -193,6 +218,7 @@ export function useGroupFilters(
       );
     });
   }, [
+    effectiveFamilyFilter,
     effectiveProtocolFilter,
     groupRows,
     locale,
@@ -202,6 +228,7 @@ export function useGroupFilters(
   ]);
 
   function resetFilters() {
+    setFamilyFilter("all");
     setProtocolFilter("all");
     setSearch("");
     setStrategyFilter("all");
@@ -210,17 +237,21 @@ export function useGroupFilters(
 
   return {
     activeFilterCount: [
+      effectiveFamilyFilter !== "all",
       effectiveProtocolFilter !== "all",
       Boolean(search.trim()),
       strategyFilter !== "all",
     ].filter(Boolean).length,
+    effectiveFamilyFilter,
     effectiveProtocolFilter,
+    familyOptions,
     protocolOptions: protocolOptions.map((protocol) => ({
       value: protocol,
       label: protocolLabel(protocol, locale),
     })),
     resetFilters,
     search,
+    setFamilyFilter,
     setProtocolFilter,
     setSearch,
     setSortBy,
