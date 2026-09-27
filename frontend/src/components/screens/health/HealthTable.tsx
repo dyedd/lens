@@ -164,9 +164,16 @@ export function HealthTable({
         {items.map((item) => (
           <TableRow key={item.name} className="hover:bg-transparent">
             <TableCell className="w-[16rem] max-w-[16rem]">
-              <span className="block truncate font-medium" title={item.name}>
-                {item.name}
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="block truncate font-medium">
+                    {item.name}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-sm break-all">
+                  {item.name}
+                </TooltipContent>
+              </Tooltip>
             </TableCell>
             <TableCell>
               <Badge

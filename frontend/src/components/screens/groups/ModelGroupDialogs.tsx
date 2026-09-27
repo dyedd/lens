@@ -24,6 +24,7 @@ import {
   SheetTitle,
 } from "@/components/ui/Sheet";
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
+import type { RegexRule } from "@/lib/api/regexRules";
 import type {
   CandidateChannelGroup,
   ChannelMemberGroup,
@@ -51,9 +52,10 @@ interface GroupEditorDialogProps {
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
   changeMatchRules: (
-    rules: Partial<Pick<FormState, "match_models" | "match_regex">>,
+    rules: Partial<Pick<FormState, "match_models" | "match_rule_ids">>,
   ) => void;
-  matchRegexInvalid: boolean;
+  invalidMatchRules: RegexRule[];
+  hasDeletedMatchRules: boolean;
   ruleMatchModelCount: number;
   ruleMatchSourceCount: number;
   candidateSearch: string;
@@ -193,15 +195,16 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 <ModelGroupMatchRules
                   locale={locale}
                   matchModels={form.match_models}
-                  matchRegex={form.match_regex}
-                  matchRegexInvalid={props.matchRegexInvalid}
+                  matchRuleIds={form.match_rule_ids}
+                  invalidMatchRules={props.invalidMatchRules}
+                  hasDeletedMatchRules={props.hasDeletedMatchRules}
                   ruleMatchModelCount={props.ruleMatchModelCount}
                   ruleMatchSourceCount={props.ruleMatchSourceCount}
                   onMatchModelsChange={(matchModels) =>
                     props.changeMatchRules({ match_models: matchModels })
                   }
-                  onMatchRegexChange={(matchRegex) =>
-                    props.changeMatchRules({ match_regex: matchRegex })
+                  onMatchRuleIdsChange={(matchRuleIds) =>
+                    props.changeMatchRules({ match_rule_ids: matchRuleIds })
                   }
                 />
               ) : null}
@@ -343,7 +346,10 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                   <Button
                     type="submit"
                     size="sm"
-                    disabled={props.matchRegexInvalid}
+                    disabled={
+                      props.invalidMatchRules.length > 0 ||
+                      props.hasDeletedMatchRules
+                    }
                   >
                     {editingId
                       ? locale === "zh-CN"

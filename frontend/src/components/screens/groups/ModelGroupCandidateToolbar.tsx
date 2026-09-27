@@ -1,6 +1,11 @@
 import { RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 
 interface ModelGroupCandidateToolbarProps {
   locale: "zh-CN" | "en-US";
@@ -27,17 +32,23 @@ export function ModelGroupCandidateToolbar({
         onClear={() => changeCandidateSearch("")}
         placeholder={locale === "zh-CN" ? "搜索模型名称" : "Search models"}
       />
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label={locale === "zh-CN" ? "刷新列表" : "Refresh list"}
-        title={locale === "zh-CN" ? "刷新列表" : "Refresh list"}
-        onClick={() => void refetchCandidates()}
-        disabled={isFetchingCandidates}
-      >
-        <RefreshCcw />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={locale === "zh-CN" ? "刷新列表" : "Refresh list"}
+            onClick={() => void refetchCandidates()}
+            disabled={isFetchingCandidates}
+          >
+            <RefreshCcw />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {locale === "zh-CN" ? "刷新列表" : "Refresh list"}
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }

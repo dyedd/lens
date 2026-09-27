@@ -172,7 +172,8 @@ export function GroupsScreen() {
           routeTargetOptions={queries.routeTargetOptions}
           changeRouteTarget={candidates.changeRouteTarget}
           changeMatchRules={candidates.changeMatchRules}
-          matchRegexInvalid={candidates.matchRegexInvalid}
+          invalidMatchRules={candidates.invalidMatchRules}
+          hasDeletedMatchRules={candidates.hasDeletedMatchRules}
           ruleMatchModelCount={candidates.ruleMatchModelCount}
           ruleMatchSourceCount={candidates.ruleMatchSourceCount}
           candidateSearch={editor.candidateSearch}

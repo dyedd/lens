@@ -20,8 +20,8 @@ type ChannelEditor = {
 function modelSyncSourceKey(site: Site) {
   return JSON.stringify([
     site.model_sync_enabled,
-    site.model_sync_include,
-    site.model_sync_exclude,
+    site.model_sync_include_rule_ids,
+    site.model_sync_exclude_rule_ids,
     site.base_urls.map((item) => item.url),
     site.credentials.map((item) => item.api_key),
   ]);

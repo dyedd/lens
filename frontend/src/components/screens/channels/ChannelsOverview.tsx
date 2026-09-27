@@ -34,6 +34,11 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import { ToolbarButton } from "@/components/ui/ToolbarButton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { Site } from "@/lib/api/sites";
 import { cn } from "@/lib/classNames";
 import { ChannelsTable } from "./ChannelsTable";
@@ -375,23 +380,35 @@ export function ChannelsOverview({
         </div>
 
         <div className="ml-auto flex min-h-8 shrink-0 items-center gap-1">
-          <ToolbarButton
-            onClick={onRefresh}
-            disabled={isLoading}
-            aria-label={locale === "zh-CN" ? "刷新" : "Refresh"}
-            title={locale === "zh-CN" ? "刷新" : "Refresh"}
-          >
-            <RefreshCw
-              className={cn("size-3.5", isLoading && "animate-spin")}
-            />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={onImport}
-            aria-label={locale === "zh-CN" ? "批量导入" : "Import"}
-            title={locale === "zh-CN" ? "批量导入" : "Import"}
-          >
-            <FileInput className="size-3.5" />
-          </ToolbarButton>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ToolbarButton
+                onClick={onRefresh}
+                disabled={isLoading}
+                aria-label={locale === "zh-CN" ? "刷新" : "Refresh"}
+              >
+                <RefreshCw
+                  className={cn("size-3.5", isLoading && "animate-spin")}
+                />
+              </ToolbarButton>
+            </TooltipTrigger>
+            <TooltipContent>
+              {locale === "zh-CN" ? "刷新" : "Refresh"}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ToolbarButton
+                onClick={onImport}
+                aria-label={locale === "zh-CN" ? "批量导入" : "Import"}
+              >
+                <FileInput className="size-3.5" />
+              </ToolbarButton>
+            </TooltipTrigger>
+            <TooltipContent>
+              {locale === "zh-CN" ? "批量导入" : "Import"}
+            </TooltipContent>
+          </Tooltip>
           <Button
             type="button"
             size="sm"

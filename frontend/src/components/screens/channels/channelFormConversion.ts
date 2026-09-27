@@ -184,8 +184,8 @@ export function toForm(site: Site): FormState {
       paramOverrideRulesToDraft(site.param_override),
     ),
     model_sync_enabled: site.model_sync_enabled,
-    model_sync_include: site.model_sync_include,
-    model_sync_exclude: site.model_sync_exclude,
+    model_sync_include_rule_ids: site.model_sync_include_rule_ids,
+    model_sync_exclude_rule_ids: site.model_sync_exclude_rule_ids,
   };
   return {
     ...draft,
@@ -237,8 +237,8 @@ export function toPayload(form: FormState): SitePayload {
       paramDraftsFromJson(rebuilt.paramsJson) ?? [],
     ),
     model_sync_enabled: rebuilt.model_sync_enabled,
-    model_sync_include: rebuilt.model_sync_include.trim(),
-    model_sync_exclude: rebuilt.model_sync_exclude.trim(),
+    model_sync_include_rule_ids: rebuilt.model_sync_include_rule_ids,
+    model_sync_exclude_rule_ids: rebuilt.model_sync_exclude_rule_ids,
     base_urls: baseUrls,
     credentials: credentials.map((item, index) => ({
       id: persistedCredentialId(item.id),

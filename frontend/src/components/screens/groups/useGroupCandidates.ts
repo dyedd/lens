@@ -1,8 +1,10 @@
 import { type Dispatch, type SetStateAction, useEffect, useMemo } from "react";
+import { useRegexRules } from "@/hooks/useRegexRules";
 import type {
   ModelGroupCandidateItem,
   ModelGroupCandidatesResponse,
 } from "@/lib/api/groups";
+import { compileRegexRulePattern } from "@/lib/regexRules";
 import type { FormState } from "./groupTypes";
 import {
   applyMatchRulesToForm,
@@ -10,7 +12,7 @@ import {
   groupModelCandidates,
 } from "./groupView";
 import {
-  compileMatchRegex,
+  compileMatchRules,
   matchesGroupRules,
   modelGroupItemKey,
 } from "./modelGroupFormatting";
@@ -38,31 +40,46 @@ export function useGroupCandidates({
   setForm,
 }: GroupCandidateOptions) {
   const candidates = candidateResponse?.candidates;
-  const matchRegexInvalid =
-    Boolean(form.match_regex.trim()) && !compileMatchRegex(form.match_regex);
-  const ruleMatches = useMemo(() => {
-    const regex = compileMatchRegex(form.match_regex);
-    return (candidates ?? []).filter((candidate) =>
-      matchesGroupRules(candidate.model_name, form.match_models, regex),
+  const regexRules = useRegexRules();
+  const libraryRules = regexRules.rules;
+  const invalidMatchRules = libraryRules.filter(
+    (rule) =>
+      form.match_rule_ids.includes(rule.id) &&
+      !compileRegexRulePattern(rule.pattern),
+  );
+  const hasDeletedMatchRules =
+    regexRules.isLoaded &&
+    form.match_rule_ids.some(
+      (id) => !libraryRules.some((rule) => rule.id === id),
     );
-  }, [candidates, form.match_models, form.match_regex]);
+  const ruleMatches = useMemo(() => {
+    const matchRules = compileMatchRules(form.match_rule_ids, libraryRules);
+    return (candidates ?? []).filter((candidate) =>
+      matchesGroupRules(candidate.model_name, form.match_models, matchRules),
+    );
+  }, [candidates, form.match_models, form.match_rule_ids, libraryRules]);
 
-  // Refreshed candidates may add or drop rule members.
+  // Refreshed candidates or edited library rules may add or drop rule
+  // members; waiting for the library keeps a load gap from dropping them.
   useEffect(() => {
-    if (!candidates) return;
-    setForm((current) => applyMatchRulesToForm(current, candidates));
-  }, [candidates, setForm]);
+    if (!candidates || !regexRules.isLoaded) return;
+    setForm((current) =>
+      applyMatchRulesToForm(current, candidates, libraryRules),
+    );
+  }, [candidates, libraryRules, regexRules.isLoaded, setForm]);
 
   /** Update the form and immediately re-resolve live rule members. */
   function updateRuleForm(update: (current: FormState) => FormState) {
     setForm((current) => {
       const next = update(current);
-      return candidates ? applyMatchRulesToForm(next, candidates) : next;
+      return candidates && regexRules.isLoaded
+        ? applyMatchRulesToForm(next, candidates, libraryRules)
+        : next;
     });
   }
 
   function changeMatchRules(
-    rules: Partial<Pick<FormState, "match_models" | "match_regex">>,
+    rules: Partial<Pick<FormState, "match_models" | "match_rule_ids">>,
   ) {
     updateRuleForm((current) => ({ ...current, ...rules }));
   }
@@ -93,7 +110,7 @@ export function useGroupCandidates({
       ...current,
       route_group_id: routeGroupId,
       match_models: routeGroupId ? [] : current.match_models,
-      match_regex: routeGroupId ? "" : current.match_regex,
+      match_rule_ids: routeGroupId ? [] : current.match_rule_ids,
       fallback_group_ids: routeGroupId ? [] : current.fallback_group_ids,
     }));
     setExpandedChannels([]);
@@ -168,7 +185,8 @@ export function useGroupCandidates({
     changeRouteTarget,
     expandedChannels: visibleExpandedChannels,
     groupedCandidates,
-    matchRegexInvalid,
+    hasDeletedMatchRules,
+    invalidMatchRules,
     ruleMatchModelCount: new Set(
       ruleMatches.map((candidate) => candidate.model_name),
     ).size,

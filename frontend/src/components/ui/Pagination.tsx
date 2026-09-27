@@ -11,6 +11,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import { cn } from "@/lib/classNames";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
@@ -180,18 +185,24 @@ export function TablePagination({
           )}
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          className="h-5 w-5 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
-          onClick={() => onPageChange(Math.max(1, page - 1))}
-          disabled={loading || page <= 1}
-          aria-label={titleForLocale(locale, "上一页", "Previous page")}
-          title={titleForLocale(locale, "上一页", "Previous page")}
-        >
-          <ChevronLeftIcon className="size-4 stroke-1" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="h-5 w-5 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+              onClick={() => onPageChange(Math.max(1, page - 1))}
+              disabled={loading || page <= 1}
+              aria-label={titleForLocale(locale, "上一页", "Previous page")}
+            >
+              <ChevronLeftIcon className="size-4 stroke-1" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {titleForLocale(locale, "上一页", "Previous page")}
+          </TooltipContent>
+        </Tooltip>
         {showPageSize ? (
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
@@ -227,18 +238,26 @@ export function TablePagination({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          className="h-5 w-5 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
-          onClick={() => onPageChange(Math.min(normalizedPageCount, page + 1))}
-          disabled={loading || page >= normalizedPageCount}
-          aria-label={titleForLocale(locale, "下一页", "Next page")}
-          title={titleForLocale(locale, "下一页", "Next page")}
-        >
-          <ChevronRightIcon className="size-4 stroke-1" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="h-5 w-5 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+              onClick={() =>
+                onPageChange(Math.min(normalizedPageCount, page + 1))
+              }
+              disabled={loading || page >= normalizedPageCount}
+              aria-label={titleForLocale(locale, "下一页", "Next page")}
+            >
+              <ChevronRightIcon className="size-4 stroke-1" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {titleForLocale(locale, "下一页", "Next page")}
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );

@@ -21,6 +21,11 @@ import {
 } from "@/components/ui/Table";
 import { TabsContent } from "@/components/ui/Tabs";
 import { Textarea } from "@/components/ui/Textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { parseModelTestPrompts } from "@/lib/modelTestPrompts";
 import { SettingsSectionCard } from "./SettingsSectionCard";
@@ -307,46 +312,52 @@ export function ModelTestSettingsSection({
                   </TableCell>
                   <TableCell className="w-20">
                     <div className="flex justify-end gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        className="text-muted-foreground shadow-none"
-                        aria-label={titleForLocale(
-                          locale,
-                          "编辑问题",
-                          "Edit prompt",
-                        )}
-                        title={titleForLocale(
-                          locale,
-                          "编辑问题",
-                          "Edit prompt",
-                        )}
-                        onClick={() => openEditDialog(index)}
-                      >
-                        <Pencil />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        className="text-muted-foreground shadow-none hover:text-destructive"
-                        aria-label={titleForLocale(
-                          locale,
-                          "删除问题",
-                          "Remove prompt",
-                        )}
-                        title={titleForLocale(
-                          locale,
-                          "删除问题",
-                          "Remove prompt",
-                        )}
-                        onClick={() =>
-                          updatePrompts(prompts.filter((_, i) => i !== index))
-                        }
-                      >
-                        <Trash2 />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-muted-foreground shadow-none"
+                            aria-label={titleForLocale(
+                              locale,
+                              "编辑问题",
+                              "Edit prompt",
+                            )}
+                            onClick={() => openEditDialog(index)}
+                          >
+                            <Pencil />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {titleForLocale(locale, "编辑问题", "Edit prompt")}
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-muted-foreground shadow-none hover:text-destructive"
+                            aria-label={titleForLocale(
+                              locale,
+                              "删除问题",
+                              "Remove prompt",
+                            )}
+                            onClick={() =>
+                              updatePrompts(
+                                prompts.filter((_, i) => i !== index),
+                              )
+                            }
+                          >
+                            <Trash2 />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {titleForLocale(locale, "删除问题", "Remove prompt")}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   </TableCell>
                 </TableRow>

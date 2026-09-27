@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useRegexRules } from "@/hooks/useRegexRules";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Site } from "@/lib/api/sites";
 import {
@@ -41,6 +42,8 @@ function validateChannelForm(
   form: FormState,
   duplicatedConfigCount: number,
   locale: Locale,
+  /** Ids in the loaded rule library, or null before it loads. */
+  libraryRuleIds: Set<string> | null,
 ) {
   if (!form.name.trim()) {
     toast.error(locale === "zh-CN" ? "请填写渠道名称" : "Enter a channel name");
@@ -90,18 +93,19 @@ function validateChannelForm(
     );
     return false;
   }
-  for (const pattern of [form.model_sync_include, form.model_sync_exclude]) {
-    if (!pattern.trim()) continue;
-    try {
-      new RegExp(pattern.trim());
-    } catch {
-      toast.error(
-        locale === "zh-CN"
-          ? `同步筛选正则无效：${pattern.trim()}`
-          : `Invalid sync filter regex: ${pattern.trim()}`,
-      );
-      return false;
-    }
+  if (
+    libraryRuleIds &&
+    [
+      ...form.model_sync_include_rule_ids,
+      ...form.model_sync_exclude_rule_ids,
+    ].some((id) => !libraryRuleIds.has(id))
+  ) {
+    toast.error(
+      locale === "zh-CN"
+        ? "同步筛选引用了已删除的规则，请先移除"
+        : "Remove the deleted rules from the sync filters first",
+    );
+    return false;
   }
   if (invalidProtocolBaseUrlCount(form)) {
     toast.error(
@@ -149,6 +153,7 @@ function useUnsavedChannelGuard(
 
 /** Owns the channel editor form and its local mutations. */
 export function useChannelForm(locale: Locale) {
+  const regexRules = useRegexRules();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
@@ -204,7 +209,14 @@ export function useChannelForm(locale: Locale) {
     setEditingSiteId(null);
   }
   function validateSiteForm() {
-    return validateChannelForm(form, duplicatedProtocolConfigKeys.size, locale);
+    return validateChannelForm(
+      form,
+      duplicatedProtocolConfigKeys.size,
+      locale,
+      regexRules.isLoaded
+        ? new Set(regexRules.rules.map((rule) => rule.id))
+        : null,
+    );
   }
   function updateModelProtocols(key: string, protocols: ProtocolKind[]) {
     if (!protocols.length) {

@@ -1,29 +1,34 @@
 import { X } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
+import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
 import { Badge } from "@/components/ui/Badge";
-import { Input } from "@/components/ui/Input";
+import type { RegexRule } from "@/lib/api/regexRules";
 
 interface ModelGroupMatchRulesProps {
   locale: "zh-CN" | "en-US";
   matchModels: string[];
-  matchRegex: string;
-  matchRegexInvalid: boolean;
+  matchRuleIds: string[];
+  /** Attached rules whose pattern JS cannot compile; they block saving. */
+  invalidMatchRules: RegexRule[];
+  /** Attached ids missing from the library; they block saving. */
+  hasDeletedMatchRules: boolean;
   ruleMatchModelCount: number;
   ruleMatchSourceCount: number;
   onMatchModelsChange: (matchModels: string[]) => void;
-  onMatchRegexChange: (matchRegex: string) => void;
+  onMatchRuleIdsChange: (matchRuleIds: string[]) => void;
 }
 
 /** Edit the live match rules that pull channel models into a group. */
 export function ModelGroupMatchRules({
   locale,
   matchModels,
-  matchRegex,
-  matchRegexInvalid,
+  matchRuleIds,
+  invalidMatchRules,
+  hasDeletedMatchRules,
   ruleMatchModelCount,
   ruleMatchSourceCount,
   onMatchModelsChange,
-  onMatchRegexChange,
+  onMatchRuleIdsChange,
 }: ModelGroupMatchRulesProps) {
   const [draft, setDraft] = useState("");
 
@@ -103,21 +108,29 @@ export function ModelGroupMatchRules({
           className="h-6 min-w-32 flex-1 bg-transparent font-mono text-xs outline-none placeholder:font-sans placeholder:text-muted-foreground"
         />
       </div>
-      <Input
-        value={matchRegex}
-        onChange={(event) => onMatchRegexChange(event.target.value)}
-        aria-invalid={matchRegexInvalid}
-        aria-label={locale === "zh-CN" ? "匹配正则" : "Match regex"}
-        placeholder={
-          locale === "zh-CN"
-            ? "正则（可选），如 ^claude-opus"
-            : "Regex (optional), e.g. ^claude-opus"
-        }
-        className="font-mono"
-      />
-      {matchRegexInvalid ? (
+      <div className="flex items-start gap-2">
+        <span className="shrink-0 text-xs leading-6 text-muted-foreground">
+          {locale === "zh-CN" ? "正则规则" : "Regex rules"}
+        </span>
+        <RegexRulePicker
+          locale={locale}
+          label={locale === "zh-CN" ? "匹配正则规则" : "Match regex rules"}
+          value={matchRuleIds}
+          onChange={onMatchRuleIdsChange}
+        />
+      </div>
+      {invalidMatchRules.length ? (
         <p className="text-xs text-destructive">
-          {locale === "zh-CN" ? "正则表达式无效" : "Invalid regex"}
+          {locale === "zh-CN"
+            ? `规则正则无效：${invalidMatchRules.map((rule) => rule.name).join("、")}`
+            : `Invalid rule regex: ${invalidMatchRules.map((rule) => rule.name).join(", ")}`}
+        </p>
+      ) : null}
+      {hasDeletedMatchRules ? (
+        <p className="text-xs text-destructive">
+          {locale === "zh-CN"
+            ? "移除已删除的规则后才能保存"
+            : "Remove the deleted rules to save"}
         </p>
       ) : null}
     </section>

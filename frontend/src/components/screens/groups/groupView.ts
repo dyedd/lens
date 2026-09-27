@@ -1,4 +1,5 @@
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
+import type { RegexRule } from "@/lib/api/regexRules";
 import {
   headerDraftToRules,
   headerRulesToDraft,
@@ -18,7 +19,7 @@ import type {
 import {
   buildGroupDisplayMembers,
   buildModelMatchKey,
-  compileMatchRegex,
+  compileMatchRules,
   matchesGroupRules,
   modelFoldKey,
   modelGroupChannelKey,
@@ -61,17 +62,22 @@ export function candidatePayloadToFormItems(
 export function applyMatchRulesToForm(
   form: FormState,
   candidates: ModelGroupCandidateItem[],
+  regexRules: RegexRule[],
 ): FormState {
   const savedItems = form.items.filter(
     (item) => !item.matched_by_rule || !item.enabled,
   );
   const savedKeys = new Set(savedItems.map((item) => modelGroupItemKey(item)));
-  const regex = compileMatchRegex(form.match_regex);
+  const matchRules = compileMatchRules(form.match_rule_ids, regexRules);
   const ruleItems = form.route_group_id
     ? []
     : candidates
         .filter((candidate) =>
-          matchesGroupRules(candidate.model_name, form.match_models, regex),
+          matchesGroupRules(
+            candidate.model_name,
+            form.match_models,
+            matchRules,
+          ),
         )
         .flatMap((candidate) => candidatePayloadToFormItems(candidate, true))
         .filter((item) => !savedKeys.has(modelGroupItemKey(item)));
@@ -97,7 +103,7 @@ export function modelGroupToForm(group: ModelGroup): FormState {
     strategy: group.strategy,
     route_group_id: group.route_group_id ?? "",
     match_models: group.match_models,
-    match_regex: group.match_regex,
+    match_rule_ids: group.match_rule_ids,
     param_override: paramOverrideRulesToDraft(group.param_override),
     headers: headerRulesToDraft(group.headers),
     fallback_group_ids: group.fallback_group_ids ?? [],
@@ -147,7 +153,7 @@ export function formToModelGroupPayload(form: FormState) {
             form.match_models.map((name) => name.trim()).filter(Boolean),
           ),
         ],
-    match_regex: routeGroupId ? "" : form.match_regex.trim(),
+    match_rule_ids: routeGroupId ? [] : form.match_rule_ids,
     param_override: paramOverrideDraftToRules(form.param_override),
     headers: headerDraftToRules(form.headers),
     fallback_group_ids: form.fallback_group_ids,

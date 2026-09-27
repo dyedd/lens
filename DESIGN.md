@@ -161,6 +161,11 @@ Muted well, caption `text-xs text-muted-foreground` with a 16px icon at `text-fo
 
 `min-h-10`, ghost `h-8` tools, `text-xs text-muted-foreground`, icons `size-3.5 stroke-1`. Search field on `md+`; icon popover on small screens.
 
+### Tooltip
+**Role:** Hover hints, icon-button labels, truncated-text reveal
+
+Always `Tooltip` from `@/components/ui/Tooltip` (`TooltipTrigger asChild` + `TooltipContent`); never the native `title` attribute. Icon-only buttons still carry `aria-label`. For truncated text, the truncated element is the trigger and the content shows the full value. Wrap a disabled button in `<span className="inline-flex">` so its hint can open. Component props named `title` (dialog, section, field titles) are not hints and are unaffected.
+
 ## Do's and Don'ts
 
 ### Do
@@ -181,6 +186,7 @@ Muted well, caption `text-xs text-muted-foreground` with a 16px icon at `text-fo
 - Don't put the delete target in a bordered name-card with oversized stacked Cancel/Delete.
 - Don't add drop shadows to wells, tables, or settings sections. Shadows belong on dialogs (`shadow-xl`) and sheets (`shadow-2xl`) only.
 - Don't introduce a second accent (orange, yellow, mint) or a marketing display size.
+- Don't use the native `title` attribute for hover hints or truncated text; use `Tooltip`.
 - Don't use solid destructive fills or green “success cards”; failure wells may add `border-destructive/40`, success wells stay `bg-muted/35`.
 
 ## Elevation

@@ -172,10 +172,17 @@ def test_model_without_group_is_not_routed(
 
 
 @pytest.mark.parametrize(
-    "match_rules",
+    "build_match_rules",
     [
-        pytest.param({"match_models": ["GPT-4O"]}, id="match-models"),
-        pytest.param({"match_regex": "^GPT-4"}, id="match-regex"),
+        pytest.param(
+            lambda _create_rule: {"match_models": ["GPT-4O"]}, id="match-models"
+        ),
+        pytest.param(
+            lambda create_rule: {
+                "match_rule_ids": [create_rule("GPT-4", "^GPT-4")["id"]]
+            },
+            id="match-rule",
+        ),
     ],
 )
 def test_model_group_rule_routes_to_live_matching_channel_models(
@@ -184,12 +191,13 @@ def test_model_group_rule_routes_to_live_matching_channel_models(
     monkeypatch,
     create_site,
     create_gateway_key,
-    match_rules: dict[str, Any],
+    create_regex_rule,
+    build_match_rules: Any,
 ) -> None:
     group_response = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={"name": "gpt-4o", **match_rules},
+        json={"name": "gpt-4o", **build_match_rules(create_regex_rule)},
     )
     assert group_response.status_code == 201, group_response.text
     create_site(_site_with_key("Added Later", "later"))

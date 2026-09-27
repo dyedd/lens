@@ -301,8 +301,8 @@ export const emptyForm = (): FormState => {
     headersJson: "",
     paramsJson: "",
     model_sync_enabled: true,
-    model_sync_include: "",
-    model_sync_exclude: "",
+    model_sync_include_rule_ids: [],
+    model_sync_exclude_rule_ids: [],
   };
 };
 

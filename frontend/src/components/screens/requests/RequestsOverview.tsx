@@ -28,6 +28,11 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import { ToolbarButton } from "@/components/ui/ToolbarButton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type {
   RequestLogFilterOption,
@@ -386,14 +391,22 @@ export function RequestsOverview({
         </div>
 
         <div className="ml-auto flex min-h-8 shrink-0 items-center gap-1">
-          <ToolbarButton
-            onClick={onRefresh}
-            disabled={fetching}
-            aria-label={titleForLocale(locale, "刷新", "Refresh")}
-            title={titleForLocale(locale, "刷新", "Refresh")}
-          >
-            <RefreshCw className={cn("size-3.5", fetching && "animate-spin")} />
-          </ToolbarButton>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ToolbarButton
+                onClick={onRefresh}
+                disabled={fetching}
+                aria-label={titleForLocale(locale, "刷新", "Refresh")}
+              >
+                <RefreshCw
+                  className={cn("size-3.5", fetching && "animate-spin")}
+                />
+              </ToolbarButton>
+            </TooltipTrigger>
+            <TooltipContent>
+              {titleForLocale(locale, "刷新", "Refresh")}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </section>
 

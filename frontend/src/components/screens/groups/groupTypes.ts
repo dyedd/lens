@@ -39,7 +39,7 @@ export type FormState = {
   strategy: RoutingStrategy;
   route_group_id: string;
   match_models: string[];
-  match_regex: string;
+  match_rule_ids: string[];
   param_override: ParamOverrideRuleDraft[];
   headers: HeaderRuleDraft[];
   fallback_group_ids: string[];
@@ -131,7 +131,7 @@ export const EMPTY_FORM: FormState = {
   strategy: "failover",
   route_group_id: "",
   match_models: [],
-  match_regex: "",
+  match_rule_ids: [],
   param_override: [{ path: "", action: "set", value: "" }],
   headers: [{ key: "", value: "", action: "override" }],
   fallback_group_ids: [],

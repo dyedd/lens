@@ -94,21 +94,13 @@ def build_upstream_request(
             raise HTTPException(
                 status_code=500, detail=f"Unsupported protocol={channel.protocol.value}"
             )
-        if channel.protocol == ProtocolKind.ANTHROPIC:
-            default_headers = {
-                "x-api-key": api_key,
-                "anthropic-version": ANTHROPIC_VERSION,
-                "content-type": "application/json",
-                "accept": "application/json",
-            }
-            if forwarded_headers:
-                default_headers.update(forwarded_headers)
-        else:
-            default_headers = {
-                "authorization": f"Bearer {api_key}",
-                "content-type": "application/json",
-                "accept": "application/json",
-            }
+        default_headers = {
+            **build_upstream_auth_headers(channel, api_key),
+            "content-type": "application/json",
+            "accept": "application/json",
+        }
+        if channel.protocol == ProtocolKind.ANTHROPIC and forwarded_headers:
+            default_headers.update(forwarded_headers)
         url = append_url_path(_protocol_base_url(channel), suffix)
         payload = dict(body)
 
@@ -124,6 +116,15 @@ def build_upstream_request(
         context=context,
     )
     return UpstreamRequest(method="POST", url=url, headers=headers, json_body=payload)
+
+
+def build_upstream_auth_headers(channel: ChannelConfig, api_key: str) -> dict[str, str]:
+    """Build protocol-native auth headers; Gemini sends its key as a query param."""
+    if channel.protocol == ProtocolKind.GEMINI:
+        return {}
+    if channel.protocol == ProtocolKind.ANTHROPIC:
+        return {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION}
+    return {"authorization": f"Bearer {api_key}"}
 
 
 def build_upstream_headers(
@@ -215,6 +216,12 @@ def resolve_upstream_proxy_url(
     return global_proxy or None
 
 
-def resolve_channel_model_list_url(channel: ChannelConfig) -> str:
-    """Build the model-list endpoint URL for a channel."""
-    return append_url_path(_protocol_base_url(channel), "models")
+def resolve_channel_model_list_url(channel: ChannelConfig, api_key: str) -> str:
+    """Build the model-list endpoint URL, sized to fetch one full page."""
+    query_params = {
+        ProtocolKind.ANTHROPIC: {"limit": "1000"},
+        ProtocolKind.GEMINI: {"key": api_key, "pageSize": "1000"},
+    }.get(channel.protocol)
+    return append_url_path(
+        _protocol_base_url(channel), "models", query_params=query_params
+    )

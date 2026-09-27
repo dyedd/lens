@@ -62,8 +62,8 @@ export type ModelGroup = {
   route_group_name?: string;
   /** Channel model names that join live by case-insensitive exact match. */
   match_models: string[];
-  /** Case-insensitive search pattern whose matching models join live. */
-  match_regex: string;
+  /** Library regex rule ids; models matching any of them join live. */
+  match_rule_ids: string[];
   param_override: ParamOverrideRule[];
   headers: HeaderRule[];
   fallback_group_ids?: string[];

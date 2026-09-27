@@ -168,12 +168,16 @@ export function ChannelsTable({
               </TableCell>
               <TableCell>
                 {urls.length === 1 ? (
-                  <div
-                    className="max-w-[14rem] truncate text-xs text-muted-foreground"
-                    title={urls[0]}
-                  >
-                    {urls[0]}
-                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="max-w-[14rem] truncate text-xs text-muted-foreground">
+                        {urls[0]}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-sm break-all">
+                      {urls[0]}
+                    </TooltipContent>
+                  </Tooltip>
                 ) : urls.length > 1 ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -227,22 +231,26 @@ export function ChannelsTable({
                       : `${models.enabled} / ${models.total}`}
                   </span>
                   {models.pending ? (
-                    <Badge variant="destructive" asChild>
-                      <button
-                        type="button"
-                        className="cursor-pointer"
-                        onClick={() => onReviewPendingModels(site)}
-                        title={
-                          locale === "zh-CN"
-                            ? "上游已不再提供这些模型，点击确认保留或删除"
-                            : "No longer listed upstream; review to keep or delete"
-                        }
-                      >
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="destructive" asChild>
+                          <button
+                            type="button"
+                            className="cursor-pointer"
+                            onClick={() => onReviewPendingModels(site)}
+                          >
+                            {locale === "zh-CN"
+                              ? `${models.pending} 待确认`
+                              : `${models.pending} to review`}
+                          </button>
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
                         {locale === "zh-CN"
-                          ? `${models.pending} 待确认`
-                          : `${models.pending} to review`}
-                      </button>
-                    </Badge>
+                          ? "上游已不再提供这些模型，点击确认保留或删除"
+                          : "No longer listed upstream; review to keep or delete"}
+                      </TooltipContent>
+                    </Tooltip>
                   ) : null}
                 </div>
               </TableCell>

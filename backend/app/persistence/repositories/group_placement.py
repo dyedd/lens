@@ -128,7 +128,6 @@ class GroupPlacementMixin:
                     strategy=RoutingStrategy.FAILOVER.value,
                     route_group_id="",
                     match_models_json=dump_match_models([view.model_name]),
-                    match_regex="",
                 )
                 for view in unplaced
                 if _is_placeable(view)

@@ -185,18 +185,27 @@ export function CronjobsTable({
                   />
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                  <span
-                    className="inline-flex items-center gap-1"
-                    title={task.last_error ?? undefined}
-                  >
-                    {task.status === "succeeded" ? (
-                      <Check className="size-3.5 shrink-0" />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-1">
+                        {task.status === "succeeded" ? (
+                          <Check className="size-3.5 shrink-0" />
+                        ) : null}
+                        {task.status === "failed" ? (
+                          <X className="size-3.5 shrink-0" />
+                        ) : null}
+                        {formatTaskTime(locale, task.next_run_at, timeZone)}
+                      </span>
+                    </TooltipTrigger>
+                    {task.last_error ? (
+                      <TooltipContent
+                        side="top"
+                        className="max-w-sm whitespace-pre-wrap"
+                      >
+                        {task.last_error}
+                      </TooltipContent>
                     ) : null}
-                    {task.status === "failed" ? (
-                      <X className="size-3.5 shrink-0" />
-                    ) : null}
-                    {formatTaskTime(locale, task.next_run_at, timeZone)}
-                  </span>
+                  </Tooltip>
                 </TableCell>
                 <TableCell className="text-right">
                   <Tooltip>

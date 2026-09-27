@@ -4,8 +4,9 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from .protocols import ProtocolKind, RoutingStrategy
+from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel, validate_regex_pattern
+from .validation import StrictBaseModel
 
 
 def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | None:
@@ -50,14 +51,6 @@ def canonicalize_match_models(value: list[str] | None) -> list[str] | None:
     return result
 
 
-def canonicalize_match_regex(value: str | None) -> str | None:
-    """Trim the pattern; matching is always case-insensitive, so drop ``(?i)``."""
-    if value is None:
-        return None
-    pattern = value.strip().removeprefix("(?i)").strip()
-    return validate_regex_pattern(pattern, error_label="model group match regex")
-
-
 class ModelGroupItemState(str, Enum):
     READY = "ready"
     DISABLED = "disabled"
@@ -83,7 +76,7 @@ class ModelGroup(StrictBaseModel):
     route_group_id: str = ""
     route_group_name: str = ""
     match_models: list[str] = Field(default_factory=list)
-    match_regex: str = ""
+    match_rule_ids: RegexRuleIds = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
@@ -110,12 +103,11 @@ class ModelGroup(StrictBaseModel):
     _canonicalize_match_models = field_validator("match_models")(
         canonicalize_match_models
     )
-    _canonicalize_match_regex = field_validator("match_regex")(canonicalize_match_regex)
 
     @model_validator(mode="after")
     def clear_route_group_match_rules(self) -> "ModelGroup":
         if self.route_group_id.strip():
-            self.match_models, self.match_regex = [], ""
+            self.match_models, self.match_rule_ids = [], []
         return self
 
 
@@ -160,7 +152,7 @@ class ModelGroupCreate(StrictBaseModel):
     strategy: RoutingStrategy = RoutingStrategy.FAILOVER
     route_group_id: str = ""
     match_models: list[str] = Field(default_factory=list)
-    match_regex: str = ""
+    match_rule_ids: RegexRuleIds = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
@@ -179,12 +171,11 @@ class ModelGroupCreate(StrictBaseModel):
     _canonicalize_match_models = field_validator("match_models")(
         canonicalize_match_models
     )
-    _canonicalize_match_regex = field_validator("match_regex")(canonicalize_match_regex)
 
     @model_validator(mode="after")
     def clear_route_group_match_rules(self) -> "ModelGroupCreate":
         if self.route_group_id.strip():
-            self.match_models, self.match_regex = [], ""
+            self.match_models, self.match_rule_ids = [], []
         return self
 
 
@@ -193,7 +184,7 @@ class ModelGroupUpdate(StrictBaseModel):
     strategy: RoutingStrategy | None = None
     route_group_id: str | None = None
     match_models: list[str] | None = None
-    match_regex: str | None = None
+    match_rule_ids: RegexRuleIds | None = None
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None
     fallback_group_ids: list[str] | None = Field(default=None, max_length=20)
@@ -210,7 +201,6 @@ class ModelGroupUpdate(StrictBaseModel):
     _canonicalize_match_models = field_validator("match_models")(
         canonicalize_match_models
     )
-    _canonicalize_match_regex = field_validator("match_regex")(canonicalize_match_regex)
 
 
 class ModelGroupCandidateSubitem(ModelGroupItemInput):

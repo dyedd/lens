@@ -27,6 +27,7 @@ from app.persistence.entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
+from app.persistence.regex_rule_references import dump_rule_ids, validate_rule_ids
 
 from .cleanup import SiteConfigurationCleanupMixin
 from .endpoint_credentials import credential_ids_for_url
@@ -190,6 +191,13 @@ class SiteConfigUpsertsMixin(
         if not payload.base_urls:
             raise ValueError("At least one base URL is required")
 
+        await validate_rule_ids(
+            session,
+            [
+                *payload.model_sync_include_rule_ids,
+                *payload.model_sync_exclude_rule_ids,
+            ],
+        )
         built_base_urls = self._build_base_urls(payload.base_urls)
         base_url_ids = {item.id for item in built_base_urls}
         built_credentials = self._build_credentials(payload.credentials, base_url_ids)
@@ -209,8 +217,12 @@ class SiteConfigUpsertsMixin(
                     channel_proxy=payload.channel_proxy.strip(),
                     param_override=_dump_rules(payload.param_override),
                     model_sync_enabled=int(payload.model_sync_enabled),
-                    model_sync_include=payload.model_sync_include,
-                    model_sync_exclude=payload.model_sync_exclude,
+                    model_sync_include_rule_ids_json=dump_rule_ids(
+                        payload.model_sync_include_rule_ids
+                    ),
+                    model_sync_exclude_rule_ids_json=dump_rule_ids(
+                        payload.model_sync_exclude_rule_ids
+                    ),
                 )
             )
         else:
@@ -223,8 +235,12 @@ class SiteConfigUpsertsMixin(
             site.channel_proxy = payload.channel_proxy.strip()
             site.param_override = _dump_rules(payload.param_override)
             site.model_sync_enabled = int(payload.model_sync_enabled)
-            site.model_sync_include = payload.model_sync_include
-            site.model_sync_exclude = payload.model_sync_exclude
+            site.model_sync_include_rule_ids_json = dump_rule_ids(
+                payload.model_sync_include_rule_ids
+            )
+            site.model_sync_exclude_rule_ids_json = dump_rule_ids(
+                payload.model_sync_exclude_rule_ids
+            )
 
         await self._upsert_base_urls(session, site_id, built_base_urls)
         current_protocol_config_ids = set(

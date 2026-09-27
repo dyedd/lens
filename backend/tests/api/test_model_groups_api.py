@@ -472,8 +472,11 @@ def test_merge_model_group_folds_source_into_target(
     client,
     admin_headers,
     create_site,
+    create_regex_rule,
 ) -> None:
     create_site(valid_site_payload())
+    mini = create_regex_rule("mini", "-mini$")
+    dated = create_regex_rule("dated", "^gpt-4o-2")
     target = next(
         group
         for group in client.get("/api/admin/model-groups", headers=admin_headers).json()
@@ -482,14 +485,14 @@ def test_merge_model_group_folds_source_into_target(
     client.put(
         f"/api/admin/model-groups/{target['id']}",
         headers=admin_headers,
-        json={"match_regex": "-mini$"},
+        json={"match_rule_ids": [mini["id"]]},
     )
     source = _create_group(
         client,
         admin_headers,
         name="gpt-4o-latest",
         match_models=["gpt-4o-2026", "GPT-4O"],
-        match_regex="^gpt-4o-2",
+        match_rule_ids=[dated["id"], mini["id"]],
         items=[_member()],
     )
     alias = _create_group(
@@ -508,7 +511,7 @@ def test_merge_model_group_folds_source_into_target(
     assert response.status_code == 200, response.text
     merged = response.json()
     assert merged["match_models"] == ["gpt-4o", "gpt-4o-latest", "gpt-4o-2026"]
-    assert merged["match_regex"] == "(?:-mini$)|(?:^gpt-4o-2)"
+    assert merged["match_rule_ids"] == [mini["id"], dated["id"]]
     assert [
         (item["model_name"], item["matched_by_rule"]) for item in merged["items"]
     ] == [("gpt-4o", False)]

@@ -165,17 +165,21 @@ export function FoldedMemberRow({
           <div className="truncate font-mono text-xs font-medium text-foreground">
             {member.model_name}
           </div>
-          <div
-            className="truncate text-xs text-muted-foreground"
-            title={sourceLabel}
-          >
-            {sourceLabel}
-            {partiallyEnabled
-              ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
-              : !manuallyEnabled
-                ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
-                : ""}
-          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="truncate text-xs text-muted-foreground">
+                {sourceLabel}
+                {partiallyEnabled
+                  ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
+                  : !manuallyEnabled
+                    ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
+                    : ""}
+              </div>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-sm break-all">
+              {sourceLabel}
+            </TooltipContent>
+          </Tooltip>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           {member.is_rule_member ? (
@@ -264,17 +268,23 @@ export function FoldedMemberRow({
           }
         />
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        className="text-muted-foreground hover:text-destructive"
-        size="icon-xs"
-        aria-label={locale === "zh-CN" ? "移除成员" : "Remove member"}
-        title={locale === "zh-CN" ? "移除成员" : "Remove member"}
-        onClick={onRemove}
-      >
-        <X size={13} />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-muted-foreground hover:text-destructive"
+            size="icon-xs"
+            aria-label={locale === "zh-CN" ? "移除成员" : "Remove member"}
+            onClick={onRemove}
+          >
+            <X size={13} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {locale === "zh-CN" ? "移除成员" : "Remove member"}
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }

@@ -26,6 +26,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/Popover";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import { cn } from "@/lib/classNames";
 import {
   CHART_COLORS,
@@ -241,20 +246,23 @@ export function ModelAnalyticsCard(props: Props) {
               </ChartContainer>
               <div className="grid max-h-24 grid-cols-2 gap-x-3 gap-y-1 overflow-y-auto pr-1 text-[11px] text-muted-foreground">
                 {pieData.data.map((item, index) => (
-                  <div
-                    key={`${item.model}-${index}`}
-                    className="flex min-w-0 items-center gap-1.5"
-                    title={item.model}
-                  >
-                    <span
-                      className="size-2 shrink-0 rounded-[2px]"
-                      style={{
-                        backgroundColor:
-                          CHART_COLORS[index % CHART_COLORS.length],
-                      }}
-                    />
-                    <span className="truncate">{item.model}</span>
-                  </div>
+                  <Tooltip key={`${item.model}-${index}`}>
+                    <TooltipTrigger asChild>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span
+                          className="size-2 shrink-0 rounded-[2px]"
+                          style={{
+                            backgroundColor:
+                              CHART_COLORS[index % CHART_COLORS.length],
+                          }}
+                        />
+                        <span className="truncate">{item.model}</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-sm break-all">
+                      {item.model}
+                    </TooltipContent>
+                  </Tooltip>
                 ))}
               </div>
             </div>

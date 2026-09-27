@@ -42,6 +42,13 @@ export function BatchModelTestDialog({
       onPromptModeChange={onPromptModeChange}
       onPromptChange={onPromptChange}
       onRun={onRun}
+      onProtocolChangeAll={(protocol) => {
+        for (const row of rows) {
+          if (row.protocol !== protocol && row.protocols.includes(protocol)) {
+            onProtocolChange(row.key, protocol);
+          }
+        }
+      }}
       items={rows.map((row) => ({
         target: {
           modelName: row.modelName,

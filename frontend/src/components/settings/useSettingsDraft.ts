@@ -23,6 +23,7 @@ const REFRESH_QUERY_KEYS = [
   ["public-branding"],
   ["app-info"],
   ["model-groups"],
+  ["regex-rules"],
   ["overview-summary"],
   ["overview-daily"],
   ["overview-models"],
