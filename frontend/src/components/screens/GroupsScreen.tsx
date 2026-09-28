@@ -160,6 +160,7 @@ export function GroupsScreen() {
         onAddModelsToGroup={commands.addModelsToGroup}
         onCreateGroupForModels={commands.createGroupForModels}
         onAutoPlace={commands.autoPlaceModels}
+        onRemoveUnplacedModels={commands.removeUnplacedModels}
       />
 
       {editor.dialogOpen ? (

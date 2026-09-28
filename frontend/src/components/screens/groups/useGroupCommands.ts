@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
   type Dispatch,
   type FormEvent,
@@ -12,6 +13,8 @@ import type {
   ModelGroupPlacementRequest,
   ModelGroupPlacementResponse,
   RoutingStrategy,
+  UnplacedModelRemovalRequest,
+  UnplacedModelRemovalResponse,
 } from "@/lib/api/groups";
 import {
   EMPTY_FORM,
@@ -48,6 +51,7 @@ export function useGroupCommands({
   setEditingId,
   setForm,
 }: GroupCommandOptions) {
+  const queryClient = useQueryClient();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null);
 
@@ -335,6 +339,31 @@ export function useGroupCommands({
     }
   }
 
+  /** Remove unplaced model names from every channel offering them. */
+  async function removeUnplacedModels(modelNames: string[]) {
+    const payload: UnplacedModelRemovalRequest = { model_names: modelNames };
+    return runCommand(
+      "unplaced-removal",
+      locale === "zh-CN" ? "删除渠道模型失败" : "Failed to remove models",
+      async () => {
+        const { deleted, disabled } =
+          await apiRequest<UnplacedModelRemovalResponse>(
+            "/admin/unplaced-model-removals",
+            { method: "POST", body: JSON.stringify(payload) },
+          );
+        await Promise.all([
+          invalidateGroupData(),
+          queryClient.invalidateQueries({ queryKey: ["sites"] }),
+        ]);
+        toast.success(
+          locale === "zh-CN"
+            ? `已删除 ${deleted} 个、停用 ${disabled} 个渠道模型`
+            : `Removed ${deleted} and disabled ${disabled} channel models`,
+        );
+      },
+    );
+  }
+
   return {
     addModelsToGroup,
     applyEnabled,
@@ -347,6 +376,7 @@ export function useGroupCommands({
     mergeGroup,
     remove,
     removeGroups,
+    removeUnplacedModels,
     setDeleteTarget,
     submit,
     toggleGroupEnabled,

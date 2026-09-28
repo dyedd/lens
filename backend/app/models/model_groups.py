@@ -274,5 +274,14 @@ class ModelGroupPlacementResponse(StrictBaseModel):
     unplaced: list[UnplacedModelView] = Field(default_factory=list)
 
 
+class UnplacedModelRemovalRequest(StrictBaseModel):
+    model_names: list[str] = Field(min_length=1)
+
+
+class UnplacedModelRemovalResponse(StrictBaseModel):
+    deleted: int = 0
+    disabled: int = 0
+
+
 class ModelGroupMergeRequest(StrictBaseModel):
     target_group_id: str = Field(min_length=1)
