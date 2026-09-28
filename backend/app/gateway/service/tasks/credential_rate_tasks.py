@@ -14,7 +14,7 @@ from ....core.errors import ResourceNotFoundError
 from ....core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
-from ....models.protocols import ChannelStatus
+from ....models.protocols import ChannelStatus, ProtocolKind
 from ....models.sites import SiteConfig, SiteCredential
 from ...upstream_request import (
     build_upstream_headers,
@@ -113,7 +113,13 @@ def _rate_channel(
     if protocol_config is None or credential.id not in protocol_config.credential_ids:
         raise CredentialRateSyncError("Credential rate channel is no longer available")
 
-    for channel in state.channel_store.flatten_site(site):
+    # Rate endpoints only need the base URL and key, so a config without
+    # models or protocols still resolves through a transient Auto channel.
+    rate_config = protocol_config.model_copy(
+        update={"protocols": protocol_config.protocols or [ProtocolKind.AUTO]}
+    )
+    rate_site = site.model_copy(update={"protocols": [rate_config]})
+    for channel in state.channel_store.flatten_site(rate_site):
         if protocol_config_id_from_runtime_channel_id(channel.id) != protocol_config_id:
             continue
         target = channel_for_credential(channel, credential.id)
@@ -173,7 +179,7 @@ async def _fetch_credential_rate(
         ) from exc
     except (TypeError, ValueError) as exc:
         raise CredentialRateSyncError(
-            "Credential rate source returned invalid data"
+            f"Credential rate source returned invalid data: {exc}"
         ) from exc
 
 

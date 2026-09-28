@@ -1,6 +1,7 @@
-import { ChevronDown, Wand2 } from "lucide-react";
+import { ChevronDown, Trash2, Wand2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +36,7 @@ interface UnplacedModelsPanelProps {
   onAddModelsToGroup: (groupId: string, modelNames: string[]) => void;
   onCreateGroupForModels: (name: string, modelNames: string[]) => void;
   onAutoPlace: () => void;
+  onRemoveModels: (modelNames: string[]) => Promise<boolean>;
 }
 
 function buildUnplacedClusters(models: UnplacedModel[]): UnplacedCluster[] {
@@ -110,6 +112,7 @@ export function UnplacedModelsPanel({
   onAddModelsToGroup,
   onCreateGroupForModels,
   onAutoPlace,
+  onRemoveModels,
 }: UnplacedModelsPanelProps) {
   const clusters = useMemo(
     () => buildUnplacedClusters(unplacedModels),
@@ -117,6 +120,7 @@ export function UnplacedModelsPanel({
   );
   const busy = Boolean(busyId);
   const [isOpen, setIsOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<UnplacedModel | null>(null);
 
   return (
     <section
@@ -179,6 +183,44 @@ export function UnplacedModelsPanel({
                 ))}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-1">
+                {cluster.models.length > 1 ? (
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        disabled={busy}
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        {locale === "zh-CN" ? "从渠道删除" : "Remove"}
+                        <ChevronDown data-icon="inline-end" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {cluster.models.map((model) => (
+                        <DropdownMenuItem
+                          key={model.model_name}
+                          className="font-mono"
+                          onSelect={() => setRemoveTarget(model)}
+                        >
+                          {model.model_name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    disabled={busy}
+                    onClick={() => setRemoveTarget(cluster.models[0])}
+                  >
+                    <Trash2 data-icon="inline-start" />
+                    {locale === "zh-CN" ? "从渠道删除" : "Remove"}
+                  </Button>
+                )}
                 {cluster.similarGroups
                   .filter((group) => joinableGroupIds.has(group.id))
                   .map((group) => (
@@ -275,6 +317,57 @@ export function UnplacedModelsPanel({
           ))}
         </ul>
       ) : null}
+      <Dialog
+        open={Boolean(removeTarget)}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null);
+        }}
+      >
+        <AppDialogContent
+          className="max-w-lg"
+          showCloseButton={false}
+          title={
+            locale === "zh-CN" ? "从渠道删除模型" : "Remove model from channels"
+          }
+          description={
+            locale === "zh-CN"
+              ? `将从 ${removeTarget?.providers.length ?? 0} 个渠道密钥中移除「${removeTarget?.model_name ?? ""}」。开启模型同步的站点会改为停用该模型，避免下次同步重新添加。`
+              : `Remove "${removeTarget?.model_name ?? ""}" from ${removeTarget?.providers.length ?? 0} channel keys. Sites with model sync disable it instead, so the next sync does not add it back.`
+          }
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => setRemoveTarget(null)}
+              >
+                {locale === "zh-CN" ? "取消" : "Cancel"}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  if (!removeTarget) return;
+                  if (await onRemoveModels([removeTarget.model_name])) {
+                    setRemoveTarget(null);
+                  }
+                }}
+              >
+                {busy
+                  ? locale === "zh-CN"
+                    ? "删除中..."
+                    : "Removing..."
+                  : locale === "zh-CN"
+                    ? "确认删除"
+                    : "Remove"}
+              </Button>
+            </>
+          }
+        />
+      </Dialog>
     </section>
   );
 }

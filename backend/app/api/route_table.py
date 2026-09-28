@@ -12,6 +12,7 @@ from ..gateway.service.admin.model_groups import (
     list_unplaced_models,
     merge_model_group,
     place_models,
+    remove_unplaced_models,
     test_model_group_model,
     update_model_group,
 )
@@ -97,6 +98,7 @@ from ..models.model_groups import (
     ModelGroupCandidatesResponse,
     ModelGroupPlacementResponse,
     ModelGroupView,
+    UnplacedModelRemovalResponse,
     UnplacedModelsResponse,
 )
 from ..models.model_prices import ModelPriceItem, ModelPriceListResponse
@@ -304,6 +306,12 @@ def register_model_groups(app: FastAPI) -> None:
         list_unplaced_models,
         methods=["GET"],
         response_model=UnplacedModelsResponse,
+    )
+    app.add_api_route(
+        "/api/admin/unplaced-model-removals",
+        remove_unplaced_models,
+        methods=["POST"],
+        response_model=UnplacedModelRemovalResponse,
     )
     app.add_api_route(
         "/api/admin/model-group-placements",
