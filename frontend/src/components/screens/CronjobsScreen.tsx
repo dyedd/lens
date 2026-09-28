@@ -1,28 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListChecks, Play, RotateCcw, ToggleLeft } from "lucide-react";
+import { Play, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { SettingsSection } from "@/components/settings/settingsLayout";
 import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
+import {
+  BulkActionButton,
+  BulkActionsPopover,
+} from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/Popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/Select";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
+import { useRowSelection } from "@/hooks/useRowSelection";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { CronjobItem, CronjobRunResult } from "@/lib/api/cronjobs";
 import type { SettingItem } from "@/lib/api/settings";
@@ -41,6 +34,8 @@ import {
   runAtTime,
   type TaskDraft,
 } from "./cronjobs/cronjobDrafts";
+
+const cronjobId = (task: CronjobItem) => task.id;
 
 function schedulePayload(task: CronjobItem, enabled = task.enabled) {
   return {
@@ -68,10 +63,6 @@ export function CronjobsScreen() {
   const { locale, t } = useI18n();
   const timeZone = useAppTimeZone();
   const [editingTask, setEditingTask] = useState<CronjobItem | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkEnabled, setBulkEnabled] = useState<"enabled" | "disabled" | "">(
-    "",
-  );
   const [bulkBusy, setBulkBusy] = useState(false);
   const tasksQuery = useQuery({
     queryKey: ["cronjobs"],
@@ -84,21 +75,9 @@ export function CronjobsScreen() {
     staleTime: 5 * 60_000,
   });
   const tasks = tasksQuery.data ?? [];
-  const selectedTasks = tasks.filter((task) => selected.has(task.id));
+  const selection = useRowSelection(tasks, cronjobId);
+  const selectedTasks = selection.selectedRows;
   const retentionDraft = parseRetentionSettings(settingsQuery.data);
-
-  function handleSelectAll(checked: boolean) {
-    setSelected(checked ? new Set(tasks.map((task) => task.id)) : new Set());
-  }
-
-  function handleSelectOne(taskId: string, checked: boolean) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (checked) next.add(taskId);
-      else next.delete(taskId);
-      return next;
-    });
-  }
 
   const updateTask = useMutation({
     mutationFn: async ({
@@ -187,7 +166,7 @@ export function CronjobsScreen() {
   async function bulkSetEnabled(enabled: boolean) {
     const items = selectedTasks.filter((task) => task.enabled !== enabled);
     if (!items.length) {
-      setSelected(new Set());
+      selection.clear();
       return;
     }
     setBulkBusy(true);
@@ -213,7 +192,7 @@ export function CronjobsScreen() {
           `${enabled ? "Enabled" : "Disabled"} ${items.length} cron jobs`,
         ),
       );
-      setSelected(new Set());
+      selection.clear();
     } catch (error) {
       toast.error(
         getApiErrorMessage(
@@ -234,7 +213,7 @@ export function CronjobsScreen() {
   async function bulkRun() {
     const items = selectedTasks.filter((task) => task.status !== "running");
     if (!items.length) {
-      setSelected(new Set());
+      selection.clear();
       return;
     }
     setBulkBusy(true);
@@ -257,7 +236,7 @@ export function CronjobsScreen() {
           `Ran ${items.length} cron jobs`,
         ),
       );
-      setSelected(new Set());
+      selection.clear();
     } catch (error) {
       toast.error(
         getApiErrorMessage(
@@ -335,74 +314,20 @@ export function CronjobsScreen() {
       <SettingsSection
         title={titleForLocale(locale, "定时任务", "Cron jobs")}
         actions={
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
-                disabled={selectedTasks.length === 0 || bulkBusy}
-                aria-label={titleForLocale(locale, "批量", "Bulk")}
-              >
-                <ListChecks className="size-3.5" />
-                <span>{titleForLocale(locale, "批量", "Bulk")}</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-[240px] p-2">
-              <p className="flex h-7 items-center px-2 text-[11px] text-muted-foreground">
-                {titleForLocale(
-                  locale,
-                  `已选 ${selectedTasks.length} 项`,
-                  `${selectedTasks.length} selected`,
-                )}
-              </p>
-              <div className="flex h-7 w-full items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted"
-                  disabled={!bulkEnabled || bulkBusy}
-                  onClick={() => {
-                    void bulkSetEnabled(bulkEnabled === "enabled");
-                  }}
-                >
-                  <ToggleLeft className="size-3" />
-                  {titleForLocale(locale, "应用", "Apply")}
-                </Button>
-                <Select
-                  value={bulkEnabled || undefined}
-                  onValueChange={(value) =>
-                    setBulkEnabled(value as "enabled" | "disabled")
-                  }
-                >
-                  <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
-                    <SelectValue
-                      placeholder={titleForLocale(locale, "状态", "Status")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="enabled">
-                      {titleForLocale(locale, "启用", "Enable")}
-                    </SelectItem>
-                    <SelectItem value="disabled">
-                      {titleForLocale(locale, "停用", "Disable")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                className="mt-1 h-7 w-full justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted hover:text-foreground"
-                disabled={bulkBusy}
-                onClick={() => void bulkRun()}
-              >
-                <Play className="size-3.5" />
-                {titleForLocale(locale, "执行选中任务", "Run selected")}
-              </Button>
-            </PopoverContent>
-          </Popover>
+          <BulkActionsPopover
+            locale={locale}
+            count={selectedTasks.length}
+            isBusy={bulkBusy}
+            placement="section"
+            onSetEnabled={(enabled) => void bulkSetEnabled(enabled)}
+          >
+            <BulkActionButton
+              icon={<Play className="size-3.5" />}
+              label={titleForLocale(locale, "执行选中任务", "Run selected")}
+              isBusy={bulkBusy}
+              onClick={() => void bulkRun()}
+            />
+          </BulkActionsPopover>
         }
       >
         <CronjobsTable
@@ -411,7 +336,7 @@ export function CronjobsScreen() {
           isFetching={tasksQuery.isFetching}
           tasksIsError={tasksQuery.isError}
           timeZone={timeZone}
-          selected={selected}
+          selected={selection.selected}
           bulkBusy={bulkBusy}
           togglingTaskId={
             updateTask.isPending && !editingTask
@@ -419,8 +344,8 @@ export function CronjobsScreen() {
               : undefined
           }
           runningTaskId={runTask.isPending ? runTask.variables?.id : undefined}
-          onSelectAll={handleSelectAll}
-          onSelectOne={handleSelectOne}
+          onSelectAll={(checked) => selection.toggleRows(tasks, checked)}
+          onSelectOne={selection.toggleId}
           onEdit={setEditingTask}
           onRun={(task) => runTask.mutate(task)}
           onToggleEnabled={(task, enabled) =>

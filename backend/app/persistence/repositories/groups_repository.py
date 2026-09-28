@@ -14,7 +14,6 @@ from app.models.model_groups import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
-    ModelGroupItemInput,
     ModelGroupUpdate,
     ModelGroupView,
     canonicalize_match_models,
@@ -203,16 +202,6 @@ class ModelGroupRepository(
                 )
                 current_item_views = current_items.get(group_id, [])
             next_items = payload.items
-            if next_items is None and validates_items:
-                next_items = [
-                    ModelGroupItemInput(
-                        channel_id=item.channel_id,
-                        credential_id=item.credential_id,
-                        model_name=item.model_name,
-                        enabled=item.enabled,
-                    )
-                    for item in current_item_views
-                ]
             next_fallback_group_ids = (
                 payload.fallback_group_ids
                 if payload.fallback_group_ids is not None

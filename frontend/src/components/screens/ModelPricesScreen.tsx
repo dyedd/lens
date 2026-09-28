@@ -1,6 +1,6 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { LockKeyhole, Pencil, RefreshCw, Search, Unlock } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import {
@@ -35,6 +35,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
+import { useClientPagination } from "@/hooks/useClientPagination";
+import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { apiRequest } from "@/lib/api/client";
 import type { ModelGroup } from "@/lib/api/groups";
 import { type Locale, useI18n } from "@/lib/I18nContext";
@@ -52,7 +54,6 @@ const PRICE_FIELDS = [
   ["cache_write_price_per_million", "缓存写入", "Cache write"],
   ["image_price_per_image", "每张价格", "Per image"],
 ] as const;
-const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 const TOKEN_PRICE_FIELDS = PRICE_FIELDS.filter(
   ([key]) => key !== "image_price_per_image",
 );
@@ -277,25 +278,18 @@ export function ModelPricesScreen() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<ModelGroup | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] =
-    useState<(typeof PAGE_SIZE_OPTIONS)[number]>(25);
-  const groups = useQuery({
-    queryKey: ["groups"],
-    queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
-  });
+  const groups = useModelGroupsQuery();
   const isChinese = locale === "zh-CN";
   const rows = (groups.data ?? []).filter(
     (group) =>
       !group.route_group_id &&
       group.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const pagedRows = useMemo(
-    () => rows.slice((safePage - 1) * pageSize, safePage * pageSize),
-    [rows, pageSize, safePage],
-  );
+  const {
+    pageRows: pagedRows,
+    resetPage,
+    paginationProps,
+  } = useClientPagination(rows);
   const rowsByMode = (mode: ModelGroup["pricing_mode"]) =>
     pagedRows.filter((group) => group.pricing_mode === mode);
 
@@ -338,7 +332,7 @@ export function ModelPricesScreen() {
               value={search}
               onChange={(event) => {
                 setSearch(event.target.value);
-                setPage(1);
+                resetPage();
               }}
               placeholder={isChinese ? "搜索模型" : "Search models"}
             />
@@ -512,19 +506,7 @@ export function ModelPricesScreen() {
           </TableBody>
         </Table>
       ) : null}
-      <TablePagination
-        locale={locale}
-        total={rows.length}
-        page={safePage}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size as (typeof PAGE_SIZE_OPTIONS)[number]);
-          setPage(1);
-        }}
-      />
+      <TablePagination locale={locale} {...paginationProps} />
       {editing ? (
         <PriceEditor
           group={editing}

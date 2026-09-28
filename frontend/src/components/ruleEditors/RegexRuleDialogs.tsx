@@ -2,6 +2,7 @@ import { type KeyboardEvent, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/Button";
+import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -238,64 +239,38 @@ export function DeleteRegexRuleDialog({
   }
 
   return (
-    <Dialog
+    <ConfirmDeleteDialog
       open
+      locale={locale}
+      title={titleForLocale(locale, "删除规则", "Delete rule")}
+      description={
+        usageLines.length
+          ? titleForLocale(
+              locale,
+              `删除规则「${rule.name}」？将从 ${rule.sites.length} 个渠道、${rule.groups.length} 个模型组中移除。`,
+              `Delete rule "${rule.name}"? It will be removed from ${rule.sites.length} channels and ${rule.groups.length} groups.`,
+            )
+          : titleForLocale(
+              locale,
+              `删除规则「${rule.name}」？没有渠道或模型组使用它。`,
+              `Delete rule "${rule.name}"? No channel or group uses it.`,
+            )
+      }
+      isBusy={isDeleting}
       onOpenChange={(open) => {
         if (!open && !isDeleting) onClose();
       }}
+      onConfirm={() => void handleDelete()}
     >
-      <AppDialogContent
-        className="max-w-lg"
-        showCloseButton={false}
-        title={titleForLocale(locale, "删除规则", "Delete rule")}
-        description={
-          usageLines.length
-            ? titleForLocale(
-                locale,
-                `删除规则「${rule.name}」？将从 ${rule.sites.length} 个渠道、${rule.groups.length} 个模型组中移除。`,
-                `Delete rule "${rule.name}"? It will be removed from ${rule.sites.length} channels and ${rule.groups.length} groups.`,
-              )
-            : titleForLocale(
-                locale,
-                `删除规则「${rule.name}」？没有渠道或模型组使用它。`,
-                `Delete rule "${rule.name}"? No channel or group uses it.`,
-              )
-        }
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={isDeleting}
-              onClick={onClose}
-            >
-              {titleForLocale(locale, "取消", "Cancel")}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              disabled={isDeleting}
-              onClick={() => void handleDelete()}
-            >
-              {isDeleting
-                ? titleForLocale(locale, "删除中...", "Deleting...")
-                : titleForLocale(locale, "确认删除", "Delete")}
-            </Button>
-          </>
-        }
-      >
-        {usageLines.length ? (
-          <div className="space-y-0.5 text-xs text-muted-foreground">
-            {usageLines.map((line) => (
-              <p key={line} className="break-words">
-                {line}
-              </p>
-            ))}
-          </div>
-        ) : null}
-      </AppDialogContent>
-    </Dialog>
+      {usageLines.length ? (
+        <div className="space-y-0.5 text-xs text-muted-foreground">
+          {usageLines.map((line) => (
+            <p key={line} className="break-words">
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </ConfirmDeleteDialog>
   );
 }

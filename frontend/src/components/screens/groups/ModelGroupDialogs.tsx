@@ -14,7 +14,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/Accordion";
 import { Button } from "@/components/ui/Button";
-import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
   Sheet,
   SheetContent,
@@ -378,49 +378,20 @@ export function DeleteGroupDialog({
   remove,
 }: DeleteGroupDialogProps) {
   return (
-    <Dialog
+    <ConfirmDeleteDialog
       open={Boolean(deleteTarget)}
+      locale={locale}
+      title={locale === "zh-CN" ? "确认删除模型组" : "Delete group"}
+      description={
+        locale === "zh-CN"
+          ? `将删除模型组「${deleteTarget?.name ?? ""}」。如果渠道仍提供它的模型且没有其他模型组覆盖，下次同步时会被重新自动放置；要停止路由某个模型，请在渠道中停用该模型，或将此组合并到其他组。`
+          : `Delete group "${deleteTarget?.name ?? ""}". If channels still provide its models and no other group covers them, they are auto-placed again on the next sync. To stop routing a model, disable it in the channel or merge this group instead.`
+      }
+      isBusy={Boolean(deleteTarget) && busyId === deleteTarget?.id}
       onOpenChange={(open) => {
         if (!open) setDeleteTarget(null);
       }}
-    >
-      <AppDialogContent
-        className="max-w-lg"
-        showCloseButton={false}
-        title={locale === "zh-CN" ? "确认删除模型组" : "Delete group"}
-        description={
-          locale === "zh-CN"
-            ? `将删除模型组「${deleteTarget?.name ?? ""}」。如果渠道仍提供它的模型且没有其他模型组覆盖，下次同步时会被重新自动放置；要停止路由某个模型，请在渠道中停用该模型，或将此组合并到其他组。`
-            : `Delete group "${deleteTarget?.name ?? ""}". If channels still provide its models and no other group covers them, they are auto-placed again on the next sync. To stop routing a model, disable it in the channel or merge this group instead.`
-        }
-        footer={
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={() => setDeleteTarget(null)}
-            >
-              {locale === "zh-CN" ? "取消" : "Cancel"}
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              type="button"
-              onClick={() => deleteTarget && void remove(deleteTarget)}
-              disabled={busyId === deleteTarget?.id}
-            >
-              {busyId === deleteTarget?.id
-                ? locale === "zh-CN"
-                  ? "删除中..."
-                  : "Deleting..."
-                : locale === "zh-CN"
-                  ? "确认删除"
-                  : "Delete"}
-            </Button>
-          </>
-        }
-      />
-    </Dialog>
+      onConfirm={() => deleteTarget && void remove(deleteTarget)}
+    />
   );
 }

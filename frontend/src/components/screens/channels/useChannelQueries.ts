@@ -94,7 +94,6 @@ export function useChannelQueries(locale: Locale) {
       queryClient.invalidateQueries({ queryKey: ["sites"] }),
       queryClient.invalidateQueries({ queryKey: ["group-candidates"] }),
       queryClient.invalidateQueries({ queryKey: ["groups"] }),
-      queryClient.invalidateQueries({ queryKey: ["model-groups"] }),
       queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
       queryClient.invalidateQueries({ queryKey: ["request-log-detail"] }),
       queryClient.invalidateQueries({

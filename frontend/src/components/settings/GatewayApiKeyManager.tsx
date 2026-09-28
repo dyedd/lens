@@ -1,30 +1,21 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListChecks, Plus, ToggleLeft, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/Popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/Select";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
+import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
+import { useRowSelection } from "@/hooks/useRowSelection";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type { ModelGroup } from "@/lib/api/groups";
 import type { GatewayApiKey, GatewayApiKeyPayload } from "@/lib/api/settings";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
-
 import { GatewayApiKeyTable } from "./gateway-api-key-manager/GatewayApiKeyTable";
 import { buildGatewayModelGroupOptions } from "./gateway-api-key-manager/gatewayApiKeyModel";
 import { SettingsSection } from "./settingsLayout";
+
+const gatewayKeyId = (item: GatewayApiKey) => item.id;
 
 const GatewayApiKeyDialog = lazyComponent(() =>
   import("./gateway-api-key-manager/GatewayApiKeyDialog").then(
@@ -42,11 +33,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     staleTime: 5_000,
     refetchInterval: 10_000,
   });
-  const { data: modelGroups = [] } = useQuery({
-    queryKey: ["model-groups"],
-    queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
-    staleTime: 5 * 60_000,
-  });
+  const { data: modelGroups = [] } = useModelGroupsQuery();
 
   const modelGroupOptions = useMemo(
     () => buildGatewayModelGroupOptions(modelGroups),
@@ -55,13 +42,10 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<GatewayApiKey | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
-  const [bulkEnabled, setBulkEnabled] = useState<"enabled" | "disabled" | "">(
-    "",
-  );
-  const selectedKeys = gatewayKeys.filter((item) => selected.has(item.id));
+  const selection = useRowSelection(gatewayKeys, gatewayKeyId);
+  const selectedKeys = selection.selectedRows;
 
   function openCreateDialog() {
     setEditingKey(null);
@@ -94,26 +78,6 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
   async function refreshKeys() {
     await queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] });
-  }
-
-  function handleSelectAll(checked: boolean) {
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const item of gatewayKeys) {
-        if (checked) next.add(item.id);
-        else next.delete(item.id);
-      }
-      return next;
-    });
-  }
-
-  function handleSelectOne(keyId: string, checked: boolean) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (checked) next.add(keyId);
-      else next.delete(keyId);
-      return next;
-    });
   }
 
   async function toggleGatewayKeyEnabled(
@@ -171,7 +135,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
   async function bulkSetEnabled(enabled: boolean) {
     const items = selectedKeys.filter((item) => item.enabled !== enabled);
     if (!items.length) {
-      setSelected(new Set());
+      selection.clear();
       return;
     }
     setBusyId("bulk");
@@ -209,7 +173,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
             : `Disabled ${items.length} API keys`,
         ),
       );
-      setSelected(new Set());
+      selection.clear();
     } catch (requestError) {
       const message = getApiErrorMessage(
         requestError,
@@ -250,7 +214,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
           `Deleted ${selectedKeys.length} API keys`,
         ),
       );
-      setSelected(new Set());
+      selection.clear();
       await refreshKeys();
     } catch (requestError) {
       const message = getApiErrorMessage(
@@ -274,73 +238,14 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         title={titleForLocale(locale, "API 密钥", "API keys")}
         actions={
           <>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
-                  disabled={selectedKeys.length === 0 || Boolean(busyId)}
-                  aria-label={titleForLocale(locale, "批量", "Bulk")}
-                >
-                  <ListChecks className="size-3.5" />
-                  {titleForLocale(locale, "批量", "Bulk")}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-[240px] p-2">
-                <p className="flex h-7 items-center px-2 text-[11px] text-muted-foreground">
-                  {titleForLocale(
-                    locale,
-                    `已选 ${selectedKeys.length} 项`,
-                    `${selectedKeys.length} selected`,
-                  )}
-                </p>
-                <div className="flex h-7 w-full items-center gap-1.5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted"
-                    disabled={!bulkEnabled || Boolean(busyId)}
-                    onClick={() => {
-                      void bulkSetEnabled(bulkEnabled === "enabled");
-                    }}
-                  >
-                    <ToggleLeft className="size-3" />
-                    {titleForLocale(locale, "应用", "Apply")}
-                  </Button>
-                  <Select
-                    value={bulkEnabled || undefined}
-                    onValueChange={(value) =>
-                      setBulkEnabled(value as "enabled" | "disabled")
-                    }
-                  >
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
-                      <SelectValue
-                        placeholder={titleForLocale(locale, "状态", "Status")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="enabled">
-                        {titleForLocale(locale, "启用", "Enable")}
-                      </SelectItem>
-                      <SelectItem value="disabled">
-                        {titleForLocale(locale, "停用", "Disable")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <button
-                  type="button"
-                  disabled={Boolean(busyId)}
-                  onClick={() => void bulkRemove()}
-                  className="mt-1 flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
-                >
-                  <Trash2 className="size-3.5" />
-                  {titleForLocale(locale, "批量删除", "Delete selected")}
-                </button>
-              </PopoverContent>
-            </Popover>
+            <BulkActionsPopover
+              locale={locale}
+              count={selectedKeys.length}
+              isBusy={Boolean(busyId)}
+              placement="section"
+              onSetEnabled={(enabled) => void bulkSetEnabled(enabled)}
+              onDelete={() => void bulkRemove()}
+            />
             <Button
               type="button"
               variant="ghost"
@@ -358,11 +263,11 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
           locale={locale}
           gatewayKeys={gatewayKeys}
           timeZone={timeZone}
-          selected={selected}
+          selected={selection.selected}
           busyId={busyId}
           copiedKey={copiedKey}
-          onSelectAll={handleSelectAll}
-          onSelectOne={handleSelectOne}
+          onSelectAll={(checked) => selection.toggleRows(gatewayKeys, checked)}
+          onSelectOne={selection.toggleId}
           onCopy={copyGatewayKey}
           onEdit={openEditDialog}
           onToggle={toggleGatewayKeyEnabled}

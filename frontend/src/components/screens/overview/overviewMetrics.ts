@@ -7,8 +7,6 @@ export type HeatmapPoint = {
   tokens: number;
   waitTimeMs: number;
 };
-export type StatTrendPoint = { label: string; value: number };
-
 export const TIME_RANGE_OPTIONS = [
   { value: "-1", zhLabel: "今天", enLabel: "Today" },
   { value: "7", zhLabel: "近 7 天", enLabel: "Last 7 days" },
@@ -69,11 +67,6 @@ export function parseDateKey(value: string) {
       ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
       : value;
 }
-/** Format a date key for sparkline labels. */
-export function formatSparklineLabel(value: string) {
-  const date = parseDateKey(value);
-  return date.length >= 10 ? `${date.slice(5, 7)}/${date.slice(8, 10)}` : value;
-}
 /** Convert a local date to an ISO date key. */
 export function toLocalDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -88,15 +81,6 @@ export function addDays(date: Date, days: number) {
 export function startOfHeatmapWeek(date: Date) {
   const day = date.getDay();
   return addDays(date, day === 0 ? -6 : 1 - day);
-}
-/** Ensure a trend has enough points for chart rendering. */
-export function ensureTrendPoints(points: StatTrendPoint[]) {
-  return points.length >= 2
-    ? points
-    : [
-        { label: "", value: 0 },
-        { label: "", value: 0 },
-      ];
 }
 
 /** Build localized labels for the selected model metric. */

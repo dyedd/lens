@@ -190,9 +190,3 @@ export function getModelGroupAvatar(name: string): AvatarComponent {
   }
   return FALLBACK_AVATAR;
 }
-
-/** Renders the family avatar for a model name. */
-export function ModelAvatar({ name, size }: { name: string; size?: number }) {
-  const avatarFn = getModelGroupAvatar(name);
-  return avatarFn({ size });
-}

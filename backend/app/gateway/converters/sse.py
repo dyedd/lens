@@ -61,3 +61,31 @@ def format_sse_event(event: str | None, data: dict[str, Any] | str) -> bytes:
         lines.append(f"data: {data}")
     lines.extend(("", ""))
     return "\n".join(lines).encode("utf-8")
+
+
+def anthropic_block_start(index: int, content_block: dict[str, Any]) -> bytes:
+    return format_sse_event(
+        "content_block_start",
+        {"type": "content_block_start", "index": index, "content_block": content_block},
+    )
+
+
+def anthropic_block_delta(index: int, delta: dict[str, Any]) -> bytes:
+    return format_sse_event(
+        "content_block_delta",
+        {"type": "content_block_delta", "index": index, "delta": delta},
+    )
+
+
+def anthropic_block_stop(index: int) -> bytes:
+    return format_sse_event(
+        "content_block_stop", {"type": "content_block_stop", "index": index}
+    )
+
+
+def build_chat_tool_call(call_id: str, name: str, arguments: str) -> dict[str, Any]:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments},
+    }
