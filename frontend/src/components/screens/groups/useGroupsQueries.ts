@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { apiRequest } from "@/lib/api/client";
 import type {
-  ModelGroup,
   ModelGroupCandidatesPayload,
   ModelGroupCandidatesResponse,
   RoutingStrategy,
@@ -40,11 +40,7 @@ export function useGroupsQueries({
   locale,
 }: GroupsQueryOptions) {
   const queryClient = useQueryClient();
-  const groupsQuery = useQuery({
-    queryKey: ["groups"],
-    queryFn: () => apiRequest<ModelGroup[]>("/admin/model-groups"),
-    staleTime: 2 * 60_000,
-  });
+  const groupsQuery = useModelGroupsQuery();
   // Nested under "groups" so every groups invalidation refreshes it too.
   const unplacedQuery = useQuery({
     queryKey: ["groups", "unplaced-models"],

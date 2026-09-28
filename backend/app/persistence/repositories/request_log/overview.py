@@ -567,56 +567,30 @@ class RequestLogOverview(
     ) -> dict[str, float | set[str]]:
         if days == 0:
             imported_total = await session.get(ImportedStatsTotalEntity, 1)
+            rows = [imported_total] if imported_total is not None else []
             covered_dates = {
                 row[0]
                 for row in (
                     await session.execute(select(ImportedStatsDailyEntity.date))
                 ).all()
             }
-            if imported_total is None:
-                return {
-                    "request_count": 0.0,
-                    "wait_time_ms": 0.0,
-                    "input_tokens": 0.0,
-                    "cache_read_input_tokens": 0.0,
-                    "cache_write_input_tokens": 0.0,
-                    "output_tokens": 0.0,
-                    "input_cost_usd": 0.0,
-                    "output_cost_usd": 0.0,
-                    "total_cost_usd": 0.0,
-                    "covered_dates": covered_dates,
-                }
-            return {
-                "request_count": float(
-                    imported_total.request_success + imported_total.request_failed
-                ),
-                "wait_time_ms": float(imported_total.wait_time),
-                "input_tokens": float(imported_total.input_token),
-                "cache_read_input_tokens": 0.0,
-                "cache_write_input_tokens": 0.0,
-                "output_tokens": float(imported_total.output_token),
-                "input_cost_usd": float(imported_total.input_cost),
-                "output_cost_usd": float(imported_total.output_cost),
-                "total_cost_usd": float(
-                    imported_total.input_cost + imported_total.output_cost
-                ),
-                "covered_dates": covered_dates,
-            }
-        start_at, end_at = resolve_imported_date_window(
-            days, offset_days=offset_days, time_zone=time_zone
-        )
-        rows = (
-            (
-                await session.execute(
-                    select(ImportedStatsDailyEntity)
-                    .where(ImportedStatsDailyEntity.date >= start_at)
-                    .where(ImportedStatsDailyEntity.date < end_at)
-                )
+        else:
+            start_at, end_at = resolve_imported_date_window(
+                days, offset_days=offset_days, time_zone=time_zone
             )
-            .scalars()
-            .all()
-        )
-        covered_dates = {item.date for item in rows}
+            daily_rows = (
+                (
+                    await session.execute(
+                        select(ImportedStatsDailyEntity)
+                        .where(ImportedStatsDailyEntity.date >= start_at)
+                        .where(ImportedStatsDailyEntity.date < end_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            rows = list(daily_rows)
+            covered_dates = {item.date for item in daily_rows}
         return {
             "request_count": float(
                 sum(item.request_success + item.request_failed for item in rows)
@@ -707,44 +681,6 @@ class RequestLogOverview(
             return 0.0
         return round((current - previous) / previous * 100, 2)
 
-    async def request_log_totals_excluding_imported_days(
-        self, session: AsyncSession, *, time_zone: ZoneInfo
-    ) -> dict[str, float]:
-        imported_dates = {
-            row[0]
-            for row in (
-                await session.execute(select(ImportedStatsDailyEntity.date))
-            ).all()
-        }
-        archived_totals = await self.archived_period_totals(
-            session, days=0, exclude_dates=imported_dates, time_zone=time_zone
-        )
-        live_totals = await self.request_log_period_totals(
-            session, days=0, exclude_dates=imported_dates, time_zone=time_zone
-        )
-        return {
-            "request_count": archived_totals["request_count"]
-            + live_totals["request_count"],
-            "wait_time_ms": archived_totals["wait_time_ms"]
-            + live_totals["wait_time_ms"],
-            "input_tokens": archived_totals["input_tokens"]
-            + live_totals["input_tokens"],
-            "cache_read_input_tokens": archived_totals["cache_read_input_tokens"]
-            + live_totals["cache_read_input_tokens"],
-            "cache_write_input_tokens": archived_totals["cache_write_input_tokens"]
-            + live_totals["cache_write_input_tokens"],
-            "output_tokens": archived_totals["output_tokens"]
-            + live_totals["output_tokens"],
-            "input_cost_usd": archived_totals["input_cost_usd"]
-            + live_totals["input_cost_usd"],
-            "output_cost_usd": archived_totals["output_cost_usd"]
-            + live_totals["output_cost_usd"],
-            "total_cost_usd": archived_totals["total_cost_usd"]
-            + live_totals["total_cost_usd"],
-            "successful_requests": archived_totals["successful_requests"]
-            + live_totals["successful_requests"],
-        }
-
     async def archived_period_totals(
         self,
         session: AsyncSession,
@@ -816,32 +752,9 @@ class RequestLogOverview(
             exclude_dates=imported_totals["covered_dates"],
             time_zone=time_zone,
         )
+        parts = (imported_totals, archived_totals, request_log_totals)
         return {
-            "request_count": imported_totals["request_count"]
-            + archived_totals["request_count"]
-            + request_log_totals["request_count"],
-            "wait_time_ms": imported_totals["wait_time_ms"]
-            + archived_totals["wait_time_ms"]
-            + request_log_totals["wait_time_ms"],
-            "input_tokens": imported_totals["input_tokens"]
-            + archived_totals["input_tokens"]
-            + request_log_totals["input_tokens"],
-            "cache_read_input_tokens": imported_totals["cache_read_input_tokens"]
-            + archived_totals["cache_read_input_tokens"]
-            + request_log_totals["cache_read_input_tokens"],
-            "cache_write_input_tokens": imported_totals["cache_write_input_tokens"]
-            + archived_totals["cache_write_input_tokens"]
-            + request_log_totals["cache_write_input_tokens"],
-            "output_tokens": imported_totals["output_tokens"]
-            + archived_totals["output_tokens"]
-            + request_log_totals["output_tokens"],
-            "input_cost_usd": imported_totals["input_cost_usd"]
-            + archived_totals["input_cost_usd"]
-            + request_log_totals["input_cost_usd"],
-            "output_cost_usd": imported_totals["output_cost_usd"]
-            + archived_totals["output_cost_usd"]
-            + request_log_totals["output_cost_usd"],
-            "total_cost_usd": imported_totals["total_cost_usd"]
-            + archived_totals["total_cost_usd"]
-            + request_log_totals["total_cost_usd"],
+            key: sum(part[key] for part in parts)
+            for key in imported_totals
+            if key != "covered_dates"
         }

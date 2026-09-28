@@ -7,6 +7,8 @@ from typing import Any
 from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
 from .sse import (
     FINISH_REASON_CHAT_TO_ANTHROPIC,
+    anthropic_block_start,
+    anthropic_block_stop,
     format_sse_event,
     parse_sse_json_stream,
 )
@@ -116,7 +118,7 @@ class _AnthropicStreamState:
 
     def finish_events(self) -> list[bytes]:
         events = [
-            _content_block_stop(index)
+            anthropic_block_stop(index)
             for index in (self.thinking_index, self.text_index)
             if index is not None
         ]
@@ -126,7 +128,7 @@ class _AnthropicStreamState:
             arguments_delta = tool_call.take_argument_delta()
             if arguments_delta:
                 events.append(_tool_arguments_delta(tool_call, arguments_delta))
-            events.append(_content_block_stop(_tool_block_index(tool_call)))
+            events.append(anthropic_block_stop(_tool_block_index(tool_call)))
 
         stop_reason = FINISH_REASON_CHAT_TO_ANTHROPIC.get(
             self.finish_reason, "end_turn"
@@ -156,7 +158,7 @@ class _AnthropicStreamState:
         if self.thinking_index is None:
             self.thinking_index = self._allocate_block_index()
             events.append(
-                _content_block_start(
+                anthropic_block_start(
                     self.thinking_index, {"type": "thinking", "thinking": ""}
                 )
             )
@@ -182,7 +184,7 @@ class _AnthropicStreamState:
         if self.text_index is None:
             self.text_index = self._allocate_block_index()
             events.append(
-                _content_block_start(self.text_index, {"type": "text", "text": ""})
+                anthropic_block_start(self.text_index, {"type": "text", "text": ""})
             )
         events.append(
             format_sse_event(
@@ -220,30 +222,12 @@ class _AnthropicStreamState:
         return index
 
 
-def _content_block_start(index: int, content_block: dict[str, Any]) -> bytes:
-    return format_sse_event(
-        "content_block_start",
-        {
-            "type": "content_block_start",
-            "index": index,
-            "content_block": content_block,
-        },
-    )
-
-
-def _content_block_stop(index: int) -> bytes:
-    return format_sse_event(
-        "content_block_stop",
-        {"type": "content_block_stop", "index": index},
-    )
-
-
 def _tool_block_start(tool_call: ChatToolCall) -> bytes:
     if not tool_call.call_id:
         raise ValueError("Chat tool call stream ended without id")
     if not tool_call.name:
         raise ValueError("Chat tool call stream ended without function.name")
-    return _content_block_start(
+    return anthropic_block_start(
         _tool_block_index(tool_call),
         {
             "type": "tool_use",

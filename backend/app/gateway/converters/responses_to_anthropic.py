@@ -13,7 +13,13 @@ from .responses_common import (
     usage_int,
     validate_terminal_response,
 )
-from .sse import format_sse_event, parse_sse_json_stream
+from .sse import (
+    anthropic_block_delta,
+    anthropic_block_start,
+    anthropic_block_stop,
+    format_sse_event,
+    parse_sse_json_stream,
+)
 from .validation import required_string
 
 _TERMINAL_EVENTS = {"response.completed", "response.incomplete"}
@@ -224,7 +230,7 @@ async def responses_stream_to_anthropic_stream(
                 response, expected_status=expected_status
             )
             for index in sorted(state.open_blocks):
-                yield _content_block_stop(index)
+                yield anthropic_block_stop(index)
             state.open_blocks.clear()
             has_tool_calls = any(
                 isinstance(item, Mapping) and item.get("type") == "function_call"
@@ -283,7 +289,7 @@ def _reasoning_delta_events(
         block_index = state.new_block()
         state.output_blocks[output_index] = block_index
         result.append(
-            _content_block_start(block_index, {"type": "thinking", "thinking": ""})
+            anthropic_block_start(block_index, {"type": "thinking", "thinking": ""})
         )
     delta = required_string(
         payload.get("delta"),
@@ -292,7 +298,9 @@ def _reasoning_delta_events(
     )
     state.reasoning_has_delta.add(output_index)
     result.append(
-        _content_block_delta(block_index, {"type": "thinking_delta", "thinking": delta})
+        anthropic_block_delta(
+            block_index, {"type": "thinking_delta", "thinking": delta}
+        )
     )
     return result
 
@@ -309,9 +317,9 @@ def _text_delta_events(
     if block_index is None:
         block_index = state.new_block()
         state.text_blocks[key] = block_index
-        result.append(_content_block_start(block_index, {"type": "text", "text": ""}))
+        result.append(anthropic_block_start(block_index, {"type": "text", "text": ""}))
     result.append(
-        _content_block_delta(
+        anthropic_block_delta(
             block_index,
             {
                 "type": "text_delta",
@@ -340,7 +348,7 @@ def _output_item_added_events(
     block_index = state.new_block()
     state.output_blocks[output_index] = block_index
     return [
-        _content_block_start(
+        anthropic_block_start(
             block_index,
             {
                 "type": "tool_use",
@@ -365,7 +373,7 @@ def _function_arguments_delta_event(
     block_index = state.output_blocks.get(output_index)
     if block_index is None:
         raise ValueError("Responses function arguments arrived before function_call")
-    return _content_block_delta(
+    return anthropic_block_delta(
         block_index,
         {
             "type": "input_json_delta",
@@ -414,13 +422,15 @@ def _reasoning_done_events(
         state.output_blocks[output_index] = block_index
         if not summary:
             result.append(
-                _content_block_start(block_index, reasoning_item_to_anthropic(item))
+                anthropic_block_start(block_index, reasoning_item_to_anthropic(item))
             )
             return result + _close_blocks(state, [block_index])
         result.extend(
             [
-                _content_block_start(block_index, {"type": "thinking", "thinking": ""}),
-                _content_block_delta(
+                anthropic_block_start(
+                    block_index, {"type": "thinking", "thinking": ""}
+                ),
+                anthropic_block_delta(
                     block_index,
                     {"type": "thinking_delta", "thinking": summary},
                 ),
@@ -428,13 +438,13 @@ def _reasoning_done_events(
         )
     elif output_index not in state.reasoning_has_delta and summary:
         result.append(
-            _content_block_delta(
+            anthropic_block_delta(
                 block_index,
                 {"type": "thinking_delta", "thinking": summary},
             )
         )
     result.append(
-        _content_block_delta(
+        anthropic_block_delta(
             block_index,
             {
                 "type": "signature_delta",
@@ -452,33 +462,9 @@ def _close_blocks(
     for block_index in sorted(block_indices):
         if block_index not in state.open_blocks:
             continue
-        result.append(_content_block_stop(block_index))
+        result.append(anthropic_block_stop(block_index))
         state.open_blocks.remove(block_index)
     return result
-
-
-def _content_block_start(index: int, content_block: dict[str, Any]) -> bytes:
-    return format_sse_event(
-        "content_block_start",
-        {
-            "type": "content_block_start",
-            "index": index,
-            "content_block": content_block,
-        },
-    )
-
-
-def _content_block_delta(index: int, delta: dict[str, Any]) -> bytes:
-    return format_sse_event(
-        "content_block_delta",
-        {"type": "content_block_delta", "index": index, "delta": delta},
-    )
-
-
-def _content_block_stop(index: int) -> bytes:
-    return format_sse_event(
-        "content_block_stop", {"type": "content_block_stop", "index": index}
-    )
 
 
 def _event_index(payload: Mapping[str, Any], key: str) -> int:

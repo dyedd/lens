@@ -39,6 +39,7 @@ import type {
   RequestLogItem,
 } from "@/lib/api/requests";
 import { cn } from "@/lib/classNames";
+import type { Locale } from "@/lib/I18nContext";
 import { titleForLocale } from "@/lib/I18nContext";
 import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";
 import { protocolOptions } from "@/lib/protocols";
@@ -50,8 +51,6 @@ import {
   type SortMode,
   type StatusFilter,
 } from "./requestView";
-
-type Locale = "zh-CN" | "en-US";
 
 type Props = {
   locale: Locale;

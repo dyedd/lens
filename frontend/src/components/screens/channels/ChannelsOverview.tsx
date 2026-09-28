@@ -3,16 +3,14 @@ import {
   Check,
   FileInput,
   Funnel,
-  ListChecks,
   Plus,
   RefreshCw,
   Search,
-  ToggleLeft,
-  Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
-import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +37,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
+import { useClientPagination } from "@/hooks/useClientPagination";
+import { useRowSelection } from "@/hooks/useRowSelection";
 import type { Site } from "@/lib/api/sites";
 import { cn } from "@/lib/classNames";
 import { ChannelsTable } from "./ChannelsTable";
@@ -49,7 +49,20 @@ import type {
   SiteRow,
 } from "./channelTypes";
 
-const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+const siteId = (site: SiteRow) => site.id;
+
+function channelSortOptions(
+  locale: Locale,
+): Array<{ value: ChannelSort; label: string }> {
+  return [
+    { value: "name-asc", label: locale === "zh-CN" ? "名称升序" : "Name A-Z" },
+    { value: "name-desc", label: locale === "zh-CN" ? "名称降序" : "Name Z-A" },
+    {
+      value: "models-desc",
+      label: locale === "zh-CN" ? "模型优先" : "Models first",
+    },
+  ];
+}
 
 type Props = {
   locale: Locale;
@@ -113,59 +126,15 @@ export function ChannelsOverview({
   onBulkEnabled,
   onBulkDelete,
 }: Props) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [bulkEnabled, setBulkEnabled] = useState<"enabled" | "disabled" | "">(
-    "",
-  );
+  const {
+    pageRows: pagedSites,
+    resetPage,
+    paginationProps,
+  } = useClientPagination(visibleSites);
+  const selection = useRowSelection(visibleSites, siteId);
+  const selectedSites = selection.selectedRows;
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
-  const pageCount = Math.max(1, Math.ceil(visibleSites.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const pagedSites = useMemo(
-    () => visibleSites.slice((safePage - 1) * pageSize, safePage * pageSize),
-    [pageSize, safePage, visibleSites],
-  );
-  const selectedSites = visibleSites.filter((site) => selected.has(site.id));
-  const sortOptions: Array<{ value: ChannelSort; label: string }> = [
-    {
-      value: "name-asc",
-      label: locale === "zh-CN" ? "名称升序" : "Name A-Z",
-    },
-    {
-      value: "name-desc",
-      label: locale === "zh-CN" ? "名称降序" : "Name Z-A",
-    },
-    {
-      value: "models-desc",
-      label: locale === "zh-CN" ? "模型优先" : "Models first",
-    },
-  ];
-
-  function handleSelectAll(checked: boolean) {
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const site of pagedSites) {
-        if (checked) next.add(site.id);
-        else next.delete(site.id);
-      }
-      return next;
-    });
-  }
-
-  function handleSelectOne(id: string, checked: boolean) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }
-
-  function handlePageSizeChange(size: number) {
-    setPageSize(size);
-    setPage(1);
-  }
+  const sortOptions = channelSortOptions(locale);
 
   return (
     <div className="space-y-3 pb-10">
@@ -186,7 +155,7 @@ export function ChannelsOverview({
               }
               onChange={(event) => {
                 onSearchChange(event.target.value);
-                setPage(1);
+                resetPage();
               }}
               className="bg-background pl-8"
             />
@@ -218,7 +187,7 @@ export function ChannelsOverview({
                     value={statusFilter}
                     onValueChange={(value) => {
                       onStatusChange(value as ChannelStatusFilter);
-                      setPage(1);
+                      resetPage();
                     }}
                   >
                     <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
@@ -246,7 +215,7 @@ export function ChannelsOverview({
                       value={tagFilter ? `tag:${tagFilter}` : "all"}
                       onValueChange={(value) => {
                         onTagChange(value === "all" ? null : value.slice(4));
-                        setPage(1);
+                        resetPage();
                       }}
                     >
                       <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
@@ -274,7 +243,7 @@ export function ChannelsOverview({
                       className="h-7 px-2 text-xs shadow-none"
                       onClick={() => {
                         onReset();
-                        setPage(1);
+                        resetPage();
                       }}
                     >
                       {locale === "zh-CN" ? "清空" : "Clear"}
@@ -310,73 +279,16 @@ export function ChannelsOverview({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Popover>
-            <PopoverTrigger asChild>
-              <ToolbarButton
-                disabled={selectedSites.length === 0 || Boolean(busyId)}
-                aria-label={locale === "zh-CN" ? "批量" : "Bulk"}
-              >
-                <ListChecks className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {locale === "zh-CN" ? "批量" : "Bulk"}
-                </span>
-              </ToolbarButton>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-[240px] p-2">
-              <p className="flex h-7 items-center px-2 text-[11px] text-muted-foreground">
-                {locale === "zh-CN"
-                  ? `已选 ${selectedSites.length} 项`
-                  : `${selectedSites.length} selected`}
-              </p>
-              <div className="flex h-7 w-full items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted"
-                  disabled={!bulkEnabled || Boolean(busyId)}
-                  onClick={() => {
-                    void onBulkEnabled(
-                      selectedSites,
-                      bulkEnabled === "enabled",
-                    );
-                    setSelected(new Set());
-                  }}
-                >
-                  <ToggleLeft className="size-3" />
-                  {locale === "zh-CN" ? "应用" : "Apply"}
-                </Button>
-                <Select
-                  value={bulkEnabled || undefined}
-                  onValueChange={(value) =>
-                    setBulkEnabled(value as "enabled" | "disabled")
-                  }
-                >
-                  <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
-                    <SelectValue
-                      placeholder={locale === "zh-CN" ? "状态" : "Status"}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="enabled">
-                      {locale === "zh-CN" ? "启用" : "Enable"}
-                    </SelectItem>
-                    <SelectItem value="disabled">
-                      {locale === "zh-CN" ? "停用" : "Disable"}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <button
-                type="button"
-                disabled={Boolean(busyId)}
-                onClick={() => setBulkDeleteOpen(true)}
-                className="mt-1 flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
-              >
-                <Trash2 className="size-3.5" />
-                {locale === "zh-CN" ? "批量删除" : "Delete selected"}
-              </button>
-            </PopoverContent>
-          </Popover>
+          <BulkActionsPopover
+            locale={locale}
+            count={selectedSites.length}
+            isBusy={Boolean(busyId)}
+            onSetEnabled={(enabled) => {
+              void onBulkEnabled(selectedSites, enabled);
+              selection.clear();
+            }}
+            onDelete={() => setBulkDeleteOpen(true)}
+          />
         </div>
 
         <div className="ml-auto flex min-h-8 shrink-0 items-center gap-1">
@@ -425,10 +337,10 @@ export function ChannelsOverview({
         locale={locale}
         items={pagedSites}
         loading={isLoading}
-        selected={selected}
+        selected={selection.selected}
         busyId={busyId}
-        onSelectAll={handleSelectAll}
-        onSelectOne={handleSelectOne}
+        onSelectAll={(checked) => selection.toggleRows(pagedSites, checked)}
+        onSelectOne={selection.toggleId}
         onEdit={onOpenEdit}
         onManageModels={onManageModels}
         onReviewPendingModels={onReviewPendingModels}
@@ -439,54 +351,25 @@ export function ChannelsOverview({
         onDelete={onDelete}
       />
 
-      <TablePagination
-        locale={locale}
-        total={visibleSites.length}
-        page={safePage}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        onPageChange={setPage}
-        onPageSizeChange={handlePageSizeChange}
-      />
+      <TablePagination locale={locale} {...paginationProps} />
 
-      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
-        <AppDialogContent
-          className="max-w-lg"
-          showCloseButton={false}
-          title={locale === "zh-CN" ? "确认批量删除" : "Delete channels"}
-          description={
-            locale === "zh-CN"
-              ? `将删除选中的 ${selectedSites.length} 个渠道，其协议配置、模型和模型组成员会一起移除。`
-              : `${selectedSites.length} selected channels will be removed together with their protocol configs, models, and group members.`
-          }
-          footer={
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setBulkDeleteOpen(false)}
-              >
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                disabled={Boolean(busyId)}
-                onClick={() => {
-                  void onBulkDelete(selectedSites);
-                  setSelected(new Set());
-                  setBulkDeleteOpen(false);
-                }}
-              >
-                {locale === "zh-CN" ? "确认删除" : "Delete"}
-              </Button>
-            </>
-          }
-        />
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={bulkDeleteOpen}
+        locale={locale}
+        title={locale === "zh-CN" ? "确认批量删除" : "Delete channels"}
+        description={
+          locale === "zh-CN"
+            ? `将删除选中的 ${selectedSites.length} 个渠道，其协议配置、模型和模型组成员会一起移除。`
+            : `${selectedSites.length} selected channels will be removed together with their protocol configs, models, and group members.`
+        }
+        isDisabled={Boolean(busyId)}
+        onOpenChange={setBulkDeleteOpen}
+        onConfirm={() => {
+          void onBulkDelete(selectedSites);
+          selection.clear();
+          setBulkDeleteOpen(false);
+        }}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from .sse import build_chat_tool_call
 from .validation import required_string
 
 
@@ -169,7 +170,7 @@ def _anthropic_tool_use_to_chat(block: Mapping[str, Any]) -> dict[str, Any]:
     tool_input = block.get("input", {})
     if not isinstance(tool_input, Mapping):
         raise ValueError("Anthropic tool_use input must be an object")
-    return _build_chat_tool_call(
+    return build_chat_tool_call(
         required_string(block.get("id"), "Anthropic tool_use must contain id"),
         required_string(block.get("name"), "Anthropic tool_use must contain name"),
         json.dumps(dict(tool_input), ensure_ascii=False),
@@ -364,14 +365,6 @@ def _anthropic_tool_choice_to_chat(value: Any) -> Any:
             },
         }
     raise ValueError("Unsupported Anthropic tool_choice type")
-
-
-def _build_chat_tool_call(call_id: str, name: str, arguments: str) -> dict[str, Any]:
-    return {
-        "id": call_id,
-        "type": "function",
-        "function": {"name": name, "arguments": arguments},
-    }
 
 
 def _assemble_chat_content(
