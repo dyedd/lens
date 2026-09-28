@@ -92,6 +92,7 @@ type Props = {
   onAddModelsToGroup: (groupId: string, modelNames: string[]) => void;
   onCreateGroupForModels: (name: string, modelNames: string[]) => void;
   onAutoPlace: () => void;
+  onRemoveUnplacedModels: (modelNames: string[]) => Promise<boolean>;
 };
 
 /** Renders unplaced models and the model group list as a toolbar and table. */
@@ -131,6 +132,7 @@ export function GroupsOverview({
   onAddModelsToGroup,
   onCreateGroupForModels,
   onAutoPlace,
+  onRemoveUnplacedModels,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
@@ -209,6 +211,7 @@ export function GroupsOverview({
           onAddModelsToGroup={onAddModelsToGroup}
           onCreateGroupForModels={onCreateGroupForModels}
           onAutoPlace={onAutoPlace}
+          onRemoveModels={onRemoveUnplacedModels}
         />
       ) : null}
 

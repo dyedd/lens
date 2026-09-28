@@ -460,6 +460,35 @@ def test_near_named_channel_model_stays_unplaced_and_is_listed(
     ]
 
 
+def test_remove_unplaced_model_only_touches_unplaced_channel_models(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    create_model_group(name="claude-opus-4.5")
+    create_site(valid_site_payload(model_name="claude-opus-4-5"))
+
+    rejected = client.post(
+        "/api/admin/unplaced-model-removals",
+        headers=admin_headers,
+        json={"model_names": ["claude-opus-4.5"]},
+    )
+    removed = client.post(
+        "/api/admin/unplaced-model-removals",
+        headers=admin_headers,
+        json={"model_names": ["claude-opus-4-5"]},
+    )
+    unplaced = client.get("/api/admin/unplaced-models", headers=admin_headers)
+    [site] = client.get("/api/admin/sites", headers=admin_headers).json()
+
+    assert_error(rejected, 400, "claude-opus-4.5")
+    assert removed.status_code == 200, removed.text
+    assert removed.json() == {"deleted": 1, "disabled": 0}
+    assert unplaced.json()["items"] == []
+    assert site["protocols"][0]["models"] == []
+
+
 def _create_group(client, admin_headers, **payload: object) -> dict[str, object]:
     response = client.post(
         "/api/admin/model-groups", headers=admin_headers, json=payload

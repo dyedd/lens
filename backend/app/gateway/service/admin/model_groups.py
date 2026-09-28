@@ -15,6 +15,8 @@ from ....models.model_groups import (
     ModelGroupPlacementResponse,
     ModelGroupUpdate,
     ModelGroupView,
+    UnplacedModelRemovalRequest,
+    UnplacedModelRemovalResponse,
     UnplacedModelsResponse,
 )
 from ....models.protocols import ProtocolKind
@@ -137,6 +139,13 @@ async def list_unplaced_models(
     return UnplacedModelsResponse(
         items=await app_state.group_repo.list_unplaced_models()
     )
+
+
+async def remove_unplaced_models(
+    payload: UnplacedModelRemovalRequest, _: Any = Depends(get_current_admin)
+) -> UnplacedModelRemovalResponse:
+    """Remove unplaced model names from every channel offering them."""
+    return await app_state.group_repo.remove_unplaced_models(payload.model_names)
 
 
 async def place_models(

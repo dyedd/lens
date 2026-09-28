@@ -133,4 +133,9 @@ export type ModelGroupPlacementResponse = {
   created: ModelGroup[];
   unplaced: UnplacedModel[];
 };
+export type UnplacedModelRemovalRequest = { model_names: string[] };
+export type UnplacedModelRemovalResponse = {
+  deleted: number;
+  disabled: number;
+};
 export type ModelGroupMergeRequest = { target_group_id: string };

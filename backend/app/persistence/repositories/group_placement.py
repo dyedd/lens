@@ -11,10 +11,16 @@ from app.models.model_groups import (
     ModelGroupPlacementResponse,
     ModelGroupView,
     UnplacedModelProvider,
+    UnplacedModelRemovalResponse,
     UnplacedModelView,
 )
 from app.models.protocols import RoutingStrategy
-from app.persistence.entities import ModelGroupEntity
+from app.persistence.entities import (
+    ModelGroupEntity,
+    SiteDiscoveredModelEntity,
+    SiteEntity,
+    SiteProtocolConfigEntity,
+)
 from app.persistence.group_rule_codec import dump_match_models
 
 from .group_read import list_ready_channel_items
@@ -146,3 +152,43 @@ class GroupPlacementMixin:
                 view for view in unplaced if view.model_name not in created_names
             ],
         )
+
+    async def remove_unplaced_models(
+        self, model_names: list[str]
+    ) -> UnplacedModelRemovalResponse:
+        """Remove unplaced model names from every channel that still offers them.
+
+        Sites with model sync keep the rows disabled, so the next sync does not
+        add the upstream model back; other sites drop the rows.
+        """
+        names = set(model_names)
+        unplaced_names = {view.model_name for view in await self.list_unplaced_models()}
+        if covered := sorted(names - unplaced_names):
+            raise ValueError(
+                "Models are still placed in model groups or not offered: "
+                + ", ".join(covered)
+            )
+        async with self._session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(SiteDiscoveredModelEntity, SiteEntity.model_sync_enabled)
+                    .join(
+                        SiteProtocolConfigEntity,
+                        SiteProtocolConfigEntity.id
+                        == SiteDiscoveredModelEntity.protocol_config_id,
+                    )
+                    .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
+                    .where(SiteDiscoveredModelEntity.model_name.in_(names))
+                    .where(SiteDiscoveredModelEntity.enabled == 1)
+                )
+            ).all()
+            deleted = disabled = 0
+            for entity, sync_enabled in rows:
+                if sync_enabled:
+                    entity.enabled = 0
+                    disabled += 1
+                else:
+                    await session.delete(entity)
+                    deleted += 1
+            await session.commit()
+        return UnplacedModelRemovalResponse(deleted=deleted, disabled=disabled)
