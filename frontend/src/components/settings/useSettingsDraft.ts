@@ -22,7 +22,7 @@ const REFRESH_QUERY_KEYS = [
   ["settings"],
   ["public-branding"],
   ["app-info"],
-  ["model-groups"],
+  ["groups"],
   ["regex-rules"],
   ["overview-summary"],
   ["overview-daily"],

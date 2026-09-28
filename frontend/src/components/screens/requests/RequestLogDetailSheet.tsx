@@ -15,6 +15,7 @@ import type {
 } from "@/lib/api/requests";
 import { cn } from "@/lib/classNames";
 import { formatLogDateTime } from "@/lib/datetime";
+import type { Locale } from "@/lib/I18nContext";
 import { titleForLocale } from "@/lib/I18nContext";
 import { protocolLabel } from "@/lib/protocols";
 import {
@@ -29,8 +30,6 @@ import {
   getSecondaryModelName,
   tryParseJsonValue,
 } from "./requestView";
-
-type Locale = "zh-CN" | "en-US";
 
 function DetailRow({
   label,

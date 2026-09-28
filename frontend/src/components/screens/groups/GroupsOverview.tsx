@@ -2,16 +2,18 @@ import {
   ArrowDownUp,
   Check,
   Funnel,
-  ListChecks,
   Plus,
   RefreshCw,
   Search,
   Shuffle,
-  ToggleLeft,
-  Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import {
+  BulkActionButton,
+  BulkActionsPopover,
+} from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
   DropdownMenu,
@@ -39,6 +41,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
+import { useClientPagination } from "@/hooks/useClientPagination";
+import { useRowSelection } from "@/hooks/useRowSelection";
 import type {
   ModelGroup,
   RoutingStrategy,
@@ -52,7 +56,24 @@ import type { GroupRow, GroupSort, SimilarGroupView } from "./groupTypes";
 import { STRATEGY_OPTIONS } from "./modelGroupFormatting";
 import { UnplacedModelsPanel } from "./UnplacedModelsPanel";
 
-const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+const groupId = (group: GroupRow) => group.id;
+
+function groupSortOptions(
+  locale: "zh-CN" | "en-US",
+): Array<{ value: GroupSort; label: string }> {
+  return [
+    {
+      value: "members-desc",
+      label: locale === "zh-CN" ? "成员优先" : "Members first",
+    },
+    {
+      value: "enabled-desc",
+      label: locale === "zh-CN" ? "启用优先" : "Enabled first",
+    },
+    { value: "name-asc", label: locale === "zh-CN" ? "名称升序" : "Name A-Z" },
+    { value: "name-desc", label: locale === "zh-CN" ? "名称降序" : "Name Z-A" },
+  ];
+}
 
 type MergeRequest = { source: GroupRow; target: SimilarGroupView };
 
@@ -134,65 +155,16 @@ export function GroupsOverview({
   onAutoPlace,
   onRemoveUnplacedModels,
 }: Props) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [bulkEnabled, setBulkEnabled] = useState<"enabled" | "disabled" | "">(
-    "",
-  );
+  const {
+    pageRows: pagedGroups,
+    resetPage,
+    paginationProps,
+  } = useClientPagination(visibleGroups);
+  const selection = useRowSelection(visibleGroups, groupId);
+  const selectedGroups = selection.selectedRows;
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null);
-  const pageCount = Math.max(1, Math.ceil(visibleGroups.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const pagedGroups = useMemo(
-    () => visibleGroups.slice((safePage - 1) * pageSize, safePage * pageSize),
-    [pageSize, safePage, visibleGroups],
-  );
-  const selectedGroups = visibleGroups.filter((group) =>
-    selected.has(group.id),
-  );
-  const sortOptions: Array<{ value: GroupSort; label: string }> = [
-    {
-      value: "members-desc",
-      label: locale === "zh-CN" ? "成员优先" : "Members first",
-    },
-    {
-      value: "enabled-desc",
-      label: locale === "zh-CN" ? "启用优先" : "Enabled first",
-    },
-    {
-      value: "name-asc",
-      label: locale === "zh-CN" ? "名称升序" : "Name A-Z",
-    },
-    {
-      value: "name-desc",
-      label: locale === "zh-CN" ? "名称降序" : "Name Z-A",
-    },
-  ];
-  function handleSelectAll(checked: boolean) {
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const group of pagedGroups) {
-        if (checked) next.add(group.id);
-        else next.delete(group.id);
-      }
-      return next;
-    });
-  }
-
-  function handleSelectOne(id: string, checked: boolean) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }
-
-  function handlePageSizeChange(size: number) {
-    setPageSize(size);
-    setPage(1);
-  }
+  const sortOptions = groupSortOptions(locale);
 
   return (
     <div className="space-y-3 pb-10">
@@ -228,7 +200,7 @@ export function GroupsOverview({
               }
               onChange={(event) => {
                 onSearchChange(event.target.value);
-                setPage(1);
+                resetPage();
               }}
               className="bg-background pl-8"
             />
@@ -260,7 +232,7 @@ export function GroupsOverview({
                     value={strategyFilter}
                     onValueChange={(value) => {
                       onStrategyChange(value as "all" | RoutingStrategy);
-                      setPage(1);
+                      resetPage();
                     }}
                   >
                     <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
@@ -288,7 +260,7 @@ export function GroupsOverview({
                       value={familyFilter}
                       onValueChange={(value) => {
                         onFamilyChange(value);
-                        setPage(1);
+                        resetPage();
                       }}
                     >
                       <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
@@ -316,7 +288,7 @@ export function GroupsOverview({
                       value={protocolFilter}
                       onValueChange={(value) => {
                         onProtocolChange(value as "all" | ProtocolKind);
-                        setPage(1);
+                        resetPage();
                       }}
                     >
                       <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
@@ -344,7 +316,7 @@ export function GroupsOverview({
                       className="h-7 px-2 text-xs shadow-none"
                       onClick={() => {
                         onReset();
-                        setPage(1);
+                        resetPage();
                       }}
                     >
                       {locale === "zh-CN" ? "清空" : "Clear"}
@@ -380,90 +352,33 @@ export function GroupsOverview({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Popover>
-            <PopoverTrigger asChild>
-              <ToolbarButton
-                disabled={selectedGroups.length === 0 || Boolean(busyId)}
-                aria-label={locale === "zh-CN" ? "批量" : "Bulk"}
-              >
-                <ListChecks className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {locale === "zh-CN" ? "批量" : "Bulk"}
-                </span>
-              </ToolbarButton>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-[240px] p-2">
-              <p className="flex h-7 items-center px-2 text-[11px] text-muted-foreground">
-                {locale === "zh-CN"
-                  ? `已选 ${selectedGroups.length} 项`
-                  : `${selectedGroups.length} selected`}
-              </p>
-              <div className="flex h-7 w-full items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted"
-                  disabled={!bulkEnabled || Boolean(busyId)}
-                  onClick={() => {
-                    void onBulkEnabled(
-                      selectedGroups,
-                      bulkEnabled === "enabled",
-                    );
-                    setSelected(new Set());
-                  }}
-                >
-                  <ToggleLeft className="size-3" />
-                  {locale === "zh-CN" ? "应用" : "Apply"}
-                </Button>
-                <Select
-                  value={bulkEnabled || undefined}
-                  onValueChange={(value) =>
-                    setBulkEnabled(value as "enabled" | "disabled")
-                  }
-                >
-                  <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
-                    <SelectValue
-                      placeholder={locale === "zh-CN" ? "状态" : "Status"}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="enabled">
-                      {locale === "zh-CN" ? "启动" : "Enable"}
-                    </SelectItem>
-                    <SelectItem value="disabled">
-                      {locale === "zh-CN" ? "停止" : "Disable"}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {STRATEGY_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={Boolean(busyId)}
-                  onClick={() => {
-                    void onBulkStrategy(selectedGroups, option.value);
-                    setSelected(new Set());
-                  }}
-                  className="mt-1 flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
-                >
-                  <Shuffle className="size-3.5" />
-                  {locale === "zh-CN"
+          <BulkActionsPopover
+            locale={locale}
+            count={selectedGroups.length}
+            isBusy={Boolean(busyId)}
+            onSetEnabled={(enabled) => {
+              void onBulkEnabled(selectedGroups, enabled);
+              selection.clear();
+            }}
+            onDelete={() => setBulkDeleteOpen(true)}
+          >
+            {STRATEGY_OPTIONS.map((option) => (
+              <BulkActionButton
+                key={option.value}
+                icon={<Shuffle className="size-3.5" />}
+                label={
+                  locale === "zh-CN"
                     ? `设为${option.zh}`
-                    : `Set to ${option.en}`}
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={Boolean(busyId)}
-                onClick={() => setBulkDeleteOpen(true)}
-                className="mt-1 flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
-              >
-                <Trash2 className="size-3.5" />
-                {locale === "zh-CN" ? "批量删除" : "Delete selected"}
-              </button>
-            </PopoverContent>
-          </Popover>
+                    : `Set to ${option.en}`
+                }
+                isBusy={Boolean(busyId)}
+                onClick={() => {
+                  void onBulkStrategy(selectedGroups, option.value);
+                  selection.clear();
+                }}
+              />
+            ))}
+          </BulkActionsPopover>
         </div>
 
         <div className="ml-auto flex min-h-8 shrink-0 items-center gap-1">
@@ -499,11 +414,11 @@ export function GroupsOverview({
         locale={locale}
         items={pagedGroups}
         loading={isLoading}
-        selected={selected}
+        selected={selection.selected}
         busyId={busyId}
         testingModel={testingModel}
-        onSelectAll={handleSelectAll}
-        onSelectOne={handleSelectOne}
+        onSelectAll={(checked) => selection.toggleRows(pagedGroups, checked)}
+        onSelectOne={selection.toggleId}
         onEdit={onOpenEdit}
         onToggleEnabled={onToggleEnabled}
         onChangeStrategy={onChangeStrategy}
@@ -512,16 +427,7 @@ export function GroupsOverview({
         onTest={onTest}
       />
 
-      <TablePagination
-        locale={locale}
-        total={visibleGroups.length}
-        page={safePage}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        onPageChange={setPage}
-        onPageSizeChange={handlePageSizeChange}
-      />
+      <TablePagination locale={locale} {...paginationProps} />
 
       <Dialog
         open={Boolean(mergeRequest)}
@@ -565,43 +471,23 @@ export function GroupsOverview({
         />
       </Dialog>
 
-      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
-        <AppDialogContent
-          className="max-w-lg"
-          showCloseButton={false}
-          title={locale === "zh-CN" ? "确认批量删除" : "Delete groups"}
-          description={
-            locale === "zh-CN"
-              ? `将删除选中的 ${selectedGroups.length} 个模型组。`
-              : `${selectedGroups.length} selected groups will be removed.`
-          }
-          footer={
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setBulkDeleteOpen(false)}
-              >
-                {locale === "zh-CN" ? "取消" : "Cancel"}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                disabled={Boolean(busyId)}
-                onClick={() => {
-                  void onBulkDelete(selectedGroups);
-                  setSelected(new Set());
-                  setBulkDeleteOpen(false);
-                }}
-              >
-                {locale === "zh-CN" ? "确认删除" : "Delete"}
-              </Button>
-            </>
-          }
-        />
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={bulkDeleteOpen}
+        locale={locale}
+        title={locale === "zh-CN" ? "确认批量删除" : "Delete groups"}
+        description={
+          locale === "zh-CN"
+            ? `将删除选中的 ${selectedGroups.length} 个模型组。`
+            : `${selectedGroups.length} selected groups will be removed.`
+        }
+        isDisabled={Boolean(busyId)}
+        onOpenChange={setBulkDeleteOpen}
+        onConfirm={() => {
+          void onBulkDelete(selectedGroups);
+          selection.clear();
+          setBulkDeleteOpen(false);
+        }}
+      />
     </div>
   );
 }

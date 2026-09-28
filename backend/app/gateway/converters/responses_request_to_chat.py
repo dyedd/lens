@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from .sse import build_chat_tool_call
 from .validation import required_string
 
 
@@ -80,7 +81,7 @@ def _responses_input_to_chat_messages(
 
 
 def _responses_function_call_to_chat(item: Mapping[str, Any]) -> dict[str, Any]:
-    return _build_chat_tool_call(
+    return build_chat_tool_call(
         required_string(
             item.get("call_id"),
             "Responses function_call must contain call_id",
@@ -293,11 +294,3 @@ def _responses_text_format_to_chat(value: Any) -> dict[str, Any] | None:
     if "strict" in format_value:
         json_schema["strict"] = format_value["strict"]
     return {"type": "json_schema", "json_schema": json_schema}
-
-
-def _build_chat_tool_call(call_id: str, name: str, arguments: str) -> dict[str, Any]:
-    return {
-        "id": call_id,
-        "type": "function",
-        "function": {"name": name, "arguments": arguments},
-    }

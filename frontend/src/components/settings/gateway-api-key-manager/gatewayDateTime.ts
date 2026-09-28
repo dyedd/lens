@@ -104,29 +104,6 @@ export function formatExpiresAt(date: Date | undefined, timeZone: string) {
   return nextDate.toISOString();
 }
 
-/** Format an optional timestamp for the selected locale and time zone. */
-export function formatDateTime(
-  locale: Locale,
-  value: string | null | undefined,
-  timeZone: string,
-) {
-  if (!value) {
-    return titleForLocale(locale, "未设置", "Not set");
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone,
-  });
-}
-
 /** Format an optional date for the selected locale and time zone. */
 export function formatDateOnly(
   locale: Locale,

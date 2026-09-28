@@ -1,16 +1,13 @@
-import { ListChecks, Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { AccountSettings } from "@/components/settings/AccountSettings";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/Popover";
 import {
   Table,
   TableBody,
@@ -26,6 +23,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
+import { useRowSelection } from "@/hooks/useRowSelection";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { parseModelTestPrompts } from "@/lib/modelTestPrompts";
 import { SettingsSectionCard } from "./SettingsSectionCard";
@@ -105,6 +103,8 @@ export function AccountSettingsSection({
   );
 }
 
+const promptIndex = (index: number) => index;
+
 /** Render the model test prompt settings tab content. */
 export function ModelTestSettingsSection({
   locale,
@@ -115,36 +115,19 @@ export function ModelTestSettingsSection({
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const selectedCount = prompts.filter((_, index) =>
-    selected.has(index),
-  ).length;
-  const allSelected =
-    prompts.length > 0 && prompts.every((_, index) => selected.has(index));
-  const someSelected = prompts.some((_, index) => selected.has(index));
+  const promptIndexes = prompts.map((_, index) => index);
+  const selection = useRowSelection(promptIndexes, promptIndex);
+  const selectedCount = selection.selectedRows.length;
+  const allSelected = prompts.length > 0 && selectedCount === prompts.length;
+  const someSelected = selectedCount > 0;
 
   function updatePrompts(nextPrompts: string[]) {
     settings.setDraftValue("modelTestPrompts", nextPrompts.join("\n"));
-    setSelected(new Set());
-  }
-
-  function handleSelectAll(checked: boolean) {
-    setSelected(
-      checked ? new Set(prompts.map((_, index) => index)) : new Set(),
-    );
-  }
-
-  function handleSelectOne(index: number, checked: boolean) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (checked) next.add(index);
-      else next.delete(index);
-      return next;
-    });
+    selection.clear();
   }
 
   function removeSelectedPrompts() {
-    updatePrompts(prompts.filter((_, index) => !selected.has(index)));
+    updatePrompts(prompts.filter((_, index) => !selection.selected.has(index)));
     setBulkDeleteOpen(false);
   }
 
@@ -180,40 +163,12 @@ export function ModelTestSettingsSection({
           title={titleForLocale(locale, "模型测试", "Model test")}
           actions={
             <div className="flex items-center gap-1.5">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
-                    disabled={selectedCount === 0}
-                    aria-label={titleForLocale(locale, "批量", "Bulk")}
-                  >
-                    <ListChecks className="size-3.5" />
-                    {titleForLocale(locale, "批量", "Bulk")}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-[220px] p-2">
-                  <p className="flex h-7 items-center px-2 text-[11px] text-muted-foreground">
-                    {titleForLocale(
-                      locale,
-                      `已选 ${selectedCount} 项`,
-                      `${selectedCount} selected`,
-                    )}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-7 w-full justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted hover:text-foreground"
-                    disabled={selectedCount === 0}
-                    onClick={() => setBulkDeleteOpen(true)}
-                  >
-                    <Trash2 className="size-3.5" />
-                    {titleForLocale(locale, "批量删除", "Delete selected")}
-                  </Button>
-                </PopoverContent>
-              </Popover>
+              <BulkActionsPopover
+                locale={locale}
+                count={selectedCount}
+                placement="section"
+                onDelete={() => setBulkDeleteOpen(true)}
+              />
               <Button
                 type="button"
                 variant="ghost"
@@ -246,7 +201,7 @@ export function ModelTestSettingsSection({
                             : false
                       }
                       onCheckedChange={(checked) =>
-                        handleSelectAll(checked === true)
+                        selection.toggleRows(promptIndexes, checked === true)
                       }
                       aria-label={titleForLocale(
                         locale,
@@ -284,7 +239,9 @@ export function ModelTestSettingsSection({
               {prompts.map((prompt, index) => (
                 <TableRow
                   key={`${index}-${prompt}`}
-                  data-state={selected.has(index) ? "selected" : undefined}
+                  data-state={
+                    selection.selected.has(index) ? "selected" : undefined
+                  }
                 >
                   <TableCell
                     className="w-[44px] py-1.5 text-center"
@@ -292,9 +249,9 @@ export function ModelTestSettingsSection({
                   >
                     <div className="flex h-7 items-center justify-center">
                       <Checkbox
-                        checked={selected.has(index)}
+                        checked={selection.selected.has(index)}
                         onCheckedChange={(checked) =>
-                          handleSelectOne(index, checked === true)
+                          selection.toggleId(index, checked === true)
                         }
                         aria-label={titleForLocale(
                           locale,
@@ -425,39 +382,19 @@ export function ModelTestSettingsSection({
         </Dialog>
       ) : null}
 
-      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
-        <AppDialogContent
-          className="max-w-lg"
-          showCloseButton={false}
-          title={titleForLocale(locale, "确认批量删除", "Delete prompts")}
-          description={titleForLocale(
-            locale,
-            `将删除选中的 ${selectedCount} 个测试问题。`,
-            `Delete ${selectedCount} selected prompts.`,
-          )}
-          footer={
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setBulkDeleteOpen(false)}
-              >
-                {titleForLocale(locale, "取消", "Cancel")}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                disabled={selectedCount === 0}
-                onClick={removeSelectedPrompts}
-              >
-                {titleForLocale(locale, "确认删除", "Delete")}
-              </Button>
-            </>
-          }
-        />
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={bulkDeleteOpen}
+        locale={locale}
+        title={titleForLocale(locale, "确认批量删除", "Delete prompts")}
+        description={titleForLocale(
+          locale,
+          `将删除选中的 ${selectedCount} 个测试问题。`,
+          `Delete ${selectedCount} selected prompts.`,
+        )}
+        isDisabled={selectedCount === 0}
+        onOpenChange={setBulkDeleteOpen}
+        onConfirm={removeSelectedPrompts}
+      />
     </>
   );
 }

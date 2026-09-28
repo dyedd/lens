@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/Tooltip";
 import type { RequestLogItem } from "@/lib/api/requests";
 import { formatLogDateTime } from "@/lib/datetime";
+import type { Locale } from "@/lib/I18nContext";
 import { titleForLocale } from "@/lib/I18nContext";
 import { protocolLabel } from "@/lib/protocols";
 import { RequestOutcomeBadge } from "./RequestSummaryFields";
@@ -28,8 +29,6 @@ import {
   getResolvedGroupName,
   getSecondaryModelName,
 } from "./requestView";
-
-type Locale = "zh-CN" | "en-US";
 
 type Props = {
   locale: Locale;

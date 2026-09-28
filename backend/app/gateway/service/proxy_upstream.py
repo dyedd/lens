@@ -142,6 +142,61 @@ async def _read_response_body(
         return await response.aread()
 
 
+def _invalid_upstream(detail: str, exc: ValueError) -> UpstreamRequestError:
+    return UpstreamRequestError(
+        status_code=502, detail=f"{detail}: {exc}", router_status_code=502
+    )
+
+
+async def _json_upstream_result(
+    response: httpx.Response,
+    *,
+    content: bytes,
+    media_type: str | None,
+    headers: dict[str, str],
+    parsed: dict[str, Any],
+    pricing_group_name: str | None,
+    rate_multiplier: float | None,
+    image_count: int,
+    request_content: str | None,
+    response_content: str | None,
+) -> UpstreamResult:
+    cost = await safe_estimate_cost(
+        pricing_group_name,
+        parsed["input_tokens"],
+        parsed["output_tokens"],
+        parsed["cache_read_input_tokens"],
+        parsed["cache_write_input_tokens"],
+        image_input_tokens=parsed["image_input_tokens"],
+        image_count=image_count,
+        rate_multiplier=rate_multiplier,
+    )
+    return UpstreamResult(
+        response=Response(
+            content=content,
+            status_code=response.status_code,
+            media_type=media_type,
+            headers=headers,
+        ),
+        status_code=response.status_code,
+        is_stream=False,
+        upstream_model_name=parsed["resolved_model"],
+        input_tokens=parsed["input_tokens"],
+        image_input_tokens=parsed["image_input_tokens"],
+        cache_read_input_tokens=parsed["cache_read_input_tokens"],
+        cache_write_input_tokens=parsed["cache_write_input_tokens"],
+        output_tokens=parsed["output_tokens"],
+        total_tokens=parsed["total_tokens"],
+        input_cost_usd=cost.input_cost_usd,
+        output_cost_usd=cost.output_cost_usd,
+        total_cost_usd=cost.total_cost_usd,
+        billing_mode=cost.billing_mode,
+        billing_units=cost.billing_units,
+        request_content=request_content,
+        response_content=response_content,
+    )
+
+
 async def _build_anthropic_sse_to_json_result(
     response: httpx.Response,
     channel: ChannelConfig,
@@ -159,21 +214,13 @@ async def _build_anthropic_sse_to_json_result(
     try:
         parsed = extract_stream_usage(channel.protocol, raw_content)
     except ValueError as exc:
-        raise UpstreamRequestError(
-            status_code=502,
-            detail=f"Invalid upstream usage: {exc}",
-            router_status_code=502,
-        ) from exc
+        raise _invalid_upstream("Invalid upstream usage", exc) from exc
     try:
         distilled_content = distill_stream_response_content(
             channel.protocol, raw_content
         )
     except ValueError as exc:
-        raise UpstreamRequestError(
-            status_code=502,
-            detail=f"Invalid upstream response: {exc}",
-            router_status_code=502,
-        ) from exc
+        raise _invalid_upstream("Invalid upstream response", exc) from exc
     response_headers = passthrough_headers(response.headers)
     media_type = response.headers.get("content-type")
     response_content = raw_content
@@ -184,36 +231,15 @@ async def _build_anthropic_sse_to_json_result(
         media_type = "application/json"
         response_headers.pop("content-type", None)
 
-    cost = await safe_estimate_cost(
-        pricing_group_name,
-        parsed["input_tokens"],
-        parsed["output_tokens"],
-        parsed["cache_read_input_tokens"],
-        parsed["cache_write_input_tokens"],
-        image_input_tokens=parsed["image_input_tokens"],
+    return await _json_upstream_result(
+        response,
+        content=content,
+        media_type=media_type,
+        headers=response_headers,
+        parsed=parsed,
+        pricing_group_name=pricing_group_name,
         rate_multiplier=rate_multiplier,
-    )
-    return UpstreamResult(
-        response=Response(
-            content=content,
-            status_code=response.status_code,
-            media_type=media_type,
-            headers=response_headers,
-        ),
-        status_code=response.status_code,
-        is_stream=False,
-        upstream_model_name=parsed["resolved_model"],
-        input_tokens=parsed["input_tokens"],
-        image_input_tokens=parsed["image_input_tokens"],
-        cache_read_input_tokens=parsed["cache_read_input_tokens"],
-        cache_write_input_tokens=parsed["cache_write_input_tokens"],
-        output_tokens=parsed["output_tokens"],
-        total_tokens=parsed["total_tokens"],
-        input_cost_usd=cost.input_cost_usd,
-        output_cost_usd=cost.output_cost_usd,
-        total_cost_usd=cost.total_cost_usd,
-        billing_mode=cost.billing_mode,
-        billing_units=cost.billing_units,
+        image_count=0,
         request_content=request_content,
         response_content=response_content if log_body_enabled else None,
     )
@@ -352,58 +378,28 @@ async def _build_json_result(
             channel.protocol, payload, fallback_model=body.get("model")
         )
     except ValueError as exc:
-        raise UpstreamRequestError(
-            status_code=502,
-            detail=f"Invalid upstream usage: {exc}",
-            router_status_code=502,
-        ) from exc
+        raise _invalid_upstream("Invalid upstream usage", exc) from exc
     if client_protocol is not None and client_protocol != channel.protocol:
         try:
             content = convert_response(
                 client_protocol, channel.protocol, content, body.get("model", "")
             )
         except ValueError as exc:
-            raise UpstreamRequestError(
-                status_code=502,
-                detail=f"Invalid upstream response: {exc}",
-                router_status_code=502,
-            ) from exc
+            raise _invalid_upstream("Invalid upstream response", exc) from exc
 
-    cost = await safe_estimate_cost(
-        pricing_group_name,
-        parsed["input_tokens"],
-        parsed["output_tokens"],
-        parsed["cache_read_input_tokens"],
-        parsed["cache_write_input_tokens"],
-        image_input_tokens=parsed["image_input_tokens"],
+    return await _json_upstream_result(
+        response,
+        content=content,
+        media_type=response.headers.get("content-type"),
+        headers=passthrough_headers(response.headers),
+        parsed=parsed,
+        pricing_group_name=pricing_group_name,
+        rate_multiplier=rate_multiplier,
         image_count=(
             _image_count(body, payload)
             if channel.protocol == ProtocolKind.OPENAI_IMAGE
             else 0
         ),
-        rate_multiplier=rate_multiplier,
-    )
-    return UpstreamResult(
-        response=Response(
-            content=content,
-            status_code=response.status_code,
-            media_type=response.headers.get("content-type"),
-            headers=passthrough_headers(response.headers),
-        ),
-        status_code=response.status_code,
-        is_stream=False,
-        upstream_model_name=parsed["resolved_model"],
-        input_tokens=parsed["input_tokens"],
-        image_input_tokens=parsed["image_input_tokens"],
-        cache_read_input_tokens=parsed["cache_read_input_tokens"],
-        cache_write_input_tokens=parsed["cache_write_input_tokens"],
-        output_tokens=parsed["output_tokens"],
-        total_tokens=parsed["total_tokens"],
-        input_cost_usd=cost.input_cost_usd,
-        output_cost_usd=cost.output_cost_usd,
-        total_cost_usd=cost.total_cost_usd,
-        billing_mode=cost.billing_mode,
-        billing_units=cost.billing_units,
         request_content=request_content,
         response_content=(
             decode_log_content_bytes(content) if log_body_enabled else None

@@ -6,7 +6,10 @@ export const SEARCH_DEBOUNCE_MS = 300;
 
 export type HealthMode = "model" | "channel";
 export type HealthHours = "1" | "6" | "24";
-export type Locale = "zh-CN" | "en-US";
+
+import type { Locale } from "@/lib/I18nContext";
+
+export type { Locale };
 
 export const HEALTH_HOURS = [
   { value: "1", zh: "1 小时", en: "1 hour" },

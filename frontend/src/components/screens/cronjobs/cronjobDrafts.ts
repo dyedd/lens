@@ -71,13 +71,6 @@ export function parseRetentionSettings(
   };
 }
 
-function coerceRetentionDraft(draft: RetentionDraft) {
-  return {
-    enabled: draft.enabled,
-    period: coerceRetentionDays(draft.period),
-  };
-}
-
 /** Coerce a retention period to a backend-safe value. */
 export function coerceRetentionDays(value: string) {
   const days = Number(value);
@@ -86,45 +79,11 @@ export function coerceRetentionDays(value: string) {
     : "7";
 }
 
-/** Check whether retention settings have changed. */
-export function isRetentionDraftChanged(
-  settings: SettingItem[] | undefined,
-  draft: RetentionDraft,
-) {
-  const current = coerceRetentionDraft(parseRetentionSettings(settings));
-  return (
-    JSON.stringify(current) !== JSON.stringify(coerceRetentionDraft(draft))
-  );
-}
-
 /** Check whether retention settings are invalid. */
 export function isRetentionDraftInvalid(draft: RetentionDraft) {
   if (!draft.enabled) return false;
   const days = Number(draft.period);
   return !Number.isInteger(days) || days < 1 || days > 36_500;
-}
-
-function projectDraftForCompare(draft: TaskDraft) {
-  return {
-    enabled: draft.enabled,
-    scheduleType: draft.scheduleType,
-    intervalHours: intervalHours(draft),
-    runAtTime: draft.scheduleType === "interval" ? null : runAtTime(draft),
-    weekdays:
-      draft.scheduleType === "weekly" ? sortedWeekdays(draft.weekdays) : [],
-  };
-}
-
-/** Check whether a task schedule draft has changed. */
-export function isDraftChanged(
-  item: CronjobItem,
-  draft: TaskDraft | undefined,
-) {
-  if (!draft) return false;
-  return (
-    JSON.stringify(projectDraftForCompare(taskDraft(item))) !==
-    JSON.stringify(projectDraftForCompare(draft))
-  );
 }
 
 /** Check whether a task schedule draft is invalid. */
