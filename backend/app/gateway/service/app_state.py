@@ -118,9 +118,9 @@ class AppState:
             store=self.cronjob_store,
             specs=CRONJOB_SPECS,
             handlers={
-                TASK_REQUEST_LOG_PRUNE: self.request_log_store.prune_request_logs,
+                TASK_REQUEST_LOG_PRUNE: self.request_log_store.maintenance.prune_request_logs,
                 TASK_MODEL_PRICE_SYNC: self._sync_model_prices,
-                TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.persist_request_log_stats,
+                TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.statistics.persist_request_log_stats,
                 TASK_VERSION_CHECK: self._check_version_update,
                 TASK_CHANNEL_MODEL_SYNC: self._sync_channel_models,
                 TASK_CREDENTIAL_RATE_SYNC: self._sync_credential_rates,

@@ -17,6 +17,7 @@ import { cn } from "@/lib/classNames";
 import { formatLogDateTime } from "@/lib/datetime";
 import type { Locale } from "@/lib/I18nContext";
 import { titleForLocale } from "@/lib/I18nContext";
+import { formatJson } from "@/lib/jsonFormatting";
 import { protocolLabel } from "@/lib/protocols";
 import {
   formatChannelCredentialLabel,
@@ -28,7 +29,6 @@ import {
   formatUserAgentDisplay,
   getResolvedGroupName,
   getSecondaryModelName,
-  tryParseJsonValue,
 } from "./requestView";
 
 function DetailRow({
@@ -150,18 +150,6 @@ function AttemptGroup({
   );
 }
 
-function formatJsonText(raw: string) {
-  const value = raw.trim();
-  if (!value) return "";
-  const parsed = tryParseJsonValue(value);
-  if (parsed === null) return value;
-  try {
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return value;
-  }
-}
-
 function JsonSection({
   title,
   value,
@@ -173,7 +161,7 @@ function JsonSection({
   locale: Locale;
   loading?: boolean;
 }) {
-  const formatted = formatJsonText(value);
+  const formatted = formatJson(value) ?? value.trim();
   const empty = !formatted;
   return (
     <section className="space-y-2">

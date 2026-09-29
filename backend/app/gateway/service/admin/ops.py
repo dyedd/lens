@@ -219,7 +219,7 @@ async def get_overview_summary(
     _: Any = Depends(get_current_admin),
 ) -> OverviewSummary:
     """Return aggregate request statistics for the selected period."""
-    return await app_state.request_log_store.get_overview_summary(
+    return await app_state.request_log_store.overview.get_overview_summary(
         days=days,
     )
 
@@ -229,7 +229,7 @@ async def list_overview_daily(
     _: Any = Depends(get_current_admin),
 ) -> list[OverviewDailyPoint]:
     """List daily request statistics for the selected period."""
-    return await app_state.request_log_store.list_overview_daily(
+    return await app_state.request_log_store.overview.list_overview_daily(
         days=days,
     )
 
@@ -241,7 +241,7 @@ async def get_overview_model_analytics(
     _: Any = Depends(get_current_admin),
 ) -> OverviewModelAnalytics:
     """Return model analytics for the selected metric and filters."""
-    return await app_state.request_log_store.get_model_analytics(
+    return await app_state.request_log_store.overview.get_model_analytics(
         days=days,
         metric=metric,
         gateway_key_id=gateway_key_id,
@@ -264,7 +264,7 @@ async def list_request_logs(
     _: Any = Depends(get_current_admin),
 ) -> RequestLogPage:
     """Return a filtered page of request logs."""
-    return await app_state.request_log_store.list_request_log_page(
+    return await app_state.request_log_store.queries.list_request_log_page(
         limit=limit,
         offset=offset,
         gateway_key_id=gateway_key_id,
@@ -279,7 +279,7 @@ async def list_request_logs(
 
 async def clear_request_logs(_: Any = Depends(get_current_admin)) -> Response:
     """Delete all request logs."""
-    await app_state.request_log_store.clear_request_logs()
+    await app_state.request_log_store.maintenance.clear_request_logs()
     return Response(status_code=204)
 
 
@@ -287,7 +287,7 @@ async def get_request_log_detail(
     log_id: int, _: Any = Depends(get_current_admin)
 ) -> RequestLogDetail:
     """Return one request log with its payload and attempts."""
-    return await app_state.request_log_store.get_request_log(log_id)
+    return await app_state.request_log_store.queries.get_request_log(log_id)
 
 
 # --- routing ---
@@ -325,7 +325,9 @@ async def update_settings(
             next_time_zone_value = time_zone
     await app_state.settings_repo.upsert_settings(canonical_items)
     if next_time_zone is not None and next_time_zone != current_time_zone:
-        await app_state.request_log_store.persist_request_log_stats(force=True)
+        await app_state.request_log_store.statistics.persist_request_log_stats(
+            force=True
+        )
         if next_time_zone_value is not None:
             await app_state.cronjob_runner.reschedule_cronjobs(next_time_zone_value)
     return await app_state.settings_repo.list_editable_settings()

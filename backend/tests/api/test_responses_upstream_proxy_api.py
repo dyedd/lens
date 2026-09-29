@@ -99,8 +99,10 @@ def _enable_body_logging(monkeypatch: Any, app_state: Any) -> None:
 
 
 def _latest_request_log(app_state: Any) -> Any:
-    item = run_async(app_state.request_log_store.list_request_log_page()).items[0]
-    return run_async(app_state.request_log_store.get_request_log(item.id))
+    item = run_async(app_state.request_log_store.queries.list_request_log_page()).items[
+        0
+    ]
+    return run_async(app_state.request_log_store.queries.get_request_log(item.id))
 
 
 def _completed_frames() -> list[dict[str, Any]]:

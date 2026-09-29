@@ -1072,7 +1072,7 @@ def test_failover_orders_targets_and_tracks_active_credential(
                 json={"error": {"message": "failed"}},
                 request=request,
             )
-        page = await app_state.request_log_store.list_request_log_page()
+        page = await app_state.request_log_store.queries.list_request_log_page()
         active_log = page.items[0]
         assert active_log.lifecycle_status == RequestLogLifecycleStatus.CONNECTING
         assert active_log.channel_name == "Second site"

@@ -100,7 +100,7 @@ def seed_request_log(
 ) -> Any:
     """Insert a representative request log through the current repository."""
     return run_async(
-        app_state.request_log_store.create_request_log(
+        app_state.request_log_store.commands.create_request_log(
             protocol=protocol,
             user_agent="pytest",
             requested_group_name=requested_group_name,

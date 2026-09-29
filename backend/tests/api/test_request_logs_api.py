@@ -111,7 +111,7 @@ def test_request_log_page_filters_failed_logs_with_na_options(
     app_state,
 ) -> None:
     failed_log = run_async(
-        app_state.request_log_store.create_request_log(
+        app_state.request_log_store.commands.create_request_log(
             protocol=ProtocolKind.OPENAI_CHAT.value,
             user_agent="pytest failed client",
             requested_group_name="deepseek-chat",
@@ -165,7 +165,7 @@ def test_request_log_page_does_not_mix_channel_with_previous_attempt_credential(
     app_state,
 ) -> None:
     run_async(
-        app_state.request_log_store.create_request_log(
+        app_state.request_log_store.commands.create_request_log(
             protocol=ProtocolKind.OPENAI_CHAT.value,
             user_agent="pytest failover client",
             requested_group_name="gpt-4o",

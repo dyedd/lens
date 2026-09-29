@@ -241,10 +241,10 @@ def test_openai_chat_stream_logs_kimi_sse_as_json(
     assert response.status_code == 200, response.text
     assert response.text == stream_body
     request_log_item = run_async(
-        app_state.request_log_store.list_request_log_page()
+        app_state.request_log_store.queries.list_request_log_page()
     ).items[0]
     request_log = run_async(
-        app_state.request_log_store.get_request_log(request_log_item.id)
+        app_state.request_log_store.queries.get_request_log(request_log_item.id)
     )
     assert request_log.input_tokens == 61105
     assert request_log.output_tokens == 346
@@ -316,10 +316,10 @@ def test_anthropic_stream_with_openai_semantic_usage_does_not_double_count_cache
 
     assert response.status_code == 200, response.text
     request_log_item = run_async(
-        app_state.request_log_store.list_request_log_page()
+        app_state.request_log_store.queries.list_request_log_page()
     ).items[0]
     request_log = run_async(
-        app_state.request_log_store.get_request_log(request_log_item.id)
+        app_state.request_log_store.queries.get_request_log(request_log_item.id)
     )
     assert request_log.input_tokens == 51630
     assert request_log.cache_read_input_tokens == 51456

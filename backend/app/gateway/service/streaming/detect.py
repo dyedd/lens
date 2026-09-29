@@ -218,7 +218,7 @@ async def _persist_stream_first_token_latency(
     latency_ms: int,
 ) -> None:
     try:
-        await app_state.request_log_store.update_request_log_runtime(
+        await app_state.request_log_store.commands.update_request_log_runtime(
             request_log_id,
             first_token_latency_ms=first_token_latency_ms,
             latency_ms=latency_ms,
