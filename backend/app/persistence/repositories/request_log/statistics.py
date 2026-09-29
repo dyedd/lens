@@ -37,7 +37,6 @@ class RequestLogStatistics:
         now = datetime.now(UTC).replace(tzinfo=None)
         time_zone = self.runtime_time_zone(runtime)
         local_now = now.replace(tzinfo=UTC).astimezone(time_zone)
-        today_key = local_now.strftime("%Y%m%d")
         today_start_utc = (
             local_now.replace(hour=0, minute=0, second=0, microsecond=0)
             .astimezone(UTC)
@@ -55,23 +54,6 @@ class RequestLogStatistics:
                 await session.execute(update(RequestLogEntity).values(stats_archived=0))
                 stored_time_zone.value = time_zone.key
                 force = True
-            if not force:
-                await session.execute(
-                    delete(RequestLogDailyStatsEntity).where(
-                        RequestLogDailyStatsEntity.date == today_key
-                    )
-                )
-                await session.execute(
-                    delete(OverviewModelDailyStatsEntity).where(
-                        OverviewModelDailyStatsEntity.date == today_key
-                    )
-                )
-                await session.execute(
-                    update(RequestLogEntity)
-                    .where(RequestLogEntity.stats_archived == 1)
-                    .where(RequestLogEntity.created_at >= today_start_utc)
-                    .values(stats_archived=0)
-                )
             unarchived_stmt = (
                 select(*REQUEST_LOG_STATS_COLUMNS)
                 .where(RequestLogEntity.stats_archived == 0)
