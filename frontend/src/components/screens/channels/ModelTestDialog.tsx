@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { SiteModelTestResult } from "@/lib/api/sites";
+import { formatJson } from "@/lib/jsonFormatting";
 import { protocolLabel } from "@/lib/protocols";
 import type { Locale } from "./channelTypes";
 
@@ -87,15 +88,6 @@ function DebugBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatResponseBody(body: string): string {
-  if (!body.trim()) return "";
-  try {
-    return JSON.stringify(JSON.parse(body), null, 2);
-  } catch {
-    return body;
-  }
-}
-
 export function ModelTestDialog({
   items,
   locale,
@@ -140,7 +132,7 @@ export function ModelTestDialog({
     ? JSON.stringify(debug.response.headers, null, 2)
     : "";
   const responseBody =
-    formatResponseBody(debug?.response.body || "") ||
+    (formatJson(debug?.response.body || "") ?? debug?.response.body) ||
     result?.error_message ||
     "";
 

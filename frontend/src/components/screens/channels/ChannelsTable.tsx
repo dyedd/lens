@@ -34,17 +34,23 @@ import type { Site } from "@/lib/api/sites";
 import { siteEndpointUrls, siteModelCounts } from "./channelModels";
 import type { Locale, SiteRow } from "./channelTypes";
 
+const updatedAtOptions: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+const updatedAtFormatters: Record<Locale, Intl.DateTimeFormat> = {
+  "zh-CN": new Intl.DateTimeFormat("zh-CN", updatedAtOptions),
+  "en-US": new Intl.DateTimeFormat("en-US", updatedAtOptions),
+};
+
 function formatUpdatedAt(value: string | null | undefined, locale: Locale) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(locale, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return updatedAtFormatters[locale].format(date);
 }
 
 type Props = {

@@ -19,7 +19,7 @@ async def _startup_app_state(state: AppState) -> None:
     load_time_zone(None)
     if state.http.is_closed:
         state.http = state._create_http_client()
-    await state.request_log_store.fail_running_request_logs()
+    await state.request_log_store.maintenance.fail_running_request_logs()
     await run_model_group_placement(state)
 
 

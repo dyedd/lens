@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import String, cast, func, literal, or_, select
+from sqlalchemy import Select, String, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceNotFoundError
@@ -50,6 +50,40 @@ from .types import (
     extract_reasoning_effort,
     group_channel_ids_by_protocol_config,
 )
+
+REQUEST_LOG_STATS_COLUMNS = (
+    RequestLogEntity.created_at,
+    RequestLogEntity.lifecycle_status,
+    RequestLogEntity.latency_ms,
+    RequestLogEntity.input_tokens,
+    RequestLogEntity.cache_read_input_tokens,
+    RequestLogEntity.cache_write_input_tokens,
+    RequestLogEntity.output_tokens,
+    RequestLogEntity.total_tokens,
+    RequestLogEntity.input_cost_usd,
+    RequestLogEntity.output_cost_usd,
+    RequestLogEntity.total_cost_usd,
+)
+
+
+def select_request_log_models() -> Select:
+    model = func.coalesce(
+        RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name
+    )
+    return (
+        select(
+            RequestLogEntity.created_at,
+            model,
+            RequestLogEntity.total_tokens,
+            RequestLogEntity.total_cost_usd,
+        )
+        .where(
+            RequestLogEntity.lifecycle_status
+            == RequestLogLifecycleStatus.SUCCEEDED.value
+        )
+        .where(model.is_not(None))
+        .order_by(RequestLogEntity.created_at.asc())
+    )
 
 
 def primary_attempt(
