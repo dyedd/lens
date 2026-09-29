@@ -233,20 +233,24 @@ class RequestLogOverview:
         )
         async with self.session_factory() as session:
             archived_model_rows = []
-            if gateway_key_id_value is None and days != -1:
+            if gateway_key_id_value is None:
                 window_start, window_end = resolve_imported_date_window(
                     days, time_zone=time_zone
                 )
                 archived_model_rows = await self.overview_model_daily_rows(
                     session, start_at=window_start, end_at=window_end
                 )
+            # Daily archives cannot recover the original hours after logs are deleted.
+            bucket_format = (
+                "%Y%m%d%H" if days == -1 and not archived_model_rows else "%Y%m%d"
+            )
             live_model_rows = await self.request_log_model_rows(
                 session,
                 days=days,
                 gateway_key_id=gateway_key_id_value,
                 include_archived=gateway_key_id_value is not None,
                 time_zone=time_zone,
-                bucket_format="%Y%m%d%H" if days == -1 else "%Y%m%d",
+                bucket_format=bucket_format,
             )
         merged_rows: dict[tuple[str, str], dict[str, float | str]] = {}
         for date_value, model, requests, total_tokens, total_cost in [

@@ -247,15 +247,10 @@ def resolve_request_log_window(
 ) -> tuple[datetime | None, datetime | None]:
     if days == 0:
         return None, None
-    now = datetime.now(time_zone)
-    if days == -1:
-        start_at = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
-            days=offset_days
-        )
-        end_at = start_at + timedelta(days=1)
-    else:
-        end_at = now - timedelta(days=offset_days)
-        start_at = end_at - timedelta(days=days)
+    # Live rows and daily archives must cover the same local calendar days.
+    today = datetime.now(time_zone).replace(hour=0, minute=0, second=0, microsecond=0)
+    end_at = today + timedelta(days=1 - offset_days)
+    start_at = end_at - timedelta(days=1 if days == -1 else days)
     return (
         start_at.astimezone(UTC).replace(tzinfo=None),
         end_at.astimezone(UTC).replace(tzinfo=None),
