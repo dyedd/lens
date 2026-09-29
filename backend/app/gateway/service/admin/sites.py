@@ -50,7 +50,7 @@ async def list_model_health(
     """List request-log health by execution model group or site."""
     if hours not in (1, 6, 24):
         raise HTTPException(status_code=422, detail="hours must be 1, 6, or 24")
-    return await app_state.request_log_store.list_model_health(
+    return await app_state.request_log_store.queries.list_model_health(
         hours=hours,
         mode=mode,
         query=query,

@@ -49,7 +49,7 @@ async def _create_pending_proxy_log_context(
     is_stream: bool,
     request_content: str | None,
 ) -> RequestLogger:
-    request_log = await app_state.request_log_store.create_pending_request_log(
+    request_log = await app_state.request_log_store.commands.create_pending_request_log(
         protocol=protocol.value,
         user_agent=user_agent,
         requested_group_name=requested_group_name,

@@ -2,6 +2,7 @@ import type * as React from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/classNames";
+import { formatJson } from "@/lib/jsonFormatting";
 
 type Props = {
   id?: string;
@@ -15,16 +16,6 @@ type Props = {
   invalidFormatMessage: string;
   onChange: (value: string) => void;
 };
-
-function formatJson(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2);
-  } catch {
-    return null;
-  }
-}
 
 /** Renders a JSON textarea with a format action and optional toolbar. */
 export function JsonField({
