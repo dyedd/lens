@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.db import Base
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.protocols import ProtocolKind, RequestLogLifecycleStatus
+from app.models.request_logs import RequestLogInput
 
 _INITIAL_SERVICE_STATE_CLOSED = False
 
@@ -101,52 +102,54 @@ def seed_request_log(
     """Insert a representative request log through the current repository."""
     return run_async(
         app_state.request_log_store.commands.create_request_log(
-            protocol=protocol,
-            user_agent="pytest",
-            requested_group_name=requested_group_name,
-            resolved_group_name=resolved_group_name,
-            upstream_model_name=resolved_group_name,
-            channel_id=channel_id or openai_chat_channel_id(),
-            channel_name=channel_name,
-            gateway_key_id=gateway_key_id,
-            status_code=status_code,
-            success=success,
-            lifecycle_status=lifecycle_status
-            or (
-                RequestLogLifecycleStatus.SUCCEEDED
-                if success
-                else RequestLogLifecycleStatus.FAILED
-            ),
-            is_stream=False,
-            first_token_latency_ms=12,
-            latency_ms=34,
-            input_tokens=10,
-            cache_read_input_tokens=1,
-            cache_write_input_tokens=2,
-            output_tokens=20,
-            total_tokens=30,
-            input_cost_usd=0.01,
-            output_cost_usd=0.02,
-            total_cost_usd=0.03,
-            rate_multiplier=rate_multiplier,
-            billing_mode=billing_mode,
-            billing_units=billing_units,
-            request_content='{"model":"gpt-4o"}',
-            response_content='{"ok":true}',
-            attempts=[
-                {
-                    "channel_id": channel_id or openai_chat_channel_id(),
-                    "channel_name": channel_name or "OpenAI Site",
-                    "credential_id": "cred-1",
-                    "credential_name": "primary-key",
-                    "model_name": resolved_group_name,
-                    "status_code": status_code,
-                    "success": success,
-                    "duration_ms": 34,
-                    "error_message": error_message,
-                }
-            ],
-            error_message=error_message,
+            RequestLogInput(
+                protocol=protocol,
+                user_agent="pytest",
+                requested_group_name=requested_group_name,
+                resolved_group_name=resolved_group_name,
+                upstream_model_name=resolved_group_name,
+                channel_id=channel_id or openai_chat_channel_id(),
+                channel_name=channel_name,
+                gateway_key_id=gateway_key_id,
+                status_code=status_code,
+                success=success,
+                lifecycle_status=lifecycle_status
+                or (
+                    RequestLogLifecycleStatus.SUCCEEDED
+                    if success
+                    else RequestLogLifecycleStatus.FAILED
+                ),
+                is_stream=False,
+                first_token_latency_ms=12,
+                latency_ms=34,
+                input_tokens=10,
+                cache_read_input_tokens=1,
+                cache_write_input_tokens=2,
+                output_tokens=20,
+                total_tokens=30,
+                input_cost_usd=0.01,
+                output_cost_usd=0.02,
+                total_cost_usd=0.03,
+                rate_multiplier=rate_multiplier,
+                billing_mode=billing_mode,
+                billing_units=billing_units,
+                request_content='{"model":"gpt-4o"}',
+                response_content='{"ok":true}',
+                attempts=[
+                    {
+                        "channel_id": channel_id or openai_chat_channel_id(),
+                        "channel_name": channel_name or "OpenAI Site",
+                        "credential_id": "cred-1",
+                        "credential_name": "primary-key",
+                        "model_name": resolved_group_name,
+                        "status_code": status_code,
+                        "success": success,
+                        "duration_ms": 34,
+                        "error_message": error_message,
+                    }
+                ],
+                error_message=error_message,
+            )
         )
     )
 
