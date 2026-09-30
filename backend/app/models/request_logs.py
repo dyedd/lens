@@ -1,9 +1,44 @@
-from typing import Literal
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from pydantic import Field
 
 from .protocols import ProtocolKind, RequestLogLifecycleStatus
 from .validation import StrictBaseModel
+
+
+@dataclass(slots=True, kw_only=True)
+class RequestLogInput:
+    protocol: str
+    user_agent: str
+    requested_group_name: str | None = None
+    resolved_group_name: str | None = None
+    upstream_model_name: str | None = None
+    channel_id: str | None = None
+    channel_name: str | None = None
+    gateway_key_id: str | None = None
+    status_code: int | None = None
+    success: bool = False
+    lifecycle_status: RequestLogLifecycleStatus = RequestLogLifecycleStatus.CONNECTING
+    is_stream: bool = False
+    first_token_latency_ms: int = 0
+    latency_ms: int = 0
+    input_tokens: int = 0
+    image_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
+    rate_multiplier: float | None = None
+    billing_mode: str = "tokens"
+    billing_units: int = 0
+    request_content: str | None = None
+    response_content: str | None = None
+    attempts: list[dict[str, Any]] | None = None
+    error_message: str | None = None
 
 
 class RequestLogItem(StrictBaseModel):

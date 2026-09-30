@@ -6,6 +6,7 @@ from typing import Any
 from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
+from ...models.request_logs import RequestLogInput
 from .app_state import app_state
 from .routing_plan import elapsed_ms
 from .runtime_types import (
@@ -176,30 +177,14 @@ class RequestLogger:
             self.last_channel = channel
         else:
             channel = self.last_channel
-        kwargs: dict[str, Any] = {"rate_multiplier": rate_multiplier}
-        if result is not None:
-            kwargs.update(
-                input_tokens=result.input_tokens,
-                image_input_tokens=result.image_input_tokens,
-                cache_read_input_tokens=result.cache_read_input_tokens,
-                cache_write_input_tokens=result.cache_write_input_tokens,
-                output_tokens=result.output_tokens,
-                total_tokens=result.total_tokens,
-                input_cost_usd=result.input_cost_usd,
-                output_cost_usd=result.output_cost_usd,
-                total_cost_usd=result.total_cost_usd,
-                billing_mode=result.billing_mode,
-                billing_units=result.billing_units,
-            )
-        await update_request_log(
-            self.request_log_id,
-            protocol=self.protocol,
+        payload = RequestLogInput(
+            protocol=self.protocol.value,
             requested_group_name=self.requested_group_name,
             resolved_group_name=self.resolved_group_name,
             upstream_model_name=upstream_model_name,
             channel_id=channel.id if channel else None,
             channel_name=channel.name if channel else None,
-            gateway_key=self.gateway_key,
+            gateway_key_id=self.gateway_key.id,
             user_agent=self.user_agent,
             lifecycle_status=lifecycle_status,
             status_code=status_code,
@@ -213,74 +198,20 @@ class RequestLogger:
             response_content=response_content,
             attempts=attempt_logs_to_dicts(self.attempts),
             error_message=error_message,
-            **kwargs,
+            rate_multiplier=rate_multiplier,
         )
-
-
-async def update_request_log(
-    request_log_id: int,
-    *,
-    protocol: ProtocolKind,
-    requested_group_name: str | None,
-    resolved_group_name: str | None,
-    upstream_model_name: str | None,
-    channel_id: str | None,
-    channel_name: str | None,
-    gateway_key: GatewayApiKey,
-    user_agent: str,
-    lifecycle_status: RequestLogLifecycleStatus,
-    status_code: int | None,
-    success: bool,
-    is_stream: bool,
-    first_token_latency_ms: int,
-    latency_ms: int,
-    rate_multiplier: float | None = None,
-    input_tokens: int = 0,
-    image_input_tokens: int = 0,
-    cache_read_input_tokens: int = 0,
-    cache_write_input_tokens: int = 0,
-    output_tokens: int = 0,
-    total_tokens: int = 0,
-    input_cost_usd: float = 0.0,
-    output_cost_usd: float = 0.0,
-    total_cost_usd: float = 0.0,
-    billing_mode: str = "tokens",
-    billing_units: int = 0,
-    request_content: str | None = None,
-    response_content: str | None = None,
-    attempts: list[dict[str, Any]] | None = None,
-    error_message: str | None,
-) -> None:
-    await app_state.request_log_store.commands.update_request_log(
-        request_log_id,
-        protocol=protocol.value,
-        requested_group_name=requested_group_name,
-        resolved_group_name=resolved_group_name,
-        upstream_model_name=upstream_model_name,
-        channel_id=channel_id,
-        channel_name=channel_name,
-        gateway_key_id=gateway_key.id,
-        user_agent=user_agent,
-        status_code=status_code,
-        success=success,
-        lifecycle_status=lifecycle_status,
-        is_stream=is_stream,
-        first_token_latency_ms=first_token_latency_ms,
-        latency_ms=latency_ms,
-        input_tokens=input_tokens,
-        image_input_tokens=image_input_tokens,
-        cache_read_input_tokens=cache_read_input_tokens,
-        cache_write_input_tokens=cache_write_input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
-        input_cost_usd=input_cost_usd,
-        output_cost_usd=output_cost_usd,
-        total_cost_usd=total_cost_usd,
-        rate_multiplier=rate_multiplier,
-        billing_mode=billing_mode,
-        billing_units=billing_units,
-        request_content=request_content,
-        response_content=response_content,
-        attempts=attempts,
-        error_message=error_message,
-    )
+        if result is not None:
+            payload.input_tokens = result.input_tokens
+            payload.image_input_tokens = result.image_input_tokens
+            payload.cache_read_input_tokens = result.cache_read_input_tokens
+            payload.cache_write_input_tokens = result.cache_write_input_tokens
+            payload.output_tokens = result.output_tokens
+            payload.total_tokens = result.total_tokens
+            payload.input_cost_usd = result.input_cost_usd
+            payload.output_cost_usd = result.output_cost_usd
+            payload.total_cost_usd = result.total_cost_usd
+            payload.billing_mode = result.billing_mode
+            payload.billing_units = result.billing_units
+        await app_state.request_log_store.commands.update_request_log(
+            self.request_log_id, payload
+        )

@@ -4,6 +4,7 @@ import pytest
 from conftest import assert_error, run_async, seed_request_log
 
 from app.models.protocols import ProtocolKind, RequestLogLifecycleStatus
+from app.models.request_logs import RequestLogInput
 
 
 def test_request_log_page_returns_empty_result(client, admin_headers) -> None:
@@ -112,27 +113,29 @@ def test_request_log_page_filters_failed_logs_with_na_options(
 ) -> None:
     failed_log = run_async(
         app_state.request_log_store.commands.create_request_log(
-            protocol=ProtocolKind.OPENAI_CHAT.value,
-            user_agent="pytest failed client",
-            requested_group_name="deepseek-chat",
-            resolved_group_name="deepseek-chat",
-            upstream_model_name="deepseek-chat",
-            channel_id=None,
-            channel_name=None,
-            gateway_key_id=None,
-            status_code=500,
-            success=False,
-            lifecycle_status=RequestLogLifecycleStatus.FAILED,
-            is_stream=False,
-            first_token_latency_ms=0,
-            latency_ms=80,
-            input_tokens=1,
-            output_tokens=0,
-            total_tokens=1,
-            input_cost_usd=0,
-            output_cost_usd=0,
-            total_cost_usd=0,
-            error_message="upstream 500",
+            RequestLogInput(
+                protocol=ProtocolKind.OPENAI_CHAT.value,
+                user_agent="pytest failed client",
+                requested_group_name="deepseek-chat",
+                resolved_group_name="deepseek-chat",
+                upstream_model_name="deepseek-chat",
+                channel_id=None,
+                channel_name=None,
+                gateway_key_id=None,
+                status_code=500,
+                success=False,
+                lifecycle_status=RequestLogLifecycleStatus.FAILED,
+                is_stream=False,
+                first_token_latency_ms=0,
+                latency_ms=80,
+                input_tokens=1,
+                output_tokens=0,
+                total_tokens=1,
+                input_cost_usd=0,
+                output_cost_usd=0,
+                total_cost_usd=0,
+                error_message="upstream 500",
+            )
         )
     )
     seed_request_log(app_state)
@@ -166,39 +169,41 @@ def test_request_log_page_does_not_mix_channel_with_previous_attempt_credential(
 ) -> None:
     run_async(
         app_state.request_log_store.commands.create_request_log(
-            protocol=ProtocolKind.OPENAI_CHAT.value,
-            user_agent="pytest failover client",
-            requested_group_name="gpt-4o",
-            resolved_group_name="gpt-4o",
-            upstream_model_name="gpt-4o",
-            channel_id="current-channel",
-            channel_name="Current site",
-            gateway_key_id=None,
-            status_code=None,
-            success=False,
-            lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
-            is_stream=False,
-            first_token_latency_ms=0,
-            latency_ms=10,
-            input_tokens=0,
-            output_tokens=0,
-            total_tokens=0,
-            input_cost_usd=0,
-            output_cost_usd=0,
-            total_cost_usd=0,
-            attempts=[
-                {
-                    "channel_id": "previous-channel",
-                    "channel_name": "Previous site",
-                    "credential_id": "previous-credential",
-                    "credential_name": "l3",
-                    "model_name": "gpt-4o",
-                    "status_code": 500,
-                    "success": False,
-                    "duration_ms": 10,
-                    "error_message": "failed",
-                }
-            ],
+            RequestLogInput(
+                protocol=ProtocolKind.OPENAI_CHAT.value,
+                user_agent="pytest failover client",
+                requested_group_name="gpt-4o",
+                resolved_group_name="gpt-4o",
+                upstream_model_name="gpt-4o",
+                channel_id="current-channel",
+                channel_name="Current site",
+                gateway_key_id=None,
+                status_code=None,
+                success=False,
+                lifecycle_status=RequestLogLifecycleStatus.CONNECTING,
+                is_stream=False,
+                first_token_latency_ms=0,
+                latency_ms=10,
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                input_cost_usd=0,
+                output_cost_usd=0,
+                total_cost_usd=0,
+                attempts=[
+                    {
+                        "channel_id": "previous-channel",
+                        "channel_name": "Previous site",
+                        "credential_id": "previous-credential",
+                        "credential_name": "l3",
+                        "model_name": "gpt-4o",
+                        "status_code": 500,
+                        "success": False,
+                        "duration_ms": 10,
+                        "error_message": "failed",
+                    }
+                ],
+            )
         )
     )
 
