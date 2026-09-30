@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { lazyComponent } from "@/lib/lazyComponent";
-import type { ModelStatusFilter } from "./ChannelModelsDialog";
-import type { Locale } from "./channelTypes";
+import type {
+  AggregatedModel,
+  Locale,
+  ModelStatusFilter,
+} from "./channelTypes";
 import type {
   useChannelPersistence,
   useChannelTransfer,
@@ -9,7 +12,6 @@ import type {
 import type { useChannelForm } from "./useChannelForm";
 import type { useChannelModelPicker } from "./useChannelModelPicker";
 import type { useChannelModelTest } from "./useChannelModelTest";
-import type { useAggregatedModels } from "./useChannelQueries";
 import type { useChannelSave } from "./useChannelSave";
 
 const ChannelEditorDialog = lazyComponent(() =>
@@ -42,7 +44,7 @@ type Props = {
   picker: ReturnType<typeof useChannelModelPicker>;
   modelTest: ReturnType<typeof useChannelModelTest>;
   save: ReturnType<typeof useChannelSave>;
-  overviewModels: ReturnType<typeof useAggregatedModels>;
+  overviewModels: AggregatedModel[];
   editorMode: "channel" | "models";
   isModelsNested: boolean;
   modelsStatusFilter: ModelStatusFilter;

@@ -69,3 +69,33 @@ export type SiteRow = Site & {
 
 export type ChannelStatusFilter = "all" | "enabled" | "disabled";
 export type ChannelSort = "name-asc" | "name-desc" | "models-desc";
+
+export type AggregatedModelMember = {
+  /** Per-credential key matching protocolConfigModelKey semantics. */
+  key: string;
+  credentialId: string;
+  credentialName: string;
+  /** Key label plus masked value. */
+  credentialTitle: string;
+  source: SiteModelInput["source"];
+};
+
+export type AggregatedModel = {
+  /** Group key shared by every same-name model inside one protocol config. */
+  key: string;
+  modelName: string;
+  /** Base URL of the protocol config that owns this row. */
+  baseUrl: string;
+  /** Number of keys bound to the owning protocol config. */
+  credentialCount: number;
+  protocols: ProtocolKind[];
+  source: SiteModelInput["source"];
+  enabled: boolean;
+  upstreamMissing: boolean;
+  /** Per-credential rows for expanding the collapsed overview row. */
+  members: AggregatedModelMember[];
+  /** Per-credential key used to open the single-model test dialog. */
+  testKey: string | null;
+};
+
+export type ModelStatusFilter = "all" | "enabled" | "disabled" | "missing";

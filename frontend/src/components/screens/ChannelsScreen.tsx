@@ -3,9 +3,10 @@ import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import type { Site } from "@/lib/api/sites";
 import { useI18n } from "@/lib/I18nContext";
-import type { ModelStatusFilter } from "./channels/ChannelModelsDialog";
 import { ChannelsDialogs } from "./channels/ChannelsDialogs";
 import { ChannelsOverview } from "./channels/ChannelsOverview";
+import type { ModelStatusFilter } from "./channels/channelTypes";
+import { useAggregatedModels } from "./channels/useAggregatedModels";
 import {
   useChannelPersistence,
   useChannelTransfer,
@@ -13,10 +14,7 @@ import {
 import { useChannelForm } from "./channels/useChannelForm";
 import { useChannelModelPicker } from "./channels/useChannelModelPicker";
 import { useChannelModelTest } from "./channels/useChannelModelTest";
-import {
-  useAggregatedModels,
-  useChannelQueries,
-} from "./channels/useChannelQueries";
+import { useChannelQueries } from "./channels/useChannelQueries";
 import { useChannelSave } from "./channels/useChannelSave";
 
 /** Coordinates channel management data, dialogs, and user actions. */

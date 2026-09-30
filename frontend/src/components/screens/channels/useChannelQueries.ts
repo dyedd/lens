@@ -1,24 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api/client";
-import type { ProtocolKind } from "@/lib/api/protocols";
-import type { Site, SiteModelInput } from "@/lib/api/sites";
-import {
-  activeBaseUrlValue,
-  protocolConfigSelectedCredentialIds,
-} from "./channelForm";
-import {
-  aggregateModelGroupKey,
-  credentialLabel,
-  formatCredentialTitle,
-  protocolConfigModelKey,
-  siteEndpointSummary,
-  siteModelCounts,
-} from "./channelModels";
+import type { Site } from "@/lib/api/sites";
+import { siteEndpointSummary, siteModelCounts } from "./channelModels";
 import type {
   ChannelSort,
   ChannelStatusFilter,
-  FormState,
   Locale,
   SiteRow,
 } from "./channelTypes";
@@ -132,127 +119,4 @@ export function useChannelQueries(locale: Locale) {
     resetFilters,
     invalidateChannelData,
   };
-}
-
-export type AggregatedModelMember = {
-  /** Per-credential key matching protocolConfigModelKey semantics. */
-  key: string;
-  credentialId: string;
-  credentialName: string;
-  /** Key label plus masked value. */
-  credentialTitle: string;
-  source: SiteModelInput["source"];
-};
-
-export type AggregatedModel = {
-  /** Group key shared by every same-name model inside one protocol config. */
-  key: string;
-  modelName: string;
-  /** Base URL of the protocol config that owns this row. */
-  baseUrl: string;
-  /** Number of keys bound to the owning protocol config. */
-  credentialCount: number;
-  protocols: ProtocolKind[];
-  source: SiteModelInput["source"];
-  enabled: boolean;
-  upstreamMissing: boolean;
-  /** Per-credential rows for expanding the collapsed overview row. */
-  members: AggregatedModelMember[];
-  /** Per-credential key used to open the single-model test dialog. */
-  testKey: string | null;
-};
-
-type ModelGroupSeed = {
-  modelName: string;
-  protocols: Set<ProtocolKind>;
-  sources: Set<SiteModelInput["source"]>;
-  enabled: boolean;
-  upstreamMissing: boolean;
-  members: AggregatedModelMember[];
-  testKey: string | null;
-};
-
-/**
- * Builds the channel overview rows, collapsing models that share a name
- * within one protocol configuration so multi-key duplicates stay one row.
- */
-export function useAggregatedModels(
-  form: Pick<FormState, "base_urls" | "credentials" | "protocolConfigs">,
-  locale: Locale,
-): AggregatedModel[] {
-  const { base_urls: baseUrls, credentials, protocolConfigs } = form;
-  return useMemo(() => {
-    const credentialById = new Map(
-      credentials.map(
-        (credential, index) => [credential.id, { credential, index }] as const,
-      ),
-    );
-    const unknownKey = locale === "zh-CN" ? "未知密钥" : "Unknown key";
-    const credentialNames = (credentialId: string) => {
-      const entry = credentialById.get(credentialId);
-      if (!entry) return { name: unknownKey, title: unknownKey };
-      return {
-        name: credentialLabel(entry.credential, entry.index, locale),
-        title: formatCredentialTitle(entry.credential, entry.index, locale),
-      };
-    };
-    return protocolConfigs.flatMap((protocolConfig) => {
-      const baseUrl = activeBaseUrlValue(
-        { base_urls: baseUrls },
-        protocolConfig,
-      ).trim();
-      const credentialCount =
-        protocolConfigSelectedCredentialIds(protocolConfig).length;
-      const groups = new Map<string, ModelGroupSeed>();
-      const groupOf = (modelName: string) => {
-        const existing = groups.get(modelName);
-        if (existing) return existing;
-        const created: ModelGroupSeed = {
-          modelName,
-          protocols: new Set(),
-          sources: new Set(),
-          enabled: false,
-          upstreamMissing: false,
-          members: [],
-          testKey: null,
-        };
-        groups.set(modelName, created);
-        return created;
-      };
-
-      for (const model of protocolConfig.models) {
-        const group = groupOf(model.model_name);
-        for (const protocol of model.protocols) {
-          group.protocols.add(protocol);
-        }
-        group.sources.add(model.source);
-        group.enabled = group.enabled || model.enabled;
-        group.upstreamMissing = group.upstreamMissing || model.upstream_missing;
-        const memberKey = protocolConfigModelKey(protocolConfig, model);
-        if (group.members.some((member) => member.key === memberKey)) continue;
-        const names = credentialNames(model.credential_id);
-        group.members.push({
-          key: memberKey,
-          credentialId: model.credential_id,
-          credentialName: names.name,
-          credentialTitle: names.title,
-          source: model.source,
-        });
-        group.testKey ??= memberKey;
-      }
-
-      return Array.from(groups.values()).map((group) => ({
-        key: aggregateModelGroupKey(protocolConfig, group.modelName),
-        modelName: group.modelName,
-        baseUrl,
-        credentialCount,
-        protocols: Array.from(group.protocols),
-        source: group.sources.has("manual") ? "manual" : "synced",
-        enabled: group.enabled,
-        upstreamMissing: group.upstreamMissing,
-        members: group.members,
-        testKey: group.testKey,
-      }));
-    });
-  }, [baseUrls, credentials, protocolConfigs, locale]);
 }

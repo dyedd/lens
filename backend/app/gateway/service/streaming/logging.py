@@ -5,9 +5,10 @@ from typing import Any
 
 from ....models.channels import ChannelConfig
 from ....models.protocols import RequestLogLifecycleStatus
+from ....models.request_logs import RequestLogInput
 from ....persistence.repositories.model_price_repository import ModelCostEstimate
 from ..app_state import app_state, logger
-from ..request_logger import RequestLogger, update_request_log
+from ..request_logger import RequestLogger
 from ..routing_plan import elapsed_ms
 from ..runtime_types import (
     StreamCapture,
@@ -162,38 +163,40 @@ async def record_stream_request_log(
         image_input_tokens=parsed["image_input_tokens"],
         rate_multiplier=log_ctx.rate_multiplier,
     )
-    await update_request_log(
+    await app_state.request_log_store.commands.update_request_log(
         log_ctx.request_log_id,
-        protocol=log_ctx.protocol,
-        requested_group_name=log_ctx.requested_group_name,
-        resolved_group_name=log_ctx.resolved_group_name,
-        upstream_model_name=parsed["resolved_model"] or result.upstream_model_name,
-        channel_id=channel.id,
-        channel_name=channel.name,
-        gateway_key=log_ctx.gateway_key,
-        user_agent=log_ctx.user_agent,
-        lifecycle_status=outcome.lifecycle_status,
-        status_code=status_code,
-        success=outcome.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED,
-        is_stream=True,
-        first_token_latency_ms=first_token_latency_ms,
-        latency_ms=latency_ms,
-        input_tokens=parsed["input_tokens"],
-        image_input_tokens=parsed["image_input_tokens"],
-        cache_read_input_tokens=parsed["cache_read_input_tokens"],
-        cache_write_input_tokens=parsed["cache_write_input_tokens"],
-        output_tokens=parsed["output_tokens"],
-        total_tokens=parsed["total_tokens"],
-        input_cost_usd=cost.input_cost_usd,
-        output_cost_usd=cost.output_cost_usd,
-        total_cost_usd=cost.total_cost_usd,
-        rate_multiplier=log_ctx.rate_multiplier,
-        billing_mode=cost.billing_mode,
-        billing_units=cost.billing_units,
-        request_content=result.request_content,
-        response_content=distilled_content,
-        attempts=attempt_logs,
-        error_message=outcome.capture_issue,
+        RequestLogInput(
+            protocol=log_ctx.protocol.value,
+            requested_group_name=log_ctx.requested_group_name,
+            resolved_group_name=log_ctx.resolved_group_name,
+            upstream_model_name=parsed["resolved_model"] or result.upstream_model_name,
+            channel_id=channel.id,
+            channel_name=channel.name,
+            gateway_key_id=log_ctx.gateway_key.id,
+            user_agent=log_ctx.user_agent,
+            lifecycle_status=outcome.lifecycle_status,
+            status_code=status_code,
+            success=outcome.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED,
+            is_stream=True,
+            first_token_latency_ms=first_token_latency_ms,
+            latency_ms=latency_ms,
+            input_tokens=parsed["input_tokens"],
+            image_input_tokens=parsed["image_input_tokens"],
+            cache_read_input_tokens=parsed["cache_read_input_tokens"],
+            cache_write_input_tokens=parsed["cache_write_input_tokens"],
+            output_tokens=parsed["output_tokens"],
+            total_tokens=parsed["total_tokens"],
+            input_cost_usd=cost.input_cost_usd,
+            output_cost_usd=cost.output_cost_usd,
+            total_cost_usd=cost.total_cost_usd,
+            rate_multiplier=log_ctx.rate_multiplier,
+            billing_mode=cost.billing_mode,
+            billing_units=cost.billing_units,
+            request_content=result.request_content,
+            response_content=distilled_content,
+            attempts=attempt_logs,
+            error_message=outcome.capture_issue,
+        ),
     )
 
 

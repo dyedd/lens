@@ -8,6 +8,8 @@ from typing import Any
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
+from app.models.request_logs import RequestLogInput
+
 from ...core.errors import RoutingError
 from ...core.model_name_parser import parse_model_name
 from ...models.channels import ChannelConfig
@@ -49,17 +51,19 @@ async def _create_pending_proxy_log_context(
     is_stream: bool,
     request_content: str | None,
 ) -> RequestLogger:
-    request_log = await app_state.request_log_store.commands.create_pending_request_log(
-        protocol=protocol.value,
-        user_agent=user_agent,
-        requested_group_name=requested_group_name,
-        resolved_group_name=None,
-        upstream_model_name=None,
-        channel_id=None,
-        channel_name=None,
-        gateway_key_id=gateway_key.id,
-        is_stream=is_stream,
-        request_content=request_content,
+    request_log = await app_state.request_log_store.commands.create_request_log(
+        RequestLogInput(
+            protocol=protocol.value,
+            user_agent=user_agent,
+            requested_group_name=requested_group_name,
+            resolved_group_name=None,
+            upstream_model_name=None,
+            channel_id=None,
+            channel_name=None,
+            gateway_key_id=gateway_key.id,
+            is_stream=is_stream,
+            request_content=request_content,
+        )
     )
     return RequestLogger(
         request_log_id=request_log.id,

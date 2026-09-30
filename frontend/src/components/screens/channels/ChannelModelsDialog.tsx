@@ -1,5 +1,4 @@
 import {
-  Activity,
   ArrowDownUp,
   Cable,
   Check,
@@ -8,19 +7,15 @@ import {
   Pin,
   Plus,
   RefreshCw,
-  Trash2,
 } from "lucide-react";
 import { type FormEventHandler, useMemo, useState } from "react";
-import { Badge } from "@/components/ui/Badge";
 import {
   BulkActionButton,
   BulkActionsPopover,
 } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
-  AppDialogContent,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -34,8 +29,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
-import { Field, FieldLabel } from "@/components/ui/Field";
-import { Label } from "@/components/ui/Label";
 import {
   Popover,
   PopoverContent,
@@ -48,33 +41,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import { Switch } from "@/components/ui/Switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/Table";
-import { Textarea } from "@/components/ui/Textarea";
 import { ToolbarButton } from "@/components/ui/ToolbarButton";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { protocolLabel, protocolOptions } from "@/lib/protocols";
-import { CredentialBadges } from "./CredentialBadges";
-import { formatBaseUrlLabel } from "./channelModels";
-import type { Locale } from "./channelTypes";
+import { AddChannelModelsDialog } from "./AddChannelModelsDialog";
+import { ChannelModelsTable } from "./ChannelModelsTable";
+import type {
+  AggregatedModel,
+  Locale,
+  ModelStatusFilter,
+} from "./channelTypes";
 import { ProtocolDropdown } from "./ProtocolDropdown";
-import type { AggregatedModel } from "./useChannelQueries";
 
-export type ModelStatusFilter = "all" | "enabled" | "disabled" | "missing";
 type ProtocolFilter = "all" | ProtocolKind;
 type ModelSort = "name-asc" | "name-desc" | "status-desc" | "protocol-asc";
 
@@ -171,7 +151,7 @@ function ChannelModelsBody({
         )
       );
     });
-    return [...filtered].sort((left, right) => {
+    return filtered.sort((left, right) => {
       if (sortBy === "name-desc") {
         return right.modelName.localeCompare(left.modelName, locale);
       }
@@ -211,9 +191,6 @@ function ChannelModelsBody({
     [selection.selectedRows],
   );
   const selectedCount = selectedKeys.length;
-  const allSelected =
-    visibleModels.length > 0 && selectedCount === visibleModels.length;
-  const someSelected = selectedCount > 0;
   const activeFilterCount =
     Number(statusFilter !== "all") + Number(protocolFilter !== "all");
   const sortOptions = modelSortOptions(locale);
@@ -463,215 +440,22 @@ function ChannelModelsBody({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden px-4 py-2">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[44px] text-center">
-                  <div className="flex h-7 items-center justify-center">
-                    <Checkbox
-                      checked={
-                        allSelected
-                          ? true
-                          : someSelected
-                            ? "indeterminate"
-                            : false
-                      }
-                      onCheckedChange={(checked) =>
-                        selection.toggleRows(visibleModels, checked === true)
-                      }
-                      aria-label={
-                        locale === "zh-CN" ? "全选模型" : "Select all models"
-                      }
-                    />
-                  </div>
-                </TableHead>
-                <TableHead className="w-[56px]">
-                  {locale === "zh-CN" ? "状态" : "Status"}
-                </TableHead>
-                <TableHead>
-                  {locale === "zh-CN" ? "上游模型名" : "Upstream model"}
-                </TableHead>
-                <TableHead className="w-[150px]">
-                  {locale === "zh-CN" ? "密钥" : "Keys"}
-                </TableHead>
-                <TableHead className="w-[64px]">
-                  {locale === "zh-CN" ? "来源" : "Source"}
-                </TableHead>
-                <TableHead className="w-[180px]">
-                  {locale === "zh-CN" ? "转发方式" : "Forwarding"}
-                </TableHead>
-                <TableHead className="w-[72px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visibleModels.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell
-                    colSpan={7}
-                    className="h-28 text-center text-muted-foreground"
-                  >
-                    {models.length === 0
-                      ? locale === "zh-CN"
-                        ? "还没有模型。获取上游模型，或手动添加。"
-                        : "No models yet. Fetch upstream models, or add them manually."
-                      : locale === "zh-CN"
-                        ? "没有匹配的模型。"
-                        : "No matching models."}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                visibleModels.map((model) => (
-                  <TableRow
-                    key={model.key}
-                    data-state={
-                      selection.selected.has(model.key) ? "selected" : undefined
-                    }
-                  >
-                    <TableCell className="w-[44px] py-1.5 text-center">
-                      <div className="flex h-7 items-center justify-center">
-                        <Checkbox
-                          checked={selection.selected.has(model.key)}
-                          onCheckedChange={(checked) =>
-                            selection.toggleId(model.key, checked === true)
-                          }
-                          aria-label={
-                            locale === "zh-CN"
-                              ? `选择 ${model.modelName}`
-                              : `Select ${model.modelName}`
-                          }
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-1.5">
-                      <div className="flex h-7 items-center">
-                        <Switch
-                          size="sm"
-                          checked={model.enabled}
-                          onCheckedChange={(checked) =>
-                            onToggleEnabled(model.key, checked)
-                          }
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell className="max-w-[220px] py-1.5 font-mono text-xs text-muted-foreground">
-                      <div className="flex min-h-7 min-w-0 items-center gap-1.5">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="truncate">{model.modelName}</span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-sm break-all">
-                            {model.modelName}
-                          </TooltipContent>
-                        </Tooltip>
-                        {model.upstreamMissing ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Badge
-                                variant="destructive"
-                                className="shrink-0 font-sans"
-                                tabIndex={0}
-                              >
-                                {locale === "zh-CN" ? "待确认" : "Review"}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {locale === "zh-CN"
-                                ? "上游已不再提供，暂停调用"
-                                : "No longer listed upstream; paused"}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : null}
-                      </div>
-                      {hasMultipleBaseUrls ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <p className="truncate text-[11px] leading-4">
-                              {formatBaseUrlLabel(model.baseUrl)}
-                            </p>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-sm break-all">
-                            {model.baseUrl}
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="w-[150px] py-1.5">
-                      <ModelKeyBadges
-                        model={model}
-                        showBaseUrl={hasMultipleBaseUrls}
-                        locale={locale}
-                      />
-                    </TableCell>
-                    <TableCell className="w-[64px] py-1.5 text-xs text-muted-foreground">
-                      {model.source === "synced"
-                        ? locale === "zh-CN"
-                          ? "同步"
-                          : "Synced"
-                        : locale === "zh-CN"
-                          ? "手动"
-                          : "Manual"}
-                    </TableCell>
-                    <TableCell className="w-[180px] py-1.5">
-                      <ProtocolDropdown
-                        value={model.protocols}
-                        locale={locale}
-                        className="h-7 px-2 py-0 text-[11px] has-[>svg]:px-2"
-                        onChange={(protocols) =>
-                          onUpdateProtocols(model.key, protocols)
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="w-[72px] py-1.5">
-                      <div className="flex h-7 items-center justify-end gap-0.5">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                className="size-6 text-muted-foreground"
-                                disabled={testing || !model.testKey}
-                                aria-label={
-                                  locale === "zh-CN" ? "测试模型" : "Test model"
-                                }
-                                onClick={() => {
-                                  if (model.testKey) onTest(model.testKey);
-                                }}
-                              >
-                                <Activity className="size-3.5 stroke-1" />
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">
-                            {model.testKey
-                              ? locale === "zh-CN"
-                                ? "测试"
-                                : "Test"
-                              : locale === "zh-CN"
-                                ? "无法测试"
-                                : "Cannot test"}
-                          </TooltipContent>
-                        </Tooltip>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="size-6 text-muted-foreground"
-                          aria-label={
-                            locale === "zh-CN" ? "删除绑定" : "Delete binding"
-                          }
-                          onClick={() => onDelete(model.key)}
-                        >
-                          <Trash2 className="size-3.5 stroke-1" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          <ChannelModelsTable
+            locale={locale}
+            items={visibleModels}
+            hasModels={models.length > 0}
+            hasMultipleBaseUrls={hasMultipleBaseUrls}
+            selected={selection.selected}
+            testing={testing}
+            onSelectAll={(checked) =>
+              selection.toggleRows(visibleModels, checked)
+            }
+            onSelectOne={selection.toggleId}
+            onToggleEnabled={onToggleEnabled}
+            onUpdateProtocols={onUpdateProtocols}
+            onDelete={onDelete}
+            onTest={onTest}
+          />
         </div>
         <DialogFooter className="shrink-0 px-4 py-3">
           <Button
@@ -700,7 +484,7 @@ function ChannelModelsBody({
           </Button>
         </DialogFooter>
       </form>
-      <AddModelsDialog
+      <AddChannelModelsDialog
         open={newOpen}
         locale={locale}
         onOpenChange={setNewOpen}
@@ -720,88 +504,6 @@ function ChannelModelsBody({
         onConfirm={deleteSelected}
       />
     </>
-  );
-}
-
-/** Collects manually entered upstream model names. */
-function AddModelsDialog({
-  open,
-  locale,
-  onOpenChange,
-  onAddBinding,
-}: {
-  open: boolean;
-  locale: Locale;
-  onOpenChange: (open: boolean) => void;
-  onAddBinding: Props["onAddBinding"];
-}) {
-  const [newName, setNewName] = useState("");
-  const [newProtocols, setNewProtocols] = useState<ProtocolKind[]>(["auto"]);
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <AppDialogContent
-        className="max-w-md"
-        title={locale === "zh-CN" ? "手动添加模型" : "Add models manually"}
-        description={
-          locale === "zh-CN"
-            ? "每行或用逗号分隔一个模型名，会加到所有密钥下。手动模型不受自动同步影响。"
-            : "One model name per line or comma-separated, added for every key. Manual models are never changed by auto-sync."
-        }
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-            >
-              {locale === "zh-CN" ? "取消" : "Cancel"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!newName.trim() || newProtocols.length === 0}
-              onClick={() => {
-                if (onAddBinding(newName, newProtocols)) {
-                  setNewName("");
-                  setNewProtocols(["auto"]);
-                  onOpenChange(false);
-                }
-              }}
-            >
-              {locale === "zh-CN" ? "创建" : "Create"}
-            </Button>
-          </>
-        }
-      >
-        <div className="grid gap-3">
-          <div className="min-w-0 space-y-1">
-            <Label
-              required
-              className="text-xs font-normal text-muted-foreground"
-            >
-              {locale === "zh-CN" ? "上游模型名" : "Upstream model names"}
-            </Label>
-            <Textarea
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder={"gpt-4o\ngpt-4o-mini"}
-              className="max-h-48 font-mono"
-            />
-          </div>
-          <Field>
-            <FieldLabel>
-              {locale === "zh-CN" ? "转发方式" : "Forwarding"}
-            </FieldLabel>
-            <ProtocolDropdown
-              value={newProtocols}
-              locale={locale}
-              onChange={setNewProtocols}
-            />
-          </Field>
-        </div>
-      </AppDialogContent>
-    </Dialog>
   );
 }
 
@@ -828,48 +530,4 @@ function modelSortOptions(
       label: locale === "zh-CN" ? "协议升序" : "Protocol A-Z",
     },
   ];
-}
-
-/** Shows which keys provide one aggregated model row. */
-function ModelKeyBadges({
-  model,
-  showBaseUrl,
-  locale,
-}: {
-  model: AggregatedModel;
-  showBaseUrl: boolean;
-  locale: Locale;
-}) {
-  const keys = [
-    ...new Map(
-      model.members.map((member) => [
-        member.credentialId,
-        { id: member.credentialId, label: member.credentialName },
-      ]),
-    ).values(),
-  ];
-  const sourceLabel = (source: AggregatedModel["source"]) =>
-    source === "synced"
-      ? locale === "zh-CN"
-        ? "同步"
-        : "Synced"
-      : locale === "zh-CN"
-        ? "手动"
-        : "Manual";
-  return (
-    <CredentialBadges
-      keys={keys}
-      totalCount={model.credentialCount}
-      details={model.members.map((member) =>
-        [
-          member.credentialTitle,
-          showBaseUrl ? formatBaseUrlLabel(model.baseUrl) : "",
-          sourceLabel(member.source),
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      )}
-      locale={locale}
-    />
-  );
 }

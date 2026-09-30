@@ -815,6 +815,10 @@ def test_image_proxy_logs_non_token_billing(
     assert log["billing_units"] == 2
     assert log["output_cost_usd"] == 0.16
     assert log["total_cost_usd"] == 0.16
+    keys = client.get("/api/admin/gateway-api-keys", headers=admin_headers)
+    assert keys.status_code == 200
+    stored_key = next(item for item in keys.json() if item["id"] == key["id"])
+    assert stored_key["spent_cost_usd"] == log["total_cost_usd"]
 
 
 @pytest.mark.parametrize("free", [False, True])
