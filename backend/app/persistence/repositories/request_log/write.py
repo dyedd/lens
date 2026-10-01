@@ -11,13 +11,13 @@ from app.models.request_logs import RequestLogInput, RequestLogItem
 from app.persistence.entities import RequestLogEntity
 
 from .query import to_request_log
+from .statistics import RequestLogStatistics
 from .types import (
     REQUEST_LOG_RUNNING_STATUSES,
     REQUEST_LOG_TERMINAL_STATUSES,
     GatewayKeyPort,
     RuntimeTimeZone,
     SettingsPort,
-    StatisticsPort,
 )
 
 
@@ -129,7 +129,7 @@ class RequestLogMaintenance:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         settings_repo: SettingsPort,
-        statistics: StatisticsPort,
+        statistics: RequestLogStatistics,
         runtime_time_zone: RuntimeTimeZone,
     ) -> None:
         self.session_factory = session_factory
@@ -138,27 +138,43 @@ class RequestLogMaintenance:
         self.runtime_time_zone = runtime_time_zone
 
     async def clear_request_logs(self) -> None:
-        """Archive statistics and delete all request logs."""
-        await self.statistics.persist_request_log_stats(force=True)
-        async with self.session_factory() as session:
-            await session.execute(delete(RequestLogEntity))
-            await session.commit()
+        """Archive and clear finished logs, keeping in-flight rows for final accounting."""
+        runtime = await self.settings_repo.get_runtime_settings()
+        async with self.session_factory.begin() as session:
+            await self.statistics.archive_request_logs(
+                session, time_zone=self.runtime_time_zone(runtime)
+            )
+            await session.execute(
+                delete(RequestLogEntity).where(
+                    RequestLogEntity.lifecycle_status.in_(
+                        REQUEST_LOG_TERMINAL_STATUSES
+                    ),
+                    RequestLogEntity.stats_archived == 1,
+                )
+            )
 
     async def prune_request_logs(self) -> None:
         """Archive statistics and delete request logs beyond retention."""
         runtime = await self.settings_repo.get_runtime_settings()
         if not runtime["relay_log_keep_enabled"]:
             return
-        await self.statistics.persist_request_log_stats(force=True)
         keep_days = int(runtime["relay_log_keep_period"])
         cutoff = self.statistics.request_log_prune_cutoff(
             keep_days=keep_days, time_zone=self.runtime_time_zone(runtime)
         )
-        async with self.session_factory() as session:
-            await session.execute(
-                delete(RequestLogEntity).where(RequestLogEntity.created_at < cutoff)
+        async with self.session_factory.begin() as session:
+            await self.statistics.archive_request_logs(
+                session, time_zone=self.runtime_time_zone(runtime), before=cutoff
             )
-            await session.commit()
+            await session.execute(
+                delete(RequestLogEntity).where(
+                    RequestLogEntity.created_at < cutoff,
+                    RequestLogEntity.lifecycle_status.in_(
+                        REQUEST_LOG_TERMINAL_STATUSES
+                    ),
+                    RequestLogEntity.stats_archived == 1,
+                )
+            )
 
     async def fail_running_request_logs(self) -> None:
         """Mark request logs left running by an interruption as failed."""

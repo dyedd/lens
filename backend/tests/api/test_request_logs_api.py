@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, datetime, timedelta
+
+import httpx
 import pytest
-from conftest import assert_error, run_async, seed_request_log
+from conftest import assert_error, gateway_headers, run_async, seed_request_log
+from sqlalchemy import update
 
 from app.models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from app.models.request_logs import RequestLogInput
+from app.persistence.entities import RequestLogEntity
 
 
 def test_request_log_page_returns_empty_result(client, admin_headers) -> None:
@@ -271,3 +277,109 @@ def test_model_health_attributes_channel_logs_to_their_site(
     assert items[site["name"]]["total_count"] == 1
     assert items[site["name"]]["success_count"] == 1
     assert items[site["name"]]["tier"] == "healthy"
+
+
+@pytest.mark.parametrize("is_stream", [False, True])
+@pytest.mark.parametrize("maintenance", ["clear", "prune"])
+def test_log_maintenance_preserves_inflight_accounting(
+    client,
+    admin_headers,
+    app_state,
+    monkeypatch,
+    create_site_group_and_key,
+    is_stream,
+    maintenance,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    _, _, key = create_site_group_and_key()
+    priced = client.put(
+        "/api/admin/model-prices/gpt-4o",
+        headers=admin_headers,
+        json={
+            "model_key": "gpt-4o",
+            "input_price_per_million": 1000000,
+            "output_price_per_million": 1000000,
+        },
+    )
+    assert priced.status_code == 200
+
+    async def send_upstream(_client, upstream, *, stream, body_bytes):
+        assert stream == is_stream
+        if maintenance == "prune":
+            async with app_state.session_factory() as session:
+                await session.execute(
+                    update(RequestLogEntity)
+                    .where(RequestLogEntity.gateway_key_id == key["id"])
+                    .values(
+                        created_at=datetime.now(UTC).replace(tzinfo=None)
+                        - timedelta(days=45)
+                    )
+                )
+                await session.commit()
+            response = await asyncio.to_thread(
+                client.post,
+                "/api/admin/cronjobs/request_log_prune/runs",
+                headers=admin_headers,
+            )
+            assert response.status_code == 200
+        else:
+            response = await asyncio.to_thread(
+                client.delete, "/api/admin/request-logs", headers=admin_headers
+            )
+            assert response.status_code == 204
+        if stream:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=(
+                    b'data: {"id":"response","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":null}]}\n\n'
+                    b'data: {"id":"response","model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}\n\n'
+                    b"data: [DONE]\n\n"
+                ),
+                request=httpx.Request("POST", upstream.url),
+            )
+        return httpx.Response(
+            200,
+            json={
+                "id": "response",
+                "model": "gpt-4o",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 20,
+                    "total_tokens": 30,
+                },
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send_upstream)
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": is_stream,
+        },
+    )
+
+    assert response.status_code == 200
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers)
+    keys = client.get("/api/admin/gateway-api-keys", headers=admin_headers)
+    assert logs.status_code == keys.status_code == 200
+    assert logs.json()["total"] == 1
+    log = logs.json()["items"][0]
+    assert log["lifecycle_status"] == "succeeded"
+    assert log["total_cost_usd"] == 30
+    assert (
+        next(item["spent_cost_usd"] for item in keys.json() if item["id"] == key["id"])
+        == 30
+    )

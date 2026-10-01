@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -1595,3 +1596,246 @@ def test_html_upstream_body_is_summarised_by_title(
     assert "Invalid upstream response body" in message
     assert "502 Bad Gateway" in message
     assert "<html>" not in message
+
+
+@pytest.mark.parametrize("primary_fails", [False, True])
+def test_multimodal_fallback_groups_are_selected_only_when_needed(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+    primary_fails,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    items = []
+    for suffix in ("primary", "a", "b"):
+        create_site(
+            valid_site_payload(
+                name=suffix,
+                base_id=f"base-{suffix}",
+                credential_id=f"key-{suffix}",
+                protocol_config_id=f"pc-{suffix}",
+                model_name=f"model-{suffix}",
+            )
+        )
+        items.append(
+            _protocol_group_item(
+                "openai_chat",
+                f"model-{suffix}",
+                protocol_config_id=f"pc-{suffix}",
+                credential_id=f"key-{suffix}",
+            )
+        )
+    fallback = create_model_group(name="fallback-group", items=items[1:])
+    primary = create_model_group(name="primary-group", items=items[:1])
+    updated = client.put(
+        f"/api/admin/model-groups/{primary['id']}",
+        headers=admin_headers,
+        json={"fallback_group_ids": [fallback["id"]]},
+    )
+    assert updated.status_code == 200
+    sent = []
+
+    async def fake_send(_client, upstream, *, stream, body_bytes):
+        model = json.loads(body_bytes)["model"]
+        sent.append(model)
+        if model == "model-primary" and primary_fails:
+            return httpx.Response(
+                500,
+                json={"error": {"message": "primary failed"}},
+                request=httpx.Request("POST", upstream.url),
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send)
+    key = create_gateway_key()
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "primary-group",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "describe"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "https://example.invalid/image.png"},
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert sent == (
+        ["model-primary", "model-a"] if primary_fails else ["model-primary"]
+    )
+    log = client.get("/api/admin/request-logs/page", headers=admin_headers).json()[
+        "items"
+    ][0]
+    assert log["requested_group_name"] == "primary-group"
+    assert log["resolved_group_name"] == (
+        "fallback-group" if primary_fails else "primary-group"
+    )
+    direct = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "fallback-group",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+    assert direct.status_code == 200
+    assert sent[-1] == ("model-b" if primary_fails else "model-a")
+
+
+@pytest.mark.parametrize(
+    ("clear_logs", "second_fails"),
+    [(False, False), (False, True), (True, False)],
+)
+def test_failover_preserves_body_isolation_and_final_log(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+    clear_logs,
+    second_fails,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    def create_target(payload):
+        if payload["name"] == "First":
+            payload["param_override"] = [
+                {"path": "metadata.first_only", "action": "set", "value": True},
+                {
+                    "path": "messages.0.content",
+                    "action": "set",
+                    "value": "first target",
+                },
+            ]
+        return create_site(payload)
+
+    _create_failover_group(
+        client=client,
+        admin_headers=admin_headers,
+        create_site=create_target,
+        create_model_group=create_model_group,
+    )
+    price = client.put(
+        "/api/admin/model-prices/fail-group",
+        headers=admin_headers,
+        json={
+            "model_key": "fail-group",
+            "input_price_per_million": 1000000,
+            "output_price_per_million": 2000000,
+        },
+    )
+    assert price.status_code == 200
+    bodies = []
+
+    async def fake_send(_client, upstream, *, stream, body_bytes):
+        body = json.loads(body_bytes)
+        bodies.append(body)
+        if len(bodies) == 1:
+            return httpx.Response(
+                500,
+                json={"error": {"message": "first failed"}},
+                request=httpx.Request("POST", upstream.url),
+            )
+        pending = await asyncio.to_thread(
+            client.get, "/api/admin/request-logs/page", headers=admin_headers
+        )
+        assert pending.json()["items"][0]["lifecycle_status"] == "connecting"
+        if clear_logs:
+            cleared = await asyncio.to_thread(
+                client.delete, "/api/admin/request-logs", headers=admin_headers
+            )
+            assert cleared.status_code == 204
+        if second_fails:
+            return httpx.Response(
+                503,
+                json={"error": {"message": "second failed"}},
+                request=httpx.Request("POST", upstream.url),
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": body["model"],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send)
+    key = create_gateway_key()
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "fail-group",
+            "messages": [{"role": "user", "content": "original"}],
+            "metadata": {"original": True},
+        },
+    )
+
+    assert response.status_code == (502 if second_fails else 200)
+    assert [body["model"] for body in bodies] == ["m-a", "m-b"]
+    assert bodies[0]["messages"][0]["content"] == "first target"
+    assert bodies[0]["metadata"] == {"original": True, "first_only": True}
+    assert bodies[1]["messages"][0]["content"] == "original"
+    assert bodies[1]["metadata"] == {"original": True}
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()
+    assert logs["total"] == 1
+    log = logs["items"][0]
+    assert log["lifecycle_status"] == ("failed" if second_fails else "succeeded")
+    assert log["status_code"] == (503 if second_fails else 200)
+    assert log["total_cost_usd"] == (0 if second_fails else 3)
+    detail = client.get(
+        f"/api/admin/request-logs/{log['id']}", headers=admin_headers
+    ).json()
+    assert [attempt["status_code"] for attempt in detail["attempts"]] == [
+        500,
+        503 if second_fails else 200,
+    ]
+    keys = client.get("/api/admin/gateway-api-keys", headers=admin_headers).json()
+    assert (
+        next(item["spent_cost_usd"] for item in keys if item["id"] == key["id"])
+        == log["total_cost_usd"]
+    )
