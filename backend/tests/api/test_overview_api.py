@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -174,3 +175,144 @@ def test_overview_uses_matching_calendar_windows_before_and_after_archiving(
         assert summary.json()["total_cost_usd"]["value"] == pytest.approx(0.06)
         assert sum(point["request_count"] for point in daily.json()) == 2
         assert models.json()["distribution"][0]["requests"] == 2
+
+
+@pytest.mark.parametrize("clear", [False, True])
+def test_timezone_changes_preserve_archived_totals(
+    client, admin_headers, app_state, clear
+) -> None:
+    seed_request_log(app_state)
+    if clear:
+        assert (
+            client.delete("/api/admin/request-logs", headers=admin_headers).status_code
+            == 204
+        )
+        seed_request_log(app_state)
+    expected_count = 2 if clear else 1
+    for time_zone in ("UTC", "America/New_York", "Asia/Shanghai"):
+        changed = client.put(
+            "/api/admin/settings",
+            headers=admin_headers,
+            json={"items": [{"key": SETTING_TIME_ZONE, "value": time_zone}]},
+        )
+        assert changed.status_code == 200
+        summary = client.get(
+            "/api/admin/overview-summary", headers=admin_headers, params={"days": 0}
+        )
+        models = client.get(
+            "/api/admin/overview-models", headers=admin_headers, params={"days": 0}
+        )
+        assert summary.status_code == models.status_code == 200
+        assert summary.json()["request_count"]["value"] == expected_count
+        assert summary.json()["total_cost_usd"]["value"] == pytest.approx(
+            0.03 * expected_count
+        )
+        assert models.json()["distribution"][0]["requests"] == expected_count
+
+
+def test_timezone_rebuckets_retained_detail_without_discarding_pruned_history(
+    client, admin_headers, app_state, monkeypatch
+) -> None:
+    now = datetime(2026, 3, 8, 18, tzinfo=UTC)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz else now.replace(tzinfo=None)
+
+    monkeypatch.setattr(query, "datetime", Clock)
+    monkeypatch.setattr(statistics, "datetime", Clock)
+    assert (
+        client.put(
+            "/api/admin/settings",
+            headers=admin_headers,
+            json={"items": [{"key": SETTING_TIME_ZONE, "value": "Asia/Shanghai"}]},
+        ).status_code
+        == 200
+    )
+    old = seed_request_log(app_state, resolved_group_name="old")
+    recent = seed_request_log(app_state, resolved_group_name="recent")
+
+    async def date_logs() -> None:
+        async with app_state.session_factory() as session:
+            for log_id, created_at in (
+                (old.id, datetime(2026, 1, 22, 23, 30)),
+                (recent.id, datetime(2026, 3, 7, 23, 30)),
+            ):
+                await session.execute(
+                    update(RequestLogEntity)
+                    .where(RequestLogEntity.id == log_id)
+                    .values(created_at=created_at)
+                )
+            await session.commit()
+
+    run_async(date_logs())
+    for task in ("request_log_stats_persist", "request_log_prune"):
+        assert (
+            client.post(
+                f"/api/admin/cronjobs/{task}/runs", headers=admin_headers
+            ).status_code
+            == 200
+        )
+    page = client.get("/api/admin/request-logs/page", headers=admin_headers)
+    assert [item["id"] for item in page.json()["items"]] == [recent.id]
+    changed = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": SETTING_TIME_ZONE, "value": "UTC"}]},
+    )
+    assert changed.status_code == 200
+
+    summary = client.get(
+        "/api/admin/overview-summary", headers=admin_headers, params={"days": 0}
+    )
+    daily = client.get("/api/admin/overview-daily", headers=admin_headers)
+    assert summary.status_code == daily.status_code == 200
+    assert summary.json()["request_count"]["value"] == 2
+    assert summary.json()["total_cost_usd"]["value"] == pytest.approx(0.06)
+    assert {item["date"]: item["request_count"] for item in daily.json()} == {
+        "20260123": 1,
+        "20260307": 1,
+    }
+
+
+def test_overlapping_archive_and_clear_do_not_double_count(
+    client, admin_headers, app_state
+) -> None:
+    seed_request_log(app_state)
+
+    async def date_log() -> None:
+        async with app_state.session_factory() as session:
+            await session.execute(
+                update(RequestLogEntity).values(
+                    created_at=datetime.now(UTC).replace(tzinfo=None)
+                    - timedelta(days=45)
+                )
+            )
+            await session.commit()
+
+    run_async(date_log())
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        requests = [
+            pool.submit(
+                client.delete, "/api/admin/request-logs", headers=admin_headers
+            ),
+            pool.submit(
+                client.post,
+                "/api/admin/cronjobs/request_log_stats_persist/runs",
+                headers=admin_headers,
+            ),
+            pool.submit(
+                client.post,
+                "/api/admin/cronjobs/request_log_prune/runs",
+                headers=admin_headers,
+            ),
+        ]
+        assert [request.result().status_code for request in requests] == [204, 200, 200]
+
+    summary = client.get(
+        "/api/admin/overview-summary", headers=admin_headers, params={"days": 0}
+    )
+    assert summary.status_code == 200
+    assert summary.json()["request_count"]["value"] == 1
+    assert summary.json()["total_cost_usd"]["value"] == pytest.approx(0.03)

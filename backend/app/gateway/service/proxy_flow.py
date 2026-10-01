@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from time import perf_counter
 from typing import Any
 
@@ -23,7 +23,13 @@ from .error_responses import protocol_error_response
 from .http_handlers import apply_router_runtime_settings
 from .multimodal import body_has_multimodal_content
 from .payload_serialization import dump_log_json
-from .proxy_attempt import AttemptLog, AttemptRequest, FailureLedger, run_attempt
+from .proxy_attempt import (
+    AttemptLog,
+    AttemptRequest,
+    FailureLedger,
+    LogFailure,
+    run_attempt,
+)
 from .request_logger import RequestLogger
 from .routing_plan import (
     resolve_routing_plan,
@@ -88,6 +94,7 @@ async def _resolve_proxy_route(
     parsed_model: object | None = None,
     group_id: str | None = None,
     requested_group_name: str | None = None,
+    failures: FailureLedger | None = None,
 ) -> RouteResolution:
     plan: RoutingPlan | None = None
     try:
@@ -127,6 +134,7 @@ async def _resolve_proxy_route(
                 log_ctx=log_ctx,
                 is_stream_body=is_stream_body,
                 exc=exc,
+                failures=failures,
             ),
         )
 
@@ -160,16 +168,19 @@ async def _routing_error_response(
     log_ctx: RequestLogger,
     is_stream_body: bool,
     exc: Exception,
+    failures: FailureLedger | None = None,
 ) -> JSONResponse:
-    log_ctx.plan_route(
+    failure = LogFailure(
         requested_group_name=plan.requested_group_name if plan else requested_model,
         resolved_group_name=plan.resolved_group_name if plan else None,
-    )
-    await log_ctx.record_failure(
         status_code=503,
         error_message=str(exc),
         is_stream=is_stream_body,
     )
+    if failures is None:
+        await failure.write(log_ctx)
+    else:
+        failures.last_log_failure = failure
     return protocol_error_response(
         protocol=protocol,
         status_code=503,
@@ -178,7 +189,7 @@ async def _routing_error_response(
     )
 
 
-async def _resolve_route_plans(
+async def _iter_route_plans(
     *,
     initial_plan: RoutingPlan,
     initial_selection: RouteSelection,
@@ -191,11 +202,11 @@ async def _resolve_route_plans(
     log_ctx: RequestLogger,
     is_stream_body: bool,
     failures: FailureLedger,
-) -> list[tuple[RoutingPlan, RouteSelection]]:
-    """Resolve the initial route and eligible multimodal fallback groups."""
-    route_plans = [(initial_plan, initial_selection)]
+) -> AsyncIterator[tuple[RoutingPlan, RouteSelection]]:
+    """Resolve fallback groups only after the current group's attempts fail."""
+    yield initial_plan, initial_selection
     if not body_has_multimodal_content(body, protocol):
-        return route_plans
+        return
 
     seen_group_ids = {
         initial_plan.resolved_group.id if initial_plan.resolved_group else ""
@@ -213,6 +224,7 @@ async def _resolve_route_plans(
             parsed_model=parsed_model,
             group_id=fallback_group_id,
             requested_group_name=requested_group_name,
+            failures=failures,
         )
         if fallback_resolution.error is not None:
             failures.record(
@@ -223,15 +235,12 @@ async def _resolve_route_plans(
             fallback_resolution.plan is not None
             and fallback_resolution.selection is not None
         ):
-            route_plans.append(
-                (fallback_resolution.plan, fallback_resolution.selection)
-            )
-    return route_plans
+            yield fallback_resolution.plan, fallback_resolution.selection
 
 
 async def _run_route_attempts(
     *,
-    route_plans: list[tuple[RoutingPlan, RouteSelection]],
+    route_plans: AsyncIterator[tuple[RoutingPlan, RouteSelection]],
     request: AttemptRequest,
     deadline: RequestDeadline,
     log_ctx: RequestLogger,
@@ -239,7 +248,7 @@ async def _run_route_attempts(
     is_stream_body: bool,
 ) -> Response | None:
     """Try each available target, returning the first successful response."""
-    for current_plan, current_selection in route_plans:
+    async for current_plan, current_selection in route_plans:
         for target in [current_selection.primary, *current_selection.fallbacks]:
             if deadline.is_first_token_expired():
                 timeout_message = deadline.timeout_message(kind="first_token")
@@ -343,7 +352,9 @@ async def _finalize_proxy_failure(
     is_stream_body: bool,
 ) -> Response:
     failed_status_code, failed_error_type, failed_message = failures.final_failure()
-    if not log_ctx.attempts:
+    if failures.last_log_failure is not None:
+        await failures.last_log_failure.write(log_ctx)
+    elif not log_ctx.attempts:
         log_ctx.plan_route(
             requested_group_name=plan.requested_group_name if plan else requested_model,
             resolved_group_name=plan.resolved_group_name if plan else None,
@@ -508,7 +519,7 @@ async def proxy_protocol(
             path_suffix=path_suffix,
             multipart_files=multipart_files,
         )
-        route_plans = await _resolve_route_plans(
+        route_plans = _iter_route_plans(
             initial_plan=plan,
             initial_selection=selection,
             channels=channels,

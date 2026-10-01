@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from copy import deepcopy
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any
@@ -68,11 +67,40 @@ class AttemptRequest:
 
 
 @dataclass(slots=True)
+class LogFailure:
+    status_code: int
+    error_message: str
+    is_stream: bool
+    requested_group_name: str | None
+    resolved_group_name: str | None
+    channel: ChannelConfig | None = None
+    user_agent: str | None = None
+    rate_multiplier: float | None = None
+    request_content: str | None = None
+
+    async def write(self, log_ctx: RequestLogger) -> None:
+        log_ctx.plan_route(
+            requested_group_name=self.requested_group_name,
+            resolved_group_name=self.resolved_group_name,
+        )
+        await log_ctx.record_failure(
+            status_code=self.status_code,
+            error_message=self.error_message,
+            is_stream=self.is_stream,
+            channel=self.channel,
+            user_agent=self.user_agent,
+            rate_multiplier=self.rate_multiplier,
+            request_content=self.request_content,
+        )
+
+
+@dataclass(slots=True)
 class FailureLedger:
     """Accumulate failed-target diagnostics and select the final client error."""
 
     errors: list[str] = field(default_factory=list)
     status_codes: list[int | None] = field(default_factory=list)
+    last_log_failure: LogFailure | None = None
 
     def record(self, message: str, status_code: int | None) -> None:
         self.errors.append(message)
@@ -143,7 +171,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
                 upstream_body=request.body,
             )
     else:
-        upstream_body = deepcopy(request.body)
+        upstream_body = dict(request.body)
         if target.model_name:
             upstream_body["model"] = target.model_name
 
@@ -510,7 +538,9 @@ async def _record_target_failure(
     run.attempt.reasoning_effort = extract_request_reasoning_effort(
         run.log_ctx.body, upstream_body
     )
-    await run.log_ctx.record_failure(
+    run.failures.last_log_failure = LogFailure(
+        requested_group_name=run.plan.requested_group_name,
+        resolved_group_name=run.plan.resolved_group_name,
         status_code=exc.status_code,
         error_message=message,
         is_stream=bool(upstream_body.get("stream")),
@@ -528,6 +558,7 @@ async def _record_target_failure(
         ),
     )
     if exc.stop_fallback:
+        await run.failures.last_log_failure.write(run.log_ctx)
         return protocol_error_response(
             protocol=run.log_ctx.protocol,
             status_code=exc.status_code,
