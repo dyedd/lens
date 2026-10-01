@@ -161,7 +161,7 @@ function JsonSection({
   locale: Locale;
   loading?: boolean;
 }) {
-  const formatted = formatJson(value) ?? value.trim();
+  const formatted = formatJson(value.trim()) ?? value.trim();
   const empty = !formatted;
   return (
     <section className="space-y-2">

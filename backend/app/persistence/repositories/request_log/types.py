@@ -28,22 +28,6 @@ class SettingsPort(Protocol):
 RuntimeTimeZone = Callable[[dict[str, Any]], ZoneInfo]
 
 
-class StatisticsPort(Protocol):
-    async def persist_request_log_stats(self, *, force: bool = False) -> None: ...
-
-    def request_log_prune_cutoff(
-        self, *, keep_days: int, time_zone: ZoneInfo
-    ) -> Any: ...
-
-    def daily_stats_by_local_bucket(
-        self, rows: list[Any], time_zone: ZoneInfo
-    ) -> dict[str, dict[str, float]]: ...
-
-    def model_rows_by_local_bucket(
-        self, rows: list[Any], format_text: str, time_zone: ZoneInfo
-    ) -> list[tuple[str, str, int, int, float]]: ...
-
-
 class HydratorPort(Protocol):
     async def hydrate_request_logs(
         self,

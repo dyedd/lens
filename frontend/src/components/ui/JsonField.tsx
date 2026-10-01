@@ -52,7 +52,7 @@ export function JsonField({
             className="h-6 px-2 text-[11px]"
             disabled={disabled}
             onClick={() => {
-              const next = formatJson(value);
+              const next = formatJson(value.trim());
               if (next === null) {
                 toast.error(invalidFormatMessage);
                 return;

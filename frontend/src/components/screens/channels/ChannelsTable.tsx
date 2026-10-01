@@ -41,16 +41,14 @@ const updatedAtOptions: Intl.DateTimeFormatOptions = {
   hour: "2-digit",
   minute: "2-digit",
 };
-const updatedAtFormatters: Record<Locale, Intl.DateTimeFormat> = {
-  "zh-CN": new Intl.DateTimeFormat("zh-CN", updatedAtOptions),
-  "en-US": new Intl.DateTimeFormat("en-US", updatedAtOptions),
-};
-
-function formatUpdatedAt(value: string | null | undefined, locale: Locale) {
+function formatUpdatedAt(
+  value: string | null | undefined,
+  formatter: Intl.DateTimeFormat,
+) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return updatedAtFormatters[locale].format(date);
+  return formatter.format(date);
 }
 
 type Props = {
@@ -89,6 +87,7 @@ export function ChannelsTable({
   onToggleEnabled,
   onDelete,
 }: Props) {
+  const updatedAtFormatter = new Intl.DateTimeFormat(locale, updatedAtOptions);
   const allSelected =
     items.length > 0 && items.every((item) => selected.has(item.id));
   const someSelected = items.some((item) => selected.has(item.id));
@@ -261,7 +260,7 @@ export function ChannelsTable({
                 </div>
               </TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">
-                {formatUpdatedAt(site.updated_at, locale)}
+                {formatUpdatedAt(site.updated_at, updatedAtFormatter)}
               </TableCell>
               <TableCell className="w-[56px] py-1.5">
                 <div className="flex h-7 items-center justify-end">

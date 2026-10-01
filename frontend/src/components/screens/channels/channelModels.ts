@@ -70,8 +70,16 @@ export function aggregateModelGroupKey(
 
 /** Reports whether a key targets a whole model group instead of one model. */
 export function isAggregateModelGroupKey(key: string) {
-  // Group keys hold two JSON parts; model keys hold four.
-  return key.startsWith("[") && key.split(",").length === 2;
+  try {
+    const parts: unknown = JSON.parse(key);
+    return (
+      Array.isArray(parts) &&
+      parts.length === 2 &&
+      parts.every((part) => typeof part === "string")
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Merges form models that represent the same persisted model rows. */
