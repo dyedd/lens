@@ -11,6 +11,7 @@ import { headerDraftsFromJson } from "./channelAdvancedJson";
 import { activeBaseUrlValue } from "./channelForm";
 import { rebuildProtocolConfigs } from "./channelFormConversion";
 import {
+  acceptApiKeyDrafts,
   activeSelectedCredentialIds,
   buildModels,
   credentialLabel,
@@ -64,20 +65,24 @@ export function useChannelModelPicker({
   /** Fetches every base URL with each of its keys; failures only warn. */
   async function discoverRemoteCatalog(): Promise<RemoteModelCatalog | null> {
     if (fetching) return null;
+    const editor = acceptApiKeyDrafts(form);
+    if (editor !== form) setForm(editor);
     const headers = headerDraftToRules(
-      headerDraftsFromJson(form.headersJson) ?? [],
+      headerDraftsFromJson(editor.headersJson) ?? [],
     );
-    const targets = rebuildProtocolConfigs(form).flatMap((config) => {
-      const credentialIds = new Set(activeSelectedCredentialIds(form, config));
-      const baseUrl = activeBaseUrlValue(form, config).trim();
+    const targets = rebuildProtocolConfigs(editor).flatMap((config) => {
+      const credentialIds = new Set(
+        activeSelectedCredentialIds(editor, config),
+      );
+      const baseUrl = activeBaseUrlValue(editor, config).trim();
       if (!credentialIds.size || !baseUrl) return [];
       const payload: SiteModelFetchPayload = {
         base_url: baseUrl,
         protocol: discoveryProtocol(config.protocols),
         headers,
-        proxy_mode: form.proxy_mode,
-        channel_proxy: form.channel_proxy.trim(),
-        credentials: form.credentials
+        proxy_mode: editor.proxy_mode,
+        channel_proxy: editor.channel_proxy.trim(),
+        credentials: editor.credentials
           .map((item, index) => ({
             id: item.id,
             name: item.name.trim() || fallbackCredentialName(index),
@@ -107,14 +112,14 @@ export function useChannelModelPicker({
         ),
       );
       const credentialIndexById = new Map(
-        form.credentials.map((item, index) => [item.id, index] as const),
+        editor.credentials.map((item, index) => [item.id, index] as const),
       );
       const items = results.flatMap((result, index) =>
         result.status === "fulfilled"
           ? result.value.map((item) => {
               const credentialIndex =
                 credentialIndexById.get(item.credential_id) ?? -1;
-              const credential = form.credentials[credentialIndex];
+              const credential = editor.credentials[credentialIndex];
               return {
                 protocol_config_id: targets[index].protocolConfigId,
                 credential_id: item.credential_id,
@@ -150,7 +155,7 @@ export function useChannelModelPicker({
       return {
         items,
         boundNames: new Set(
-          form.protocolConfigs.flatMap((config) =>
+          editor.protocolConfigs.flatMap((config) =>
             config.models.map((model) => model.model_name),
           ),
         ),

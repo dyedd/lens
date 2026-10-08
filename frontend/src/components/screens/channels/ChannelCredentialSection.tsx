@@ -1,6 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCcw, Trash2 } from "lucide-react";
-import { type Dispatch, type SetStateAction, useState } from "react";
+import {
+  type Dispatch,
+  type KeyboardEvent,
+  type SetStateAction,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -21,12 +26,7 @@ import {
 } from "@/components/ui/Tooltip";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { SiteCredential } from "@/lib/api/sites";
-import {
-  credentialLabel,
-  isPendingCredentialId,
-  maskApiKey,
-  replacePendingCredentials,
-} from "./channelModels";
+import { addApiKeyDraft, credentialLabel, maskApiKey } from "./channelModels";
 import type { FormCredential, FormState, Locale } from "./channelTypes";
 
 type Props = {
@@ -48,7 +48,7 @@ const CLEARED_RATE_STATUS = {
   rate_last_error: "",
 } satisfies Partial<FormCredential>;
 
-/** Renders the saved keys of one URL scope and a textarea for new keys. */
+/** Renders one URL's keys and a draft box that joins the list on Enter. */
 export function ChannelCredentialSection({
   locale,
   inputId,
@@ -67,15 +67,11 @@ export function ChannelCredentialSection({
       "")
     : form.newApiKeysLines;
   // Keep the site-wide index so fallback labels match the rest of the app.
-  const savedKeys = form.credentials
+  const scopedKeys = form.credentials
     .map((credential, index) => ({ credential, index }))
-    .filter(
-      ({ credential }) =>
-        credential.baseUrlId === baseUrlId &&
-        !isPendingCredentialId(credential.id),
-    );
+    .filter(({ credential }) => credential.baseUrlId === baseUrlId);
 
-  function changeNewKeys(value: string) {
+  function changeDraft(value: string) {
     setForm((current) => ({
       ...current,
       newApiKeysLines: baseUrlId ? current.newApiKeysLines : value,
@@ -84,12 +80,30 @@ export function ChannelCredentialSection({
             item.id === baseUrlId ? { ...item, newApiKeysLines: value } : item,
           )
         : current.base_urls,
-      credentials: replacePendingCredentials(
-        current.credentials,
-        value,
-        baseUrlId,
-      ),
     }));
+  }
+
+  function addDraftKeys() {
+    const result = addApiKeyDraft(form, baseUrlId);
+    if (result.form === form) return;
+    setForm(result.form);
+    if (result.added === 0) {
+      toast.info(
+        isZh ? "这些 Key 已在列表中" : "These keys are already in the list",
+      );
+    }
+  }
+
+  function handleDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.nativeEvent.isComposing ||
+      event.key !== "Enter" ||
+      event.shiftKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    addDraftKeys();
   }
 
   function updateKey(credentialId: string, patch: Partial<FormCredential>) {
@@ -154,7 +168,7 @@ export function ChannelCredentialSection({
         required={required}
         className="text-xs font-normal text-muted-foreground"
       >
-        {savedKeys.length
+        {scopedKeys.length
           ? isZh
             ? "新增 API Key"
             : "Add API keys"
@@ -164,31 +178,26 @@ export function ChannelCredentialSection({
       </Label>
       <Textarea
         id={inputId}
-        required={required && savedKeys.length === 0}
+        required={required && scopedKeys.length === 0}
         spellCheck={false}
         wrap="off"
         className="h-24 resize-none overflow-auto whitespace-pre font-mono text-xs [field-sizing:fixed]"
         placeholder={
-          savedKeys.length
-            ? isZh
-              ? "每行一个新增 API Key，留空则不新增"
-              : "One new API key per line; leave empty to skip"
-            : isZh
-              ? "每行一个 API Key"
-              : "One API key per line"
+          isZh
+            ? "每行一个 API Key，Enter 加入列表，Shift+Enter 换行"
+            : "One API key per line. Enter adds them, Shift+Enter for a new line"
         }
         value={newApiKeysLines}
-        onChange={(event) => changeNewKeys(event.target.value)}
+        onChange={(event) => changeDraft(event.target.value)}
+        onKeyDown={handleDraftKeyDown}
       />
-      {savedKeys.length > 0 ? (
+      {scopedKeys.length > 0 ? (
         <div className="mt-2 space-y-1.5">
           <div className="text-[11px] leading-4 text-muted-foreground">
-            {isZh
-              ? `已有 ${savedKeys.length} 个 Key`
-              : `${savedKeys.length} existing keys`}
+            {isZh ? `${scopedKeys.length} 个 Key` : `${scopedKeys.length} keys`}
           </div>
           <div className="overflow-hidden rounded-md bg-muted/35">
-            {savedKeys.map(({ credential, index }) => {
+            {scopedKeys.map(({ credential, index }) => {
               const isSyncing = syncingId === credential.id;
               const needsGroup =
                 credential.rate_source === "newapi" &&

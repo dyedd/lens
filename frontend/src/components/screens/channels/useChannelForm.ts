@@ -15,6 +15,7 @@ import {
 } from "./channelFormConversion";
 import {
   aggregateModelGroupKey,
+  applyApiKeyDrafts,
   buildModels,
   createLocalId,
   duplicateProtocolConfigKeys,
@@ -45,6 +46,7 @@ function validateChannelForm(
   /** Ids in the loaded rule library, or null before it loads. */
   libraryRuleIds: Set<string> | null,
 ) {
+  const credentials = applyApiKeyDrafts(form).credentials;
   if (!form.name.trim()) {
     toast.error(locale === "zh-CN" ? "请填写渠道名称" : "Enter a channel name");
     return false;
@@ -53,7 +55,7 @@ function validateChannelForm(
     toast.error(locale === "zh-CN" ? "请填写渠道地址" : "Enter a channel URL");
     return false;
   }
-  if (!form.credentials.some((item) => item.api_key.trim())) {
+  if (!credentials.some((item) => item.api_key.trim())) {
     toast.error(
       locale === "zh-CN"
         ? "请填写至少一个 API Key"
@@ -68,7 +70,7 @@ function validateChannelForm(
         (item) =>
           item.url.trim() &&
           item.shareKeys === false &&
-          !form.credentials.some(
+          !credentials.some(
             (credential) =>
               credential.baseUrlId === item.id && credential.api_key.trim(),
           ),

@@ -16,6 +16,7 @@ import {
 } from "./channelAdvancedJson";
 import { canonicalizeCredentialIds, resolveBaseUrlId } from "./channelForm";
 import {
+  applyApiKeyDrafts,
   coalesceFormModels,
   createLocalId,
   emptyProtocolConfig,
@@ -219,9 +220,10 @@ export function formBaseUrlsForPayload(form: FormState) {
 
 /** Converts channel editor state into a site payload. */
 export function toPayload(form: FormState): SitePayload {
+  const drafted = applyApiKeyDrafts(form);
   const rebuilt = {
-    ...form,
-    protocolConfigs: rebuildProtocolConfigs(form),
+    ...drafted,
+    protocolConfigs: rebuildProtocolConfigs(drafted),
   };
   const baseUrls = formBaseUrlsForPayload(rebuilt);
   const credentials = rebuilt.credentials.filter((item) => item.api_key.trim());
