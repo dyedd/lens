@@ -292,6 +292,49 @@ export function useGroupCommands({
     }
   }
 
+  /** Create one own group per model name, then refresh once. */
+  async function createOwnGroups(modelNames: string[]) {
+    const names = [
+      ...new Set(modelNames.map((name) => name.trim()).filter(Boolean)),
+    ];
+    if (!names.length) return false;
+    setBusyId("unplaced-own-groups");
+    let created = 0;
+    try {
+      for (const name of names) {
+        await apiRequest<ModelGroup>("/admin/model-groups", {
+          method: "POST",
+          body: JSON.stringify(
+            formToModelGroupPayload({
+              ...EMPTY_FORM,
+              name,
+              match_models: [name],
+            }),
+          ),
+        });
+        created += 1;
+      }
+      await invalidateGroupData();
+      toast.success(
+        locale === "zh-CN"
+          ? `已创建 ${created} 个模型组`
+          : `Created ${created} groups`,
+      );
+      return true;
+    } catch (error) {
+      if (created) await invalidateGroupData();
+      toast.error(
+        modelGroupErrorMessage(
+          error,
+          locale === "zh-CN" ? "创建模型组失败" : "Failed to create groups",
+        ),
+      );
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   /** Create one group whose match rules cover the given model names. */
   async function createGroupForModels(name: string, modelNames: string[]) {
     const created = await runCommand(
@@ -372,6 +415,7 @@ export function useGroupCommands({
     busyId,
     changeStrategy,
     createGroupForModels,
+    createOwnGroups,
     deleteTarget,
     mergeGroup,
     remove,

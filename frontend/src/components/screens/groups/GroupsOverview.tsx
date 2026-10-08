@@ -112,6 +112,7 @@ type Props = {
   onBulkDelete: (groups: ModelGroup[]) => void;
   onAddModelsToGroup: (groupId: string, modelNames: string[]) => void;
   onCreateGroupForModels: (name: string, modelNames: string[]) => void;
+  onCreateOwnGroups: (modelNames: string[]) => Promise<boolean>;
   onAutoPlace: () => void;
   onRemoveUnplacedModels: (modelNames: string[]) => Promise<boolean>;
 };
@@ -152,6 +153,7 @@ export function GroupsOverview({
   onBulkDelete,
   onAddModelsToGroup,
   onCreateGroupForModels,
+  onCreateOwnGroups,
   onAutoPlace,
   onRemoveUnplacedModels,
 }: Props) {
@@ -182,6 +184,7 @@ export function GroupsOverview({
           joinableGroupIds={joinableGroupIds}
           onAddModelsToGroup={onAddModelsToGroup}
           onCreateGroupForModels={onCreateGroupForModels}
+          onCreateOwnGroups={onCreateOwnGroups}
           onAutoPlace={onAutoPlace}
           onRemoveModels={onRemoveUnplacedModels}
         />
