@@ -159,6 +159,7 @@ export function GroupsScreen() {
         onBulkDelete={commands.removeGroups}
         onAddModelsToGroup={commands.addModelsToGroup}
         onCreateGroupForModels={commands.createGroupForModels}
+        onCreateOwnGroups={commands.createOwnGroups}
         onAutoPlace={commands.autoPlaceModels}
         onRemoveUnplacedModels={commands.removeUnplacedModels}
       />
