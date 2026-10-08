@@ -220,7 +220,7 @@ function emptyCredential(baseUrlId = ""): FormCredential {
   };
 }
 
-/** Splits a bulk key textarea into unique API keys. */
+/** Splits a bulk key draft into unique API keys. */
 function parseApiKeyLines(value: string) {
   const keys: string[] = [];
   for (const line of value.split(/\r?\n/)) {
@@ -228,6 +228,77 @@ function parseApiKeyLines(value: string) {
     if (apiKey && !keys.includes(apiKey)) keys.push(apiKey);
   }
   return keys;
+}
+
+function apiKeyDraft(form: FormState, baseUrlId: string) {
+  if (!baseUrlId) return form.newApiKeysLines;
+  return (
+    form.base_urls.find((item) => item.id === baseUrlId)?.newApiKeysLines ?? ""
+  );
+}
+
+function clearApiKeyDraft(form: FormState, baseUrlId: string): FormState {
+  if (!baseUrlId) return { ...form, newApiKeysLines: "" };
+  return {
+    ...form,
+    base_urls: form.base_urls.map((item) =>
+      item.id === baseUrlId ? { ...item, newApiKeysLines: "" } : item,
+    ),
+  };
+}
+
+/** Appends new keys for one URL. Keys already on that URL stay as they are. */
+function appendApiKeyLines(
+  credentials: FormCredential[],
+  lines: string,
+  baseUrlId: string,
+) {
+  const existing = new Set(
+    credentials
+      .filter((item) => item.baseUrlId === baseUrlId)
+      .map((item) => item.api_key.trim()),
+  );
+  const added: FormCredential[] = [];
+  for (const apiKey of parseApiKeyLines(lines)) {
+    if (existing.has(apiKey)) continue;
+    existing.add(apiKey);
+    added.push({
+      ...emptyCredential(baseUrlId),
+      id: `pending-${createLocalId("credential")}`,
+      api_key: apiKey,
+    });
+  }
+  return added.length ? [...credentials, ...added] : credentials;
+}
+
+/** Moves one URL's draft into the key list so each key can take a remark. */
+export function addApiKeyDraft(
+  form: FormState,
+  baseUrlId: string,
+): { form: FormState; added: number } {
+  const lines = apiKeyDraft(form, baseUrlId);
+  const keys = parseApiKeyLines(lines);
+  if (!keys.length) return { form, added: 0 };
+  const credentials = appendApiKeyLines(form.credentials, lines, baseUrlId);
+  return {
+    form: { ...clearApiKeyDraft(form, baseUrlId), credentials },
+    added: credentials.length - form.credentials.length,
+  };
+}
+
+/** Moves every visible key draft into the list. */
+export function acceptApiKeyDrafts(form: FormState): FormState {
+  const separateUrls = form.base_urls.filter((url) => url.shareKeys === false);
+  let next = addApiKeyDraft(form, "").form;
+  for (const url of separateUrls) next = addApiKeyDraft(next, url.id).form;
+  return next;
+}
+
+/** Includes draft lines that have not been moved into the key list yet. */
+export function applyApiKeyDrafts(form: FormState): FormState {
+  const accepted = acceptApiKeyDrafts(form);
+  if (accepted.credentials === form.credentials) return form;
+  return { ...form, credentials: accepted.credentials };
 }
 
 /** Masks a stored API key for the existing-key list. */
@@ -244,35 +315,6 @@ export function isPendingCredentialId(id: string) {
 /** Drops the editor-only pending marker so saved keys keep a plain ID. */
 export function persistedCredentialId(id: string) {
   return isPendingCredentialId(id) ? id.slice("pending-".length) : id;
-}
-
-/** Replaces pending keys for one URL while keeping persisted keys. */
-export function replacePendingCredentials(
-  credentials: FormCredential[],
-  lines: string,
-  baseUrlId: string,
-) {
-  const kept = credentials.filter(
-    (item) => item.baseUrlId !== baseUrlId || !isPendingCredentialId(item.id),
-  );
-  const previousPending = new Map(
-    credentials
-      .filter(
-        (item) =>
-          item.baseUrlId === baseUrlId && isPendingCredentialId(item.id),
-      )
-      .map((item) => [item.api_key, item]),
-  );
-  const pending = parseApiKeyLines(lines).map((apiKey) => {
-    const existing = previousPending.get(apiKey);
-    if (existing) return existing;
-    return {
-      ...emptyCredential(baseUrlId),
-      id: `pending-${createLocalId("credential")}`,
-      api_key: apiKey,
-    };
-  });
-  return [...kept, ...pending];
 }
 
 /** Creates a new protocol configuration with editor defaults. */
