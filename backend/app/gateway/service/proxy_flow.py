@@ -170,11 +170,22 @@ async def _routing_error_response(
     exc: Exception,
     failures: FailureLedger | None = None,
 ) -> JSONResponse:
+    error_msg = str(exc).strip()
+    if isinstance(exc, CooldownRoutingError):
+        message = (
+            f"Gateway routing failed: all upstream targets for '{requested_model}' "
+            f"are currently in cooldown ({error_msg})"
+        )
+    elif error_msg:
+        message = f"Gateway routing failed: {error_msg}"
+    else:
+        message = f"Gateway routing failed for model '{requested_model}'"
+
     failure = LogFailure(
         requested_group_name=plan.requested_group_name if plan else requested_model,
         resolved_group_name=plan.resolved_group_name if plan else None,
         status_code=503,
-        error_message=str(exc),
+        error_message=error_msg or message,
         is_stream=is_stream_body,
     )
     if failures is None:
@@ -185,7 +196,7 @@ async def _routing_error_response(
         protocol=protocol,
         status_code=503,
         error_type="routing_error",
-        message="Gateway routing failed",
+        message=message,
     )
 
 

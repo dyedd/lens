@@ -190,16 +190,6 @@ export function useRequestsScreen() {
     ]);
   }
   async function clearRequestLogs() {
-    if (
-      !window.confirm(
-        titleForLocale(
-          locale,
-          "确认删除全部请求日志？",
-          "Delete all request logs?",
-        ),
-      )
-    )
-      return;
     setClearingLogs(true);
     try {
       await apiRequest<void>("/admin/request-logs", { method: "DELETE" });

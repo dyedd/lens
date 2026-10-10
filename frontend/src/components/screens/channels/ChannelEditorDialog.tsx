@@ -1,7 +1,13 @@
 import { CloudDownload, RefreshCcw, Settings2 } from "lucide-react";
-import type { Dispatch, FormEventHandler, SetStateAction } from "react";
+import {
+  type Dispatch,
+  type FormEventHandler,
+  type SetStateAction,
+  useState,
+} from "react";
 import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
 import { Button } from "@/components/ui/Button";
+import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
   Sheet,
   SheetContent,
@@ -30,7 +36,6 @@ type ChannelEditorDialogProps = {
   addBaseUrl: () => void;
   updateBaseUrl: (index: number, patch: Partial<FormBaseUrl>) => void;
   removeBaseUrl: (index: number) => void;
-  closeEditor: () => void;
   onFetchModels: () => void;
   onManageModels: () => void;
 };
@@ -136,8 +141,8 @@ function ChannelModelSection({
         <div className="flex h-7 items-center justify-between gap-2">
           <span className="truncate text-xs text-muted-foreground tabular-nums">
             {isZh
-              ? `活跃 ${modelCounts.enabled} / 总数 ${modelCounts.total}`
-              : `${modelCounts.enabled} active / ${modelCounts.total} total`}
+              ? `${modelCounts.enabled} / ${modelCounts.total} 已启用`
+              : `${modelCounts.enabled} / ${modelCounts.total} active`}
             {modelCounts.pending ? (
               <span className="text-destructive">
                 {isZh
@@ -189,24 +194,28 @@ export function ChannelEditorDialog({
   addBaseUrl,
   updateBaseUrl,
   removeBaseUrl,
-  closeEditor,
   onFetchModels,
   onManageModels,
 }: ChannelEditorDialogProps) {
   const title = editorTitle(editingSiteId, locale);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+
+  function requestClose() {
+    if (savingChannel) return;
+    if (hasUnsavedChanges) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
+    setIsDialogOpen(false);
+    setEditingSiteId(null);
+  }
 
   function handleOpenChange(open: boolean) {
-    if (!open && savingChannel) return;
-    if (!open && hasUnsavedChanges) {
-      const confirmed = window.confirm(
-        locale === "zh-CN"
-          ? "当前有未保存修改，确定关闭吗？"
-          : "You have unsaved changes. Close anyway?",
-      );
-      if (!confirmed) return;
+    if (!open) {
+      requestClose();
+    } else {
+      setIsDialogOpen(true);
     }
-    setIsDialogOpen(open);
-    if (!open) setEditingSiteId(null);
   }
 
   const submitLabel = savingChannel
@@ -260,7 +269,7 @@ export function ChannelEditorDialog({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={closeEditor}
+                onClick={requestClose}
                 disabled={savingChannel}
               >
                 {locale === "zh-CN" ? "取消" : "Cancel"}
@@ -278,6 +287,44 @@ export function ChannelEditorDialog({
           </fieldset>
         </form>
       </SheetContent>
+      <Dialog open={discardConfirmOpen} onOpenChange={setDiscardConfirmOpen}>
+        <AppDialogContent
+          title={
+            locale === "zh-CN"
+              ? "放弃未保存的修改？"
+              : "Discard unsaved changes?"
+          }
+          description={
+            locale === "zh-CN"
+              ? "未保存的修改将丢失。"
+              : "Your unsaved changes will be lost."
+          }
+          footer={
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setDiscardConfirmOpen(false)}
+              >
+                {locale === "zh-CN" ? "继续编辑" : "Keep editing"}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  setDiscardConfirmOpen(false);
+                  setIsDialogOpen(false);
+                  setEditingSiteId(null);
+                }}
+              >
+                {locale === "zh-CN" ? "放弃修改" : "Discard changes"}
+              </Button>
+            </>
+          }
+        />
+      </Dialog>
     </Sheet>
   );
 }

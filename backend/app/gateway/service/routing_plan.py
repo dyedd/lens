@@ -8,7 +8,7 @@ from time import perf_counter
 from ...core.errors import ResourceNotFoundError, RoutingError
 from ...models.channels import ChannelConfig
 from ...models.model_groups import ModelGroupItemState
-from ...models.protocols import ProtocolKind, RoutingStrategy
+from ...models.protocols import ProtocolKind
 from ..converters import can_reach_protocol
 from ..router import RouteTarget
 from .app_state import app_state
@@ -71,13 +71,6 @@ async def resolve_routing_plan(
                 credential_name=item.credential_name or None,
             )
         )
-    if resolved_group.strategy == RoutingStrategy.FAILOVER:
-        targets_by_site: dict[str, list[RouteTarget]] = {}
-        for target in route_targets:
-            targets_by_site.setdefault(target.channel.site_id, []).append(target)
-        route_targets = [
-            target for targets in targets_by_site.values() for target in targets
-        ]
     return RoutingPlan(
         requested_group_name=requested_group_name or matched_group.name,
         resolved_group_name=resolved_group.name,

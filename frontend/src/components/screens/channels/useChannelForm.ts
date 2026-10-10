@@ -188,12 +188,7 @@ export function useChannelForm(locale: Locale) {
     );
   }
   function confirmDiscardChanges() {
-    if (!hasUnsavedChanges) return true;
-    return window.confirm(
-      locale === "zh-CN"
-        ? "当前有未保存修改，确定离开吗？"
-        : "You have unsaved changes. Leave anyway?",
-    );
+    return true;
   }
   function openCreate() {
     setEditingSiteId(null);

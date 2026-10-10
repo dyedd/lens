@@ -250,7 +250,7 @@ export function UnplacedModelsPanel({
                   !isOpen && "-rotate-90",
                 )}
               />
-              {isZh ? "待放置" : "Unplaced"}
+              {isZh ? "待确认模型" : "Models pending review"}
               <span className="tabular-nums text-muted-foreground">
                 {unplacedModels.length}
               </span>
@@ -258,8 +258,8 @@ export function UnplacedModelsPanel({
             {isOpen ? (
               <p className="text-xs text-muted-foreground">
                 {isZh
-                  ? "这些模型名与已有模型组或彼此只差大小写或符号，未自动建组，请选择归属。"
-                  : "These names differ from existing groups or each other only by case or symbols, so they were not auto-grouped."}
+                  ? "检测到与已有模型组名称相近的模型，已暂缓自动建组以避免重复，建议合并或确认归属。"
+                  : "Recognized models similar to existing groups; auto-grouping paused to prevent duplicates. Merge or assign as needed."}
               </p>
             ) : null}
           </div>

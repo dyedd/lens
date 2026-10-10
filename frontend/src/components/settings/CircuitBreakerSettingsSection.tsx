@@ -1,3 +1,6 @@
+import { ShieldCheck, Sliders, Zap } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/Button";
 import { FieldError } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
@@ -334,6 +337,93 @@ function _getCircuitBreakerFieldGroups(
 }
 
 /** Render circuit breaker and health scoring settings. */
+
+const PRESET_CONFIGS = {
+  balanced: {
+    labelZh: "标准稳健 (推荐)",
+    labelEn: "Balanced (Recommended)",
+    descZh: "3次失败触发60秒冷却，退避至10分钟，适合大多数生产环境",
+    descEn:
+      "Standard 3-strike threshold with backoff up to 10 min, suitable for production",
+    values: {
+      circuitBreakerThreshold: "3",
+      circuitBreakerFailureWindowSeconds: "300",
+      circuitBreakerTimeoutThreshold: "2",
+      circuitBreakerNetworkThreshold: "2",
+      circuitBreakerCooldown: "60",
+      circuitBreakerAuthCooldown: "300",
+      circuitBreakerNotFoundCooldown: "300",
+      circuitBreakerRateLimitCooldown: "60",
+      circuitBreakerTimeoutCooldown: "60",
+      circuitBreakerNetworkCooldown: "60",
+      circuitBreakerBackoffMultiplier: "2.0",
+      circuitBreakerMaxCooldown: "600",
+      healthWindowSeconds: "3600",
+      healthPenaltyWeight: "1.5",
+      healthMinSamples: "5",
+    },
+  },
+  agile: {
+    labelZh: "敏捷响应",
+    labelEn: "Fast Failover",
+    descZh: "快速熔断异常上游，15秒迅速探测恢复，适合低延迟交互式对话",
+    descEn:
+      "Fast circuit breaking with 15s quick recovery probe, ideal for low-latency chat",
+    values: {
+      circuitBreakerThreshold: "2",
+      circuitBreakerFailureWindowSeconds: "120",
+      circuitBreakerTimeoutThreshold: "1",
+      circuitBreakerNetworkThreshold: "1",
+      circuitBreakerCooldown: "30",
+      circuitBreakerAuthCooldown: "180",
+      circuitBreakerNotFoundCooldown: "180",
+      circuitBreakerRateLimitCooldown: "30",
+      circuitBreakerTimeoutCooldown: "30",
+      circuitBreakerNetworkCooldown: "30",
+      circuitBreakerBackoffMultiplier: "1.5",
+      circuitBreakerMaxCooldown: "300",
+      healthWindowSeconds: "1800",
+      healthPenaltyWeight: "2.0",
+      healthMinSamples: "3",
+    },
+  },
+  conservative: {
+    labelZh: "宽松容灾",
+    labelEn: "High Tolerance",
+    descZh: "容忍偶发网络抖动，避免频繁误切，适合网络复杂或跨区场景",
+    descEn:
+      "High tolerance for network jitters to prevent false-alarm failovers",
+    values: {
+      circuitBreakerThreshold: "5",
+      circuitBreakerFailureWindowSeconds: "600",
+      circuitBreakerTimeoutThreshold: "3",
+      circuitBreakerNetworkThreshold: "3",
+      circuitBreakerCooldown: "120",
+      circuitBreakerAuthCooldown: "600",
+      circuitBreakerNotFoundCooldown: "600",
+      circuitBreakerRateLimitCooldown: "90",
+      circuitBreakerTimeoutCooldown: "90",
+      circuitBreakerNetworkCooldown: "90",
+      circuitBreakerBackoffMultiplier: "2.0",
+      circuitBreakerMaxCooldown: "1200",
+      healthWindowSeconds: "7200",
+      healthPenaltyWeight: "1.0",
+      healthMinSamples: "10",
+    },
+  },
+};
+
+function applyPreset(
+  settings: SettingsDraftController,
+  values: Record<CircuitBreakerKey, string>,
+) {
+  for (const [key, value] of Object.entries(values) as Array<
+    [CircuitBreakerKey, string]
+  >) {
+    settings.setDraftValue(key, value);
+  }
+}
+
 export function CircuitBreakerSettingsSection({
   locale,
   settings,
@@ -350,6 +440,95 @@ export function CircuitBreakerSettingsSection({
           "Cooldown and health ranking",
         )}
       >
+        <div className="mb-5 space-y-2 rounded-lg bg-muted/20 p-3 border border-border/40">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-foreground">
+              {titleForLocale(
+                locale,
+                "智能容灾预设",
+                "Circuit breaker presets",
+              )}
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {titleForLocale(
+                locale,
+                "一键应用推荐参数配置",
+                "Apply recommended configuration",
+              )}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2.5 text-xs font-normal"
+              onClick={() => {
+                applyPreset(settings, PRESET_CONFIGS.balanced.values);
+                toast.success(
+                  titleForLocale(
+                    locale,
+                    "已应用「标准稳健」预设",
+                    "Applied Balanced preset",
+                  ),
+                );
+              }}
+            >
+              <ShieldCheck className="size-3.5 text-primary" />
+              {titleForLocale(
+                locale,
+                PRESET_CONFIGS.balanced.labelZh,
+                PRESET_CONFIGS.balanced.labelEn,
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2.5 text-xs font-normal"
+              onClick={() => {
+                applyPreset(settings, PRESET_CONFIGS.agile.values);
+                toast.success(
+                  titleForLocale(
+                    locale,
+                    "已应用「敏捷响应」预设",
+                    "Applied Fast Failover preset",
+                  ),
+                );
+              }}
+            >
+              <Zap className="size-3.5 text-amber-500" />
+              {titleForLocale(
+                locale,
+                PRESET_CONFIGS.agile.labelZh,
+                PRESET_CONFIGS.agile.labelEn,
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2.5 text-xs font-normal"
+              onClick={() => {
+                applyPreset(settings, PRESET_CONFIGS.conservative.values);
+                toast.success(
+                  titleForLocale(
+                    locale,
+                    "已应用「宽松容灾」预设",
+                    "Applied High Tolerance preset",
+                  ),
+                );
+              }}
+            >
+              <Sliders className="size-3.5 text-muted-foreground" />
+              {titleForLocale(
+                locale,
+                PRESET_CONFIGS.conservative.labelZh,
+                PRESET_CONFIGS.conservative.labelEn,
+              )}
+            </Button>
+          </div>
+        </div>
         {_getCircuitBreakerFieldGroups(locale).map((group, groupIndex) => (
           <div key={group.title}>
             {groupIndex > 0 ? <SettingsSectionSeparator /> : null}

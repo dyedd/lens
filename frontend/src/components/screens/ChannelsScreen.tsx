@@ -140,8 +140,12 @@ export function ChannelsScreen() {
             setEditorMode("models");
           }}
           onCloseModels={() => {
-            if (isModelsNested) setEditorMode("channel");
-            else editor.closeEditor();
+            if (isModelsNested) {
+              setIsModelsNested(false);
+              setEditorMode("channel");
+            } else {
+              editor.closeEditor();
+            }
           }}
         />
       </section>

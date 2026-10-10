@@ -232,8 +232,8 @@ export function ChannelsTable({
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <span className="tabular-nums">
                     {locale === "zh-CN"
-                      ? `活 ${models.enabled} / 总 ${models.total}`
-                      : `${models.enabled} / ${models.total}`}
+                      ? `${models.enabled} / ${models.total} 已启用`
+                      : `${models.enabled} / ${models.total} active`}
                   </span>
                   {models.pending ? (
                     <Tooltip>

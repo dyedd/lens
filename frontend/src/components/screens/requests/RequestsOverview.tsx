@@ -6,7 +6,9 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -128,6 +130,7 @@ export function RequestsOverview({
   onPageSizeChange,
   onOpenDetail,
 }: Props) {
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const displayPage = page + 1;
   const familyOptions = modelPrefixOptions.filter(
     (option) => option.key !== "all",
@@ -170,7 +173,7 @@ export function RequestsOverview({
           variant="ghost"
           className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
           disabled={clearingLogs}
-          onClick={onClear}
+          onClick={() => setClearDialogOpen(true)}
         >
           <Trash2 className="size-3.5 stroke-1" />
           {clearingLogs
@@ -418,6 +421,22 @@ export function RequestsOverview({
         onOpenDetail={onOpenDetail}
       />
 
+      <ConfirmDeleteDialog
+        open={clearDialogOpen}
+        locale={locale}
+        title={titleForLocale(locale, "清空请求日志", "Clear request logs")}
+        description={titleForLocale(
+          locale,
+          "确定删除全部请求日志？此操作将永久清空历史记录且无法撤销。",
+          "Are you sure you want to clear all request logs? This action is permanent and cannot be undone.",
+        )}
+        isBusy={clearingLogs}
+        onOpenChange={setClearDialogOpen}
+        onConfirm={() => {
+          onClear();
+          setClearDialogOpen(false);
+        }}
+      />
       <TablePagination
         locale={locale}
         total={total}
