@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { useRowSelection } from "@/hooks/useRowSelection";
@@ -44,6 +45,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
   const [editingKey, setEditingKey] = useState<GatewayApiKey | null>(null);
   const [busyId, setBusyId] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const selection = useRowSelection(gatewayKeys, gatewayKeyId);
   const selectedKeys = selection.selectedRows;
 
@@ -192,14 +194,6 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
   async function bulkRemove() {
     if (!selectedKeys.length) return;
-    const confirmed = window.confirm(
-      titleForLocale(
-        locale,
-        `确认删除选中的 ${selectedKeys.length} 个 API Key？`,
-        `Delete ${selectedKeys.length} selected API keys?`,
-      ),
-    );
-    if (!confirmed) return;
     setBusyId("bulk");
     try {
       for (const item of selectedKeys) {
@@ -244,7 +238,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
               isBusy={Boolean(busyId)}
               placement="section"
               onSetEnabled={(enabled) => void bulkSetEnabled(enabled)}
-              onDelete={() => void bulkRemove()}
+              onDelete={() => setBulkDeleteOpen(true)}
             />
             <Button
               type="button"
@@ -273,6 +267,23 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
           onToggle={toggleGatewayKeyEnabled}
         />
       </SettingsSection>
+
+      <ConfirmDeleteDialog
+        open={bulkDeleteOpen}
+        locale={locale}
+        title={titleForLocale(locale, "批量删除 API Key", "Delete API keys")}
+        description={titleForLocale(
+          locale,
+          `确定删除选中的 ${selectedKeys.length} 个 API Key？此操作无法撤销。`,
+          `Are you sure you want to delete ${selectedKeys.length} selected API keys? This action cannot be undone.`,
+        )}
+        isBusy={busyId === "bulk"}
+        onOpenChange={setBulkDeleteOpen}
+        onConfirm={async () => {
+          await bulkRemove();
+          setBulkDeleteOpen(false);
+        }}
+      />
 
       {dialogOpen ? (
         <GatewayApiKeyDialog

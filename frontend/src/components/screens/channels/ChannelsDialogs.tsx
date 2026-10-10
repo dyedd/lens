@@ -106,7 +106,6 @@ export function ChannelsDialogs({
           addBaseUrl={editor.addBaseUrl}
           updateBaseUrl={editor.updateBaseUrl}
           removeBaseUrl={editor.removeBaseUrl}
-          closeEditor={editor.closeEditor}
           onFetchModels={() => setRemoteOpen(true)}
           onManageModels={onManageModels}
         />
