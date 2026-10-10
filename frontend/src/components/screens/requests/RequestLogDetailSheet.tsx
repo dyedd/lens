@@ -1,3 +1,4 @@
+import { Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
@@ -31,6 +32,42 @@ import {
   getSecondaryModelName,
 } from "./requestView";
 
+function generateCurl(
+  record: RequestLogItem | RequestLogDetail,
+  requestContent?: string | null,
+): string {
+  const origin =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "http://localhost:3000";
+  let path = "/v1/chat/completions";
+  if (record.protocol === "anthropic") {
+    path = "/v1/messages";
+  } else if (record.protocol === "openai_responses") {
+    path = "/v1/responses";
+  } else if (record.protocol === "openai_embedding") {
+    path = "/v1/embeddings";
+  } else if (record.protocol === "rerank") {
+    path = "/v1/rerank";
+  } else if (record.protocol === "gemini") {
+    path = `/v1beta/models/${record.requested_group_name || "gemini-pro"}:generateContent`;
+  }
+
+  const headers = [
+    '  -H "Content-Type: application/json"',
+    '  -H "Authorization: Bearer sk-lens-YOUR_API_KEY"',
+  ];
+  if (record.protocol === "anthropic") {
+    headers.push('  -H "anthropic-version: 2023-06-01"');
+  }
+
+  const bodyStr = requestContent?.trim()
+    ? `  -d '${requestContent.trim().replace(/'/g, "'\\''")}'`
+    : `  -d '{\n    "model": "${record.requested_group_name || ""}",\n    "messages": [{"role": "user", "content": "Hello"}]\n  }'`;
+
+  return `curl -X POST "${origin}${path}" \\\n${headers.join(" \\\n")} \\\n${bodyStr}`;
+}
+
 function DetailRow({
   label,
   value,
@@ -41,7 +78,7 @@ function DetailRow({
   mono?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 border-b border-border/50 py-2.5 last:border-b-0">
+    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-3 border-b border-border/50 py-2.5 last:border-b-0">
       <p className="text-xs text-muted-foreground">{label}</p>
       <div
         className={cn(
@@ -252,9 +289,33 @@ export function RequestLogDetailSheet({
     >
       <SheetContent className="sm:max-w-[480px]">
         <SheetHeader>
-          <SheetTitle>
-            {titleForLocale(locale, "请求日志详情", "Request log detail")}
-          </SheetTitle>
+          <div className="flex items-center justify-between gap-3">
+            <SheetTitle>
+              {titleForLocale(locale, "请求日志详情", "Request log detail")}
+            </SheetTitle>
+            {record ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={() => {
+                  const curl = generateCurl(record, detail?.request_content);
+                  void copyText(curl, locale);
+                  toast.success(
+                    titleForLocale(
+                      locale,
+                      "cURL 命令已复制",
+                      "cURL command copied",
+                    ),
+                  );
+                }}
+              >
+                <Terminal className="size-3.5 stroke-1" />
+                {titleForLocale(locale, "复制 cURL", "Copy cURL")}
+              </Button>
+            ) : null}
+          </div>
           <SheetDescription>
             {record
               ? `${modelName} · ${time}`
