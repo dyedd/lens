@@ -56,7 +56,7 @@ export function MultimodalFallbackGroups({
       <FieldLabel>
         {titleForLocale(
           locale,
-          "多模态回退模型组",
+          "多模态备用模型组",
           "Multimodal fallback groups",
         )}
       </FieldLabel>
@@ -72,7 +72,7 @@ export function MultimodalFallbackGroups({
                 ? selectedGroups.map((group) => group.name).join(" → ")
                 : titleForLocale(
                     locale,
-                    "选择回退模型组",
+                    "选择备用模型组",
                     "Select fallback groups",
                   )}
             </span>

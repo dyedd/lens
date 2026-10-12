@@ -33,7 +33,7 @@ export function createSettingsTabs(
   return [
     {
       value: "general",
-      label: titleForLocale(locale, "通用", "General"),
+      label: titleForLocale(locale, "常规", "General"),
       icon: Palette,
     },
     {
@@ -43,32 +43,32 @@ export function createSettingsTabs(
     },
     {
       value: "model-test",
-      label: titleForLocale(locale, "模型测试", "Model test"),
+      label: titleForLocale(locale, "模型测试", "Model Testing"),
       icon: TestTubeDiagonal,
     },
     {
       value: "circuit-breaker",
-      label: titleForLocale(locale, "冷却与健康", "Cooldown and health"),
+      label: titleForLocale(locale, "故障转移", "Failover"),
       icon: ShieldAlert,
     },
     {
       value: "regex-rules",
-      label: titleForLocale(locale, "正则规则库", "Regex library"),
+      label: titleForLocale(locale, "规则", "Rules"),
       icon: BookMarked,
     },
     {
       value: "api-keys",
-      label: titleForLocale(locale, "API 密钥", "API keys"),
+      label: titleForLocale(locale, "网关密钥", "Gateway Keys"),
       icon: UserRound,
     },
     {
       value: "cronjobs",
-      label: titleForLocale(locale, "定时任务", "Cron jobs"),
+      label: titleForLocale(locale, "计划任务", "Scheduled Tasks"),
       icon: TimerReset,
     },
     {
       value: "backups",
-      label: titleForLocale(locale, "备份恢复", "Backups"),
+      label: titleForLocale(locale, "备份与迁移", "Backup & Migration"),
       icon: ServerCog,
     },
   ];

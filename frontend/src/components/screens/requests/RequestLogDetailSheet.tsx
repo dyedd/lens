@@ -154,7 +154,7 @@ function AttemptGroup({
       />
       {attempt.channel_has_multiple_credentials ? (
         <DetailRow
-          label={titleForLocale(locale, "密钥", "Key")}
+          label={titleForLocale(locale, "渠道 API Key", "Channel API key")}
           value={formatInternalCredentialLabel(attempt, locale)}
         />
       ) : null}
@@ -404,13 +404,17 @@ export function RequestLogDetailSheet({
                 />
                 {record.channel_has_multiple_credentials ? (
                   <DetailRow
-                    label={titleForLocale(locale, "密钥", "Key")}
+                    label={titleForLocale(
+                      locale,
+                      "渠道 API Key",
+                      "Channel API key",
+                    )}
                     value={formatInternalCredentialLabel(record, locale)}
                   />
                 ) : null}
                 {record.gateway_key_id ? (
                   <DetailRow
-                    label="API Key"
+                    label={titleForLocale(locale, "请求密钥", "Request key")}
                     value={formatGatewayKeyLabel(record, locale)}
                   />
                 ) : null}

@@ -78,12 +78,12 @@ function removalDescription(target: RemoveRequest | null, isZh: boolean) {
   if (names.length <= 1) {
     const name = names[0] ?? "";
     return isZh
-      ? `将从 ${providerCount} 个渠道密钥中移除「${name}」。开启模型同步的站点会改为停用该模型，避免下次同步重新添加。`
-      : `Remove "${name}" from ${providerCount} channel keys. Sites with model sync disable it instead, so the next sync does not add it back.`;
+      ? `将从 ${providerCount} 个渠道的 API Key 中移除「${name}」。开启自动同步的渠道会停用该模型，避免下次同步再次加入。`
+      : `Remove "${name}" from ${providerCount} channel API keys. Auto-synced channels disable it so the next sync does not add it again.`;
   }
   return isZh
-    ? `将从渠道中移除选中的 ${names.length} 个模型名，涉及 ${providerCount} 个渠道密钥。开启模型同步的站点会改为停用这些模型，避免下次同步重新添加。`
-    : `Remove ${names.length} selected model names across ${providerCount} channel keys. Sites with model sync disable them instead, so the next sync does not add them back.`;
+    ? `将从渠道中移除选中的 ${names.length} 个模型，涉及 ${providerCount} 个渠道的 API Key。开启自动同步的渠道会停用这些模型，避免下次同步再次加入。`
+    : `Remove ${names.length} selected models across ${providerCount} channel API keys. Auto-synced channels disable them so the next sync does not add them again.`;
 }
 
 function UnplacedModelName({
@@ -218,7 +218,7 @@ export function UnplacedModelsPanel({
   return (
     <section
       className="space-y-2 rounded-md bg-muted/35 p-3"
-      aria-label={isZh ? "待放置模型" : "Unplaced models"}
+      aria-label={isZh ? "待分配模型" : "Models to assign"}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">
@@ -230,7 +230,7 @@ export function UnplacedModelsPanel({
               }
               disabled={busy}
               aria-label={
-                isZh ? "全选待放置模型" : "Select all unplaced models"
+                isZh ? "全选待分配模型" : "Select all models to assign"
               }
               onCheckedChange={(checked) =>
                 selectNames([...visibleNames], checked === true)
@@ -250,7 +250,7 @@ export function UnplacedModelsPanel({
                   !isOpen && "-rotate-90",
                 )}
               />
-              {isZh ? "待确认模型" : "Models pending review"}
+              {isZh ? "待分配模型" : "Models to assign"}
               <span className="tabular-nums text-muted-foreground">
                 {unplacedModels.length}
               </span>
@@ -258,8 +258,8 @@ export function UnplacedModelsPanel({
             {isOpen ? (
               <p className="text-xs text-muted-foreground">
                 {isZh
-                  ? "检测到与已有模型组名称相近的模型，已暂缓自动建组以避免重复，建议合并或确认归属。"
-                  : "Recognized models similar to existing groups; auto-grouping paused to prevent duplicates. Merge or assign as needed."}
+                  ? "这些模型与现有模型组名称相近，系统暂未自动建组。你可以合并到已有模型组、单独建组或删除。"
+                  : "These models are similar to existing groups, so automatic grouping paused. Join an existing group, create a group, or remove them."}
               </p>
             ) : null}
           </div>
@@ -275,8 +275,8 @@ export function UnplacedModelsPanel({
                 onClick={() => void createSelectedGroups()}
               >
                 {isZh
-                  ? `单独建组 (${selectedNames.length})`
-                  : `Own groups (${selectedNames.length})`}
+                  ? `为每个模型建组 (${selectedNames.length})`
+                  : `Create a group for each (${selectedNames.length})`}
               </Button>
               <Button
                 type="button"
@@ -298,7 +298,7 @@ export function UnplacedModelsPanel({
             onClick={onAutoPlace}
           >
             <Wand2 data-icon="inline-start" />
-            {isZh ? "自动放置" : "Auto place"}
+            {isZh ? "自动分配" : "Assign automatically"}
           </Button>
         </div>
       </div>
@@ -406,7 +406,7 @@ export function UnplacedModelsPanel({
                             size="xs"
                             disabled={busy}
                           >
-                            {isZh ? "合并建组" : "Group together"}
+                            {isZh ? "合并为一组" : "Group together"}
                             <ChevronDown data-icon="inline-end" />
                           </Button>
                         </DropdownMenuTrigger>

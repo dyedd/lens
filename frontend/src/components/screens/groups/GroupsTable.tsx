@@ -115,8 +115,8 @@ function GroupMembersPopover({
           className="-ml-2 font-normal text-muted-foreground tabular-nums shadow-none"
         >
           {locale === "zh-CN"
-            ? `${group.site_count} 站点 · ${group.credential_count} 密钥`
-            : `${group.site_count} sites · ${group.credential_count} keys`}
+            ? `${group.site_count} 个渠道 · ${group.credential_count} 个密钥`
+            : `${group.site_count} channels · ${group.credential_count} keys`}
           {group.problem_member_count > 0 ? (
             <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
               {group.problem_member_count}
@@ -128,10 +128,10 @@ function GroupMembersPopover({
         <p className="px-1 pb-1.5 text-[11px] text-muted-foreground">
           {group.strategy === "failover"
             ? locale === "zh-CN"
-              ? "按顺序故障转移"
-              : "Failover in order"
+              ? "按顺序切换"
+              : "Fail over in order"
             : locale === "zh-CN"
-              ? "轮询分配"
+              ? "轮流使用"
               : "Round robin"}
         </p>
         <ol className="max-h-72 space-y-0.5 overflow-y-auto">
@@ -278,7 +278,9 @@ export function GroupsTable({
               />
             </div>
           </TableHead>
-          <TableHead>{locale === "zh-CN" ? "模型组" : "Group"}</TableHead>
+          <TableHead>
+            {locale === "zh-CN" ? "模型组名称" : "Group name"}
+          </TableHead>
           <TableHead>{locale === "zh-CN" ? "策略" : "Strategy"}</TableHead>
           <TableHead>{locale === "zh-CN" ? "成员" : "Members"}</TableHead>
           <TableHead>

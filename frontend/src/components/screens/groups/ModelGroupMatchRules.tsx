@@ -57,22 +57,22 @@ export function ModelGroupMatchRules({
   return (
     <section
       className="flex shrink-0 flex-col gap-2"
-      aria-label={locale === "zh-CN" ? "自动匹配" : "Match rules"}
+      aria-label={locale === "zh-CN" ? "自动加入" : "Auto-add"}
     >
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-medium">
-          {locale === "zh-CN" ? "自动匹配" : "Match rules"}
+          {locale === "zh-CN" ? "自动加入" : "Auto-add"}
         </h3>
         <span className="text-xs tabular-nums text-muted-foreground">
           {locale === "zh-CN"
-            ? `匹配 ${ruleMatchModelCount} 个模型名 · ${ruleMatchSourceCount} 个来源`
-            : `${ruleMatchModelCount} names · ${ruleMatchSourceCount} sources`}
+            ? `已加入 ${ruleMatchModelCount} 个模型名 · ${ruleMatchSourceCount} 个渠道`
+            : `${ruleMatchModelCount} names · ${ruleMatchSourceCount} channels`}
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
         {locale === "zh-CN"
-          ? "渠道中名称匹配（不区分大小写）的可用模型实时加入，新密钥和新站点同步后自动生效。"
-          : "Available channel models whose names match (case-insensitive) join live, including new keys and sites."}
+          ? "名称匹配的可用模型会自动加入这个模型组；新模型也会自动生效。"
+          : "Available models whose names match are added automatically, including new models."}
       </p>
       <div className="flex min-h-8 flex-wrap items-center gap-1 rounded-md border border-input/40 px-2 py-1 focus-within:border-primary/60 focus-within:ring-[1px] focus-within:ring-primary/40">
         {matchModels.map((name) => (
@@ -101,9 +101,13 @@ export function ModelGroupMatchRules({
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleDraftKeyDown}
           onBlur={addDraft}
-          aria-label={locale === "zh-CN" ? "匹配模型名" : "Match model name"}
+          aria-label={
+            locale === "zh-CN" ? "匹配模型名称" : "Model name to match"
+          }
           placeholder={
-            locale === "zh-CN" ? "输入模型名后回车" : "Type a model name, Enter"
+            locale === "zh-CN"
+              ? "输入模型名称后按 Enter"
+              : "Type a model name and press Enter"
           }
           className="h-6 min-w-32 flex-1 bg-transparent font-mono text-xs outline-none placeholder:font-sans placeholder:text-muted-foreground"
         />

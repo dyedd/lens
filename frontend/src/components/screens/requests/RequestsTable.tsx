@@ -78,7 +78,7 @@ function ModelCell({ item, locale }: { item: RequestLogItem; locale: Locale }) {
     },
     item.gateway_key_id
       ? {
-          label: "API Key",
+          label: titleForLocale(locale, "网关密钥", "Gateway key"),
           value: formatGatewayKeyLabel(item, locale),
         }
       : null,

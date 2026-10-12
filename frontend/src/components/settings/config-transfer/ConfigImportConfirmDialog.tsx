@@ -73,7 +73,7 @@ export function ConfigImportConfirmDialog({
                   ? titleForLocale(
                       locale,
                       `将覆盖 ${preview.sites.length} 个渠道、${preview.groups.length} 个模型组`,
-                      `Will overwrite ${preview.sites.length} channels and ${preview.groups.length} model groups`,
+                      `Will overwrite ${preview.sites.length} upstream channels and ${preview.groups.length} model routing entries`,
                     )
                   : titleForLocale(
                       locale,
@@ -87,7 +87,7 @@ export function ConfigImportConfirmDialog({
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">
               <Settings2 data-icon="inline-start" />
-              {titleForLocale(locale, "设置", "Settings")}
+              {titleForLocale(locale, "系统设置", "System settings")}
             </Badge>
             <Badge variant="outline">
               <Waypoints data-icon="inline-start" />
@@ -103,12 +103,12 @@ export function ConfigImportConfirmDialog({
             </Badge>
             <Badge variant="outline">
               <CalendarClock data-icon="inline-start" />
-              {titleForLocale(locale, "定时任务", "Cron jobs")}
+              {titleForLocale(locale, "计划任务", "Scheduled tasks")}
             </Badge>
             {preview?.include_gateway_api_keys ? (
               <Badge variant="outline">
                 <KeyRound data-icon="inline-start" />
-                {titleForLocale(locale, "网关 API Key", "Gateway API keys")}
+                {titleForLocale(locale, "网关密钥", "Gateway keys")}
               </Badge>
             ) : null}
             {preview?.include_request_logs ? (

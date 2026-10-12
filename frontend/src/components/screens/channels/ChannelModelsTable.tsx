@@ -75,16 +75,16 @@ export function ChannelModelsTable({
             {locale === "zh-CN" ? "状态" : "Status"}
           </TableHead>
           <TableHead>
-            {locale === "zh-CN" ? "上游模型名" : "Upstream model"}
+            {locale === "zh-CN" ? "模型名（上游）" : "Upstream model"}
           </TableHead>
           <TableHead className="w-[150px]">
-            {locale === "zh-CN" ? "密钥" : "Keys"}
+            {locale === "zh-CN" ? "API Key" : "Keys"}
           </TableHead>
           <TableHead className="w-[64px]">
             {locale === "zh-CN" ? "来源" : "Source"}
           </TableHead>
           <TableHead className="w-[180px]">
-            {locale === "zh-CN" ? "转发方式" : "Forwarding"}
+            {locale === "zh-CN" ? "转发协议" : "Forwarding"}
           </TableHead>
           <TableHead className="w-[72px]" />
         </TableRow>
@@ -98,8 +98,8 @@ export function ChannelModelsTable({
             >
               {!hasModels
                 ? locale === "zh-CN"
-                  ? "还没有模型。获取上游模型，或手动添加。"
-                  : "No models yet. Fetch upstream models, or add them manually."
+                  ? "还没有模型。先获取模型列表，或手动添加模型。"
+                  : "No models yet. Fetch the model list or add models manually."
                 : locale === "zh-CN"
                   ? "没有匹配的模型。"
                   : "No matching models."}
@@ -155,13 +155,13 @@ export function ChannelModelsTable({
                           className="shrink-0 font-sans"
                           tabIndex={0}
                         >
-                          {locale === "zh-CN" ? "待确认" : "Review"}
+                          {locale === "zh-CN" ? "待处理" : "Needs review"}
                         </Badge>
                       </TooltipTrigger>
                       <TooltipContent>
                         {locale === "zh-CN"
-                          ? "上游已不再提供，暂停调用"
-                          : "No longer listed upstream; paused"}
+                          ? "上游已移除，已暂停调用"
+                          : "Removed upstream; calls are paused"}
                       </TooltipContent>
                     </Tooltip>
                   ) : null}
@@ -243,7 +243,7 @@ export function ChannelModelsTable({
                     size="icon-sm"
                     className="size-6 text-muted-foreground"
                     aria-label={
-                      locale === "zh-CN" ? "删除绑定" : "Delete binding"
+                      locale === "zh-CN" ? "删除模型" : "Delete model"
                     }
                     onClick={() => onDelete(model.key)}
                   >

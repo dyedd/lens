@@ -104,7 +104,7 @@ export function RegexRuleEditorDialog({
           rule && (rule.sites.length || rule.groups.length)
             ? titleForLocale(
                 locale,
-                `修改会同步到使用此规则的 ${rule.sites.length} 个渠道、${rule.groups.length} 个模型组`,
+                `修改会同步应用到 ${rule.sites.length} 个渠道和 ${rule.groups.length} 个模型组`,
                 `Changes apply to the ${rule.sites.length} channels and ${rule.groups.length} groups that use this rule`,
               )
             : undefined

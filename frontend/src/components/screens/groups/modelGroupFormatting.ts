@@ -16,8 +16,8 @@ export const STRATEGY_OPTIONS: Array<{
   zh: string;
   en: string;
 }> = [
-  { value: "failover", zh: "故障转移", en: "Failover" },
-  { value: "round_robin", zh: "轮询", en: "Round Robin" },
+  { value: "failover", zh: "故障切换", en: "Failover" },
+  { value: "round_robin", zh: "平滑轮询", en: "Round Robin" },
 ];
 
 /** Return the localized label for a routing strategy. */
@@ -53,12 +53,12 @@ export function modelGroupItemReasonLabel(
     manual_disabled: { zh: "成员已关闭", en: "Member disabled" },
     channel_not_found: { zh: "渠道不存在", en: "Channel not found" },
     channel_disabled: { zh: "渠道已停用", en: "Channel disabled" },
-    credential_not_found: { zh: "密钥不存在", en: "Key not found" },
-    credential_disabled: { zh: "密钥不可用", en: "Key unavailable" },
+    credential_not_found: { zh: "访问凭证不存在", en: "Credential not found" },
+    credential_disabled: { zh: "访问凭证已停用", en: "Credential unavailable" },
     model_not_found: { zh: "模型不存在", en: "Model not found" },
     model_disabled: { zh: "模型已停用", en: "Model disabled" },
     model_upstream_missing: {
-      zh: "上游已下线，待确认",
+      zh: "上游未提供，保留待审",
       en: "Missing upstream, review needed",
     },
   };

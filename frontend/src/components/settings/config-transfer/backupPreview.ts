@@ -81,7 +81,7 @@ export function formatExportedAt(
 
 export function resultLabelForLocale(locale: Locale, key: string) {
   const labels: Record<string, [string, string]> = {
-    gateway_api_keys: ["网关 API Key", "Gateway API keys"],
+    gateway_api_keys: ["网关密钥", "Gateway keys"],
     groups: ["模型组", "Model groups"],
     imported_stats_daily: ["导入统计(日)", "Imported stats (daily)"],
     imported_stats_total: ["导入统计(总计)", "Imported stats (total)"],
@@ -91,10 +91,10 @@ export function resultLabelForLocale(locale: Locale, key: string) {
     overview_model_daily_stats: ["模型统计(日)", "Model stats (daily)"],
     request_log_daily_stats: ["请求统计(日)", "Request stats (daily)"],
     request_logs: ["请求日志", "Request logs"],
-    cronjobs: ["定时任务", "Cron jobs"],
-    settings: ["系统设置", "Settings"],
-    site_base_urls: ["渠道地址", "Channel base URLs"],
-    site_credentials: ["上游凭据", "Upstream credentials"],
+    cronjobs: ["计划任务", "Scheduled tasks"],
+    settings: ["系统设置", "System settings"],
+    site_base_urls: ["渠道地址", "Channel URLs"],
+    site_credentials: ["渠道 API Key", "Channel API keys"],
     site_models: ["发现模型", "Discovered models"],
     site_protocol_configs: ["渠道协议配置", "Channel protocol configs"],
     sites: ["渠道", "Channels"],

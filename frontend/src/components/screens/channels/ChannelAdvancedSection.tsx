@@ -90,12 +90,12 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
     >
       <AccordionItem value="proxy" className="border-border/60">
         <AccordionTrigger className={accordionTriggerClass}>
-          <span>{locale === "zh-CN" ? "代理" : "Proxy"}</span>
+          <span>{locale === "zh-CN" ? "代理设置" : "Proxy"}</span>
         </AccordionTrigger>
         <AccordionContent className="space-y-4 pb-4 pt-0">
           <div className="min-w-0 space-y-1">
             <Label className="text-xs font-normal text-muted-foreground">
-              {locale === "zh-CN" ? "代理模式" : "Proxy mode"}
+              {locale === "zh-CN" ? "代理方式" : "Proxy mode"}
             </Label>
             <Select
               value={form.proxy_mode}
@@ -149,7 +149,7 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
             id="channel-headers"
             value={form.headersJson}
             placeholder={`{"X-Custom-Header": "value"}`}
-            formatLabel={locale === "zh-CN" ? "格式化" : "Format"}
+            formatLabel={locale === "zh-CN" ? "格式化 JSON" : "Format JSON"}
             invalidFormatMessage={
               locale === "zh-CN"
                 ? "请求头 JSON 格式无效"
@@ -166,7 +166,7 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
                     className="h-6 gap-1 px-2 text-[11px]"
                   >
                     <ListPlus className="size-3" />
-                    {locale === "zh-CN" ? "快捷填充" : "Quick fill"}
+                    {locale === "zh-CN" ? "填入常用值" : "Insert common value"}
                     <ChevronDown className="size-3" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -191,14 +191,14 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
 
       <AccordionItem value="params" className="border-border/60">
         <AccordionTrigger className={accordionTriggerClass}>
-          <span>{locale === "zh-CN" ? "参数" : "Parameters"}</span>
+          <span>{locale === "zh-CN" ? "请求参数" : "Parameters"}</span>
         </AccordionTrigger>
         <AccordionContent className="pb-4 pt-0">
           <JsonField
             id="channel-params"
             value={form.paramsJson}
             placeholder={`{"temperature": 0.7}`}
-            formatLabel={locale === "zh-CN" ? "格式化" : "Format"}
+            formatLabel={locale === "zh-CN" ? "格式化 JSON" : "Format JSON"}
             invalidFormatMessage={
               locale === "zh-CN"
                 ? "参数 JSON 格式无效"

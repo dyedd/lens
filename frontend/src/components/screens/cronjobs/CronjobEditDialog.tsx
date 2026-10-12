@@ -81,7 +81,7 @@ export function CronjobEditDialog({
         <SettingsFieldList>
           <Field data-invalid={invalidDraft}>
             <FieldLabel>
-              {titleForLocale(locale, "计划", "Schedule")}
+              {titleForLocale(locale, "执行计划", "Schedule")}
             </FieldLabel>
             <ScheduleEditor
               draft={draft}
@@ -95,7 +95,11 @@ export function CronjobEditDialog({
           {isRetentionTask ? (
             <>
               <SettingsFieldRow
-                title={titleForLocale(locale, "保留日志", "Keep logs")}
+                title={titleForLocale(
+                  locale,
+                  "保留请求日志",
+                  "Keep request logs",
+                )}
               >
                 <Switch
                   checked={retentionDraft.enabled}

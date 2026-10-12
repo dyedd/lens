@@ -47,7 +47,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
     const items = [
       {
         key: "settings",
-        label: titleForLocale(locale, "系统设置", "Settings"),
+        label: titleForLocale(locale, "系统设置", "System settings"),
         count: preview.settings.length,
       },
       {
@@ -67,7 +67,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
       },
       {
         key: "cronjobs",
-        label: titleForLocale(locale, "定时任务", "Cron jobs"),
+        label: titleForLocale(locale, "计划任务", "Scheduled tasks"),
         count: preview.cronjobs.length,
       },
       {
@@ -79,7 +79,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
     if (preview.include_gateway_api_keys) {
       items.push({
         key: "gateway_api_keys",
-        label: titleForLocale(locale, "网关 API Key", "Gateway API keys"),
+        label: titleForLocale(locale, "网关密钥", "Gateway keys"),
         count: preview.gateway_api_keys.length,
       });
     }
@@ -164,7 +164,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
   return (
     <>
       <SettingsSection
-        title={titleForLocale(locale, "恢复备份", "Restore backup")}
+        title={titleForLocale(locale, "配置导入", "Import Configuration")}
         actions={
           <Button
             type="button"
@@ -188,8 +188,8 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
         <p className="text-xs leading-5 text-muted-foreground">
           {titleForLocale(
             locale,
-            "导入会替换现有渠道、模型组、设置、模型价格、定时任务和统计数据；如果备份包包含日志或网关 API Key，也会一并覆盖。",
-            "Import replaces existing channels, model groups, settings, model prices, cron jobs, and stats. If the backup contains logs or gateway API keys, those sections are replaced as well.",
+            "导入会覆盖现有的渠道、模型组、价格和计划任务。备份中的请求日志或网关密钥也会覆盖当前数据。",
+            "Importing overwrites existing channels, model groups, prices, and scheduled tasks. Request logs or gateway keys in the backup also replace current data.",
           )}
         </p>
         <div className="space-y-3">
