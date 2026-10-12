@@ -14,7 +14,7 @@ export const TIME_RANGE_OPTIONS = [
   { value: "0", zhLabel: "全部", enLabel: "All time" },
 ] satisfies Array<{ value: TimeRange; zhLabel: string; enLabel: string }>;
 export const PIE_METRIC_OPTIONS = [
-  { value: "cost", zhLabel: "费用", enLabel: "Cost" },
+  { value: "cost", zhLabel: "成本", enLabel: "Cost" },
   { value: "requests", zhLabel: "请求", enLabel: "Requests" },
   { value: "tokens", zhLabel: "Token", enLabel: "Tokens" },
 ] satisfies Array<{ value: PieMetric; zhLabel: string; enLabel: string }>;
@@ -87,7 +87,7 @@ export function startOfHeatmapWeek(date: Date) {
 export function getPieMetricLabels(metric: PieMetric, isChinese: boolean) {
   const label = isChinese
     ? metric === "cost"
-      ? "费用"
+      ? "成本"
       : metric === "requests"
         ? "请求"
         : "Token"
@@ -100,7 +100,7 @@ export function getPieMetricLabels(metric: PieMetric, isChinese: boolean) {
     label,
     trendTitle: isChinese ? `${label}趋势` : `${label} trend`,
     cardDescription: isChinese
-      ? `模型占比和${label}趋势`
+      ? `模型分布与${label}趋势`
       : `Model share and ${label.toLowerCase()} trend`,
   };
 }

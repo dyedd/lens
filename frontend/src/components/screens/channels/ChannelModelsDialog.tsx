@@ -217,18 +217,18 @@ function ChannelModelsBody({
         <DialogHeader className="shrink-0 px-4 py-4">
           <DialogTitle>
             {locale === "zh-CN"
-              ? `管理模型 - ${channelName}`
-              : `Manage models - ${channelName}`}
+              ? `模型列表 - ${channelName}`
+              : `Models - ${channelName}`}
           </DialogTitle>
           <DialogDescription>
             {locale === "zh-CN"
-              ? "auto 按客户端协议透传；指定 OpenAI Chat/Responses 时可为其他客户端转换。"
-              : "Auto passes the client protocol through; OpenAI Chat/Responses can convert for other clients."}
+              ? "自动传递客户端协议；选择具体协议可将请求转换为该协议。"
+              : "Auto passes the client protocol through. Choose a protocol to convert requests to it."}
             {syncEnabled ? (
               <span className="block">
                 {locale === "zh-CN"
-                  ? "已开启自动同步：删除的同步模型会在下次同步时重新加入，停用即可排除；待确认的模型已暂停调用，可保留或删除。"
-                  : "Auto-sync is on: deleted synced models return on the next sync, so disable them instead. Models to review are paused; keep or delete them."}
+                  ? "自动同步已开启：同步模型删除后会在下次同步时回来；停用模型可将其排除。上游已移除的模型已暂停调用，可保留或删除。"
+                  : "Auto-sync is on: deleted synced models return on the next sync, so disable them to exclude them. Models removed upstream are paused and can be kept or deleted."}
               </span>
             ) : null}
           </DialogDescription>
@@ -241,11 +241,11 @@ function ChannelModelsBody({
             placeholder={
               hasMultipleBaseUrls
                 ? locale === "zh-CN"
-                  ? "搜索模型名、地址或协议"
-                  : "Search model name, URL or protocol"
+                  ? "搜索模型名、地址或协议..."
+                  : "Search model name, URL, or protocol..."
                 : locale === "zh-CN"
-                  ? "搜索模型名或协议"
-                  : "Search model name or protocol"
+                  ? "搜索模型名或协议..."
+                  : "Search model name or protocol..."
             }
             className="max-w-none min-w-40 flex-1"
           />
@@ -291,7 +291,7 @@ function ChannelModelsBody({
                         {locale === "zh-CN" ? "停用" : "Disabled"}
                       </SelectItem>
                       <SelectItem value="missing">
-                        {locale === "zh-CN" ? "待确认" : "To review"}
+                        {locale === "zh-CN" ? "待处理" : "Needs review"}
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -336,7 +336,7 @@ function ChannelModelsBody({
                         setProtocolFilter("all");
                       }}
                     >
-                      {locale === "zh-CN" ? "清空" : "Clear"}
+                      {locale === "zh-CN" ? "重置" : "Reset"}
                     </Button>
                   </div>
                 ) : null}
@@ -425,7 +425,7 @@ function ChannelModelsBody({
               onClick={onOpenRemote}
             >
               <CloudDownload className="size-3.5" />
-              {locale === "zh-CN" ? "获取模型" : "Fetch models"}
+              {locale === "zh-CN" ? "获取模型列表" : "Fetch model list"}
             </Button>
             <Button
               type="button"
@@ -435,7 +435,7 @@ function ChannelModelsBody({
               onClick={() => setNewOpen(true)}
             >
               <Plus className="size-3.5" />
-              {locale === "zh-CN" ? "手动添加" : "Add manually"}
+              {locale === "zh-CN" ? "手动添加模型" : "Add models manually"}
             </Button>
           </div>
         </div>
@@ -493,10 +493,10 @@ function ChannelModelsBody({
       <ConfirmDeleteDialog
         open={bulkDeleteOpen}
         locale={locale}
-        title={locale === "zh-CN" ? "确认批量删除" : "Delete models"}
+        title={locale === "zh-CN" ? "删除模型" : "Delete models"}
         description={
           locale === "zh-CN"
-            ? `将删除选中的 ${selectedCount} 个模型，保存后生效。${syncEnabled ? "上游仍提供的同步模型会在下次同步时重新加入。" : ""}`
+            ? `删除选中的 ${selectedCount} 个模型，保存后生效。${syncEnabled ? "上游仍提供的同步模型会在下次同步时重新加入。" : ""}`
             : `${selectedCount} selected models will be removed after you save.${syncEnabled ? " Synced models still listed upstream return on the next sync." : ""}`
         }
         isDisabled={selectedCount === 0}

@@ -144,7 +144,7 @@ export function ModelTestDialog({
       >
         <DialogContent className="flex max-h-[min(88vh,720px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[600px]">
           <DialogHeader className="shrink-0 px-5 pb-4 pt-5 pr-12">
-            <DialogTitle>{isChinese ? "模型测试" : "Model test"}</DialogTitle>
+            <DialogTitle>{isChinese ? "测试模型" : "Test model"}</DialogTitle>
             <DialogDescription className="truncate">
               {[targetName, target?.modelName].filter(Boolean).join(" · ") ||
                 "-"}
@@ -156,7 +156,7 @@ export function ModelTestDialog({
               {items.length === 1 && credentialOptions.length > 1 ? (
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-muted-foreground">
-                    {isChinese ? "测试密钥" : "Test key"}
+                    {isChinese ? "使用的 API Key" : "API key"}
                   </span>
                   <Select
                     value={credentialValue ?? ""}
@@ -165,7 +165,7 @@ export function ModelTestDialog({
                   >
                     <SelectTrigger
                       className="h-8 min-w-44 max-w-72"
-                      aria-label={isChinese ? "测试密钥" : "Test key"}
+                      aria-label={isChinese ? "使用的 API Key" : "API key"}
                     >
                       <SelectValue />
                     </SelectTrigger>
@@ -197,8 +197,8 @@ export function ModelTestDialog({
                       className="h-7 w-36"
                       aria-label={
                         isChinese
-                          ? "全部设为测试协议"
-                          : "Set all test protocols"
+                          ? "全部使用此协议"
+                          : "Use this protocol for all"
                       }
                     >
                       <SelectValue
@@ -334,7 +334,7 @@ export function ModelTestDialog({
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground">
-                  {isChinese ? "测试输入" : "Test input"}
+                  {isChinese ? "测试内容" : "Test input"}
                 </span>
                 <Select
                   value={promptMode}
@@ -486,7 +486,7 @@ export function ModelTestDialog({
                 className="mr-auto text-muted-foreground shadow-none"
                 onClick={() => setConfirmDeleteOpen(true)}
               >
-                {isChinese ? "删除此模型" : "Delete model"}
+                {isChinese ? "删除模型" : "Delete model"}
               </Button>
             ) : null}
             <Button type="button" size="sm" onClick={onRun} disabled={!canRun}>
@@ -508,13 +508,11 @@ export function ModelTestDialog({
       <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle>
-              {isChinese ? "删除模型绑定" : "Delete model binding"}
-            </DialogTitle>
+            <DialogTitle>{isChinese ? "删除模型" : "Delete model"}</DialogTitle>
             <DialogDescription>
               {isChinese
-                ? `从当前渠道移除「${target?.modelName || "-"}」的绑定？保存后生效。`
-                : `Remove the binding for "${target?.modelName || "-"}" from this channel? Changes take effect after saving.`}
+                ? `从当前渠道移除「${target?.modelName || "-"}」？保存后生效。`
+                : `Remove "${target?.modelName || "-"}" from this channel? Changes take effect after saving.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

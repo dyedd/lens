@@ -37,9 +37,9 @@ class RenderErrorBoundary extends Component<
         <main className="flex min-h-screen items-center justify-center bg-background p-6">
           <Alert variant="destructive" className="max-w-lg">
             <AlertTriangleIcon aria-hidden="true" />
-            <AlertTitle>页面渲染失败</AlertTitle>
+            <AlertTitle>页面无法显示</AlertTitle>
             <AlertDescription className="flex flex-col gap-3">
-              <span>{this.state.error.message || "未知错误"}</span>
+              <span>{this.state.error.message || "发生未知错误"}</span>
               <span>
                 <Button type="button" variant="outline" onClick={this.reset}>
                   <RefreshCwIcon data-icon="inline-start" />

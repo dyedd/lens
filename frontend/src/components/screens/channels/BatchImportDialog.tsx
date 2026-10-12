@@ -158,8 +158,8 @@ export function BatchImportDialog({
                   {
                     value: "foreign",
                     label: isZh
-                      ? "第三方一键迁移 (One API / Sub2API 等)"
-                      : "Migrate from other tools",
+                      ? "从其他平台导入"
+                      : "Import from another platform",
                   },
                 ]}
               />
@@ -182,7 +182,7 @@ export function BatchImportDialog({
                     disabled={importing}
                   >
                     <Upload data-icon="inline-start" />
-                    {isZh ? "选择 JSON 文件" : "Choose JSON"}
+                    {isZh ? "选择 JSON 文件" : "Choose JSON file"}
                   </Button>
                   <Button
                     type="button"
@@ -191,7 +191,7 @@ export function BatchImportDialog({
                     disabled={importing}
                   >
                     <Download data-icon="inline-start" />
-                    {isZh ? "下载导入模板" : "Download template"}
+                    {isZh ? "下载导入模板" : "Download import template"}
                   </Button>
                 </div>
 

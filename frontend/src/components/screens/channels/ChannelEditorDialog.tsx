@@ -68,18 +68,18 @@ function ChannelModelSection({
   return (
     <div className="min-w-0 space-y-1">
       <div className="text-xs font-normal text-muted-foreground">
-        {isZh ? "模型" : "Models"}
+        {isZh ? "模型同步" : "Model sync"}
       </div>
       <div className="space-y-2.5 rounded-md bg-muted/35 p-2.5">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-xs font-medium">
-              {isZh ? "自动同步上游模型" : "Auto-sync upstream models"}
+              {isZh ? "自动同步模型" : "Auto-sync models"}
             </div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
               {isZh
-                ? "新模型自动加入并放入模型组，上游下线的模型标记为待确认"
-                : "New models join and are placed into model groups; models gone upstream wait for review"}
+                ? "自动加入上游的新模型；上游移除的模型会标记为待处理。"
+                : "Add new upstream models automatically; mark removed models for review."}
             </div>
           </div>
           <Switch
@@ -91,7 +91,7 @@ function ChannelModelSection({
                 model_sync_enabled: checked,
               }))
             }
-            aria-label={isZh ? "自动同步上游模型" : "Auto-sync upstream models"}
+            aria-label={isZh ? "自动同步模型" : "Auto-sync models"}
           />
         </div>
         {form.model_sync_enabled ? (
@@ -104,7 +104,7 @@ function ChannelModelSection({
                 locale={locale}
                 label={
                   isZh
-                    ? "只同步匹配这些规则的模型"
+                    ? "仅同步符合规则的模型"
                     : "Only sync models matching these rules"
                 }
                 value={form.model_sync_include_rule_ids}
@@ -124,7 +124,7 @@ function ChannelModelSection({
                 locale={locale}
                 label={
                   isZh
-                    ? "不同步匹配这些规则的模型"
+                    ? "排除符合规则的模型"
                     : "Skip models matching these rules"
                 }
                 value={form.model_sync_exclude_rule_ids}
@@ -146,8 +146,8 @@ function ChannelModelSection({
             {modelCounts.pending ? (
               <span className="text-destructive">
                 {isZh
-                  ? ` · ${modelCounts.pending} 待确认`
-                  : ` · ${modelCounts.pending} to review`}
+                  ? ` · ${modelCounts.pending} 待处理`
+                  : ` · ${modelCounts.pending} needs review`}
               </span>
             ) : null}
           </span>
@@ -159,7 +159,7 @@ function ChannelModelSection({
               onClick={onFetchModels}
             >
               <CloudDownload />
-              {isZh ? "获取模型" : "Fetch models"}
+              {isZh ? "获取模型列表" : "Fetch model list"}
             </Button>
             <Button
               type="button"
@@ -168,7 +168,7 @@ function ChannelModelSection({
               onClick={onManageModels}
             >
               <Settings2 />
-              {isZh ? "管理" : "Manage"}
+              {isZh ? "管理模型" : "Manage models"}
             </Button>
           </div>
         </div>

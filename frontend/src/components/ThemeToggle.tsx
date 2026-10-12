@@ -12,8 +12,7 @@ import { useTheme } from "@/lib/ThemeContext";
 export function ThemeToggle() {
   const { locale } = useI18n();
   const { toggleTheme } = useTheme();
-  const label = locale === "zh-CN" ? "切换明暗模式" : "Toggle theme";
-
+  const label = locale === "zh-CN" ? "切换主题" : "Toggle theme";
   return (
     <Tooltip>
       <TooltipTrigger asChild>

@@ -55,11 +55,17 @@ function channelSortOptions(
   locale: Locale,
 ): Array<{ value: ChannelSort; label: string }> {
   return [
-    { value: "name-asc", label: locale === "zh-CN" ? "名称升序" : "Name A-Z" },
-    { value: "name-desc", label: locale === "zh-CN" ? "名称降序" : "Name Z-A" },
+    {
+      value: "name-asc",
+      label: locale === "zh-CN" ? "渠道名称升序" : "Name A-Z",
+    },
+    {
+      value: "name-desc",
+      label: locale === "zh-CN" ? "渠道名称降序" : "Name Z-A",
+    },
     {
       value: "models-desc",
-      label: locale === "zh-CN" ? "模型优先" : "Models first",
+      label: locale === "zh-CN" ? "模型数量" : "Model count",
     },
   ];
 }
@@ -140,7 +146,7 @@ export function ChannelsOverview({
     <div className="space-y-3 pb-10">
       <div className="flex h-10 items-center justify-between gap-3 px-1">
         <h3 className="text-sm font-semibold">
-          {locale === "zh-CN" ? "渠道管理" : "Channels"}
+          {locale === "zh-CN" ? "渠道" : "Channels"}
         </h3>
       </div>
 
@@ -151,7 +157,9 @@ export function ChannelsOverview({
             <Input
               value={search}
               placeholder={
-                locale === "zh-CN" ? "搜索名称、地址" : "Search name or URL"
+                locale === "zh-CN"
+                  ? "搜索渠道名称或地址..."
+                  : "Search channel name or URL..."
               }
               onChange={(event) => {
                 onSearchChange(event.target.value);
@@ -312,13 +320,13 @@ export function ChannelsOverview({
             <TooltipTrigger asChild>
               <ToolbarButton
                 onClick={onImport}
-                aria-label={locale === "zh-CN" ? "批量导入" : "Import"}
+                aria-label={locale === "zh-CN" ? "导入渠道" : "Import Channels"}
               >
                 <FileInput className="size-3.5" />
               </ToolbarButton>
             </TooltipTrigger>
             <TooltipContent>
-              {locale === "zh-CN" ? "批量导入" : "Import"}
+              {locale === "zh-CN" ? "导入渠道" : "Import Channels"}
             </TooltipContent>
           </Tooltip>
           <Button
@@ -328,7 +336,7 @@ export function ChannelsOverview({
             onClick={onCreate}
           >
             <Plus className="size-3.5 stroke-1" />
-            {locale === "zh-CN" ? "新增" : "Add"}
+            {locale === "zh-CN" ? "新建渠道" : "New Channel"}
           </Button>
         </div>
       </section>
@@ -356,10 +364,10 @@ export function ChannelsOverview({
       <ConfirmDeleteDialog
         open={bulkDeleteOpen}
         locale={locale}
-        title={locale === "zh-CN" ? "确认批量删除" : "Delete channels"}
+        title={locale === "zh-CN" ? "删除渠道" : "Delete channels"}
         description={
           locale === "zh-CN"
-            ? `将删除选中的 ${selectedSites.length} 个渠道，其协议配置、模型和模型组成员会一起移除。`
+            ? `将删除选中的 ${selectedSites.length} 个渠道。渠道下的协议配置、模型和模型组成员也会一并移除。`
             : `${selectedSites.length} selected channels will be removed together with their protocol configs, models, and group members.`
         }
         isDisabled={Boolean(busyId)}

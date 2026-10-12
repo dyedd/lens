@@ -47,7 +47,7 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
 
   return (
     <SettingsSection
-      title={titleForLocale(locale, "导出备份", "Export backup")}
+      title={titleForLocale(locale, "配置归档", "Configuration Archive")}
       actions={
         <Button
           type="button"
@@ -71,8 +71,8 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
       <p className="text-xs leading-5 text-muted-foreground">
         {titleForLocale(
           locale,
-          "始终包含：系统设置、渠道与凭据、模型组、模型价格、定时任务和统计",
-          "Always included: settings, channels and credentials, model groups, prices, cron jobs, and stats",
+          "设置、渠道与密钥、模型组、价格和计划任务。",
+          "settings, channels and keys, model groups, prices, and scheduled tasks.",
         )}
       </p>
       <SettingsFieldList>
@@ -81,8 +81,8 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
           title={titleForLocale(locale, "包含请求日志", "Include request logs")}
           description={titleForLocale(
             locale,
-            "导出所有请求日志明细，文件体积可能明显增大",
-            "Export all request log details; this can increase file size significantly",
+            "导出所有请求日志明细，文件可能较大",
+            "Export all request log details; the file may be large",
           )}
         >
           <Switch
@@ -93,11 +93,7 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
         </SettingsFieldRow>
         <SettingsFieldRow
           htmlFor="config-export-api-keys"
-          title={titleForLocale(
-            locale,
-            "包含网关 API Key",
-            "Include gateway API keys",
-          )}
+          title={titleForLocale(locale, "包含网关密钥", "Include gateway keys")}
           description={titleForLocale(
             locale,
             "会把网关鉴权 Key 一并写入备份，导出后请妥善保管",

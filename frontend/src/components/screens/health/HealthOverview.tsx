@@ -89,13 +89,13 @@ export function HealthOverview({
         "当前筛选条件下没有健康数据。",
         "No matching health data.",
       )
-    : titleForLocale(locale, "暂无健康数据。", "No health data yet.");
+    : titleForLocale(locale, "健康状态", "Health status");
 
   return (
     <div className="space-y-3 pb-10">
       <div className="flex h-10 items-center justify-between gap-3 px-1">
         <h3 className="text-sm font-semibold">
-          {titleForLocale(locale, "模型组健康", "Model group health")}
+          {titleForLocale(locale, "健康状态", "Health status")}
         </h3>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -138,14 +138,10 @@ export function HealthOverview({
                 mode === "model"
                   ? titleForLocale(
                       locale,
-                      "搜索模型组名称",
-                      "Search model group names",
+                      "搜索模型组...",
+                      "Search model groups...",
                     )
-                  : titleForLocale(
-                      locale,
-                      "搜索渠道名称",
-                      "Search channel names",
-                    )
+                  : titleForLocale(locale, "搜索渠道...", "Search channels...")
               }
               onChange={(event) => onSearchChange(event.target.value)}
               className="bg-background pl-8"

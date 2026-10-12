@@ -76,14 +76,14 @@ export function OverviewScreen() {
   useEffect(() => {
     if (!pageError) return;
     toast.error(
-      isChineseLocale ? "总览数据加载失败" : "Failed to load overview",
+      isChineseLocale ? "概览数据加载失败" : "Failed to load overview",
       {
         id: "overview-load-error",
         description:
           pageError instanceof Error
             ? pageError.message
             : isChineseLocale
-              ? "无法读取总览数据"
+              ? "无法读取概览数据"
               : "Unable to read overview data",
       },
     );

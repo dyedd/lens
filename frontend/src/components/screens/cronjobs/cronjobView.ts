@@ -12,8 +12,8 @@ export function cronjobTitle(locale: Locale, task: CronjobItem) {
   const labels: Record<string, [string, string]> = {
     [REQUEST_LOG_PRUNE_TASK_ID]: ["请求日志清理", "Request log cleanup"],
     [REQUEST_LOG_STATS_PERSIST_TASK_ID]: [
-      "请求日志统计落库",
-      "Request log stats persist",
+      "请求日志统计归档",
+      "Archive request log statistics",
     ],
     model_price_sync: ["模型价格同步", "Model price sync"],
     channel_model_sync: ["渠道模型同步", "Channel model sync"],
@@ -27,12 +27,12 @@ export function cronjobTitle(locale: Locale, task: CronjobItem) {
 export function cronjobDescription(locale: Locale, task: CronjobItem) {
   const labels: Record<string, [string, string]> = {
     [REQUEST_LOG_PRUNE_TASK_ID]: [
-      "按日志保留天数清理过期请求日志",
-      "Prune request logs by the retention window",
+      "按保留天数清理过期请求日志",
+      "Remove request logs older than the retention period",
     ],
     [REQUEST_LOG_STATS_PERSIST_TASK_ID]: [
       "归档请求日志统计数据",
-      "Persist request log statistics",
+      "Archive request log statistics",
     ],
     model_price_sync: [
       "从 LiteLLM 同步模型价格",

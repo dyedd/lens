@@ -135,24 +135,24 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               <SheetTitle>
                 {isBinding
                   ? locale === "zh-CN"
-                    ? "添加上游来源"
-                    : "Add upstream sources"
+                    ? "添加渠道成员"
+                    : "Add channel members"
                   : editingId
                     ? locale === "zh-CN"
                       ? "编辑模型组"
-                      : "Edit group"
+                      : "Edit model group"
                     : locale === "zh-CN"
                       ? "新建模型组"
-                      : "Create group"}
+                      : "Create model group"}
               </SheetTitle>
               <SheetDescription className="mt-1 truncate text-xs">
                 {isBinding
                   ? locale === "zh-CN"
-                    ? "手动加入额外来源；规则匹配的模型已自动加入。"
-                    : "Add extra sources by hand; rule matches are already in."
+                    ? "选择要添加的渠道成员；符合自动加入规则的模型已列出。"
+                    : "Choose channel members to add. Models matching the auto-add rules are already listed."
                   : locale === "zh-CN"
-                    ? "对外模型、上游来源与请求规则"
-                    : "Model name, upstream sources and request rules"}
+                    ? "模型名称、渠道成员和匹配规则"
+                    : "Model name, channel members, and match rules"}
               </SheetDescription>
             </div>
           </div>
@@ -318,8 +318,8 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
             <span className="text-xs text-muted-foreground">
               {form.route_group_id
                 ? locale === "zh-CN"
-                  ? "路由组"
-                  : "Routing group"
+                  ? "别名模型组"
+                  : "Alias group"
                 : locale === "zh-CN"
                   ? `已选 ${props.foldedMembers.length} 个模型`
                   : `${props.foldedMembers.length} selected models`}
@@ -381,11 +381,11 @@ export function DeleteGroupDialog({
     <ConfirmDeleteDialog
       open={Boolean(deleteTarget)}
       locale={locale}
-      title={locale === "zh-CN" ? "确认删除模型组" : "Delete group"}
+      title={locale === "zh-CN" ? "删除模型组" : "Delete model group"}
       description={
         locale === "zh-CN"
-          ? `将删除模型组「${deleteTarget?.name ?? ""}」。如果渠道仍提供它的模型且没有其他模型组覆盖，下次同步时会被重新自动放置；要停止路由某个模型，请在渠道中停用该模型，或将此组合并到其他组。`
-          : `Delete group "${deleteTarget?.name ?? ""}". If channels still provide its models and no other group covers them, they are auto-placed again on the next sync. To stop routing a model, disable it in the channel or merge this group instead.`
+          ? `删除模型组「${deleteTarget?.name ?? ""}」？如果渠道仍提供这些模型，自动同步可能再次加入它们。要停止调用，请先在渠道中停用模型。`
+          : `Delete model group "${deleteTarget?.name ?? ""}"? If channels still provide its models, automatic sync may add them again. Disable the models in the channel to stop calls.`
       }
       isBusy={Boolean(deleteTarget) && busyId === deleteTarget?.id}
       onOpenChange={(open) => {

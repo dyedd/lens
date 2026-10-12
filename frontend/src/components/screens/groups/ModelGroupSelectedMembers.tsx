@@ -93,12 +93,12 @@ export function ModelGroupSelectedMembers({
   return (
     <section
       className="flex shrink-0 flex-col gap-3"
-      aria-label={locale === "zh-CN" ? "上游来源" : "Upstream sources"}
+      aria-label={locale === "zh-CN" ? "渠道成员" : "Channel members"}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">
-            {locale === "zh-CN" ? "上游来源" : "Upstream sources"}
+            {locale === "zh-CN" ? "渠道成员" : "Channel members"}
           </h3>
           <span className="text-xs tabular-nums text-muted-foreground">
             {foldedMembers.length}
@@ -106,18 +106,18 @@ export function ModelGroupSelectedMembers({
         </div>
         <Button type="button" size="sm" onClick={onAddSources}>
           <Plus data-icon="inline-start" />
-          {locale === "zh-CN" ? "添加来源" : "Add sources"}
+          {locale === "zh-CN" ? "添加成员" : "Add members"}
         </Button>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {strategy === "failover"
             ? locale === "zh-CN"
-              ? "按渠道顺序尝试，拖动调整优先级。"
+              ? "按渠道顺序尝试；拖动可调整优先级。"
               : "Try channels in order. Drag to set priority."
             : locale === "zh-CN"
-              ? "轮询分配请求，拖动调整成员顺序。"
-              : "Distribute requests in rotation. Drag to reorder."}
+              ? "按顺序轮流使用渠道成员；拖动可调整顺序。"
+              : "Rotate through channel members. Drag to reorder."}
         </p>
         <div className="flex items-center gap-1">
           <Select
@@ -128,9 +128,7 @@ export function ModelGroupSelectedMembers({
           >
             <SelectTrigger
               className="h-7 w-auto min-w-24"
-              aria-label={
-                locale === "zh-CN" ? "成员状态筛选" : "Member status filter"
-              }
+              aria-label={locale === "zh-CN" ? "成员状态" : "Member status"}
             >
               <SelectValue />
             </SelectTrigger>

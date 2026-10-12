@@ -52,7 +52,7 @@ export function ParamRuleRows({ title, rules, locale, onChange }: Props) {
           onClick={() => onChange([...rules, { ...EMPTY_RULE }])}
         >
           <Plus className="size-3.5" />
-          {titleForLocale(locale, "添加", "Add")}
+          {titleForLocale(locale, "添加参数", "Add parameter")}
         </Button>
       </div>
       {rules.length ? (

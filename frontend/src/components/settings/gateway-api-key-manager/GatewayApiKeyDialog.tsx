@@ -56,7 +56,7 @@ function GatewayApiKeyBasicFields({
     <>
       <Field>
         <FieldLabel htmlFor="gateway-key-remark">
-          {titleForLocale(locale, "密钥名称", "Key name")}
+          {titleForLocale(locale, "备注", "Label")}
         </FieldLabel>
         <Input
           id="gateway-key-remark"
@@ -70,7 +70,7 @@ function GatewayApiKeyBasicFields({
         <Field>
           <div className="flex items-center gap-1">
             <FieldLabel htmlFor="gateway-key-secret">
-              {titleForLocale(locale, "密钥", "Key")}
+              {titleForLocale(locale, "网关密钥", "Gateway key")}
             </FieldLabel>
             <SettingsHint
               description={titleForLocale(
@@ -105,7 +105,7 @@ function GatewayApiKeyBasicFields({
       <Field>
         <div className="flex items-center gap-1">
           <FieldLabel htmlFor="gateway-key-limit">
-            {titleForLocale(locale, "最大余额 (USD)", "Max balance (USD)")}
+            {titleForLocale(locale, "费用上限 (USD)", "Cost limit (USD)")}
           </FieldLabel>
           <SettingsHint
             description={titleForLocale(
@@ -217,8 +217,8 @@ export function GatewayApiKeyDialog({
       toast.success(
         titleForLocale(
           locale,
-          editingKeyId ? "API Key 已更新" : "API Key 已创建",
-          editingKeyId ? "API key updated" : "API key created",
+          editingKeyId ? "网关密钥已更新" : "网关密钥已创建",
+          editingKeyId ? "Gateway key updated" : "Gateway key created",
         ),
       );
       onClose();
@@ -228,10 +228,10 @@ export function GatewayApiKeyDialog({
         requestError,
         titleForLocale(
           locale,
-          editingKeyId ? "更新 API Key 失败" : "创建 API Key 失败",
+          editingKeyId ? "更新网关密钥失败" : "创建网关密钥失败",
           editingKeyId
-            ? "Failed to update API key"
-            : "Failed to create API key",
+            ? "Failed to update gateway key"
+            : "Failed to create gateway key",
         ),
       );
       toast.error(message);
@@ -255,8 +255,8 @@ export function GatewayApiKeyDialog({
           <SheetTitle>
             {titleForLocale(
               locale,
-              editingKeyId ? "编辑 API Key" : "创建 API Key",
-              editingKeyId ? "Edit API key" : "Create API key",
+              editingKeyId ? "编辑网关密钥" : "创建网关密钥",
+              editingKeyId ? "Edit gateway key" : "Create gateway key",
             )}
           </SheetTitle>
         </SheetHeader>

@@ -51,7 +51,7 @@ export function OverviewStats(props: Props) {
   return (
     <section className="space-y-3">
       <h3 className="px-1 text-sm font-semibold">
-        {isChineseLocale ? "用量统计" : "Usage"}
+        {isChineseLocale ? "运行概览" : "Overview metrics"}
       </h3>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <OverviewStatCard
@@ -69,7 +69,7 @@ export function OverviewStats(props: Props) {
             },
             {
               icon: Timer,
-              title: isChineseLocale ? "消耗时间" : "Time spent",
+              title: isChineseLocale ? "总耗时" : "Total time",
               value: formatDuration(consumedTime),
             },
           ]}
@@ -79,17 +79,17 @@ export function OverviewStats(props: Props) {
           views={[
             {
               icon: DollarSign,
-              title: isChineseLocale ? "总费用" : "Total spend",
+              title: isChineseLocale ? "预估成本" : "Estimated cost",
               value: formatMoney(totalCost),
             },
             {
               icon: ArrowDownToLine,
-              title: isChineseLocale ? "输入费用" : "Input spend",
+              title: isChineseLocale ? "输入成本" : "Input cost",
               value: formatMoney(inputCost),
             },
             {
               icon: ArrowUpFromLine,
-              title: isChineseLocale ? "输出费用" : "Output spend",
+              title: isChineseLocale ? "输出成本" : "Output cost",
               value: formatMoney(outputCost),
             },
           ]}
@@ -99,7 +99,7 @@ export function OverviewStats(props: Props) {
           views={[
             {
               icon: Braces,
-              title: isChineseLocale ? "总 Tokens" : "Total tokens",
+              title: isChineseLocale ? "Token 总数" : "Total tokens",
               value: formatCompact(totalTokens),
             },
             {

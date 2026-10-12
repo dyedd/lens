@@ -41,8 +41,9 @@ type Props = {
 
 function statusLabel(status: CatalogRow["status"], locale: Locale) {
   if (status === "bound") return locale === "zh-CN" ? "已添加" : "Added";
-  if (status === "absent") return locale === "zh-CN" ? "上游缺失" : "Missing";
-  return locale === "zh-CN" ? "未添加" : "New";
+  if (status === "absent")
+    return locale === "zh-CN" ? "上游已移除" : "Removed upstream";
+  return locale === "zh-CN" ? "未添加" : "Not added";
 }
 
 /** Lets the admin pick upstream models across every URL and key. */
@@ -128,8 +129,8 @@ export function ChannelRemoteModelsDialog({
     onImport(items);
     toast.success(
       locale === "zh-CN"
-        ? `已添加 ${selected.size} 个模型，保存渠道后生效`
-        : `Added ${selected.size} models. Save the channel to apply`,
+        ? `已添加 ${selected.size} 个模型。保存渠道后生效。`
+        : `Added ${selected.size} models. Save the channel to apply.`,
     );
     onOpenChange(false);
   }
@@ -143,13 +144,13 @@ export function ChannelRemoteModelsDialog({
         className="max-w-2xl"
         title={
           locale === "zh-CN"
-            ? `获取上游模型 - ${channelName}`
-            : `Fetch upstream models - ${channelName}`
+            ? `获取模型列表 - ${channelName}`
+            : `Fetch model list - ${channelName}`
         }
         description={
           locale === "zh-CN"
-            ? "已汇总所有地址和密钥的模型列表。勾选的模型作为手动模型加入，不受自动同步影响。"
-            : "Models from every URL and key. Picked models are added as manual models and never changed by auto-sync."
+            ? "已汇总所有地址和 API Key 的模型列表。选中的模型会作为手动模型加入，不受自动同步影响。"
+            : "Models from every URL and API key are listed here. Selected models are added manually and are not changed by auto-sync."
         }
         footer={
           <>
@@ -191,7 +192,11 @@ export function ChannelRemoteModelsDialog({
                 },
                 {
                   value: "absent",
-                  label: filterLabel("上游缺失", "Missing", counts.absent),
+                  label: filterLabel(
+                    "上游已移除",
+                    "Removed upstream",
+                    counts.absent,
+                  ),
                 },
                 { value: "all", label: filterLabel("全部", "All", counts.all) },
               ]}
@@ -201,7 +206,7 @@ export function ChannelRemoteModelsDialog({
               onChange={setQuery}
               onClear={() => setQuery("")}
               placeholder={
-                locale === "zh-CN" ? "搜索模型名" : "Search model names"
+                locale === "zh-CN" ? "搜索模型名称..." : "Search model names..."
               }
               className="max-w-none min-w-40 flex-1"
             />
@@ -255,10 +260,10 @@ export function ChannelRemoteModelsDialog({
                     />
                   </TableHead>
                   <TableHead>
-                    {locale === "zh-CN" ? "上游模型名" : "Upstream model"}
+                    {locale === "zh-CN" ? "模型名（上游）" : "Upstream model"}
                   </TableHead>
                   <TableHead className="w-[150px]">
-                    {locale === "zh-CN" ? "密钥" : "Keys"}
+                    {locale === "zh-CN" ? "API Key" : "Keys"}
                   </TableHead>
                   <TableHead className="w-[96px]">
                     {locale === "zh-CN" ? "状态" : "Status"}
@@ -274,8 +279,8 @@ export function ChannelRemoteModelsDialog({
                     >
                       {loading
                         ? locale === "zh-CN"
-                          ? "正在获取上游模型..."
-                          : "Fetching upstream models..."
+                          ? "正在获取模型列表..."
+                          : "Fetching model list..."
                         : locale === "zh-CN"
                           ? "没有匹配的模型"
                           : "No matching models"}

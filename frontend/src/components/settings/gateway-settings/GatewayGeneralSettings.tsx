@@ -31,7 +31,7 @@ export function GatewayGeneralSettings({
   return (
     <SettingsFieldList>
       <SettingsFieldRow
-        title={titleForLocale(locale, "全局代理地址", "Global proxy URL")}
+        title={titleForLocale(locale, "上游代理", "Upstream proxy")}
       >
         <Input
           className="w-full"
@@ -42,7 +42,11 @@ export function GatewayGeneralSettings({
       </SettingsFieldRow>
       <Field>
         <FieldLabel>
-          {titleForLocale(locale, "CORS 跨域名单", "CORS allow origins")}
+          {titleForLocale(
+            locale,
+            "跨域资源共享 (CORS) 允许源",
+            "Allowed CORS Origins",
+          )}
         </FieldLabel>
         <Textarea
           className="mt-2 min-h-[92px]"
@@ -55,8 +59,8 @@ export function GatewayGeneralSettings({
         htmlFor="gateway-auth-access-token-minutes"
         title={titleForLocale(
           locale,
-          "访问令牌有效期（分钟）",
-          "Access token lifetime (minutes)",
+          "管理员登录有效期（分钟）",
+          "Admin session lifetime (minutes)",
         )}
         invalid={Boolean(authAccessTokenMinutesError)}
       >
@@ -82,13 +86,13 @@ export function GatewayGeneralSettings({
         htmlFor="gateway-first-token-timeout-seconds"
         title={titleForLocale(
           locale,
-          "首字超时（秒）",
-          "First-token timeout (seconds)",
+          "首个 Token 超时（秒）",
+          "First token timeout (seconds)",
         )}
         description={titleForLocale(
           locale,
-          "限制首个可交付响应：流式请求须在预算内产生首个有效协议输出，非流式请求须在预算内读完完整响应；路由和回退共享该预算，设为 0 时不限制。",
-          "Limits the first deliverable response: streaming requests must produce meaningful protocol output within the shared routing and fallback budget, while non-streaming requests must finish reading the full response; set to 0 for no limit.",
+          "限定产生首个有效数据块的最长等待时间。流式与非流式请求在全部故障切换尝试中共用此预算；设为 0 表示不设上限。",
+          "Sets maximum wait for initial meaningful protocol response, shared across all failover attempts. 0 means unlimited.",
         )}
         invalid={Boolean(firstTokenTimeoutSecondsError)}
       >
@@ -114,13 +118,13 @@ export function GatewayGeneralSettings({
         htmlFor="gateway-stream-idle-timeout-seconds"
         title={titleForLocale(
           locale,
-          "流空闲超时（秒）",
+          "流式响应空闲超时（秒）",
           "Stream idle timeout (seconds)",
         )}
         description={titleForLocale(
           locale,
-          "首个有效输出之后，相邻上游数据块之间的最长滚动等待；设为 0 时禁用流空闲限制。",
-          "Sets the rolling maximum wait between upstream chunks after the first meaningful output; set to 0 to disable this limit.",
+          "首字输出后，相邻数据块之间的最长静默间隔。若上游停滞超过此时长将主动中断；设为 0 则不限制。",
+          "Maximum silence permitted between stream chunks after first token. 0 disables limit.",
         )}
         invalid={Boolean(streamIdleTimeoutSecondsError)}
       >
@@ -146,13 +150,13 @@ export function GatewayGeneralSettings({
         htmlFor="gateway-max-request-body-bytes"
         title={titleForLocale(
           locale,
-          "最大请求体（字节）",
-          "Maximum request body (bytes)",
+          "请求体大小上限（字节）",
+          "Request body limit (bytes)",
         )}
         description={titleForLocale(
           locale,
-          "限制发送到上游的请求体大小；设为 0 时不限制。",
-          "Limits the size of the request body sent upstream; set to 0 for no limit.",
+          "限制客户端单次提交的最大载荷大小（针对大图像或长上下文请求）；设为 0 表示不限制。",
+          "Limits client request body size (e.g. large images or long contexts). 0 means unlimited.",
         )}
         invalid={Boolean(maxRequestBodyBytesError)}
       >
@@ -172,7 +176,7 @@ export function GatewayGeneralSettings({
         ) : null}
       </SettingsFieldRow>
       <SettingsFieldRow
-        title={titleForLocale(locale, "记录日志正文", "Record log body")}
+        title={titleForLocale(locale, "记录请求正文", "Record request bodies")}
       >
         <Switch
           checked={isRelayLogBodyEnabled}

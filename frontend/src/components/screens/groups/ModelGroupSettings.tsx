@@ -72,36 +72,36 @@ export function ModelGroupSettings({
           </Field>
 
           <Field className="sm:col-span-2 space-y-1.5">
-            <FieldLabel>{isZh ? "工作模式" : "Operation mode"}</FieldLabel>
+            <FieldLabel>{isZh ? "模型组类型" : "Group type"}</FieldLabel>
             <SegmentedControl
               value={groupMode}
               onValueChange={handleModeChange}
               options={[
                 {
                   value: "direct",
-                  label: isZh ? "独立调度成员" : "Direct execution",
+                  label: isZh ? "直接调度" : "Direct execution",
                 },
                 {
                   value: "alias",
-                  label: isZh ? "快捷别名 (Alias)" : "Alias pointer",
+                  label: isZh ? "别名" : "Alias",
                 },
               ]}
             />
             <FieldDescription>
               {groupMode === "direct"
                 ? isZh
-                  ? "直接调度和管理上游渠道成员与分发策略。"
-                  : "Directly manage upstream channel members and load distribution."
+                  ? "直接管理渠道成员和分发策略。"
+                  : "Manage channel members and the distribution strategy directly."
                 : isZh
-                  ? "作为别名直接转发至目标模型组，共享其全部上游成员。"
-                  : "Acts as an alias forwarding all requests to the target model group."}
+                  ? "作为别名转发到目标模型组，共用它的渠道成员。"
+                  : "Forward requests to the target model group and share its channel members."}
             </FieldDescription>
           </Field>
 
           {groupMode === "alias" ? (
             <Field className="sm:col-span-2">
               <FieldLabel htmlFor="group-route-target" required>
-                {isZh ? "别名指向目标模型组" : "Target group"}
+                {isZh ? "目标模型组" : "Target model group"}
               </FieldLabel>
               <Combobox
                 id="group-route-target"

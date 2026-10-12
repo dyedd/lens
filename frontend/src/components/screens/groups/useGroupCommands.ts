@@ -367,14 +367,14 @@ export function useGroupCommands({
       await invalidateGroupData();
       toast.success(
         locale === "zh-CN"
-          ? `已创建 ${created.length} 个模型组，剩余 ${unplaced.length} 个待放置`
-          : `Created ${created.length} groups, ${unplaced.length} still unplaced`,
+          ? `已创建 ${created.length} 个模型组，剩余 ${unplaced.length} 个待分配`
+          : `Created ${created.length} groups, ${unplaced.length} still need assignment`,
       );
     } catch (error) {
       toast.error(
         modelGroupErrorMessage(
           error,
-          locale === "zh-CN" ? "自动放置失败" : "Auto placement failed",
+          locale === "zh-CN" ? "自动分配失败" : "Automatic assignment failed",
         ),
       );
     } finally {

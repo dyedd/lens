@@ -92,15 +92,17 @@ export function GatewayApiKeyTable({
                 onCheckedChange={(checked) => onSelectAll(checked === true)}
                 aria-label={titleForLocale(
                   locale,
-                  "全选密钥",
-                  "Select all keys",
+                  "全选网关密钥",
+                  "Select all gateway keys",
                 )}
                 disabled={bulkBusy}
               />
             </div>
           </TableHead>
-          <TableHead>{titleForLocale(locale, "名称", "Name")}</TableHead>
-          <TableHead>{titleForLocale(locale, "限额", "Limit")}</TableHead>
+          <TableHead>{titleForLocale(locale, "备注", "Label")}</TableHead>
+          <TableHead>
+            {titleForLocale(locale, "费用上限", "Cost limit")}
+          </TableHead>
           <TableHead>{titleForLocale(locale, "权限", "Permissions")}</TableHead>
           <TableHead className="w-[72px] text-center">
             {titleForLocale(locale, "状态", "Status")}
@@ -115,7 +117,7 @@ export function GatewayApiKeyTable({
               colSpan={6}
               className="h-32 text-center text-sm text-muted-foreground"
             >
-              {titleForLocale(locale, "当前没有 API 密钥", "No API keys")}
+              {titleForLocale(locale, "暂无网关密钥", "No gateway keys")}
             </TableCell>
           </TableRow>
         ) : (
@@ -138,8 +140,8 @@ export function GatewayApiKeyTable({
                       }
                       aria-label={titleForLocale(
                         locale,
-                        "选择密钥",
-                        "Select key",
+                        "选择网关密钥",
+                        "Select gateway key",
                       )}
                       disabled={isBusy}
                     />
@@ -209,15 +211,19 @@ export function GatewayApiKeyTable({
                             onClick={() => void onCopy(item.api_key)}
                             aria-label={titleForLocale(
                               locale,
-                              "复制密钥",
-                              "Copy key",
+                              "复制网关密钥",
+                              "Copy gateway key",
                             )}
                           >
                             {copied ? <Check /> : <Copy />}
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                          {titleForLocale(locale, "复制密钥", "Copy key")}
+                          {titleForLocale(
+                            locale,
+                            "复制网关密钥",
+                            "Copy gateway key",
+                          )}
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -258,8 +264,10 @@ export function GatewayApiKeyTable({
                       }
                       aria-label={titleForLocale(
                         locale,
-                        item.enabled ? "停用 API Key" : "启用 API Key",
-                        item.enabled ? "Disable API key" : "Enable API key",
+                        item.enabled ? "停用网关密钥" : "启用网关密钥",
+                        item.enabled
+                          ? "Disable gateway key"
+                          : "Enable gateway key",
                       )}
                     />
                   </div>
@@ -277,15 +285,19 @@ export function GatewayApiKeyTable({
                           disabled={isBusy}
                           aria-label={titleForLocale(
                             locale,
-                            "编辑 API Key",
-                            "Edit API key",
+                            "编辑网关密钥",
+                            "Edit gateway key",
                           )}
                         >
                           <Pencil />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="top">
-                        {titleForLocale(locale, "编辑 API Key", "Edit API key")}
+                        {titleForLocale(
+                          locale,
+                          "编辑网关密钥",
+                          "Edit gateway key",
+                        )}
                       </TooltipContent>
                     </Tooltip>
                   </div>

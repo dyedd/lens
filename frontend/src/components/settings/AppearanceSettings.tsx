@@ -52,7 +52,7 @@ export function AppearanceSettings({
           ))}
         </Combobox>
       </SettingsFieldRow>
-      <SettingsFieldRow title={titleForLocale(locale, "站点名称", "Site name")}>
+      <SettingsFieldRow title={titleForLocale(locale, "名称", "Name")}>
         <Input
           className="w-full"
           value={siteName}
@@ -60,7 +60,7 @@ export function AppearanceSettings({
           placeholder="Lens"
         />
       </SettingsFieldRow>
-      <SettingsFieldRow title={titleForLocale(locale, "Logo 地址", "Logo URL")}>
+      <SettingsFieldRow title={titleForLocale(locale, "Logo 链接", "Logo URL")}>
         <Input
           className="w-full"
           value={siteLogoUrl}

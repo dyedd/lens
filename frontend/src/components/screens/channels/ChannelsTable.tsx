@@ -111,8 +111,10 @@ export function ChannelsTable({
               />
             </div>
           </TableHead>
-          <TableHead>{locale === "zh-CN" ? "名称" : "Name"}</TableHead>
-          <TableHead>{locale === "zh-CN" ? "地址" : "URL"}</TableHead>
+          <TableHead>
+            {locale === "zh-CN" ? "渠道名称" : "Channel name"}
+          </TableHead>
+          <TableHead>{locale === "zh-CN" ? "接口地址" : "Base URL"}</TableHead>
           <TableHead className="text-center">
             {locale === "zh-CN" ? "状态" : "Status"}
           </TableHead>
@@ -191,8 +193,8 @@ export function ChannelsTable({
                         className="cursor-default text-muted-foreground"
                       >
                         {locale === "zh-CN"
-                          ? `${urls.length} 项`
-                          : `${urls.length}`}
+                          ? `${urls.length} 个地址`
+                          : `${urls.length} URLs`}
                       </Badge>
                     </TooltipTrigger>
                     <TooltipContent side="top">
@@ -245,15 +247,15 @@ export function ChannelsTable({
                             onClick={() => onReviewPendingModels(site)}
                           >
                             {locale === "zh-CN"
-                              ? `${models.pending} 待确认`
+                              ? `${models.pending} 待处理`
                               : `${models.pending} to review`}
                           </button>
                         </Badge>
                       </TooltipTrigger>
                       <TooltipContent side="top">
                         {locale === "zh-CN"
-                          ? "上游已不再提供这些模型，点击确认保留或删除"
-                          : "No longer listed upstream; review to keep or delete"}
+                          ? "上游已移除这些模型，点击查看并选择保留或删除"
+                          : "These models were removed upstream. Review them to keep or delete."}
                       </TooltipContent>
                     </Tooltip>
                   ) : null}
@@ -289,7 +291,9 @@ export function ChannelsTable({
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => onFetchModels(site)}>
                         <CloudDownload className="size-3.5 stroke-1" />
-                        {locale === "zh-CN" ? "获取模型" : "Fetch models"}
+                        {locale === "zh-CN"
+                          ? "获取模型列表"
+                          : "Fetch model list"}
                       </DropdownMenuItem>
                       {site.model_sync_enabled ? (
                         <DropdownMenuItem
@@ -297,7 +301,9 @@ export function ChannelsTable({
                           onSelect={() => onSyncModels(site)}
                         >
                           <RefreshCw className="size-3.5 stroke-1" />
-                          {locale === "zh-CN" ? "立即同步" : "Sync now"}
+                          {locale === "zh-CN"
+                            ? "立即同步模型"
+                            : "Sync models now"}
                         </DropdownMenuItem>
                       ) : null}
                       <DropdownMenuSeparator />

@@ -43,8 +43,8 @@ function formatSyncSummary(
   const restored = countSyncedNames(result, "restored");
   if (locale !== "zh-CN") {
     const parts = [
-      added && `${added} new models placed into model groups`,
-      missing && `${missing} missing upstream to review`,
+      added && `${added} new models added to model groups`,
+      missing && `${missing} models removed upstream; review needed`,
       restored && `${restored} back upstream`,
     ].filter(Boolean);
     return parts.length
@@ -52,8 +52,8 @@ function formatSyncSummary(
       : "Models are up to date";
   }
   const parts = [
-    added && `新增 ${added} 个模型，已放入模型组`,
-    missing && `${missing} 个上游缺失待确认`,
+    added && `新增 ${added} 个模型，已加入模型组`,
+    missing && `${missing} 个模型已从上游移除，待处理`,
     restored && `${restored} 个已恢复`,
   ].filter(Boolean);
   return parts.length ? `已同步：${parts.join("，")}` : "模型已是最新";
@@ -121,7 +121,7 @@ export function useChannelSave({
         toast.warning(formatSyncSummary(result, locale), {
           description:
             locale === "zh-CN"
-              ? `${failures.length} 个密钥获取失败：${failures[0].error}`
+              ? `${failures.length} 个 API Key 获取失败：${failures[0].error}`
               : `${failures.length} keys failed: ${failures[0].error}`,
         });
       } else {

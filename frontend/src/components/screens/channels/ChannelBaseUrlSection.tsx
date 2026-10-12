@@ -42,7 +42,7 @@ export function ChannelBaseUrlSection({
         required
         className="text-xs font-normal text-muted-foreground"
       >
-        {locale === "zh-CN" ? "地址" : "URL"}
+        {locale === "zh-CN" ? "接口地址" : "Base URL"}
       </Label>
       <Input
         id="channel-url"
@@ -61,7 +61,7 @@ export function ChannelBaseUrlSection({
           }}
         >
           <span>
-            {locale === "zh-CN" ? "更多地址" : "More URLs"}
+            {locale === "zh-CN" ? "备用地址" : "Backup URLs"}
             {extraUrls.length
               ? locale === "zh-CN"
                 ? `（${extraUrls.length}）`
@@ -125,7 +125,9 @@ export function ChannelBaseUrlSection({
                           }));
                         }}
                       />
-                      {locale === "zh-CN" ? "使用相同密钥" : "Same keys"}
+                      {locale === "zh-CN"
+                        ? "共用主地址密钥"
+                        : "Use primary keys"}
                     </label>
                     <Button
                       type="button"
@@ -133,7 +135,9 @@ export function ChannelBaseUrlSection({
                       size="icon-sm"
                       className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
                       aria-label={
-                        locale === "zh-CN" ? "删除地址" : "Remove URL"
+                        locale === "zh-CN"
+                          ? "删除备用地址"
+                          : "Remove backup URL"
                       }
                       onClick={() => onRemove(index)}
                     >
@@ -163,7 +167,7 @@ export function ChannelBaseUrlSection({
               onClick={onAdd}
             >
               <Plus className="size-3.5 stroke-1" />
-              {locale === "zh-CN" ? "添加地址" : "Add URL"}
+              {locale === "zh-CN" ? "添加备用地址" : "Add backup URL"}
             </Button>
           </div>
         ) : null}

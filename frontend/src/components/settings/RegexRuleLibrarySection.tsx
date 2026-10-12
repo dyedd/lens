@@ -91,7 +91,7 @@ export function RegexRuleLibrarySection({ locale }: { locale: Locale }) {
   return (
     <TabsContent value="regex-rules" className="mt-0">
       <SettingsSectionCard
-        title={titleForLocale(locale, "正则规则库", "Regex library")}
+        title={titleForLocale(locale, "规则", "Rules")}
         actions={
           <Button
             type="button"
@@ -102,15 +102,15 @@ export function RegexRuleLibrarySection({ locale }: { locale: Locale }) {
             disabled={!library.isLoaded}
           >
             <Plus className="size-3.5" />
-            {titleForLocale(locale, "添加规则", "Add rule")}
+            {titleForLocale(locale, "新建规则", "New rule")}
           </Button>
         }
       >
         <p className="text-xs text-muted-foreground">
           {titleForLocale(
             locale,
-            "渠道同步过滤和模型组匹配引用这里的规则，匹配不区分大小写；修改或删除规则会立即作用于所有使用处。",
-            "Channel sync filters and group match rules reference these rules; matching is case-insensitive. Editing or deleting a rule applies everywhere it is used.",
+            "维护渠道同步和模型组匹配使用的正则规则。修改后会立即影响引用它的功能。",
+            "Manage regex rules used by channel sync and model group matching. Changes apply immediately wherever a rule is used.",
           )}
         </p>
         <Table>

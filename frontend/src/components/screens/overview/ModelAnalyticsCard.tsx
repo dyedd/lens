@@ -112,7 +112,7 @@ export function ModelAnalyticsCard(props: Props) {
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">
-            {isChineseLocale ? "模型分析" : "Model analytics"}
+            {isChineseLocale ? "模型使用情况" : "Model usage"}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
             {modelCardDescription}
@@ -135,7 +135,7 @@ export function ModelAnalyticsCard(props: Props) {
                 size="sm"
                 className="h-8 max-w-[220px] gap-1.5 px-2 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
                 aria-label={
-                  isChineseLocale ? "选择模型统计范围" : "Select model range"
+                  isChineseLocale ? "选择时间范围" : "Select time range"
                 }
               >
                 <span className="flex size-3.5 shrink-0 items-center justify-center">
@@ -176,7 +176,7 @@ export function ModelAnalyticsCard(props: Props) {
       <div className="grid gap-5 rounded-md bg-muted/35 p-2 md:p-3 lg:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1fr)]">
         <div className="min-w-0">
           <div className="mb-3 text-sm font-medium text-foreground">
-            {isChineseLocale ? "模型组合" : "Model mix"}
+            {isChineseLocale ? "模型分布" : "Model distribution"}
           </div>
           {pieData.data.length ? (
             <div className="grid gap-3">
@@ -268,7 +268,9 @@ export function ModelAnalyticsCard(props: Props) {
             </div>
           ) : modelsIsError ? null : (
             <EmptyBlock
-              label={isChineseLocale ? "暂无模型占比数据" : "No model mix data"}
+              label={
+                isChineseLocale ? "暂无模型使用数据" : "No model usage data"
+              }
             />
           )}
         </div>
@@ -320,7 +322,9 @@ export function ModelAnalyticsCard(props: Props) {
             </ChartContainer>
           ) : modelsIsError ? null : (
             <EmptyBlock
-              label={isChineseLocale ? "暂无消耗趋势数据" : "No trend data"}
+              label={
+                isChineseLocale ? "暂无使用趋势数据" : "No usage trend data"
+              }
             />
           )}
         </div>

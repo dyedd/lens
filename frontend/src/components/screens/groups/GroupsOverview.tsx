@@ -64,14 +64,20 @@ function groupSortOptions(
   return [
     {
       value: "members-desc",
-      label: locale === "zh-CN" ? "成员优先" : "Members first",
+      label: locale === "zh-CN" ? "成员数量" : "Member count",
     },
     {
       value: "enabled-desc",
-      label: locale === "zh-CN" ? "启用优先" : "Enabled first",
+      label: locale === "zh-CN" ? "可用状态" : "Availability",
     },
-    { value: "name-asc", label: locale === "zh-CN" ? "名称升序" : "Name A-Z" },
-    { value: "name-desc", label: locale === "zh-CN" ? "名称降序" : "Name Z-A" },
+    {
+      value: "name-asc",
+      label: locale === "zh-CN" ? "模型组名称升序" : "Group name A-Z",
+    },
+    {
+      value: "name-desc",
+      label: locale === "zh-CN" ? "模型组名称降序" : "Group name Z-A",
+    },
   ];
 }
 
@@ -172,7 +178,7 @@ export function GroupsOverview({
     <div className="space-y-3 pb-10">
       <div className="flex min-h-10 items-center justify-between gap-3 px-1">
         <h3 className="min-w-0 text-sm font-semibold">
-          {locale === "zh-CN" ? "模型组管理" : "Model groups"}
+          {locale === "zh-CN" ? "模型组" : "Model Groups"}
         </h3>
       </div>
 
@@ -198,8 +204,8 @@ export function GroupsOverview({
               value={search}
               placeholder={
                 locale === "zh-CN"
-                  ? "搜索模型组、渠道或描述"
-                  : "Search groups or channels"
+                  ? "搜索模型组、渠道或模型..."
+                  : "Search groups, channels, or models..."
               }
               onChange={(event) => {
                 onSearchChange(event.target.value);
@@ -246,10 +252,10 @@ export function GroupsOverview({
                         {locale === "zh-CN" ? "全部策略" : "All strategies"}
                       </SelectItem>
                       <SelectItem value="round_robin">
-                        {locale === "zh-CN" ? "轮询" : "Round robin"}
+                        {locale === "zh-CN" ? "平滑轮询" : "Round robin"}
                       </SelectItem>
                       <SelectItem value="failover">
-                        {locale === "zh-CN" ? "故障转移" : "Failover"}
+                        {locale === "zh-CN" ? "故障切换" : "Failover"}
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -408,7 +414,7 @@ export function GroupsOverview({
             onClick={onCreate}
           >
             <Plus className="size-3.5" />
-            {locale === "zh-CN" ? "新增" : "Add"}
+            {locale === "zh-CN" ? "新建模型组" : "New Model Group"}
           </Button>
         </div>
       </section>
@@ -441,7 +447,7 @@ export function GroupsOverview({
         <AppDialogContent
           className="max-w-lg"
           showCloseButton={false}
-          title={locale === "zh-CN" ? "确认合并模型组" : "Merge groups"}
+          title={locale === "zh-CN" ? "合并模型组" : "Merge groups"}
           description={
             locale === "zh-CN"
               ? `将「${mergeRequest?.source.name ?? ""}」的名称、匹配规则和成员并入「${mergeRequest?.target.name ?? ""}」，引用改指向目标组，然后删除「${mergeRequest?.source.name ?? ""}」。`
@@ -477,7 +483,7 @@ export function GroupsOverview({
       <ConfirmDeleteDialog
         open={bulkDeleteOpen}
         locale={locale}
-        title={locale === "zh-CN" ? "确认批量删除" : "Delete groups"}
+        title={locale === "zh-CN" ? "删除模型组" : "Delete groups"}
         description={
           locale === "zh-CN"
             ? `将删除选中的 ${selectedGroups.length} 个模型组。`

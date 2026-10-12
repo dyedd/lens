@@ -47,7 +47,7 @@ export function GeneralSettingsSection({
 }: SettingsSectionProps & { account: AccountSettingsController }) {
   return (
     <TabsContent value="general" className="mt-0">
-      <SettingsSectionCard title={titleForLocale(locale, "站点", "Site")}>
+      <SettingsSectionCard title={titleForLocale(locale, "外观", "Appearance")}>
         <AppearanceSettings
           siteName={settings.draft.siteName}
           siteLogoUrl={settings.draft.siteLogoUrl}
@@ -64,7 +64,7 @@ export function GeneralSettingsSection({
         />
         <SettingsSectionSeparator />
         <h3 className="mb-4 text-sm font-semibold">
-          {titleForLocale(locale, "账号", "Account")}
+          {titleForLocale(locale, "管理员账号", "Admin account")}
         </h3>
         <AccountSettingsSection locale={locale} account={account} embedded />
       </SettingsSectionCard>
@@ -97,7 +97,9 @@ export function AccountSettingsSection({
   return embedded ? (
     <div className="mt-3">{content}</div>
   ) : (
-    <SettingsSectionCard title={titleForLocale(locale, "账号", "Account")}>
+    <SettingsSectionCard
+      title={titleForLocale(locale, "管理员账号", "Admin account")}
+    >
       {content}
     </SettingsSectionCard>
   );
@@ -160,7 +162,7 @@ export function ModelTestSettingsSection({
     <>
       <TabsContent value="model-test" className="mt-0">
         <SettingsSectionCard
-          title={titleForLocale(locale, "模型测试", "Model test")}
+          title={titleForLocale(locale, "模型测试", "Model Testing")}
           actions={
             <div className="flex items-center gap-1.5">
               <BulkActionsPopover
@@ -178,13 +180,15 @@ export function ModelTestSettingsSection({
                 disabled={prompts.length >= 20}
               >
                 <Plus className="size-3.5" />
-                {titleForLocale(locale, "添加问题", "Add prompt")}
+                {titleForLocale(locale, "添加测试问题", "Add test prompt")}
               </Button>
             </div>
           }
         >
           <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-            <span>{titleForLocale(locale, "预设问题", "Preset prompts")}</span>
+            <span>
+              {titleForLocale(locale, "常用测试问题", "Test prompts")}
+            </span>
             <span>{prompts.length} / 20</span>
           </div>
           <Table>
@@ -205,8 +209,8 @@ export function ModelTestSettingsSection({
                       }
                       aria-label={titleForLocale(
                         locale,
-                        "全选问题",
-                        "Select all prompts",
+                        "全选测试问题",
+                        "Select all test prompts",
                       )}
                       disabled={prompts.length === 0}
                     />
@@ -214,7 +218,7 @@ export function ModelTestSettingsSection({
                 </TableHead>
                 <TableHead className="w-12 text-center">#</TableHead>
                 <TableHead>
-                  {titleForLocale(locale, "问题", "Prompt")}
+                  {titleForLocale(locale, "测试问题", "Test prompt")}
                 </TableHead>
                 <TableHead className="w-20 text-right">
                   {titleForLocale(locale, "操作", "Actions")}
@@ -228,11 +232,7 @@ export function ModelTestSettingsSection({
                     colSpan={4}
                     className="h-32 text-center text-muted-foreground"
                   >
-                    {titleForLocale(
-                      locale,
-                      "暂无预设问题",
-                      "No preset prompts",
-                    )}
+                    {titleForLocale(locale, "暂无测试问题", "No test prompts")}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -255,8 +255,8 @@ export function ModelTestSettingsSection({
                         }
                         aria-label={titleForLocale(
                           locale,
-                          "选择问题",
-                          "Select prompt",
+                          "选择测试问题",
+                          "Select test prompt",
                         )}
                       />
                     </div>
@@ -278,8 +278,8 @@ export function ModelTestSettingsSection({
                             className="text-muted-foreground shadow-none"
                             aria-label={titleForLocale(
                               locale,
-                              "编辑问题",
-                              "Edit prompt",
+                              "编辑测试问题",
+                              "Edit test prompt",
                             )}
                             onClick={() => openEditDialog(index)}
                           >
@@ -287,7 +287,11 @@ export function ModelTestSettingsSection({
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          {titleForLocale(locale, "编辑问题", "Edit prompt")}
+                          {titleForLocale(
+                            locale,
+                            "编辑测试问题",
+                            "Edit test prompt",
+                          )}
                         </TooltipContent>
                       </Tooltip>
                       <Tooltip>
@@ -299,8 +303,8 @@ export function ModelTestSettingsSection({
                             className="text-muted-foreground shadow-none"
                             aria-label={titleForLocale(
                               locale,
-                              "删除问题",
-                              "Remove prompt",
+                              "删除测试问题",
+                              "Remove test prompt",
                             )}
                             onClick={() =>
                               updatePrompts(
@@ -312,7 +316,11 @@ export function ModelTestSettingsSection({
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          {titleForLocale(locale, "删除问题", "Remove prompt")}
+                          {titleForLocale(
+                            locale,
+                            "删除测试问题",
+                            "Remove test prompt",
+                          )}
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -362,7 +370,7 @@ export function ModelTestSettingsSection({
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="model-test-prompt">
-                  {titleForLocale(locale, "问题内容", "Prompt")}
+                  {titleForLocale(locale, "测试问题", "Test prompt")}
                 </FieldLabel>
                 <Textarea
                   id="model-test-prompt"
@@ -385,11 +393,11 @@ export function ModelTestSettingsSection({
       <ConfirmDeleteDialog
         open={bulkDeleteOpen}
         locale={locale}
-        title={titleForLocale(locale, "确认批量删除", "Delete prompts")}
+        title={titleForLocale(locale, "删除测试问题", "Delete test prompts")}
         description={titleForLocale(
           locale,
-          `将删除选中的 ${selectedCount} 个测试问题。`,
-          `Delete ${selectedCount} selected prompts.`,
+          `删除选中的 ${selectedCount} 个测试问题。`,
+          `Delete ${selectedCount} selected test prompts.`,
         )}
         isDisabled={selectedCount === 0}
         onOpenChange={setBulkDeleteOpen}

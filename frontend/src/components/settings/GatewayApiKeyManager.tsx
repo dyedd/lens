@@ -63,7 +63,9 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     try {
       await navigator.clipboard.writeText(value);
       setCopiedKey(value);
-      toast.success(titleForLocale(locale, "API Key 已复制", "API key copied"));
+      toast.success(
+        titleForLocale(locale, "网关密钥已复制", "Gateway key copied"),
+      );
       window.setTimeout(() => {
         setCopiedKey((current) => (current === value ? "" : current));
       }, 1500);
@@ -115,8 +117,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
       toast.success(
         titleForLocale(
           locale,
-          enabled ? "API Key 已启用" : "API Key 已停用",
-          enabled ? "API key enabled" : "API key disabled",
+          enabled ? "网关密钥已启用" : "网关密钥已停用",
+          enabled ? "Gateway key enabled" : "Gateway key disabled",
         ),
       );
     } catch (requestError) {
@@ -124,8 +126,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         requestError,
         titleForLocale(
           locale,
-          "更新 API Key 状态失败",
-          "Failed to update API key status",
+          "更新网关密钥状态失败",
+          "Failed to update gateway key status",
         ),
       );
       toast.error(message);
@@ -168,11 +170,11 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         titleForLocale(
           locale,
           enabled
-            ? `已启用 ${items.length} 个 API Key`
-            : `已停用 ${items.length} 个 API Key`,
+            ? `已启用 ${items.length} 个网关密钥`
+            : `已停用 ${items.length} 个网关密钥`,
           enabled
-            ? `Enabled ${items.length} API keys`
-            : `Disabled ${items.length} API keys`,
+            ? `Enabled ${items.length} gateway keys`
+            : `Disabled ${items.length} gateway keys`,
         ),
       );
       selection.clear();
@@ -181,8 +183,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         requestError,
         titleForLocale(
           locale,
-          "批量更新 API Key 失败",
-          "Failed to update API keys",
+          "批量更新网关密钥失败",
+          "Failed to update gateway keys",
         ),
       );
       toast.error(message);
@@ -204,8 +206,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
       toast.success(
         titleForLocale(
           locale,
-          `已删除 ${selectedKeys.length} 个 API Key`,
-          `Deleted ${selectedKeys.length} API keys`,
+          `已删除 ${selectedKeys.length} 个网关密钥`,
+          `Deleted ${selectedKeys.length} gateway keys`,
         ),
       );
       selection.clear();
@@ -215,8 +217,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         requestError,
         titleForLocale(
           locale,
-          "批量删除 API Key 失败",
-          "Failed to delete API keys",
+          "批量删除网关密钥失败",
+          "Failed to delete gateway keys",
         ),
       );
       toast.error(message);
@@ -229,7 +231,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
   return (
     <>
       <SettingsSection
-        title={titleForLocale(locale, "API 密钥", "API keys")}
+        title={titleForLocale(locale, "网关密钥", "Gateway Keys")}
         actions={
           <>
             <BulkActionsPopover
@@ -248,7 +250,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
               onClick={openCreateDialog}
             >
               <Plus className="size-3.5" />
-              {titleForLocale(locale, "创建 Key", "Create key")}
+              {titleForLocale(locale, "创建网关密钥", "Create gateway key")}
             </Button>
           </>
         }
@@ -271,11 +273,15 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
       <ConfirmDeleteDialog
         open={bulkDeleteOpen}
         locale={locale}
-        title={titleForLocale(locale, "批量删除 API Key", "Delete API keys")}
+        title={titleForLocale(
+          locale,
+          "批量删除网关密钥",
+          "Delete gateway keys",
+        )}
         description={titleForLocale(
           locale,
-          `确定删除选中的 ${selectedKeys.length} 个 API Key？此操作无法撤销。`,
-          `Are you sure you want to delete ${selectedKeys.length} selected API keys? This action cannot be undone.`,
+          `确定删除选中的 ${selectedKeys.length} 个网关密钥？此操作无法撤销。`,
+          `Are you sure you want to delete ${selectedKeys.length} selected gateway keys? This action cannot be undone.`,
         )}
         isBusy={busyId === "bulk"}
         onOpenChange={setBulkDeleteOpen}
