@@ -18,11 +18,11 @@ export const HEALTH_HOURS = [
 ] as const;
 
 const TIER_LABELS: Record<HealthTier, [string, string]> = {
-  "no-data": ["无数据", "No data"],
-  healthy: ["健康", "Healthy"],
-  "mostly-healthy": ["基本健康", "Mostly healthy"],
-  partial: ["部分失败", "Partial failures"],
-  major: ["大量失败", "Major failures"],
+  "no-data": ["暂无数据", "No data"],
+  healthy: ["运行正常", "Healthy"],
+  "mostly-healthy": ["少量失败", "Few failures"],
+  partial: ["偶尔失败", "Occasional failures"],
+  major: ["较多失败", "Many failures"],
   "all-failed": ["全部失败", "All failed"],
 };
 

@@ -71,7 +71,7 @@ export function formatGatewayKeyLabel(
   return (
     item.gateway_key_remark?.trim() ||
     shortenGatewayKeyId(item.gateway_key_id) ||
-    titleForLocale(locale, "未绑定 API Key", "No API key")
+    titleForLocale(locale, "未绑定网关密钥", "No gateway key")
   );
 }
 
@@ -134,7 +134,7 @@ export function gatewayKeyFilterOptionLabel(
   locale: "zh-CN" | "en-US",
 ) {
   if (item.id === EMPTY_FILTER_OPTION_ID) {
-    return titleForLocale(locale, "未绑定 API Key", "No API key");
+    return titleForLocale(locale, "未绑定网关密钥", "No gateway key");
   }
   const label = item.label.trim();
   return label && label !== item.id ? label : shortenGatewayKeyId(item.id);

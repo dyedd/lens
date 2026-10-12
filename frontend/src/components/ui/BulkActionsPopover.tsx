@@ -47,7 +47,7 @@ export function BulkActionsPopover({
   const [enabledChoice, setEnabledChoice] = useState<
     "enabled" | "disabled" | ""
   >("");
-  const label = titleForLocale(locale, "批量", "Bulk");
+  const label = titleForLocale(locale, "批量操作", "Bulk actions");
   const isTriggerDisabled = count === 0 || isBusy;
 
   return (
@@ -89,7 +89,7 @@ export function BulkActionsPopover({
               onClick={() => onSetEnabled(enabledChoice === "enabled")}
             >
               <ToggleLeft className="size-3" />
-              {titleForLocale(locale, "应用", "Apply")}
+              {titleForLocale(locale, "设置", "Set")}
             </Button>
             <Select
               value={enabledChoice || undefined}
@@ -117,7 +117,7 @@ export function BulkActionsPopover({
         {onDelete ? (
           <BulkActionButton
             icon={<Trash2 className="size-3.5" />}
-            label={titleForLocale(locale, "批量删除", "Delete selected")}
+            label={titleForLocale(locale, "删除选中项", "Delete selected")}
             isBusy={isBusy}
             onClick={onDelete}
           />

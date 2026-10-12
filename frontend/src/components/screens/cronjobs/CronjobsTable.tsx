@@ -89,8 +89,8 @@ export function CronjobsTable({
                 onCheckedChange={(checked) => onSelectAll(checked === true)}
                 aria-label={titleForLocale(
                   locale,
-                  "全选定时任务",
-                  "Select all cron jobs",
+                  "全选计划任务",
+                  "Select all scheduled tasks",
                 )}
               />
             </div>
@@ -117,7 +117,7 @@ export function CronjobsTable({
             >
               {isFetching
                 ? titleForLocale(locale, "加载中...", "Loading...")
-                : titleForLocale(locale, "暂无定时任务", "No cron jobs")}
+                : titleForLocale(locale, "暂无计划任务", "No scheduled tasks")}
             </TableCell>
           </TableRow>
         ) : (

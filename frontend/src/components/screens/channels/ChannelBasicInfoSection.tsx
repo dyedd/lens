@@ -79,7 +79,7 @@ export function ChannelBasicInfoSection({
           required
           className="text-xs font-normal text-muted-foreground"
         >
-          {locale === "zh-CN" ? "名称" : "Name"}
+          {locale === "zh-CN" ? "渠道名称" : "Channel name"}
         </Label>
         <Input
           id="channel-name"
@@ -120,7 +120,7 @@ export function ChannelBasicInfoSection({
             >
               <span className="truncate text-muted-foreground">
                 {locale === "zh-CN"
-                  ? "选择或创建标签"
+                  ? "选择或新建标签"
                   : "Select or create a tag"}
               </span>
               <ChevronsUpDown data-icon="inline-end" />
@@ -141,8 +141,8 @@ export function ChannelBasicInfoSection({
                 }
                 placeholder={
                   locale === "zh-CN"
-                    ? "搜索或输入新标签..."
-                    : "Search or enter a new tag..."
+                    ? "搜索已有标签或输入新标签..."
+                    : "Search existing tags or enter a new one..."
                 }
                 onValueChange={setTagInput}
               />
@@ -153,8 +153,8 @@ export function ChannelBasicInfoSection({
                       ? "该标签已添加"
                       : "Tag already added"
                     : locale === "zh-CN"
-                      ? "暂无已有标签"
-                      : "No existing tags"}
+                      ? "没有匹配的标签"
+                      : "No matching tags"}
                 </CommandEmpty>
                 {suggestedTags.length ? (
                   <CommandGroup

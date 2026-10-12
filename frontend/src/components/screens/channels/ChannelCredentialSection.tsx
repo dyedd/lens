@@ -127,7 +127,7 @@ export function ChannelCredentialSection({
   async function copyKey(apiKey: string) {
     try {
       await navigator.clipboard.writeText(apiKey);
-      toast.success(isZh ? "已复制 API Key" : "API key copied");
+      toast.success(isZh ? "API Key 已复制" : "API key copied");
     } catch {
       toast.error(isZh ? "复制失败" : "Copy failed");
     }
@@ -170,10 +170,10 @@ export function ChannelCredentialSection({
       >
         {scopedKeys.length
           ? isZh
-            ? "新增 API Key"
+            ? "添加 API Key"
             : "Add API keys"
           : isZh
-            ? "密钥（支持多密钥轮询）"
+            ? "API Key（支持多个）"
             : "API keys (rotated)"}
       </Label>
       <Textarea
@@ -184,8 +184,8 @@ export function ChannelCredentialSection({
         className="h-24 resize-none overflow-auto whitespace-pre font-mono text-xs [field-sizing:fixed]"
         placeholder={
           isZh
-            ? "每行一个 API Key，Enter 加入列表，Shift+Enter 换行"
-            : "One API key per line. Enter adds them, Shift+Enter for a new line"
+            ? "每行输入一个 API Key，按 Enter 添加；Shift+Enter 换行"
+            : "One API key per line. Enter adds it; Shift+Enter inserts a new line"
         }
         value={newApiKeysLines}
         onChange={(event) => changeDraft(event.target.value)}
@@ -194,7 +194,9 @@ export function ChannelCredentialSection({
       {scopedKeys.length > 0 ? (
         <div className="mt-2 space-y-1.5">
           <div className="text-[11px] leading-4 text-muted-foreground">
-            {isZh ? `${scopedKeys.length} 个 Key` : `${scopedKeys.length} keys`}
+            {isZh
+              ? `${scopedKeys.length} 个 API Key`
+              : `${scopedKeys.length} keys`}
           </div>
           <div className="overflow-hidden rounded-md bg-muted/35">
             {scopedKeys.map(({ credential, index }) => {
@@ -231,7 +233,7 @@ export function ChannelCredentialSection({
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {isZh ? "复制完整 Key" : "Copy full key"}
+                        {isZh ? "复制完整 API Key" : "Copy full key"}
                       </TooltipContent>
                     </Tooltip>
                     <Select
@@ -253,7 +255,7 @@ export function ChannelCredentialSection({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">
-                          {isZh ? "不查倍率" : "No rate"}
+                          {isZh ? "不查询倍率" : "No rate"}
                         </SelectItem>
                         <SelectItem value="sub2api">Sub2API</SelectItem>
                         <SelectItem value="newapi">NewAPI</SelectItem>
@@ -353,13 +355,15 @@ export function ChannelCredentialSection({
                                   isSyncing ? "animate-spin" : undefined
                                 }
                               />
-                              {isZh ? "同步倍率" : "Sync rate"}
+                              {isZh ? "查询倍率" : "Sync rate"}
                             </Button>
                           </span>
                         </TooltipTrigger>
                         {canSyncRates ? null : (
                           <TooltipContent>
-                            {isZh ? "先保存渠道" : "Save the channel first"}
+                            {isZh
+                              ? "先保存渠道后再查询"
+                              : "Save the channel first"}
                           </TooltipContent>
                         )}
                       </Tooltip>

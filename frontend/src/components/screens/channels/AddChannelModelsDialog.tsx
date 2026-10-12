@@ -26,11 +26,11 @@ export function AddChannelModelsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <AppDialogContent
         className="max-w-md"
-        title={locale === "zh-CN" ? "手动添加模型" : "Add models manually"}
+        title={locale === "zh-CN" ? "添加模型" : "Add models"}
         description={
           locale === "zh-CN"
-            ? "每行或用逗号分隔一个模型名，会加到所有密钥下。手动模型不受自动同步影响。"
-            : "One model name per line or comma-separated, added for every key. Manual models are never changed by auto-sync."
+            ? "每行输入一个模型名，也可用逗号分隔。模型会添加到所有 API Key，并且不受自动同步影响。"
+            : "Enter one model name per line or separate names with commas. Models are added to every API key and are not changed by auto-sync."
         }
         footer={
           <>
@@ -54,7 +54,7 @@ export function AddChannelModelsDialog({
                 }
               }}
             >
-              {locale === "zh-CN" ? "创建" : "Create"}
+              {locale === "zh-CN" ? "添加" : "Add"}
             </Button>
           </>
         }
@@ -65,7 +65,7 @@ export function AddChannelModelsDialog({
               required
               className="text-xs font-normal text-muted-foreground"
             >
-              {locale === "zh-CN" ? "上游模型名" : "Upstream model names"}
+              {locale === "zh-CN" ? "模型名（上游）" : "Upstream model names"}
             </Label>
             <Textarea
               value={newName}
@@ -76,7 +76,7 @@ export function AddChannelModelsDialog({
           </div>
           <Field>
             <FieldLabel>
-              {locale === "zh-CN" ? "转发方式" : "Forwarding"}
+              {locale === "zh-CN" ? "转发协议" : "Forwarding"}
             </FieldLabel>
             <ProtocolDropdown
               value={newProtocols}

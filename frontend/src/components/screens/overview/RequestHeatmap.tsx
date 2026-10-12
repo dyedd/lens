@@ -16,7 +16,7 @@ import {
 const METRIC_OPTIONS = [
   { value: "requests", zhLabel: "请求", enLabel: "Requests" },
   { value: "tokens", zhLabel: "Token 消耗", enLabel: "Token usage" },
-  { value: "duration", zhLabel: "消耗时间", enLabel: "Time spent" },
+  { value: "duration", zhLabel: "累计耗时", enLabel: "Cumulative duration" },
 ] satisfies Array<{ value: HeatmapMetric; zhLabel: string; enLabel: string }>;
 
 function metricValue(point: HeatmapPoint, metric: HeatmapMetric) {
@@ -28,7 +28,7 @@ function metricValue(point: HeatmapPoint, metric: HeatmapMetric) {
 function legendLabel(metric: HeatmapMetric, isChinese: boolean) {
   if (metric === "tokens")
     return isChinese
-      ? { low: "Token 少", high: "Token 多" }
+      ? { low: "少", high: "多" }
       : { low: "Fewer tokens", high: "More tokens" };
   if (metric === "duration")
     return isChinese
@@ -103,7 +103,7 @@ export function RequestHeatmap({
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">
-            {isChineseLocale ? "热力图" : "Heatmap"}
+            {isChineseLocale ? "请求活动" : "Request activity"}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
             {isChineseLocale ? (
@@ -180,7 +180,7 @@ export function RequestHeatmap({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      aria-label={`${formatDate(point.date, isChineseLocale)}，${isChineseLocale ? "请求" : "requests"} ${formatCompact(point.count)}，Token ${formatCompact(point.tokens)}，${isChineseLocale ? "消耗时间" : "time spent"} ${formatDuration(point.waitTimeMs)}`}
+                      aria-label={`${formatDate(point.date, isChineseLocale)}，${isChineseLocale ? "请求" : "requests"} ${formatCompact(point.count)}，Token ${formatCompact(point.tokens)}，${isChineseLocale ? "累计耗时" : "cumulative duration"} ${formatDuration(point.waitTimeMs)}`}
                       className={cn(
                         "aspect-square w-full cursor-pointer rounded-[3px] ring-1 ring-foreground/5 transition-colors hover:ring-ring/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
                         toneClass(metricValue(point, metric)),
@@ -202,7 +202,7 @@ export function RequestHeatmap({
                         </span>
                         <span>{formatCompact(point.tokens)}</span>
                         <span className="opacity-75">
-                          {isChineseLocale ? "消耗时间" : "Time spent"}
+                          {isChineseLocale ? "累计耗时" : "Cumulative duration"}
                         </span>
                         <span>{formatDuration(point.waitTimeMs)}</span>
                       </div>

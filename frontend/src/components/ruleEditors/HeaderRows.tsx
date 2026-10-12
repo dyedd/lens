@@ -42,7 +42,7 @@ export function HeaderRows({
           onClick={onAdd}
         >
           <Plus className="size-3.5" />
-          {titleForLocale(locale, "添加", "Add")}
+          {titleForLocale(locale, "添加请求头", "Add header")}
         </Button>
       </div>
       {headers.length ? (

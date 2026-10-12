@@ -59,7 +59,11 @@ export function ModelHealthScreen() {
   useEffect(() => {
     if (!healthQuery.isError) return;
     toast.error(
-      titleForLocale(locale, "健康数据加载失败", "Failed to load health data"),
+      titleForLocale(
+        locale,
+        "健康状态加载失败",
+        "Failed to load health status",
+      ),
       {
         id: "model-health-load-error",
         description:
@@ -67,8 +71,8 @@ export function ModelHealthScreen() {
             ? healthQuery.error.message
             : titleForLocale(
                 locale,
-                "无法读取请求日志健康统计",
-                "Unable to read request-log health statistics",
+                "无法读取健康状态数据",
+                "Unable to read health status data",
               ),
       },
     );

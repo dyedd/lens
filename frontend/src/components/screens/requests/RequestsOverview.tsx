@@ -142,7 +142,7 @@ export function RequestsOverview({
     },
     {
       value: "cost",
-      label: titleForLocale(locale, "费用优先", "Highest cost"),
+      label: titleForLocale(locale, "成本最高", "Highest cost"),
     },
     {
       value: "latency",
@@ -156,7 +156,7 @@ export function RequestsOverview({
   const emptyLabel = activeFilterCount
     ? titleForLocale(
         locale,
-        "当前筛选条件下没有请求日志。",
+        "当前筛选条件下没有匹配的请求日志。",
         "No request logs match the current filters.",
       )
     : titleForLocale(locale, "暂无请求日志。", "No request logs yet.");
@@ -165,7 +165,7 @@ export function RequestsOverview({
     <div className="space-y-3 pb-10">
       <div className="flex h-10 items-center justify-between gap-3 px-1">
         <h3 className="text-sm font-semibold">
-          {titleForLocale(locale, "请求日志", "Request logs")}
+          {titleForLocale(locale, "请求日志", "Request Logs")}
         </h3>
         <Button
           type="button"
@@ -178,7 +178,7 @@ export function RequestsOverview({
           <Trash2 className="size-3.5 stroke-1" />
           {clearingLogs
             ? titleForLocale(locale, "清空中...", "Clearing...")
-            : titleForLocale(locale, "清空请求日志", "Clear logs")}
+            : titleForLocale(locale, "清空全部请求日志", "Clear all logs")}
         </Button>
       </div>
 
@@ -190,8 +190,8 @@ export function RequestsOverview({
               value={keyword}
               placeholder={titleForLocale(
                 locale,
-                "模型 / 渠道 / API Key / 错误",
-                "Model / channel / API key / error",
+                "搜索模型、渠道、网关密钥或错误信息...",
+                "Search model, channel, key, or error...",
               )}
               onChange={(event) => onKeywordChange(event.target.value)}
               className="bg-background pl-8"
@@ -296,7 +296,7 @@ export function RequestsOverview({
                 {showGatewayKeyFilter ? (
                   <div className="space-y-1">
                     <p className="px-1 text-[10px] text-muted-foreground">
-                      API Key
+                      {titleForLocale(locale, "网关密钥", "Gateway key")}
                     </p>
                     <Select
                       value={selectedGatewayKeyId}
@@ -309,8 +309,8 @@ export function RequestsOverview({
                         <SelectItem value="all">
                           {titleForLocale(
                             locale,
-                            "全部 API Key",
-                            "All API keys",
+                            "全部网关密钥",
+                            "All gateway keys",
                           )}
                         </SelectItem>
                         {gatewayKeyOptions.map((item) => (

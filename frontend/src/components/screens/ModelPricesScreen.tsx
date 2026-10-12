@@ -143,13 +143,11 @@ function PriceEditor({
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
       <DialogContent className="flex max-h-[min(86dvh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[620px]">
         <DialogHeader className="shrink-0 space-y-1.5 gap-0 px-4 py-4 pr-12">
-          <DialogTitle>
-            {isChinese ? "模型基础价格" : "Model base pricing"}
-          </DialogTitle>
+          <DialogTitle>{isChinese ? "模型价格" : "Model prices"}</DialogTitle>
           <DialogDescription>
             {isChinese
-              ? "设置模型的计费模式与基础单价。"
-              : "Set the model's billing mode and base rates."}
+              ? "设置模型的计费方式和单价，用于估算调用成本。"
+              : "Set the billing method and rates used to estimate model costs."}
           </DialogDescription>
         </DialogHeader>
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
@@ -248,8 +246,8 @@ function PriceEditor({
             ) : null}
             <p className="text-xs leading-5 text-muted-foreground">
               {isChinese
-                ? "保存后会锁定为手动价格，自动同步不会覆盖。点击解锁图标可恢复自动同步。"
-                : "Saving locks this model to manual pricing. Automatic sync skips it until you restore automatic sync."}
+                ? "手动价格不会被自动同步覆盖。点击解锁图标可恢复自动价格。"
+                : "Manual prices are kept during automatic sync. Click the unlock icon to restore automatic pricing."}
             </p>
           </div>
           <DialogFooter className="shrink-0 px-4 pt-3 pb-4">
@@ -320,7 +318,7 @@ export function ModelPricesScreen() {
     <section className="space-y-3 pb-10">
       <div className="flex h-10 items-center px-1">
         <h1 className="text-sm font-semibold">
-          {isChinese ? "计费" : "Billing"}
+          {isChinese ? "价格" : "Pricing"}
         </h1>
       </div>
       <div className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto px-0.5 py-1">
@@ -334,7 +332,9 @@ export function ModelPricesScreen() {
                 setSearch(event.target.value);
                 resetPage();
               }}
-              placeholder={isChinese ? "搜索模型" : "Search models"}
+              placeholder={
+                isChinese ? "搜索模型名称..." : "Search model name..."
+              }
             />
           </div>
         </div>
@@ -500,7 +500,7 @@ export function ModelPricesScreen() {
                 colSpan={2}
                 className="h-32 text-center text-muted-foreground"
               >
-                {isChinese ? "暂无计费模型" : "No pricing models"}
+                {isChinese ? "暂无价格" : "No prices"}
               </TableCell>
             </TableRow>
           </TableBody>

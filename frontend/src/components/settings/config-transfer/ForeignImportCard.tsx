@@ -76,8 +76,8 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
     <SettingsSection
       title={titleForLocale(
         locale,
-        "从其他项目导入渠道",
-        "Import channels from other tools",
+        "导入其他平台的渠道",
+        "Import channels from another platform",
       )}
       actions={
         isReady && file ? (
@@ -97,8 +97,8 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
       <p className="text-xs leading-5 text-muted-foreground">
         {titleForLocale(
           locale,
-          "支持 Octopus、CLIProxyAPI、metapi、Sub2API、ccLoad、All API Hub 导出的 JSON、YAML 或 CSV；只追加渠道，不改动现有配置。",
-          "Supports JSON, YAML, or CSV exports from Octopus, CLIProxyAPI, metapi, Sub2API, ccLoad, and All API Hub; only appends channels and leaves current configuration unchanged.",
+          "读取其他平台的备份文件，选择要加入 Lens 的渠道。现有渠道不会被修改。",
+          "Read a backup from another platform and choose which channels to add to Lens. Existing channels are unchanged.",
         )}
       </p>
       <div className="space-y-3">
@@ -246,7 +246,7 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
                         <span className="w-28 shrink-0 text-right text-xs text-muted-foreground">
                           {titleForLocale(
                             locale,
-                            `${site.credential_count} 密钥 · ${site.model_count} 模型`,
+                            `${site.credential_count} 个密钥 · ${site.model_count} 个模型`,
                             `${site.credential_count} keys · ${site.model_count} models`,
                           )}
                         </span>
