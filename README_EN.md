@@ -113,7 +113,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 - Model testing: Single-model and batch model tests with configurable test prompts
 - Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt; optional request/response body capture
 - Health and cooldown: Model health page graded by success rate, built-in circuit-breaker cooldown with exponential backoff, and custom cooldown detection rules
-- Pricing: LiteLLM model price sync, credential rate multipliers, and per-image pricing
+- Pricing: LiteLLM model price sync, credential rate multipliers, per-image pricing, and input-context price tiers for the same model (for example, long-context rates above 200K / 272K input tokens)
 - Scheduled tasks: Built-in jobs for channel model sync, price sync, and credential rate sync
 - Config backup: Export/import sites, model groups, settings, pricing, cron jobs, and stats; optionally include gateway keys and request logs
 
