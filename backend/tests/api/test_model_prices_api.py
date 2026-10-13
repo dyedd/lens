@@ -121,6 +121,142 @@ def test_sync_model_prices_fetches_source_and_returns_updated_prices(
     assert payload["last_synced_at"]
 
 
+def test_sync_model_prices_imports_input_context_tiers(
+    client,
+    admin_headers,
+    create_model_group,
+    monkeypatch,
+) -> None:
+    create_model_group(name="gpt-5.4")
+    create_model_group(name="qwen3-coder-flash")
+    source_client = _litellm_client(
+        {
+            "gpt-5.4": {
+                "mode": "chat",
+                "input_cost_per_token": 2.5e-6,
+                "input_cost_per_token_above_272k_tokens": 5e-6,
+                "input_cost_per_token_above_272k_tokens_priority": 1e-5,
+                "output_cost_per_token": 1.5e-5,
+                "output_cost_per_token_above_272k_tokens": 2.25e-5,
+                "cache_read_input_token_cost": 2.5e-7,
+            },
+            "qwen3-coder-flash": {
+                "mode": "chat",
+                "tiered_pricing": [
+                    {
+                        "range": [0, 32000],
+                        "input_cost_per_token": 3e-7,
+                        "output_cost_per_token": 1.5e-6,
+                    },
+                    {
+                        "range": [32000, 128000],
+                        "input_cost_per_token": 5e-7,
+                        "output_cost_per_token": 2.5e-6,
+                    },
+                ],
+            },
+        }
+    )
+    monkeypatch.setattr(
+        model_price_tasks.httpx,
+        "AsyncClient",
+        lambda **_kwargs: source_client,
+    )
+
+    response = client.post("/api/admin/model-price-sync-jobs", headers=admin_headers)
+
+    assert response.status_code == 200, response.text
+    items = {item["model_key"]: item for item in response.json()["items"]}
+    assert items["gpt-5.4"]["context_tiers"] == [
+        {
+            "above_input_tokens": 272000,
+            "input_price_per_million": 5,
+            "output_price_per_million": 22.5,
+            "cache_read_price_per_million": 0.25,
+            "cache_write_price_per_million": 0,
+        }
+    ]
+    assert items["qwen3-coder-flash"]["pricing_mode"] == "tokens"
+    assert items["qwen3-coder-flash"]["input_price_per_million"] == 0.3
+    assert [
+        (tier["above_input_tokens"], tier["input_price_per_million"])
+        for tier in items["qwen3-coder-flash"]["context_tiers"]
+    ] == [(32000, 0.5)]
+
+
+@pytest.mark.parametrize(
+    "context_tiers",
+    [
+        pytest.param(
+            [{"above_input_tokens": 0, "input_price_per_million": 1}],
+            id="non-positive-threshold",
+        ),
+        pytest.param(
+            [
+                {"above_input_tokens": 200000, "input_price_per_million": 1},
+                {"above_input_tokens": 200000, "input_price_per_million": 2},
+            ],
+            id="duplicate-threshold",
+        ),
+    ],
+)
+def test_update_model_price_rejects_invalid_context_tiers(
+    client,
+    admin_headers,
+    create_model_group,
+    context_tiers,
+) -> None:
+    create_model_group(name="gemini-2.5-pro")
+
+    response = client.put(
+        "/api/admin/model-prices/gemini-2.5-pro",
+        headers=admin_headers,
+        json={
+            "model_key": "gemini-2.5-pro",
+            "input_price_per_million": 1.25,
+            "context_tiers": context_tiers,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_manual_context_tiers_are_sorted_and_persisted(
+    client,
+    admin_headers,
+    create_model_group,
+) -> None:
+    group = create_model_group(name="gemini-2.5-pro")
+
+    response = client.put(
+        "/api/admin/model-prices/gemini-2.5-pro",
+        headers=admin_headers,
+        json={
+            "model_key": "gemini-2.5-pro",
+            "input_price_per_million": 1.25,
+            "output_price_per_million": 10,
+            "context_tiers": [
+                {"above_input_tokens": 500000, "input_price_per_million": 4},
+                {
+                    "above_input_tokens": 200000,
+                    "input_price_per_million": 2.5,
+                    "output_price_per_million": 15,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    stored = client.get(
+        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
+    ).json()
+    assert [
+        (tier["above_input_tokens"], tier["input_price_per_million"])
+        for tier in stored["context_tiers"]
+    ] == [(200000, 2.5), (500000, 4)]
+    assert stored["context_tiers"][0]["output_price_per_million"] == 15
+
+
 def test_sync_model_prices_rolls_back_when_timestamp_write_fails(
     client,
     app_state,

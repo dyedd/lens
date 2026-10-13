@@ -822,6 +822,89 @@ def test_image_proxy_logs_non_token_billing(
     assert stored_key["spent_cost_usd"] == log["total_cost_usd"]
 
 
+@pytest.mark.parametrize(
+    ("prompt_tokens", "expected_input_cost", "expected_total_cost"),
+    [
+        pytest.param(200_000, 0.25, 0.26, id="at-threshold-uses-base-price"),
+        pytest.param(200_001, 0.5000025, 0.5150025, id="above-threshold-uses-tier"),
+    ],
+)
+def test_chat_proxy_bills_long_context_requests_at_context_tier_price(
+    client,
+    admin_headers,
+    app_state,
+    monkeypatch,
+    create_site_group_and_key,
+    prompt_tokens,
+    expected_input_cost,
+    expected_total_cost,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+    import app.gateway.service.streaming.logging as stream_logging
+
+    async def fake_send_upstream(_client, upstream, *, stream, body_bytes):
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "gemini-2.5-pro",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": 1000,
+                    "total_tokens": prompt_tokens + 1000,
+                },
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    monkeypatch.setattr(stream_logging, "app_state", app_state)
+    _, _, key = create_site_group_and_key(model_name="gemini-2.5-pro")
+    price = client.put(
+        "/api/admin/model-prices/gemini-2.5-pro",
+        headers=admin_headers,
+        json={
+            "model_key": "gemini-2.5-pro",
+            "input_price_per_million": 1.25,
+            "output_price_per_million": 10,
+            "context_tiers": [
+                {
+                    "above_input_tokens": 200_000,
+                    "input_price_per_million": 2.5,
+                    "output_price_per_million": 15,
+                }
+            ],
+        },
+    )
+    assert price.status_code == 200, price.text
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "gemini-2.5-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    log = client.get("/api/admin/request-logs/page", headers=admin_headers).json()[
+        "items"
+    ][0]
+    assert log["input_tokens"] == prompt_tokens
+    assert log["input_cost_usd"] == expected_input_cost
+    assert log["total_cost_usd"] == expected_total_cost
+
+
 @pytest.mark.parametrize("free", [False, True])
 def test_image_proxy_logs_separate_image_input_tokens(
     client,

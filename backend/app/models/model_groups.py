@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from .model_prices import ModelPriceContextTier
 from .protocols import ProtocolKind, RoutingStrategy
 from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
@@ -88,6 +89,7 @@ class ModelGroup(StrictBaseModel):
     image_price_per_image: float = 0.0
     pricing_mode: Literal["free", "tokens", "non_tokens"] = "free"
     manual_override: bool = False
+    context_tiers: list[ModelPriceContextTier] = Field(default_factory=list)
     items: list["ModelGroupItem"] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(

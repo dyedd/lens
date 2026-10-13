@@ -342,6 +342,7 @@ class ModelPriceEntity(Base):
         String(32), nullable=False, default="free"
     )
     manual_override: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    context_tiers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
 
 class CronjobEntity(Base):

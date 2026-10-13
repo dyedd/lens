@@ -1,3 +1,4 @@
+import type { ModelPriceContextTier } from "./modelPrices";
 import type { ProtocolKind } from "./protocols";
 
 export type HeaderRule = {
@@ -75,6 +76,8 @@ export type ModelGroup = {
   cache_write_price_per_million: number;
   image_price_per_image: number;
   pricing_mode: "free" | "tokens" | "non_tokens";
+  /** Input-context price tiers, ordered by threshold; token billing only. */
+  context_tiers: ModelPriceContextTier[];
   items: ModelGroupItem[];
 };
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {
