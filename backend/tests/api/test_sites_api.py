@@ -222,6 +222,64 @@ def test_sync_credential_rate_persists_upstream_multiplier(
     assert stored["credentials"][0]["rate_multiplier"] == expected_rate
 
 
+def test_update_credential_api_key_resets_cached_multiplier(
+    client,
+    app_state,
+    admin_headers,
+    create_site,
+    monkeypatch,
+) -> None:
+    site = create_site(_rate_site_payload("sub2api"))
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "object": "sub2api.key_billing",
+                "schema_version": 1,
+                "billing_scope": "token",
+                "group_rate_multiplier": 0.8,
+                "user_rate_multiplier": None,
+                "resolved_rate_multiplier": 0.8,
+                "peak_rate_enabled": False,
+                "peak_rate_multiplier": None,
+                "applied_peak_multiplier": None,
+                "effective_rate_multiplier": 0.8,
+                "observed_at": "2026-08-17T00:00:00Z",
+            },
+            request=request,
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        app_state, "get_http_client", lambda _proxy_url: upstream_client
+    )
+    try:
+        response = client.post(
+            f"/api/admin/sites/{site['id']}/credentials/cred-1/rate-sync",
+            headers=admin_headers,
+        )
+    finally:
+        run_async(upstream_client.aclose())
+
+    assert response.status_code == 200
+    stored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert stored["credentials"][0]["rate_multiplier"] == 0.8
+
+    update_payload = _rate_site_payload("sub2api")
+    update_payload["credentials"][0]["api_key"] = "new-rotated-secret"
+    update_response = client.put(
+        f"/api/admin/sites/{site['id']}",
+        headers=admin_headers,
+        json=update_payload,
+    )
+    assert update_response.status_code == 200
+    updated_site = update_response.json()
+    assert updated_site["credentials"][0]["id"] == "cred-1"
+    assert updated_site["credentials"][0]["api_key"] == "new-rotated-secret"
+    assert updated_site["credentials"][0]["rate_multiplier"] is None
+
+
 def test_failed_credential_rate_sync_preserves_cached_multiplier(
     client,
     app_state,

@@ -96,7 +96,7 @@ function RoundRobinMemberList({
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
 
   return (
-    <div className="flex flex-col gap-0.5">
+    <ul className="flex flex-col gap-0.5">
       {visibleFoldedMembers.map(({ member, index }) => (
         <SelectedMemberRow
           key={member.key}
@@ -117,7 +117,7 @@ function RoundRobinMemberList({
           removeFoldedMember={removeFoldedMember}
         />
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -151,27 +151,36 @@ function FailoverMemberList({
   } | null>(null);
 
   return (
-    <div className="flex flex-col divide-y divide-border/60">
+    <ul className="flex flex-col divide-y divide-border/60">
       {visibleChannelGroups.map((channelGroup, channelIndex) => (
-        <div key={channelGroup.key} className="overflow-hidden py-1">
-          <div
-            onDragEnter={
-              canReorder
-                ? () => {
-                    if (
-                      draggingChannelIndex === null ||
-                      draggingChannelIndex === channelIndex
-                    ) {
-                      return;
-                    }
-                    moveChannelGroup(draggingChannelIndex, channelIndex);
-                    setDraggingChannelIndex(channelIndex);
+        <li
+          key={channelGroup.key}
+          className="overflow-hidden py-1"
+          onDragStart={
+            canReorder ? () => setDraggingChannelIndex(channelIndex) : undefined
+          }
+          onDragEnter={
+            canReorder
+              ? () => {
+                  if (
+                    draggingChannelIndex === null ||
+                    draggingChannelIndex === channelIndex
+                  ) {
+                    return;
                   }
-                : undefined
-            }
-            onDragOver={
-              canReorder ? (event) => event.preventDefault() : undefined
-            }
+                  moveChannelGroup(draggingChannelIndex, channelIndex);
+                  setDraggingChannelIndex(channelIndex);
+                }
+              : undefined
+          }
+          onDragOver={
+            canReorder ? (event) => event.preventDefault() : undefined
+          }
+          onDragEnd={
+            canReorder ? () => setDraggingChannelIndex(null) : undefined
+          }
+        >
+          <div
             className={cn(
               "flex min-h-9 min-w-0 items-center gap-2 rounded-md bg-secondary/50 px-2 py-1.5",
               draggingChannelIndex === channelIndex && "opacity-60",
@@ -181,8 +190,6 @@ function FailoverMemberList({
               <span
                 draggable
                 className="cursor-grab text-muted-foreground active:cursor-grabbing"
-                onDragStart={() => setDraggingChannelIndex(channelIndex)}
-                onDragEnd={() => setDraggingChannelIndex(null)}
               >
                 <GripVertical size={14} />
               </span>
@@ -221,7 +228,7 @@ function FailoverMemberList({
               {channelGroup.priority}
             </Badge>
           </div>
-          <div className="flex flex-col">
+          <ul className="flex flex-col">
             {channelGroup.members.map(({ member }, memberIndex) => (
               <SelectedMemberRow
                 key={member.key}
@@ -263,10 +270,10 @@ function FailoverMemberList({
                 removeFoldedMember={removeFoldedMember}
               />
             ))}
-          </div>
-        </div>
+          </ul>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
