@@ -201,7 +201,17 @@ class SiteConfigUpsertsMixin(
         built_base_urls = self._build_base_urls(payload.base_urls)
         base_url_ids = {item.id for item in built_base_urls}
         built_credentials = self._build_credentials(payload.credentials, base_url_ids)
-        previous_credential_ids = set(await self._site_credential_ids(session, site_id))
+        previous_credentials_by_id = {
+            row.id: row.api_key
+            for row in (
+                await session.execute(
+                    select(SiteCredentialEntity.id, SiteCredentialEntity.api_key).where(
+                        SiteCredentialEntity.site_id == site_id
+                    )
+                )
+            ).all()
+        }
+        previous_credential_ids = set(previous_credentials_by_id)
         now = _naive_utc_now()
         site = await session.get(SiteEntity, site_id)
         if site is None:
@@ -265,6 +275,7 @@ class SiteConfigUpsertsMixin(
             built_credentials,
             payload.protocols,
             previous_credential_ids,
+            previous_credentials_by_id,
         )
         await self._cleanup_invalid_group_items(
             session, current_protocol_config_ids | next_protocol_config_ids
@@ -310,6 +321,7 @@ class SiteConfigUpsertsMixin(
         credentials: list[SiteCredential],
         protocols: list[SiteProtocolConfigInput],
         previous_credential_ids: set[str],
+        previous_credentials_by_id: dict[str, str] | None = None,
     ) -> None:
         protocol_by_id = {item.id: item for item in protocols if item.id}
         next_credential_ids = {item.id for item in credentials}
@@ -359,6 +371,11 @@ class SiteConfigUpsertsMixin(
                     f"{credential.rate_protocol_config_id}: {credential.id}"
                 )
 
+            previous_api_key = (
+                previous_credentials_by_id.get(credential.id)
+                if previous_credentials_by_id
+                else None
+            )
             if entity is None:
                 entity = SiteCredentialRateEntity(credential_id=credential.id)
                 session.add(entity)
@@ -368,6 +385,10 @@ class SiteConfigUpsertsMixin(
                     entity.protocol_config_id != credential.rate_protocol_config_id
                     or entity.source != credential.rate_source
                     or entity.group_name != credential.rate_group
+                    or (
+                        previous_api_key is not None
+                        and previous_api_key != credential.api_key
+                    )
                 )
             entity.protocol_config_id = credential.rate_protocol_config_id
             entity.source = credential.rate_source

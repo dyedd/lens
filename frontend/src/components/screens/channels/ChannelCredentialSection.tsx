@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { RefreshCcw, Trash2 } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, RefreshCcw, Trash2 } from "lucide-react";
 import {
   type Dispatch,
   type KeyboardEvent,
@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/Tooltip";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { SiteCredential } from "@/lib/api/sites";
-import { addApiKeyDraft, credentialLabel, maskApiKey } from "./channelModels";
+import { addApiKeyDraft, credentialLabel } from "./channelModels";
 import type { FormCredential, FormState, Locale } from "./channelTypes";
 
 type Props = {
@@ -48,6 +48,108 @@ const CLEARED_RATE_STATUS = {
   rate_last_error: "",
 } satisfies Partial<FormCredential>;
 
+type CredentialKeyCellProps = {
+  credential: FormCredential;
+  locale: Locale;
+  updateKey: (credentialId: string, patch: Partial<FormCredential>) => void;
+  copyKey: (apiKey: string, id?: string) => Promise<void>;
+  copiedId: string | null;
+};
+
+function CredentialKeyCell({
+  credential,
+  locale,
+  updateKey,
+  copyKey,
+  copiedId,
+}: CredentialKeyCellProps) {
+  const isZh = locale === "zh-CN";
+  const [showKey, setShowKey] = useState(false);
+
+  return (
+    <div className="relative flex min-w-0 flex-1 items-center">
+      <Input
+        type={showKey ? "text" : "password"}
+        value={credential.api_key}
+        onChange={(e) =>
+          updateKey(credential.id, {
+            api_key: e.target.value,
+            ...CLEARED_RATE_STATUS,
+          })
+        }
+        onBlur={(e) => {
+          const trimmed = e.target.value.trim();
+          if (trimmed !== credential.api_key) {
+            updateKey(credential.id, { api_key: trimmed });
+          }
+        }}
+        placeholder="sk-..."
+        aria-label={isZh ? "API Key" : "API key"}
+        className="h-7 min-w-0 flex-1 pl-2 pr-12 font-mono text-[11px]"
+        spellCheck={false}
+      />
+      <div className="absolute right-1 flex items-center gap-0.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="size-5 text-muted-foreground shadow-none hover:text-foreground"
+              onClick={() => setShowKey(!showKey)}
+              aria-label={
+                showKey
+                  ? isZh
+                    ? "隐藏明文"
+                    : "Hide key"
+                  : isZh
+                    ? "显示明文"
+                    : "Show key"
+              }
+            >
+              {showKey ? (
+                <EyeOff className="size-3" />
+              ) : (
+                <Eye className="size-3" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {showKey
+              ? isZh
+                ? "隐藏明文"
+                : "Hide key"
+              : isZh
+                ? "显示明文"
+                : "Show key"}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="size-5 text-muted-foreground shadow-none hover:text-foreground"
+              aria-label={isZh ? "复制完整 API Key" : "Copy full key"}
+              onClick={() => void copyKey(credential.api_key, credential.id)}
+            >
+              {copiedId === credential.id ? (
+                <Check className="size-3 text-emerald-500" />
+              ) : (
+                <Copy className="size-3 stroke-1" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {isZh ? "复制完整 API Key" : "Copy full key"}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+  );
+}
+
 /** Renders one URL's keys and a draft box that joins the list on Enter. */
 export function ChannelCredentialSection({
   locale,
@@ -62,6 +164,7 @@ export function ChannelCredentialSection({
   const isZh = locale === "zh-CN";
   const queryClient = useQueryClient();
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const newApiKeysLines = baseUrlId
     ? (form.base_urls.find((item) => item.id === baseUrlId)?.newApiKeysLines ??
       "")
@@ -124,9 +227,13 @@ export function ChannelCredentialSection({
     }));
   }
 
-  async function copyKey(apiKey: string) {
+  async function copyKey(apiKey: string, id?: string) {
     try {
       await navigator.clipboard.writeText(apiKey);
+      if (id) {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 1500);
+      }
       toast.success(isZh ? "API Key 已复制" : "API key copied");
     } catch {
       toast.error(isZh ? "复制失败" : "Copy failed");
@@ -210,11 +317,11 @@ export function ChannelCredentialSection({
                   className="space-y-1.5 border-b border-border/40 px-2.5 py-1.5 text-xs last:border-b-0"
                 >
                   <div className="flex h-7 items-center gap-2">
-                    <span className="w-12 shrink-0 truncate text-[11px] text-muted-foreground tabular-nums">
+                    <span className="w-10 shrink-0 truncate text-[11px] text-muted-foreground tabular-nums">
                       {credentialLabel({ name: "" }, index, locale)}
                     </span>
                     <Input
-                      className="h-7 min-w-0 flex-1"
+                      className="h-7 w-20 shrink-0 px-2 text-xs"
                       value={credential.name}
                       placeholder={isZh ? "备注" : "Remark"}
                       aria-label={isZh ? "密钥备注" : "Key remark"}
@@ -222,20 +329,13 @@ export function ChannelCredentialSection({
                         updateKey(credential.id, { name: event.target.value })
                       }
                     />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="w-[88px] shrink-0 truncate text-left font-mono text-[11px] text-muted-foreground hover:text-foreground"
-                          onClick={() => void copyKey(credential.api_key)}
-                        >
-                          {maskApiKey(credential.api_key)}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {isZh ? "复制完整 API Key" : "Copy full key"}
-                      </TooltipContent>
-                    </Tooltip>
+                    <CredentialKeyCell
+                      credential={credential}
+                      locale={locale}
+                      updateKey={updateKey}
+                      copyKey={copyKey}
+                      copiedId={copiedId}
+                    />
                     <Select
                       value={credential.rate_source}
                       onValueChange={(value) =>
@@ -248,12 +348,12 @@ export function ChannelCredentialSection({
                       }
                     >
                       <SelectTrigger
-                        className="h-7 w-[92px] shrink-0 px-2"
+                        className="h-7 w-[88px] shrink-0 px-2"
                         aria-label={isZh ? "倍率来源" : "Rate source"}
                       >
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="bg-background">
                         <SelectItem value="none">
                           {isZh ? "不查询倍率" : "No rate"}
                         </SelectItem>
