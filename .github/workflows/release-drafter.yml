@@ -6,7 +6,7 @@ on:
 jobs:
   draft_release:
     if: github.ref_name == 'main' || github.ref_name == 'dev'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 

@@ -138,7 +138,7 @@ export function FoldedMemberRow({
         : "Dependency unavailable";
 
   return (
-    <div
+    <li
       draggable={canReorder}
       onDragStart={canReorder ? onDragStart : undefined}
       onDragEnter={canReorder ? onDragEnter : undefined}
@@ -285,6 +285,6 @@ export function FoldedMemberRow({
           {locale === "zh-CN" ? "移除成员" : "Remove member"}
         </TooltipContent>
       </Tooltip>
-    </div>
+    </li>
   );
 }
