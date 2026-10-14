@@ -29,6 +29,7 @@ from app.persistence.entities import (
     SiteProtocolConfigEntity,
 )
 
+from ...core.context_windows import coerce_context_window
 from ...core.runtime_channel_ids import compose_runtime_channel_id
 from ..regex_rule_references import parse_rule_ids
 from ..site_loader import fetch_site_rows
@@ -134,6 +135,10 @@ class ChannelRowMappingMixin:
                     ),
                     source=row.source,
                     upstream_missing=bool(row.upstream_missing),
+                    context_window=coerce_context_window(row.context_window),
+                    upstream_context_window=coerce_context_window(
+                        row.upstream_context_window
+                    ),
                 )
             )
         return result
@@ -277,6 +282,8 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                     enabled=model.enabled,
                     upstream_missing=model.upstream_missing,
                     sort_order=model.sort_order,
+                    context_window=model.context_window,
+                    upstream_context_window=model.upstream_context_window,
                 )
             )
         return items

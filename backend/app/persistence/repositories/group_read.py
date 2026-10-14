@@ -8,6 +8,10 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.context_windows import (
+    coerce_context_window,
+    resolve_channel_model_context_window,
+)
 from app.core.model_prices import canonical_model_price_key
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
@@ -91,6 +95,20 @@ def _build_item_view(
         if channel_lookup is not None
         else None
     )
+    channel_model = (
+        channel_lookup.models_by_key.get((item.credential_id, item.model_name))
+        if channel_lookup is not None
+        else None
+    )
+    context = resolve_channel_model_context_window(
+        model_name=item.model_name,
+        context_window=(
+            channel_model.context_window if channel_model is not None else None
+        ),
+        upstream_context_window=(
+            channel_model.upstream_context_window if channel_model is not None else None
+        ),
+    )
     return ModelGroupItemView(
         channel_id=item.channel_id,
         site_id=channel.site_id if channel is not None else None,
@@ -111,6 +129,8 @@ def _build_item_view(
         sort_order=sort_order,
         state=evaluation.state,
         reasons=list(evaluation.reasons),
+        context_window=context.context_window,
+        context_window_source=context.source,
     )
 
 
@@ -480,6 +500,7 @@ class GroupMappingMixin:
             param_override=parse_param_override(entity.param_override),
             headers=parse_headers(entity.headers_json),
             fallback_group_ids=parse_fallback_group_ids(entity.fallback_group_ids_json),
+            context_window=coerce_context_window(entity.context_window),
             **group_price_kwargs(price),
             items=items,
         )

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.context_windows import coerce_context_window
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.protocols import ModelSource, ProtocolKind
 from app.models.sites import SiteConfig, SiteCredentialInput
@@ -76,6 +77,10 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 ),
                 "source": row.source,
                 "upstream_missing": bool(row.upstream_missing),
+                "context_window": coerce_context_window(row.context_window),
+                "upstream_context_window": coerce_context_window(
+                    row.upstream_context_window
+                ),
             }
         )
 
@@ -327,6 +332,8 @@ async def replace_sites(
                             model.upstream_missing
                             and model.source == ModelSource.SYNCED
                         ),
+                        context_window=model.context_window,
+                        upstream_context_window=model.upstream_context_window,
                     )
                 )
 

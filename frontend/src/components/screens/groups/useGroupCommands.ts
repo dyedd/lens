@@ -16,6 +16,7 @@ import type {
   UnplacedModelRemovalRequest,
   UnplacedModelRemovalResponse,
 } from "@/lib/api/groups";
+import { parseContextWindowInput } from "@/lib/contextWindow";
 import {
   EMPTY_FORM,
   type FormState,
@@ -87,6 +88,14 @@ export function useGroupCommands({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (parseContextWindowInput(form.context_window) === undefined) {
+      toast.error(
+        locale === "zh-CN"
+          ? "默认上下文格式无效，示例：200K、1M、128000"
+          : "Invalid default context. Examples: 200K, 1M, 128000",
+      );
+      return;
+    }
     try {
       await saveGroup(form, editingId);
       toast.success(

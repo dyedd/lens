@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -125,8 +126,13 @@ class SiteOperationsMixin:
         *,
         upstream_names: set[str],
         wanted_names: set[str],
+        upstream_context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
-        """Add wanted upstream models and flag synced models missing upstream."""
+        """Add wanted upstream models and flag synced models missing upstream.
+
+        Context windows the upstream reports are refreshed on every bound row.
+        """
+        reported_context_windows = upstream_context_windows or {}
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
@@ -190,13 +196,22 @@ class SiteOperationsMixin:
                             sort_order=next_sort_order,
                             protocol=protocol.value,
                             source=ModelSource.SYNCED.value,
+                            upstream_context_window=reported_context_windows.get(
+                                model_name
+                            ),
                         )
                     )
                     next_sort_order += 1
 
             missing: set[str] = set()
             restored: set[str] = set()
+            has_context_changes = False
             for row in credential_models:
+                if row.model_name in upstream_names:
+                    reported = reported_context_windows.get(row.model_name)
+                    if row.upstream_context_window != reported:
+                        row.upstream_context_window = reported
+                        has_context_changes = True
                 if row.source != ModelSource.SYNCED.value:
                     continue
                 is_missing = row.model_name not in upstream_names
@@ -205,7 +220,7 @@ class SiteOperationsMixin:
                 row.upstream_missing = int(is_missing)
                 (missing if is_missing else restored).add(row.model_name)
 
-            if added or missing or restored:
+            if added or missing or restored or has_context_changes:
                 await session.commit()
             return UpstreamModelChanges(
                 added=added, missing=sorted(missing), restored=sorted(restored)

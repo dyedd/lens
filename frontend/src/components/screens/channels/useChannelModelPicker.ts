@@ -124,6 +124,7 @@ export function useChannelModelPicker({
                 protocol_config_id: targets[index].protocolConfigId,
                 credential_id: item.credential_id,
                 model_name: item.model_name,
+                context_window: item.context_window,
                 credentialName: credential
                   ? credentialLabel(credential, credentialIndex, locale)
                   : item.credential_name,
@@ -182,6 +183,7 @@ export function useChannelModelPicker({
             item.model_name,
             ["auto"],
             "manual",
+            item.context_window,
           ),
         );
       imported += newModels.length;

@@ -69,6 +69,7 @@ type Props = {
   onSave: FormEventHandler<HTMLFormElement>;
   onToggleEnabled: (key: string, enabled: boolean) => void;
   onUpdateProtocols: (key: string, protocols: ProtocolKind[]) => void;
+  onUpdateContextWindow: (key: string, contextWindow: number | null) => void;
   onDelete: (key: string) => void;
   onTest: (key: string) => void;
   testing: boolean;
@@ -86,7 +87,7 @@ type Props = {
 export function ChannelModelsDialog({ open, onOpenChange, ...props }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <ChannelModelsBody onOpenChange={onOpenChange} {...props} />
       </DialogContent>
     </Dialog>
@@ -103,6 +104,7 @@ function ChannelModelsBody({
   onSave,
   onToggleEnabled,
   onUpdateProtocols,
+  onUpdateContextWindow,
   onDelete,
   onTest,
   testing,
@@ -453,6 +455,7 @@ function ChannelModelsBody({
             onSelectOne={selection.toggleId}
             onToggleEnabled={onToggleEnabled}
             onUpdateProtocols={onUpdateProtocols}
+            onUpdateContextWindow={onUpdateContextWindow}
             onDelete={onDelete}
             onTest={onTest}
           />

@@ -26,7 +26,7 @@ from ....models.sites import (
 )
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..tasks.model_discovery import fetch_upstream_models, filter_model_names
+from ..tasks.model_discovery import fetch_upstream_models, filter_upstream_models
 from ..tasks.model_group_placement import run_model_group_placement
 from ..tasks.site_model_probe import run_site_model_probe
 from ..upstream_support import format_channel_error
@@ -145,15 +145,15 @@ async def fetch_site_models(
             param_override=[],
         )
         try:
-            model_names = filter_model_names(
+            upstream_models = filter_upstream_models(
                 await fetch_upstream_models(channel), payload.match_regex
             )
         except HTTPException as exc:
             errors.append(format_channel_error(exc.detail))
             continue
 
-        for model_name in model_names:
-            key = (preview["credential_id"], model_name)
+        for upstream_model in upstream_models:
+            key = (preview["credential_id"], upstream_model.name)
             if key in seen:
                 continue
             seen.add(key)
@@ -161,7 +161,8 @@ async def fetch_site_models(
                 SiteModelFetchItem(
                     credential_id=preview["credential_id"],
                     credential_name=preview["credential_name"],
-                    model_name=model_name,
+                    model_name=upstream_model.name,
+                    context_window=upstream_model.context_window,
                 )
             )
     if not items and errors:

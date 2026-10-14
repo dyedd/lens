@@ -6,6 +6,7 @@ import type {
   RoutingStrategy,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import type { ContextWindowSource } from "@/lib/contextWindow";
 import type {
   HeaderRuleDraft,
   ParamOverrideRuleDraft,
@@ -30,6 +31,9 @@ export type FormItem = {
   matched_by_rule: boolean;
   state: ModelGroupItemState | null;
   reasons: ModelGroupItemReason[];
+  /** The channel model's own context window; null uses the group default. */
+  context_window: number | null;
+  context_window_source: ContextWindowSource | null;
 };
 
 export type EvaluatedFormItem = FormItem;
@@ -43,6 +47,8 @@ export type FormState = {
   param_override: ParamOverrideRuleDraft[];
   headers: HeaderRuleDraft[];
   fallback_group_ids: string[];
+  /** Default context window text, e.g. "1M"; empty means unknown. */
+  context_window: string;
   items: FormItem[];
 };
 
@@ -67,6 +73,8 @@ export type FoldedMember = {
   base_url: string;
   rate_multiplier: number | null;
   rate_source: "none" | "sub2api" | "newapi";
+  context_window: number | null;
+  context_window_source: ContextWindowSource | null;
   protocols: ProtocolKind[];
   subItems: EvaluatedFormItem[];
   is_rule_member: boolean;
@@ -135,5 +143,6 @@ export const EMPTY_FORM: FormState = {
   param_override: [{ path: "", action: "set", value: "" }],
   headers: [{ key: "", value: "", action: "override" }],
   fallback_group_ids: [],
+  context_window: "",
   items: [],
 };
