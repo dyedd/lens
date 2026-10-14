@@ -2,13 +2,13 @@ import type {
   ModelGroup,
   ModelGroupItemReason,
   ModelGroupItemState,
+  ModelGroupMemberSource,
+  ModelGroupNewMemberPosition,
   RoutingStrategy,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { RegexRule } from "@/lib/api/regexRules";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
 import { PROTOCOL_LIST } from "@/lib/protocols";
-import { compileRegexRulePattern } from "@/lib/regexRules";
 import type { FormItem, GroupDisplayMember, GroupRow } from "./groupTypes";
 
 export const STRATEGY_OPTIONS: Array<{
@@ -109,6 +109,49 @@ export function formatCredentialIdentity(
     .join(" · ");
 }
 
+/** Format how a member joined its group. */
+export function formatMemberSource(
+  source: ModelGroupMemberSource,
+  locale: "zh-CN" | "en-US",
+) {
+  if (source === "rule") return locale === "zh-CN" ? "规则" : "Rule";
+  if (source === "placement") return locale === "zh-CN" ? "自动" : "Auto";
+  return locale === "zh-CN" ? "手动" : "Manual";
+}
+
+export const NEW_MEMBER_POSITION_OPTIONS: Array<{
+  value: ModelGroupNewMemberPosition;
+  zh: string;
+  en: string;
+}> = [
+  { value: "end", zh: "放在末尾", en: "At the end" },
+  { value: "start", zh: "放在开头", en: "At the start" },
+  { value: "rate_asc", zh: "按倍率从低到高", en: "By rate, lowest first" },
+];
+
+/**
+ * Insert automatically joined items where the group places new members.
+ *
+ * Mirrors the backend reconcile: "rate_asc" puts each item before the first
+ * member with a higher rate, and an unknown rate sorts last.
+ */
+export function insertNewMembers(
+  items: FormItem[],
+  newItems: FormItem[],
+  position: ModelGroupNewMemberPosition,
+): FormItem[] {
+  if (!newItems.length) return items;
+  if (position === "start") return [...newItems, ...items];
+  if (position === "end") return [...items, ...newItems];
+  const rateOf = (item: FormItem) => item.rate_multiplier ?? Infinity;
+  const result = items.slice();
+  for (const item of newItems) {
+    const index = result.findIndex((member) => rateOf(member) > rateOf(item));
+    result.splice(index < 0 ? result.length : index, 0, item);
+  }
+  return result;
+}
+
 /** Format a model price for compact display. */
 export function formatMoney(value: number) {
   if (value === 0) return "0";
@@ -163,24 +206,18 @@ export function buildModelMatchKey(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** Compile the selected library rules; unknown ids and invalid patterns match nothing. */
-export function compileMatchRules(ruleIds: string[], rules: RegexRule[]) {
-  return rules
-    .filter((rule) => ruleIds.includes(rule.id))
-    .flatMap((rule) => compileRegexRulePattern(rule.pattern) ?? []);
-}
-
-/** Return whether a model name joins a group through its live match rules. */
-export function matchesGroupRules(
-  modelName: string,
+/**
+ * Build a matcher for a group's rules: exact match models (case-insensitive)
+ * plus the model names the backend found for its regex rules.
+ */
+export function buildRuleMatcher(
   matchModels: string[],
-  matchRules: RegExp[],
+  matchedModelNames: string[],
 ) {
-  const lowerName = modelName.toLowerCase();
-  return (
-    matchModels.some((name) => name.toLowerCase() === lowerName) ||
-    matchRules.some((rule) => rule.test(modelName))
+  const names = new Set(
+    [...matchModels, ...matchedModelNames].map((name) => name.toLowerCase()),
   );
+  return (modelName: string) => names.has(modelName.toLowerCase());
 }
 
 /** Build the stable identity key for a model group member. */
@@ -229,7 +266,7 @@ export function buildGroupDisplayMembers(
         credential_number: item.credential_number,
         credential_mask: item.credential_mask,
         base_url: item.base_url,
-        matched_by_rule: true,
+        source: item.source,
         protocols: [],
         items: [],
         enabled_item_count: 0,
@@ -242,7 +279,7 @@ export function buildGroupDisplayMembers(
     }
 
     member.items.push(item);
-    member.matched_by_rule &&= item.matched_by_rule;
+    if (member.source !== item.source) member.source = "manual";
     if (item.enabled) member.enabled_item_count += 1;
     else member.disabled_item_count += 1;
     if (item.state === "ready") member.ready_item_count += 1;

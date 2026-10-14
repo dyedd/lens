@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
@@ -29,6 +28,7 @@ from app.persistence.entities import (
     ModelGroupItemEntity,
     ModelPriceEntity,
 )
+from app.persistence.group_match_rules import load_match_rules
 from app.persistence.group_rule_codec import (
     group_price_kwargs,
     parse_fallback_group_ids,
@@ -36,7 +36,7 @@ from app.persistence.group_rule_codec import (
     parse_match_models,
     parse_param_override,
 )
-from app.persistence.regex_rule_references import load_rule_patterns, parse_rule_ids
+from app.persistence.regex_rule_references import parse_rule_ids
 
 from ...core.model_group_status import (
     ModelGroupChannelLookup,
@@ -45,7 +45,19 @@ from ...core.model_group_status import (
     model_group_item_key,
 )
 from ...core.protocol_reachability import infer_client_protocols
-from ...models.model_groups import ModelGroupItemState
+from ...models.model_groups import (
+    ModelGroupItemState,
+    ModelGroupMemberSource,
+    ModelGroupNewMemberPosition,
+)
+
+
+@dataclass(slots=True)
+class GroupItemViews:
+    """Saved member and exclusion views keyed by group id."""
+
+    members: dict[str, list[ModelGroupItemView]]
+    excluded: dict[str, list[ModelGroupItemView]]
 
 
 @dataclass
@@ -63,16 +75,6 @@ class _CandidateAggregate:
     model_name: str = ""
     credential_id: str = ""
     protocol_config_id: str = ""
-
-
-def _model_matches_group_rule(
-    model_name: str, match_models: list[str], patterns: list[re.Pattern[str]]
-) -> bool:
-    """Return whether a model name joins a group by its match models or rules."""
-    folded_name = model_name.casefold()
-    return any(folded_name == item.casefold() for item in match_models) or any(
-        pattern.search(model_name) for pattern in patterns
-    )
 
 
 def format_credential_mask(api_key: str) -> str:
@@ -126,6 +128,7 @@ def _build_item_view(
         rate_multiplier=credential.rate_multiplier if credential is not None else None,
         model_name=item.model_name,
         enabled=item.enabled,
+        source=item.source,
         sort_order=sort_order,
         state=evaluation.state,
         reasons=list(evaluation.reasons),
@@ -259,9 +262,24 @@ class GroupCandidatesMixin:
             _build_item_view(item, index, channels_by_id)
             for index, item in enumerate(payload.items)
         ]
+        matched_model_names: list[str] = []
+        if payload.match_models or payload.match_rule_ids:
+            async with self._session_factory() as session:
+                rules = await load_match_rules(
+                    session, payload.match_models, payload.match_rule_ids
+                )
+            matched_model_names = sorted(
+                {
+                    model.model_name
+                    for channel in all_channels
+                    for model in channel.models
+                    if rules.matches(model.model_name)
+                }
+            )
         return ModelGroupCandidatesResponse(
             candidates=candidates,
             evaluated_items=evaluated_items,
+            matched_model_names=matched_model_names,
         )
 
     @staticmethod
@@ -308,21 +326,12 @@ class GroupMappingMixin:
                 .all()
             )
             entities = [*entities, *route_entities]
-        items_by_group = await self._load_group_items(
+        item_views = await self._load_group_items(
             session,
             [item.id for item in entities],
             channels,
         )
-        rule_patterns = await load_rule_patterns(
-            session,
-            (
-                rule_id
-                for item in entities
-                if not item.route_group_id.strip()
-                for rule_id in parse_rule_ids(item.match_rule_ids_json)
-            ),
-        )
-        self._append_rule_items(entities, items_by_group, channels, rule_patterns)
+        items_by_group = item_views.members
         route_name_by_id = {item.id: item.name for item in entities}
         prices_by_key = await self._load_model_prices_by_keys(
             session, [canonical_model_price_key(item.name) for item in entities]
@@ -337,6 +346,7 @@ class GroupMappingMixin:
             self._to_group(
                 item,
                 items_by_group.get(item.id, []),
+                item_views.excluded.get(item.id, []),
                 client_protocols_by_group.get(item.route_group_id or item.id, []),
                 prices_by_key.get(canonical_model_price_key(item.name)),
                 route_name_by_id.get(item.route_group_id, ""),
@@ -344,62 +354,6 @@ class GroupMappingMixin:
             for item in entities
             if item.id in requested_ids
         ]
-
-    @staticmethod
-    def _append_rule_items(
-        entities: list[ModelGroupEntity],
-        items_by_group: dict[str, list[ModelGroupItemView]],
-        channels: list[ChannelConfig],
-        rule_patterns: Mapping[str, re.Pattern[str]],
-    ) -> None:
-        """Add READY channel models matched by each execution group's rules.
-
-        Saved members come first and win on the same key, so disabling a saved
-        member also keeps the rules from re-adding it.
-        """
-        rules: list[tuple[str, list[str], list[re.Pattern[str]]]] = []
-        for entity in entities:
-            if entity.route_group_id.strip():
-                continue
-            match_models = parse_match_models(entity.match_models_json)
-            patterns = [
-                rule_patterns[rule_id]
-                for rule_id in parse_rule_ids(entity.match_rule_ids_json)
-                if rule_id in rule_patterns
-            ]
-            if match_models or patterns:
-                rules.append((entity.id, match_models, patterns))
-        if not rules:
-            return
-        # ponytail: matches every channel model name per hydration; index names if slow
-        model_names = {
-            model.model_name for channel in channels for model in channel.models
-        }
-        names_by_group = {
-            group_id: {
-                name
-                for name in model_names
-                if _model_matches_group_rule(name, match_models, patterns)
-            }
-            for group_id, match_models, patterns in rules
-        }
-        ready_items = list_ready_channel_items(
-            channels, set().union(*names_by_group.values())
-        )
-        for group_id, _match_models, _patterns in rules:
-            items = items_by_group.setdefault(group_id, [])
-            saved_keys = {model_group_item_key(item) for item in items}
-            for ready_item in ready_items:
-                if (
-                    ready_item.model_name not in names_by_group[group_id]
-                    or model_group_item_key(ready_item) in saved_keys
-                ):
-                    continue
-                items.append(
-                    ready_item.model_copy(
-                        update={"sort_order": len(items), "matched_by_rule": True}
-                    )
-                )
 
     async def _load_model_prices_by_keys(
         self, session: AsyncSession, keys: list[str]
@@ -426,9 +380,12 @@ class GroupMappingMixin:
         session: AsyncSession,
         group_ids: list[str],
         channels: list[ChannelConfig],
-    ) -> dict[str, list[ModelGroupItemView]]:
+    ) -> GroupItemViews:
+        item_views = GroupItemViews(
+            members={group_id: [] for group_id in group_ids}, excluded={}
+        )
         if not group_ids:
-            return {}
+            return item_views
 
         rows = (
             (
@@ -446,9 +403,6 @@ class GroupMappingMixin:
             .all()
         )
 
-        items_by_group: dict[str, list[ModelGroupItemView]] = {
-            group_id: [] for group_id in group_ids
-        }
         channels_by_id = build_model_group_channel_lookups(channels)
         for row in rows:
             item = ModelGroupItemInput(
@@ -456,26 +410,35 @@ class GroupMappingMixin:
                 credential_id=row.credential_id,
                 model_name=row.model_name,
                 enabled=bool(row.enabled),
+                source=ModelGroupMemberSource(row.source),
             )
-            items_by_group.setdefault(row.group_id, []).append(
+            views = item_views.excluded if row.excluded else item_views.members
+            views.setdefault(row.group_id, []).append(
                 _build_item_view(item, row.sort_order, channels_by_id)
             )
-        return items_by_group
+        return item_views
 
     def _replace_group_items(
         self,
         session: AsyncSession,
         group_id: str,
         items: list[ModelGroupItemInput],
+        excluded_items: list[ModelGroupItemInput] | None = None,
     ) -> None:
-        for index, item in enumerate(items):
+        rows = [
+            *((item, False) for item in items),
+            *((item, True) for item in excluded_items or []),
+        ]
+        for index, (item, is_excluded) in enumerate(rows):
             session.add(
                 ModelGroupItemEntity(
                     group_id=group_id,
                     channel_id=item.channel_id,
                     credential_id=item.credential_id,
                     model_name=item.model_name,
-                    enabled=1 if item.enabled else 0,
+                    enabled=0 if is_excluded or not item.enabled else 1,
+                    source=item.source.value,
+                    excluded=1 if is_excluded else 0,
                     sort_order=index,
                 )
             )
@@ -484,6 +447,7 @@ class GroupMappingMixin:
     def _to_group(
         entity: ModelGroupEntity,
         items: list[ModelGroupItemView],
+        excluded_items: list[ModelGroupItemView],
         client_protocols: list[ProtocolKind],
         price: ModelPriceEntity | None = None,
         route_group_name: str = "",
@@ -500,7 +464,9 @@ class GroupMappingMixin:
             param_override=parse_param_override(entity.param_override),
             headers=parse_headers(entity.headers_json),
             fallback_group_ids=parse_fallback_group_ids(entity.fallback_group_ids_json),
+            new_member_position=ModelGroupNewMemberPosition(entity.new_member_position),
             context_window=coerce_context_window(entity.context_window),
             **group_price_kwargs(price),
             items=items,
+            excluded_items=excluded_items,
         )

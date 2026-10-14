@@ -124,6 +124,29 @@ class SiteProtocolConfigUpsertsMixin:
         protocol_config: SiteProtocolConfigInput,
         credential_ids: set[str],
     ) -> None:
+        # Rows are rebuilt from the payload, which does not carry miss times.
+        missing_since_by_key = {
+            (
+                row.credential_id,
+                row.model_name,
+                row.protocol,
+            ): row.upstream_missing_since
+            for row in (
+                await session.execute(
+                    select(
+                        SiteDiscoveredModelEntity.credential_id,
+                        SiteDiscoveredModelEntity.model_name,
+                        SiteDiscoveredModelEntity.protocol,
+                        SiteDiscoveredModelEntity.upstream_missing_since,
+                    )
+                    .where(
+                        SiteDiscoveredModelEntity.protocol_config_id
+                        == protocol_config_id
+                    )
+                    .where(SiteDiscoveredModelEntity.upstream_missing == 1)
+                )
+            ).all()
+        }
         await session.execute(
             delete(SiteDiscoveredModelEntity).where(
                 SiteDiscoveredModelEntity.protocol_config_id == protocol_config_id
@@ -152,6 +175,9 @@ class SiteProtocolConfigUpsertsMixin:
                 )
             seen_models.add(model_key)
 
+            is_upstream_missing = (
+                model.upstream_missing and model.source == ModelSource.SYNCED
+            )
             model_id = model.id
             if not model_id or model_id in seen_row_ids:
                 model_id = str(uuid.uuid4())
@@ -167,8 +193,11 @@ class SiteProtocolConfigUpsertsMixin:
                     sort_order=model_index,
                     protocol=protocol_value,
                     source=model.source.value,
-                    upstream_missing=int(
-                        model.upstream_missing and model.source == ModelSource.SYNCED
+                    upstream_missing=int(is_upstream_missing),
+                    upstream_missing_since=(
+                        missing_since_by_key.get(model_key) or _naive_utc_now()
+                        if is_upstream_missing
+                        else None
                     ),
                     context_window=model.context_window,
                     upstream_context_window=model.upstream_context_window,

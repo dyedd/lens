@@ -20,6 +20,7 @@ from ...persistence.repositories import (
     GatewayApiKeyRepository,
     ModelGroupRepository,
     ModelPriceRepository,
+    ModelSyncRunRepository,
     RegexRuleRepository,
     RequestLogRepository,
     SettingsRepository,
@@ -100,6 +101,7 @@ class AppState:
         self.gateway_api_key_repo = GatewayApiKeyRepository(self.session_factory)
         self.group_repo = ModelGroupRepository(self.session_factory)
         self.model_price_repo = ModelPriceRepository(self.session_factory)
+        self.model_sync_run_repo = ModelSyncRunRepository(self.session_factory)
         self.regex_rule_repo = RegexRuleRepository(self.session_factory)
         self.site_credential_rate_repo = SiteCredentialRateRepository(
             self.session_factory

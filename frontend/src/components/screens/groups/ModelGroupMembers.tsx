@@ -25,6 +25,7 @@ import { protocolLabel } from "@/lib/protocols";
 import type { FoldedMember } from "./groupTypes";
 import {
   formatCredentialIdentity,
+  formatMemberSource,
   modelGroupItemReasonLabel,
   modelGroupReasonsForState,
 } from "./modelGroupFormatting";
@@ -186,17 +187,21 @@ export function FoldedMemberRow({
           </Tooltip>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
-          {member.is_rule_member ? (
+          {member.source !== "manual" ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Badge variant="outline" tabIndex={0}>
-                  {locale === "zh-CN" ? "规则" : "Rule"}
+                  {formatMemberSource(member.source, locale)}
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                {locale === "zh-CN"
-                  ? "由自动匹配规则实时加入；关闭或移除即排除，拖动排序会固定成员"
-                  : "Joined by the live match rules. Disabling or removing excludes it; reordering pins members"}
+                {member.source === "rule"
+                  ? locale === "zh-CN"
+                    ? "由匹配规则自动加入；可以像其他成员一样拖动排序"
+                    : "Joined through the match rules; reorder it like any member"
+                  : locale === "zh-CN"
+                    ? "同步时自动放入这个模型组"
+                    : "Placed into this group automatically during sync"}
               </TooltipContent>
             </Tooltip>
           ) : null}
@@ -306,7 +311,13 @@ export function FoldedMemberRow({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {locale === "zh-CN" ? "移除成员" : "Remove member"}
+          {member.source !== "manual"
+            ? locale === "zh-CN"
+              ? "移除后不再自动加入，可在“已排除”中恢复"
+              : "It will no longer join automatically; restore it from Excluded"
+            : locale === "zh-CN"
+              ? "移除成员"
+              : "Remove member"}
         </TooltipContent>
       </Tooltip>
     </li>

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
@@ -113,6 +114,8 @@ class SiteModel(StrictBaseModel):
     protocol: ProtocolKind | None = None
     source: ModelSource = ModelSource.MANUAL
     upstream_missing: bool = False
+    # Internal: carried to runtime channels for retirement, never serialized.
+    upstream_missing_since: datetime | None = Field(default=None, exclude=True)
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
 

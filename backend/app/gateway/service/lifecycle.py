@@ -11,7 +11,7 @@ from ...core.auth import validate_auth_secret_key
 from ...core.config import settings
 from ...core.time_zone import load_time_zone
 from .app_state import AppState, app_state
-from .tasks.model_group_placement import run_model_group_placement
+from .tasks.model_group_reconcile import run_model_group_reconcile
 
 
 async def _startup_app_state(state: AppState) -> None:
@@ -20,7 +20,7 @@ async def _startup_app_state(state: AppState) -> None:
     if state.http.is_closed:
         state.http = state._create_http_client()
     await state.request_log_store.maintenance.fail_running_request_logs()
-    await run_model_group_placement(state)
+    await run_model_group_reconcile(state, should_raise=True)
 
 
 async def _close_app_state(state: AppState) -> None:
