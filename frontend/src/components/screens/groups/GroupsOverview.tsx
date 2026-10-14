@@ -2,6 +2,7 @@ import {
   ArrowDownUp,
   Check,
   Funnel,
+  History,
   Plus,
   RefreshCw,
   Search,
@@ -121,6 +122,7 @@ type Props = {
   onCreateOwnGroups: (modelNames: string[]) => Promise<boolean>;
   onAutoPlace: () => void;
   onRemoveUnplacedModels: (modelNames: string[]) => Promise<boolean>;
+  onOpenSyncRuns: () => void;
 };
 
 /** Renders unplaced models and the model group list as a toolbar and table. */
@@ -162,6 +164,7 @@ export function GroupsOverview({
   onCreateOwnGroups,
   onAutoPlace,
   onRemoveUnplacedModels,
+  onOpenSyncRuns,
 }: Props) {
   const {
     pageRows: pagedGroups,
@@ -180,6 +183,10 @@ export function GroupsOverview({
         <h3 className="min-w-0 text-sm font-semibold">
           {locale === "zh-CN" ? "模型组" : "Model Groups"}
         </h3>
+        <ToolbarButton onClick={onOpenSyncRuns}>
+          <History className="size-3.5" />
+          {locale === "zh-CN" ? "同步记录" : "Sync history"}
+        </ToolbarButton>
       </div>
 
       {unplacedModels.length ? (

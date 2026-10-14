@@ -34,6 +34,7 @@ import type {
 } from "./groupTypes";
 import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
 import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
+import { ModelGroupExcludedMembers } from "./ModelGroupExcludedMembers";
 import { ModelGroupMatchRules } from "./ModelGroupMatchRules";
 import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
 import { ModelGroupSettings } from "./ModelGroupSettings";
@@ -58,6 +59,9 @@ interface GroupEditorDialogProps {
   hasDeletedMatchRules: boolean;
   ruleMatchModelCount: number;
   ruleMatchSourceCount: number;
+  memberChange: { added: number; removed: number } | null;
+  excludedMembers: FoldedMember[];
+  restoreExcludedMember: (foldKey: string) => void;
   candidateSearch: string;
   changeCandidateSearch: (value: string) => void;
   refetchCandidates: () => unknown;
@@ -148,8 +152,8 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               <SheetDescription className="mt-1 truncate text-xs">
                 {isBinding
                   ? locale === "zh-CN"
-                    ? "选择要添加的渠道成员；符合自动加入规则的模型已列出。"
-                    : "Choose channel members to add. Models matching the auto-add rules are already listed."
+                    ? "选择要添加的渠道成员；手动添加已排除的模型会取消排除。"
+                    : "Choose channel members to add. Adding an excluded model lifts its exclusion."
                   : locale === "zh-CN"
                     ? "模型名称、渠道成员和匹配规则"
                     : "Model name, channel members, and match rules"}
@@ -200,11 +204,19 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                   hasDeletedMatchRules={props.hasDeletedMatchRules}
                   ruleMatchModelCount={props.ruleMatchModelCount}
                   ruleMatchSourceCount={props.ruleMatchSourceCount}
+                  newMemberPosition={form.new_member_position}
+                  memberChange={props.memberChange}
                   onMatchModelsChange={(matchModels) =>
                     props.changeMatchRules({ match_models: matchModels })
                   }
                   onMatchRuleIdsChange={(matchRuleIds) =>
                     props.changeMatchRules({ match_rule_ids: matchRuleIds })
+                  }
+                  onNewMemberPositionChange={(position) =>
+                    setForm((current) => ({
+                      ...current,
+                      new_member_position: position,
+                    }))
                   }
                 />
               ) : null}
@@ -232,6 +244,13 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                   moveFoldedMemberWithinChannel={
                     props.moveFoldedMemberWithinChannel
                   }
+                />
+              ) : null}
+              {!form.route_group_id ? (
+                <ModelGroupExcludedMembers
+                  locale={locale}
+                  excludedMembers={props.excludedMembers}
+                  restoreExcludedMember={props.restoreExcludedMember}
                 />
               ) : null}
               <Accordion
