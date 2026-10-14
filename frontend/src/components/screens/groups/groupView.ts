@@ -1,6 +1,10 @@
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
 import type { RegexRule } from "@/lib/api/regexRules";
 import {
+  formatContextWindow,
+  parseContextWindowInput,
+} from "@/lib/contextWindow";
+import {
   headerDraftToRules,
   headerRulesToDraft,
   paramOverrideDraftToRules,
@@ -50,6 +54,8 @@ export function candidatePayloadToFormItems(
     // Candidates are READY by construction; rule members skip evaluation.
     state: matchedByRule ? "ready" : null,
     reasons: [],
+    context_window: null,
+    context_window_source: null,
   }));
 }
 
@@ -107,6 +113,10 @@ export function modelGroupToForm(group: ModelGroup): FormState {
     param_override: paramOverrideRulesToDraft(group.param_override),
     headers: headerRulesToDraft(group.headers),
     fallback_group_ids: group.fallback_group_ids ?? [],
+    context_window:
+      group.context_window === null
+        ? ""
+        : formatContextWindow(group.context_window),
     items: group.items
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -128,6 +138,8 @@ export function modelGroupToForm(group: ModelGroup): FormState {
         matched_by_rule: item.matched_by_rule,
         state: item.state,
         reasons: item.reasons,
+        context_window: item.context_window,
+        context_window_source: item.context_window_source,
       })),
   };
 }
@@ -157,6 +169,7 @@ export function formToModelGroupPayload(form: FormState) {
     param_override: paramOverrideDraftToRules(form.param_override),
     headers: headerDraftToRules(form.headers),
     fallback_group_ids: form.fallback_group_ids,
+    context_window: parseContextWindowInput(form.context_window) ?? null,
     items: listSavedFormItems(form.items).map((item) => ({
       channel_id: item.channel_id,
       credential_id: item.credential_id,
@@ -320,6 +333,8 @@ export function foldGroupMembers(
           base_url: evaluation.base_url,
           rate_multiplier: evaluation.rate_multiplier,
           rate_source: evaluation.rate_source,
+          context_window: evaluation.context_window,
+          context_window_source: evaluation.context_window_source,
           state: evaluationMatchesForm ? evaluation.state : item.state,
           reasons: evaluationMatchesForm ? evaluation.reasons : item.reasons,
         }
@@ -345,6 +360,8 @@ export function foldGroupMembers(
         base_url: evaluatedItem.base_url,
         rate_multiplier: evaluatedItem.rate_multiplier,
         rate_source: evaluatedItem.rate_source,
+        context_window: evaluatedItem.context_window,
+        context_window_source: evaluatedItem.context_window_source,
         protocols: [],
         subItems: [],
         is_rule_member: true,

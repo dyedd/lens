@@ -1,7 +1,10 @@
 import { Activity, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import {
   Table,
@@ -17,6 +20,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import {
+  contextWindowSourceLabel,
+  formatContextWindow,
+  parseContextWindowInput,
+} from "@/lib/contextWindow";
 import { CredentialBadges } from "./CredentialBadges";
 import { formatBaseUrlLabel } from "./channelModels";
 import type { AggregatedModel, Locale } from "./channelTypes";
@@ -33,6 +41,7 @@ type Props = {
   onSelectOne: (key: string, checked: boolean) => void;
   onToggleEnabled: (key: string, enabled: boolean) => void;
   onUpdateProtocols: (key: string, protocols: ProtocolKind[]) => void;
+  onUpdateContextWindow: (key: string, contextWindow: number | null) => void;
   onDelete: (key: string) => void;
   onTest: (key: string) => void;
 };
@@ -48,6 +57,7 @@ export function ChannelModelsTable({
   onSelectOne,
   onToggleEnabled,
   onUpdateProtocols,
+  onUpdateContextWindow,
   onDelete,
   onTest,
 }: Props) {
@@ -86,6 +96,9 @@ export function ChannelModelsTable({
           <TableHead className="w-[180px]">
             {locale === "zh-CN" ? "转发协议" : "Forwarding"}
           </TableHead>
+          <TableHead className="w-[92px]">
+            {locale === "zh-CN" ? "上下文" : "Context"}
+          </TableHead>
           <TableHead className="w-[72px]" />
         </TableRow>
       </TableHeader>
@@ -93,7 +106,7 @@ export function ChannelModelsTable({
         {items.length === 0 ? (
           <TableRow className="hover:bg-transparent">
             <TableCell
-              colSpan={7}
+              colSpan={8}
               className="h-28 text-center text-muted-foreground"
             >
               {!hasModels
@@ -205,6 +218,17 @@ export function ChannelModelsTable({
                   }
                 />
               </TableCell>
+              <TableCell className="w-[92px] py-1.5">
+                <ContextWindowInput
+                  // Remount when the saved value changes so the draft resets.
+                  key={model.contextWindow ?? "auto"}
+                  model={model}
+                  locale={locale}
+                  onCommit={(contextWindow) =>
+                    onUpdateContextWindow(model.key, contextWindow)
+                  }
+                />
+              </TableCell>
               <TableCell className="w-[72px] py-1.5">
                 <div className="flex h-7 items-center justify-end gap-0.5">
                   <Tooltip>
@@ -256,6 +280,93 @@ export function ChannelModelsTable({
         )}
       </TableBody>
     </Table>
+  );
+}
+
+/**
+ * Edits a model's context window override inline. Empty falls back to the
+ * upstream-reported or name-detected value shown as the placeholder.
+ */
+function ContextWindowInput({
+  model,
+  locale,
+  onCommit,
+}: {
+  model: AggregatedModel;
+  locale: Locale;
+  onCommit: (contextWindow: number | null) => void;
+}) {
+  const savedText =
+    model.contextWindow === null
+      ? ""
+      : formatContextWindow(model.contextWindow);
+  const [draft, setDraft] = useState(savedText);
+  const isZh = locale === "zh-CN";
+  const autoText =
+    model.autoContextWindow === null
+      ? ""
+      : formatContextWindow(model.autoContextWindow);
+
+  function commit() {
+    if (draft.trim() === savedText) {
+      setDraft(savedText);
+      return;
+    }
+    const parsed = parseContextWindowInput(draft);
+    if (parsed === undefined) {
+      toast.error(
+        isZh
+          ? "上下文格式无效，示例：200K、1M、128000"
+          : "Invalid context window. Examples: 200K, 1M, 128000",
+      );
+      setDraft(savedText);
+      return;
+    }
+    if (parsed === model.contextWindow) {
+      setDraft(savedText);
+      return;
+    }
+    onCommit(parsed);
+  }
+
+  const hint =
+    model.contextWindow !== null
+      ? `${contextWindowSourceLabel("manual", locale)} · ${model.contextWindow.toLocaleString()} tokens`
+      : model.autoContextWindowSource !== null &&
+          model.autoContextWindow !== null
+        ? `${contextWindowSourceLabel(model.autoContextWindowSource, locale)} · ${model.autoContextWindow.toLocaleString()} tokens`
+        : isZh
+          ? "未知时使用模型组默认上下文"
+          : "Unknown; the model group default applies";
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Input
+          value={draft}
+          placeholder={autoText || (isZh ? "默认" : "Default")}
+          inputMode="numeric"
+          aria-label={
+            isZh
+              ? `${model.modelName} 上下文窗口`
+              : `${model.modelName} context window`
+          }
+          className="h-7 px-2 font-mono text-[11px] md:text-[11px]"
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            } else if (event.key === "Escape") {
+              event.stopPropagation();
+              setDraft(savedText);
+            }
+          }}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="top">{hint}</TooltipContent>
+    </Tooltip>
   );
 }
 

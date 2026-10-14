@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { SiteModelInput } from "@/lib/api/sites";
+import { parseModelNameContextWindow } from "@/lib/contextWindow";
 import {
   activeBaseUrlValue,
   protocolConfigSelectedCredentialIds,
@@ -24,6 +25,8 @@ type ModelGroupSeed = {
   sources: Set<SiteModelInput["source"]>;
   enabled: boolean;
   upstreamMissing: boolean;
+  contextWindow: number | null;
+  upstreamContextWindow: number | null;
   members: Map<string, AggregatedModelMember>;
   testKey: string | null;
 };
@@ -69,6 +72,8 @@ export function useAggregatedModels(
           sources: new Set(),
           enabled: false,
           upstreamMissing: false,
+          contextWindow: null,
+          upstreamContextWindow: null,
           members: new Map(),
           testKey: null,
         };
@@ -84,6 +89,8 @@ export function useAggregatedModels(
         group.sources.add(model.source);
         group.enabled = group.enabled || model.enabled;
         group.upstreamMissing = group.upstreamMissing || model.upstream_missing;
+        group.contextWindow ??= model.context_window;
+        group.upstreamContextWindow ??= model.upstream_context_window;
         const memberKey = protocolConfigModelKey(protocolConfig, model);
         if (group.members.has(memberKey)) continue;
         const names = credentialNames(model.credential_id);
@@ -97,18 +104,29 @@ export function useAggregatedModels(
         group.testKey ??= memberKey;
       }
 
-      return Array.from(groups.values()).map((group) => ({
-        key: aggregateModelGroupKey(protocolConfig, group.modelName),
-        modelName: group.modelName,
-        baseUrl,
-        credentialCount,
-        protocols: Array.from(group.protocols),
-        source: group.sources.has("manual") ? "manual" : "synced",
-        enabled: group.enabled,
-        upstreamMissing: group.upstreamMissing,
-        members: Array.from(group.members.values()),
-        testKey: group.testKey,
-      }));
+      return Array.from(groups.values()).map((group) => {
+        const nameContextWindow = parseModelNameContextWindow(group.modelName);
+        return {
+          key: aggregateModelGroupKey(protocolConfig, group.modelName),
+          modelName: group.modelName,
+          baseUrl,
+          credentialCount,
+          protocols: Array.from(group.protocols),
+          source: group.sources.has("manual") ? "manual" : "synced",
+          enabled: group.enabled,
+          upstreamMissing: group.upstreamMissing,
+          contextWindow: group.contextWindow,
+          autoContextWindow: group.upstreamContextWindow ?? nameContextWindow,
+          autoContextWindowSource:
+            group.upstreamContextWindow !== null
+              ? "upstream"
+              : nameContextWindow !== null
+                ? "model_name"
+                : null,
+          members: Array.from(group.members.values()),
+          testKey: group.testKey,
+        };
+      });
     });
   }, [baseUrls, credentials, protocolConfigs, locale]);
 }

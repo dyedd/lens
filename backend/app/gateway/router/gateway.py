@@ -64,6 +64,7 @@ class GatewayRouter:
         use_model_matching: bool = True,
         route_targets: list[RouteTarget] | None = None,
         cursor_key: str | None = None,
+        required_context_tokens: int | None = None,
     ) -> RouteSelection:
         """Select a primary route and ordered fallbacks."""
         with self._lock:
@@ -77,6 +78,7 @@ class GatewayRouter:
                 use_model_matching,
                 route_targets,
                 cursor_key,
+                required_context_tokens,
             )
 
     def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:

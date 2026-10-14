@@ -168,6 +168,8 @@ class SiteDiscoveredModelEntity(Base):
     upstream_missing: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    upstream_context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ModelGroupEntity(Base):
@@ -194,6 +196,7 @@ class ModelGroupEntity(Base):
     fallback_group_ids_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]"
     )
+    context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ModelGroupItemEntity(Base):
@@ -342,7 +345,6 @@ class ModelPriceEntity(Base):
         String(32), nullable=False, default="free"
     )
     manual_override: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    context_tiers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
 
 class CronjobEntity(Base):

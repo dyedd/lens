@@ -8,7 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.core.model_prices import CONTEXT_TIER_PRICE_FIELDS, parse_context_price_tiers
 from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import ModelPriceEntity
 
@@ -53,26 +52,15 @@ def parse_fallback_group_ids(raw: str) -> list[str]:
 def group_price_kwargs(price: ModelPriceEntity | None) -> dict[str, Any]:
     """Price columns defaulted the same way everywhere a group is materialized."""
     pricing_mode = price.pricing_mode if price is not None else "free"
-    context_tiers = (
-        parse_context_price_tiers(price.context_tiers_json) if price is not None else []
-    )
-    if (
-        price is not None
-        and not any(
-            float(getattr(price, field) or 0.0) > 0
-            for field in (
-                "input_price_per_million",
-                "image_input_price_per_million",
-                "output_price_per_million",
-                "cache_read_price_per_million",
-                "cache_write_price_per_million",
-                "image_price_per_image",
-            )
-        )
-        and not any(
-            float(tier[field]) > 0
-            for tier in context_tiers
-            for field in CONTEXT_TIER_PRICE_FIELDS
+    if price is not None and not any(
+        float(getattr(price, field) or 0.0) > 0
+        for field in (
+            "input_price_per_million",
+            "image_input_price_per_million",
+            "output_price_per_million",
+            "cache_read_price_per_million",
+            "cache_write_price_per_million",
+            "image_price_per_image",
         )
     ):
         pricing_mode = "free"
@@ -97,5 +85,4 @@ def group_price_kwargs(price: ModelPriceEntity | None) -> dict[str, Any]:
         ),
         "pricing_mode": pricing_mode,
         "manual_override": bool(price.manual_override) if price is not None else False,
-        "context_tiers": context_tiers if pricing_mode == "tokens" else [],
     }

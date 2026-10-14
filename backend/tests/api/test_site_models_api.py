@@ -33,9 +33,14 @@ def test_fetch_site_models_uses_selected_credentials(
     admin_headers,
     monkeypatch,
 ) -> None:
-    async def fake_fetch(channel: Any) -> list[str]:
+    from app.gateway.service.tasks.model_discovery import UpstreamModel
+
+    async def fake_fetch(channel: Any) -> list[UpstreamModel]:
         assert channel.keys[0].id == "cred-a"
-        return ["gpt-4o", "gpt-4o-mini"]
+        return [
+            UpstreamModel(name="gpt-4o", context_window=128_000),
+            UpstreamModel(name="gpt-4o-mini"),
+        ]
 
     import app.gateway.service.admin.sites as sites
 
@@ -59,10 +64,9 @@ def test_fetch_site_models_uses_selected_credentials(
     )
 
     assert response.status_code == 200
-    assert [item["model_name"] for item in response.json()] == [
-        "gpt-4o",
-        "gpt-4o-mini",
-    ]
+    assert [
+        (item["model_name"], item["context_window"]) for item in response.json()
+    ] == [("gpt-4o", 128_000), ("gpt-4o-mini", None)]
 
 
 @pytest.mark.parametrize(
@@ -73,7 +77,12 @@ def test_fetch_site_models_uses_selected_credentials(
             "/v1/models",
             {"limit": "1000"},
             {"x-api-key": "upstream-secret", "anthropic-version": "2023-06-01"},
-            {"data": [{"id": "model-a"}, {"id": "model-b"}]},
+            {
+                "data": [
+                    {"id": "model-a", "max_input_tokens": 200_000},
+                    {"id": "model-b"},
+                ]
+            },
             id="anthropic",
         ),
         pytest.param(
@@ -81,7 +90,12 @@ def test_fetch_site_models_uses_selected_credentials(
             "/v1beta/models",
             {"key": "upstream-secret", "pageSize": "1000"},
             {},
-            {"models": [{"name": "models/model-a"}, {"name": "models/model-b"}]},
+            {
+                "models": [
+                    {"name": "models/model-a", "inputTokenLimit": 200_000},
+                    {"name": "models/model-b"},
+                ]
+            },
             id="gemini",
         ),
     ],
@@ -123,10 +137,10 @@ def test_fetch_site_models_uses_protocol_native_model_list(
     )
 
     assert response.status_code == 200, response.text
-    assert sorted(item["model_name"] for item in response.json()) == [
-        "model-a",
-        "model-b",
-    ]
+    assert {item["model_name"]: item["context_window"] for item in response.json()} == {
+        "model-a": 200_000,
+        "model-b": None,
+    }
     request = captured[0]
     assert request.url.path == path
     assert dict(request.url.params) == expected_params
@@ -456,8 +470,15 @@ def _create_sync_site(client, admin_headers, payload: dict[str, Any]) -> str:
 
 def _patch_upstream_models(monkeypatch, fetch: Any) -> None:
     import app.gateway.service.tasks.model_sync as model_sync
+    from app.gateway.service.tasks.model_discovery import UpstreamModel
 
-    monkeypatch.setattr(model_sync, "fetch_upstream_models", fetch)
+    async def fetch_models(channel: Any) -> list[UpstreamModel]:
+        return [
+            item if isinstance(item, UpstreamModel) else UpstreamModel(name=item)
+            for item in await fetch(channel)
+        ]
+
+    monkeypatch.setattr(model_sync, "fetch_upstream_models", fetch_models)
 
 
 def _run_model_sync(client, admin_headers, **body: Any) -> dict[str, Any]:

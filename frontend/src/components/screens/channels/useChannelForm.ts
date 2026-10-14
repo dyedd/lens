@@ -312,6 +312,21 @@ export function useChannelForm(locale: Locale) {
     }));
   }
 
+  /** Sets the context window override for every key's copy of a model. */
+  function updateModelContextWindow(key: string, contextWindow: number | null) {
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map((config) => ({
+        ...config,
+        models: config.models.map((model) =>
+          aggregateModelGroupKey(config, model.model_name) === key
+            ? { ...model, context_window: contextWindow }
+            : model,
+        ),
+      })),
+    }));
+  }
+
   /** Keeps models an upstream stopped listing by handing them to the admin. */
   function keepAggregateModels(keys: string[]) {
     const selected = new Set(keys);
@@ -364,6 +379,7 @@ export function useChannelForm(locale: Locale) {
     validateSiteForm,
     hasUnsavedChanges,
     updateModelProtocols,
+    updateModelContextWindow,
     removeAggregateModel,
     toggleAggregateEnabled,
     keepAggregateModels,

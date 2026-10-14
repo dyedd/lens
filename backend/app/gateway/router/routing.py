@@ -45,6 +45,25 @@ class _SWRRNode:
     current_weight: int = 0
 
 
+def _keep_targets_fitting_context(
+    targets: list[RouteTarget], required_context_tokens: int | None
+) -> list[RouteTarget]:
+    """Drop targets whose known context window is too small for the request.
+
+    The request size is an estimate, so when no target is known to fit the
+    pool is left unchanged and the upstreams decide.
+    """
+    if not required_context_tokens:
+        return targets
+    fitting = [
+        target
+        for target in targets
+        if target.context_window is None
+        or target.context_window >= required_context_tokens
+    ]
+    return fitting or targets
+
+
 class RoutePlanner:
     def __init__(self, health: RouteHealth) -> None:
         self._health = health
@@ -70,6 +89,7 @@ class RoutePlanner:
         use_model_matching: bool,
         route_targets: list[RouteTarget] | None,
         cursor_key: str | None,
+        required_context_tokens: int | None = None,
     ) -> RouteSelection:
         active = self._build_active_pool(
             channels,
@@ -78,6 +98,7 @@ class RoutePlanner:
             allowed_channel_ids,
             use_model_matching,
             route_targets,
+            required_context_tokens=required_context_tokens,
         )
         if not active:
             all_matching = self._build_active_pool(
@@ -87,6 +108,7 @@ class RoutePlanner:
                 allowed_channel_ids,
                 use_model_matching,
                 route_targets,
+                required_context_tokens=required_context_tokens,
                 skip_health_filter=True,
             )
             if all_matching:
@@ -166,15 +188,19 @@ class RoutePlanner:
         use_model_matching: bool = True,
         route_targets: list[RouteTarget] | None = None,
         *,
+        required_context_tokens: int | None = None,
         skip_health_filter: bool = False,
     ) -> list[RouteTarget]:
-        active = build_route_targets(
-            channels,
-            protocol,
-            requested_model,
-            allowed_channel_ids,
-            use_model_matching,
-            route_targets,
+        active = _keep_targets_fitting_context(
+            build_route_targets(
+                channels,
+                protocol,
+                requested_model,
+                allowed_channel_ids,
+                use_model_matching,
+                route_targets,
+            ),
+            required_context_tokens,
         )
         if skip_health_filter:
             return active

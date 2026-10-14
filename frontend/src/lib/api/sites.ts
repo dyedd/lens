@@ -44,6 +44,10 @@ export type SiteModel = {
   sort_order: number;
   source: "manual" | "synced";
   upstream_missing: boolean;
+  /** Admin override; null falls back to the upstream or model-name value. */
+  context_window: number | null;
+  /** Context window the upstream model list reports. */
+  upstream_context_window: number | null;
 };
 export type SiteModelInput = {
   id?: string | null;
@@ -53,6 +57,8 @@ export type SiteModelInput = {
   enabled: boolean;
   source: "manual" | "synced";
   upstream_missing: boolean;
+  context_window: number | null;
+  upstream_context_window: number | null;
 };
 export type SiteProtocolConfig = {
   id: string;
@@ -229,6 +235,7 @@ export type SiteModelFetchItem = {
   credential_id: string;
   credential_name: string;
   model_name: string;
+  context_window: number | null;
 };
 export type SiteModelTestPayload = {
   protocol: ProtocolKind;
