@@ -51,6 +51,7 @@ from ..gateway.service.admin.sites import (
     fetch_site_models,
     import_sites,
     list_model_health,
+    list_model_sync_runs,
     list_sites,
     sync_channel_models,
     sync_site_credential_rate,
@@ -213,6 +214,12 @@ def register_sites(app: FastAPI) -> None:
         sync_channel_models,
         methods=["POST"],
         response_model=ChannelModelSyncResponse,
+    )
+    app.add_api_route(
+        "/api/admin/model-sync-runs",
+        list_model_sync_runs,
+        methods=["GET"],
+        response_model=list[ChannelModelSyncResponse],
     )
     app.add_api_route(
         "/api/admin/sites/{site_id}/credentials/{credential_id}/rate-sync",

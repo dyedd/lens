@@ -135,6 +135,7 @@ class ChannelRowMappingMixin:
                     ),
                     source=row.source,
                     upstream_missing=bool(row.upstream_missing),
+                    upstream_missing_since=row.upstream_missing_since,
                     context_window=coerce_context_window(row.context_window),
                     upstream_context_window=coerce_context_window(
                         row.upstream_context_window
@@ -281,6 +282,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                     model_name=model.model_name,
                     enabled=model.enabled,
                     upstream_missing=model.upstream_missing,
+                    upstream_missing_since=model.upstream_missing_since,
                     sort_order=model.sort_order,
                     context_window=model.context_window,
                     upstream_context_window=model.upstream_context_window,
