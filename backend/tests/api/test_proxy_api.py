@@ -1107,7 +1107,7 @@ def test_failover_orders_targets_and_tracks_active_credential(
         assert active_log.credential_id == "cred-b"
         assert active_log.credential_name == "feng-key"
         assert active_log.channel_has_multiple_credentials is True
-        assert active_log.attempt_count == 3
+        assert active_log.attempt_count == 2
         return httpx.Response(
             200,
             json={
@@ -1150,17 +1150,13 @@ def test_failover_orders_targets_and_tracks_active_credential(
     assert detail_response.status_code == 200, detail_response.text
     detail = detail_response.json()
 
-    assert attempted_models == ["model-a1", "model-a2", "model-b"]
+    # Failover follows member order, not members grouped by site.
+    assert attempted_models == ["model-a1", "model-b"]
     assert [attempt["channel_name"] for attempt in detail["attempts"]] == [
-        "First site",
         "First site",
         "Second site",
     ]
-    assert [attempt["success"] for attempt in detail["attempts"]] == [
-        False,
-        False,
-        True,
-    ]
+    assert [attempt["success"] for attempt in detail["attempts"]] == [False, True]
 
 
 def test_upstream_400_passes_through_body_without_failover(
