@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/Tooltip";
 import type { ModelGroupCandidateItem } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
+import {
+  contextWindowSourceLabel,
+  formatContextWindow,
+} from "@/lib/contextWindow";
 import { protocolLabel } from "@/lib/protocols";
 import type { FoldedMember } from "./groupTypes";
 import {
@@ -201,6 +205,26 @@ export function FoldedMemberRow({
             <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
               {locale === "zh-CN" ? "倍率" : "Rate"} {member.rate_multiplier}x
             </Badge>
+          ) : null}
+          {member.context_window !== null ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="secondary"
+                  className="px-1.5 py-0 text-[10px]"
+                  tabIndex={0}
+                >
+                  {locale === "zh-CN" ? "上下文" : "Context"}{" "}
+                  {formatContextWindow(member.context_window)}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {member.context_window_source
+                  ? `${contextWindowSourceLabel(member.context_window_source, locale)} · `
+                  : ""}
+                {member.context_window.toLocaleString()} tokens
+              </TooltipContent>
+            </Tooltip>
           ) : null}
           {member.protocols.map((protocol) => (
             <Badge

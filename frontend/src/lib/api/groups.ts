@@ -1,4 +1,4 @@
-import type { ModelPriceContextTier } from "./modelPrices";
+import type { ContextWindowSource } from "@/lib/contextWindow";
 import type { ProtocolKind } from "./protocols";
 
 export type HeaderRule = {
@@ -53,6 +53,9 @@ export type ModelGroupItem = ModelGroupItemPayload & {
   reasons: ModelGroupItemReason[];
   sort_order: number;
   matched_by_rule: boolean;
+  /** The channel model's own context window; null uses the group default. */
+  context_window: number | null;
+  context_window_source: ContextWindowSource | null;
 };
 export type ModelGroup = {
   id: string;
@@ -68,6 +71,8 @@ export type ModelGroup = {
   param_override: ParamOverrideRule[];
   headers: HeaderRule[];
   fallback_group_ids?: string[];
+  /** Default context window for members without their own value. */
+  context_window: number | null;
   input_price_per_million: number;
   image_input_price_per_million: number;
   manual_override: boolean;
@@ -76,8 +81,6 @@ export type ModelGroup = {
   cache_write_price_per_million: number;
   image_price_per_image: number;
   pricing_mode: "free" | "tokens" | "non_tokens";
-  /** Input-context price tiers, ordered by threshold; token billing only. */
-  context_tiers: ModelPriceContextTier[];
   items: ModelGroupItem[];
 };
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {

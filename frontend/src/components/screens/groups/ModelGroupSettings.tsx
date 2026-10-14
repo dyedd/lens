@@ -17,6 +17,11 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import type { ModelGroup } from "@/lib/api/groups";
+import {
+  formatContextWindow,
+  parseContextWindowInput,
+  parseModelNameContextWindow,
+} from "@/lib/contextWindow";
 
 import type { FormState } from "./groupTypes";
 
@@ -39,6 +44,9 @@ export function ModelGroupSettings({
 }: ModelGroupSettingsProps) {
   const isZh = locale === "zh-CN";
   const groupMode = form.route_group_id ? "alias" : "direct";
+  const nameContextWindow = parseModelNameContextWindow(form.name);
+  const isContextWindowInvalid =
+    parseContextWindowInput(form.context_window) === undefined;
 
   function handleModeChange(mode: "direct" | "alias") {
     if (mode === "direct") {
@@ -117,7 +125,7 @@ export function ModelGroupSettings({
               </Combobox>
             </Field>
           ) : (
-            <Field className="sm:col-span-2">
+            <Field>
               <FieldLabel htmlFor="group-strategy">
                 {isZh ? "分发策略" : "Routing strategy"}
               </FieldLabel>
@@ -144,6 +152,45 @@ export function ModelGroupSettings({
               </Select>
             </Field>
           )}
+
+          {groupMode === "direct" ? (
+            <Field>
+              <FieldLabel htmlFor="group-context-window">
+                {isZh ? "默认上下文" : "Default context"}
+              </FieldLabel>
+              <Input
+                id="group-context-window"
+                className="font-mono"
+                inputMode="numeric"
+                aria-invalid={isContextWindowInvalid || undefined}
+                placeholder={
+                  nameContextWindow !== null
+                    ? formatContextWindow(nameContextWindow)
+                    : isZh
+                      ? "如 200K、1M"
+                      : "e.g. 200K, 1M"
+                }
+                value={form.context_window}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    context_window: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+          ) : null}
+          {groupMode === "direct" ? (
+            <FieldDescription className="sm:col-span-2 -mt-2">
+              {isContextWindowInvalid
+                ? isZh
+                  ? "上下文格式无效，示例：200K、1M、128000"
+                  : "Invalid context window. Examples: 200K, 1M, 128000"
+                : isZh
+                  ? "渠道模型未设置上下文时使用。请求超出某个渠道的上下文时会跳过该渠道，改用上下文更大的成员。"
+                  : "Used when a channel model has no context window. Requests longer than a channel's context skip it for a member with a larger one."}
+            </FieldDescription>
+          ) : null}
         </FieldGroup>
       </section>
     </div>

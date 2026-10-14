@@ -6,7 +6,7 @@ from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
 from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel
+from .validation import ContextWindow, StrictBaseModel
 
 
 def require_non_empty_text(value: str) -> str:
@@ -113,6 +113,8 @@ class SiteModel(StrictBaseModel):
     protocol: ProtocolKind | None = None
     source: ModelSource = ModelSource.MANUAL
     upstream_missing: bool = False
+    context_window: ContextWindow | None = None
+    upstream_context_window: ContextWindow | None = None
 
 
 class SiteModelInput(StrictBaseModel):
@@ -123,6 +125,8 @@ class SiteModelInput(StrictBaseModel):
     protocol: ProtocolKind = ProtocolKind.AUTO
     source: ModelSource = ModelSource.MANUAL
     upstream_missing: bool = False
+    context_window: ContextWindow | None = None
+    upstream_context_window: ContextWindow | None = None
 
 
 class SiteProtocolConfig(StrictBaseModel):

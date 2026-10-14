@@ -42,17 +42,18 @@ def _create_failover_group(
     admin_headers: dict[str, Any],
     create_site: Any,
     create_model_group: Any,
-) -> None:
+    first_context_window: int | None = None,
+) -> dict[str, Any]:
     """Create two sites with a failover model group for upstream error tests."""
-    create_site(
-        valid_site_payload(
-            name="First",
-            base_id="ba",
-            credential_id="ca",
-            protocol_config_id="pa",
-            model_name="m-a",
-        )
+    first_site = valid_site_payload(
+        name="First",
+        base_id="ba",
+        credential_id="ca",
+        protocol_config_id="pa",
+        model_name="m-a",
     )
+    first_site["protocols"][0]["models"][0]["context_window"] = first_context_window
+    create_site(first_site)
     create_site(
         valid_site_payload(
             name="Second",
@@ -85,6 +86,28 @@ def _create_failover_group(
         json={"strategy": "failover"},
     )
     assert update.status_code == 200, update.text
+    return update.json()
+
+
+def _chat_completion_response(model: str, url: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+        request=httpx.Request("POST", url),
+    )
 
 
 async def _set_gateway_spend(app_state: Any, key_id: str, spent: float) -> None:
@@ -822,89 +845,6 @@ def test_image_proxy_logs_non_token_billing(
     assert stored_key["spent_cost_usd"] == log["total_cost_usd"]
 
 
-@pytest.mark.parametrize(
-    ("prompt_tokens", "expected_input_cost", "expected_total_cost"),
-    [
-        pytest.param(200_000, 0.25, 0.26, id="at-threshold-uses-base-price"),
-        pytest.param(200_001, 0.5000025, 0.5150025, id="above-threshold-uses-tier"),
-    ],
-)
-def test_chat_proxy_bills_long_context_requests_at_context_tier_price(
-    client,
-    admin_headers,
-    app_state,
-    monkeypatch,
-    create_site_group_and_key,
-    prompt_tokens,
-    expected_input_cost,
-    expected_total_cost,
-) -> None:
-    import app.gateway.service.proxy_upstream as proxy_upstream
-    import app.gateway.service.streaming.logging as stream_logging
-
-    async def fake_send_upstream(_client, upstream, *, stream, body_bytes):
-        return httpx.Response(
-            200,
-            json={
-                "id": "chatcmpl-1",
-                "object": "chat.completion",
-                "created": 0,
-                "model": "gemini-2.5-pro",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": "ok"},
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": 1000,
-                    "total_tokens": prompt_tokens + 1000,
-                },
-            },
-            request=httpx.Request("POST", upstream.url),
-        )
-
-    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
-    monkeypatch.setattr(stream_logging, "app_state", app_state)
-    _, _, key = create_site_group_and_key(model_name="gemini-2.5-pro")
-    price = client.put(
-        "/api/admin/model-prices/gemini-2.5-pro",
-        headers=admin_headers,
-        json={
-            "model_key": "gemini-2.5-pro",
-            "input_price_per_million": 1.25,
-            "output_price_per_million": 10,
-            "context_tiers": [
-                {
-                    "above_input_tokens": 200_000,
-                    "input_price_per_million": 2.5,
-                    "output_price_per_million": 15,
-                }
-            ],
-        },
-    )
-    assert price.status_code == 200, price.text
-
-    response = client.post(
-        "/v1/chat/completions",
-        headers=gateway_headers(key),
-        json={
-            "model": "gemini-2.5-pro",
-            "messages": [{"role": "user", "content": "hi"}],
-        },
-    )
-
-    assert response.status_code == 200, response.text
-    log = client.get("/api/admin/request-logs/page", headers=admin_headers).json()[
-        "items"
-    ][0]
-    assert log["input_tokens"] == prompt_tokens
-    assert log["input_cost_usd"] == expected_input_cost
-    assert log["total_cost_usd"] == expected_total_cost
-
-
 @pytest.mark.parametrize("free", [False, True])
 def test_image_proxy_logs_separate_image_input_tokens(
     client,
@@ -1360,6 +1300,120 @@ def test_openai_chat_stream_error_frame_terminates_response(
 
     assert response.status_code == 200, response.text
     assert response.text == stream_body.split(b"\n\ndata:", 1)[0].decode() + "\n\n"
+
+
+def test_routing_skips_channel_model_with_too_small_context_window(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    group = _create_failover_group(
+        client=client,
+        admin_headers=admin_headers,
+        create_site=create_site,
+        create_model_group=create_model_group,
+        first_context_window=1_000,
+    )
+    items = {item["model_name"]: item for item in group["items"]}
+    assert items["m-a"]["context_window"] == 1_000
+    assert items["m-a"]["context_window_source"] == "manual"
+    assert items["m-b"]["context_window"] is None
+
+    attempted: list[str] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        model = json.loads(body_bytes)["model"]
+        attempted.append(model)
+        return _chat_completion_response(model, upstream.url)
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    short = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "fail-group", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    long = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "fail-group",
+            "messages": [{"role": "user", "content": "context " * 2_000}],
+        },
+    )
+
+    assert short.status_code == 200, short.text
+    assert long.status_code == 200, long.text
+    assert attempted == ["m-a", "m-b"]
+
+
+def test_context_window_exceeded_error_fails_over_to_next_channel(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    _create_failover_group(
+        client=client,
+        admin_headers=admin_headers,
+        create_site=create_site,
+        create_model_group=create_model_group,
+    )
+
+    attempted: list[str] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        model = json.loads(body_bytes)["model"]
+        attempted.append(model)
+        if model == "m-a":
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "message": (
+                            "This model's maximum context length is 8192 tokens. "
+                            "However, your messages resulted in 9000 tokens."
+                        ),
+                        "code": "context_length_exceeded",
+                    }
+                },
+                request=httpx.Request("POST", upstream.url),
+            )
+        return _chat_completion_response(model, upstream.url)
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "fail-group", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert attempted == ["m-a", "m-b"]
 
 
 def test_all_upstream_fail_returns_first_specific_message(

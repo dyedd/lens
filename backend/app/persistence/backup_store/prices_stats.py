@@ -3,11 +3,7 @@ from __future__ import annotations
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.model_prices import (
-    canonical_model_price_key,
-    dump_context_price_tiers,
-    parse_context_price_tiers,
-)
+from app.core.model_prices import canonical_model_price_key
 from app.models.backups import (
     ConfigBackupImportedStatsDaily,
     ConfigBackupImportedStatsTotal,
@@ -55,7 +51,6 @@ async def load_model_prices(self, session: AsyncSession) -> list[ModelPriceItem]
             image_price_per_image=row.image_price_per_image,
             pricing_mode=row.pricing_mode,
             manual_override=bool(row.manual_override),
-            context_tiers=parse_context_price_tiers(row.context_tiers_json),
         )
         for row in rows
     ]
@@ -192,12 +187,6 @@ async def replace_model_prices(
                     item.manual_override
                     if "manual_override" in item.model_fields_set
                     else True
-                ),
-                context_tiers_json=dump_context_price_tiers(
-                    tier.model_dump()
-                    for tier in (
-                        item.context_tiers if item.pricing_mode == "tokens" else []
-                    )
                 ),
             )
         )

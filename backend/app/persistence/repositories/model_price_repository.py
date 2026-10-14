@@ -1,20 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceNotFoundError
-from app.core.model_prices import (
-    CONTEXT_TIER_PRICE_FIELDS,
-    PRICE_PAYLOAD_FIELDS,
-    canonical_model_price_key,
-    dump_context_price_tiers,
-    find_context_price_tier,
-    parse_context_price_tiers,
-)
+from app.core.model_prices import PRICE_PAYLOAD_FIELDS, canonical_model_price_key
 from app.models.model_prices import (
     ModelPriceItem,
     ModelPriceListResponse,
@@ -43,7 +35,7 @@ class ModelCostEstimate:
 
 
 def _model_price_entity(
-    item: dict[str, Any],
+    item: dict[str, int | float | str],
 ) -> ModelPriceEntity | None:
     key = canonical_model_price_key(str(item.get("model_key") or ""))
     if not key:
@@ -68,13 +60,12 @@ def _model_price_entity(
         image_price_per_image=float(item.get("image_price_per_image") or 0.0),
         pricing_mode=str(item.get("pricing_mode") or "tokens"),
         manual_override=bool(item.get("manual_override", False)),
-        context_tiers_json=dump_context_price_tiers(item.get("context_tiers") or []),
     )
 
 
 async def _replace_model_prices(
     session_factory: async_sessionmaker[AsyncSession],
-    model_prices: list[dict[str, Any]],
+    model_prices: list[dict[str, int | float | str]],
 ) -> None:
     async with session_factory() as session:
         await session.execute(
@@ -89,7 +80,7 @@ async def _replace_model_prices(
 
 async def _sync_model_prices(
     session_factory: async_sessionmaker[AsyncSession],
-    model_prices: list[dict[str, Any]],
+    model_prices: list[dict[str, int | float | str]],
     *,
     synced_at: str,
     allowed_keys: list[str],
@@ -123,9 +114,6 @@ async def _sync_model_prices(
                         item.get("display_name") or entity.display_name or key
                     ),
                     pricing_mode=str(item.get("pricing_mode") or "tokens"),
-                    context_tiers_json=dump_context_price_tiers(
-                        item.get("context_tiers") or []
-                    ),
                     manual_override=0,
                 )
             )
@@ -220,29 +208,20 @@ class ModelPriceRepository:
             0,
         )
 
-        context_tier = find_context_price_tier(
-            parse_context_price_tiers(entity.context_tiers_json), total_input_tokens
-        )
-        token_prices = (
-            context_tier
-            if context_tier is not None
-            else {field: getattr(entity, field) for field in CONTEXT_TIER_PRICE_FIELDS}
-        )
-
         input_cost = (regular_input_tokens / 1_000_000) * float(
-            token_prices["input_price_per_million"]
+            entity.input_price_per_million
         )
         input_cost += (image_tokens / 1_000_000) * float(
             entity.image_input_price_per_million
         )
         input_cost += (cache_read_tokens / 1_000_000) * float(
-            token_prices["cache_read_price_per_million"]
+            entity.cache_read_price_per_million
         )
         input_cost += (cache_write_tokens / 1_000_000) * float(
-            token_prices["cache_write_price_per_million"]
+            entity.cache_write_price_per_million
         )
         output_cost = (max(output_tokens, 0) / 1_000_000) * float(
-            token_prices["output_price_per_million"]
+            entity.output_price_per_million
         )
         input_cost *= multiplier
         output_cost *= multiplier
@@ -352,11 +331,6 @@ class ModelPriceRepository:
                     manual_override=bool(price_entity.manual_override)
                     if price_entity is not None
                     else False,
-                    context_tiers=(
-                        parse_context_price_tiers(price_entity.context_tiers_json)
-                        if price_entity is not None
-                        else []
-                    ),
                 )
             )
 
@@ -421,15 +395,12 @@ class ModelPriceRepository:
             cache_read_price = float(payload.cache_read_price_per_million)
             cache_write_price = float(payload.cache_write_price_per_million)
             unit_price = float(payload.image_price_per_image)
-            context_tiers = [tier.model_dump() for tier in payload.context_tiers]
             if pricing_mode == "free":
                 input_price = image_input_price = output_price = 0.0
                 cache_read_price = cache_write_price = unit_price = 0.0
-                context_tiers = []
             elif pricing_mode == "non_tokens":
                 input_price = output_price = cache_read_price = cache_write_price = 0.0
                 image_input_price = 0.0
-                context_tiers = []
             else:
                 unit_price = 0.0
             if not any(
@@ -441,14 +412,8 @@ class ModelPriceRepository:
                     cache_write_price,
                     unit_price,
                 )
-            ) and not any(
-                tier[field] > 0
-                for tier in context_tiers
-                for field in CONTEXT_TIER_PRICE_FIELDS
             ):
                 pricing_mode = "free"
-                context_tiers = []
-            context_tiers_json = dump_context_price_tiers(context_tiers)
             display_name = payload.display_name.strip() or matched_groups[0][0]
             if entity is None:
                 entity = ModelPriceEntity(
@@ -462,7 +427,6 @@ class ModelPriceRepository:
                     image_price_per_image=unit_price,
                     pricing_mode=pricing_mode,
                     manual_override=True,
-                    context_tiers_json=context_tiers_json,
                 )
                 session.add(entity)
             else:
@@ -474,7 +438,6 @@ class ModelPriceRepository:
                 entity.cache_write_price_per_million = cache_write_price
                 entity.image_price_per_image = unit_price
                 entity.pricing_mode = pricing_mode
-                entity.context_tiers_json = context_tiers_json
                 entity.manual_override = 1
 
             await session.commit()
@@ -502,16 +465,17 @@ class ModelPriceRepository:
             image_price_per_image=unit_price,
             pricing_mode=pricing_mode,
             manual_override=True,
-            context_tiers=context_tiers,
         )
 
-    async def replace_model_prices(self, model_prices: list[dict[str, Any]]) -> None:
+    async def replace_model_prices(
+        self, model_prices: list[dict[str, int | float | str]]
+    ) -> None:
         """Replace all persisted model prices with the supplied entries."""
         await _replace_model_prices(self._session_factory, model_prices)
 
     async def sync_model_prices(
         self,
-        model_prices: list[dict[str, Any]],
+        model_prices: list[dict[str, int | float | str]],
         *,
         synced_at: str,
         allowed_keys: list[str],

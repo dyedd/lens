@@ -164,7 +164,8 @@ async def _sync_credential_models(
     )
     if fetch_channel is None:
         raise ValueError("no usable credential for model discovery")
-    upstream_names = set(await fetch_upstream_models(fetch_channel))
+    upstream_models = await fetch_upstream_models(fetch_channel)
+    upstream_names = {model.name for model in upstream_models}
     if not upstream_names:
         raise ValueError("upstream returned no models")
 
@@ -174,6 +175,11 @@ async def _sync_credential_models(
         [channel.protocol for channel in channels],
         upstream_names=upstream_names,
         wanted_names={name for name in upstream_names if is_wanted(name)},
+        upstream_context_windows={
+            model.name: model.context_window
+            for model in upstream_models
+            if model.context_window is not None
+        },
     )
     item.added = changes.added
     item.missing = changes.missing

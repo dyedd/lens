@@ -109,11 +109,12 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 - Unified entry: One Base URL and one gateway key for OpenAI Chat / Responses / Embeddings / Images, Anthropic, Gemini, and Rerank entry protocols
 - Site management: Configure multiple Base URLs and credentials per site, with model sync, manual models, batch import, and site tags
 - Model group routing: Build candidates from runtime channel + credential + upstream model, with round robin, failover, reusable execution groups, per-channel toggles, and multimodal fallback
+- Context awareness: The same model can have a different context window per channel (set manually, read from the upstream model list, or detected from names such as `glm-5.3-200k`), and model groups can set a default; long requests skip channels whose context is too small, and context-length errors fail over to the next member
 - Protocols: Models default to Auto and forward the client request unchanged. After an upstream protocol is pinned, Anthropic / OpenAI Responses clients can reach OpenAI Chat or Responses upstreams, and OpenAI Chat clients can reach Responses upstreams
 - Model testing: Single-model and batch model tests with configurable test prompts
 - Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt; optional request/response body capture
 - Health and cooldown: Model health page graded by success rate, built-in circuit-breaker cooldown with exponential backoff, and custom cooldown detection rules
-- Pricing: LiteLLM model price sync, credential rate multipliers, per-image pricing, and input-context price tiers for the same model (for example, long-context rates above 200K / 272K input tokens)
+- Pricing: LiteLLM model price sync, credential rate multipliers, and per-image pricing
 - Scheduled tasks: Built-in jobs for channel model sync, price sync, and credential rate sync
 - Config backup: Export/import sites, model groups, settings, pricing, cron jobs, and stats; optionally include gateway keys and request logs
 
@@ -250,6 +251,7 @@ Open `/groups`, create a model group, add upstream models, and choose a routing 
 - **Failover**: Prefer earlier members, then switch to the next credential or channel after failures
 - **Execution group reuse**: A visible group can point to another execution model group and reuse its candidates and strategy
 - **Multimodal fallback**: Configure ordered backup model groups for a model group; for multimodal requests, backup groups are tried once the primary group's candidates are exhausted
+- **Context windows**: A channel model's context comes from its manual setting, then the upstream model list, then its name (e.g. `-200k`, `[1m]`); otherwise the group's default context applies (detected from the group name when empty). The gateway skips members too small for the estimated request tokens; if none fit, upstreams still decide, and context-length errors keep failing over
 
 **Protocol conversion**: Conversion runs only when a member's upstream protocol differs from the client protocol. Supported pairs are Anthropic → OpenAI Chat / Responses, OpenAI Responses → OpenAI Chat, and OpenAI Chat → OpenAI Responses.
 

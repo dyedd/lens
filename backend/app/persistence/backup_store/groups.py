@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.context_windows import coerce_context_window
 from app.core.model_group_status import model_group_item_key
 from app.core.model_prices import canonical_model_price_key
 from app.core.runtime_channel_ids import (
@@ -128,6 +129,7 @@ async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                     "fallback_group_ids": parse_fallback_group_ids(
                         row.fallback_group_ids_json
                     ),
+                    "context_window": coerce_context_window(row.context_window),
                     **group_price_kwargs(price),
                     "items": items_by_group.get(row.id, []),
                 }
@@ -222,6 +224,7 @@ async def replace_groups(
                 fallback_group_ids_json=dump_fallback_group_ids(
                     group.fallback_group_ids
                 ),
+                context_window=group.context_window,
             )
         )
 

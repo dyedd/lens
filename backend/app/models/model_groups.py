@@ -3,11 +3,11 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from .model_prices import ModelPriceContextTier
+from ..core.context_windows import ContextWindowSource
 from .protocols import ProtocolKind, RoutingStrategy
 from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel
+from .validation import ContextWindow, StrictBaseModel
 
 
 def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | None:
@@ -81,6 +81,7 @@ class ModelGroup(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
+    context_window: ContextWindow | None = None
     input_price_per_million: float = 0.0
     image_input_price_per_million: float = 0.0
     output_price_per_million: float = 0.0
@@ -89,7 +90,6 @@ class ModelGroup(StrictBaseModel):
     image_price_per_image: float = 0.0
     pricing_mode: Literal["free", "tokens", "non_tokens"] = "free"
     manual_override: bool = False
-    context_tiers: list[ModelPriceContextTier] = Field(default_factory=list)
     items: list["ModelGroupItem"] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(
@@ -135,6 +135,9 @@ class ModelGroupItemView(ModelGroupItem):
     matched_by_rule: bool = False
     credential_mask: str = ""
     base_url: str = ""
+    # Channel-specific context window; the group default covers None.
+    context_window: int | None = None
+    context_window_source: ContextWindowSource | None = None
 
 
 class ModelGroupView(ModelGroup):
@@ -158,6 +161,7 @@ class ModelGroupCreate(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
+    context_window: ContextWindow | None = None
     items: list[ModelGroupItemInput] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(
@@ -190,6 +194,7 @@ class ModelGroupUpdate(StrictBaseModel):
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None
     fallback_group_ids: list[str] | None = Field(default=None, max_length=20)
+    context_window: ContextWindow | None = None
     items: list[ModelGroupItemInput] | None = None
 
     _canonicalize_headers = field_validator("headers")(
