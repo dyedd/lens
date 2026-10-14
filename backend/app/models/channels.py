@@ -10,7 +10,7 @@ from .protocols import (
     ProtocolKind,
 )
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel
+from .validation import ContextWindow, StrictBaseModel
 
 
 class ChannelKeyItem(StrictBaseModel):
@@ -30,6 +30,8 @@ class ChannelDiscoveredModel(StrictBaseModel):
     enabled: bool = True
     upstream_missing: bool = False
     sort_order: int = Field(default=0, ge=0)
+    context_window: ContextWindow | None = None
+    upstream_context_window: ContextWindow | None = None
 
 
 class ChannelConfig(StrictBaseModel):

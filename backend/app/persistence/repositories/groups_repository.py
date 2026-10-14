@@ -154,6 +154,7 @@ class ModelGroupRepository(
                 fallback_group_ids_json=dump_fallback_group_ids(
                     payload.fallback_group_ids
                 ),
+                context_window=payload.context_window,
             )
             session.add(entity)
             await session.flush()
@@ -371,6 +372,8 @@ class ModelGroupRepository(
                         ]
                     )
 
+            if target.context_window is None:
+                target.context_window = source.context_window
             await session.delete(source)
             await session.commit()
             hydrated = await self._hydrate_groups(session, [target], channels)

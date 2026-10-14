@@ -170,6 +170,8 @@ class SiteProtocolConfigUpsertsMixin:
                     upstream_missing=int(
                         model.upstream_missing and model.source == ModelSource.SYNCED
                     ),
+                    context_window=model.context_window,
+                    upstream_context_window=model.upstream_context_window,
                 )
             )
 

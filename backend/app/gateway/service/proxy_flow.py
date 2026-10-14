@@ -19,6 +19,7 @@ from ..router import RouteSelection, RouteTarget
 from ..router.routing import CooldownRoutingError
 from .app_state import app_state
 from .auth import gateway_key_allows_model
+from .context_tokens import estimate_request_context_tokens
 from .error_responses import protocol_error_response
 from .http_handlers import apply_router_runtime_settings
 from .multimodal import body_has_multimodal_content
@@ -95,6 +96,7 @@ async def _resolve_proxy_route(
     group_id: str | None = None,
     requested_group_name: str | None = None,
     failures: FailureLedger | None = None,
+    required_context_tokens: int | None = None,
 ) -> RouteResolution:
     plan: RoutingPlan | None = None
     try:
@@ -114,6 +116,7 @@ async def _resolve_proxy_route(
             route_targets=plan.route_targets,
             use_model_matching=plan.use_model_matching,
             cursor_key=plan.cursor_key,
+            required_context_tokens=required_context_tokens,
         )
         log_ctx.plan_route(
             requested_group_name=plan.requested_group_name,
@@ -213,6 +216,7 @@ async def _iter_route_plans(
     log_ctx: RequestLogger,
     is_stream_body: bool,
     failures: FailureLedger,
+    required_context_tokens: int | None,
 ) -> AsyncIterator[tuple[RoutingPlan, RouteSelection]]:
     """Resolve fallback groups only after the current group's attempts fail."""
     yield initial_plan, initial_selection
@@ -236,6 +240,7 @@ async def _iter_route_plans(
             group_id=fallback_group_id,
             requested_group_name=requested_group_name,
             failures=failures,
+            required_context_tokens=required_context_tokens,
         )
         if fallback_resolution.error is not None:
             failures.record(
@@ -503,6 +508,7 @@ async def proxy_protocol(
     )
     if access_error is not None:
         return access_error
+    required_context_tokens = estimate_request_context_tokens(body, protocol)
     try:
         route_resolution = await _resolve_proxy_route(
             channels=channels,
@@ -512,6 +518,7 @@ async def proxy_protocol(
             is_stream_body=is_stream_body,
             parsed_model=parsed_model,
             requested_group_name=original_requested_model,
+            required_context_tokens=required_context_tokens,
         )
         if route_resolution.error is not None:
             return route_resolution.error
@@ -542,6 +549,7 @@ async def proxy_protocol(
             log_ctx=log_ctx,
             is_stream_body=is_stream_body,
             failures=failures,
+            required_context_tokens=required_context_tokens,
         )
         response = await _run_route_attempts(
             route_plans=route_plans,

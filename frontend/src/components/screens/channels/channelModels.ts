@@ -30,7 +30,8 @@ export function buildModels(
   modelName: string,
   protocols: ProtocolKind[],
   source: "manual" | "synced",
-) {
+  upstreamContextWindow: number | null = null,
+): FormModel[] {
   const existing = new Set(
     config.models.map((model) => `${model.credential_id}:${model.model_name}`),
   );
@@ -44,6 +45,8 @@ export function buildModels(
       enabled: true,
       source,
       upstream_missing: false,
+      context_window: null,
+      upstream_context_window: upstreamContextWindow,
     }));
 }
 
@@ -110,6 +113,8 @@ export function coalesceFormModels(models: FormModel[]) {
     existing.enabled = existing.enabled || model.enabled;
     existing.upstream_missing =
       existing.upstream_missing || model.upstream_missing;
+    existing.context_window ??= model.context_window;
+    existing.upstream_context_window ??= model.upstream_context_window;
   }
   return Array.from(groups.values());
 }

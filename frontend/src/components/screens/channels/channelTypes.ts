@@ -7,6 +7,7 @@ import type {
   SiteModelInput,
   SiteModelSyncSettings,
 } from "@/lib/api/sites";
+import type { ContextWindowSource } from "@/lib/contextWindow";
 import type { Locale } from "@/lib/I18nContext";
 
 export type FormCredential = Omit<
@@ -53,6 +54,8 @@ export type PickerModelItem = {
   protocol_config_id: string;
   credential_id: string;
   model_name: string;
+  /** Context window the upstream model list reports. */
+  context_window: number | null;
 };
 
 export type ModelTestTarget = {
@@ -92,6 +95,11 @@ export type AggregatedModel = {
   source: SiteModelInput["source"];
   enabled: boolean;
   upstreamMissing: boolean;
+  /** Admin override shared by every key's copy of this model. */
+  contextWindow: number | null;
+  /** Upstream-reported or name-detected value used without an override. */
+  autoContextWindow: number | null;
+  autoContextWindowSource: Exclude<ContextWindowSource, "manual"> | null;
   /** Per-credential rows for expanding the collapsed overview row. */
   members: AggregatedModelMember[];
   /** Per-credential key used to open the single-model test dialog. */

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
 import httpx
 from fastapi import HTTPException
 
+from ....core.context_windows import parse_upstream_model_context_window
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
@@ -26,8 +28,14 @@ from ..upstream_support import (
 )
 
 
-async def fetch_upstream_models(channel: ChannelConfig) -> list[str]:
-    """List all model names currently offered by an upstream."""
+@dataclass(frozen=True, slots=True)
+class UpstreamModel:
+    name: str
+    context_window: int | None = None
+
+
+async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
+    """List all models currently offered by an upstream."""
     if channel.protocol == ProtocolKind.AUTO:
         channel = channel.model_copy(update={"protocol": ProtocolKind.OPENAI_CHAT})
     runtime = await app_state.settings_repo.get_runtime_settings()
@@ -75,20 +83,22 @@ def _compile_model_list_pattern(match_regex: str) -> re.Pattern[str]:
     return re.compile(match_regex)
 
 
-def filter_model_names(names: list[str], match_regex: str) -> list[str]:
-    """Keeps the model names matching a channel's upstream filter.
+def filter_upstream_models(
+    models: list[UpstreamModel], match_regex: str
+) -> list[UpstreamModel]:
+    """Keeps the upstream models matching a channel's upstream filter.
 
     An empty pattern keeps everything. The pattern is validated on write, so a
     compile error here is a bug rather than user input to tolerate.
     """
     if not match_regex.strip():
-        return names
+        return models
     pattern = _compile_model_list_pattern(match_regex)
-    return [name for name in names if pattern.search(name)]
+    return [model for model in models if pattern.search(model.name)]
 
 
-def _parse_model_list(payload: dict[str, Any]) -> list[str]:
-    names: list[str] = []
+def _parse_model_list(payload: dict[str, Any]) -> list[UpstreamModel]:
+    models: list[UpstreamModel] = []
     seen: set[str] = set()
     if "data" in payload:
         items = payload["data"]
@@ -109,6 +119,11 @@ def _parse_model_list(payload: dict[str, Any]) -> list[str]:
             continue
         if value not in seen:
             seen.add(value)
-            names.append(value)
+            models.append(
+                UpstreamModel(
+                    name=value,
+                    context_window=parse_upstream_model_context_window(item),
+                )
+            )
 
-    return names
+    return models
