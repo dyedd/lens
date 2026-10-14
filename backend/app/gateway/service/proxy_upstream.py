@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 from fastapi import Response
 
+from ...core.context_windows import is_context_window_exceeded_error
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
 from ..converters import (
@@ -642,7 +643,10 @@ async def execute_upstream_request(
             if status_code in (429, 503)
             else None
         )
-        stop_fallback = _is_request_level_client_error(status_code)
+        # A larger-context target may accept what this one rejected as too long.
+        stop_fallback = _is_request_level_client_error(
+            status_code
+        ) and not is_context_window_exceeded_error(detail)
         classification = classify_error(
             status_code,
             detail,

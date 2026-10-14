@@ -124,6 +124,7 @@ export function ChannelsDialogs({
           onSave={save.submit}
           onToggleEnabled={editor.toggleAggregateEnabled}
           onUpdateProtocols={editor.updateModelProtocols}
+          onUpdateContextWindow={editor.updateModelContextWindow}
           onDelete={editor.removeAggregateModel}
           onTest={modelTest.openAggregateModelTest}
           testing={modelTest.testingModel}

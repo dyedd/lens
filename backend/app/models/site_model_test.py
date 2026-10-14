@@ -4,7 +4,7 @@ from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
 from .sites import SiteCredentialInput, require_non_empty_text
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import StrictBaseModel, validate_regex_pattern
+from .validation import ContextWindow, StrictBaseModel, validate_regex_pattern
 
 
 class SiteModelFetchRequest(StrictBaseModel):
@@ -28,6 +28,7 @@ class SiteModelFetchItem(StrictBaseModel):
     credential_id: str
     credential_name: str = ""
     model_name: str
+    context_window: ContextWindow | None = None
 
 
 class SiteModelTestCredential(StrictBaseModel):

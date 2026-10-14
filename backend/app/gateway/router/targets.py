@@ -23,6 +23,8 @@ class RouteTarget:
     credential_id: str | None = None
     credential_name: str | None = None
     rate_multiplier: float | None = None
+    # Largest prompt plus output size this target accepts; None means unknown.
+    context_window: int | None = None
     # Auto channels speak each client protocol natively, so each client
     # protocol is its own fault domain; empty for fixed-protocol channels.
     fault_protocol: str = ""
@@ -82,9 +84,8 @@ def _expand_target_credentials(target: RouteTarget) -> list[RouteTarget]:
         if key is None:
             return []
         return [
-            RouteTarget(
-                channel=target.channel,
-                model_name=target.model_name,
+            replace(
+                target,
                 credential_id=key.id,
                 credential_name=target.credential_name or key.remark,
                 rate_multiplier=key.rate_multiplier,
@@ -95,9 +96,8 @@ def _expand_target_credentials(target: RouteTarget) -> list[RouteTarget]:
         return [target]
 
     return [
-        RouteTarget(
-            channel=target.channel,
-            model_name=target.model_name,
+        replace(
+            target,
             credential_id=key.id,
             credential_name=key.remark,
             rate_multiplier=key.rate_multiplier,

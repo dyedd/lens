@@ -574,6 +574,13 @@ def _final_upstream_failure(
     for error, status_code in zip(errors, failure_status_codes, strict=False):
         if _is_request_too_large_error(status_code, error):
             return 413, "request_too_large", error
+    # Every target rejected the request itself, e.g. as longer than its context.
+    if (
+        errors
+        and failure_status_codes
+        and all(status_code in (400, 422) for status_code in failure_status_codes)
+    ):
+        return failure_status_codes[0] or 400, "upstream_error", errors[0]
     if failure_status_codes and all(
         status_code == 504 for status_code in failure_status_codes
     ):
