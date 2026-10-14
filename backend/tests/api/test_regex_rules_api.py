@@ -114,8 +114,8 @@ def test_updating_rule_pattern_changes_referencing_group_members(
 
     assert group["items"] == []
     assert response.json()["groups"] == [{"id": group["id"], "name": "family"}]
-    assert [(item["model_name"], item["matched_by_rule"]) for item in members] == [
-        ("gpt-4o", True)
+    assert [(item["model_name"], item["source"]) for item in members] == [
+        ("gpt-4o", "rule")
     ]
 
 

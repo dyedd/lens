@@ -7,7 +7,7 @@ from fastapi import Depends, Response
 from ....models.regex_rules import RegexRuleCreate, RegexRuleUpdate, RegexRuleView
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..tasks.model_group_placement import run_model_group_placement
+from ..tasks.model_group_reconcile import run_model_group_reconcile
 
 
 async def list_regex_rules(
@@ -29,7 +29,7 @@ async def update_regex_rule(
 ) -> RegexRuleView:
     """Update a regex rule, then place models its groups no longer cover."""
     rule = await app_state.regex_rule_repo.update_rule(rule_id, payload)
-    await run_model_group_placement(app_state)
+    await run_model_group_reconcile(app_state)
     return rule
 
 
@@ -38,5 +38,5 @@ async def delete_regex_rule(
 ) -> Response:
     """Delete a regex rule and its references, then place uncovered models."""
     await app_state.regex_rule_repo.delete_rule(rule_id)
-    await run_model_group_placement(app_state)
+    await run_model_group_reconcile(app_state)
     return Response(status_code=204)

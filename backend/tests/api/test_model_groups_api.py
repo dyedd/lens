@@ -497,6 +497,24 @@ def _create_group(client, admin_headers, **payload: object) -> dict[str, object]
     return response.json()
 
 
+def test_unplaced_model_joins_same_named_group_without_rules(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    group = _create_group(client, admin_headers, name="claude-opus-4-5")
+
+    create_site(valid_site_payload(model_name="claude-opus-4-5"))
+    stored = client.get(f"/api/admin/model-groups/{group['id']}", headers=admin_headers)
+    unplaced = client.get("/api/admin/unplaced-models", headers=admin_headers)
+
+    assert group["match_models"] == []
+    assert [
+        (item["model_name"], item["source"]) for item in stored.json()["items"]
+    ] == [("claude-opus-4-5", "placement")]
+    assert unplaced.json()["items"] == []
+
+
 def test_merge_model_group_folds_source_into_target(
     client,
     admin_headers,
@@ -541,9 +559,9 @@ def test_merge_model_group_folds_source_into_target(
     merged = response.json()
     assert merged["match_models"] == ["gpt-4o", "gpt-4o-latest", "gpt-4o-2026"]
     assert merged["match_rule_ids"] == [mini["id"], dated["id"]]
-    assert [
-        (item["model_name"], item["matched_by_rule"]) for item in merged["items"]
-    ] == [("gpt-4o", False)]
+    assert [(item["model_name"], item["source"]) for item in merged["items"]] == [
+        ("gpt-4o", "rule")
+    ]
     assert_error(
         client.get(f"/api/admin/model-groups/{source['id']}", headers=admin_headers),
         404,
@@ -594,3 +612,38 @@ def test_merge_model_group_rejects_invalid_targets(
     )
 
     assert_error(response, status_code)
+
+
+def test_group_candidates_report_models_matched_by_draft_rules(
+    client,
+    admin_headers,
+    create_site,
+    create_regex_rule,
+) -> None:
+    payload = valid_site_payload()
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-1",
+            "model_name": "gpt-4o-mini",
+            "enabled": True,
+            "protocol": ProtocolKind.OPENAI_CHAT.value,
+        }
+    )
+    create_site(payload)
+    mini = create_regex_rule("mini", "-mini$")
+
+    def matched(**rules: object) -> list[str]:
+        response = client.post(
+            "/api/admin/model-group-candidates",
+            headers=admin_headers,
+            json={"items": [], **rules},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["matched_model_names"]
+
+    assert matched() == []
+    assert matched(match_rule_ids=[mini["id"]]) == ["gpt-4o-mini"]
+    assert matched(match_models=["GPT-4O"], match_rule_ids=[mini["id"]]) == [
+        "gpt-4o",
+        "gpt-4o-mini",
+    ]

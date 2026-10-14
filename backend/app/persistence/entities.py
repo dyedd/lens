@@ -168,6 +168,8 @@ class SiteDiscoveredModelEntity(Base):
     upstream_missing: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # When a sync first found the model missing; retirement counts from here.
+    upstream_missing_since: Mapped[datetime | None] = mapped_column(nullable=True)
     context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
     upstream_context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -196,6 +198,9 @@ class ModelGroupEntity(Base):
     fallback_group_ids_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]"
     )
+    new_member_position: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="end", server_default="end"
+    )
     context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
@@ -205,6 +210,10 @@ class ModelGroupItemEntity(Base):
         CheckConstraint(
             "credential_id <> ''",
             name="ck_model_group_items_credential_id_not_empty",
+        ),
+        CheckConstraint(
+            "source IN ('manual', 'rule', 'placement')",
+            name="ck_model_group_items_source",
         ),
         UniqueConstraint(
             "group_id",
@@ -222,6 +231,23 @@ class ModelGroupItemEntity(Base):
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="manual", server_default="manual"
+    )
+    # An excluded row is not a member; it keeps rules and placement out. It
+    # is always saved disabled, so a release without exclusions skips it too.
+    excluded: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+
+class ModelSyncRunEntity(Base):
+    __tablename__ = "model_sync_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
+    finished_at: Mapped[datetime] = mapped_column(nullable=False)
+    report_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class RegexRuleEntity(Base):

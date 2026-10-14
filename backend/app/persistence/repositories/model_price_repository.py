@@ -253,7 +253,8 @@ class ModelPriceRepository:
                     select(ModelGroupEntity.name, ModelGroupItemEntity.channel_id)
                     .outerjoin(
                         ModelGroupItemEntity,
-                        ModelGroupItemEntity.group_id == ModelGroupEntity.id,
+                        (ModelGroupItemEntity.group_id == ModelGroupEntity.id)
+                        & (ModelGroupItemEntity.excluded == 0),
                     )
                     .where(ModelGroupEntity.route_group_id == "")
                     .order_by(ModelGroupEntity.name.asc())
@@ -358,7 +359,8 @@ class ModelPriceRepository:
                     )
                     .outerjoin(
                         ModelGroupItemEntity,
-                        ModelGroupItemEntity.group_id == ModelGroupEntity.id,
+                        (ModelGroupItemEntity.group_id == ModelGroupEntity.id)
+                        & (ModelGroupItemEntity.excluded == 0),
                     )
                     .where(ModelGroupEntity.route_group_id == "")
                 )

@@ -3,6 +3,8 @@ import type {
   ModelGroupCandidateItem,
   ModelGroupItemReason,
   ModelGroupItemState,
+  ModelGroupMemberSource,
+  ModelGroupNewMemberPosition,
   RoutingStrategy,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
@@ -27,8 +29,7 @@ export type FormItem = {
   rate_source: "none" | "sub2api" | "newapi";
   model_name: string;
   enabled: boolean;
-  /** Joined through the group's live match rules rather than saved explicitly. */
-  matched_by_rule: boolean;
+  source: ModelGroupMemberSource;
   state: ModelGroupItemState | null;
   reasons: ModelGroupItemReason[];
   /** The channel model's own context window; null uses the group default. */
@@ -47,9 +48,12 @@ export type FormState = {
   param_override: ParamOverrideRuleDraft[];
   headers: HeaderRuleDraft[];
   fallback_group_ids: string[];
+  new_member_position: ModelGroupNewMemberPosition;
   /** Default context window text, e.g. "1M"; empty means unknown. */
   context_window: string;
   items: FormItem[];
+  /** Members kept out so match rules and placement do not add them back. */
+  excluded_items: FormItem[];
 };
 
 export type CandidateChannelGroup = {
@@ -77,7 +81,8 @@ export type FoldedMember = {
   context_window_source: ContextWindowSource | null;
   protocols: ProtocolKind[];
   subItems: EvaluatedFormItem[];
-  is_rule_member: boolean;
+  /** Shared source of every sub item; mixed sources count as manual. */
+  source: ModelGroupMemberSource;
   enabled_item_count: number;
   disabled_item_count: number;
   ready_item_count: number;
@@ -102,7 +107,7 @@ export type GroupDisplayMember = {
   credential_number: number;
   credential_mask: string;
   base_url: string;
-  matched_by_rule: boolean;
+  source: ModelGroupMemberSource;
   protocols: ProtocolKind[];
   items: ModelGroup["items"];
   enabled_item_count: number;
@@ -143,6 +148,8 @@ export const EMPTY_FORM: FormState = {
   param_override: [{ path: "", action: "set", value: "" }],
   headers: [{ key: "", value: "", action: "override" }],
   fallback_group_ids: [],
+  new_member_position: "end",
   context_window: "",
   items: [],
+  excluded_items: [],
 };

@@ -2,7 +2,17 @@ import { X } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
 import { Badge } from "@/components/ui/Badge";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
+import type { ModelGroupNewMemberPosition } from "@/lib/api/groups";
 import type { RegexRule } from "@/lib/api/regexRules";
+import { NEW_MEMBER_POSITION_OPTIONS } from "./modelGroupFormatting";
 
 interface ModelGroupMatchRulesProps {
   locale: "zh-CN" | "en-US";
@@ -14,11 +24,15 @@ interface ModelGroupMatchRulesProps {
   hasDeletedMatchRules: boolean;
   ruleMatchModelCount: number;
   ruleMatchSourceCount: number;
+  newMemberPosition: ModelGroupNewMemberPosition;
+  /** Members saving adds or removes compared with the saved group. */
+  memberChange: { added: number; removed: number } | null;
   onMatchModelsChange: (matchModels: string[]) => void;
   onMatchRuleIdsChange: (matchRuleIds: string[]) => void;
+  onNewMemberPositionChange: (position: ModelGroupNewMemberPosition) => void;
 }
 
-/** Edit the live match rules that pull channel models into a group. */
+/** Edit the match rules that pull channel models into a group. */
 export function ModelGroupMatchRules({
   locale,
   matchModels,
@@ -27,8 +41,11 @@ export function ModelGroupMatchRules({
   hasDeletedMatchRules,
   ruleMatchModelCount,
   ruleMatchSourceCount,
+  newMemberPosition,
+  memberChange,
   onMatchModelsChange,
   onMatchRuleIdsChange,
+  onNewMemberPositionChange,
 }: ModelGroupMatchRulesProps) {
   const [draft, setDraft] = useState("");
 
@@ -71,8 +88,8 @@ export function ModelGroupMatchRules({
       </div>
       <p className="text-xs text-muted-foreground">
         {locale === "zh-CN"
-          ? "名称匹配的可用模型会自动加入这个模型组；新模型也会自动生效。"
-          : "Available models whose names match are added automatically, including new models."}
+          ? "名称匹配的可用模型会在保存和每次同步时加入这个模型组，并保存为成员。"
+          : "Available models whose names match join this group as saved members on save and on every sync."}
       </p>
       <div className="flex min-h-8 flex-wrap items-center gap-1 rounded-md border border-input/40 px-2 py-1 focus-within:border-primary/60 focus-within:ring-[1px] focus-within:ring-primary/40">
         {matchModels.map((name) => (
@@ -123,6 +140,42 @@ export function ModelGroupMatchRules({
           onChange={onMatchRuleIdsChange}
         />
       </div>
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {locale === "zh-CN" ? "新成员放在" : "New members go"}
+        </span>
+        <Select
+          value={newMemberPosition}
+          onValueChange={(value) =>
+            onNewMemberPositionChange(value as ModelGroupNewMemberPosition)
+          }
+        >
+          <SelectTrigger
+            className="h-7 w-auto min-w-32"
+            aria-label={
+              locale === "zh-CN" ? "新成员位置" : "New member position"
+            }
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {NEW_MEMBER_POSITION_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {locale === "zh-CN" ? option.zh : option.en}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+      {memberChange && (memberChange.added || memberChange.removed) ? (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          {locale === "zh-CN"
+            ? `保存后：新增 ${memberChange.added} 个成员，移除 ${memberChange.removed} 个成员`
+            : `On save: ${memberChange.added} members added, ${memberChange.removed} removed`}
+        </p>
+      ) : null}
       {invalidMatchRules.length ? (
         <p className="text-xs text-destructive">
           {locale === "zh-CN"
