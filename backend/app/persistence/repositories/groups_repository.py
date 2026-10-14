@@ -9,11 +9,15 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceConflictError, ResourceNotFoundError
+from app.core.model_group_status import model_group_item_key
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
+    ModelGroupItemInput,
+    ModelGroupItemState,
+    ModelGroupItemView,
     ModelGroupUpdate,
     ModelGroupView,
     canonicalize_match_models,
@@ -23,6 +27,7 @@ from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
 )
+from app.persistence.group_match_rules import is_auto_joined, load_group_match_rules
 from app.persistence.group_rule_codec import (
     dump_fallback_group_ids,
     dump_match_models,
@@ -39,10 +44,22 @@ from app.persistence.regex_rule_references import (
 from ..channel_store import ChannelStore
 from .group_placement import GroupPlacementMixin
 from .group_read import GroupCandidatesMixin, GroupMappingMixin
+from .group_reconcile import GroupReconcileMixin
 from .group_write import GroupValidationMixin
 
 
+def _view_to_input(item: ModelGroupItemView) -> ModelGroupItemInput:
+    return ModelGroupItemInput(
+        channel_id=item.channel_id,
+        credential_id=item.credential_id,
+        model_name=item.model_name,
+        enabled=item.enabled,
+        source=item.source,
+    )
+
+
 class ModelGroupRepository(
+    GroupReconcileMixin,
     GroupPlacementMixin,
     GroupCandidatesMixin,
     GroupValidationMixin,
@@ -140,6 +157,7 @@ class ModelGroupRepository(
                 payload.items,
                 fallback_group_ids=payload.fallback_group_ids,
                 channels=channels,
+                excluded_items=payload.excluded_items,
             )
             await validate_rule_ids(session, payload.match_rule_ids)
             entity = ModelGroupEntity(
@@ -154,11 +172,14 @@ class ModelGroupRepository(
                 fallback_group_ids_json=dump_fallback_group_ids(
                     payload.fallback_group_ids
                 ),
+                new_member_position=payload.new_member_position.value,
                 context_window=payload.context_window,
             )
             session.add(entity)
             await session.flush()
-            self._replace_group_items(session, entity.id, payload.items)
+            self._replace_group_items(
+                session, entity.id, payload.items, payload.excluded_items
+            )
             await session.commit()
             await session.refresh(entity)
             hydrated = await self._hydrate_groups(session, [entity], channels)
@@ -193,16 +214,29 @@ class ModelGroupRepository(
                 raise ValueError(
                     "Execution groups referenced by route groups cannot become route groups"
                 )
-            validates_items = payload.items is not None
+            replaces_items = (
+                payload.items is not None or payload.excluded_items is not None
+            )
             current_item_views = []
-            if validates_items:
+            current_excluded_views = []
+            if replaces_items:
                 current_items = await self._load_group_items(
                     session,
                     [group_id],
                     channels,
                 )
-                current_item_views = current_items.get(group_id, [])
-            next_items = payload.items
+                current_item_views = current_items.members.get(group_id, [])
+                current_excluded_views = current_items.excluded.get(group_id, [])
+            next_items = (
+                payload.items
+                if payload.items is not None
+                else [_view_to_input(item) for item in current_item_views]
+            )
+            next_excluded_items = (
+                payload.excluded_items
+                if payload.excluded_items is not None
+                else [_view_to_input(item) for item in current_excluded_views]
+            )
             next_fallback_group_ids = (
                 payload.fallback_group_ids
                 if payload.fallback_group_ids is not None
@@ -212,11 +246,12 @@ class ModelGroupRepository(
                 session,
                 next_name,
                 next_route_group_id,
-                next_items if validates_items else None,
+                next_items if replaces_items else None,
                 exclude_group_id=group_id,
                 fallback_group_ids=next_fallback_group_ids,
                 channels=channels,
                 existing_items=current_item_views,
+                excluded_items=next_excluded_items,
             )
             if payload.match_rule_ids is not None:
                 await validate_rule_ids(session, payload.match_rule_ids)
@@ -230,8 +265,11 @@ class ModelGroupRepository(
                 elif key == "match_rule_ids":
                     if value is not None:
                         entity.match_rule_ids_json = dump_rule_ids(value)
-                elif key == "items":
+                elif key in {"items", "excluded_items"}:
                     continue
+                elif key == "new_member_position":
+                    if value is not None:
+                        entity.new_member_position = value.value
                 elif key == "fallback_group_ids":
                     entity.fallback_group_ids_json = dump_fallback_group_ids(value)
                 elif key == "headers":
@@ -249,18 +287,72 @@ class ModelGroupRepository(
                 entity.match_models_json = dump_match_models([])
                 entity.match_rule_ids_json = dump_rule_ids([])
 
-            if payload.items is not None:
+            if replaces_items:
+                # Only a caller that does not send exclusions gets removed
+                # automatic members excluded for it. The editor sends its own
+                # list, so a member a sync added while it was open is not
+                # mistaken for a removal; reconcile puts that member back.
+                if not entity.route_group_id and payload.excluded_items is None:
+                    next_excluded_items = [
+                        *next_excluded_items,
+                        *await self._exclude_removed_auto_members(
+                            session,
+                            entity,
+                            current_item_views,
+                            next_items,
+                            next_excluded_items,
+                        ),
+                    ]
                 await session.execute(
                     delete(ModelGroupItemEntity).where(
                         ModelGroupItemEntity.group_id == group_id
                     )
                 )
-                self._replace_group_items(session, group_id, next_items or [])
+                self._replace_group_items(
+                    session,
+                    group_id,
+                    next_items,
+                    next_excluded_items,
+                )
 
             await session.commit()
             await session.refresh(entity)
             hydrated = await self._hydrate_groups(session, [entity], channels)
             return hydrated[0]
+
+    @staticmethod
+    async def _exclude_removed_auto_members(
+        session: AsyncSession,
+        entity: ModelGroupEntity,
+        previous_items: list[ModelGroupItemView],
+        next_items: list[ModelGroupItemInput],
+        next_excluded_items: list[ModelGroupItemInput],
+    ) -> list[ModelGroupItemInput]:
+        """Turn removed members that reconcile would re-add into exclusions."""
+        kept_keys = {
+            model_group_item_key(item) for item in (*next_items, *next_excluded_items)
+        }
+        # A member whose target is gone cannot rejoin, so it needs no exclusion.
+        removed = [
+            item
+            for item in previous_items
+            if model_group_item_key(item) not in kept_keys
+            and item.state != ModelGroupItemState.INVALID
+        ]
+        if not removed:
+            return []
+        rules = (await load_group_match_rules(session, [entity]))[entity.id]
+        return [
+            ModelGroupItemInput(
+                channel_id=item.channel_id,
+                credential_id=item.credential_id,
+                model_name=item.model_name,
+                enabled=item.enabled,
+                source=item.source,
+            )
+            for item in removed
+            if is_auto_joined(entity.name, rules, item.model_name)
+        ]
 
     async def delete_group(self, group_id: str) -> None:
         """Delete an unreferenced model group and its members."""

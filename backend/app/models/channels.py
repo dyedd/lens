@@ -1,8 +1,10 @@
+from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import AwareDatetime, Field, HttpUrl, field_validator
 
 from ..core.urls import canonicalize_base_url
+from .model_groups import ModelGroupReconcileReport
 from .protocols import (
     ChannelModelSyncStatus,
     ChannelProxyMode,
@@ -29,6 +31,7 @@ class ChannelDiscoveredModel(StrictBaseModel):
     model_name: str
     enabled: bool = True
     upstream_missing: bool = False
+    upstream_missing_since: datetime | None = Field(default=None, exclude=True)
     sort_order: int = Field(default=0, ge=0)
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
@@ -72,4 +75,10 @@ class ChannelModelSyncResultItem(StrictBaseModel):
 
 
 class ChannelModelSyncResponse(StrictBaseModel):
+    """One model sync run: per-credential catalog changes, then group changes."""
+
+    id: str = ""
+    started_at: AwareDatetime | None = None
+    finished_at: AwareDatetime | None = None
     items: list[ChannelModelSyncResultItem] = Field(default_factory=list)
+    groups: ModelGroupReconcileReport = Field(default_factory=ModelGroupReconcileReport)

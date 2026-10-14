@@ -18,7 +18,7 @@ import {
 } from "@/lib/modelPrefix";
 import { protocolLabel } from "@/lib/protocols";
 import type { FormState, GroupRow, GroupSort } from "./groupTypes";
-import { buildGroupRows, listSavedFormItems } from "./groupView";
+import { buildGroupRows } from "./groupView";
 import {
   GROUP_PROTOCOL_ORDER,
   groupMemberProtocols,
@@ -47,11 +47,14 @@ export function useGroupsQueries({
     queryFn: () => apiRequest<UnplacedModelsResponse>("/admin/unplaced-models"),
     staleTime: 2 * 60_000,
   });
-  // Live rule members are left out so the candidate list still offers them
-  // to the client-side rule preview.
+  // Every member is evaluated; candidates then offer only models outside the
+  // group, which is what the rule preview may add. The draft match rules are
+  // evaluated by the backend so the preview matches what saving does.
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(
     () => ({
-      items: listSavedFormItems(form.items)
+      match_models: form.match_models,
+      match_rule_ids: form.match_rule_ids,
+      items: form.items
         .map((item) => ({
           channel_id: item.channel_id,
           credential_id: item.credential_id,
@@ -62,10 +65,10 @@ export function useGroupsQueries({
           modelGroupItemKey(left).localeCompare(modelGroupItemKey(right)),
         ),
     }),
-    [form.items],
+    [form.items, form.match_models, form.match_rule_ids],
   );
   const candidateQuery = useQuery({
-    queryKey: ["group-candidates", candidatePayload],
+    queryKey: ["group-candidates", editingId, candidatePayload],
     queryFn: () =>
       apiRequest<ModelGroupCandidatesResponse>(
         "/admin/model-group-candidates",
@@ -75,6 +78,10 @@ export function useGroupsQueries({
         },
       ),
     enabled: dialogOpen && !form.route_group_id,
+    // Keep the list on screen while an edit in the same editor is
+    // re-evaluated; another group never borrows this one's candidates.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === editingId ? previous : undefined,
   });
   const groupRows = useMemo(
     () => buildGroupRows(groupsQuery.data ?? []),

@@ -1,4 +1,8 @@
-import type { HeaderRule, ParamOverrideRule } from "./groups";
+import type {
+  HeaderRule,
+  ModelGroupReconcileReport,
+  ParamOverrideRule,
+} from "./groups";
 import type { ProtocolKind } from "./protocols";
 
 export type ChannelProxyMode = "inherit" | "direct" | "custom";
@@ -144,8 +148,14 @@ export type ChannelModelSyncResultItem = {
   missing: string[];
   restored: string[];
 };
+/** One model sync run: per-key catalog changes, then where models ended up. */
 export type ChannelModelSyncResponse = {
+  /** Empty when nothing was synced and the run was not recorded. */
+  id: string;
+  started_at: string | null;
+  finished_at: string | null;
   items: ChannelModelSyncResultItem[];
+  groups: ModelGroupReconcileReport;
 };
 export type SiteBatchImportBaseUrlInput = {
   ref: string;

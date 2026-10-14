@@ -59,6 +59,22 @@ class ModelGroupItemState(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
+class ModelGroupMemberSource(str, Enum):
+    """How a saved member joined its group."""
+
+    MANUAL = "manual"
+    RULE = "rule"
+    PLACEMENT = "placement"
+
+
+class ModelGroupNewMemberPosition(str, Enum):
+    """Where automatically joined members are inserted."""
+
+    END = "end"
+    START = "start"
+    RATE_ASC = "rate_asc"
+
+
 class ModelGroupItemReason(str, Enum):
     MANUAL_DISABLED = "manual_disabled"
     CHANNEL_NOT_FOUND = "channel_not_found"
@@ -81,6 +97,7 @@ class ModelGroup(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
+    new_member_position: ModelGroupNewMemberPosition = ModelGroupNewMemberPosition.END
     context_window: ContextWindow | None = None
     input_price_per_million: float = 0.0
     image_input_price_per_million: float = 0.0
@@ -91,6 +108,7 @@ class ModelGroup(StrictBaseModel):
     pricing_mode: Literal["free", "tokens", "non_tokens"] = "free"
     manual_override: bool = False
     items: list["ModelGroupItem"] = Field(default_factory=list)
+    excluded_items: list["ModelGroupItem"] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(
         lambda value: [ParamOverrideRule.model_validate(item) for item in value]
@@ -122,6 +140,7 @@ class ModelGroupItem(StrictBaseModel):
     credential_number: int = Field(default=0, ge=0)
     model_name: str
     enabled: bool = True
+    source: ModelGroupMemberSource = ModelGroupMemberSource.MANUAL
     sort_order: int = Field(default=0, ge=0)
 
 
@@ -132,7 +151,6 @@ class ModelGroupItemView(ModelGroupItem):
     rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     state: ModelGroupItemState
     reasons: list[ModelGroupItemReason] = Field(default_factory=list)
-    matched_by_rule: bool = False
     credential_mask: str = ""
     base_url: str = ""
     # Channel-specific context window; the group default covers None.
@@ -143,6 +161,7 @@ class ModelGroupItemView(ModelGroupItem):
 class ModelGroupView(ModelGroup):
     client_protocols: list[ProtocolKind] = Field(default_factory=list)
     items: list[ModelGroupItemView] = Field(default_factory=list)
+    excluded_items: list[ModelGroupItemView] = Field(default_factory=list)
 
 
 class ModelGroupItemInput(StrictBaseModel):
@@ -150,6 +169,7 @@ class ModelGroupItemInput(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     enabled: bool = True
+    source: ModelGroupMemberSource = ModelGroupMemberSource.MANUAL
 
 
 class ModelGroupCreate(StrictBaseModel):
@@ -161,8 +181,10 @@ class ModelGroupCreate(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
+    new_member_position: ModelGroupNewMemberPosition = ModelGroupNewMemberPosition.END
     context_window: ContextWindow | None = None
     items: list[ModelGroupItemInput] = Field(default_factory=list)
+    excluded_items: list[ModelGroupItemInput] = Field(default_factory=list)
 
     _validate_param_override = field_validator("param_override")(
         lambda value: [ParamOverrideRule.model_validate(item) for item in value]
@@ -194,8 +216,10 @@ class ModelGroupUpdate(StrictBaseModel):
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None
     fallback_group_ids: list[str] | None = Field(default=None, max_length=20)
+    new_member_position: ModelGroupNewMemberPosition | None = None
     context_window: ContextWindow | None = None
     items: list[ModelGroupItemInput] | None = None
+    excluded_items: list[ModelGroupItemInput] | None = None
 
     _canonicalize_headers = field_validator("headers")(
         lambda value: (
@@ -233,11 +257,16 @@ class ModelGroupCandidateItem(StrictBaseModel):
 
 class ModelGroupCandidatesRequest(StrictBaseModel):
     items: list[ModelGroupItemInput] = Field(default_factory=list)
+    # The editor's unsaved rules; the response reports which models they match.
+    match_models: list[str] = Field(default_factory=list)
+    match_rule_ids: RegexRuleIds = Field(default_factory=list)
 
 
 class ModelGroupCandidatesResponse(StrictBaseModel):
     candidates: list[ModelGroupCandidateItem] = Field(default_factory=list)
     evaluated_items: list[ModelGroupItemView] = Field(default_factory=list)
+    # Channel model names the requested rules match, evaluated like reconcile.
+    matched_model_names: list[str] = Field(default_factory=list)
 
 
 class ModelGroupModelTestRequest(StrictBaseModel):
@@ -272,12 +301,43 @@ class UnplacedModelsResponse(StrictBaseModel):
     items: list[UnplacedModelView] = Field(default_factory=list)
 
 
+class ModelGroupRefView(StrictBaseModel):
+    id: str
+    name: str
+
+
+class ModelGroupMemberChangeView(StrictBaseModel):
+    group_id: str
+    group_name: str
+    channel_id: str
+    channel_name: str = ""
+    credential_id: str
+    credential_name: str = ""
+    model_name: str
+    source: ModelGroupMemberSource = ModelGroupMemberSource.MANUAL
+
+
+class ModelGroupReconcileReport(StrictBaseModel):
+    """Group-level outcome of one reconcile pass, in pipeline stage order."""
+
+    added: list[ModelGroupMemberChangeView] = Field(default_factory=list)
+    removed: list[ModelGroupMemberChangeView] = Field(default_factory=list)
+    created_groups: list[ModelGroupRefView] = Field(default_factory=list)
+    pending: list[UnplacedModelView] = Field(default_factory=list)
+    retired: list[ModelGroupMemberChangeView] = Field(default_factory=list)
+
+    @property
+    def has_changes(self) -> bool:
+        return bool(self.added or self.removed or self.created_groups or self.retired)
+
+
 class ModelGroupPlacementRequest(StrictBaseModel):
     model_names: list[str] | None = None
 
 
 class ModelGroupPlacementResponse(StrictBaseModel):
     created: list[ModelGroupView] = Field(default_factory=list)
+    joined: list[ModelGroupMemberChangeView] = Field(default_factory=list)
     unplaced: list[UnplacedModelView] = Field(default_factory=list)
 
 

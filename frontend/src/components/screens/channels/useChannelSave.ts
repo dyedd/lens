@@ -41,10 +41,14 @@ function formatSyncSummary(
   const added = countSyncedNames(result, "added");
   const missing = countSyncedNames(result, "missing");
   const restored = countSyncedNames(result, "restored");
+  const createdGroups = result.groups.created_groups.length;
+  const pending = result.groups.pending.length;
   if (locale !== "zh-CN") {
     const parts = [
-      added && `${added} new models added to model groups`,
-      missing && `${missing} models removed upstream; review needed`,
+      added && `${added} new models`,
+      createdGroups && `${createdGroups} groups created`,
+      pending && `${pending} awaiting placement`,
+      missing && `${missing} removed upstream`,
       restored && `${restored} back upstream`,
     ].filter(Boolean);
     return parts.length
@@ -52,8 +56,10 @@ function formatSyncSummary(
       : "Models are up to date";
   }
   const parts = [
-    added && `新增 ${added} 个模型，已加入模型组`,
-    missing && `${missing} 个模型已从上游移除，待处理`,
+    added && `新增 ${added} 个模型`,
+    createdGroups && `新建 ${createdGroups} 个模型组`,
+    pending && `${pending} 个待放置`,
+    missing && `${missing} 个已从上游移除`,
     restored && `${restored} 个已恢复`,
   ].filter(Boolean);
   return parts.length ? `已同步：${parts.join("，")}` : "模型已是最新";

@@ -23,6 +23,7 @@ from ....models.protocols import ProtocolKind
 from ....models.site_model_test import SiteModelTestRequest, SiteModelTestResult
 from ..app_state import app_state
 from ..auth import get_current_admin
+from ..tasks.model_group_reconcile import run_model_group_reconcile
 from ..tasks.site_model_probe import run_site_model_probe
 
 
@@ -106,15 +107,19 @@ async def test_model_group_model(
 async def create_model_group(
     payload: ModelGroupCreate, _: Any = Depends(get_current_admin)
 ) -> ModelGroupView:
-    """Create a model group."""
-    return await app_state.group_repo.create_group(payload)
+    """Create a model group, then save the members its rules match."""
+    group = await app_state.group_repo.create_group(payload)
+    await run_model_group_reconcile(app_state)
+    return await app_state.group_repo.get_group(group.id)
 
 
 async def update_model_group(
     group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)
 ) -> ModelGroupView:
-    """Update a model group."""
-    return await app_state.group_repo.update_group(group_id, payload)
+    """Update a model group, then reconcile members with its rules."""
+    await app_state.group_repo.update_group(group_id, payload)
+    await run_model_group_reconcile(app_state)
+    return await app_state.group_repo.get_group(group_id)
 
 
 async def delete_model_group(
@@ -129,7 +134,9 @@ async def merge_model_group(
     group_id: str, payload: ModelGroupMergeRequest, _: Any = Depends(get_current_admin)
 ) -> ModelGroupView:
     """Merge a model group into another execution group."""
-    return await app_state.group_repo.merge_group(group_id, payload.target_group_id)
+    group = await app_state.group_repo.merge_group(group_id, payload.target_group_id)
+    await run_model_group_reconcile(app_state)
+    return await app_state.group_repo.get_group(group.id)
 
 
 async def list_unplaced_models(

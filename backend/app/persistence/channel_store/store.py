@@ -205,6 +205,8 @@ class SiteOperationsMixin:
 
             missing: set[str] = set()
             restored: set[str] = set()
+            checked_at = datetime.now(UTC).replace(tzinfo=None)
+            has_backfill = False
             has_context_changes = False
             for row in credential_models:
                 if row.model_name in upstream_names:
@@ -216,11 +218,15 @@ class SiteOperationsMixin:
                     continue
                 is_missing = row.model_name not in upstream_names
                 if is_missing == bool(row.upstream_missing):
+                    if is_missing and row.upstream_missing_since is None:
+                        row.upstream_missing_since = checked_at
+                        has_backfill = True
                     continue
                 row.upstream_missing = int(is_missing)
+                row.upstream_missing_since = checked_at if is_missing else None
                 (missing if is_missing else restored).add(row.model_name)
 
-            if added or missing or restored or has_context_changes:
+            if added or missing or restored or has_backfill or has_context_changes:
                 await session.commit()
             return UpstreamModelChanges(
                 added=added, missing=sorted(missing), restored=sorted(restored)

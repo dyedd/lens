@@ -27,6 +27,7 @@ class GroupValidationMixin:
         *,
         channels: list[ChannelConfig],
         existing_items: list[ModelGroupItemView] | None = None,
+        excluded_items: list[ModelGroupItemInput] | None = None,
     ) -> ModelGroupEntity | None:
         trimmed_name = name.strip()
         if not trimmed_name:
@@ -97,6 +98,22 @@ class GroupValidationMixin:
                     f"model={item.model_name}"
                 )
             seen_keys.add(item_key)
+        excluded_keys: set[tuple[str, str, str]] = set()
+        for item in excluded_items or []:
+            item_key = model_group_item_key(item)
+            if item_key in seen_keys:
+                raise ValueError(
+                    "Model group member cannot also be excluded: "
+                    f"channel={item.channel_id} credential={item.credential_id} "
+                    f"model={item.model_name}"
+                )
+            if item_key in excluded_keys:
+                raise ValueError(
+                    "Duplicate excluded model group member: "
+                    f"channel={item.channel_id} credential={item.credential_id} "
+                    f"model={item.model_name}"
+                )
+            excluded_keys.add(item_key)
 
         channels_by_id = build_model_group_channel_lookups(channels)
         previous_by_key = {

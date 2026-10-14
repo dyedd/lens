@@ -3,6 +3,7 @@ import type { ModelGroup } from "@/lib/api/groups";
 import type { FormItem, FormState, MemberStatusFilter } from "./groupTypes";
 import { foldGroupMembers, groupFoldedMembersByChannel } from "./groupView";
 import {
+  insertNewMembers,
   modelFoldKey,
   modelGroupChannelKey,
   modelGroupItemKey,
@@ -19,13 +20,6 @@ function formItemMemberKey(item: FormItem) {
 
 function formItemChannelKey(item: FormItem) {
   return modelGroupChannelKey(item.site_id, item.channel_id);
-}
-
-/** Saves every member explicitly so a manual order survives the rule. */
-function pinFormItems(items: FormItem[]) {
-  return items.map((item) =>
-    item.matched_by_rule ? { ...item, matched_by_rule: false } : item,
-  );
 }
 
 type FormItemMember = {
@@ -68,16 +62,46 @@ function groupFormItemsByChannel(items: FormItem[]) {
   return Array.from(channels.values());
 }
 
+/**
+ * Remove matching members; ones that rules or placement would add back become
+ * exclusions so the removal sticks, the same way the backend saves them.
+ */
+function removeFormItems(
+  form: FormState,
+  matches: (item: FormItem) => boolean,
+  isAutoJoined: (form: FormState, modelName: string) => boolean,
+): FormState {
+  const removedItems = form.items.filter(matches);
+  if (!removedItems.length) return form;
+  const excludedItems = removedItems
+    .filter(
+      (item) =>
+        item.state !== "invalid" &&
+        (item.source !== "manual" || isAutoJoined(form, item.model_name)),
+    )
+    .map((item) => ({ ...item, state: null, reasons: [] }));
+  return {
+    ...form,
+    items: form.items.filter((item) => !matches(item)),
+    excluded_items: [...form.excluded_items, ...excludedItems],
+  };
+}
+
 /** Derive folded members and manage editor member operations. */
 export function useGroupMembers(
   form: FormState,
   evaluatedItems: ModelGroup["items"],
   setForm: Dispatch<SetStateAction<FormState>>,
   memberStatusFilter: MemberStatusFilter,
+  isAutoJoined: (form: FormState, modelName: string) => boolean,
 ) {
   const foldedMembers = useMemo(
     () => foldGroupMembers(form.items, evaluatedItems),
     [evaluatedItems, form.items],
+  );
+  const excludedMembers = useMemo(
+    () => foldGroupMembers(form.excluded_items, []),
+    [form.excluded_items],
   );
   const visibleFoldedMembers = useMemo(() => {
     return foldedMembers.flatMap((member, index) => {
@@ -134,17 +158,41 @@ export function useGroupMembers(
     });
   }
 
-  /** Removes saved members; rule members are disabled so the rule skips them. */
   function removeFoldedMember(foldKey: string) {
-    setForm((current) => ({
-      ...current,
-      items: current.items.flatMap((item) => {
-        if (formItemMemberKey(item) !== foldKey) return [item];
-        return item.matched_by_rule
-          ? [{ ...item, enabled: false, state: null, reasons: [] }]
-          : [];
-      }),
-    }));
+    setForm((current) =>
+      removeFormItems(
+        current,
+        (item) => formItemMemberKey(item) === foldKey,
+        isAutoJoined,
+      ),
+    );
+  }
+
+  /** Bring an excluded member back at the group's insert position. */
+  function restoreExcludedMember(foldKey: string) {
+    setForm((current) => {
+      const restoredItems = current.excluded_items.filter(
+        (item) => formItemMemberKey(item) === foldKey,
+      );
+      if (!restoredItems.length) return current;
+      return {
+        ...current,
+        items: insertNewMembers(
+          current.items,
+          // Exclusions are stored disabled; bringing one back turns it on.
+          restoredItems.map((item) => ({
+            ...item,
+            enabled: true,
+            state: null,
+            reasons: [],
+          })),
+          current.new_member_position,
+        ),
+        excluded_items: current.excluded_items.filter(
+          (item) => formItemMemberKey(item) !== foldKey,
+        ),
+      };
+    });
   }
 
   function toggleFoldedMember(foldKey: string, enabled: boolean) {
@@ -162,7 +210,7 @@ export function useGroupMembers(
       if (nextMembers === members) return current;
       return {
         ...current,
-        items: pinFormItems(nextMembers.flatMap((member) => member.items)),
+        items: nextMembers.flatMap((member) => member.items),
       };
     });
   }
@@ -174,10 +222,8 @@ export function useGroupMembers(
       if (nextChannels === channels) return current;
       return {
         ...current,
-        items: pinFormItems(
-          nextChannels.flatMap((channel) =>
-            channel.members.flatMap((member) => member.items),
-          ),
+        items: nextChannels.flatMap((channel) =>
+          channel.members.flatMap((member) => member.items),
         ),
       };
     });
@@ -201,19 +247,15 @@ export function useGroupMembers(
       nextChannels[channelIndex] = { ...channel, members: nextMembers };
       return {
         ...current,
-        items: pinFormItems(
-          nextChannels.flatMap((item) =>
-            item.members.flatMap((member) => member.items),
-          ),
+        items: nextChannels.flatMap((item) =>
+          item.members.flatMap((member) => member.items),
         ),
       };
     });
   }
 
   function clearMembers() {
-    setForm((current) =>
-      current.items.length ? { ...current, items: [] } : current,
-    );
+    setForm((current) => removeFormItems(current, () => true, isAutoJoined));
   }
 
   function setAllMembersEnabled(enabled: boolean) {
@@ -221,12 +263,9 @@ export function useGroupMembers(
   }
 
   function removeDisabledMembers() {
-    setForm((current) => {
-      const items = current.items.filter((item) => item.enabled);
-      return items.length === current.items.length
-        ? current
-        : { ...current, items };
-    });
+    setForm((current) =>
+      removeFormItems(current, (item) => !item.enabled, isAutoJoined),
+    );
   }
 
   function removeInvalidItems() {
@@ -237,17 +276,19 @@ export function useGroupMembers(
         .map((item) => modelGroupItemKey(item)),
     );
     if (!keysToRemove.size) return;
-    setForm((current) => ({
-      ...current,
-      items: current.items.filter(
-        (item) => !keysToRemove.has(modelGroupItemKey(item)),
+    setForm((current) =>
+      removeFormItems(
+        current,
+        (item) => keysToRemove.has(modelGroupItemKey(item)),
+        isAutoJoined,
       ),
-    }));
+    );
   }
 
   return {
     clearMembers,
     disabledItemCount,
+    excludedMembers,
     foldedMembers,
     invalidItemCount,
     moveChannelGroup,
@@ -256,6 +297,7 @@ export function useGroupMembers(
     removeDisabledMembers,
     removeFoldedMember,
     removeInvalidItems,
+    restoreExcludedMember,
     setAllMembersEnabled,
     toggleChannelMembers,
     toggleFoldedMember,
