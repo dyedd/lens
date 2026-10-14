@@ -1,5 +1,9 @@
-import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
-import type { RegexRule } from "@/lib/api/regexRules";
+import type {
+  ModelGroup,
+  ModelGroupCandidateItem,
+  ModelGroupItemPayload,
+  ModelGroupMemberSource,
+} from "@/lib/api/groups";
 import {
   formatContextWindow,
   parseContextWindowInput,
@@ -23,8 +27,8 @@ import type {
 import {
   buildGroupDisplayMembers,
   buildModelMatchKey,
-  compileMatchRules,
-  matchesGroupRules,
+  buildRuleMatcher,
+  insertNewMembers,
   modelFoldKey,
   modelGroupChannelKey,
   modelGroupItemKey,
@@ -33,7 +37,7 @@ import {
 /** Convert candidate payload items into editable model group members. */
 export function candidatePayloadToFormItems(
   candidate: ModelGroupCandidateItem,
-  matchedByRule = false,
+  source: ModelGroupMemberSource = "manual",
 ): FormItem[] {
   return candidate.items.map((payloadItem) => ({
     channel_id: payloadItem.channel_id,
@@ -50,9 +54,9 @@ export function candidatePayloadToFormItems(
     rate_source: candidate.rate_source,
     model_name: payloadItem.model_name,
     enabled: true,
-    matched_by_rule: matchedByRule,
+    source,
     // Candidates are READY by construction; rule members skip evaluation.
-    state: matchedByRule ? "ready" : null,
+    state: source === "rule" ? "ready" : null,
     reasons: [],
     context_window: null,
     context_window_source: null,
@@ -60,46 +64,92 @@ export function candidatePayloadToFormItems(
 }
 
 /**
- * Replace enabled rule members with the candidates the match rules select.
+ * Preview what saving the match rules does to the member list.
  *
- * Saved members and excluded (disabled) rule members stay in place. Returns
- * the same form when the rule member set is unchanged.
+ * Rule members that no longer match drop out and new matches join at the
+ * group's insert position; every other member and exclusion stays. Returns
+ * the same form when nothing changes. `matchedModelNames` is the backend's
+ * evaluation of the form's current rules.
  */
 export function applyMatchRulesToForm(
   form: FormState,
   candidates: ModelGroupCandidateItem[],
-  regexRules: RegexRule[],
+  matchedModelNames: string[],
 ): FormState {
-  const savedItems = form.items.filter(
-    (item) => !item.matched_by_rule || !item.enabled,
+  if (form.route_group_id) return form;
+  const isMatched = buildRuleMatcher(form.match_models, matchedModelNames);
+  const keptItems = form.items.filter(
+    (item) => item.source !== "rule" || isMatched(item.model_name),
   );
-  const savedKeys = new Set(savedItems.map((item) => modelGroupItemKey(item)));
-  const matchRules = compileMatchRules(form.match_rule_ids, regexRules);
-  const ruleItems = form.route_group_id
-    ? []
-    : candidates
-        .filter((candidate) =>
-          matchesGroupRules(
-            candidate.model_name,
-            form.match_models,
-            matchRules,
-          ),
-        )
-        .flatMap((candidate) => candidatePayloadToFormItems(candidate, true))
-        .filter((item) => !savedKeys.has(modelGroupItemKey(item)));
-  const currentRuleKeys = form.items
-    .filter((item) => item.matched_by_rule && item.enabled)
-    .map((item) => modelGroupItemKey(item));
-  const nextRuleKeys = new Set(
-    ruleItems.map((item) => modelGroupItemKey(item)),
+  const blockedKeys = new Set(
+    [...keptItems, ...form.excluded_items].map((item) =>
+      modelGroupItemKey(item),
+    ),
   );
-  if (
-    currentRuleKeys.length === nextRuleKeys.size &&
-    currentRuleKeys.every((key) => nextRuleKeys.has(key))
-  ) {
-    return form;
-  }
-  return { ...form, items: [...savedItems, ...ruleItems] };
+  const ruleItems = candidates
+    .filter((candidate) => isMatched(candidate.model_name))
+    .flatMap((candidate) => candidatePayloadToFormItems(candidate, "rule"))
+    .filter((item) => !blockedKeys.has(modelGroupItemKey(item)));
+  if (keptItems.length === form.items.length && !ruleItems.length) return form;
+  return {
+    ...form,
+    items: insertNewMembers(keptItems, ruleItems, form.new_member_position),
+  };
+}
+
+/** Summarize how the edited form changes the saved members. */
+export function buildMemberChangeSummary(
+  group: ModelGroup | undefined,
+  form: FormState,
+) {
+  const savedKeys = new Set(
+    (group?.items ?? []).map((item) => modelGroupItemKey(item)),
+  );
+  const formKeys = new Set(form.items.map((item) => modelGroupItemKey(item)));
+  const countMembers = (items: FormItem[] | ModelGroup["items"]) =>
+    new Set(
+      items.map((item) =>
+        modelFoldKey(
+          item.protocol_config_id,
+          item.credential_id,
+          item.model_name,
+        ),
+      ),
+    ).size;
+  return {
+    added: countMembers(
+      form.items.filter((item) => !savedKeys.has(modelGroupItemKey(item))),
+    ),
+    removed: countMembers(
+      (group?.items ?? []).filter(
+        (item) => !formKeys.has(modelGroupItemKey(item)),
+      ),
+    ),
+  };
+}
+
+function modelGroupItemToFormItem(item: ModelGroup["items"][number]): FormItem {
+  return {
+    channel_id: item.channel_id,
+    site_id: item.site_id,
+    protocol_config_id: item.protocol_config_id,
+    channel_name: item.channel_name,
+    protocol: item.protocol,
+    credential_id: item.credential_id,
+    credential_name: item.credential_name,
+    credential_number: item.credential_number,
+    credential_mask: item.credential_mask,
+    base_url: item.base_url,
+    rate_multiplier: item.rate_multiplier,
+    rate_source: item.rate_source,
+    model_name: item.model_name,
+    enabled: item.enabled,
+    source: item.source,
+    state: item.state,
+    reasons: item.reasons,
+    context_window: item.context_window,
+    context_window_source: item.context_window_source,
+  };
 }
 
 /** Convert a persisted model group into editor form state. */
@@ -117,38 +167,23 @@ export function modelGroupToForm(group: ModelGroup): FormState {
       group.context_window === null
         ? ""
         : formatContextWindow(group.context_window),
+    new_member_position: group.new_member_position,
     items: group.items
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((item) => ({
-        channel_id: item.channel_id,
-        site_id: item.site_id,
-        protocol_config_id: item.protocol_config_id,
-        channel_name: item.channel_name,
-        protocol: item.protocol,
-        credential_id: item.credential_id,
-        credential_name: item.credential_name,
-        credential_number: item.credential_number,
-        credential_mask: item.credential_mask,
-        base_url: item.base_url,
-        rate_multiplier: item.rate_multiplier,
-        rate_source: item.rate_source,
-        model_name: item.model_name,
-        enabled: item.enabled,
-        matched_by_rule: item.matched_by_rule,
-        state: item.state,
-        reasons: item.reasons,
-        context_window: item.context_window,
-        context_window_source: item.context_window_source,
-      })),
+      .map(modelGroupItemToFormItem),
+    excluded_items: group.excluded_items.map(modelGroupItemToFormItem),
   };
 }
 
-/** Return the form items the backend persists; live rule members are derived. */
-export function listSavedFormItems(items: FormItem[]) {
-  // Enabled rule members follow the live rules; a disabled one is saved so
-  // the rules stop routing to it.
-  return items.filter((item) => !item.matched_by_rule || !item.enabled);
+function formItemToPayload(item: FormItem): ModelGroupItemPayload {
+  return {
+    channel_id: item.channel_id,
+    credential_id: item.credential_id,
+    model_name: item.model_name,
+    enabled: item.enabled,
+    source: item.source,
+  };
 }
 
 /** Convert editor form state into a model-group API payload. */
@@ -170,12 +205,9 @@ export function formToModelGroupPayload(form: FormState) {
     headers: headerDraftToRules(form.headers),
     fallback_group_ids: form.fallback_group_ids,
     context_window: parseContextWindowInput(form.context_window) ?? null,
-    items: listSavedFormItems(form.items).map((item) => ({
-      channel_id: item.channel_id,
-      credential_id: item.credential_id,
-      model_name: item.model_name,
-      enabled: item.enabled,
-    })),
+    new_member_position: form.new_member_position,
+    items: form.items.map(formItemToPayload),
+    excluded_items: form.excluded_items.map(formItemToPayload),
   };
 }
 
@@ -364,7 +396,7 @@ export function foldGroupMembers(
         context_window_source: evaluatedItem.context_window_source,
         protocols: [],
         subItems: [],
-        is_rule_member: true,
+        source: evaluatedItem.source,
         enabled_item_count: 0,
         disabled_item_count: 0,
         ready_item_count: 0,
@@ -375,7 +407,7 @@ export function foldGroupMembers(
       membersByKey.set(key, member);
     }
     member.subItems.push(evaluatedItem);
-    member.is_rule_member &&= evaluatedItem.matched_by_rule;
+    if (member.source !== evaluatedItem.source) member.source = "manual";
     if (evaluatedItem.enabled) member.enabled_item_count += 1;
     else member.disabled_item_count += 1;
     if (evaluatedItem.state === null) member.pending_item_count += 1;

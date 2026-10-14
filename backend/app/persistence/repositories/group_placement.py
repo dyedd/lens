@@ -1,32 +1,31 @@
 from __future__ import annotations
 
 import re
-import uuid
 from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from sqlalchemy import select
 
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
+    ModelGroupMemberSource,
     ModelGroupPlacementResponse,
     ModelGroupView,
     UnplacedModelProvider,
     UnplacedModelRemovalResponse,
     UnplacedModelView,
 )
-from app.models.protocols import RoutingStrategy
 from app.persistence.entities import (
-    ModelGroupEntity,
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
 )
-from app.persistence.group_rule_codec import dump_match_models
 
 from .group_read import list_ready_channel_items
 
 # Mirrors the model_groups.name column length.
-_MAX_GROUP_NAME_LENGTH = 120
+MAX_GROUP_NAME_LENGTH = 120
 
 
 def model_match_key(name: str) -> str:
@@ -34,20 +33,46 @@ def model_match_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
+@dataclass(frozen=True, slots=True)
+class GroupCoverage:
+    """The names a group claims when spotting unplaced and near-named models."""
+
+    id: str
+    name: str
+    is_route_group: bool
+    match_models: tuple[str, ...]
+    # Members and exclusions both count: an exclusion is a placement decision.
+    model_names: frozenset[str]
+
+
+def build_group_coverage(group: ModelGroupView) -> GroupCoverage:
+    return GroupCoverage(
+        id=group.id,
+        name=group.name,
+        is_route_group=bool(group.route_group_id),
+        match_models=tuple(group.match_models),
+        model_names=frozenset(
+            item.model_name for item in (*group.items, *group.excluded_items)
+        ),
+    )
+
+
 def build_unplaced_models(
-    groups: list[ModelGroupView], channels: list[ChannelConfig]
+    groups: Sequence[GroupCoverage], channels: list[ChannelConfig]
 ) -> list[UnplacedModelView]:
     """Return READY channel model names that no execution group covers."""
-    execution_groups = [group for group in groups if not group.route_group_id]
     covered_names = {
-        item.model_name for group in execution_groups for item in group.items
+        name
+        for group in groups
+        if not group.is_route_group
+        for name in group.model_names
     }
-    groups_by_key: dict[str, list[ModelGroupView]] = defaultdict(list)
+    groups_by_key: dict[str, list[GroupCoverage]] = defaultdict(list)
     for group in groups:
         for key in {
             model_match_key(group.name),
             *(model_match_key(name) for name in group.match_models),
-            *(model_match_key(item.model_name) for item in group.items),
+            *(model_match_key(name) for name in group.model_names),
         }:
             groups_by_key[key].append(group)
 
@@ -94,11 +119,11 @@ def build_unplaced_models(
     return views
 
 
-def _is_placeable(view: UnplacedModelView) -> bool:
+def is_placeable_as_new_group(view: UnplacedModelView) -> bool:
     return (
         not view.similar_group_ids
         and not view.similar_model_names
-        and len(view.model_name) <= _MAX_GROUP_NAME_LENGTH
+        and len(view.model_name) <= MAX_GROUP_NAME_LENGTH
     )
 
 
@@ -107,50 +132,28 @@ class GroupPlacementMixin:
         """Return channel models not covered by any execution group."""
         channels = await self._channel_store.list_channels()
         groups = await self.list_groups(channels=channels)
-        return build_unplaced_models(groups, channels)
+        return build_unplaced_models(
+            [build_group_coverage(group) for group in groups], channels
+        )
 
     async def place_models(
         self, model_names: list[str] | None = None
     ) -> ModelGroupPlacementResponse:
-        """Create a failover group for each unplaced model without a near name."""
-        channels = await self._channel_store.list_channels()
-        requested_names = set(model_names) if model_names is not None else None
-        async with self._session_factory() as session:
-            entities = list(
-                (
-                    await session.execute(
-                        select(ModelGroupEntity).order_by(ModelGroupEntity.name)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            groups = await self._hydrate_groups(session, entities, channels)
-            unplaced = build_unplaced_models(groups, channels)
-            created_entities = [
-                ModelGroupEntity(
-                    id=str(uuid.uuid4()),
-                    name=view.model_name,
-                    strategy=RoutingStrategy.FAILOVER.value,
-                    route_group_id="",
-                    match_models_json=dump_match_models([view.model_name]),
-                )
-                for view in unplaced
-                if _is_placeable(view)
-                and (requested_names is None or view.model_name in requested_names)
-            ]
-            if not created_entities:
-                return ModelGroupPlacementResponse(unplaced=unplaced)
-            session.add_all(created_entities)
-            await session.flush()
-            created = await self._hydrate_groups(session, created_entities, channels)
-            await session.commit()
-        created_names = {group.name for group in created}
+        """Join or create groups for unplaced models without a near name."""
+        report = await self.reconcile_group_members(
+            placement_names=set(model_names) if model_names is not None else None
+        )
+        created_ids = {group.id for group in report.created_groups}
+        groups = await self.list_groups()
         return ModelGroupPlacementResponse(
-            created=created,
-            unplaced=[
-                view for view in unplaced if view.model_name not in created_names
+            created=[group for group in groups if group.id in created_ids],
+            joined=[
+                change
+                for change in report.added
+                if change.source == ModelGroupMemberSource.PLACEMENT
+                and change.group_id not in created_ids
             ],
+            unplaced=report.pending,
         )
 
     async def remove_unplaced_models(

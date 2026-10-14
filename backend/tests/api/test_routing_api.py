@@ -185,7 +185,7 @@ def test_model_without_group_is_not_routed(
         ),
     ],
 )
-def test_model_group_rule_routes_to_live_matching_channel_models(
+def test_model_group_rule_saves_and_routes_to_matching_channel_models(
     client,
     admin_headers,
     monkeypatch,
@@ -211,9 +211,9 @@ def test_model_group_rule_routes_to_live_matching_channel_models(
 
     assert response.status_code == 200, response.text
     assert used_keys == ["Bearer later-secret"]
-    assert [
-        (item["model_name"], item["matched_by_rule"]) for item in group["items"]
-    ] == [("gpt-4o", True)]
+    assert [(item["model_name"], item["source"]) for item in group["items"]] == [
+        ("gpt-4o", "rule")
+    ]
 
 
 def test_disabled_saved_member_keeps_rule_from_routing_to_it(
@@ -246,3 +246,99 @@ def test_disabled_saved_member_keeps_rule_from_routing_to_it(
 
     assert response.status_code == 503, response.text
     assert used_keys == []
+
+
+def test_removed_rule_member_stays_excluded_until_restored(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_gateway_key,
+) -> None:
+    create_site(_site_with_key("First", "first"))
+    group = _group_named(client, admin_headers, "gpt-4o")
+    excluded = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"items": []},
+    )
+    create_site(_site_with_key("Second", "second"))
+    used_keys = _capture_upstream_keys(monkeypatch)
+
+    response = _chat(client, create_gateway_key())
+    restored = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"excluded_items": []},
+    )
+
+    assert excluded.status_code == 200, excluded.text
+    assert [item["credential_id"] for item in excluded.json()["excluded_items"]] == [
+        "first-cred"
+    ]
+    assert response.status_code == 200, response.text
+    assert used_keys == ["Bearer second-secret"]
+    assert restored.status_code == 200, restored.text
+    assert sorted(item["credential_id"] for item in restored.json()["items"]) == [
+        "first-cred",
+        "second-cred",
+    ]
+    assert restored.json()["excluded_items"] == []
+
+
+def test_editor_save_keeps_rule_members_added_while_it_was_open(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(_site_with_key("First", "first"))
+    group = _group_named(client, admin_headers, "gpt-4o")
+    create_site(_site_with_key("Second", "second"))
+
+    # The editor still holds the members it loaded and sends its exclusions.
+    saved = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={
+            "items": [
+                {
+                    "channel_id": item["channel_id"],
+                    "credential_id": item["credential_id"],
+                    "model_name": item["model_name"],
+                    "enabled": item["enabled"],
+                    "source": item["source"],
+                }
+                for item in group["items"]
+            ],
+            "excluded_items": [],
+        },
+    )
+
+    assert saved.status_code == 200, saved.text
+    assert sorted(item["credential_id"] for item in saved.json()["items"]) == [
+        "first-cred",
+        "second-cred",
+    ]
+    assert saved.json()["excluded_items"] == []
+
+
+def test_rule_members_join_at_the_group_insert_position(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(_site_with_key("First", "first"))
+    group = _group_named(client, admin_headers, "gpt-4o")
+    client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"new_member_position": "start"},
+    )
+
+    create_site(_site_with_key("Second", "second"))
+    stored = client.get(f"/api/admin/model-groups/{group['id']}", headers=admin_headers)
+
+    assert stored.json()["new_member_position"] == "start"
+    assert [
+        (item["credential_id"], item["source"]) for item in stored.json()["items"]
+    ] == [("second-cred", "rule"), ("first-cred", "rule")]

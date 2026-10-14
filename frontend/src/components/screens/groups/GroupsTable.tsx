@@ -49,6 +49,7 @@ import type {
 } from "./groupTypes";
 import {
   formatCredentialIdentity,
+  formatMemberSource,
   groupMemberProtocols,
   isGroupEnabled,
   STRATEGY_OPTIONS,
@@ -153,9 +154,9 @@ function GroupMembersPopover({
                   </div>
                 ) : null}
               </div>
-              {member.matched_by_rule ? (
+              {member.source !== "manual" ? (
                 <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                  {locale === "zh-CN" ? "规则" : "Rule"}
+                  {formatMemberSource(member.source, locale)}
                 </Badge>
               ) : null}
               <span
