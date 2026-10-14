@@ -8,7 +8,7 @@ import {
   type FormState,
   type MemberStatusFilter,
 } from "./groups/groupTypes";
-import { modelGroupToForm } from "./groups/groupView";
+import { buildMemberChangeSummary, modelGroupToForm } from "./groups/groupView";
 import { useGroupCandidates } from "./groups/useGroupCandidates";
 import { useGroupCommands } from "./groups/useGroupCommands";
 import { useGroupMembers } from "./groups/useGroupMembers";
@@ -23,6 +23,11 @@ const GroupEditorDialog = lazyComponent(() =>
 const DeleteGroupDialog = lazyComponent(() =>
   import("./groups/ModelGroupDialogs").then(
     (module) => module.DeleteGroupDialog,
+  ),
+);
+const ModelSyncRunsSheet = lazyComponent(() =>
+  import("./groups/ModelSyncRunsSheet").then(
+    (module) => module.ModelSyncRunsSheet,
   ),
 );
 const BatchModelTestDialog = lazyComponent(() =>
@@ -79,6 +84,7 @@ function useGroupEditorState() {
 export function GroupsScreen() {
   const { locale } = useI18n();
   const editor = useGroupEditorState();
+  const [isSyncRunsOpen, setIsSyncRunsOpen] = useState(false);
   const queries = useGroupsQueries({
     dialogOpen: editor.dialogOpen,
     editingId: editor.editingId,
@@ -86,15 +92,10 @@ export function GroupsScreen() {
     locale,
   });
   const filters = useGroupFilters(queries.groupRows, locale);
-  const members = useGroupMembers(
-    editor.form,
-    queries.evaluatedItems,
-    editor.setForm,
-    editor.memberStatusFilter,
-  );
-  const modelTest = useGroupModelTest(locale);
   const candidates = useGroupCandidates({
     candidateResponse: queries.candidateQuery.data,
+    // Placeholder data still reflects the previous rules.
+    candidateResponseIsCurrent: !queries.candidateQuery.isPlaceholderData,
     candidateSearch: editor.candidateSearch,
     expandedChannels: editor.expandedChannels,
     form: editor.form,
@@ -103,6 +104,17 @@ export function GroupsScreen() {
     setExpandedChannels: editor.setExpandedChannels,
     setForm: editor.setForm,
   });
+  const members = useGroupMembers(
+    editor.form,
+    queries.evaluatedItems,
+    editor.setForm,
+    editor.memberStatusFilter,
+    candidates.isAutoJoined,
+  );
+  const modelTest = useGroupModelTest(locale);
+  const editingGroup = queries.groups?.find(
+    (group) => group.id === editor.editingId,
+  );
   const commands = useGroupCommands({
     editingId: editor.editingId,
     form: editor.form,
@@ -162,7 +174,16 @@ export function GroupsScreen() {
         onCreateOwnGroups={commands.createOwnGroups}
         onAutoPlace={commands.autoPlaceModels}
         onRemoveUnplacedModels={commands.removeUnplacedModels}
+        onOpenSyncRuns={() => setIsSyncRunsOpen(true)}
       />
+
+      {isSyncRunsOpen ? (
+        <ModelSyncRunsSheet
+          open={isSyncRunsOpen}
+          locale={locale}
+          onOpenChange={setIsSyncRunsOpen}
+        />
+      ) : null}
 
       {editor.dialogOpen ? (
         <GroupEditorDialog
@@ -181,6 +202,13 @@ export function GroupsScreen() {
           hasDeletedMatchRules={candidates.hasDeletedMatchRules}
           ruleMatchModelCount={candidates.ruleMatchModelCount}
           ruleMatchSourceCount={candidates.ruleMatchSourceCount}
+          memberChange={
+            editingGroup
+              ? buildMemberChangeSummary(editingGroup, editor.form)
+              : null
+          }
+          excludedMembers={members.excludedMembers}
+          restoreExcludedMember={members.restoreExcludedMember}
           candidateSearch={editor.candidateSearch}
           changeCandidateSearch={editor.setCandidateSearch}
           refetchCandidates={queries.candidateQuery.refetch}
