@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
@@ -14,11 +15,11 @@ from ....models.channels import (
     ChannelModelSyncResponse,
     ChannelModelSyncResultItem,
 )
+from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus
 from ....models.sites import SiteConfig, SiteProtocolConfig
 from ..app_state import logger
 from .model_discovery import fetch_upstream_models
-from .model_group_placement import run_model_group_placement
 
 if TYPE_CHECKING:
     from ..app_state import AppState
@@ -70,7 +71,13 @@ def channel_for_credential(
 async def sync_channel_models(
     state: AppState, *, site_ids: list[str] | None = None
 ) -> ChannelModelSyncResponse:
-    """Add new upstream models to sync-enabled sites and flag vanished ones."""
+    """Run the model pipeline for sync-enabled sites and record the run.
+
+    Discovery, filtering, and storage run per credential; grouping, member
+    writes, and retirement then run once over every group, so the record
+    shows where each new or vanished model ended up.
+    """
+    started_at = datetime.now(UTC)
     requested_site_ids = set(site_ids) if site_ids is not None else None
     sites = [
         site
@@ -101,8 +108,42 @@ async def sync_channel_models(
         sum(item.status == ChannelModelSyncStatus.UPDATED for item in items),
         sum(item.status == ChannelModelSyncStatus.FAILED for item in items),
     )
-    await run_model_group_placement(state)
-    return ChannelModelSyncResponse(items=items)
+    groups = await _reconcile_synced_groups(state, items)
+    run = ChannelModelSyncResponse(
+        started_at=started_at,
+        finished_at=datetime.now(UTC),
+        items=items,
+        groups=groups,
+    )
+    if not items and not groups.has_changes:
+        return run
+    return await state.model_sync_run_repo.create_run(run)
+
+
+async def _reconcile_synced_groups(
+    state: AppState, items: list[ChannelModelSyncResultItem]
+) -> ModelGroupReconcileReport:
+    # A failed catalog says nothing about which models vanished upstream.
+    synced_targets = {
+        (item.protocol_config_id, item.credential_id)
+        for item in items
+        if item.status != ChannelModelSyncStatus.FAILED
+    }
+    try:
+        report = await state.group_repo.reconcile_group_members(
+            synced_targets=synced_targets
+        )
+    except Exception:
+        logger.exception("Model group reconcile after model sync failed")
+        return ModelGroupReconcileReport()
+    logger.info(
+        "Model sync groups: added=%s created=%s pending=%s retired=%s",
+        len(report.added),
+        len(report.created_groups),
+        len(report.pending),
+        len(report.retired),
+    )
+    return report
 
 
 async def _sync_site_models(

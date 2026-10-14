@@ -91,9 +91,12 @@ async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
         ).all()
     }
     items_by_group: dict[str, list[dict[str, object]]] = {}
+    excluded_by_group: dict[str, list[dict[str, object]]] = {}
     for row in item_rows:
         protocol_config_id = protocol_config_id_from_runtime_channel_id(row.channel_id)
-        items_by_group.setdefault(row.group_id, []).append(
+        (excluded_by_group if row.excluded else items_by_group).setdefault(
+            row.group_id, []
+        ).append(
             {
                 "channel_id": row.channel_id,
                 "channel_name": site_names.get(
@@ -103,6 +106,7 @@ async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                 "credential_name": credential_names.get(row.credential_id, ""),
                 "model_name": row.model_name,
                 "enabled": bool(row.enabled),
+                "source": row.source,
                 "sort_order": row.sort_order,
             }
         )
@@ -129,9 +133,11 @@ async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                     "fallback_group_ids": parse_fallback_group_ids(
                         row.fallback_group_ids_json
                     ),
+                    "new_member_position": row.new_member_position,
                     "context_window": coerce_context_window(row.context_window),
                     **group_price_kwargs(price),
                     "items": items_by_group.get(row.id, []),
+                    "excluded_items": excluded_by_group.get(row.id, []),
                 }
             )
         )
@@ -189,6 +195,16 @@ async def replace_groups(
 
         resolved_item_keys: set[tuple[str, str, str]] = set()
 
+        for item in group.excluded_items:
+            target = model_group_item_key(item)
+            if target in resolved_item_keys:
+                raise ValueError(
+                    "Duplicate excluded model group member in backup "
+                    f"{group.name}: channel={item.channel_id} "
+                    f"credential={item.credential_id} model={item.model_name}"
+                )
+            resolved_item_keys.add(target)
+
         for item in group.items:
             parsed_channel_id = split_runtime_channel_id(item.channel_id)
             if parsed_channel_id is None or (
@@ -224,6 +240,7 @@ async def replace_groups(
                 fallback_group_ids_json=dump_fallback_group_ids(
                     group.fallback_group_ids
                 ),
+                new_member_position=group.new_member_position.value,
                 context_window=group.context_window,
             )
         )
@@ -236,6 +253,20 @@ async def replace_groups(
                     credential_id=item.credential_id,
                     model_name=item.model_name,
                     enabled=1 if item.enabled else 0,
+                    source=item.source.value,
                     sort_order=item.sort_order if item.sort_order >= 0 else index,
+                )
+            )
+        for item in group.excluded_items:
+            session.add(
+                ModelGroupItemEntity(
+                    group_id=group.id,
+                    channel_id=item.channel_id,
+                    credential_id=item.credential_id,
+                    model_name=item.model_name,
+                    enabled=0,
+                    source=item.source.value,
+                    excluded=1,
+                    sort_order=item.sort_order,
                 )
             )

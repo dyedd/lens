@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -606,6 +607,73 @@ def test_channel_model_sync_flags_vanished_models_instead_of_deleting_them(
     assert ("cred-a", "gpt-old", "synced", False) in _stored_models(
         client, admin_headers
     )
+
+
+def test_channel_model_sync_retires_members_missing_past_the_grace_period(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    import app.persistence.channel_store.write as site_write
+    import app.persistence.repositories.group_reconcile as group_reconcile
+
+    payload = _sync_site_payload()
+    payload["protocols"][0]["models"].append(_model("gpt-old"))
+    site_id = _create_sync_site(client, admin_headers, payload)
+
+    async def fake_fetch(_channel: Any) -> list[str]:
+        return ["gpt-new"]
+
+    _patch_upstream_models(monkeypatch, fake_fetch)
+
+    flagged = _run_model_sync(client, admin_headers)
+    # A site save later in the grace period rebuilds the model rows; the miss
+    # must still count from the sync that first saw it.
+    first_miss = datetime.now(UTC).replace(tzinfo=None)
+    monkeypatch.setattr(
+        site_write, "_naive_utc_now", lambda: first_miss + timedelta(days=3)
+    )
+    payload["protocols"][0]["models"] = [
+        _model("manual-only", source="manual"),
+        _model("gpt-old", upstream_missing=True),
+        _model("gpt-new"),
+        _model("gpt-new", credential_id="cred-b"),
+    ]
+    saved = client.put(
+        f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+    )
+    within_grace = _run_model_sync(client, admin_headers)
+    monkeypatch.setattr(
+        group_reconcile, "_naive_utc_now", lambda: first_miss + timedelta(days=8)
+    )
+    past_grace = _run_model_sync(client, admin_headers)
+    history = client.get("/api/admin/model-sync-runs?limit=100", headers=admin_headers)
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+
+    def changed(run: dict[str, Any], stage: str) -> list[tuple[str, str, str]]:
+        return [
+            (change["group_name"], change["credential_id"], change["model_name"])
+            for change in run["groups"][stage]
+        ]
+
+    assert saved.status_code == 200, saved.text
+    assert set(changed(flagged, "added")) == {
+        ("gpt-new", "cred-a", "gpt-new"),
+        ("gpt-new", "cred-b", "gpt-new"),
+    }
+    assert [group["name"] for group in flagged["groups"]["created_groups"]] == [
+        "gpt-new"
+    ]
+    assert changed(flagged, "retired") == []
+    assert changed(within_grace, "retired") == []
+    assert changed(past_grace, "retired") == [("gpt-old", "cred-a", "gpt-old")]
+    assert next(group for group in groups if group["name"] == "gpt-old")["items"] == []
+    assert history.status_code == 200, history.text
+    assert {run["id"] for run in history.json()} == {
+        flagged["id"],
+        within_grace["id"],
+        past_grace["id"],
+    }
 
 
 @pytest.mark.parametrize(
