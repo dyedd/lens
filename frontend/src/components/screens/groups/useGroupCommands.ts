@@ -368,16 +368,18 @@ export function useGroupCommands({
     const payload: ModelGroupPlacementRequest = { model_names: null };
     setBusyId("placement");
     try {
-      const { created, unplaced } =
+      const { created, joined, unplaced } =
         await apiRequest<ModelGroupPlacementResponse>(
           "/admin/model-group-placements",
           { method: "POST", body: JSON.stringify(payload) },
         );
       await invalidateGroupData();
+      const joinedModelCount = new Set(joined.map((item) => item.model_name))
+        .size;
       toast.success(
         locale === "zh-CN"
-          ? `已创建 ${created.length} 个模型组，剩余 ${unplaced.length} 个待分配`
-          : `Created ${created.length} groups, ${unplaced.length} still need assignment`,
+          ? `已创建 ${created.length} 个模型组，${joinedModelCount} 个加入同名模型组，剩余 ${unplaced.length} 个待分配`
+          : `Created ${created.length} groups, ${joinedModelCount} joined same-named groups, ${unplaced.length} still need assignment`,
       );
     } catch (error) {
       toast.error(

@@ -32,11 +32,16 @@ export type ModelGroupItemReason =
   | "model_not_found"
   | "model_disabled"
   | "model_upstream_missing";
+/** How a saved member joined: by hand, through match rules, or by placement. */
+export type ModelGroupMemberSource = "manual" | "rule" | "placement";
+/** Where automatically joined members are inserted. */
+export type ModelGroupNewMemberPosition = "end" | "start" | "rate_asc";
 export type ModelGroupItemPayload = {
   channel_id: string;
   credential_id: string;
   model_name: string;
   enabled: boolean;
+  source?: ModelGroupMemberSource;
 };
 export type ModelGroupItem = ModelGroupItemPayload & {
   site_id: string | null;
@@ -52,7 +57,7 @@ export type ModelGroupItem = ModelGroupItemPayload & {
   state: ModelGroupItemState;
   reasons: ModelGroupItemReason[];
   sort_order: number;
-  matched_by_rule: boolean;
+  source: ModelGroupMemberSource;
   /** The channel model's own context window; null uses the group default. */
   context_window: number | null;
   context_window_source: ContextWindowSource | null;
@@ -64,10 +69,11 @@ export type ModelGroup = {
   strategy: RoutingStrategy;
   route_group_id?: string;
   route_group_name?: string;
-  /** Channel model names that join live by case-insensitive exact match. */
+  /** Channel model names that join by case-insensitive exact match. */
   match_models: string[];
-  /** Library regex rule ids; models matching any of them join live. */
+  /** Library regex rule ids; models matching any of them join the group. */
   match_rule_ids: string[];
+  new_member_position: ModelGroupNewMemberPosition;
   param_override: ParamOverrideRule[];
   headers: HeaderRule[];
   fallback_group_ids?: string[];
@@ -82,6 +88,8 @@ export type ModelGroup = {
   image_price_per_image: number;
   pricing_mode: "free" | "tokens" | "non_tokens";
   items: ModelGroupItem[];
+  /** Kept out of the group; rules and placement do not add them back. */
+  excluded_items: ModelGroupItem[];
 };
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {
   protocol_config_id: string;
@@ -102,10 +110,17 @@ export type ModelGroupCandidateItem = {
   protocols: ProtocolKind[];
   items: ModelGroupCandidateSubitem[];
 };
-export type ModelGroupCandidatesPayload = { items: ModelGroupItemPayload[] };
+export type ModelGroupCandidatesPayload = {
+  items: ModelGroupItemPayload[];
+  /** Draft match rules; the backend reports which channel models they match. */
+  match_models: string[];
+  match_rule_ids: string[];
+};
 export type ModelGroupCandidatesResponse = {
   candidates: ModelGroupCandidateItem[];
   evaluated_items: ModelGroupItem[];
+  /** Channel model names the draft match rules select, evaluated server-side. */
+  matched_model_names: string[];
 };
 export type ModelGroupModelTestPayload = {
   channel_id: string;
@@ -135,9 +150,29 @@ export type UnplacedModel = {
 };
 export type UnplacedModelsResponse = { items: UnplacedModel[] };
 export type ModelGroupPlacementRequest = { model_names: string[] | null };
+export type ModelGroupMemberChange = {
+  group_id: string;
+  group_name: string;
+  channel_id: string;
+  channel_name: string;
+  credential_id: string;
+  credential_name: string;
+  model_name: string;
+  source: ModelGroupMemberSource;
+};
 export type ModelGroupPlacementResponse = {
   created: ModelGroup[];
+  joined: ModelGroupMemberChange[];
   unplaced: UnplacedModel[];
+};
+/** Group-level outcome of one reconcile pass, in pipeline stage order. */
+export type ModelGroupReconcileReport = {
+  added: ModelGroupMemberChange[];
+  removed: ModelGroupMemberChange[];
+  created_groups: Array<{ id: string; name: string }>;
+  pending: UnplacedModel[];
+  /** Members whose model stayed missing upstream past the grace period. */
+  retired: ModelGroupMemberChange[];
 };
 export type UnplacedModelRemovalRequest = { model_names: string[] };
 export type UnplacedModelRemovalResponse = {

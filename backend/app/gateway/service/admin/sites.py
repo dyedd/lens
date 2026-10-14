@@ -27,7 +27,7 @@ from ....models.sites import (
 from ..app_state import app_state
 from ..auth import get_current_admin
 from ..tasks.model_discovery import fetch_upstream_models, filter_upstream_models
-from ..tasks.model_group_placement import run_model_group_placement
+from ..tasks.model_group_reconcile import run_model_group_reconcile
 from ..tasks.site_model_probe import run_site_model_probe
 from ..upstream_support import format_channel_error
 
@@ -64,7 +64,7 @@ async def create_site(
 ) -> SiteConfig:
     """Create an upstream site."""
     site = await app_state.channel_store.create_site(payload)
-    await run_model_group_placement(app_state)
+    await run_model_group_reconcile(app_state)
     return site
 
 
@@ -73,7 +73,7 @@ async def import_sites(
 ) -> SiteBatchImportResult:
     """Import upstream sites from a validated batch payload."""
     result = await app_state.channel_store.import_sites(payload)
-    await run_model_group_placement(app_state)
+    await run_model_group_reconcile(app_state)
     return result
 
 
@@ -82,7 +82,7 @@ async def update_site(
 ) -> SiteConfig:
     """Update an upstream site."""
     site = await app_state.channel_store.update_site(site_id, payload)
-    await run_model_group_placement(app_state)
+    await run_model_group_reconcile(app_state)
     return site
 
 
@@ -93,7 +93,7 @@ async def update_site_enabled(
 ) -> SiteConfig:
     """Update an upstream site's master enabled state."""
     site = await app_state.channel_store.update_site_enabled(site_id, payload)
-    await run_model_group_placement(app_state)
+    await run_model_group_reconcile(app_state)
     return site
 
 
@@ -189,6 +189,14 @@ async def sync_channel_models(
     from ..tasks.model_sync import sync_channel_models as run_channel_model_sync
 
     return await run_channel_model_sync(app_state, site_ids=payload.site_ids)
+
+
+async def list_model_sync_runs(
+    limit: int = Query(default=20, ge=1, le=100),
+    _: Any = Depends(get_current_admin),
+) -> list[ChannelModelSyncResponse]:
+    """List recorded model sync runs, newest first."""
+    return await app_state.model_sync_run_repo.list_runs(limit=limit)
 
 
 async def sync_site_credential_rate(

@@ -12,13 +12,15 @@ import {
   groupModelCandidates,
 } from "./groupView";
 import {
-  compileMatchRules,
-  matchesGroupRules,
+  buildRuleMatcher,
+  modelFoldKey,
   modelGroupItemKey,
 } from "./modelGroupFormatting";
 
 type GroupCandidateOptions = {
   candidateResponse?: ModelGroupCandidatesResponse;
+  /** False while the response still belongs to earlier rules or members. */
+  candidateResponseIsCurrent: boolean;
   candidateSearch: string;
   expandedChannels: string[];
   form: FormState;
@@ -28,9 +30,10 @@ type GroupCandidateOptions = {
   setForm: Dispatch<SetStateAction<FormState>>;
 };
 
-/** Derive candidate groups, keep live rule members current, and add sources. */
+/** Derive candidate groups, preview rule members, and add sources. */
 export function useGroupCandidates({
   candidateResponse,
+  candidateResponseIsCurrent,
   candidateSearch,
   expandedChannels,
   form,
@@ -52,41 +55,43 @@ export function useGroupCandidates({
     form.match_rule_ids.some(
       (id) => !libraryRules.some((rule) => rule.id === id),
     );
-  const ruleMatches = useMemo(() => {
-    const matchRules = compileMatchRules(form.match_rule_ids, libraryRules);
-    return (candidates ?? []).filter((candidate) =>
-      matchesGroupRules(candidate.model_name, form.match_models, matchRules),
-    );
-  }, [candidates, form.match_models, form.match_rule_ids, libraryRules]);
+  // The backend evaluates the draft rules the same way saving and reconcile
+  // do, so the preview never relies on browser regex semantics.
+  const matchedModelNames = candidateResponse?.matched_model_names;
+  const isRuleMatched = useMemo(
+    () => buildRuleMatcher(form.match_models, matchedModelNames ?? []),
+    [form.match_models, matchedModelNames],
+  );
+  // Members the rules cover, whatever their source; candidates only list
+  // models outside the group.
+  const ruleMatches = useMemo(
+    () => form.items.filter((item) => isRuleMatched(item.model_name)),
+    [form.items, isRuleMatched],
+  );
 
-  // Refreshed candidates or edited library rules may add or drop rule
-  // members; waiting for the library keeps a load gap from dropping them.
+  // A response for the current rules may add or drop rule members. Stale
+  // placeholder data is skipped so an earlier rule set cannot drop them.
   useEffect(() => {
-    if (!candidates || !regexRules.isLoaded) return;
+    if (!candidateResponse || !candidateResponseIsCurrent) return;
     setForm((current) =>
-      applyMatchRulesToForm(current, candidates, libraryRules),
+      applyMatchRulesToForm(
+        current,
+        candidateResponse.candidates,
+        candidateResponse.matched_model_names,
+      ),
     );
-  }, [candidates, libraryRules, regexRules.isLoaded, setForm]);
+  }, [candidateResponse, candidateResponseIsCurrent, setForm]);
 
-  /** Update the form and immediately re-resolve live rule members. */
-  function updateRuleForm(update: (current: FormState) => FormState) {
-    setForm((current) => {
-      const next = update(current);
-      return candidates && regexRules.isLoaded
-        ? applyMatchRulesToForm(next, candidates, libraryRules)
-        : next;
-    });
-  }
-
+  // Rule edits change the candidate query, whose response re-previews members.
   function changeMatchRules(
     rules: Partial<Pick<FormState, "match_models" | "match_rule_ids">>,
   ) {
-    updateRuleForm((current) => ({ ...current, ...rules }));
+    setForm((current) => ({ ...current, ...rules }));
   }
 
   /** While creating, the default match rule follows the group name. */
   function changeName(name: string) {
-    updateRuleForm((current) => {
+    setForm((current) => {
       const currentName = current.name.trim();
       const followsName =
         isCreating &&
@@ -106,7 +111,7 @@ export function useGroupCandidates({
   }
 
   function changeRouteTarget(routeGroupId: string) {
-    updateRuleForm((current) => ({
+    setForm((current) => ({
       ...current,
       route_group_id: routeGroupId,
       match_models: routeGroupId ? [] : current.match_models,
@@ -163,6 +168,7 @@ export function useGroupCandidates({
     });
   }
 
+  /** Adding a member by hand also lifts its exclusion. */
   function addCandidate(candidate: ModelGroupCandidateItem) {
     const newFormItems = candidatePayloadToFormItems(candidate);
     setForm((current) => {
@@ -172,10 +178,27 @@ export function useGroupCandidates({
       const itemsToAdd = newFormItems.filter(
         (item) => !existingKeys.has(modelGroupItemKey(item)),
       );
+      const addedKeys = new Set(
+        itemsToAdd.map((item) => modelGroupItemKey(item)),
+      );
       return itemsToAdd.length
-        ? { ...current, items: [...current.items, ...itemsToAdd] }
+        ? {
+            ...current,
+            items: [...current.items, ...itemsToAdd],
+            excluded_items: current.excluded_items.filter(
+              (item) => !addedKeys.has(modelGroupItemKey(item)),
+            ),
+          }
         : current;
     });
+  }
+
+  /** Whether saving would add this model back: a rule or the group's own name. */
+  function isAutoJoined(current: FormState, modelName: string) {
+    return (
+      modelName.toLowerCase() === current.name.trim().toLowerCase() ||
+      buildRuleMatcher(current.match_models, matchedModelNames ?? [])(modelName)
+    );
   }
 
   return {
@@ -187,10 +210,18 @@ export function useGroupCandidates({
     groupedCandidates,
     hasDeletedMatchRules,
     invalidMatchRules,
-    ruleMatchModelCount: new Set(
-      ruleMatches.map((candidate) => candidate.model_name),
+    isAutoJoined,
+    ruleMatchModelCount: new Set(ruleMatches.map((item) => item.model_name))
+      .size,
+    ruleMatchSourceCount: new Set(
+      ruleMatches.map((item) =>
+        modelFoldKey(
+          item.protocol_config_id,
+          item.credential_id,
+          item.model_name,
+        ),
+      ),
     ).size,
-    ruleMatchSourceCount: ruleMatches.length,
     toggleChannel,
   };
 }
