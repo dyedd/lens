@@ -112,8 +112,6 @@ export function ChannelsScreen() {
             openEditor(site, "models", { statusFilter: "missing" })
           }
           onFetchModels={(site) => openEditor(site, "models", { fetch: true })}
-          syncingSiteId={save.syncingSiteId}
-          onSyncModels={(site) => void save.syncSiteModels(site.id)}
           onToggleSiteEnabled={persistence.toggleSiteEnabled}
           onDelete={persistence.setDeleteTarget}
           onBulkEnabled={persistence.applyEnabled}

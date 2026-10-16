@@ -185,8 +185,8 @@ export function ModelSyncRunsSheet({
           ) : !runs.length ? (
             <p className="rounded-md bg-muted/35 px-3 py-6 text-center text-xs text-muted-foreground">
               {isZh
-                ? "还没有同步记录。开启渠道的自动同步后，每次同步都会记录在这里。"
-                : "No sync runs yet. Runs appear here once a channel has auto-sync on."}
+                ? "还没有同步记录。渠道保存后和定时任务运行时会自动记录同步结果。"
+                : "No sync runs yet. Runs are recorded after channel saves and scheduled syncs."}
             </p>
           ) : (
             <Accordion type="multiple" className="border-y border-border/60">

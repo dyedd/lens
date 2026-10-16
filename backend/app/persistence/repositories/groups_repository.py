@@ -27,7 +27,11 @@ from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
 )
-from app.persistence.group_match_rules import is_auto_joined, load_group_match_rules
+from app.persistence.group_match_rules import (
+    create_default_group_match_rule,
+    is_auto_joined,
+    load_group_match_rules,
+)
 from app.persistence.group_rule_codec import (
     dump_fallback_group_ids,
     dump_match_models,
@@ -160,13 +164,30 @@ class ModelGroupRepository(
                 excluded_items=payload.excluded_items,
             )
             await validate_rule_ids(session, payload.match_rule_ids)
+            match_models = payload.match_models
+            match_rule_ids = list(payload.match_rule_ids)
+            if (
+                not route_group
+                and not match_rule_ids
+                and (
+                    not match_models
+                    or (
+                        len(match_models) == 1
+                        and match_models[0].casefold()
+                        == payload.name.strip().casefold()
+                    )
+                )
+            ):
+                rule = await create_default_group_match_rule(session, payload.name)
+                match_rule_ids.append(rule.id)
+                match_models = []
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
                 strategy=payload.strategy.value,
                 route_group_id=route_group.id if route_group is not None else "",
-                match_models_json=dump_match_models(payload.match_models),
-                match_rule_ids_json=dump_rule_ids(payload.match_rule_ids),
+                match_models_json=dump_match_models(match_models),
+                match_rule_ids_json=dump_rule_ids(match_rule_ids),
                 param_override=dump_rules(payload.param_override),
                 headers_json=dump_rules(payload.headers),
                 fallback_group_ids_json=dump_fallback_group_ids(
@@ -351,7 +372,7 @@ class ModelGroupRepository(
                 source=item.source,
             )
             for item in removed
-            if is_auto_joined(entity.name, rules, item.model_name)
+            if is_auto_joined(rules, item.model_name)
         ]
 
     async def delete_group(self, group_id: str) -> None:

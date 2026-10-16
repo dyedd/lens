@@ -204,6 +204,31 @@ def test_model_group_defaults_to_failover(client, admin_headers) -> None:
     assert response.json()["strategy"] == "failover"
 
 
+def test_new_model_group_can_create_a_shared_default_match_rule(
+    client, admin_headers
+) -> None:
+    response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={
+            "name": "gpt-4o",
+            "match_models": ["gpt-4o"],
+            "items": [],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    group = response.json()
+    assert group["match_models"] == []
+    [rule_id] = group["match_rule_ids"]
+
+    rules = client.get("/api/admin/regex-rules", headers=admin_headers)
+    assert rules.status_code == 200, rules.text
+    rule = next(item for item in rules.json() if item["id"] == rule_id)
+    assert rule["pattern"] == "^gpt-4o"
+    assert rule["groups"] == [{"id": group["id"], "name": "gpt-4o"}]
+
+
 def test_model_group_fallback_groups_round_trip(
     client, admin_headers, create_model_group
 ) -> None:
@@ -484,7 +509,7 @@ def test_remove_unplaced_model_only_touches_unplaced_channel_models(
 
     assert_error(rejected, 400, "claude-opus-4.5")
     assert removed.status_code == 200, removed.text
-    assert removed.json() == {"deleted": 1, "disabled": 0}
+    assert removed.json() == {"deleted": 1}
     assert unplaced.json()["items"] == []
     assert site["protocols"][0]["models"] == []
 
@@ -497,7 +522,7 @@ def _create_group(client, admin_headers, **payload: object) -> dict[str, object]
     return response.json()
 
 
-def test_unplaced_model_joins_same_named_group_without_rules(
+def test_new_group_uses_default_rule_for_same_named_model(
     client,
     admin_headers,
     create_site,
@@ -509,9 +534,10 @@ def test_unplaced_model_joins_same_named_group_without_rules(
     unplaced = client.get("/api/admin/unplaced-models", headers=admin_headers)
 
     assert group["match_models"] == []
+    assert len(group["match_rule_ids"]) == 1
     assert [
         (item["model_name"], item["source"]) for item in stored.json()["items"]
-    ] == [("claude-opus-4-5", "placement")]
+    ] == [("claude-opus-4-5", "rule")]
     assert unplaced.json()["items"] == []
 
 
@@ -522,6 +548,7 @@ def test_merge_model_group_folds_source_into_target(
     create_regex_rule,
 ) -> None:
     create_site(valid_site_payload())
+    _create_group(client, admin_headers, name="gpt-4o")
     mini = create_regex_rule("mini", "-mini$")
     dated = create_regex_rule("dated", "^gpt-4o-2")
     target = next(
@@ -557,10 +584,10 @@ def test_merge_model_group_folds_source_into_target(
 
     assert response.status_code == 200, response.text
     merged = response.json()
-    assert merged["match_models"] == ["gpt-4o", "gpt-4o-latest", "gpt-4o-2026"]
+    assert merged["match_models"] == ["gpt-4o-latest", "gpt-4o-2026", "GPT-4O"]
     assert merged["match_rule_ids"] == [mini["id"], dated["id"]]
     assert [(item["model_name"], item["source"]) for item in merged["items"]] == [
-        ("gpt-4o", "rule")
+        ("gpt-4o", "manual")
     ]
     assert_error(
         client.get(f"/api/admin/model-groups/{source['id']}", headers=admin_headers),
