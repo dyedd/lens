@@ -15,7 +15,7 @@ from ...core.upstream_rules import (
 )
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
-from ..converters import convert_request
+from ..converters import convert_request, strip_foreign_reasoning
 from ..router import RouteTarget
 from ..router.cooldown import ErrorCategory, classify_error
 from .app_state import app_state
@@ -174,6 +174,9 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
         upstream_body = dict(request.body)
         if target.model_name:
             upstream_body["model"] = target.model_name
+        if channel.protocol == ProtocolKind.ANTHROPIC:
+            # Foreign reasoning envelopes cannot be replayed to Anthropic.
+            upstream_body = strip_foreign_reasoning(upstream_body)
 
     try:
         upstream_body = apply_param_rules(

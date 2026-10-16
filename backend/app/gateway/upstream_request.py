@@ -78,11 +78,16 @@ def build_upstream_request(
         payload = {
             key: value for key, value in body.items() if key not in {"model", "stream"}
         }
+        query_params = {"key": api_key}
+        if body.get("stream"):
+            # Without alt=sse Google answers a stream request with a buffered
+            # JSON array, which the SSE reader cannot parse.
+            query_params["alt"] = "sse"
         url = append_url_path(
             _protocol_base_url(channel),
             "models",
             f"{model_name}:{operation}",
-            query_params={"key": api_key},
+            query_params=query_params,
         )
         default_headers = {
             "content-type": "application/json",

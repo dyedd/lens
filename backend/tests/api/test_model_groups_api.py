@@ -250,6 +250,7 @@ def test_model_group_derives_client_protocols_from_member(
         "openai_chat",
         "openai_responses",
         "anthropic",
+        "gemini",
     ]
 
 
